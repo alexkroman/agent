@@ -16,13 +16,13 @@
 import {
   type DeepReadonly,
   type DialogPosition,
+  type DialogSpec,
   dialog,
   isToolFailure,
   pushCapped,
   sessionSlot,
 } from "@alexkroman1/aai";
 import { webSearch } from "@alexkroman1/aai/tools";
-import { setup } from "xstate";
 
 /** One completed step — their `past_steps`, as a pair rather than a tuple. */
 export interface PastStep {
@@ -88,44 +88,33 @@ export const planSlot = sessionSlot("plan", emptyPlan);
  * three because `start_plan` is always legal — a caller may re-plan from
  * scratch at any point, which is the one transition that is not a progression.
  */
-const planMachine = setup({
-  types: {} as {
-    events: { type: "PLANNED" } | { type: "ANSWERED" } | { type: "REOPENED" };
-  },
-}).createMachine({
-  id: "plan",
+const planSpec = {
   initial: "idle",
   states: {
     idle: {
-      meta: {
-        instruction:
-          "There is no plan yet. Find out what the caller wants to get done, then use start_plan.",
-      },
+      instruction:
+        "There is no plan yet. Find out what the caller wants to get done, then use start_plan.",
       on: { PLANNED: "working" },
     },
     working: {
-      meta: {
-        instruction:
-          "Work the plan one step at a time with work_next_step, reporting after each step.",
-      },
+      instruction:
+        "Work the plan one step at a time with work_next_step, reporting after each step.",
       on: { ANSWERED: "answered", PLANNED: "working" },
     },
     answered: {
-      meta: {
-        instruction:
-          "The plan is finished — give the caller the answer. Use revise_plan if they change their mind.",
-      },
+      instruction:
+        "The plan is finished — give the caller the answer. Use revise_plan if they change their mind.",
       on: { REOPENED: "working", PLANNED: "working" },
     },
   },
-});
+} as const satisfies DialogSpec;
 
 /**
  * The flow. Its own slot key, because a flow stores an actor snapshot and
  * {@link planSlot} stores the plan — the position and the payload are two
  * things, and one tool call moves both.
  */
-export const planFlow = dialog("planFlow", planMachine);
+export const planFlow = dialog("planFlow", planSpec);
 
 /**
  * How the stage reads to a caller, from the flow's own position.

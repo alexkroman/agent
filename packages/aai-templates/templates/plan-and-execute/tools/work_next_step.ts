@@ -9,17 +9,6 @@ import {
   recordStep,
 } from "../shared.ts";
 
-/** What one turn of the loop reports. `response` drives the flow's transition. */
-type StepOutcome = {
-  finished: boolean;
-  message: string;
-  step?: string;
-  result?: string;
-  searches?: string[];
-  remaining?: readonly string[];
-  response?: string;
-};
-
 /**
  * What the claim window decided, as a DISCRIMINATED union.
  *
@@ -30,7 +19,7 @@ type StepOutcome = {
  */
 type Claim =
   | { kind: "failed"; failure: ToolFailure }
-  | { kind: "dry"; outcome: StepOutcome }
+  | { kind: "dry" }
   | { kind: "step"; step: string; objective: string; pastSteps: PastStep[] };
 
 /**
@@ -71,8 +60,6 @@ export default planFlow.tool({
     "step — never in a loop. Say a short 'let me look into that' first, since " +
     "the step may take a few seconds.",
   when: "working",
-  sendFrom: (outcome: StepOutcome) =>
-    outcome.response === undefined ? undefined : ({ type: "ANSWERED" } as const),
   async execute(_args, ctx) {
     // The whole read-and-claim, in one window nothing can interleave with.
     const claimed = planSlot.update(ctx, (plan): Claim => {
@@ -84,15 +71,7 @@ export default planFlow.tool({
         return { kind: "failed", failure: toolFailure("There is no plan yet — use start_plan.") };
       }
       const step = plan.plan.shift();
-      if (!step) {
-        return {
-          kind: "dry",
-          outcome: {
-            finished: true,
-            message: "No steps are left. Ask the caller what they want next.",
-          },
-        };
-      }
+      if (!step) return { kind: "dry" };
       return {
         kind: "step",
         step,
@@ -101,7 +80,16 @@ export default planFlow.tool({
       };
     });
     if (claimed.kind === "failed") return claimed.failure;
-    if (claimed.kind === "dry") return claimed.outcome;
+    if (claimed.kind === "dry") {
+      // `response: undefined` is spelled out rather than omitted: `sendFrom`
+      // below reads that field to decide whether to send ANSWERED, and a key
+      // missing from one arm of a union is not readable on the union at all.
+      return {
+        finished: true,
+        response: undefined,
+        message: "No steps are left. Ask the caller what they want next.",
+      };
+    }
     const { step, objective, pastSteps } = claimed;
 
     try {
@@ -151,4 +139,11 @@ export default planFlow.tool({
       return toolFailure(`That step could not be worked: ${errorMessage(err)}`);
     }
   },
+  // Written BELOW `execute` deliberately. `sendFrom`'s parameter is
+  // `Exclude<NoInfer<R>, ToolFailure>`, and `NoInfer` keeps it from bidding on
+  // `R` — but this body's own return type is itself an inference
+  // (`planSlot.update`'s), so with `sendFrom` first there is no candidate to
+  // contextually type it against and the parameter lands as `unknown`.
+  sendFrom: (outcome) =>
+    outcome.response === undefined ? undefined : ({ type: "ANSWERED" } as const),
 });

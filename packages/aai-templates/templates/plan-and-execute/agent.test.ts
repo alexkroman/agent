@@ -1,8 +1,9 @@
 /// <reference types="vite/client" />
 
-import type { DialogToolResult, GenerateFn, ToolContext } from "@alexkroman1/aai";
+import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
+  okPosition,
   runTool,
   stubGenerate,
   withDiscoveredTools,
@@ -27,23 +28,6 @@ import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./proced
 import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
 import type { SearchFn } from "./shared.ts";
 import { MAX_PAST_STEPS, planFlow, planProjection, planSlot, planView } from "./shared.ts";
-
-/**
- * What a `planFlow.tool` answers, unwrapped.
- *
- * A gated tool's result is `{ state, done, instruction?, result }` — the flow's
- * position wrapped around the body's own return value — so every assertion on
- * what a step FOUND reads `.result`, and the ones about where the CALL is read
- * `.state`. The wrapper is the SDK's, not this template's, and it is what puts
- * the current instruction in front of the model on every call.
- */
-function outcomeOf<T>(answered: unknown): DialogToolResult<T> {
-  const wrapped = answered as DialogToolResult<T> & { error?: string };
-  if (wrapped.error !== undefined) {
-    throw new Error(`expected a step outcome, got a refusal: ${wrapped.error}`);
-  }
-  return wrapped;
-}
 
 // ─── A scripted model ────────────────────────────────────────────────────────
 //
@@ -97,15 +81,11 @@ function fakeSearch(hits: Record<string, { title: string; url: string }[]>): {
   return { search, queries };
 }
 
-function makeCtx(generate: GenerateFn, sessionId?: string) {
-  return createToolContext({ generate, ...(sessionId ? { sessionId } : {}) });
-}
-
 /** A tool by the name the model calls it by, bound to this agent. The lookup
  *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
  *  what is local is only which agent they run against. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
-  runTool(agentDef, name, args, ctx);
+const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
+  runTool(agentDef, name, argsOrCtx, ctx);
 
 function stateOf(ctx: ToolContext) {
   return planSlot.get(ctx);
@@ -207,7 +187,7 @@ describe("normalizeAct", () => {
 describe("start_plan", () => {
   test("stores the objective and the steps", async () => {
     const { generate } = scriptedModel({ steps: ["Check prices", "Compare hotels", "Book"] });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     const result = (await run("start_plan", { objective: "a weekend in Lisbon" }, ctx)) as {
       steps: string[];
     };
@@ -233,14 +213,14 @@ describe("start_plan", () => {
 describe("work_next_step", () => {
   test("is refused before there is a plan, by the flow rather than by the body", async () => {
     const { generate } = scriptedModel();
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     // The gate is `when: "working"`, so the refusal names the state the call is
     // actually in and quotes that state's instruction — which is what the model
     // needs in order to do the right thing on its own next turn.
-    expect(await run("work_next_step", {}, ctx)).toMatchObject({
+    expect(await run("work_next_step", ctx)).toMatchObject({
       error: expect.stringContaining('this conversation is at "idle"'),
     });
-    expect(await run("work_next_step", {}, ctx)).toMatchObject({
+    expect(await run("work_next_step", ctx)).toMatchObject({
       error: expect.stringContaining("use start_plan"),
     });
     // Refused means the body did not run: nothing was claimed off the plan.
@@ -253,15 +233,15 @@ describe("work_next_step", () => {
       turns: [{ answer: "Fares are about 180 return." }],
       acts: [{ kind: "plan", steps: ["Compare hotels"] }],
     });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
 
-    const first = outcomeOf<{
+    const first = okPosition<{
       finished: boolean;
       step: string;
       result: string;
       remaining: string[];
-    }>(await run("work_next_step", {}, ctx));
+    }>(await run("work_next_step", ctx));
     expect(first.result.finished).toBe(false);
     expect(first.result.step).toBe("Check prices");
     expect(first.result.result).toContain("180");
@@ -281,10 +261,10 @@ describe("work_next_step", () => {
       turns: [{ answer: "Fares are about 180 return." }],
       acts: [{ kind: "respond", response: "Go in May — flights are about 180 return." }],
     });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
-    const answered = outcomeOf<{ finished: boolean; response: string }>(
-      await run("work_next_step", {}, ctx),
+    const answered = okPosition<{ finished: boolean; response: string }>(
+      await run("work_next_step", ctx),
     );
 
     expect(answered.result.finished).toBe(true);
@@ -301,7 +281,7 @@ describe("work_next_step", () => {
 
     // A finished plan is not worked again, and now it CANNOT be: the tool is
     // gated out of `answered` rather than returning a done-shaped result.
-    expect(await run("work_next_step", {}, ctx)).toMatchObject({
+    expect(await run("work_next_step", ctx)).toMatchObject({
       error: expect.stringContaining('this conversation is at "answered"'),
     });
     expect(stateOf(ctx).pastSteps).toHaveLength(1);
@@ -320,9 +300,9 @@ describe("work_next_step", () => {
         steps: Array.from({ length: total - i - 1 }, (_, j) => `Step ${i + j + 2}`),
       })),
     });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     await run("start_plan", { objective: "a long one" }, ctx);
-    for (let i = 0; i < total; i++) await run("work_next_step", {}, ctx);
+    for (let i = 0; i < total; i++) await run("work_next_step", ctx);
 
     const state = stateOf(ctx);
     expect(state.pastSteps).toHaveLength(MAX_PAST_STEPS);
@@ -339,14 +319,14 @@ describe("work_next_step", () => {
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
     const { generate } = scriptedModel({ steps: ["Only step"] });
-    const first = makeCtx(generate);
-    const second = makeCtx(generate);
+    const first = createToolContext({ generate });
+    const second = createToolContext({ generate });
 
     await run("start_plan", { objective: "mine" }, first);
     expect(stateOf(second).objective).toBeNull();
     // The FLOW is per-session too, not just the plan — `second` is still idle.
     expect(planFlow.position(second).state).toBe("idle");
-    expect(await run("work_next_step", {}, second)).toMatchObject({
+    expect(await run("work_next_step", second)).toMatchObject({
       error: expect.stringContaining('this conversation is at "idle"'),
     });
   });
@@ -362,12 +342,12 @@ describe("revise_plan", () => {
         { kind: "plan", steps: ["Check Porto prices"] },
       ],
     });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
-    await run("work_next_step", {}, ctx);
+    await run("work_next_step", ctx);
     expect(stateOf(ctx).response).not.toBeNull();
 
-    const revised = outcomeOf<{ finished: boolean; remaining: string[] }>(
+    const revised = okPosition<{ finished: boolean; remaining: string[] }>(
       await run("revise_plan", { instruction: "make it Porto instead" }, ctx),
     );
     expect(revised.result.finished).toBe(false);
@@ -389,7 +369,7 @@ describe("revise_plan", () => {
 
   test("is refused before there is a plan", async () => {
     const { generate } = scriptedModel();
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     expect(await run("revise_plan", { instruction: "change it" }, ctx)).toMatchObject({
       error: expect.stringContaining('this conversation is at "idle"'),
     });
@@ -400,9 +380,9 @@ describe("revise_plan", () => {
       steps: ["Check Lisbon prices"],
       acts: [{ kind: "respond", response: "Nothing to do — you already booked it." }],
     });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
-    const revised = outcomeOf<{ finished: boolean }>(
+    const revised = okPosition<{ finished: boolean }>(
       await run("revise_plan", { instruction: "never mind, it is booked" }, ctx),
     );
     expect(revised.result.finished).toBe(true);
@@ -417,19 +397,19 @@ describe("plan_status", () => {
       turns: [{ answer: "About 180 return." }],
       acts: [{ kind: "plan", steps: ["Book"] }],
     });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     // Legal in every state, so it READS the position rather than being gated on
     // one — and "no plan yet" is the flow's own answer, not a third derivation
     // of `!objective`.
-    expect(await run("plan_status", {}, ctx)).toMatchObject({
+    expect(await run("plan_status", ctx)).toMatchObject({
       stage: "idle",
       next: expect.stringContaining("start_plan"),
       objective: null,
     });
 
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
-    await run("work_next_step", {}, ctx);
-    expect(await run("plan_status", {}, ctx)).toMatchObject({
+    await run("work_next_step", ctx);
+    expect(await run("plan_status", ctx)).toMatchObject({
       stage: "working",
       objective: "a weekend in Lisbon",
       remaining: ["Book"],
@@ -460,11 +440,11 @@ describe("planView projection", () => {
       turns: [{ answer: "Done one." }],
       acts: [{ kind: "plan", steps: ["Two", "Three"] }],
     });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     await run("start_plan", { objective: "three things" }, ctx);
     expect(planView(stateOf(ctx)).progress).toBe(0);
 
-    await run("work_next_step", {}, ctx);
+    await run("work_next_step", ctx);
     const view = planView(stateOf(ctx));
     expect(view.progress).toBeCloseTo(1 / 3, 5);
     expect(view.done[0]?.step).toBe("One");

@@ -1,7 +1,13 @@
 /// <reference types="vite/client" />
 
 import type { ToolContext } from "@alexkroman1/aai";
-import { createToolContext, runTool, toolOf, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import {
+  createToolContext,
+  parseToolInput,
+  runTool,
+  toolInputIssues,
+  withDiscoveredTools,
+} from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
 
@@ -36,9 +42,11 @@ const makeCtx = (): ToolContext => createToolContext();
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup
  *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
- *  what is local is only which agent they run against. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
-  runTool(agentDef, name, args, ctx);
+ *  what is local is only which agent they run against. The third parameter is
+ *  forwarded as-is so a no-argument tool can pass the context in the arguments'
+ *  place — `runTool` tells the two apart by shape. */
+const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
+  runTool(agentDef, name, argsOrCtx, ctx);
 
 const margherita: Omit<Pizza, "id"> = {
   size: "medium",
@@ -79,18 +87,11 @@ describe("pricing (shared.ts)", () => {
   });
 
   test("add_pizza schema defaults quantity to 1 and rejects non-positive quantities", async () => {
-    const schema = toolOf(agentDef, "add_pizza").inputSchema;
-    if (!schema) throw new Error("add_pizza has no input schema");
-    // Validate through the Standard Schema contract — the vendor-neutral
-    // interface every inputSchema carries.
-    const validate = (value: unknown) => schema["~standard"].validate(value);
-    const ok = await validate({ size: "small", crust: "thin", toppings: [] });
-    if (ok.issues) throw new Error("expected valid input");
-    expect((ok.value as { quantity: number }).quantity).toBe(1);
-    const zero = await validate({ size: "small", crust: "thin", toppings: [], quantity: 0 });
-    expect(zero.issues).toBeDefined();
-    const frac = await validate({ size: "small", crust: "thin", toppings: [], quantity: 1.5 });
-    expect(frac.issues).toBeDefined();
+    const base = { size: "small", crust: "thin", toppings: [] };
+    const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza", base);
+    expect(parsed.quantity).toBe(1);
+    expect(await toolInputIssues(agentDef, "add_pizza", { ...base, quantity: 0 })).toBeDefined();
+    expect(await toolInputIssues(agentDef, "add_pizza", { ...base, quantity: 1.5 })).toBeDefined();
   });
 });
 
@@ -101,8 +102,8 @@ describe("tool flow (add → update → remove → place_order)", () => {
     const ctx = makeCtx();
 
     // Empty order guards
-    expect(await run("view_order", {}, ctx)).toEqual({ message: "The order is empty." });
-    expect(await run("place_order", {}, ctx)).toEqual({ error: "Cannot place an empty order." });
+    expect(await run("view_order", ctx)).toEqual({ message: "The order is empty." });
+    expect(await run("place_order", ctx)).toEqual({ error: "Cannot place an empty order." });
 
     // Add two pizzas — IDs increment
     const first = (await run(
@@ -144,7 +145,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
 
     // Name + place the order
     await run("set_customer_name", { name: "Alex" }, ctx);
-    const placed = (await run("place_order", {}, ctx)) as {
+    const placed = (await run("place_order", ctx)) as {
       orderNumber: number;
       customerName: string;
       pizzas: number;
@@ -155,8 +156,8 @@ describe("tool flow (add → update → remove → place_order)", () => {
     expect(placed.total).toBe(`$${(8.99 + 2.0).toFixed(2)}`);
 
     // The cart is cleared after placing — a follow-up order starts fresh.
-    expect(await run("view_order", {}, ctx)).toEqual({ message: "The order is empty." });
-    expect(await run("place_order", {}, ctx)).toEqual({ error: "Cannot place an empty order." });
+    expect(await run("view_order", ctx)).toEqual({ message: "The order is empty." });
+    expect(await run("place_order", ctx)).toEqual({ error: "Cannot place an empty order." });
   });
 
   test("two independent contexts never share pizzas or names", async () => {
@@ -175,10 +176,10 @@ describe("tool flow (add → update → remove → place_order)", () => {
     );
     await run("set_customer_name", { name: "Alice" }, firstCall);
 
-    expect(await run("view_order", {}, secondCall)).toEqual({ message: "The order is empty." });
+    expect(await run("view_order", secondCall)).toEqual({ message: "The order is empty." });
 
     await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, secondCall);
-    const placedB = (await run("place_order", {}, secondCall)) as {
+    const placedB = (await run("place_order", secondCall)) as {
       customerName: string;
       pizzas: number;
     };
@@ -187,7 +188,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
     expect(placedB.pizzas).toBe(1);
 
     // And the first context's cart survives the second's checkout untouched.
-    const viewA = (await run("view_order", {}, firstCall)) as { pizzas: unknown[] };
+    const viewA = (await run("view_order", firstCall)) as { pizzas: unknown[] };
     expect(viewA.pizzas).toHaveLength(1);
   });
 });
@@ -227,7 +228,7 @@ describe("orderView projection", () => {
     // checkout, and the UI still has to show the order that was just placed.
     const ctx = makeCtx();
     await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
-    await run("place_order", {}, ctx);
+    await run("place_order", ctx);
 
     const view = orderView(orderSlot.get(ctx));
     expect(view.orderPlaced).toBe(true);

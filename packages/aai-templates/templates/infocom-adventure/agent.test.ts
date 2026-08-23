@@ -21,8 +21,8 @@ const agentDef = withDiscoveredTools(
 import { DEFAULT_GAME_STATE, gameSlot, MAX_HISTORY, REPORTED_HISTORY } from "./shared.ts";
 
 /** A tool by the name the model calls it by, bound to this agent. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
-  runTool(agentDef, name, args, ctx);
+const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
+  runTool(agentDef, name, argsOrCtx, ctx);
 
 /** Each context owns its OWN slot store, which is what makes two playthroughs
  *  independent by construction. */
@@ -153,7 +153,7 @@ describe("the adventure's tools", () => {
       await run("game_state_history", { value: `command ${i}` }, ctx);
     }
 
-    expect(await run("game_state_get", {}, ctx)).toEqual({
+    expect(await run("game_state_get", ctx)).toEqual({
       currentRoom: "Echo Chamber",
       inventory: ["lantern"],
       score: 7,
@@ -169,7 +169,7 @@ describe("the adventure's tools", () => {
     await run("game_state_score", { value: 30 }, ctx);
     await run("game_state_move", { value: "Echo Chamber" }, ctx);
 
-    const restarted = (await run("game_state_restart", {}, ctx)) as {
+    const restarted = (await run("game_state_restart", ctx)) as {
       restarted: boolean;
       currentRoom: string;
     };

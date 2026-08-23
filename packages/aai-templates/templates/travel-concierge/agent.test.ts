@@ -1,7 +1,13 @@
 /// <reference types="vite/client" />
 
 import type { ToolContext } from "@alexkroman1/aai";
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import {
+  createToolContext,
+  ok,
+  okPosition,
+  runTool,
+  withDiscoveredTools,
+} from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
 
@@ -36,8 +42,8 @@ const makeCtx = (): ToolContext => createToolContext();
 /** A tool by the name the model calls it by, bound to this agent. The lookup
  *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
  *  what is local is only which agent they run against. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
-  runTool(agentDef, name, args, ctx);
+const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
+  runTool(agentDef, name, argsOrCtx, ctx);
 
 /** The state a tool just mutated, read back the way `syncState` reads it. */
 function stateOf(ctx: ToolContext) {
@@ -127,11 +133,13 @@ describe("sensitive tools stage rather than act", () => {
     expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
 
     // A gated tool answers the flow's POSITION wrapped around the body's own
-    // return value, so the applied sentence is under `result`.
-    const confirmed = (await run("confirm_action", {}, ctx)) as {
-      state: string;
-      result: { applied: string; reference: string };
-    };
+    // return value, so the applied sentence is under `result`. `okPosition`
+    // keeps the position and THROWS on a refusal, quoting it — where the cast
+    // it replaces read `undefined` off the failure and died three assertions
+    // later on a property of undefined.
+    const confirmed = okPosition<{ applied: string; reference: string }>(
+      await run("confirm_action", ctx),
+    );
     expect(confirmed.result.applied).toContain("Harborview Suites");
     // 3 nights at $265.
     expect(confirmed.result.applied).toContain("$795");
@@ -145,7 +153,7 @@ describe("sensitive tools stage rather than act", () => {
 
     // The gate re-arms, and now REFUSES rather than reporting an empty apply —
     // `when: "awaitingConfirmation"` is what a second confirm meets.
-    expect(await run("confirm_action", {}, ctx)).toMatchObject({
+    expect(await run("confirm_action", ctx)).toMatchObject({
       error: expect.stringContaining('this conversation is at "browsing"'),
     });
   });
@@ -153,17 +161,14 @@ describe("sensitive tools stage rather than act", () => {
   test("cancel_action drops the staged change and leaves the booking alone", async () => {
     const ctx = makeCtx();
     await run("update_ticket", { flightId: "LX54" }, ctx);
-    const dropped = (await run("cancel_action", {}, ctx)) as {
-      state: string;
-      result: { discarded: string };
-    };
+    const dropped = okPosition<{ discarded: string }>(await run("cancel_action", ctx));
     expect(dropped.result.discarded).toContain("LX54");
     expect(dropped.state).toBe("browsing");
 
     const state = stateOf(ctx);
     expect(state.pending).toBeNull();
     expect(state.ticket?.flightId).toBe("LX40");
-    expect(await run("cancel_action", {}, ctx)).toMatchObject({
+    expect(await run("cancel_action", ctx)).toMatchObject({
       error: expect.stringContaining('this conversation is at "browsing"'),
     });
   });
@@ -180,14 +185,14 @@ describe("sensitive tools stage rather than act", () => {
 
   test("cancelling the ticket makes a later ticket change impossible", async () => {
     const ctx = makeCtx();
-    await run("cancel_ticket", {}, ctx);
-    await run("confirm_action", {}, ctx);
+    await run("cancel_ticket", ctx);
+    await run("confirm_action", ctx);
     expect(stateOf(ctx).ticket).toBeNull();
 
     expect(await run("update_ticket", { flightId: "LX52" }, ctx)).toEqual({
       error: "This caller has no ticket to move — it was cancelled on this call.",
     });
-    expect(await run("cancel_ticket", {}, ctx)).toEqual({ error: "There is no ticket to cancel." });
+    expect(await run("cancel_ticket", ctx)).toEqual({ error: "There is no ticket to cancel." });
   });
 
   test("a second staging is REFUSED rather than overwriting the first", async () => {
@@ -215,8 +220,10 @@ describe("sensitive tools stage rather than act", () => {
     // A refused SECOND staging must not have moved the gate either — it was
     // already `awaitingConfirmation` and the refusal changed nothing.
     expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
-    const applied = (await run("confirm_action", {}, ctx)) as { result: { applied: string } };
-    expect(applied.result.applied).toContain("LX52");
+    // `ok` is `okPosition` with `.result` taken off: this assertion is about
+    // what the apply DID, not about where the gate landed.
+    const applied = ok<{ applied: string }>(await run("confirm_action", ctx));
+    expect(applied.applied).toContain("LX52");
     expect(stateOf(ctx).bookings).toEqual([]);
 
     // Once the queue is clear, the hotel can be staged after all.
@@ -229,7 +236,7 @@ describe("sensitive tools stage rather than act", () => {
   test("cancel_action clears the block, so a declined change does not wedge the desk", async () => {
     const ctx = makeCtx();
     await run("book_car_rental", { carId: "C2", days: 3 }, ctx);
-    await run("cancel_action", {}, ctx);
+    await run("cancel_action", ctx);
     const staged = (await run("book_excursion", { excursionId: "E2" }, ctx)) as {
       awaitingConfirmation: boolean;
     };
@@ -247,13 +254,13 @@ describe("sensitive tools stage rather than act", () => {
 
     await run("to_hotel_assistant", { request: "a room" }, first);
     await run("book_hotel", { hotelId: "H3", nights: 1 }, first);
-    await run("confirm_action", {}, first);
+    await run("confirm_action", first);
 
     expect(activeAssistant(stateOf(second))).toBe("primary");
     expect(stateOf(second).bookings).toEqual([]);
     // The GATE is per-session too, not just the trip.
     expect(gateFlow.position(second).state).toBe("browsing");
-    expect(await run("confirm_action", {}, second)).toMatchObject({
+    expect(await run("confirm_action", second)).toMatchObject({
       error: expect.stringContaining('this conversation is at "browsing"'),
     });
     expect(stateOf(first).bookings).toHaveLength(1);
@@ -307,8 +314,8 @@ describe("search tools", () => {
   test("lookup_booking reports the ticket the caller is actually holding", async () => {
     const ctx = makeCtx();
     await run("update_ticket", { flightId: "LX52" }, ctx);
-    await run("confirm_action", {}, ctx);
-    const booking = (await run("lookup_booking", {}, ctx)) as {
+    await run("confirm_action", ctx);
+    const booking = (await run("lookup_booking", ctx)) as {
       passenger: string;
       ticket: { flight: string; departs: string } | null;
     };
@@ -351,9 +358,9 @@ describe("tripView projection", () => {
   test("totals every confirmed booking", async () => {
     const ctx = makeCtx();
     await run("book_hotel", { hotelId: "H3", nights: 2 }, ctx); // 2 × 180
-    await run("confirm_action", {}, ctx);
+    await run("confirm_action", ctx);
     await run("book_excursion", { excursionId: "E1" }, ctx); // 35
-    await run("confirm_action", {}, ctx);
+    await run("confirm_action", ctx);
 
     const view = tripView(stateOf(ctx));
     expect(view.total).toBe(395);

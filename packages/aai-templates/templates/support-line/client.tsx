@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { AutoScroll, client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
+import { AutoScroll, client, useAgentState } from "@alexkroman1/aai-ui";
 import { PRODUCT, supportProjection } from "./shared.ts";
 
 /**
@@ -11,12 +11,11 @@ import { PRODUCT, supportProjection } from "./shared.ts";
  * support line nobody can tell apart from one that just guesses well.
  */
 function TraceSidebar() {
-  const theme = useTheme();
   const support = useAgentState(supportProjection);
   const trace = support.trace;
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-4" style={{ color: theme.text }}>
+    <div className="flex h-full min-h-0 flex-col gap-4 p-4 text-aai-text">
       <div>
         <h3 className="text-sm font-bold uppercase tracking-wide opacity-60">{support.product}</h3>
         <p className="text-xs opacity-50">
@@ -36,7 +35,7 @@ function TraceSidebar() {
           scrollClassName="min-h-0 overflow-y-auto"
           contentClassName="flex flex-col gap-4 pr-1"
         >
-          <div className="rounded-lg p-3" style={{ background: theme.surface }}>
+          <div className="rounded-lg p-3 bg-aai-surface">
             <p className="text-[11px] font-bold uppercase tracking-wide opacity-60">Question</p>
             <p className="text-sm">{trace.question}</p>
             {trace.rewrites > 0 && (
@@ -54,10 +53,11 @@ function TraceSidebar() {
             {trace.docs.map((doc) => (
               <div
                 key={doc.id}
-                className="flex items-start gap-2 rounded-lg p-2"
-                style={{ background: theme.surface, opacity: doc.relevant ? 1 : 0.5 }}
+                className={`flex items-start gap-2 rounded-lg p-2 bg-aai-surface ${
+                  doc.relevant ? "" : "opacity-50"
+                }`}
               >
-                <span style={{ color: doc.relevant ? theme.primary : theme.text }}>
+                <span className={doc.relevant ? "text-aai-primary" : "text-aai-text"}>
                   {doc.relevant ? "✓" : "×"}
                 </span>
                 <div className="min-w-0">
@@ -79,7 +79,7 @@ function TraceSidebar() {
             ))}
           </div>
 
-          <div className="rounded-lg p-3" style={{ background: theme.surface }}>
+          <div className="rounded-lg p-3 bg-aai-surface">
             <p className="text-[11px] font-bold uppercase tracking-wide opacity-60">Verdict</p>
             {trace.answer ? (
               <p className="text-sm">{trace.answer}</p>

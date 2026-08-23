@@ -1,6 +1,14 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState, ChatMessage } from "@alexkroman1/aai-ui";
-import { AutoScroll, client, useSession, useUserTranscript } from "@alexkroman1/aai-ui";
+import type { AgentState } from "@alexkroman1/aai-ui";
+import {
+  AutoScroll,
+  client,
+  useConversation,
+  useSession,
+  useSessionSelector,
+  useTheme,
+} from "@alexkroman1/aai-ui";
+import type { ReactNode } from "react";
 
 const CSS = `
 @keyframes ic-flicker {
@@ -71,89 +79,187 @@ const STATE_COLORS = {
   error: GREEN_DARK,
 } satisfies Record<AgentState, string>;
 
-function InfocomAdventure() {
-  const session = useSession();
-  // `speaking` and `text` in place of a `userTranscript !== null` check: `null`
-  // is silence and `""` is speech detected with no words back yet, and reading
-  // them as one falsy value hides the indicator at the start of every turn.
-  const { speaking, text: userTranscript } = useUserTranscript();
+/**
+ * The exchange, in the CRT idiom.
+ *
+ * `useConversation()` rather than `session.messages`: the four decisions
+ * `<MessageList>` makes — the message/tool-call interleave, the streaming
+ * narrator line, the transcript's `null`-vs-`""` distinction and the thinking
+ * rule — are the hook's now, so this renders them instead of shipping a
+ * conversation missing all four. The old list read `messages` alone, so the
+ * eight `game_state_*` calls and every partial of the narrator's reply were
+ * invisible: the screen sat still until a whole utterance finalized.
+ *
+ * It also subscribes per FIELD, so a partial transcript no longer re-renders
+ * the status bar, the footer and the CRT overlays with it.
+ */
+function Transcript() {
+  const { items, streaming, transcript, thinking } = useConversation();
+  // The one theme read left in this file, and the case `useTheme()` is still
+  // for: `scrollbar-color` takes TWO values and has no utility class, so it has
+  // to be a style — and reading it off the theme beats re-pinning the two hex
+  // codes the `client({ theme })` block below already declares.
+  const theme = useTheme();
 
+  return (
+    <AutoScroll
+      scrollClassName="ic-messages overflow-y-auto"
+      contentClassName="p-5"
+      style={{ scrollbarWidth: "thin", scrollbarColor: `${theme.primary} ${theme.surface}` }}
+    >
+      {items.map((item) =>
+        item.kind === "message" ? (
+          <div
+            key={item.message.id}
+            className={`mb-4 ${item.message.role === "user" ? "ic-user-msg" : ""}`}
+            style={{
+              textShadow:
+                item.message.role === "user"
+                  ? "0 0 5px rgba(0,204,255,0.3)"
+                  : "0 0 5px rgba(0,255,65,0.3)",
+              color: item.message.role === "user" ? CYAN : GREEN,
+            }}
+          >
+            {item.message.content}
+          </div>
+        ) : (
+          // The game engine's own bookkeeping, in the idiom the machine would
+          // have printed it in. Dim, because it is beneath the narration and
+          // not instead of it.
+          <div key={item.toolCall.callId} className="mb-4 text-[13px]" style={{ color: GREEN_DIM }}>
+            {`[ ${item.toolCall.name.replace(/^game_state_/, "").replace(/_/g, " ")}${
+              item.toolCall.status === "pending" ? " …" : ""
+            } ]`}
+          </div>
+        ),
+      )}
+      {streaming !== null && (
+        <div className="mb-4" style={{ color: GREEN, textShadow: "0 0 5px rgba(0,255,65,0.3)" }}>
+          {streaming}
+        </div>
+      )}
+      {transcript.speaking && (
+        <div
+          className="ic-transcript italic"
+          style={{ color: "#007a1e", textShadow: "0 0 5px rgba(0,255,65,0.15)" }}
+        >
+          {transcript.text}
+        </div>
+      )}
+      {thinking && (
+        <div className="animate-pulse" style={{ color: GREEN_DIM }}>
+          &#9612;
+        </div>
+      )}
+    </AutoScroll>
+  );
+}
+
+/** The turn counter — a NUMBER out of the selector, so a new message array with
+ *  the same user-message count re-renders nothing. */
+function TurnCount() {
+  const turns = useSessionSelector(
+    (snapshot) => snapshot.messages.filter((message) => message.role === "user").length,
+  );
+  return <span>Turns: {turns}</span>;
+}
+
+/** The live state dot and its label. */
+function StatusDot() {
+  const state = useSessionSelector((snapshot) => snapshot.state);
+  const dotColor = STATE_COLORS[state];
   const stateLabel =
-    session.state === "listening"
+    state === "listening"
       ? "Listening"
-      : session.state === "speaking"
+      : state === "speaking"
         ? "Narrating"
-        : session.state === "thinking"
+        : state === "thinking"
           ? "Thinking"
-          : session.state === "connecting"
+          : state === "connecting"
             ? "Connecting"
-            : session.state === "ready"
+            : state === "ready"
               ? "Ready"
               : "Idle";
 
-  const msgCount = session.messages.filter((m: ChatMessage) => m.role === "user").length;
+  return (
+    <div
+      className="flex items-center gap-2.5 text-xs uppercase tracking-wider"
+      style={{ color: GREEN_DIM }}
+    >
+      <div
+        className="w-2 h-2 rounded-full"
+        style={{
+          background: dotColor,
+          boxShadow: dotColor !== GREEN_DARK ? `0 0 6px ${dotColor}` : "none",
+        }}
+      />
+      <span>{stateLabel}</span>
+    </div>
+  );
+}
 
-  const dotColor = STATE_COLORS[session.state];
+/**
+ * The fault line.
+ *
+ * `role="alert"` for the reason `ConsoleShell` gives: once `session-core`
+ * latches a fatal error the state eyebrow goes back to reading like a live
+ * session, so this banner is the only remaining signal — and a screen reader is
+ * never told an unannounced one appeared.
+ */
+function ErrorBanner() {
+  const error = useSessionSelector((snapshot) => snapshot.error);
+  if (!error) return null;
+  return (
+    <div
+      role="alert"
+      className="px-5 py-2 text-xs"
+      style={{ background: "#3a0000", color: "#ff4141" }}
+    >
+      ERROR: {error.message}
+    </div>
+  );
+}
 
-  if (!session.started) {
-    return (
-      <>
-        <style>{CSS}</style>
-        <div
-          className="ic-crt fixed inset-0 overflow-hidden"
-          style={{
-            background: CRT_BG,
-            color: GREEN,
-            fontFamily: "monospace",
-            fontSize: "15px",
-            lineHeight: 1.6,
-            animation: "ic-flicker 4s infinite",
-          }}
+/** Pause/resume and hang-up. The only place a whole-session subscription is
+ *  still needed: the ACTIONS live on `useSession()`, and `useSessionCore` — the
+ *  narrow way `<Controls>` reaches them — is not on the public surface. */
+function Footer() {
+  const session = useSession();
+  return (
+    <div
+      className="flex items-center justify-between px-5 py-2 shrink-0 gap-3"
+      style={{ borderTop: `1px solid ${GREEN_DARK}`, background: "#001100" }}
+    >
+      <StatusDot />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
+          style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
+          onClick={session.toggle}
         >
-          <div
-            className="flex flex-col items-center justify-center h-full text-center p-10"
-            style={{ animation: "ic-boot 1.5s ease-out" }}
-          >
-            <div
-              className="text-[11px] whitespace-pre mb-8"
-              style={{ textShadow: "0 0 10px rgba(0,255,65,0.5)" }}
-            >
-              {ASCII_LOGO}
-            </div>
-            <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
-              AN INTERACTIVE FICTION
-            </div>
-            <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
-              In the style of the classic text adventures.
-            </div>
-            <div className="text-[13px] mt-4" style={{ color: GREEN }}>
-              VOICE-ENABLED EDITION
-            </div>
-            <button
-              type="button"
-              className="mt-10 px-12 py-3.5 bg-transparent cursor-pointer uppercase tracking-[3px] font-mono text-base"
-              style={{
-                color: GREEN,
-                border: `1px solid ${GREEN}`,
-                animation: "ic-pulse 2s ease-in-out infinite",
-              }}
-              onClick={session.start}
-            >
-              Begin Adventure
-            </button>
-          </div>
-          <div
-            className="fixed inset-0 pointer-events-none z-12"
-            style={{
-              background:
-                "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)",
-            }}
-          />
-        </div>
-      </>
-    );
-  }
+          {session.running ? "[P]ause" : "[R]esume"}
+        </button>
+        {/* end() hangs up and drops the sessionId, so the
+            session-scoped game state starts over and the title
+            screen returns. (session.reset() keeps the same
+            sessionId and would resume the old game.) */}
+        <button
+          type="button"
+          className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
+          style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
+          onClick={() => session.end()}
+        >
+          [N]ew Game
+        </button>
+      </div>
+    </div>
+  );
+}
 
+/** The CRT itself: the flicker, the scanlines and the vignette every screen
+ *  sits inside. */
+function Crt({ children }: { children: ReactNode }) {
   return (
     <>
       <style>{CSS}</style>
@@ -168,98 +274,7 @@ function InfocomAdventure() {
           animation: "ic-flicker 4s infinite",
         }}
       >
-        <div className="flex flex-col h-full">
-          {/* Status bar */}
-          <div
-            className="flex items-center justify-between px-5 py-2 text-[13px] font-bold tracking-wider shrink-0"
-            style={{ background: GREEN, color: CRT_BG }}
-          >
-            <div className="flex gap-6">
-              <span>CAVERN ADVENTURE</span>
-              <span>Turns: {msgCount}</span>
-            </div>
-            <span>Voice Adventure</span>
-          </div>
-
-          {session.error && (
-            <div className="px-5 py-2 text-xs" style={{ background: "#3a0000", color: "#ff4141" }}>
-              ERROR: {session.error.message}
-            </div>
-          )}
-
-          {/* Messages */}
-          <AutoScroll
-            scrollClassName="ic-messages overflow-y-auto"
-            contentClassName="p-5"
-            style={{ scrollbarWidth: "thin", scrollbarColor: `${GREEN} #001a00` }}
-          >
-            {session.messages.map((msg: ChatMessage, i: number) => (
-              <div
-                key={i}
-                className={`mb-4 ${msg.role === "user" ? "ic-user-msg" : ""}`}
-                style={{
-                  textShadow:
-                    msg.role === "user"
-                      ? "0 0 5px rgba(0,204,255,0.3)"
-                      : "0 0 5px rgba(0,255,65,0.3)",
-                  color: msg.role === "user" ? CYAN : GREEN,
-                }}
-              >
-                {msg.content}
-              </div>
-            ))}
-            {speaking && (
-              <div
-                className="ic-transcript italic"
-                style={{ color: "#007a1e", textShadow: "0 0 5px rgba(0,255,65,0.15)" }}
-              >
-                {userTranscript}
-              </div>
-            )}
-          </AutoScroll>
-
-          {/* Footer controls */}
-          <div
-            className="flex items-center justify-between px-5 py-2 shrink-0 gap-3"
-            style={{ borderTop: `1px solid ${GREEN_DARK}`, background: "#001100" }}
-          >
-            <div
-              className="flex items-center gap-2.5 text-xs uppercase tracking-wider"
-              style={{ color: GREEN_DIM }}
-            >
-              <div
-                className="w-2 h-2 rounded-full"
-                style={{
-                  background: dotColor,
-                  boxShadow: dotColor !== GREEN_DARK ? `0 0 6px ${dotColor}` : "none",
-                }}
-              />
-              <span>{stateLabel}</span>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
-                style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-                onClick={session.toggle}
-              >
-                {session.running ? "[P]ause" : "[R]esume"}
-              </button>
-              {/* end() hangs up and drops the sessionId, so the
-                  session-scoped game state starts over and the title
-                  screen returns. (session.reset() keeps the same
-                  sessionId and would resume the old game.) */}
-              <button
-                type="button"
-                className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
-                style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-                onClick={() => session.end()}
-              >
-                [N]ew Game
-              </button>
-            </div>
-          </div>
-        </div>
+        {children}
         <div
           className="fixed inset-0 pointer-events-none z-12"
           style={{
@@ -268,6 +283,73 @@ function InfocomAdventure() {
         />
       </div>
     </>
+  );
+}
+
+function TitleScreen() {
+  const session = useSession();
+  return (
+    <Crt>
+      <div
+        className="flex flex-col items-center justify-center h-full text-center p-10"
+        style={{ animation: "ic-boot 1.5s ease-out" }}
+      >
+        <div
+          className="text-[11px] whitespace-pre mb-8"
+          style={{ textShadow: "0 0 10px rgba(0,255,65,0.5)" }}
+        >
+          {ASCII_LOGO}
+        </div>
+        <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
+          AN INTERACTIVE FICTION
+        </div>
+        <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
+          In the style of the classic text adventures.
+        </div>
+        <div className="text-[13px] mt-4" style={{ color: GREEN }}>
+          VOICE-ENABLED EDITION
+        </div>
+        <button
+          type="button"
+          className="mt-10 px-12 py-3.5 bg-transparent cursor-pointer uppercase tracking-[3px] font-mono text-base"
+          style={{
+            color: GREEN,
+            border: `1px solid ${GREEN}`,
+            animation: "ic-pulse 2s ease-in-out infinite",
+          }}
+          onClick={session.start}
+        >
+          Begin Adventure
+        </button>
+      </div>
+    </Crt>
+  );
+}
+
+function InfocomAdventure() {
+  const started = useSessionSelector((snapshot) => snapshot.started);
+  if (!started) return <TitleScreen />;
+
+  return (
+    <Crt>
+      <div className="flex flex-col h-full">
+        {/* Status bar */}
+        <div
+          className="flex items-center justify-between px-5 py-2 text-[13px] font-bold tracking-wider shrink-0"
+          style={{ background: GREEN, color: CRT_BG }}
+        >
+          <div className="flex gap-6">
+            <span>CAVERN ADVENTURE</span>
+            <TurnCount />
+          </div>
+          <span>Voice Adventure</span>
+        </div>
+
+        <ErrorBanner />
+        <Transcript />
+        <Footer />
+      </div>
+    </Crt>
   );
 }
 

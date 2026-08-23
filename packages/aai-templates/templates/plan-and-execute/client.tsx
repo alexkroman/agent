@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { AutoScroll, client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
+import { AutoScroll, client, useAgentState } from "@alexkroman1/aai-ui";
 import { planProjection } from "./shared.ts";
 
 /**
@@ -10,14 +10,13 @@ import { planProjection } from "./shared.ts";
  * out. The sidebar is where that lives; the call is where the decisions happen.
  */
 function PlanSidebar() {
-  const theme = useTheme();
   const plan = useAgentState(planProjection);
 
   if (!plan.objective) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
         <span className="text-4xl">🗂️</span>
-        <p className="text-sm opacity-60" style={{ color: theme.text }}>
+        <p className="text-sm opacity-60 text-aai-text">
           Say what you want to get done and the plan appears here.
         </p>
       </div>
@@ -25,14 +24,16 @@ function PlanSidebar() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-4" style={{ color: theme.text }}>
+    <div className="flex h-full min-h-0 flex-col gap-4 p-4 text-aai-text">
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-bold uppercase tracking-wide opacity-60">Objective</h3>
         <p className="text-sm">{plan.objective}</p>
-        <div className="h-1.5 w-full rounded-full" style={{ background: theme.surface }}>
+        <div className="h-1.5 w-full rounded-full bg-aai-surface">
+          {/* The WIDTH is the one thing here that is genuinely computed, so it
+              stays inline; the colour is a token. */}
           <div
-            className="h-1.5 rounded-full transition-all"
-            style={{ width: `${Math.round(plan.progress * 100)}%`, background: theme.primary }}
+            className="h-1.5 rounded-full transition-all bg-aai-primary"
+            style={{ width: `${Math.round(plan.progress * 100)}%` }}
           />
         </div>
         <p className="text-xs opacity-50">
@@ -45,9 +46,9 @@ function PlanSidebar() {
         contentClassName="flex flex-col gap-2 pr-1"
       >
         {plan.done.map((past) => (
-          <div key={past.step} className="rounded-lg p-3" style={{ background: theme.surface }}>
+          <div key={past.step} className="rounded-lg p-3 bg-aai-surface">
             <p className="text-sm">
-              <span style={{ color: theme.primary }}>✓</span> {past.step}
+              <span className="text-aai-primary">✓</span> {past.step}
             </p>
             <p className="mt-1 text-xs opacity-70">{past.result}</p>
             {past.searches.length > 0 && (
@@ -60,8 +61,7 @@ function PlanSidebar() {
           // a revision, so the position is part of the identity.
           <div
             key={`${index}-${step}`}
-            className="rounded-lg p-3 text-sm opacity-60"
-            style={{ border: `1px dashed ${theme.border}` }}
+            className="rounded-lg p-3 text-sm opacity-60 border border-dashed border-aai-border"
           >
             <span className="opacity-50">{plan.done.length + index + 1}.</span> {step}
           </div>
@@ -69,10 +69,7 @@ function PlanSidebar() {
       </AutoScroll>
 
       {plan.response && (
-        <div
-          className="rounded-lg p-3"
-          style={{ background: theme.surface, border: `1px solid ${theme.primary}` }}
-        >
+        <div className="rounded-lg p-3 bg-aai-surface border border-aai-primary">
           <p className="text-[11px] font-bold uppercase tracking-wide opacity-60">Answer</p>
           <p className="mt-1 text-sm">{plan.response}</p>
         </div>

@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
+import { client, useAgentState } from "@alexkroman1/aai-ui";
 import { formatPrice, orderProjection, pizzaPrice } from "./shared.ts";
 
 function PizzaIcon({ size }: { size: string }) {
@@ -20,7 +20,6 @@ function PizzaIcon({ size }: { size: string }) {
 }
 
 function OrderSidebar() {
-  const theme = useTheme();
   // The agent's own cart, projected by `syncState` and pushed after every
   // tool call. This replaced ~45 lines that rebuilt the cart by diffing
   // added/removed/updated events — where one missed event desynced the view
@@ -29,16 +28,11 @@ function OrderSidebar() {
 
   if (order.orderPlaced) {
     return (
-      <div
-        className="flex flex-col items-center gap-4 p-6 text-center"
-        style={{ color: theme.text }}
-      >
+      <div className="flex flex-col items-center gap-4 p-6 text-center text-aai-text">
         <div className="text-5xl">&#10003;</div>
         <h2 className="text-lg font-bold">Order Placed</h2>
         {order.orderNumber && <p className="opacity-70">Order #{order.orderNumber}</p>}
-        <p className="font-bold text-xl" style={{ color: theme.primary }}>
-          {order.total}
-        </p>
+        <p className="font-bold text-xl text-aai-primary">{order.total}</p>
         {order.estimatedMinutes && (
           <p className="opacity-60 text-sm">Ready in ~{order.estimatedMinutes} minutes</p>
         )}
@@ -50,22 +44,16 @@ function OrderSidebar() {
     return (
       <div className="flex flex-col items-center gap-3 p-6 text-center opacity-50">
         <PizzaIcon size="large" />
-        <p className="text-sm" style={{ color: theme.text }}>
-          Your order is empty. Tell me what you'd like.
-        </p>
+        <p className="text-sm text-aai-text">Your order is empty. Tell me what you'd like.</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-3 p-4" style={{ color: theme.text }}>
+    <div className="flex flex-col gap-3 p-4 text-aai-text">
       <h3 className="text-sm font-bold opacity-60 uppercase tracking-wide">Your Order</h3>
       {order.pizzas.map((p) => (
-        <div
-          key={p.id}
-          className="flex items-center gap-3 p-3 rounded-lg"
-          style={{ background: theme.surface }}
-        >
+        <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg bg-aai-surface">
           <PizzaIcon size={p.size} />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">
@@ -78,19 +66,14 @@ function OrderSidebar() {
                 : "cheese only"}
             </p>
           </div>
-          <p className="text-sm font-bold whitespace-nowrap" style={{ color: theme.primary }}>
+          <p className="text-sm font-bold whitespace-nowrap text-aai-primary">
             {formatPrice(pizzaPrice(p))}
           </p>
         </div>
       ))}
-      <div
-        className="flex justify-between items-center pt-3 mt-1 border-t"
-        style={{ borderColor: theme.border }}
-      >
+      <div className="flex justify-between items-center pt-3 mt-1 border-t border-aai-border">
         <span className="font-bold">Total</span>
-        <span className="font-bold text-lg" style={{ color: theme.primary }}>
-          {order.total}
-        </span>
+        <span className="font-bold text-lg text-aai-primary">{order.total}</span>
       </div>
     </div>
   );
