@@ -55,7 +55,7 @@
  * Everything the desk claims to do. `submitRecording`, `checkTranscript` and
  * `discardTranscript` are AssemblyAI's pre-recorded API (`POST`, `GET` and
  * `DELETE` on `/v2/transcript`), and `summarize` is a real model call through
- * `stepGenerate`. The BATCH API is what makes the polling port honest: it
+ * `stepGenerateJsonClassified`. The BATCH API is what makes the polling port honest: it
  * answers with a job id in milliseconds and finishes minutes later, so the wait
  * is the provider's, not a `setTimeout` this template chose. (Its sibling
  * `transcription-workflow` takes the other endpoint — the sync one, which answers in
@@ -67,14 +67,13 @@
  * just your shell.
  */
 
+import { report, requireStepEnv, stepFetch } from "@alexkroman1/aai/step";
 import {
-  report,
-  requireStepEnv,
-  stepFetch,
-  stepGenerateJson,
-  stepTranscribeSubmit,
-} from "@alexkroman1/aai/step";
-import { stepFetchOk, throwStepError, toStepError } from "@alexkroman1/aai/step-errors";
+  stepFetchOk,
+  stepGenerateJsonClassified,
+  stepTranscribeSubmitClassified,
+  toStepError,
+} from "@alexkroman1/aai/step-errors";
 import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { createHook, FatalError, sleep } from "workflow";
 import { z } from "zod";
@@ -149,7 +148,7 @@ const POINTS = 3;
 /**
  * The shape the model must answer in.
  *
- * `stepGenerateJson` validates against this and throws PLAINLY when the reply
+ * `stepGenerateJsonClassified` validates against this and throws PLAINLY when the reply
  * misses, which is the retry policy in one distinction: a model that answered in
  * prose may answer correctly next time, where a 401 will not. `spoken` is the
  * field this template exists for — without it the announced turn has nothing to
@@ -357,13 +356,14 @@ export async function submitRecording(url: string): Promise<{ id: string }> {
 
   await report(`Submitting ${new URL(url).hostname} for transcription…`);
 
-  // `stepTranscribeSubmit` owns the endpoint, the raw-key auth, the PLURAL
-  // `speech_models` field and the failure classification. `speaker_labels` is
-  // this desk's own request, which is what `params` is for — the async API's
+  // `stepTranscribeSubmitClassified` owns the endpoint, the raw-key auth, the
+  // PLURAL `speech_models` field and the failure classification — the
+  // `Classified` suffix being that last part: it is `stepTranscribeSubmit` with
+  // `throwStepError` already applied, so a provider refusal stays terminal and a
+  // rate limit waits out the delay the provider itself named. `speaker_labels`
+  // is this desk's own request, which is what `params` is for — the async API's
   // surface is large and the SDK deliberately does not mirror it.
-  return await stepTranscribeSubmit(url, { params: { speaker_labels: true } }).catch(
-    throwStepError,
-  );
+  return await stepTranscribeSubmitClassified(url, { params: { speaker_labels: true } });
 }
 
 /**
@@ -465,19 +465,20 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
     throw new FatalError("That recording came back with no speech in it.");
   }
 
-  // `stepGenerateJson` unwraps the fence a model puts around JSON however firmly
-  // it is told not to, parses it, and validates it — all four things this step
-  // used to re-derive. `throwStepError` is what makes a terminal gateway failure
-  // (a bad key, a rejected request) stop rather than burn the remaining
-  // attempts, where a reply that missed the SHAPE throws plainly and retries.
-  const parsed = await stepGenerateJson(text, {
+  // `stepGenerateJsonClassified` unwraps the fence a model puts around JSON
+  // however firmly it is told not to, parses it, and validates it — all four
+  // things this step used to re-derive. The `Classified` half is what makes a
+  // terminal gateway failure (a bad key, a rejected request) stop rather than
+  // burn the remaining attempts, where a reply that missed the SHAPE throws
+  // plainly and retries.
+  const parsed = await stepGenerateJsonClassified(text, {
     schema: RecapReply,
     system:
       "You write up recordings for someone who will hear the result on a phone call. " +
       `Reply with JSON only: {"headline": string, "points": string[], "spoken": string}. ` +
       `Give exactly ${POINTS} points. "spoken" is ONE sentence, under 30 words, ` +
       "written to be read aloud. No markdown fence, no preamble.",
-  }).catch(throwStepError);
+  });
 
   return {
     url,

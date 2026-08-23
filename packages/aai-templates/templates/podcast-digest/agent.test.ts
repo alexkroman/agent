@@ -13,7 +13,7 @@
  * - The STEPS, directly. Imported with no bundler in the path a `"use step"`
  *   function is an ordinary async function, so its HTTP handling, its
  *   partial-failure policy and its `FatalError` guards are all reachable —
- *   `stubStepFetch` answers the network and `stubGateway` answers the model.
+ *   `installStubStepFetch` answers the network and `stubGateway` answers the model.
  *
  * The cases worth having are the ones where a mistake is SILENT: a schema that
  * accepts a webhook pointing anywhere, a Slack payload in the shape the other
@@ -21,9 +21,12 @@
  * that fails to transcribe taking the whole digest down with it.
  */
 
-import { stubStepFetch } from "@alexkroman1/aai/testing";
-import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
+import {
+  installStubStepFetch,
+  installStubGateway as stubGateway,
+} from "@alexkroman1/aai/testing/vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import {
   formatScheduleInterval,
@@ -56,8 +59,16 @@ import {
   slackAdvice,
 } from "./workflows/slack.ts";
 
-/** Validate through the schema's own Standard Schema entry, as `start()` does. */
-const validate = (input: unknown) => dailyDigest.input?.["~standard"].validate(input);
+/**
+ * Validate through the SDK's reader, as `start()` does.
+ *
+ * `schemaInputIssues` / `parseSchemaInput` rather than a reach through
+ * `["~standard"].validate`: that is the vendor WIRE contract, and whether it
+ * answers synchronously or with a promise is the vendor's business — a missing
+ * `await` there leaves `.issues` undefined and every rejecting case below passes
+ * for the wrong reason.
+ */
+const issues = (input: unknown) => schemaInputIssues(dailyDigest.input, input, "dailyDigest");
 
 /** A complete, valid input — each case below changes one field of it. */
 const VALID = {
@@ -104,13 +115,14 @@ describe("the declaration", () => {
 
 describe("input schema", () => {
   test("accepts a minimal input and applies every default", async () => {
-    const result = await validate(VALID);
-    // `expect.fail` rather than a non-null assertion: it narrows away the
-    // failure arm for the check below AND reports the issues if it ever trips.
-    if (!result || result.issues) expect.fail(`expected a valid input: ${JSON.stringify(result)}`);
-    // The defaults are what the page and the body agree on; if they drift, the
-    // form starts sending values the flow did not expect.
-    expect(result.value).toMatchObject({
+    // `parseSchemaInput` throws naming every issue, so the failure arm needs no
+    // hand-written narrowing and a refusal reports WHAT was refused.
+    //
+    // These defaults are no longer restated anywhere: `DigestInput` is
+    // `WorkflowInputOf<typeof dailyDigest>`, the schema's OUTPUT, so the body
+    // reads them already applied instead of re-implementing each one with `??`.
+    const parsed = await parseSchemaInput(dailyDigest.input, VALID, "dailyDigest");
+    expect(parsed).toMatchObject({
       slackWorkflowTextParam: "text",
       maxEpisodesPerDigest: 5,
       intervalEvery: 1,
@@ -120,19 +132,19 @@ describe("input schema", () => {
   });
 
   test("trims the webhook before validating it", async () => {
-    const result = await validate({
-      ...VALID,
-      slackWebhookUrl: "  https://hooks.slack.com/services/T000/B000/abc123  ",
-    });
-    expect(result?.issues).toBeUndefined();
+    expect(
+      await issues({
+        ...VALID,
+        slackWebhookUrl: "  https://hooks.slack.com/services/T000/B000/abc123  ",
+      }),
+    ).toBeUndefined();
   });
 
   test.each([
     ["a workflow trigger", "https://hooks.slack.com/triggers/T000/B000/abc"],
     ["the gov host", "https://hooks.slack-gov.com/services/T000/B000/abc"],
   ])("accepts %s", async (_label, slackWebhookUrl) => {
-    const result = await validate({ ...VALID, slackWebhookUrl });
-    expect(result?.issues).toBeUndefined();
+    expect(await issues({ ...VALID, slackWebhookUrl })).toBeUndefined();
   });
 
   /**
@@ -146,8 +158,7 @@ describe("input schema", () => {
     ["plain http", "http://hooks.slack.com/services/T000/B000/abc"],
     ["no path", "https://hooks.slack.com"],
   ])("rejects %s as a webhook", async (_label, slackWebhookUrl) => {
-    const result = await validate({ ...VALID, slackWebhookUrl });
-    expect(result?.issues).toBeDefined();
+    expect(await issues({ ...VALID, slackWebhookUrl })).toBeDefined();
   });
 
   test.each([
@@ -160,8 +171,7 @@ describe("input schema", () => {
     ["more digests than allowed", { daysToRun: 31 }],
     ["an unknown interval unit", { intervalUnit: "fortnights" }],
   ])("rejects %s", async (_label, patch) => {
-    const result = await validate({ ...VALID, ...patch });
-    expect(result?.issues).toBeDefined();
+    expect(await issues({ ...VALID, ...patch })).toBeDefined();
   });
 });
 
@@ -377,9 +387,15 @@ const THREE_EPISODES = feedXml(
     itemXml("middle", "Wed, 02 Jan 2030 00:00:00 GMT"),
 );
 
-/** Route by URL, so one stub can answer a whole resolution chain. */
+/**
+ * Route by URL, so one stub can answer a whole resolution chain.
+ *
+ * `installStubStepFetch` unpublishes on `onTestFinished`, which is why no
+ * describe block below keeps a `restore` of its own — a hand-kept registry is
+ * the thing that forgets, and a step fetch left published reaches the next file.
+ */
 function stubRoutes(routes: Record<string, { status?: number; body?: unknown }>) {
-  return stubStepFetch((request) => {
+  return installStubStepFetch((request) => {
     for (const [fragment, answer] of Object.entries(routes)) {
       if (request.url.includes(fragment)) return answer;
     }
@@ -388,14 +404,7 @@ function stubRoutes(routes: Record<string, { status?: number; body?: unknown }>)
 }
 
 describe("discoverEpisodes", () => {
-  let restore: (() => void) | undefined;
-  afterEach(() => restore?.());
-
-  const stub = (routes: Record<string, { status?: number; body?: unknown }>) => {
-    const stubbed = stubRoutes(routes);
-    restore = stubbed.restore;
-    return stubbed;
-  };
+  const stub = stubRoutes;
 
   test("reads a feed URL directly and returns the newest episodes first", async () => {
     const stubbed = stub({ "show.test/feed.xml": { body: THREE_EPISODES } });
@@ -578,15 +587,9 @@ describe("discoverEpisodes", () => {
 });
 
 describe("transcribing one episode", () => {
-  let restore: (() => void) | undefined;
   beforeEach(() => vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key"));
-  afterEach(() => restore?.());
 
-  const stub = (routes: Record<string, { status?: number; body?: unknown }>) => {
-    const stubbed = stubRoutes(routes);
-    restore = stubbed.restore;
-    return stubbed;
-  };
+  const stub = stubRoutes;
 
   const EPISODE_IN = {
     id: "episode-1",
@@ -701,14 +704,7 @@ describe("transcribing one episode", () => {
 });
 
 describe("posting the digest", () => {
-  let restore: (() => void) | undefined;
-  afterEach(() => restore?.());
-
-  const stub = (answer: { status?: number; body?: unknown }) => {
-    const stubbed = stubStepFetch(() => answer);
-    restore = stubbed.restore;
-    return stubbed;
-  };
+  const stub = (answer: { status?: number; body?: unknown }) => installStubStepFetch(() => answer);
 
   const INPUT = slackInput("https://hooks.slack.com/services/T/B/a");
 

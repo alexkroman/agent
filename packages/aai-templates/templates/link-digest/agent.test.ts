@@ -18,9 +18,12 @@
  * `FatalError` guards are all testable.
  */
 
-import { stubStepFetch } from "@alexkroman1/aai/testing";
-import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { schemaInputIssues } from "@alexkroman1/aai/testing";
+import {
+  installStubStepFetch,
+  installStubGateway as stubGateway,
+} from "@alexkroman1/aai/testing/vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { extractText, extractTitle, fetchArticle, summarize } from "./workflows/digest.ts";
 
@@ -49,13 +52,16 @@ describe("the agent declares itself a workflow app", () => {
 
 describe("the input schema", () => {
   test("accepts a URL", async () => {
-    const result = await digest.input?.["~standard"].validate({ url: "https://example.com/a" });
-    expect(result?.issues).toBeUndefined();
+    // `schemaInputIssues` rather than `digest.input?.["~standard"].validate`:
+    // the vendor interface is a wire contract, and `.validate` may answer
+    // synchronously or with a promise depending on it — the half a hand-rolled
+    // reach gets wrong, since a missing `await` leaves `.issues` undefined and
+    // the refusing test below then passes for the wrong reason.
+    expect(await schemaInputIssues(digest.input, { url: "https://example.com/a" })).toBeUndefined();
   });
 
   test("rejects a non-URL at the CALL SITE rather than three steps into a run", async () => {
-    const result = await digest.input?.["~standard"].validate({ url: "not a url" });
-    expect(result?.issues).toBeDefined();
+    expect(await schemaInputIssues(digest.input, { url: "not a url" })).toBeDefined();
   });
 
   test("carries a description, which is what a rendered form labels the field with", () => {
@@ -111,28 +117,23 @@ describe("extractTitle", () => {
 });
 
 describe("fetchArticle", () => {
-  /** Unpublished between specs — a fetch left behind reaches the next file. */
-  let restore: (() => void) | undefined;
-  afterEach(() => {
-    restore?.();
-    restore = undefined;
-  });
-
   /**
    * A page server answering `html` with `status`.
    *
    * Published into `stepFetch`'s own slot rather than over `globalThis.fetch`:
    * the step calls `stepFetch`, and stubbing the global would pass while
    * exercising the fallback path production never takes.
+   *
+   * `installStubStepFetch` unpublishes it on `onTestFinished`, which is why
+   * there is no `afterEach` here — a fetch left behind reaches the next file,
+   * and a hand-kept restore registry is the thing that forgets.
    */
   function stubPage(html: string, status = 200) {
-    const stub = stubStepFetch(() => ({
+    return installStubStepFetch(() => ({
       status,
       body: html,
       headers: { "Content-Type": "text/html" },
     }));
-    restore = stub.restore;
-    return stub;
   }
 
   test("returns the page's title and its readable text", async () => {

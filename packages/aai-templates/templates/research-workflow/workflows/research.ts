@@ -49,10 +49,10 @@
  * researcher CONCLUDED, which is exactly what the step returns.
  */
 
-import { mapConcurrent, report, stepGenerate, stepGenerateJson } from "@alexkroman1/aai/step";
-import { throwStepError } from "@alexkroman1/aai/step-errors";
+import { mapConcurrent, report } from "@alexkroman1/aai/step";
+import { stepGenerateClassified, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
-import { errorMessage, isToolFailure } from "@alexkroman1/aai/utils";
+import { errorMessage, isToolFailure, plural } from "@alexkroman1/aai/utils";
 import { sleep } from "workflow";
 import { z } from "zod";
 import {
@@ -102,9 +102,9 @@ export type Source = { title: string; url: string };
 
 // ---- What each stage's model call has to come back as ------------------------
 //
-// `stepGenerateJson` validates against these, so a reply that missed is a plain
-// throw and therefore a retry — where the hand-rolled `askJson<T>()` this
-// replaces returned a value the compiler believed and nothing checked. They are
+// `stepGenerateJsonClassified` validates against these, so a reply that missed
+// is a plain throw and therefore a retry — where the hand-rolled `askJson<T>()`
+// this replaces returned a value the compiler believed and nothing checked. They are
 // deliberately LENIENT wherever the old hand-written coercion was: a model that
 // put one number in an array of strings should cost that element, not the whole
 // pass.
@@ -257,10 +257,9 @@ export async function writeBrief(topic: string): Promise<Brief> {
   "use step";
 
   await report(`Working out what "${topic}" is really asking.`);
-  const parsed = await askJson(
+  const parsed = await stepGenerateJsonClassified(
     `Research request, as the caller said it: ${topic}`,
-    BRIEF_SYSTEM,
-    BriefReply,
+    { system: BRIEF_SYSTEM, schema: BriefReply },
   );
   return { brief: parsed.brief || topic, criteria: parsed.criteria.slice(0, MAX_ANGLES) };
 }
@@ -275,7 +274,10 @@ export async function writeBrief(topic: string): Promise<Brief> {
 export async function planAngles(brief: Brief): Promise<string[]> {
   "use step";
 
-  const parsed = await askJson(briefText(brief), PLAN_SYSTEM, AnglesReply);
+  const parsed = await stepGenerateJsonClassified(briefText(brief), {
+    system: PLAN_SYSTEM,
+    schema: AnglesReply,
+  });
   const angles = parsed.angles.slice(0, MAX_ANGLES);
   if (angles.length === 0) {
     // Nothing to fan out over is a plan failure, not an empty result: the brief
@@ -283,7 +285,7 @@ export async function planAngles(brief: Brief): Promise<string[]> {
     await report("No angles came back; researching the brief itself.");
     return [brief.brief];
   }
-  await report(`Researching ${angles.length} angle${angles.length === 1 ? "" : "s"}.`);
+  await report(`Researching ${angles.length} ${plural(angles.length, "angle")}.`);
   return angles;
 }
 
@@ -337,16 +339,15 @@ export async function findGaps(brief: Brief, notes: readonly Note[]): Promise<st
   "use step";
 
   if (notes.length === 0) return [];
-  const parsed = await askJson(
+  const parsed = await stepGenerateJsonClassified(
     `${briefText(brief)}\n\nWhat came back:\n${notes.map(noteText).join("\n\n")}`,
-    GAPS_SYSTEM,
-    AnglesReply,
+    { system: GAPS_SYSTEM, schema: AnglesReply },
   );
   const gaps = parsed.angles.slice(0, MAX_ANGLES - 1);
   await report(
     gaps.length === 0
       ? "The brief is covered; writing it up."
-      : `Following up ${gaps.length} gap${gaps.length === 1 ? "" : "s"}.`,
+      : `Following up ${gaps.length} ${plural(gaps.length, "gap")}.`,
   );
   return gaps;
 }
@@ -365,12 +366,14 @@ export async function writeReport(
 ): Promise<{ report: string; summary: string }> {
   "use step";
 
-  await report(`Writing up ${notes.length} angle${notes.length === 1 ? "" : "s"}.`);
-  const written = await ask(
+  await report(`Writing up ${notes.length} ${plural(notes.length, "angle")}.`);
+  const written = await stepGenerateClassified(
     `${briefText(brief)}\n\nFindings:\n${notes.map(noteText).join("\n\n")}`,
-    REPORT_SYSTEM,
+    { system: REPORT_SYSTEM },
   );
-  const summary = await ask(`Topic: ${topic}\n\nReport:\n${written}`, BRIEF_SUMMARY_SYSTEM);
+  const summary = await stepGenerateClassified(`Topic: ${topic}\n\nReport:\n${written}`, {
+    system: BRIEF_SUMMARY_SYSTEM,
+  });
   return { report: written, summary };
 }
 
@@ -400,12 +403,11 @@ async function nextAction(
   seen: readonly string[],
   left: number,
 ): Promise<Action> {
-  return await askJson(
+  return await stepGenerateJsonClassified(
     `${briefText(brief)}\n\nYour angle: ${angle}\n` +
       `Actions left: ${left}\n\n` +
       (seen.length === 0 ? "You have not looked at anything yet." : seen.join("\n\n")),
-    RESEARCH_SYSTEM,
-    ActionReply,
+    { system: RESEARCH_SYSTEM, schema: ActionReply },
   );
 }
 
@@ -470,11 +472,10 @@ async function compress(angle: string, seen: readonly string[], sources: Source[
   if (seen.length === 0) {
     return { angle, findings: "Nothing was found on this angle.", sources: [] };
   }
-  const parsed = await askJson(
-    `Angle: ${angle}\n\n${seen.join("\n\n")}`,
-    COMPRESS_SYSTEM,
-    CompressReply,
-  );
+  const parsed = await stepGenerateJsonClassified(`Angle: ${angle}\n\n${seen.join("\n\n")}`, {
+    system: COMPRESS_SYSTEM,
+    schema: CompressReply,
+  });
   return {
     angle,
     findings: parsed.findings ?? seen.join("\n\n"),
@@ -485,31 +486,17 @@ async function compress(angle: string, seen: readonly string[], sources: Source[
 }
 
 // ---- Model plumbing ---------------------------------------------------------
-
-/**
- * `stepGenerate`, with this desk's retry POLICY on top.
- *
- * The SDK classifies the gateway's failure (`StepGenerateError.retryable`) and
- * stops there, deliberately: whether a terminal failure should burn the step's
- * remaining attempts is the caller's call. `throwStepError` is that call made
- * one way — terminal stays terminal, and a rate limit becomes a `RetryableError`
- * carrying the delay the gateway itself named.
- */
-async function ask(prompt: string, system: string): Promise<string> {
-  return await stepGenerate(prompt, { system }).catch(throwStepError);
-}
-
-/**
- * The same call, for a stage whose reply is JSON of a known shape.
- *
- * `stepGenerateJson` owns the four things every such stage used to re-derive —
- * unwrap the fence, parse, reject a non-object, check the shape — and throws
- * PLAINLY when any of them misses, which is what makes a malformed reply a
- * retry rather than a failure.
- */
-async function askJson<S extends z.ZodType>(prompt: string, system: string, schema: S) {
-  return await stepGenerateJson(prompt, { system, schema }).catch(throwStepError);
-}
+//
+// There is none left, and its absence is the point. This desk carried an `ask()`
+// and an `askJson()` whose whole body was `.catch(throwStepError)`; the SDK's
+// `stepGenerateClassified` and `stepGenerateJsonClassified`
+// (`@alexkroman1/aai/step-errors`) ARE that call — the `/step` one with the
+// gateway's verdict classified, so a terminal failure stays terminal and a rate
+// limit becomes a `RetryableError` carrying the delay the gateway itself named.
+// `stepGenerateJsonClassified` also owns the four things every JSON stage used
+// to re-derive — unwrap the fence, parse, reject a non-object, check the shape —
+// and throws PLAINLY when any of them misses, which is what makes a malformed
+// reply a retry rather than a failure.
 
 // ---- Pure helpers -----------------------------------------------------------
 

@@ -1,9 +1,5 @@
 import { tool } from "@alexkroman1/aai";
-import {
-  isTerminal,
-  type WorkflowOutputOf,
-  type WorkflowRunSnapshot,
-} from "@alexkroman1/aai/workflow-api";
+import { isTerminal, type WorkflowRunOf } from "@alexkroman1/aai/workflow-api";
 import { recap } from "../shared.ts";
 
 /** How many past runs the status tool will look at. Newest first. */
@@ -14,10 +10,13 @@ const RECENT_RUNS = 3;
  *
  * This is the QUERY, and `isTerminal` is what makes it typed: it narrows to the
  * three finished statuses, which is what puts `run.output` and `run.error`
- * within reach without a cast. `WorkflowOutputOf` names the output type from the
- * declaration, so this signature never reaches past it into the body.
+ * within reach without a cast. `WorkflowRunOf` is the snapshot with that output
+ * already named from the declaration — the
+ * `WorkflowRunSnapshot<WorkflowOutputOf<typeof recap>>` this file used to
+ * compose by hand, for a three-name import — so the signature never reaches past
+ * the declaration into the body, and it is still the discriminated union.
  */
-function describeRun(run: WorkflowRunSnapshot<WorkflowOutputOf<typeof recap>>): string {
+function describeRun(run: WorkflowRunOf<typeof recap>): string {
   if (!isTerminal(run)) return "Still working on that one.";
   switch (run.status) {
     case "completed": {

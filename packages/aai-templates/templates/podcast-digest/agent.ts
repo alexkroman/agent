@@ -42,9 +42,9 @@
  * names.
  */
 
-import { workflow, workflowApp } from "@alexkroman1/aai";
+import { type WorkflowDef, workflow, workflowApp } from "@alexkroman1/aai";
 import { z } from "zod";
-import { dailyDigestFlow } from "./workflows/digest.ts";
+import { type DailyDigestOutput, dailyDigestFlow } from "./workflows/digest.ts";
 import { isSlackWebhookUrl } from "./workflows/slack.ts";
 
 /** Somebody pastes a list; anything not http(s) is a typo worth catching here. */
@@ -71,59 +71,61 @@ function isHttpUrl(value: string): boolean {
  * one carries `.default()` so the page and the body agree on the fallback
  * instead of each picking its own.
  */
-export const dailyDigest = workflow({
+const digestInput = z.object({
+  podcastChannels: z
+    .string()
+    .trim()
+    .min(1)
+    .refine(
+      (value) => value.split(",").every((url) => isHttpUrl(url.trim())),
+      "Enter comma-separated podcast links",
+    )
+    .describe("Podcast links — Apple Podcasts, Spotify, RSS, or a show page — comma-separated"),
+  // A host check, not a URL check. This value is the target of a POST
+  // carrying summarized content, so "is it a URL" would accept an
+  // exfiltration endpoint somebody typed into a form.
+  slackWebhookUrl: z
+    .string()
+    .trim()
+    .url()
+    .refine(isSlackWebhookUrl, "Enter a Slack webhook URL from hooks.slack.com")
+    .describe("Slack incoming webhook or workflow trigger URL"),
+  slackWorkflowTextParam: z
+    .string()
+    .trim()
+    // A Slack workflow variable name. Constrained because it is used as an
+    // object KEY in the request body, and an arbitrary string there is a way
+    // to shape a payload the workflow never declared.
+    .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+    .default("text")
+    .describe("Slack workflow variable name (workflow trigger URLs only)"),
+  maxEpisodesPerDigest: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .default(5)
+    .describe("Most episodes to include in one digest"),
+  intervalEvery: z.number().int().min(1).max(365).default(1).describe("Repeat every"),
+  intervalUnit: z
+    .enum(["minutes", "hours", "days"])
+    .default("days")
+    .describe("Unit for the repeat interval"),
+  // Bounded on purpose — see the module doc on why a run is asked to end.
+  daysToRun: z
+    .number()
+    .int()
+    .min(1)
+    .max(30)
+    .default(7)
+    .describe("How many digests to post before the run completes"),
+});
+
+export const dailyDigest: WorkflowDef<typeof digestInput, DailyDigestOutput> = workflow({
   description:
     "Watch podcast feeds, transcribe new episodes with AssemblyAI, summarize them, " +
     "and post a digest to Slack on a repeating schedule",
-  input: z.object({
-    podcastChannels: z
-      .string()
-      .trim()
-      .min(1)
-      .refine(
-        (value) => value.split(",").every((url) => isHttpUrl(url.trim())),
-        "Enter comma-separated podcast links",
-      )
-      .describe("Podcast links — Apple Podcasts, Spotify, RSS, or a show page — comma-separated"),
-    // A host check, not a URL check. This value is the target of a POST
-    // carrying summarized content, so "is it a URL" would accept an
-    // exfiltration endpoint somebody typed into a form.
-    slackWebhookUrl: z
-      .string()
-      .trim()
-      .url()
-      .refine(isSlackWebhookUrl, "Enter a Slack webhook URL from hooks.slack.com")
-      .describe("Slack incoming webhook or workflow trigger URL"),
-    slackWorkflowTextParam: z
-      .string()
-      .trim()
-      // A Slack workflow variable name. Constrained because it is used as an
-      // object KEY in the request body, and an arbitrary string there is a way
-      // to shape a payload the workflow never declared.
-      .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
-      .default("text")
-      .describe("Slack workflow variable name (workflow trigger URLs only)"),
-    maxEpisodesPerDigest: z
-      .number()
-      .int()
-      .min(1)
-      .max(20)
-      .default(5)
-      .describe("Most episodes to include in one digest"),
-    intervalEvery: z.number().int().min(1).max(365).default(1).describe("Repeat every"),
-    intervalUnit: z
-      .enum(["minutes", "hours", "days"])
-      .default("days")
-      .describe("Unit for the repeat interval"),
-    // Bounded on purpose — see the module doc on why a run is asked to end.
-    daysToRun: z
-      .number()
-      .int()
-      .min(1)
-      .max(30)
-      .default(7)
-      .describe("How many digests to post before the run completes"),
-  }),
+  input: digestInput,
   run: dailyDigestFlow,
 });
 

@@ -1,9 +1,6 @@
 import { tool } from "@alexkroman1/aai";
-import {
-  isTerminal,
-  type WorkflowOutputOf,
-  type WorkflowRunSnapshot,
-} from "@alexkroman1/aai/workflow-api";
+import { plural } from "@alexkroman1/aai/utils";
+import { isTerminal, type WorkflowRunOf } from "@alexkroman1/aai/workflow-api";
 import { research } from "../shared.ts";
 
 /** How many past runs the status tool will look at. Newest first. */
@@ -12,17 +9,18 @@ const RECENT_RUNS = 3;
 /**
  * One line a voice agent can read aloud about a run.
  *
- * `WorkflowOutputOf` is what names the output type — the same helper a page uses
- * to type `run.output`, and the reason this signature does not have to reach
- * past the declaration into the body's own return type.
+ * `WorkflowRunOf` is the snapshot with its output already typed — the
+ * `WorkflowRunSnapshot<WorkflowOutputOf<typeof research>>` this file used to
+ * compose by hand, which cost a three-name import for one type. Still the
+ * discriminated union, so `isTerminal` below narrows exactly as it did.
  */
-function describeRun(run: WorkflowRunSnapshot<WorkflowOutputOf<typeof research>>): string {
+function describeRun(run: WorkflowRunOf<typeof research>): string {
   // `isTerminal` narrows to the three finished statuses, which is what makes
   // `run.output` and `run.error` reachable without a cast.
   if (!isTerminal(run)) return "Still working on it.";
   switch (run.status) {
     case "completed":
-      return `Done: ${run.output.summary} (${run.output.sources} sources)`;
+      return `Done: ${run.output.summary} (${run.output.sources} ${plural(run.output.sources, "source")})`;
     case "failed":
       return `That one failed: ${run.error}`;
     default:
