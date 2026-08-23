@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
+import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 // One static import: the runtime barrel is already loaded for the helpers
 // below, so a dynamic import inside startDevServer would defer nothing.
@@ -132,6 +133,9 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
   // pipe auto-selects) has already silenced `log` and the first session then
   // fails auth with nothing having said why. See this package's CLAUDE.md.
   for (const warning of agentEnvWarnings(agentDef, env)) notify("warn", warning);
+  // The config's own warnings — a TTS/S2S voice outside the catalog, which is
+  // otherwise reported by nothing until the first session is silent.
+  for (const warning of agentConfigWarnings(agentDef)) notify("warn", warning);
   return env;
 }
 

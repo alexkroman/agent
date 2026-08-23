@@ -259,6 +259,41 @@ function assertVoiceSpeaks(language: string, voice: unknown): void {
   );
 }
 
+/**
+ * A sentence about a voice this release's catalog does not list, or
+ * `undefined` when there is nothing to say.
+ *
+ * The WARNING half of the argument {@link AssemblyAITtsVoice} makes against an
+ * assert. Refusing an unlisted voice would refuse one AssemblyAI shipped after
+ * this release, which is the same silent mute from the other side — but saying
+ * nothing at all leaves the commonest version of that failure, a TYPO, with no
+ * signal anywhere: the agent connects, reports ready, and never speaks. A line
+ * printed by `aai build` and `aai dev` costs a new voice one sentence and costs
+ * `voice: "michal"` an afternoon less.
+ *
+ * A deprecated voice gets its own line: it works today, so "unknown" would be
+ * wrong, and it is going away, so silence would be too.
+ *
+ * Takes the DESCRIPTOR rather than the id, so a caller can hand it any stage
+ * (the AssemblyAI S2S descriptor carries a `voice` from the same catalog) and
+ * anything that is not one is simply not warned about.
+ *
+ * @internal
+ */
+export function assemblyAIVoiceWarning(descriptor: unknown): string | undefined {
+  if (!isRecord(descriptor)) return undefined;
+  const { kind, options } = descriptor;
+  if (kind !== ASSEMBLYAI_TTS_KIND || !isRecord(options)) return undefined;
+  const { voice } = options;
+  if (typeof voice !== "string" || voice === "") return undefined;
+  if (voice in ASSEMBLYAI_TTS_VOICES) return undefined;
+  const deprecated: readonly string[] = ASSEMBLYAI_TTS_DEPRECATED_VOICES;
+  if (deprecated.includes(voice)) {
+    return `AssemblyAI voice "${voice}" still works but is scheduled for removal — pick a current one from ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts).`;
+  }
+  return `AssemblyAI voice "${voice}" is not in this release's catalog. If it is a typo the agent will connect, report ready and never speak — the service refuses an unknown voice after the socket opens. Check it against ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts); a voice added since this release is fine.`;
+}
+
 export interface AssemblyAITtsOptions {
   /**
    * Voice id, e.g. `"jane"`, `"michael"`, `"vera"`. Defaults to

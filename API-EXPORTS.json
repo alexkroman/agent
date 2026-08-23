@@ -418,6 +418,7 @@
     "ToolRegistry",
     "ToolSchema",
     "ToolSchemaSchema",
+    "agentConfigWarnings",
     "agentToolsToSchemas",
     "assertPipelineTuning",
     "assertSilencePolicy",

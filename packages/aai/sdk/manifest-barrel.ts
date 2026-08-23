@@ -27,6 +27,7 @@ export {
 // (`sdk/agent-config.ts`, `host/runtime-providers.ts`), so the barrel entry was
 // buying nothing; import it from `./config-rules.ts` directly.
 export {
+  agentConfigWarnings,
   assertPipelineTuning,
   assertSilencePolicy,
   type PipelineTuning,

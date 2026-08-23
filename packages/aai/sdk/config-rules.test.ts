@@ -5,7 +5,7 @@
 // server's IsolateConfigSchema run the same asserts.
 
 import { describe, expect, test } from "vitest";
-import { assertProviderTriple } from "./config-rules.ts";
+import { agentConfigWarnings, assertProviderTriple } from "./config-rules.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
 import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
@@ -136,6 +136,45 @@ describe("toAgentConfig — silence nudge", () => {
     expect(() => config({ ...pipelineFields, silenceTimeoutMs: 0 })).toThrow(
       /silenceTimeoutMs[\s\S]*expected number to be >0/,
     );
+  });
+});
+
+describe("agentConfigWarnings", () => {
+  test("names a voice outside the catalog, since a typo is otherwise silent", () => {
+    // Not an error: the catalog is the SERVICE's and a snapshot of it goes
+    // stale, so refusing an unlisted voice would refuse one shipped last week.
+    // Saying nothing leaves the common case — a typo — to surface as an agent
+    // that connects, reports ready and never speaks.
+    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "michal" }) })).toEqual([
+      expect.stringContaining('AssemblyAI voice "michal" is not in this release\'s catalog'),
+    ]);
+  });
+
+  test("says nothing about a voice the catalog lists", () => {
+    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "michael" }) })).toEqual([]);
+  });
+
+  test("tells a DEPRECATED voice apart from an unknown one", () => {
+    // It works today, so "unknown" would be wrong; it is going away, so
+    // silence would be too.
+    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "emma" }) })).toEqual([
+      expect.stringContaining("scheduled for removal"),
+    ]);
+  });
+
+  test("reads the S2S descriptor too, whose voice comes from the same catalog", () => {
+    expect(agentConfigWarnings({ s2s: assemblyAIS2s({ voice: "michal" }) })).toEqual([
+      expect.stringContaining('"michal"'),
+    ]);
+  });
+
+  test("says nothing about another vendor's voice, which it cannot judge", () => {
+    expect(agentConfigWarnings({ tts: cartesia({ voice: "not-a-uuid" }) })).toEqual([]);
+  });
+
+  test("says nothing when no voice is declared", () => {
+    expect(agentConfigWarnings({})).toEqual([]);
+    expect(agentConfigWarnings({ tts: assemblyAITts() })).toEqual([]);
   });
 });
 

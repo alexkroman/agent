@@ -14,6 +14,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
@@ -76,6 +77,10 @@ export async function executeBuild(opts: {
   // both commands run the developer's own project code — see the note in
   // packages/aai-cli/CLAUDE.md.
   const agentDef = await evalWorkerBundle(bundle.worker);
+  // Legal, and worth saying — today that is a voice outside the catalog, whose
+  // whole failure mode is that nothing says anything until the agent is live
+  // and silent. See `agentConfigWarnings`.
+  for (const warning of agentConfigWarnings(agentDef)) notify("warn", warning);
 
   // Written AFTER the evaluation, which is the bundle's smoke test: a worker
   // whose top level throws must not be left on disk as the thing `npm start`

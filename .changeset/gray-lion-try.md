@@ -14,7 +14,11 @@ Authoring-surface fixes found by manually testing the SDK.
   error naming the voices that can, instead of an agent that connects, reports
   ready and never speaks. Includes the pair the SDK built itself:
   `assemblyAITts({ language: "fr" })` filled in the English default voice. A
-  voice this release's catalog does not list is still passed through.
+  voice this release's catalog does not list is still passed through — and
+  `aai build`/`aai dev` now WARN about it (`agentConfigWarnings`), since
+  refusing one would refuse a voice AssemblyAI shipped after this release while
+  saying nothing left a typo to surface as a silent agent. A deprecated voice
+  gets its own line.
 - `pcmDurationMs` refuses a `Uint8Array` where a byte count goes rather than
   answering `NaN`, and names itself instead of `encodeWav` in the format check
   the two share.

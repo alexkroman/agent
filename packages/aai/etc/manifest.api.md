@@ -80,6 +80,12 @@ export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
     [K in HostOnlyAgentField]?: unknown;
 };
 
+// @internal
+export function agentConfigWarnings(config: {
+    tts?: unknown;
+    s2s?: unknown;
+}): string[];
+
 // @public
 interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
