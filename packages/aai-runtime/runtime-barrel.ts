@@ -175,6 +175,12 @@ export {
 } from "./server.ts";
 export type { SessionCore } from "./session-core.ts";
 export type { SessionEventPage, SessionEventStream } from "./session-event-stream.ts";
+// The bearer variable that CLOSES the event-stream read route, beside the types a
+// reader of it names. On the barrel for the same reason `WORKFLOW_API_TOKEN_ENV` is:
+// a host closing a surface has to be able to spell the variable that closes it, and
+// this one reached no published subpath at all — so an embedder either hardcoded the
+// string or left the route as it found it.
+export { SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
 export type {
   SessionStateBackend,
   SessionStateStore,

@@ -30,8 +30,8 @@
     "dropped": {}
   },
   "session": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "session-state": {

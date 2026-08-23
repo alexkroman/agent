@@ -300,10 +300,34 @@ carried the declaration through, so a `page: "static"` agent still got the voice
 surfaces and a voice `GET /client-config`. It is read off the agent now, beside
 `name` and `greeting`, with an explicit field still winning.
 
-`uploadBroker` came with them; the remaining gaps are deliberate. The host-mode
-pair (`ServerOptions.env`, `hostBaseAgent`) belongs to `createHostServer` — a
-server whose sessions run agents their callers supply is a different door, not an
-option on this one. `name` and `greeting` are derived, which is the whole point.
+**`env` was the third, and it is why "belongs to the other door" is not a safe
+reason to drop an option.** This guide used to call `ServerOptions.env` half of
+"the host-mode pair" and leave it out on that ground: host mode is
+`createHostServer`'s business, so an env on this door looked like an option for
+a feature this door does not have. But `createServer` reads FOUR things out of
+that record and only one of them is the host gate — `AAI_WORKFLOW_API_TOKEN`,
+documented in `workflow-api.ts` as what CLOSES `/workflows/*`;
+`AAI_SESSION_EVENTS_TOKEN`, the same shape one route over; and `DATABASE_URL`,
+which is where a workflow upload's RECORD lives. So an operator who set the
+token was still serving the workflow API, and its upload WRITE routes, wide
+open, and an operator with a provisioned database still had uploads land in
+this process's temp directory and vanish before a resumed run could read them.
+The guest harness had the identical bug with the identical three symptoms — it
+called `createServer` with no `env` at all — which is the tell that the
+classification was wrong rather than the wiring.
+
+It is forwarded now, minus the gate, through `agentServerEnv` (`server-env.ts`,
+shared with the guest so the filter has one spelling): `?host=1` lets a caller
+supply its own agent definition and run it on the operator's credentials, so
+that key arriving with the other three would turn one secret into an
+unauthenticated surface. `hostBaseAgent` really does belong to the other door.
+**And the lesson for the next option is where the test went**: the token WAS
+covered, by a spec that called `createServer` directly, which is exactly why the
+wrapper's version survived it. A forwarding spec has to take the door a caller
+takes.
+
+`uploadBroker` came with them; the remaining gaps are deliberate.
+`name` and `greeting` are derived, which is the whole point.
 And of `RuntimeOptions`' twenty, the fourteen unreachable ones are the testing
 and sandbox seams (`executeTool`, `toolSchemas`, `createWebSocket`,
 `createOpenaiRealtimeWebSocket`, `runCode`, `fetch`, `onToolResult`,
@@ -387,6 +411,19 @@ Rendered in ISOLATION it reports seven more, all `{@link Db}`-shaped links into
 not a defect in these comments — do not "fix" them by deleting links.
 
 ## An upload's bytes are OBJECTS, and its record has two homes
+
+**An upload ID is checked at the ROUTER, for every `/uploads/:id` route.** The
+grammar check (`UPLOAD_TOKEN_RE`, 1-64 of `[A-Za-z0-9_-]`) used to sit inside the
+two writes that take a caller-chosen id, so the other three handed a bad id to the
+store — where `assertUploadToken` throws a plain `Error`, `sendUploadFailure` can
+only classify the store's five typed failures, and the router's catch turned a
+plainly bad request into `500 Internal server error` with the reason in the log
+and nowhere else. One class of mistake, two statuses: `POST …/not..valid/parts`
+answered 400 and named the grammar, `GET …/not..valid/info` answered 500. It is
+`uploadIdOr400` (`workflow-api-uploads.ts`) for all five now, which also keeps the
+grammar a BOUNDARY — an id that would escape the store never reaches one, whichever
+verb asked. A well-formed id nothing stored is still a 404: "malformed" and
+"reclaimed" are different answers and a client acts differently on each.
 
 One store (`_upload-store-blobs.ts`) over two interfaces — `UploadRecords`
 for the record, `UploadBlobs` for one object per `UPLOAD_PART_BYTES` window — and

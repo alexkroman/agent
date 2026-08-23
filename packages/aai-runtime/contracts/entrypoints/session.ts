@@ -21,3 +21,4 @@ export type {
   TransportEventBody,
   TransportEventType,
 } from "../../runtime-barrel.ts";
+export { SESSION_EVENTS_TOKEN_ENV } from "../../runtime-barrel.ts";

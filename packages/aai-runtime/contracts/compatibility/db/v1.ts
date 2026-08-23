@@ -11,6 +11,13 @@
  * (`../../../runtime-barrel.ts`) because the package cannot resolve itself by
  * name.
  *
+ * Frozen against the API, that is — {@link noticeLine} was added after the fact
+ * because the `onNotice` line here was simply WRONG, logging `[object Object]`
+ * for every notice and so discarding exactly what the option exists to surface.
+ * Nothing about epoch 1's surface moved, so `--bump db` refuses (and rightly:
+ * there is no signature to classify); a starter that teaches a bad line is a bug
+ * in the starter.
+ *
  * ## What this is
  *
  * One host's database bootstrap, in the order a host does it: open the pool
@@ -47,6 +54,7 @@
  * work and never from a session.
  */
 
+import { isRecord } from "@alexkroman1/aai/utils";
 import {
   type CloseableDb,
   type CreatePostgresDbOptions,
@@ -68,6 +76,22 @@ export const APP_DB_POOL_MAX = 4;
 
 /** How long an idle pooled connection is kept before the driver drops it. */
 export const APP_DB_IDLE_TIMEOUT_SECONDS = 30;
+
+/**
+ * One Postgres NOTICE as a log line. ← your log's shape
+ *
+ * A narrowing rather than a cast: `onNotice` is typed `unknown` because the value
+ * is the driver's, so probe the three fields worth keeping and fall back to the
+ * whole thing when it is not the shape this expects. `String(notice)` — the obvious
+ * one-liner — renders every notice as `[object Object]`, which throws away the
+ * `42P07` and the sentence explaining it.
+ */
+export function noticeLine(notice: unknown): string {
+  const { severity, code, message } = isRecord(notice) ? notice : {};
+  if (typeof message !== "string") return `postgres notice: ${JSON.stringify(notice)}`;
+  const label = [severity, code].filter((part) => typeof part === "string").join(" ");
+  return `postgres ${label || "NOTICE"}: ${message}`;
+}
 
 /** What a host holds for the life of the process. */
 export type AppDb = {
@@ -91,6 +115,12 @@ export type AppDb = {
  * every boot, which trains an operator to skip NOTICEs — and skipping them is
  * where a notice that matters would have arrived.
  *
+ * READ THE FIELDS, though. The parameter is `unknown` because it is the driver's
+ * object, and `String(notice)` on it yields the literal text `[object Object]` —
+ * which is worse than the blob it replaces, since the blob at least carried the
+ * code. A notice worth keeping is `severity`/`code`/`message`, which is what
+ * `createPostgresDb`'s own default sink reads.
+ *
  * `undefined` here means the environment named no database. ← decide what that
  * means for your host: this arm degrades, and a host that cannot run without
  * one should throw instead.
@@ -108,7 +138,7 @@ export function startAppDb(
     url,
     max: APP_DB_POOL_MAX,
     idleTimeoutSeconds: APP_DB_IDLE_TIMEOUT_SECONDS,
-    onNotice: (notice) => log(`postgres notice: ${String(notice)}`),
+    onNotice: (notice) => log(noticeLine(notice)),
   };
   const db = createPostgresDb(opts);
   return {

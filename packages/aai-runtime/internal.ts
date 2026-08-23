@@ -85,6 +85,11 @@ export {
 // all start from. The `Logger` TYPE — the thing a host implements — is
 // contracted, on the root barrel.
 export { consoleLogger } from "./runtime-config.ts";
+// Which keys of an agent's env a SERVER may read — everything but the host-mode
+// gate. Shared for the same reason `isPathInside` below is: the guest harness makes
+// the identical statement about a deployed agent and had its own copy of the line,
+// so a gate variable added later would have had to be remembered in two places.
+export { agentServerEnv } from "./server-env.ts";
 // The containment rule under the static-asset server, shared because it is
 // SSRF-adjacent and worth one definition rather than one per caller.
 export { isPathInside } from "./server-static.ts";

@@ -44,6 +44,7 @@ import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
 import { type AgentServer, createServer, type PassthroughServerOptions } from "./server.ts";
+import { agentServerEnv } from "./server-env.ts";
 
 /** Configuration for {@link createAgentServer}. */
 // An interface rather than an intersection: TypeDoc documents inherited
@@ -62,6 +63,18 @@ export interface AgentServerOptions extends PassthroughServerOptions {
    * credentials resolve from unless {@link AgentServerOptions.providerEnv} is
    * set. Nothing falls back to the host's `process.env`: assembling this is
    * deliberate, not boilerplate.
+   *
+   * The SERVER reads it too, and for a long time it did not: this option was
+   * forwarded to the runtime alone, so three of the four things `createServer`
+   * takes out of an env were silently dropped by the door most self-hosters use.
+   * `AAI_WORKFLOW_API_TOKEN` — documented as what CLOSES `/workflows/*` — did
+   * nothing, so an operator who set it was still serving that API, and its
+   * upload write routes, open; `AAI_SESSION_EVENTS_TOKEN` did nothing one route
+   * over; and `DATABASE_URL` did nothing, so a workflow upload's record went to
+   * this process's temp directory and was gone by the time a resumed run read
+   * it, however the app's database was provisioned. The guest harness had the
+   * same bug and the same three symptoms — see `agentServerEnv`, which is also
+   * what keeps `AAI_ALLOW_HOST` from riding along.
    */
   env: AgentEnv;
   /**
@@ -167,6 +180,10 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   });
   return createServer({
     runtime,
+    // The agent's env, MINUS the host-mode gate: `createServer` reads the two
+    // route tokens and `DATABASE_URL` out of it, and `agentServerEnv` carries
+    // the argument for why the fourth key it reads may not arrive by this door.
+    env: agentServerEnv(env),
     // Read off the agent rather than asked for again — see the module doc.
     // `page` joins them, and an explicit one still wins: the field is the more
     // specific statement, the same rule `telephony` follows in `createServer`.
