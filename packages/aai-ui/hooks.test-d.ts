@@ -16,7 +16,9 @@
 import { type DefaultToolResult, sessionSlot } from "@alexkroman1/aai";
 import { expectTypeOf, test } from "vitest";
 import { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
-import type { ToolCallInfo } from "./types.ts";
+import type { ChatMessage, ToolCallInfo } from "./types.ts";
+import { type ConversationItem, useConversation } from "./use-conversation.ts";
+import { useDownloadUrl } from "./use-download-url.ts";
 
 type Quote = { symbol: string; price: number };
 
@@ -107,4 +109,48 @@ test("a tool call's args are `any`, for the same reason results are", () => {
     expectTypeOf(toolCall.callId).toEqualTypeOf<string>();
     expectTypeOf(toolCall.name).toEqualTypeOf<string>();
   });
+});
+
+/**
+ * `useConversation`'s item type is a DISCRIMINATED union, and that is the whole
+ * ergonomic promise: a custom renderer writes one `kind` check and the other
+ * member's field is gone. Widening it to `{ kind: string; message?: … }` — the
+ * shape it would take if the two arms were merged for convenience — compiles at
+ * every call site and silently makes both fields optional, which is exactly the
+ * regression a runtime test cannot see.
+ */
+test("a conversation item narrows on `kind`, with no optional fields to guard", () => {
+  const { items, streaming, transcript, thinking } = useConversation();
+  expectTypeOf(items).toEqualTypeOf<readonly ConversationItem[]>();
+  // `null` between turns rather than `""`, which is the transcript's convention
+  // and deliberately NOT this one — an agent that has said nothing is silent.
+  expectTypeOf(streaming).toEqualTypeOf<string | null>();
+  expectTypeOf(thinking).toEqualTypeOf<boolean>();
+  expectTypeOf(transcript.speaking).toEqualTypeOf<boolean>();
+  expectTypeOf(transcript.partial).toEqualTypeOf<string | null>();
+
+  // Extracted rather than narrowed by an `if`: a conditional `expect` is
+  // exactly as strong here (both arms are types, not runtime paths) and it is
+  // what `noConditionalExpect` asks for.
+  type MessageItem = Extract<ConversationItem, { kind: "message" }>;
+  type ToolItem = Extract<ConversationItem, { kind: "tool" }>;
+  expectTypeOf<MessageItem["message"]>().toEqualTypeOf<ChatMessage>();
+  expectTypeOf<ToolItem["toolCall"]>().toEqualTypeOf<ToolCallInfo>();
+  // Each arm carries ONE payload field, so a renderer that checked `kind` never
+  // has an optional to guard. Widening the union into a single member with two
+  // optional fields — the shape a convenience merge produces — fails here.
+  expectTypeOf<MessageItem>().not.toHaveProperty("toolCall");
+  expectTypeOf<ToolItem>().not.toHaveProperty("message");
+});
+
+/**
+ * `pending` is REQUIRED and the other two are not, which is the distinction the
+ * hook exists to restore: both templates faked it as "neither url nor error",
+ * which reads a download in flight and no id at all as the same state.
+ */
+test("useDownloadUrl reports pending unconditionally and the rest optionally", () => {
+  const result = useDownloadUrl(undefined);
+  expectTypeOf(result.pending).toEqualTypeOf<boolean>();
+  expectTypeOf(result.url).toEqualTypeOf<string | undefined>();
+  expectTypeOf(result.error).toEqualTypeOf<string | undefined>();
 });

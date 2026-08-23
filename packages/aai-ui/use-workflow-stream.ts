@@ -82,6 +82,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadParallel } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useRef, useState } from "react";
+import { useRunControls } from "./_run-controls.ts";
 import {
   createUploadGate,
   randomUploadId,
@@ -176,6 +177,9 @@ export function useWorkflowStream<R = unknown>(
   const getClient = useWorkflowApiRef(api);
 
   const tracked = useWorkflowRun<R>(runId, omitUndefined({ api, intervalMs }));
+  // Same two controls as `useWorkflowSubmit` — this hook returns an ALIAS of
+  // that hook's type, so a field missing here is a lie in the shared type.
+  const { wake, cancel } = useRunControls(runId, getClient);
 
   const submit = useCallback(
     async (input: unknown) => {
@@ -251,6 +255,8 @@ export function useWorkflowStream<R = unknown>(
   return {
     submit,
     reset,
+    wake,
+    cancel,
     pauseUpload,
     resumeUpload,
     run: tracked.run,

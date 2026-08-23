@@ -52,6 +52,7 @@ export function WorkflowProgress({
   api,
   className,
   placeholder,
+  lines,
 }: {
   /**
    * The run to read. `undefined` renders nothing, so a page may pass its state
@@ -73,14 +74,30 @@ export function WorkflowProgress({
    * page that would otherwise reflow when the first line lands.
    */
   placeholder?: ReactNode | undefined;
+  /**
+   * How many of the newest lines to show. Undefined (the default) shows the
+   * whole log; `1` is the newest line only.
+   *
+   * A run's narration is append-only and unbounded, so a page with a fixed slot
+   * for it — a status strip, a card footer — wants a window rather than a log.
+   * `0` renders the placeholder, which is the consistent reading of "show none"
+   * and the one that keeps a computed `lines` from silently rendering
+   * everything.
+   */
+  lines?: number | undefined;
 }): ReactNode {
   const { progress, streaming, supported } = useWorkflowProgress(runId, omitUndefined({ api }));
 
-  if (!supported || progress.length === 0) return placeholder ?? null;
+  // Sliced before the emptiness test, so `lines={0}` reads as "nothing to show"
+  // rather than as a full log.
+  const shown =
+    lines === undefined ? progress : progress.slice(Math.max(progress.length - lines, 0));
+
+  if (!supported || shown.length === 0) return placeholder ?? null;
 
   return (
     <pre className={clsx(className ?? "whitespace-pre-wrap border-l pl-4 text-xs opacity-70")}>
-      {progress.join("\n")}
+      {shown.join("\n")}
       {streaming && "\n…"}
     </pre>
   );

@@ -146,4 +146,44 @@ describe("WorkflowProgress", () => {
     await waitFor(() => expect(container.querySelector("pre")).not.toBeNull());
     expect(container.querySelector("pre")?.className).toBe("font-mono");
   });
+  test("`lines` shows only the newest N, which is what the two raw pages hand-rolled", async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(sse(["Fetching…", "Reading…", "Summarising…"])),
+    );
+    const { container } = render(<WorkflowProgress runId="wrun_1" lines={1} />);
+
+    await waitFor(() => expect(container.querySelector("pre")).not.toBeNull());
+    expect(container.querySelector("pre")?.textContent).toBe("Summarising…");
+  });
+
+  test("`lines` larger than the log shows the whole log rather than padding it", async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(sse(["Reading…", "Filing."])));
+    const { container } = render(<WorkflowProgress runId="wrun_1" lines={10} />);
+
+    await waitFor(() => expect(container.querySelector("pre")).not.toBeNull());
+    expect(container.querySelector("pre")?.textContent).toBe("Reading…\nFiling.");
+  });
+
+  test("`lines={0}` renders the placeholder, not the whole log", async () => {
+    // The reading that keeps a COMPUTED window of zero from silently inverting
+    // into "everything".
+    fetchMock.mockImplementation(() => Promise.resolve(sse(["Reading…"])));
+    render(<WorkflowProgress runId="wrun_1" lines={0} placeholder={<p>Starting…</p>} />);
+
+    await waitFor(() => expect(screen.getByText("Starting…")).not.toBeNull());
+  });
+
+  test("`lines` still respects `supported` — an older agent stays blank, not windowed", async () => {
+    // The whole reason this is a prop: both hand-rolled versions carried a
+    // six-line comment about exactly this, and a third copy would eventually
+    // drop it.
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(() => Promise.resolve(new Response("", { status: 404 })));
+    const { container } = render(<WorkflowProgress runId="wrun_1" lines={1} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_PROGRESS_POLL_MS * 3);
+    });
+    expect(container.innerHTML).toBe("");
+  });
 });
