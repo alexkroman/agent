@@ -349,3 +349,59 @@ describe("buildSystemPrompt", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toBe(`${VOICE_CORE}\n\n${PROMPT_TOOLS}`);
   });
 });
+
+describe("an author's prompt that interpolates DEFAULT_SYSTEM_PROMPT", () => {
+  /**
+   * The shape this constant's own docs recommended for a long time, on the
+   * false premise that `agent({ systemPrompt })` REPLACES the defaults. It
+   * appends, so following the advice sent the ~10,000-character voice core
+   * twice.
+   */
+  const composed = `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss items in the catalog.`;
+
+  test("does not emit the voice core a second time", () => {
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: composed }), { hasTools: true });
+    // Once, not twice. `PROMPT_ROLE` is the first section and the cheapest
+    // witness — a doubled prompt contains it at two different offsets.
+    expect(result.indexOf(PROMPT_ROLE)).toBe(result.lastIndexOf(PROMPT_ROLE));
+    expect(result.split(PROMPT_LISTENING)).toHaveLength(2);
+    expect(result.split(PROMPT_TOOLS)).toHaveLength(2);
+  });
+
+  test("keeps the author's own rules, under the agent header", () => {
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: composed }), { hasTools: true });
+    expect(result.endsWith(`${AGENT_HEADER}\nOnly discuss items in the catalog.`)).toBe(true);
+  });
+
+  test("is byte-identical to writing only the domain rules, which is the documented form", () => {
+    const opts = { hasTools: true } as const;
+    expect(buildSystemPrompt(makeConfig({ systemPrompt: composed }), opts)).toBe(
+      buildSystemPrompt(makeConfig({ systemPrompt: "Only discuss items in the catalog." }), opts),
+    );
+  });
+
+  test("a prompt that is the default plus nothing adds no agent section at all", () => {
+    const result = buildSystemPrompt(
+      makeConfig({ systemPrompt: `${DEFAULT_SYSTEM_PROMPT}\n\n   ` }),
+      { hasTools: true },
+    );
+    expect(result).not.toContain(AGENT_HEADER);
+    // Identical to declaring no `systemPrompt` at all, which is what "the
+    // default plus nothing" means.
+    expect(result).toBe(buildSystemPrompt(makeConfig(), { hasTools: true }));
+  });
+
+  test("only a LEADING copy is stripped — a prompt that merely mentions it is untouched", () => {
+    // The strip is a duplicate-prefix removal, not prose editing: a constant
+    // interpolated mid-prompt stays where the author put it.
+    const middle = `Be brief.\n\n${DEFAULT_SYSTEM_PROMPT}`;
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: middle }), { hasTools: true });
+    expect(result.endsWith(`${AGENT_HEADER}\n${middle}`)).toBe(true);
+  });
+
+  test("a prompt that only RESEMBLES the default is appended verbatim", () => {
+    const nearly = DEFAULT_SYSTEM_PROMPT.slice(1);
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: nearly }), { hasTools: true });
+    expect(result.endsWith(`${AGENT_HEADER}\n${nearly}`)).toBe(true);
+  });
+});

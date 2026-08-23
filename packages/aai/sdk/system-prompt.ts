@@ -309,21 +309,34 @@ export const PROMPT_TOOLS: string = `\
  * 5. `## TOOLS` — never fabricate, act first and ask second, report results
  *    rather than intentions, and the mis-hearing retry ladder.
  *
- * `agent({ systemPrompt })` REPLACES all of it. To keep the voice rules and add
- * your own domain rules, append instead:
+ * **`agent({ systemPrompt })` does NOT replace any of it — it is APPENDED.**
+ * {@link buildSystemPrompt} always emits these sections and then adds your
+ * prompt last, under a header saying it overrides them where they conflict. So
+ * write only your own domain rules:
  *
  * ```ts
- * import { agent, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
+ * import { agent } from "@alexkroman1/aai";
  *
  * export default agent({
  *   name: "Cart",
- *   systemPrompt: `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss items in the catalog.`,
+ *   systemPrompt: "Only discuss items in the catalog.",
  * });
  * ```
  *
- * The full text is ~10,000 characters and is assembled from parts, so it is not
- * reproduced here — a second copy in a comment would drift from the one the
- * agent runs. Print `DEFAULT_SYSTEM_PROMPT` to read it exactly as sent.
+ * **Do not interpolate this constant into that string.** This doc used to show
+ * exactly that (`` `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss…` ``) on the false
+ * premise that it was replaced, which sent the ~10,000-character voice core
+ * twice — the repetition this module's whole section split exists to prevent,
+ * paid for in tokens on every turn and in a prompt that contradicts itself
+ * where the two copies land under different precedence headers.
+ * {@link buildSystemPrompt} now strips a leading copy rather than emitting it
+ * again, so an agent that followed the old advice is corrected on upgrade; that
+ * is a repair, not an invitation to keep composing.
+ *
+ * **It is exported to be READ, not composed**: printed while tuning an agent,
+ * diffed across SDK versions, or asserted on in a test. The full text is
+ * assembled from parts and is not reproduced here — a second copy in a comment
+ * would drift from the one the agent runs.
  */
 export const DEFAULT_SYSTEM_PROMPT: string = [
   PROMPT_ROLE,
@@ -351,6 +364,23 @@ const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
  *   5. Agent-specific instructions — LAST, so position agrees with the
  *      stated precedence ("agent-specific instructions win")
  *
+ * **The author's prompt is APPENDED, never substituted**, which is worth saying
+ * out loud because this constant's own docs claimed the opposite for a long
+ * time and gave a worked example interpolating {@link DEFAULT_SYSTEM_PROMPT}
+ * into it. Following that example put the voice core in twice — once from
+ * section 1 here and once inside section 5 — which is the repetition this
+ * module's header says the section split exists to prevent, and which lands the
+ * two copies under different precedence headers so the prompt argues with
+ * itself.
+ *
+ * A leading copy is therefore STRIPPED (see {@link stripDefaultPrefix}) rather
+ * than emitted again. It is a normalization, not a policy: the module's stated
+ * invariant is that every rule appears exactly once, and a prompt that opens
+ * with a verbatim copy of what precedes it carries no instruction the assembled
+ * prompt does not already have. An agent shipping the doubled form today is
+ * already broken — 10,000 characters of duplicate context per turn — so the
+ * behaviour change is only to a state nobody chose.
+ *
  * @param config - The serializable agent configuration (name, systemPrompt, etc.).
  * @param opts.hasTools - When `true`, includes the TOOLS section (preamble
  *   discipline, results-not-intentions, mis-hearing retries, error handling).
@@ -364,7 +394,7 @@ export function buildSystemPrompt(
   config: AgentConfig,
   opts: { hasTools: boolean; voice?: boolean; toolGuidance?: readonly string[] | undefined },
 ): string {
-  const hasCustomPrompt = config.systemPrompt && config.systemPrompt !== DEFAULT_SYSTEM_PROMPT;
+  const custom = stripDefaultPrefix(config.systemPrompt);
 
   const today = new Date().toLocaleDateString("en-US", DATE_FORMAT_OPTIONS);
 
@@ -380,12 +410,44 @@ export function buildSystemPrompt(
     sections.push(`Built-in tool usage:\n${opts.toolGuidance.join("\n")}`);
   }
 
-  if (hasCustomPrompt) {
+  if (custom !== undefined) {
     sections.push(
       "Agent-specific instructions (these override the defaults above " +
-        `where they conflict):\n${config.systemPrompt}`,
+        `where they conflict):\n${custom}`,
     );
   }
 
   return sections.join("\n\n");
+}
+
+/**
+ * The author's own instructions, with a leading copy of
+ * {@link DEFAULT_SYSTEM_PROMPT} removed — or `undefined` when there is nothing
+ * left to append.
+ *
+ * The prefix match is EXACT, on the whole ~10,000-character constant, not a
+ * fuzzy resemblance: it fires only on a string that literally begins with the
+ * text this module is about to emit anyway, which is what the old
+ * `` `${DEFAULT_SYSTEM_PROMPT}\n\n…` `` example produced and what nothing else
+ * plausibly produces. An author who genuinely wants a rule restated writes the
+ * rule, not a verbatim copy of the whole voice core.
+ *
+ * It handles only a LEADING copy, deliberately. A constant interpolated into the
+ * MIDDLE of a prompt would need a substring search and a splice, and at that
+ * point the function is editing prose rather than dropping a duplicate prefix —
+ * a much larger promise, for a shape the docs never suggested.
+ *
+ * `undefined` covers three cases that mean the same thing to the caller: no
+ * prompt was given, the prompt IS the default (the check this replaces), and the
+ * prompt was the default plus nothing but whitespace.
+ */
+function stripDefaultPrefix(systemPrompt: string | undefined): string | undefined {
+  if (systemPrompt === undefined || systemPrompt === "") return undefined;
+  const rest = systemPrompt.startsWith(DEFAULT_SYSTEM_PROMPT)
+    ? // Only the leading blank line the composed form puts between the two —
+      // `trimStart` rather than a fixed `\n\n`, since an author may have used
+      // one newline or three.
+      systemPrompt.slice(DEFAULT_SYSTEM_PROMPT.length).trimStart()
+    : systemPrompt;
+  return rest === "" ? undefined : rest;
 }

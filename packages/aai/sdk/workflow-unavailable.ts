@@ -81,6 +81,7 @@ export function rejectingWorkflows(message: string): WorkflowClient {
     signal: reject,
     stream: reject,
     streamTail: reject,
+    lastLine: reject,
     publicWebhookUrl: () => {
       throw new Error(message);
     },
