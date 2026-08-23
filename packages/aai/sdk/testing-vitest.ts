@@ -111,7 +111,7 @@ function restoreAfterThisTest(restore: () => void): void {
 /**
  * Publish an in-memory upload store, restored when this test finishes.
  *
- * {@link stubUploads} with the bookkeeping done — see it for what the store
+ * `stubUploads` with the bookkeeping done — see it for what the store
  * serves, why writes are opt-in, and why the minted ids count up.
  *
  * @example
@@ -139,7 +139,7 @@ export function installStubUploads(
 /**
  * Publish a fake `stepFetch`, restored when this test finishes.
  *
- * {@link stubStepFetch} with the bookkeeping done — see it for why a step's HTTP
+ * `stubStepFetch` with the bookkeeping done — see it for why a step's HTTP
  * goes through a published slot rather than the global, and what the recorded
  * request carries.
  *
@@ -159,7 +159,7 @@ export function installStubStepFetch(
  * Capture what a `"use step"` function narrates and emits, restored when this
  * test finishes.
  *
- * {@link stubReporter} with the bookkeeping done — see it for why `report()` and
+ * `stubReporter` with the bookkeeping done — see it for why `report()` and
  * `emit()` are separated the way the streams are.
  *
  * @public
@@ -174,7 +174,7 @@ export function installStubReporter(): StubReporter {
  * Publish a synthesizer that records what it was asked to say, restored when
  * this test finishes.
  *
- * {@link stubSpeech} with the bookkeeping done — see it for the call log's
+ * `stubSpeech` with the bookkeeping done — see it for the call log's
  * shape, the silence it answers with, and how to make it fail instead.
  *
  * @public
@@ -189,7 +189,7 @@ export function installStubSpeech(options: StubSpeechOptions = {}): StubSpeech {
  * Answer AssemblyAI's transcription endpoints in memory, restored when this test
  * finishes.
  *
- * {@link stubTranscribe} with the bookkeeping done — see it for the four legs it
+ * `stubTranscribe` with the bookkeeping done — see it for the four legs it
  * routes, why a refusal is staged as an HTTP status rather than as a
  * `TranscribeError`, and why it takes an `otherwise` handler.
  *

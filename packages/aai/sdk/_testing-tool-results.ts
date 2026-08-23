@@ -4,7 +4,7 @@
  *
  * A `dialog()` tool answers a {@link DialogToolResult} — the author's own value
  * under `result`, wrapped in the position the dialog reached — or a
- * {@link ToolFailure} when the call was refused out of state. Both are
+ * `ToolFailure` when the call was refused out of state. Both are
  * legitimate answers, so `runTool` and `toolOf(...).execute(...)` are typed
  * `unknown`: the registry lookup is by STRING, and tool discovery is a build
  * step, so there is no tool map at the type level to recover the author's `R`
@@ -29,7 +29,7 @@
 import type { DialogToolResult } from "./dialog.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import { isToolFailure, type ToolFailure } from "./utils.ts";
+import { isToolFailure } from "./utils.ts";
 
 /**
  * The value a gated tool's own `execute` returned, or a throw naming the refusal.
@@ -40,7 +40,7 @@ import { isToolFailure, type ToolFailure } from "./utils.ts";
  *
  * @param result - What `runTool` / `toolOf(...).execute(...)` answered.
  *
- * @throws When the tool refused ({@link ToolFailure}), quoting the refusal —
+ * @throws When the tool refused (`ToolFailure`), quoting the refusal —
  *   which for a `dialog()` tool is the sentence naming the state the
  *   conversation is actually in and what has to happen first.
  * @throws When the value is not a tool result envelope at all, which is what a

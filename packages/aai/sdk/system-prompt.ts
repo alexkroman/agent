@@ -4,7 +4,7 @@
  * sent to the LLM.
  *
  * Every rule lives in exactly ONE section so the assembled prompt never
- * repeats or contradicts itself. {@link buildSystemPrompt} composes these
+ * repeats or contradicts itself. `buildSystemPrompt` composes these
  * sections and nothing else; it must not append prose that overlaps with
  * them, and a rule tightened in one section must not be restated in another.
  * The previous shape — a base prompt plus a `VOICE_RULES` and a
@@ -310,7 +310,7 @@ export const PROMPT_TOOLS: string = `\
  *    rather than intentions, and the mis-hearing retry ladder.
  *
  * **`agent({ systemPrompt })` does NOT replace any of it — it is APPENDED.**
- * {@link buildSystemPrompt} always emits these sections and then adds your
+ * `buildSystemPrompt` always emits these sections and then adds your
  * prompt last, under a header saying it overrides them where they conflict. So
  * write only your own domain rules:
  *
@@ -329,7 +329,7 @@ export const PROMPT_TOOLS: string = `\
  * twice — the repetition this module's whole section split exists to prevent,
  * paid for in tokens on every turn and in a prompt that contradicts itself
  * where the two copies land under different precedence headers.
- * {@link buildSystemPrompt} now strips a leading copy rather than emitting it
+ * `buildSystemPrompt` now strips a leading copy rather than emitting it
  * again, so an agent that followed the old advice is corrected on upgrade; that
  * is a repair, not an invitation to keep composing.
  *
