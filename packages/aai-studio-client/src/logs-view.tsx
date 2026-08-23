@@ -16,7 +16,7 @@
 //   line of its own, because a tail that silently skips is indistinguishable
 //   from an agent that went quiet.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type AgentLogLine, type AgentLogsPage, api } from "./api.ts";
 import { errorText } from "./api-error.ts";
 
@@ -150,7 +150,19 @@ export function LogsView(props: LogsViewProps) {
 
   // Follow the bottom, but only while the reader is there: scrolling up to read
   // something is exactly when a forced scroll is most annoying.
-  useEffect(() => {
+  //
+  // `useLayoutEffect`, not `useEffect`, and the difference is VISIBLE. A passive
+  // effect runs after paint, so the browser draws one frame with the new line
+  // rendered and the scroller still at its old offset — a jump on every line
+  // while following, at whatever rate the agent logs. A layout effect runs
+  // inside the commit, before paint, so the frame that first shows the line
+  // already shows it scrolled to.
+  //
+  // It also makes the ordering DETERMINISTIC for a spec, which is what the two
+  // follow tests rest on: they assert `scrollTop` synchronously after the line
+  // appears, and that is only sound because the write cannot still be pending.
+  // Under `useEffect` the positive one lost about one run in six on CI.
+  useLayoutEffect(() => {
     const el = scroller.current;
     if (el && following.current) el.scrollTop = el.scrollHeight;
   }, [rows]);

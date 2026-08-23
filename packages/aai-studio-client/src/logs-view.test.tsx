@@ -182,16 +182,19 @@ describe("following the bottom", () => {
     stubScroll(el, { scrollHeight: 1000, clientHeight: 100, top: 900 });
     fireEvent.scroll(el);
 
-    // `waitFor`, not a bare assertion after `findByText`. The follow handler is
-    // a `useEffect`, i.e. a PASSIVE effect React flushes after paint — so the
-    // text being in the DOM does not mean the scroll has happened yet, and the
-    // snapshot form was a race that lost about one run in six under load
-    // (`expected 900 to be 1000`, on a green branch). It still fails if the
-    // follow is removed: `scrollTop` then stays at 900 until the wait expires.
+    // SYNCHRONOUS, and that is the assertion rather than an accident of it. The
+    // pane follows in a `useLayoutEffect`, which runs inside the commit that
+    // renders the line — so once the text is in the DOM the scroll cannot still
+    // be pending, and reading `scrollTop` here is sound.
+    //
+    // It was a `useEffect` and this line lost about one run in six on CI
+    // (`expected 900 to be 1000`): a passive effect runs after paint, so the
+    // text arriving said nothing about the scroll. Wrapping this in `waitFor`
+    // makes it pass under either hook, which is exactly why it must not be —
+    // the wait would hide a regression to the flickering version. If this goes
+    // red intermittently again, the hook moved; do not add a wait.
     await screen.findByText("second");
-    await waitFor(() => {
-      expect(el.scrollTop).toBe(1000);
-    });
+    expect(el.scrollTop).toBe(1000);
   });
 
   test("but not while they have scrolled up to read something", async () => {
@@ -206,6 +209,11 @@ describe("following the bottom", () => {
     stubScroll(el, { scrollHeight: 1000, clientHeight: 100, top: 0 });
     fireEvent.scroll(el);
 
+    // Synchronous for the same reason as its mirror above, and here it is what
+    // makes the test mean anything at all: under a passive effect this would
+    // pass whenever the scroll had simply not happened YET, which is the state
+    // it is trying to distinguish from "declined to scroll". A layout effect has
+    // run by now, so reading 0 is evidence rather than a coin toss.
     await screen.findByText("second");
     expect(el.scrollTop).toBe(0);
   });

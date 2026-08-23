@@ -327,12 +327,18 @@ test("preview queue: every interleaving converges, one deploy per project at a t
     { numRuns: 100 },
   );
 
-  // Coverage floors — see `Reached`. Set well below measured actuals (noted
-  // alongside) because what a random walk reaches varies run to run: these
-  // exist to catch a generator that stopped reaching a state, not to pin a
-  // count. A sudden drop here is a broken generator, not a fixed bug.
-  expect(reached.buildErrors, "no deploy ever failed its build").toBeGreaterThan(10); // ~35
-  expect(reached.redelivered, "no job was ever redelivered").toBeGreaterThan(5); // ~40
+  // Coverage floors — see `Reached`. Set under the OBSERVED MINIMUM rather than
+  // at a fraction of the mean, because what a random walk reaches is correlated
+  // WITHIN a run and so has a long left tail: a floor derived from an average
+  // is a floor calibrated against the runs that never happen. These exist to
+  // catch a generator that stopped reaching a state, not to pin a count, so a
+  // sudden drop here is a broken generator rather than a fixed bug.
+  //
+  // The ranges are measured, with the run count, which is what makes the next
+  // recalibration sound — a single actual says nothing about the unluckiest
+  // run. Both used to carry one (`~35`, `~40`).
+  expect(reached.buildErrors, "no deploy ever failed its build").toBeGreaterThan(10); // 23-43 over 15
+  expect(reached.redelivered, "no job was ever redelivered").toBeGreaterThan(5); // 24-43 over 15
 }, 120_000);
 
 /**

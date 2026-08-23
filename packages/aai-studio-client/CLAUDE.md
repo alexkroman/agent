@@ -558,6 +558,20 @@ so every piece of per-project state resets on a switch with no effect to do it.
     of a smooth scroll and at any fractional device-pixel ratio, so a pane
     visually at the bottom would stop following). Scrolling up to read something
     is exactly when a forced scroll is worst.
+  - **The follow write is a `useLayoutEffect`, and it must stay one.** A passive
+    effect runs after paint, so the browser draws one frame with the new line in
+    place and the scroller still at its old offset — a jump on every line while
+    following, at whatever rate the agent logs. It is also what makes the two
+    follow specs sound: they read `scrollTop` synchronously once the line is in
+    the DOM, which is only evidence if the write cannot still be pending. Under
+    `useEffect` the positive one lost about one run in six on CI (`expected 900
+    to be 1000`) while passing every local run, so **a regression here surfaces
+    as an intermittent failure rather than a clean one** — if that test goes red
+    intermittently, the hook moved. Do not answer it with a `waitFor`: the wait
+    passes under either hook, which buries the flicker instead of reporting it.
+    This is the repo's only hand-rolled scroll write (`AutoScroll` delegates to
+    `use-stick-to-bottom`), so it is a comment rather than a `guard-invariants`
+    rule — a second one would change that.
   - **The footer says the log is not durable**, once, because it is not: the
     ring lives in the sandbox and goes when the sandbox does (see "Why the
     buffer lives in the guest" in `packages/aai-guest/CLAUDE.md`). A pane that
