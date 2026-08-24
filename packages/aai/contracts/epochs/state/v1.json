@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "state",
   "epoch": 1,
-  "sha256": "a82c82883281e9fa5809c391b3d03257478202b2ee56377b34e9c5d9cd11507c",
+  "sha256": "0e8d628effe1e118476fbaf87e0ebfdb2f124a38ea81f32be58b7184dba6f174",
   "exports": [
     "DeepReadonly",
     "SessionSlot",

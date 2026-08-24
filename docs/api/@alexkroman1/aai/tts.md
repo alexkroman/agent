@@ -14,13 +14,13 @@ session start, so importing this barrel pulls in no vendor SDK.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { CARTESIA_DEFAULT_VOICE, cartesia } from "@alexkroman1/aai/tts";
+import { CARTESIA_DEFAULT_VOICE, cartesiaTts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
   // `stt` and `llm` keep their AssemblyAI defaults.
-  tts: cartesia({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
+  tts: cartesiaTts({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
 });
 ```
 
@@ -105,10 +105,10 @@ reports ready and never speaks.
 
 ***
 
-### cartesia()
+### cartesiaTts()
 
 ```ts
-function cartesia(opts?: CartesiaOptions): TtsProvider;
+function cartesiaTts(opts?: CartesiaTtsOptions): TtsProvider;
 ```
 
 Build a Cartesia TTS descriptor for pipeline mode. The API key is resolved
@@ -118,7 +118,7 @@ host-side from the agent's env (`CARTESIA_API_KEY`).
 
 ##### opts?
 
-[`CartesiaOptions`](#cartesiaoptions)
+[`CartesiaTtsOptions`](#cartesiattsoptions)
 
 #### Returns
 
@@ -128,21 +128,21 @@ host-side from the agent's env (`CARTESIA_API_KEY`).
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { CARTESIA_DEFAULT_VOICE, cartesia } from "@alexkroman1/aai/tts";
+import { CARTESIA_DEFAULT_VOICE, cartesiaTts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  tts: cartesia({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
+  tts: cartesiaTts({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
 });
 ```
 
 ***
 
-### rime()
+### rimeTts()
 
 ```ts
-function rime(opts?: RimeOptions): TtsProvider;
+function rimeTts(opts?: RimeTtsOptions): TtsProvider;
 ```
 
 Build a Rime TTS descriptor for pipeline mode. The API key is resolved
@@ -152,7 +152,7 @@ host-side from the agent's env (`RIME_API_KEY`).
 
 ##### opts?
 
-[`RimeOptions`](#rimeoptions)
+[`RimeTtsOptions`](#rimettsoptions)
 
 #### Returns
 
@@ -162,18 +162,48 @@ host-side from the agent's env (`RIME_API_KEY`).
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { RIME_DEFAULT_VOICE, rime } from "@alexkroman1/aai/tts";
+import { RIME_DEFAULT_VOICE, rimeTts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  tts: rime({ voice: RIME_DEFAULT_VOICE, model: "mistv2" }),
+  tts: rimeTts({ voice: RIME_DEFAULT_VOICE, model: "mistv2" }),
 });
 ```
 
 ## Interfaces
 
 ### AssemblyAITtsOptions
+
+The credential override every provider descriptor accepts.
+
+Names an env VARIABLE holding this stage's key, replacing the provider
+default (`DEEPGRAM_API_KEY`, `ASSEMBLYAI_API_KEY`, …). It names a variable
+and never a key, so the descriptor stays secret-free and safe to serialize
+across the CLI → server → guest boundary. The variable must be present in
+the agent's env (`.env`, or `aai secret put`), like any other credential.
+
+#### Remarks
+
+**Every provider options interface extends this, because the host has always
+honoured the field on every provider.** `descriptorEnvVar()` in
+`@alexkroman1/aai-runtime` reads `apiKeyEnv` off any descriptor's options
+through an untyped cast, so all thirteen factories accepted it at runtime
+while only the four AssemblyAI options types could spell it — a shape that
+cost `aai:s2s` epoch 1, where the field was added to one stage and left off
+the rest.
+
+The argument for keeping it AssemblyAI-only was that AssemblyAI keys are
+environment-scoped, so a mixed staging/production pipeline needs two live at
+once, and no other vendor has that problem. True, and not the whole test: a
+type that cannot spell what the runtime accepts is wrong regardless of who
+needs it, and per-stage key separation is equally the answer for two accounts
+with one vendor, for per-tenant keys, and for a rotation that runs both keys
+briefly.
+
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
 
 #### Properties
 
@@ -183,15 +213,12 @@ export default agent({
 optional apiKeyEnv?: string;
 ```
 
-Env var holding this stage's credential, replacing the provider default
-(`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
-stays secret-free and safe to serialize.
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
 
-For running one stage against a different account or cluster than the
-others — AssemblyAI keys are environment-scoped, so a staging STT cluster
-rejects a production key and vice versa, and a mixed setup needs both keys
-live at once. The variable must be present in the agent's env (`.env` or
-`aai secret put`), like any other credential.
+###### Inherited from
+
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
 
 ##### host?
 
@@ -213,7 +240,7 @@ production.
 ##### language?
 
 ```ts
-optional language?: "en" | "it" | "es" | "de" | "pt" | "fr";
+optional language?: "en" | "fr" | "de" | "it" | "pt" | "es";
 ```
 
 Spoken language as an ISO 639-1 code (`"en"`, `"fr"`, `"de"`, `"es"`,
@@ -235,11 +262,64 @@ language — see [ASSEMBLYAI\_TTS\_VOICES](index.md#assemblyai_tts_voices) for t
 
 ***
 
-### CartesiaOptions
+### AssemblyAITtsVoiceInfo
 
-Options for [cartesia](#cartesia).
+What the catalog records about one voice: the language it speaks and the
+accent it speaks with.
+
+A named interface rather than an inferred `as const` shape, because the
+inferred one put every row into the rolled-up `.d.ts` — 16 voices as 64
+lines of `readonly language: "en"; readonly accent: "US"` — and so into the
+`aai:tts` contract hash. Re-accenting a voice is a catalog refresh, not an
+API change, and it was forcing an epoch classification.
+
+The IDS stay literal ([AssemblyAITtsVoiceId](#assemblyaittsvoiceid)), because those are the
+half an author types and the half autocomplete exists for; a voice arriving
+or leaving really is a change to what may be written. That is the split:
+which voices exist is contract, what each one sounds like is data.
 
 #### Properties
+
+##### accent
+
+```ts
+readonly accent: string;
+```
+
+Accent tag as the service publishes it, e.g. `"US"`, `"UK"`, `"FR"`.
+
+##### language
+
+```ts
+readonly language: "en" | "fr" | "de" | "it" | "pt" | "es";
+```
+
+ISO 639-1 code of the language this voice speaks.
+
+***
+
+### CartesiaTtsOptions
+
+Options for [cartesiaTts](#cartesiatts).
+
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
 
 ##### language?
 
@@ -267,11 +347,28 @@ Cartesia voice ID. Defaults to [CARTESIA\_DEFAULT\_VOICE](#cartesia_default_voic
 
 ***
 
-### RimeOptions
+### RimeTtsOptions
 
-Options for [rime](#rime).
+Options for [rimeTts](#rimetts).
+
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
 
 #### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
 
 ##### language?
 
@@ -310,6 +407,35 @@ type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 ```
 
 ISO 639-1 code for a language the AssemblyAI voice catalog speaks.
+
+***
+
+### AssemblyAITtsVoiceId
+
+```ts
+type AssemblyAITtsVoiceId = 
+  | "alba"
+  | "anna"
+  | "charles"
+  | "eve"
+  | "george"
+  | "jane"
+  | "jean"
+  | "mary"
+  | "michael"
+  | "paul"
+  | "vera"
+  | "giovanni"
+  | "lola"
+  | "juergen"
+  | "rafael"
+  | "estelle";
+```
+
+The voice ids this release's catalog carries.
+
+Spelled out rather than derived with `keyof typeof`, so that annotating the
+map below does not cost the literals — see [AssemblyAITtsVoiceInfo](#assemblyaittsvoiceinfo).
 
 ## Variables
 
@@ -400,8 +526,8 @@ readonly pt: "portuguese";
 const CARTESIA_DEFAULT_VOICE: "f786b574-daa5-4673-aa0c-cbe3e8534c02" = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 ```
 
-Default voice used when callers invoke `cartesia()` with no `voice`. This
-is the same voice the example templates ship with, so a bare `cartesia()`
+Default voice used when callers invoke `cartesiaTts()` with no `voice`. This
+is the same voice the example templates ship with, so a bare `cartesiaTts()`
 works out of the box for new agents.
 
 ***
@@ -412,9 +538,9 @@ works out of the box for new agents.
 const RIME_DEFAULT_VOICE: "cove" = "cove";
 ```
 
-Default Rime speaker used when callers invoke `rime()` with no `voice`.
+Default Rime speaker used when callers invoke `rimeTts()` with no `voice`.
 `cove` is a `mistv2` speaker, matching the default model below — so a
-bare `rime()` works out of the box for new agents.
+bare `rimeTts()` works out of the box for new agents.
 
 ## References
 
@@ -427,6 +553,12 @@ Re-exports [ASSEMBLYAI_TTS_VOICES](index.md#assemblyai_tts_voices)
 ### AssemblyAITtsVoice
 
 Re-exports [AssemblyAITtsVoice](index.md#assemblyaittsvoice)
+
+***
+
+### ProviderCredentialOptions
+
+Re-exports [ProviderCredentialOptions](index.md#providercredentialoptions)
 
 ***
 

@@ -104,9 +104,9 @@ the unset stages keep the AssemblyAI default:
 
 | Subpath | Factories |
 | --- | --- |
-| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgram`, `elevenLabsStt`, `soniox` |
-| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway` |
-| `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesia`, `rime` |
+| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt` |
+| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropicLlm`, `openaiLlm`, `googleLlm`, `mistralLlm`, `xaiLlm`, `groqLlm`, `openrouterLlm`, `gatewayLlm` |
+| `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesiaTts`, `rimeTts` |
 
 Factories return pure descriptors — serializable data, not SDK clients.
 Credentials are resolved server-side from the agent's env (each factory's
@@ -118,7 +118,7 @@ model.
 
 **S2S mode** is the explicit opt-in to a speech-to-speech service, where
 STT, the LLM loop, and TTS all run service-side over one socket:
-`s2s: assemblyAIS2s()` (root export) or `openaiRealtime()` from
+`s2s: assemblyAIS2s()` (root export) or `openaiS2s()` from
 `@alexkroman1/aai/s2s`.
 
 ## Testing an agent

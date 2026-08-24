@@ -303,7 +303,7 @@ Bytes per read. Defaults to [STEP\_FILE\_WINDOW\_BYTES](#step_file_window_bytes)
 ### STEP\_FILE\_WINDOW\_BYTES
 
 ```ts
-const STEP_FILE_WINDOW_BYTES: number;
+const STEP_FILE_WINDOW_BYTES: 8388608 = 8388608;
 ```
 
 Bytes moved per store round trip, in either direction.

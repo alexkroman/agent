@@ -132,7 +132,9 @@ export interface SessionSlotOptions<T, After = void> {
    * failure. Nothing is stored in that case either.
    *
    * **It runs INSIDE the mutation window, so it is synchronous too** — an
-   * `async` hook is a compile error naming the rule ({@link RejectThenable}).
+   * `async` hook is a compile error naming the rule — see `RejectThenable`,
+   * which is off the docs for the reason the `AgentParams` misuse types are:
+   * you meet it in what tsc prints, never by name.
    * The `After` parameter exists only to carry that check: it is inferred from
    * the hook and defaults to `void`, so a caller never writes it.
    */

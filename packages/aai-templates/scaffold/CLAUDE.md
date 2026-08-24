@@ -753,9 +753,9 @@ for the providers you actually use.
 | Factory         | Default model          | Env var              |
 | --------------- | ---------------------- | -------------------- |
 | `assemblyAIStt` | `"universal-3-5-pro"`  | `ASSEMBLYAI_API_KEY` |
-| `deepgramStt`      | `"nova-3"`             | `DEEPGRAM_API_KEY`   |
+| `deepgramStt`   | `"nova-3"`             | `DEEPGRAM_API_KEY`   |
 | `elevenLabsStt` | `"scribe_v2_realtime"` | `ELEVENLABS_API_KEY` |
-| `sonioxStt`        | `"stt-rt-v3"`          | `SONIOX_API_KEY`     |
+| `sonioxStt`     | `"stt-rt-v3"`          | `SONIOX_API_KEY`     |
 
 All STT factories accept `{ model?: string, ... }`. Bare calls
 (`deepgramStt()`, `sonioxStt()`, etc.) use the default model. Language is spelled
@@ -776,20 +776,20 @@ API keys require it; the US endpoints reject them. Example:
 
 | Factory         | SDK package         | Env var                        |
 | --------------- | ------------------- | ------------------------------ |
-| `anthropicLlm`     | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
-| `openaiLlm`        | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
-| `googleLlm`        | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| `mistralLlm`       | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
-| `xaiLlm`           | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
-| `groqLlm`          | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
-| `openrouterLlm`    | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
-| `gatewayLlm`       | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
+| `anthropicLlm`  | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
+| `openaiLlm`     | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
+| `googleLlm`     | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `mistralLlm`    | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
+| `xaiLlm`        | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
+| `groqLlm`       | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
+| `openrouterLlm` | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
+| `gatewayLlm`    | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
 | `assemblyAILlm` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
 
 LLM factories require `{ model: string }` — the `ModelOptions` interface,
 shared by all of them except `assemblyAILlm`. Example:
-`anthropicLlm({ model: "claude-haiku-4-5" })`. The argument is required because a
-third-party vendor's catalog is not this SDK's to default from;
+`anthropicLlm({ model: "claude-haiku-4-5" })`. The argument is required
+because a third-party vendor's catalog is not this SDK's to default from;
 `assemblyAILlm()` is the one bare call, since it has a default model.
 
 `openrouterLlm` routes through [OpenRouter](https://openrouter.ai) — an
@@ -840,8 +840,8 @@ export default agent({
 | Factory         | Default voice                            | Env var              |
 | --------------- | ---------------------------------------- | -------------------- |
 | `assemblyAITts` | `"jane"`                                 | `ASSEMBLYAI_API_KEY` |
-| `cartesiaTts`      | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
-| `rimeTts`          | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
+| `cartesiaTts`   | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
+| `rimeTts`       | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
 
 Bare calls (`assemblyAITts()`, `cartesiaTts()`, `rimeTts()`) use the defaults.
 Override with `{ voice, model, language }`.

@@ -710,6 +710,9 @@ export function buildSystemPrompt(config: AgentConfig, opts: {
 export function builtinFetch(env?: NodeJS.ProcessEnv): typeof globalThis.fetch;
 
 // @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
 export type BuiltinToolOptions = {
     fetch?: typeof globalThis.fetch;
     runCode?: RunCodeExecutor;
@@ -823,6 +826,23 @@ export function defaultProviders(config: ProviderFields): {
     llm?: LlmProvider;
     tts?: TtsProvider;
 } | null;
+
+// @public
+type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
 
 // @internal
 type DnsLookup = (hostname: string) => Promise<{
@@ -1483,6 +1503,24 @@ export type SttTurnMeta = {
     endOfTurnConfidence?: number;
 };
 
+// @public
+interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    instructions: string;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxSteps?: number;
+    name: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
@@ -1492,6 +1530,7 @@ type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
+    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;
@@ -1858,6 +1897,23 @@ type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 export type DefaultToolResult = any;
 
 // @public
+export type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+export interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+export interface DelegateResult {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     readonly key: string;
     readonly machine: M;
@@ -1988,6 +2044,9 @@ type InlineToolsField = "tools";
 type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
 
 // @public
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
+// @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
 
 // @public
@@ -2116,7 +2175,10 @@ type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
-type RejectThenable<R> = [R] extends [never] ? unknown : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : unknown;
+type RejectThenable<R> = IsAny<R> extends true ? unknown : [R] extends [never] ? unknown : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : unknown;
+
+// @public
+type RejectThenableResult<R> = IsAny<R> extends true ? R : [R] extends [never] ? R : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : R;
 
 // @public
 export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
@@ -2347,7 +2409,7 @@ export interface SessionSlot<K extends string, T> {
     reset(ctx: ToolContext): DeepReadonly<T>;
     set(ctx: ToolContext, value: T): DeepReadonly<T>;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
-    update<R>(ctx: ToolContext, mutate: ((draft: T) => R) & RejectThenable<R>): R;
+    update<R>(ctx: ToolContext, mutate: (draft: T) => R): RejectThenableResult<R>;
     updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R> & RejectThenable<R>): ToolDef<P, R>;
 }
 
@@ -2467,6 +2529,27 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
+export function subagent(def: SubagentDef): SubagentDef;
+
+// @public
+export interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    instructions: string;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxSteps?: number;
+    name: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+export interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
@@ -2500,6 +2583,7 @@ export type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
+    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;
@@ -3294,6 +3378,23 @@ type Db = {
 };
 
 // @public
+type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -3645,6 +3746,24 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    instructions: string;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxSteps?: number;
+    name: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
 // @public
@@ -3659,6 +3778,7 @@ type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
+    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;
@@ -4829,6 +4949,9 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
 
 // @public
@@ -4847,6 +4970,23 @@ export function createUnusedDb(): Db;
 type Db = {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
+
+// @public
+type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
 
 // @public
 interface DialogPosition {
@@ -5007,6 +5147,32 @@ type StreamOptions = {
 
 // @public
 export const STUB_SPEECH_PCM_BYTES = 12000;
+
+// @public
+export interface StubDelegate {
+    calls: StubDelegateCall[];
+    delegate: DelegateFn;
+}
+
+// @public
+export function stubDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubDelegate;
+
+// @public
+export interface StubDelegateCall {
+    options: DelegateOptions;
+    subagent: SubagentDef;
+    task: string;
+}
+
+// @public
+export type StubDelegateReply = string | {
+    text: string;
+    steps?: number;
+    toolCalls?: readonly SubagentToolCall[];
+};
+
+// @public
+export type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
 
 // @public
 export type StubEmitted = {
@@ -5191,6 +5357,24 @@ export type StubUploadWrite = {
 };
 
 // @public
+interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    instructions: string;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxSteps?: number;
+    name: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
 export type TestToolContext = ToolContext & {
     readonly sent: SentEvent[];
 };
@@ -5206,6 +5390,7 @@ type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
+    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;
@@ -7057,6 +7242,8 @@ export type WorkflowKeyStore = {
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai';
+import type { DelegateOptions } from '@alexkroman1/aai';
+import type { DelegateResult } from '@alexkroman1/aai';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { IncomingMessage } from 'node:http';
@@ -7072,6 +7259,7 @@ import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai/protocol';
 import { SessionEventBody } from '@alexkroman1/aai/protocol';
 import type { SlotStore } from '@alexkroman1/aai';
+import type { SubagentDef } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
 import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
 import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';
@@ -7154,6 +7342,7 @@ type ExecuteToolCallOptions = {
     db?: Db | undefined;
     messages?: readonly Message[] | undefined;
     generate?: HostGenerateFn | undefined;
+    subagents?: SubagentRunner | undefined;
     logger?: Logger | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
@@ -7318,6 +7507,9 @@ type StoredSessionEvent = {
     json: string;
 };
 
+// @internal
+type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: ToolCallDefaults) => Promise<DelegateResult>;
+
 // @public
 type SweepDeps = {
     createDb?: (url: string) => CloseableDb;
@@ -7330,6 +7522,9 @@ type SweepSkip =
 "another-pool-is-live"
 /** Presence is ours and there was nothing locked. The healthy case. */
 | "no-orphaned-locks";
+
+// @internal
+type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
 
 // @public
 type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;

@@ -31,7 +31,7 @@ export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { gateway } from "@alexkroman1/aai/llm";
+ * import { gatewayLlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",

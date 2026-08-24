@@ -13,12 +13,12 @@ a channel's credential is passed in where a provider's is not.
 **Post a run's result to Slack**
 
 ```ts
-import { slack } from "@alexkroman1/aai/channels";
+import { slackChannel } from "@alexkroman1/aai/channels";
 import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
 
 export async function postSummary(webhookUrl: string, points: string[]): Promise<string> {
   "use step";
-  return await sendToChannelClassified(slack({ webhookUrl }), {
+  return await sendToChannelClassified(slackChannel({ webhookUrl }), {
     text: `Weekly summary: ${points.length} items`,
     heading: "Weekly summary",
     sections: [{ title: "Highlights", bullets: points }],
@@ -40,7 +40,7 @@ so what was left to write is the render-and-classify half.
 
 ## What each piece is for
 
-- [slack](#slack) — declare a destination. [isSlackWebhookUrl](#isslackwebhookurl) guards
+- [slackChannel](#slackchannel-1) — declare a destination. [isSlackWebhookUrl](#isslackwebhookurl) guards
   the value where a PERSON supplies it, which is a security boundary and not
   only a typo check.
 - [sendToChannel](#sendtochannel) — post, and throw a [ChannelDeliveryError](#channeldeliveryerror)
@@ -174,6 +174,55 @@ A workflow trigger, which takes flat variables and not Block Kit.
 
 ***
 
+### registerChannelKind()
+
+```ts
+function registerChannelKind(kind: ChannelKind): void;
+```
+
+Register a channel kind, so `sendToChannel` can dispatch a descriptor
+carrying its tag.
+
+The SDK registers what it ships (Slack today). Call this for a destination
+it does not — an internal notifier, a platform with no adapter here — and
+the rest of the channel surface works unchanged: `slackChannel()` has no privileges
+a hand-written descriptor factory lacks.
+
+**Register before the first send, and remember a descriptor outlives the
+process.** A channel round-trips through a durable run's journal, so a run
+resumed in a fresh worker dispatches on a tag whose module that worker may
+never have imported. Register at module load in the agent's entry, not
+lazily beside the first call.
+
+Re-registering a kind REPLACES it, which is what makes a shipped channel
+overridable — and is why the tag is the identity rather than the value.
+
+#### Parameters
+
+##### kind
+
+[`ChannelKind`](#channelkind-1)
+
+#### Returns
+
+`void`
+
+***
+
+### registeredChannelKinds()
+
+```ts
+function registeredChannelKinds(): readonly string[];
+```
+
+The tags [sendToChannel](#sendtochannel) can dispatch, in registration order.
+
+#### Returns
+
+readonly `string`[]
+
+***
+
 ### renderChannelPayload()
 
 ```ts
@@ -296,12 +345,12 @@ on any non-2xx.
 #### Example
 
 ```ts
-import { sendToChannel, slack } from "@alexkroman1/aai/channels";
+import { sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
 import { throwStepError } from "@alexkroman1/aai/step-errors";
 
 export async function announce(webhookUrl: string): Promise<string> {
   "use step";
-  return await sendToChannel(slack({ webhookUrl }), { text: "Run finished." }).catch(
+  return await sendToChannel(slackChannel({ webhookUrl }), { text: "Run finished." }).catch(
     throwStepError,
   );
 }
@@ -309,10 +358,10 @@ export async function announce(webhookUrl: string): Promise<string> {
 
 ***
 
-### slack()
+### slackChannel()
 
 ```ts
-function slack(options: SlackChannelOptions): SlackChannel;
+function slackChannel(options: SlackChannelOptions): SlackChannel;
 ```
 
 Declare a Slack destination.
@@ -332,12 +381,12 @@ Declare a Slack destination.
 **Post a digest to Slack from a step**
 
 ```ts
-import { slack } from "@alexkroman1/aai/channels";
+import { slackChannel } from "@alexkroman1/aai/channels";
 import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
 
 export async function postDigest(webhookUrl: string, summary: string): Promise<string> {
   "use step";
-  return await sendToChannelClassified(slack({ webhookUrl }), {
+  return await sendToChannelClassified(slackChannel({ webhookUrl }), {
     text: `Daily digest: ${summary}`,
     heading: "Daily digest",
     sections: [{ body: summary }],
@@ -528,6 +577,81 @@ readonly options: Options;
 
 ***
 
+### ChannelKind
+
+Everything one channel kind supplies: how to turn a [ChannelMessage](#channelmessage)
+into the request body that platform takes, and what to say when the platform
+refuses one.
+
+A channel is defined as a VALUE of this shape, in the module that owns the
+platform, and `sendToChannel` reaches it through the registry. The generic
+send path therefore imports nothing vendor-specific and adding a channel
+touches no shared file — which is the whole reason this interface is public
+rather than an internal shape inside `send.ts`, where it started with Slack's
+option-narrowing spelled out beside the dispatch table.
+
+`render` and `advice` are handed the descriptor's RAW options, because a
+descriptor round-trips through a durable run's journal and arrives as
+whatever was written there. Narrowing them is the kind's own job and the
+reason it owns this function: a cast here would fail as `POST undefined`
+rather than naming the field that is missing.
+
+#### Properties
+
+##### advice
+
+```ts
+readonly advice: (options: Record<string, unknown>, detail: string) => string;
+```
+
+What to tell an author when the platform refuses a post.
+
+###### Parameters
+
+###### options
+
+`Record`\<`string`, `unknown`\>
+
+###### detail
+
+`string`
+
+###### Returns
+
+`string`
+
+##### kind
+
+```ts
+readonly kind: string;
+```
+
+The `kind` tag its descriptors carry, e.g. `"slack"`.
+
+##### render
+
+```ts
+readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
+```
+
+Turn a message into this platform's request.
+
+###### Parameters
+
+###### message
+
+[`ChannelMessage`](#channelmessage)
+
+###### options
+
+`Record`\<`string`, `unknown`\>
+
+###### Returns
+
+[`ChannelPayload`](#channelpayload)
+
+***
+
 ### ChannelMessage
 
 What gets posted, in terms no single platform owns.
@@ -668,7 +792,7 @@ Where `title` points.
 
 ### SlackChannelOptions
 
-What [slack](#slack) takes.
+What [slackChannel](#slackchannel-1) takes.
 
 **No credential is read from the environment**, and that is a deliberate
 difference from a provider descriptor. A webhook URL IS the credential —
@@ -742,7 +866,7 @@ type SlackChannel = Channel & {
 };
 ```
 
-A Slack channel descriptor, as returned by [slack](#slack).
+A Slack channel descriptor, as returned by [slackChannel](#slackchannel-1).
 
 #### Type Declaration
 
@@ -768,6 +892,22 @@ const CHANNEL_POST_TIMEOUT_MS: 30000 = 30000;
 
 A platform is not slow. A post that has not answered in 30s is not going to,
 and a step holding a socket open past that is a step nobody can cancel.
+
+***
+
+### SLACK\_CHANNEL
+
+```ts
+const SLACK_CHANNEL: ChannelKind;
+```
+
+Slack as a [ChannelKind](#channelkind-1) — what `sendToChannel` dispatches to for a
+`"slack"` descriptor.
+
+Exported so a host that assembles its own channel set can name it, and so
+this module is a complete unit: everything the send path needs to handle
+Slack is here, and `send.ts` imports this one value rather than four
+functions and an options type.
 
 ***
 

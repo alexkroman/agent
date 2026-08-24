@@ -84,6 +84,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "subagent": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "testing": {
     "current": 1,
     "supported": [1],

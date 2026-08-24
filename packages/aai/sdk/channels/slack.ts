@@ -53,7 +53,7 @@ const SLACK_HEADER_MAX = 150;
 const DEFAULT_TEXT_PARAM = "text";
 
 /**
- * What {@link slack} takes.
+ * What {@link slackChannel} takes.
  *
  * **No credential is read from the environment**, and that is a deliberate
  * difference from a provider descriptor. A webhook URL IS the credential —
@@ -81,7 +81,7 @@ export interface SlackChannelOptions {
   readonly textParam?: string;
 }
 
-/** A Slack channel descriptor, as returned by {@link slack}. */
+/** A Slack channel descriptor, as returned by {@link slackChannel}. */
 export type SlackChannel = Channel & {
   readonly kind: typeof SLACK_CHANNEL_KIND;
   readonly options: SlackChannelOptions & Record<string, unknown>;

@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "tool",
   "epoch": 1,
-  "sha256": "c5857e8efb100ce82723915f09870bfeb170007f5e1c3bc381091ea74023689b",
+  "sha256": "11b35dedf6249908100e03939f5e56367d09fb252d8729daa144f6dc55ab66c7",
   "exports": [
     "DefaultToolResult",
     "InferSchemaOutput",

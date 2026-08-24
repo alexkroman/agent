@@ -154,12 +154,18 @@ export const STATE_RULES = [
       "`/testing`'s — moving the name to another capability does not change\n" +
       "that, because API Extractor rolls up FORGOTTEN exports (`Db` is in\n" +
       "`etc/testing.api.md` today under a bare `type Db = {`).\n\n" +
-      "So a new capability is a DESIGN decision, not a field: give it its own\n" +
-      "capability root under `contracts/entrypoints/`, and reach it through an\n" +
-      "existing field rather than a new one. This is the same rule as 16 for\n" +
-      "session callbacks, one layer up.\n\n" +
-      "The nine baselined occurrences are the fields that exist. Lowering the\n" +
-      "budget means one came OUT, which is the direction this moves.",
+      "So the bar is high, and it is a DESIGN decision rather than a field. A\n" +
+      "field here is a capability the runtime must supply on every tool call, on\n" +
+      "every host and in every test double — a promise, not a convenience. It\n" +
+      "earns one only if it is per-CALL and cannot be reached any other way:\n" +
+      "anything an author can get from a value they already hold belongs in that\n" +
+      "value's own module, with its own capability root under\n" +
+      "`contracts/entrypoints/`. This is rule 16 for session callbacks, one\n" +
+      "layer up, and rule 25 for the channel message shape is its sibling.\n\n" +
+      "Raising the budget is allowed and is meant to cost something: write the\n" +
+      "argument in the field's own doc, the way `delegate` does — the tenth, and\n" +
+      "the one that moved this from nine. Lowering it means a capability came\n" +
+      "OUT, which is the direction this moves.",
   },
   {
     id: 25,

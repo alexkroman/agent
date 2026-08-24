@@ -128,6 +128,23 @@ type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 export type DefaultToolResult = any;
 
 // @public
+export type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+export interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+export interface DelegateResult {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     readonly key: string;
     readonly machine: M;
@@ -258,6 +275,9 @@ type InlineToolsField = "tools";
 type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
 
 // @public
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
+// @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
 
 // @public
@@ -386,7 +406,10 @@ type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
-type RejectThenable<R> = [R] extends [never] ? unknown : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : unknown;
+type RejectThenable<R> = IsAny<R> extends true ? unknown : [R] extends [never] ? unknown : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : unknown;
+
+// @public
+type RejectThenableResult<R> = IsAny<R> extends true ? R : [R] extends [never] ? R : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : R;
 
 // @public
 export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
@@ -617,7 +640,7 @@ export interface SessionSlot<K extends string, T> {
     reset(ctx: ToolContext): DeepReadonly<T>;
     set(ctx: ToolContext, value: T): DeepReadonly<T>;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
-    update<R>(ctx: ToolContext, mutate: ((draft: T) => R) & RejectThenable<R>): R;
+    update<R>(ctx: ToolContext, mutate: (draft: T) => R): RejectThenableResult<R>;
     updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R> & RejectThenable<R>): ToolDef<P, R>;
 }
 
@@ -737,6 +760,27 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
+export function subagent(def: SubagentDef): SubagentDef;
+
+// @public
+export interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    instructions: string;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxSteps?: number;
+    name: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+export interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
@@ -770,6 +814,7 @@ export type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
+    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;

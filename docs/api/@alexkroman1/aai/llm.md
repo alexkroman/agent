@@ -14,18 +14,18 @@ eager env reads and other load-time side effects.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { anthropic } from "@alexkroman1/aai/llm";
+import { anthropicLlm } from "@alexkroman1/aai/llm";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
   // `stt` and `tts` keep their AssemblyAI defaults.
-  llm: anthropic({ model: "claude-sonnet-5" }),
+  llm: anthropicLlm({ model: "claude-sonnet-5" }),
 });
 ```
 
 `agent({ llm })` also takes a bare gateway model id — `llm: "zai/glm-4.6"` —
-which is the shorthand for [gateway](#gateway). Every other stage needs a
+which is the shorthand for [gatewayLlm](#gatewayllm). Every other stage needs a
 factory.
 
 **Credentials are never passed here.** Each factory's vendor names the env
@@ -42,7 +42,7 @@ default from. Only [assemblyAILlm](#assemblyaillm) has a default
 ([ASSEMBLYAI\_LLM\_DEFAULT\_MODEL](#assemblyai_llm_default_model)) and so a bare call.
 
 Two vendors here are AGGREGATORS rather than model owners, addressed as
-`"creator/model"`: [openrouter](#openrouter) and [gateway](#gateway). A third,
+`"creator/model"`: [openrouterLlm](#openrouterllm) and [gatewayLlm](#gatewayllm). A third,
 [assemblyAILlm](#assemblyaillm), fronts AssemblyAI's own gateway — its ids are
 [AssemblyAIGatewayModel](#assemblyaigatewaymodel), and the CATALOG behind that union (which
 model streams, calls tools, serves the EU) is on
@@ -60,37 +60,21 @@ one interface with four reference pages was three too many.
 
 ## Functions
 
-### anthropic()
+### anthropicLlm()
 
 ```ts
-function anthropic(opts: ModelOptions): LlmProvider;
+function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
 ```
-
-Build an Anthropic (Claude) LLM descriptor for pipeline mode. The API key
-is resolved host-side from the agent's env (`ANTHROPIC_API_KEY`).
 
 #### Parameters
 
 ##### opts
 
-[`ModelOptions`](#modeloptions)
+[`AnthropicLlmOptions`](#anthropicllmoptions)
 
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { anthropic } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
-  llm: anthropic({ model: "claude-sonnet-5" }),
-});
-```
 
 ***
 
@@ -139,259 +123,144 @@ gateway; [AssemblyAIGatewayModel](#assemblyaigatewaymodel) is the id set.
 
 ***
 
-### gateway()
+### gatewayLlm()
 
 ```ts
-function gateway(opts: ModelOptions): LlmProvider;
+function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
 ```
-
-Build a Vercel AI Gateway descriptor.
-
-The API key is resolved host-side from the agent's env
-(`AI_GATEWAY_API_KEY`); there is no factory-time key parameter, so the
-descriptor stays free of secrets and safe to serialize.
 
 #### Parameters
 
 ##### opts
 
-[`ModelOptions`](#modeloptions)
+[`GatewayLlmOptions`](#gatewayllmoptions)
 
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { gateway } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
-  llm: gateway({ model: "zai/glm-4.6" }),
-});
-```
-
-One key, hundreds of models, addressed `"creator/model"`. See
-https://vercel.com/ai-gateway/models for the list.
 
 ***
 
-### google()
+### googleLlm()
 
 ```ts
-function google(opts: ModelOptions): LlmProvider;
+function googleLlm(opts: GoogleLlmOptions): LlmProvider;
 ```
-
-Build a Google (Gemini) LLM descriptor for pipeline mode. The API key is
-resolved host-side from the agent's env (`GOOGLE_GENERATIVE_AI_API_KEY`).
 
 #### Parameters
 
 ##### opts
 
-[`ModelOptions`](#modeloptions)
+[`GoogleLlmOptions`](#googlellmoptions)
 
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { google } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
-  llm: google({ model: "gemini-2.5-flash" }),
-});
-```
 
 ***
 
-### groq()
+### groqLlm()
 
 ```ts
-function groq(opts: ModelOptions): LlmProvider;
+function groqLlm(opts: GroqLlmOptions): LlmProvider;
 ```
-
-Build a Groq LLM descriptor for pipeline mode. The API key is resolved
-host-side from the agent's env (`GROQ_API_KEY`).
 
 #### Parameters
 
 ##### opts
 
-[`ModelOptions`](#modeloptions)
+[`GroqLlmOptions`](#groqllmoptions)
 
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { groq } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
-  llm: groq({ model: "llama-3.3-70b-versatile" }),
-});
-```
 
 ***
 
-### mistral()
+### mistralLlm()
 
 ```ts
-function mistral(opts: ModelOptions): LlmProvider;
+function mistralLlm(opts: MistralLlmOptions): LlmProvider;
 ```
-
-Build a Mistral LLM descriptor for pipeline mode. The API key is resolved
-host-side from the agent's env (`MISTRAL_API_KEY`).
 
 #### Parameters
 
 ##### opts
 
-[`ModelOptions`](#modeloptions)
+[`MistralLlmOptions`](#mistralllmoptions)
 
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { mistral } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
-  llm: mistral({ model: "mistral-large-latest" }),
-});
-```
 
 ***
 
-### openai()
+### openaiLlm()
 
 ```ts
-function openai(opts: ModelOptions): LlmProvider;
+function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
 ```
-
-Build an OpenAI LLM descriptor for pipeline mode. The API key is resolved
-host-side from the agent's env (`OPENAI_API_KEY`).
 
 #### Parameters
 
 ##### opts
 
-[`ModelOptions`](#modeloptions)
+[`OpenAILlmOptions`](#openaillmoptions)
 
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { openai } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
-  llm: openai({ model: "gpt-5.5" }),
-});
-```
 
 ***
 
-### openrouter()
+### openrouterLlm()
 
 ```ts
-function openrouter(opts: ModelOptions): LlmProvider;
+function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
 ```
-
-Build an OpenRouter descriptor.
-
-The API key is resolved host-side from the agent's env
-(`OPENROUTER_API_KEY`); there is no factory-time key parameter, so the
-descriptor stays free of secrets and safe to serialize.
 
 #### Parameters
 
 ##### opts
 
-[`ModelOptions`](#modeloptions)
+[`OpenRouterLlmOptions`](#openrouterllmoptions)
 
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { openrouter } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
-  llm: openrouter({ model: "meta-llama/llama-3.3-70b-instruct" }),
-});
-```
-
-One key, hundreds of models, addressed `"creator/model"`. See
-https://openrouter.ai/models for the list.
 
 ***
 
-### xai()
+### xaiLlm()
 
 ```ts
-function xai(opts: ModelOptions): LlmProvider;
+function xaiLlm(opts: XaiLlmOptions): LlmProvider;
 ```
-
-Build an xAI (Grok) LLM descriptor for pipeline mode. The API key is
-resolved host-side from the agent's env (`XAI_API_KEY`).
 
 #### Parameters
 
 ##### opts
 
-[`ModelOptions`](#modeloptions)
+[`XaiLlmOptions`](#xaillmoptions)
 
 #### Returns
 
 [`LlmProvider`](index.md#llmprovider)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { xai } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
-  llm: xai({ model: "grok-4" }),
-});
-```
 
 ## Interfaces
 
-### AssemblyAILlmOptions
+### AnthropicLlmOptions
 
-Options for [assemblyAILlm](#assemblyaillm).
+Options for [anthropicLlm](#anthropicllm).
+
+Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
+one model id, and every vendor still gets a NAME for its own options so its
+first vendor-specific setting is an additive field here rather than a re-split
+of the shared interface across eight call sites.
+
+#### Extends
+
+- [`ModelOptions`](#modeloptions)
 
 #### Properties
 
@@ -401,15 +270,55 @@ Options for [assemblyAILlm](#assemblyaillm).
 optional apiKeyEnv?: string;
 ```
 
-Env var holding this stage's credential, replacing the provider default
-(`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
-stays secret-free and safe to serialize.
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
 
-For running one stage against a different account or cluster than the
-others — AssemblyAI keys are environment-scoped, so a staging STT cluster
-rejects a production key and vice versa, and a mixed setup needs both keys
-live at once. The variable must be present in the agent's env (`.env` or
-`aai secret put`), like any other credential.
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+
+##### model
+
+```ts
+model: string;
+```
+
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
+
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`model`](#model-6)
+
+***
+
+### AssemblyAILlmOptions
+
+Options for [assemblyAILlm](#assemblyaillm).
+
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
 
 ##### gatewayUrl?
 
@@ -493,11 +402,33 @@ generated catalog. Defaults to `"us"`.
 
 ***
 
-### ModelOptions
+### GatewayLlmOptions
 
-Options for an LLM factory whose only setting is which model to run.
+Options for [gatewayLlm](#gatewayllm).
+
+Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
+one model id, and every vendor still gets a NAME for its own options so its
+first vendor-specific setting is an additive field here rather than a re-split
+of the shared interface across eight call sites.
+
+#### Extends
+
+- [`ModelOptions`](#modeloptions)
 
 #### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
 
 ##### model
 
@@ -506,12 +437,354 @@ model: string;
 ```
 
 The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
-`"gemini-2.5-flash"`. The two aggregator factories (`openrouter`,
-`gateway`) address a model as `"creator/model"`; each module's doc names
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
 the shape it takes.
 
 Required: a third-party vendor's catalog is not this SDK's to default
 from, and an id invented on its behalf fails at the first session.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`model`](#model-6)
+
+***
+
+### GoogleLlmOptions
+
+Options for [googleLlm](#googlellm).
+
+Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
+one model id, and every vendor still gets a NAME for its own options so its
+first vendor-specific setting is an additive field here rather than a re-split
+of the shared interface across eight call sites.
+
+#### Extends
+
+- [`ModelOptions`](#modeloptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+
+##### model
+
+```ts
+model: string;
+```
+
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
+
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`model`](#model-6)
+
+***
+
+### GroqLlmOptions
+
+Options for [groqLlm](#groqllm).
+
+Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
+one model id, and every vendor still gets a NAME for its own options so its
+first vendor-specific setting is an additive field here rather than a re-split
+of the shared interface across eight call sites.
+
+#### Extends
+
+- [`ModelOptions`](#modeloptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+
+##### model
+
+```ts
+model: string;
+```
+
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
+
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`model`](#model-6)
+
+***
+
+### MistralLlmOptions
+
+Options for [mistralLlm](#mistralllm).
+
+Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
+one model id, and every vendor still gets a NAME for its own options so its
+first vendor-specific setting is an additive field here rather than a re-split
+of the shared interface across eight call sites.
+
+#### Extends
+
+- [`ModelOptions`](#modeloptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+
+##### model
+
+```ts
+model: string;
+```
+
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
+
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`model`](#model-6)
+
+***
+
+### ModelOptions
+
+Options for an LLM factory whose only setting is which model to run.
+
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
+
+#### Extended by
+
+- [`AnthropicLlmOptions`](#anthropicllmoptions)
+- [`GatewayLlmOptions`](#gatewayllmoptions)
+- [`GoogleLlmOptions`](#googlellmoptions)
+- [`GroqLlmOptions`](#groqllmoptions)
+- [`MistralLlmOptions`](#mistralllmoptions)
+- [`OpenAILlmOptions`](#openaillmoptions)
+- [`OpenRouterLlmOptions`](#openrouterllmoptions)
+- [`XaiLlmOptions`](#xaillmoptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
+
+##### model
+
+```ts
+model: string;
+```
+
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
+
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
+
+***
+
+### OpenAILlmOptions
+
+Options for [openaiLlm](#openaillm).
+
+Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
+one model id, and every vendor still gets a NAME for its own options so its
+first vendor-specific setting is an additive field here rather than a re-split
+of the shared interface across eight call sites.
+
+#### Extends
+
+- [`ModelOptions`](#modeloptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+
+##### model
+
+```ts
+model: string;
+```
+
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
+
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`model`](#model-6)
+
+***
+
+### OpenRouterLlmOptions
+
+Options for [openrouterLlm](#openrouterllm).
+
+Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
+one model id, and every vendor still gets a NAME for its own options so its
+first vendor-specific setting is an additive field here rather than a re-split
+of the shared interface across eight call sites.
+
+#### Extends
+
+- [`ModelOptions`](#modeloptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+
+##### model
+
+```ts
+model: string;
+```
+
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
+
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`model`](#model-6)
+
+***
+
+### XaiLlmOptions
+
+Options for [xaiLlm](#xaillm).
+
+Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
+one model id, and every vendor still gets a NAME for its own options so its
+first vendor-specific setting is an additive field here rather than a re-split
+of the shared interface across eight call sites.
+
+#### Extends
+
+- [`ModelOptions`](#modeloptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+
+##### model
+
+```ts
+model: string;
+```
+
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
+
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`model`](#model-6)
 
 ## Type Aliases
 
@@ -630,3 +903,9 @@ OpenRouter's OpenAI-compatible API endpoint.
 ### LlmProvider
 
 Re-exports [LlmProvider](index.md#llmprovider)
+
+***
+
+### ProviderCredentialOptions
+
+Re-exports [ProviderCredentialOptions](index.md#providercredentialoptions)

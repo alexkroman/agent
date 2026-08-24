@@ -37,7 +37,7 @@
  *
  * ## What each piece is for
  *
- * - {@link slack} — declare a destination. {@link isSlackWebhookUrl} guards
+ * - {@link slackChannel} — declare a destination. {@link isSlackWebhookUrl} guards
  *   the value where a PERSON supplies it, which is a security boundary and not
  *   only a typo check.
  * - {@link sendToChannel} — post, and throw a {@link ChannelDeliveryError}

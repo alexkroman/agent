@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "agent",
   "epoch": 1,
-  "sha256": "7e18652c01b7548187d8c1a6861965f4667984937be1f557b45e9747d8e94834",
+  "sha256": "f481c9316609b3c0eedf85e436d358038645672ea84aca906a4d1da269570e96",
   "exports": [
     "AgentDef",
     "AgentParams",

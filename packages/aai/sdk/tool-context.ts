@@ -96,6 +96,21 @@ export type ToolContext = {
    * rejects naming the reason. One level is a bill a caller can quote; a
    * subagent that may delegate can delegate to itself, and nothing at this
    * seam can see the recursion.
+   *
+   * @remarks
+   * The TENTH field on this type, and the one that raised `guard-invariants`
+   * rule 24 from nine. Recorded here because that is where a baselined
+   * occurrence's reason belongs: a field on this type is a capability the
+   * runtime must supply on EVERY tool call, on every host, in every test
+   * double — so it is a promise, not a convenience, and the rule exists to make
+   * adding one an argued decision rather than a diff nobody reads.
+   *
+   * The argument for this one is that it passes the test the rule sets: it is
+   * per-CALL and it cannot be reached any other way. A tool body cannot build a
+   * subagent runner itself — resolving the model, the builtins, the step budget
+   * and the nesting refusal are all the host's, exactly as they are for
+   * `generate`. Anything reachable from a value the author already holds is not
+   * this, and belongs in that value's own module.
    */
   delegate: DelegateFn;
   /** Read-only snapshot of conversation messages so far. */
