@@ -387,6 +387,7 @@ describe("API-EXPORTS.json", () => {
     // caller passes is an `import.meta.glob` result, not something to name.
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("ToolModules");
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
+      "ProjectFiles",
       "RunSnapshotOverrides",
       "STUB_SPEECH_PCM_BYTES",
       "SentEvent",
@@ -398,6 +399,7 @@ describe("API-EXPORTS.json", () => {
       "StubGateway",
       "StubGatewayCall",
       "StubGatewayOptions",
+      "StubGatewayRoute",
       "StubGenerate",
       "StubGenerateCall",
       "StubGenerateReply",
@@ -427,6 +429,7 @@ describe("API-EXPORTS.json", () => {
       "createStubWorkflows",
       "createToolContext",
       "createUnusedDb",
+      "deployedAgent",
       "ok",
       "okPosition",
       "parseSchemaInput",
@@ -435,6 +438,7 @@ describe("API-EXPORTS.json", () => {
       "schemaInputIssues",
       "stubDelegate",
       "stubGateway",
+      "stubGatewayRoute",
       "stubGenerate",
       "stubReporter",
       "stubSpeech",

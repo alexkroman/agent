@@ -20,8 +20,9 @@ order, roughly by what a spec reaches for first:
   its defaults are built from.
 - `testing-tools.ts` — `toolOf` / `runTool` / `toolRunner`, the tool under the
   name the model calls it by, the last of those being `runTool` with the agent
-  bound; `testing-discovery.ts` — `withDiscoveredTools`, which is what
-  puts the tools on an `agent.ts` default export in the first place.
+  bound; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
+  own FILES (`tools/`, `system-prompt.md`) onto its `agent.ts` default export
+  the way the build does, and `withDiscoveredTools`, the tools half alone.
 - `_testing-tool-results.ts` — `ok` / `okPosition`, unwrapping what a gated
   tool answered; `_testing-schema.ts` — what a tool's or workflow's input
   schema accepts, without reaching through `~standard`.
@@ -233,6 +234,75 @@ sentence instead of a `TypeError` on `undefined`.
 #### Returns
 
 [`Db`](index.md#db)
+
+***
+
+### deployedAgent()
+
+```ts
+function deployedAgent<D>(authored: D, project: ProjectFiles): D;
+```
+
+The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
+`tools/` directory declares, plus what its `system-prompt.md` says.
+
+**This is one call because forgetting HALF of it is the failure it exists to
+prevent, and that failure is silent.** Neither lowering is applied by
+`agent()` — both are applied by the BUILD (`aai build` enumerates `tools/`
+and resolves the prompt file) — so a spec or an eval driving the raw default
+export measures an agent with NO TOOLS and the FRAMEWORK-DEFAULT system
+prompt. Nothing fails: the model answers plausibly out of its own knowledge,
+every case that asserts a sentence still passes, and the suite reports green
+on a different agent than the one anybody deploys. It produced four bogus
+green eval results in one day, and the two nested wrappers it replaces —
+`withSystemPrompt(withDiscoveredTools(authored, glob), prompt)`, written out
+in seventeen template evals — are exactly the shape where one of the two goes
+missing under an edit.
+
+**An EMPTY `tools` glob throws.** That is the same bug wearing its other
+face: `import.meta.glob("./tool/*.ts")` (or a `tools/` directory that moved)
+matches nothing, and lowering nothing onto the def is indistinguishable from
+not lowering at all. A project with no tools omits the field instead, which
+is a statement rather than an accident.
+
+```ts no-check
+// `no-check`: import.meta.glob is a Vite transform, so it only type-checks in
+// a project whose tsconfig has vite/client types — i.e. yours, not here.
+import { deployedAgent } from "@alexkroman1/aai/testing";
+import authored from "./agent.ts";
+import systemPrompt from "./system-prompt.md?raw";
+
+const agentDef = deployedAgent(authored, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+  systemPrompt,
+});
+```
+
+Every rule the build applies applies here too, and each is an error naming
+the file: the tool-name grammar, the default-export requirement, no nested
+files, a name declared twice, an empty prompt file, and a
+`system-prompt.md` that exists while `agent.ts` declares a DIFFERENT prompt —
+the "I edited the prompt and nothing changed" failure.
+
+#### Type Parameters
+
+##### D
+
+`D` *extends* [`AgentDef`](index.md#agentdef)
+
+#### Parameters
+
+##### authored
+
+`D`
+
+##### project
+
+[`ProjectFiles`](#projectfiles)
+
+#### Returns
+
+`D`
 
 ***
 
@@ -691,6 +761,69 @@ test("summarize sends the article and returns the headline", async () => {
   expect(gateway.calls[0]?.prompt).toContain("Otters use tools.");
 });
 ```
+
+***
+
+### stubGatewayRoute()
+
+```ts
+function stubGatewayRoute(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayRoute;
+```
+
+A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot
+rather than the global `fetch`.
+
+[stubGateway](#stubgateway-1) answers over `globalThis.fetch`, which is the wrong seam
+whenever anything has published a `stepFetch`: publishing REPLACES, so a flow
+that transcribes AND calls a model — or fetches a page and calls a model — can
+install only one fake and has to route by URL inside it. Seven eval files did
+exactly that, and each hand-typed the same two things:
+
+1. **The envelope.** `{ body: { choices: [{ message: { content } }] } }`,
+   written out six times in six spellings. It is a WIRE shape, so a typo in
+   it does not fail — `stepGenerate` reads no content and reports an empty
+   completion, i.e. the fake and the code under test disagree and the case
+   blames the code.
+2. **The cursor.** `contents.at(Math.min(next, contents.length - 1))`,
+   re-derived twice, because a model call inside a LOOP cannot know how many
+   calls it will make: a script that repeats one line can only drive the loop
+   into its budget, and one that runs out mid-loop fails on the script. The
+   last reply repeats, which is [stubGateway](#stubgateway-1)'s convention and now
+   literally the same code.
+
+And it hands back DECODED calls — `prompt`, `system`, `body`, `headers` — which
+is the half no hand-rolled version had. Reading what the model was ASKED off a
+`StubStepRequest` means `String(call.body)`, i.e. the raw JSON of the whole
+request; one eval asserted its prompts that way and was really asserting
+against the serialized `model` and `temperature` too.
+
+```ts no-check
+// `no-check`: the step under test is in another file, which is the point.
+import { stubGatewayRoute } from "@alexkroman1/aai/testing";
+import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+
+const model = stubGatewayRoute(['{"verdict":"ship"}']);
+installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
+// … run the workflow …
+expect(model.calls[0]?.prompt).toContain("the brief");
+```
+
+#### Parameters
+
+##### replies
+
+`string` \| readonly `string`[]
+
+Completion contents, in order; the last repeats. A bare
+  string is one reply.
+
+##### opts?
+
+[`StubGatewayOptions`](#stubgatewayoptions)
+
+#### Returns
+
+[`StubGatewayRoute`](#stubgatewayroute)
 
 ***
 
@@ -1394,6 +1527,43 @@ quotes back in its `StepGenerateError`.
 
 ***
 
+### StubGatewayRoute
+
+A gateway answer for a `stepFetch`-published slot, plus what it was asked.
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubGatewayCall[];
+```
+
+Every completion request this route answered, DECODED, in call order.
+
+##### route
+
+```ts
+route: (request: StubStepRequest) => StubStepAnswer | undefined;
+```
+
+Answers a completion request and `undefined` for anything else, so the
+caller composes it: `?? { body: html }` for a flow that also fetches a
+page, `?? someThrow()` for one where an unexpected request is a finding, or
+straight into `stubTranscribe`'s `otherwise`.
+
+###### Parameters
+
+###### request
+
+[`StubStepRequest`](#stubsteprequest)
+
+###### Returns
+
+[`StubStepAnswer`](#stubstepanswer) \| `undefined`
+
+***
+
 ### StubGenerate
 
 A fake `ctx.generate`: the function to pass, and what it was asked.
@@ -1449,6 +1619,51 @@ system: string | undefined;
 The system instruction, or `undefined` when the call carried none.
 
 ## Type Aliases
+
+### ProjectFiles
+
+```ts
+type ProjectFiles = {
+  systemPrompt?: string;
+  tools?: ToolModules;
+};
+```
+
+What the BUILD lowers onto an `agent.ts` default export — the files beside it
+that a deployed agent runs with and a spec has to apply itself.
+
+Both fields are optional and at least one must be present: an empty object is
+a call that does nothing, which is the shape of a forgotten argument rather
+than of a project with no files.
+
+#### Properties
+
+##### systemPrompt?
+
+```ts
+readonly optional systemPrompt?: string;
+```
+
+`import prompt from "./system-prompt.md?raw"`.
+
+Omit it for a project with no `system-prompt.md`. Pass it even when
+`agent.ts` imports the file itself and composes it — that case is
+recognised and the def is left exactly as the author built it, so a spec
+never has to know which of the two its own template does.
+
+##### tools?
+
+```ts
+readonly optional tools?: ToolModules;
+```
+
+`import.meta.glob("./tools/*.ts", { eager: true })`, written at the CALL
+SITE — see the module doc for why it cannot be a directory string.
+
+Omit it for a project with no `tools/` directory. Passing an EMPTY glob is
+an error, not a no-op: see [deployedAgent](#deployedagent).
+
+***
 
 ### RunSnapshotOverrides
 

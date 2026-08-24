@@ -3834,7 +3834,7 @@ type WakeUpOptions = {
 };
 
 // @internal
-export function withSystemPrompt(def: AgentDef, prompt: string): AgentDef;
+export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
 
 // @public
 export function withTools<D extends {
@@ -4942,6 +4942,33 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 ## `@alexkroman1/aai/testing`
 
 ```ts
+import { z } from 'zod';
+
+// @public
+interface AgentDef extends PipelineVoiceTuning {
+    builtinTools?: readonly BuiltinTool[];
+    events?: SessionEventHandlers;
+    greeting: string;
+    idleTimeoutMs?: number;
+    llm?: LlmProvider;
+    maxSteps: number;
+    name: string;
+    page?: "voice" | "static";
+    requiredEnv?: readonly string[];
+    s2s?: S2sProvider;
+    silencePrompt?: string;
+    silenceTimeoutMs?: number;
+    stt?: SttProvider;
+    sttPrompt?: string;
+    syncState?: StateProjection | readonly StateProjection[];
+    systemPrompt: string;
+    text?: true;
+    toolChoice?: ToolChoice;
+    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+    tts?: TtsProvider;
+    workflows?: Readonly<Record<string, WorkflowDef>>;
+}
+
 // @public
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
@@ -4989,6 +5016,9 @@ interface DelegateResult {
     text: string;
     toolCalls: readonly SubagentToolCall[];
 }
+
+// @public
+export function deployedAgent<D extends AgentDef>(authored: D, project: ProjectFiles): D;
 
 // @public
 interface DialogPosition {
@@ -5064,6 +5094,23 @@ export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSc
 export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
 
 // @public
+interface PipelineVoiceTuning {
+    deadAirCoverMs?: number;
+    errorPhrase?: string;
+    interruptionMinDurationMs?: number;
+    minBargeInWords?: number;
+    preemptiveGeneration?: boolean;
+    resumeFalseInterruption?: boolean;
+    startFailurePhrase?: string;
+}
+
+// @public
+export type ProjectFiles = {
+    readonly tools?: ToolModules;
+    readonly systemPrompt?: string;
+};
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -5088,6 +5135,11 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
 
 // @public
+type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "s2s";
+};
+
+// @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
@@ -5097,6 +5149,189 @@ export interface SentEvent {
     // (undocumented)
     event: string;
 }
+
+// @public
+type SessionEvent = z.infer<typeof SessionEventSchema>;
+
+// @public
+type SessionEventContext = {
+    sessionId: string;
+    env: Readonly<Record<string, string>>;
+    db: Db;
+};
+
+// @public
+type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
+
+// @public
+type SessionEventHandlers = {
+    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
+        type: K;
+    }>>;
+} & {
+    "*"?: SessionEventHandler;
+};
+
+// @public (undocumented)
+const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"session.configured">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    audioFormat: z.ZodString;
+    sampleRate: z.ZodNumber;
+    ttsSampleRate: z.ZodNumber;
+    sessionId: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"audio.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"speech.started">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"speech.stopped">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+    eotConfidence: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool.called">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    toolCallId: z.ZodString;
+    toolName: z.ZodString;
+    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    toolCallId: z.ZodString;
+    result: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reply.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reply.cancelled">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session.reset">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session.timed-out">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"error.reported">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    code: z.ZodEnum<{
+        audio: "audio";
+        connection: "connection";
+        internal: "internal";
+        llm: "llm";
+        protocol: "protocol";
+        stt: "stt";
+        tool: "tool";
+        tts: "tts";
+    }>;
+    message: z.ZodString;
+    fatal: z.ZodOptional<z.ZodBoolean>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"custom.emitted">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    event: z.ZodString;
+    data: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"state.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    state: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"history.restored">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    messages: z.ZodArray<z.ZodObject<{
+        role: z.ZodEnum<{
+            assistant: "assistant";
+            user: "user";
+        }>;
+        content: z.ZodString;
+    }, z.core.$strip>>;
+    toolCalls: z.ZodArray<z.ZodObject<{
+        callId: z.ZodString;
+        name: z.ZodString;
+        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+        status: z.ZodEnum<{
+            done: "done";
+            pending: "pending";
+        }>;
+        result: z.ZodOptional<z.ZodString>;
+        afterMessageIndex: z.ZodNumber;
+    }, z.core.$strip>>;
+}, z.core.$strip>], "type">;
+
+// @public
+type SessionEventType = SessionEvent["type"];
 
 // @public
 type SlotStore = {
@@ -5142,9 +5377,21 @@ type StartOptions = {
 };
 
 // @public
+interface StateProjection<V = unknown> {
+    (value?: unknown): V;
+    readonly create: () => unknown;
+    readonly key: string;
+}
+
+// @public
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
+};
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
 };
 
 // @public
@@ -5205,6 +5452,15 @@ export interface StubGatewayOptions {
     headers?: Record<string, string>;
     status?: number;
 }
+
+// @public
+export interface StubGatewayRoute {
+    calls: StubGatewayCall[];
+    route: (request: StubStepRequest) => StubStepAnswer | undefined;
+}
+
+// @public
+export function stubGatewayRoute(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayRoute;
 
 // @public
 export interface StubGenerate {
@@ -5387,6 +5643,12 @@ export type ToolBearingAgent = {
 };
 
 // @public
+type ToolChoice = "auto" | "required" | "none" | {
+    type: "tool";
+    toolName: string;
+};
+
+// @public
 type ToolContext = {
     env: Readonly<Record<string, string>>;
     slots: SlotStore;
@@ -5429,6 +5691,11 @@ export type ToolRunner = (name: string, argsOrCtx?: InferSchemaOutput<ToolInputS
 
 // @public
 export function toolRunner(agent: ToolBearingAgent): ToolRunner;
+
+// @public
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
+};
 
 // @public
 type WakeUpOptions = {
@@ -6480,6 +6747,9 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
+export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
+
+// @public
 export function createFakeSttOpener(name: string): SttOpener & {
     last(): FakeSttSession | undefined;
 };
@@ -6488,6 +6758,9 @@ export function createFakeSttOpener(name: string): SttOpener & {
 export function createFakeTtsOpener(name: string): TtsOpener & {
     last(): FakeTtsSession | undefined;
 };
+
+// @public
+export function createVmRunCode(options?: VmRunCodeOptions): RunCodeExecutor;
 
 // @public
 export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
@@ -6679,6 +6952,12 @@ export { RunCodeExecutor }
 // @public
 export function saidIn(events: readonly SessionEvent[]): readonly string[];
 
+// @public
+export function statesIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public (undocumented)
+export function statesIn(events: readonly SessionEvent[]): readonly unknown[];
+
 export { StepFetch }
 
 // @public
@@ -6703,13 +6982,28 @@ export type StubStep = {
 };
 
 // @public
+export function toolArgsIn<T>(calls: readonly EvalToolCall[], name: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public (undocumented)
+export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
+
+// @public
 export function toolCallsIn(events: readonly SessionEvent[]): readonly EvalToolCall[];
 
 // @public
 export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
 
 // @public
+export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
+
+// @public
+export type VmRunCodeOptions = {
+    readonly timeoutMs?: number;
+    readonly globals?: Record<string, unknown>;
+};
 ```
 
 ## `@alexkroman1/aai-runtime/eval/vitest`

@@ -30,6 +30,9 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
+export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
+
+// @public
 export function createFakeSttOpener(name: string): SttOpener & {
     last(): FakeSttSession | undefined;
 };
@@ -38,6 +41,9 @@ export function createFakeSttOpener(name: string): SttOpener & {
 export function createFakeTtsOpener(name: string): TtsOpener & {
     last(): FakeTtsSession | undefined;
 };
+
+// @public
+export function createVmRunCode(options?: VmRunCodeOptions): RunCodeExecutor;
 
 // @public
 export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
@@ -229,6 +235,12 @@ export { RunCodeExecutor }
 // @public
 export function saidIn(events: readonly SessionEvent[]): readonly string[];
 
+// @public
+export function statesIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public (undocumented)
+export function statesIn(events: readonly SessionEvent[]): readonly unknown[];
+
 export { StepFetch }
 
 // @public
@@ -253,13 +265,28 @@ export type StubStep = {
 };
 
 // @public
+export function toolArgsIn<T>(calls: readonly EvalToolCall[], name: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public (undocumented)
+export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
+
+// @public
 export function toolCallsIn(events: readonly SessionEvent[]): readonly EvalToolCall[];
 
 // @public
 export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
 
 // @public
+export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
+
+// @public
+export type VmRunCodeOptions = {
+    readonly timeoutMs?: number;
+    readonly globals?: Record<string, unknown>;
+};
 
 // (No @packageDocumentation comment for this package)
 

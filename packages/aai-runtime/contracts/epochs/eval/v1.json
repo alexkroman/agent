@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "eval",
   "epoch": 1,
-  "sha256": "7d3df647299891beecc9756c7707ce1a906dd684c7598b8bffc38d1d35c21915",
+  "sha256": "cbe190948da45ca6d12e8931ddd8dd15a929d7ae28ef235fedcf781e2372b8a1",
   "exports": [
     "DescribeEvalOptions",
     "EvalCaseOptions",
@@ -33,8 +33,11 @@
     "StubScript",
     "StubStep",
     "TURN_ENDS",
+    "VmRunCodeOptions",
+    "completedOutput",
     "createFakeSttOpener",
     "createFakeTtsOpener",
+    "createVmRunCode",
     "customEventsIn",
     "describeEval",
     "describeWorkflowEval",
@@ -48,7 +51,10 @@
     "resolveEvalMode",
     "resolveWorkflowEvalMode",
     "saidIn",
+    "statesIn",
+    "toolArgsIn",
     "toolCallsIn",
-    "toolResultIn"
+    "toolResultIn",
+    "toolResultsIn"
   ]
 }

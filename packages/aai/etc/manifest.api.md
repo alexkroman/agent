@@ -591,7 +591,7 @@ type WakeUpOptions = {
 };
 
 // @internal
-export function withSystemPrompt(def: AgentDef, prompt: string): AgentDef;
+export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
 
 // @public
 export function withTools<D extends {

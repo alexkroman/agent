@@ -437,6 +437,7 @@ non-streaming tool loop needs; on the SDK side `stubDelegate`
 (`@alexkroman1/aai/testing`) fakes the capability itself, routed by subagent
 name. Both exist because the alternative — a spec that asserts on a subagent's
 steps — is a spec asserting on a provider's choices.
+
 ## Driving an agent from text is a published surface
 
 `@alexkroman1/aai-runtime/eval` and `/eval/vitest` are how an agent is measured
@@ -479,6 +480,19 @@ Four decisions worth not relitigating:
 - **An S2S agent is REFUSED by name.** The vendor owns the whole turn there, so
   there is no text seam to drive, and silently running it as a pipeline agent
   would evaluate a configuration nobody deployed.
+
+### What a TEMPLATE owes an eval, and what 25 of them found
+
+`templates/simple/agent.eval.test.ts` is the reference use of
+`@alexkroman1/aai-runtime/eval/vitest`, and the first template file that drives
+a model at all: a template's `agent.test.ts` asserts about the CONFIG and
+`toAgentConfig` runs no agent. **Everything about it — the harness, the two
+modes, why a keyless run is scripted rather than skipped, why CI gates on the
+scripted one, and the two things a TEMPLATE owes (the `.eval.` unit-tier
+exclusion in `vitest.config.ts`, and reading the environment for a credential
+and never a developer's CLI config) — is in `packages/aai-runtime/CLAUDE.md`,
+"Driving an agent from text is a published surface".** This guide is at its
+character cap; that one owns the mechanism.
 
 ### A workflow app is evaluated by RUNNING it
 

@@ -612,6 +612,7 @@
     "sonioxStt"
   ],
   "@alexkroman1/aai/testing": [
+    "ProjectFiles",
     "RunSnapshotOverrides",
     "STUB_SPEECH_PCM_BYTES",
     "SentEvent",
@@ -623,6 +624,7 @@
     "StubGateway",
     "StubGatewayCall",
     "StubGatewayOptions",
+    "StubGatewayRoute",
     "StubGenerate",
     "StubGenerateCall",
     "StubGenerateReply",
@@ -652,6 +654,7 @@
     "createStubWorkflows",
     "createToolContext",
     "createUnusedDb",
+    "deployedAgent",
     "ok",
     "okPosition",
     "parseSchemaInput",
@@ -660,6 +663,7 @@
     "schemaInputIssues",
     "stubDelegate",
     "stubGateway",
+    "stubGatewayRoute",
     "stubGenerate",
     "stubReporter",
     "stubSpeech",
@@ -818,8 +822,11 @@
     "StubScript",
     "StubStep",
     "TURN_ENDS",
+    "VmRunCodeOptions",
+    "completedOutput",
     "createFakeSttOpener",
     "createFakeTtsOpener",
+    "createVmRunCode",
     "customEventsIn",
     "evalCredentials",
     "evalWorkflowCredentials",
@@ -829,8 +836,11 @@
     "openEvalSession",
     "openEvalWorkflows",
     "saidIn",
+    "statesIn",
+    "toolArgsIn",
     "toolCallsIn",
-    "toolResultIn"
+    "toolResultIn",
+    "toolResultsIn"
   ],
   "@alexkroman1/aai-runtime/eval/vitest": [
     "DescribeEvalOptions",
