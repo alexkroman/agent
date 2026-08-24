@@ -33,6 +33,11 @@
       "types": "./dist/sdk/testing-vitest.d.ts",
       "import": "./dist/sdk/testing-vitest.js"
     },
+    "./channels": {
+      "@dev/source": "./sdk/channels-barrel.ts",
+      "types": "./dist/sdk/channels-barrel.d.ts",
+      "import": "./dist/sdk/channels-barrel.js"
+    },
     "./step-errors": {
       "@dev/source": "./sdk/step-errors.ts",
       "types": "./dist/sdk/step-errors.d.ts",

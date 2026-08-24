@@ -43,9 +43,9 @@
  */
 
 import { type WorkflowDef, workflow, workflowApp } from "@alexkroman1/aai";
+import { isSlackWebhookUrl } from "@alexkroman1/aai/channels";
 import { z } from "zod";
 import { type DailyDigestOutput, dailyDigestFlow } from "./workflows/digest.ts";
-import { isSlackWebhookUrl } from "./workflows/slack.ts";
 
 /** Somebody pastes a list; anything not http(s) is a typo worth catching here. */
 function isHttpUrl(value: string): boolean {

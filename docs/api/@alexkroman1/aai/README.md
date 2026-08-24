@@ -168,6 +168,7 @@ Full API reference: <https://alexkroman.github.io/agent/>
 
 ## Modules
 
+- [channels](channels.md)
 - [ffmpeg](ffmpeg.md)
 - [index](index.md)
 - [llm](llm.md)

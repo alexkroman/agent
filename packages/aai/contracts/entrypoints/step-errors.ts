@@ -37,6 +37,7 @@
  */
 
 export {
+  sendToChannelClassified,
   stepFetchOk,
   stepGenerateClassified,
   stepGenerateJsonClassified,

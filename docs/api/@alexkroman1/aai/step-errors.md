@@ -79,6 +79,59 @@ name intact, so a wrapper reads as the call it wraps.
 
 ## Functions
 
+### sendToChannelClassified()
+
+```ts
+function sendToChannelClassified(channel: Channel, message: ChannelMessage): Promise<string>;
+```
+
+`sendToChannel` (`@alexkroman1/aai/channels`), with its failure classified —
+see [stepGenerateClassified](#stepgenerateclassified) for the family, and this module's doc for
+why the wrapper lives here rather than beside the call it wraps.
+
+`ChannelDeliveryError` carries the platform's verdict AND its `Retry-After`,
+so a rate-limited post waits the delay the platform named rather than the
+DevKit's one-second default, and a 4xx — a revoked webhook, an unpublished
+Slack workflow, a variable name that matches nothing — stops immediately
+with the sentence a person can act on instead of burning three more attempts
+on an answer that will not change.
+
+Reach for `sendToChannel` directly where the refusal is not simply a
+failure: a body deciding to fall back to a second destination, or a run that
+treats an unreachable channel as a warning rather than an outcome.
+
+#### Parameters
+
+##### channel
+
+[`Channel`](channels.md#channel)
+
+##### message
+
+[`ChannelMessage`](channels.md#channelmessage)
+
+#### Returns
+
+`Promise`\<`string`\>
+
+#### Throws
+
+A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
+
+#### Example
+
+```ts
+import { slack } from "@alexkroman1/aai/channels";
+import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+
+export async function announce(webhookUrl: string, headline: string): Promise<string> {
+  "use step";
+  return await sendToChannelClassified(slack({ webhookUrl }), { text: headline });
+}
+```
+
+***
+
 ### stepFetchOk()
 
 ```ts
@@ -564,6 +617,10 @@ ways a step learns it failed:
 - A **`Response`** — a non-2xx from an API the step called. Transient by
   `isTransientStatus` (`/step`), with the delay from its `Retry-After`
   when it named one.
+- A **`ChannelDeliveryError`** (`@alexkroman1/aai/channels`) — a platform
+  that refused a post, having already reached the same verdict. A 4xx from a
+  webhook is terminal by construction: a revoked webhook and a wrong
+  variable name answer identically on every attempt.
 - A **`StepGenerateError`** or a **`TranscribeError`** (both `/step`) — the
   LLM gateway and the transcription endpoints, each of which has already made
   the same judgement and recorded it on `retryable`/`retryAfter`. A

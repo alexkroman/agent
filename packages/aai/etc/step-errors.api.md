@@ -5,7 +5,40 @@
 ```ts
 
 // @public
+type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
+    readonly __surface?: "channel";
+};
+
+// @public
+interface ChannelDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+interface ChannelMessage {
+    readonly heading?: string;
+    readonly sections?: readonly ChannelSection[];
+    readonly subtitle?: string;
+    readonly text: string;
+}
+
+// @public
+interface ChannelSection {
+    readonly body?: string;
+    readonly bullets?: readonly string[];
+    readonly subtitle?: string;
+    readonly title?: string;
+    readonly url?: string;
+}
+
+// @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function sendToChannelClassified(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
 interface StandardSchemaIssue {
