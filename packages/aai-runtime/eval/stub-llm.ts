@@ -25,8 +25,23 @@
  */
 
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import { createFakeLanguageModel } from "../_fake-llm.ts";
+import { createFakeLanguageModel, type ScriptedPart } from "../_fake-llm.ts";
 import { registerLlmKind } from "../providers/resolve.ts";
+
+/**
+ * One step of a scripted model: a line it says, or a tool it calls.
+ *
+ * A bare string is the line — the common case, and what most cases need. The
+ * tool form is what makes a stub run worth having for an agent that HAS tools:
+ * without it, every case asserting a tool call would have to be `{ live: true }`
+ * and would be skipped in exactly the environment that cannot have a key.
+ */
+export type StubStep =
+  | { readonly text: string }
+  | { readonly tool: string; readonly args?: Record<string, unknown> };
+
+/** What a scripted model is given: one line, or a sequence of steps. */
+export type StubScript = string | readonly (string | StubStep)[];
 
 /** The env var the stub model resolves its (unused) credential from. */
 export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
@@ -43,6 +58,40 @@ export type StubLlm = {
 
 let installs = 0;
 
+/** The default final line, for a script that ends on a tool call. */
+const STUB_DEFAULT_ANSWER = "Done — this is the eval stub model answering.";
+
+function partOf(step: string | StubStep, index: number): ScriptedPart {
+  if (typeof step === "string") return { type: "text", text: step };
+  if ("text" in step) return { type: "text", text: step.text };
+  return {
+    type: "tool-call",
+    toolCallId: `stub-call-${index + 1}`,
+    toolName: step.tool,
+    input: JSON.stringify(step.args ?? {}),
+  };
+}
+
+/**
+ * One model call per step, and the script always ENDS ON A LINE.
+ *
+ * A script whose last step is a tool call would otherwise be repeated forever
+ * (see `repeatLast`), so the agent would call that tool until its step budget
+ * ran out and then answer with nothing — a case that reads as the agent looping
+ * when it is the script that never finished. Appending a default line makes the
+ * turn end the way a real one does: tool, result, answer.
+ */
+function stepsOf(script: StubScript): ScriptedPart[][] {
+  const steps = (typeof script === "string" ? [script] : script).map((step, index) => [
+    partOf(step, index),
+  ]);
+  const last = steps.at(-1)?.[0];
+  if (last === undefined || last.type !== "text") {
+    steps.push([{ type: "text", text: STUB_DEFAULT_ANSWER }]);
+  }
+  return steps;
+}
+
 /**
  * Register a model that answers with `replies`, one per model call, repeating
  * the last for as long as it is asked.
@@ -55,16 +104,14 @@ let installs = 0;
  * The kind is UNIQUE per install, because the registry is process-global and two
  * concurrent eval sessions must not serve each other's replies.
  */
-export function installStubLlm(replies: string | readonly string[]): StubLlm {
+export function installStubLlm(script: StubScript): StubLlm {
   installs += 1;
   const kind = `aai-eval-stub-llm-${installs}`;
-  const script = (typeof replies === "string" ? [replies] : replies).map((text) => [
-    { type: "text" as const, text },
-  ]);
+  const steps = stepsOf(script);
   const release = registerLlmKind(kind, {
     envVar: STUB_LLM_API_KEY_ENV,
     label: "Eval stub",
-    create: () => createFakeLanguageModel({ steps: script, repeatLast: true }),
+    create: () => createFakeLanguageModel({ steps, repeatLast: true }),
   });
   return {
     llm: { kind, options: {} },

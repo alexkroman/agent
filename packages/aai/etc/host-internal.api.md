@@ -1084,7 +1084,7 @@ export type SpeechSynthesizer = (request: {
 export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
 
 // @public
-interface StandardSchemaIssue {
+export interface StandardSchemaIssue {
     // (undocumented)
     readonly message: string;
     // (undocumented)
@@ -1102,7 +1102,7 @@ type StandardSchemaResult<Output> = {
 };
 
 // @public
-interface StandardSchemaV1<Input = unknown, Output = Input> {
+export interface StandardSchemaV1<Input = unknown, Output = Input> {
     readonly "~standard": {
         readonly version: 1;
         readonly vendor: string;

@@ -480,6 +480,55 @@ Four decisions worth not relitigating:
   there is no text seam to drive, and silently running it as a pipeline agent
   would evaluate a configuration nobody deployed.
 
+### A workflow app is evaluated by RUNNING it
+
+`describeWorkflowEval` / `openEvalWorkflows` are the other half, and they exist
+because a `workflowApp()` template — six of the shipped ones — has no session for
+`openEvalSession` to open, no microphone and no model in its config. Its whole
+product is a durable run, and nothing in the SDK could evaluate one: a page
+starts a run over HTTP against a DEPLOYED agent, and a spec drove the exported
+steps one at a time. `app.run(def, input)` answers an `EvalWorkflowRun` — status,
+output, error, plus what the run NARRATED (`reported`), emitted, and slept.
+
+**The engine is the real client over a real key store.** `eval/workflow-engine.ts`
+implements the existing `WdkAdapter` seam in memory and `openEvalWorkflows` hands
+it to `createWorkflowClient` over `createMemoryKeyStore()` — so the schema
+validation, the def→name mapping, the correlation-key index, the snapshot union
+and `lastLine`'s tail-first rule are all production code rather than a fake's
+approximation of it.
+
+**It is NOT a durability test, and that sentence is load-bearing.** A
+`"use workflow"` body is durable only after the DevKit's builder has transformed
+it, and an eval imports it through a test runner with no bundler in the path — so
+the body runs as an ordinary async function. No journal, no replay, no
+suspension, and a step's `maxRetries` is INERT, which has a measured consequence:
+a provider 429 that a deployed run would ride out FAILS an eval run (it happened,
+on a sixth live run inside three minutes). `sleep()` is RECORDED rather than
+taken, which is what lets a case assert `podcast-digest`'s schedule without
+waiting a day. Four `WorkflowClient` methods have no honest answer here and say
+so. Do not describe a case written on this as covering replay, resume or retry —
+`aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that does.
+
+**Three things a workflow eval CANNOT reach, each costing a real case.**
+`createHook()` throws untransformed and — unlike `sleep()`, whose slot the
+engine publishes into — offers no seam to fill (`@workflow/core`'s
+`create-hook.js` throws unconditionally), so `recap-workflow`'s retention gate,
+its headline port of Temporal's `expense`, is unevaluable and its eval says so
+rather than asserting around it. `wakeUp` answers `0`, so a "send it now" tool
+can only ever report that nothing was waiting. And because `sleep` is recorded
+rather than taken, an in-flight run is observable only by HOLDING a provider
+response — a `Promise.race` against a durable sleep resolves instantly here, so
+a case that wants to see a run mid-flight scripts a slow step instead of
+sleeping. A `vi.mock("workflow", …)` factory owned by this package, and an
+`openEvalWorkflows({ sleeps: "block" })`, are the two shapes that would close
+the first and third; neither is built.
+
+**A workflow app's credential gate is a different question**, hence
+`evalWorkflowCredentials`: `requiredProviderEnvVars` returns `[]` for a
+`page: "static"` agent, so asked alone it reports every workflow app "ready" and
+a keyless run goes live and 401s three layers down inside a step. It reads
+`requiredEnv` too, which is the only place a workflow app declares what it needs.
+
 ### A keyless run gets a SCRIPTED model, not a skip
 
 `describeEval` (on `/eval/vitest`, which is what pulls the optional `vitest`
@@ -526,6 +575,23 @@ the key out of the project's `.env`, which is also why `ASSEMBLYAI_API_KEY` is
 declared in `check:eval`'s `env` in `turbo.json` (strict env mode strips an
 undeclared variable silently, leaving every case scripted with a key exported
 right there in the shell).
+
+**Four seams a case can fill, each one paid for by a template that could not be
+evaluated without it.** `runCode` backs the `run_code` builtin, which otherwise
+refuses exactly as it does off-platform — correct, and it meant the three tutor
+templates' headline feature (the arithmetic the builtin owns) could be asserted
+as a CALL and never as an answer. `fetch` keeps a case off the network, because
+a scripted `visit_webpage` really visits. `toolTimeoutMs` reaches the session's
+per-call deadline, which was unreachable from any caller: a graded retrieval loop
+measured at 22-30s against ~10x gateway variance times out at 30s and the case
+then measures the deadline instead of the agent. `workflows` supplies
+`ctx.workflows`, without which a tool that starts a run cannot execute at all.
+
+**`ctx.generate` answers from the script too**, and that was a hole rather than
+a limit: `generateText` calls the fake model's `doGenerate`, which used to
+throw, so every tool that reasons with a model — a grader, a planner, a
+rewriter, i.e. the central tool of two shipped templates — answered "doGenerate
+not implemented" in a scripted run and read as the agent being broken.
 
 Two things in `describeEval`'s SIGNATURE are decided by a linter rather than by
 taste, both A/B'd against Biome 2.5 and both invisible until a user's own project

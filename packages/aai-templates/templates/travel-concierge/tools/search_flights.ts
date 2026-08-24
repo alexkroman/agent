@@ -1,6 +1,5 @@
-import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { FLIGHTS, formatPrice } from "../shared.ts";
+import { FLIGHTS, formatPrice, requireDesk, tripSlot } from "../shared.ts";
 
 /**
  * Their `search_flights`, with the same "be generous" behaviour their flight
@@ -8,10 +7,12 @@ import { FLIGHTS, formatPrice } from "../shared.ts";
  * rather than an empty list, so the desk can say what it DOES fly instead of
  * "nothing found" — which is what sends a caller to a human.
  */
-export default tool({
+export default tripSlot.tool({
   description:
-    "Search the flight schedule. Match on any part of the route, e.g. " +
-    "'Boston' or 'Zurich to Boston'. Omit the route to hear everything.",
+    "The FLIGHT DESK's search: the schedule, matched on any part of the route, e.g. " +
+    "'Boston' or 'Zurich to Boston'. Omit the route to hear everything. Only usable while " +
+    "the call is at that desk — from anywhere else it refuses, so call to_flight_assistant " +
+    "first.",
   inputSchema: z.object({
     route: z
       .string()
@@ -20,7 +21,9 @@ export default tool({
       .optional(),
     maxFare: z.number().positive().describe("Only flights at or under this fare").optional(),
   }),
-  execute(args) {
+  execute(args, trip) {
+    const offDesk = requireDesk(trip, "flight");
+    if (offDesk) return offDesk;
     const needle = args.route?.trim().toLowerCase();
     const matched = FLIGHTS.filter(
       (f) =>

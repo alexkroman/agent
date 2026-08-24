@@ -136,6 +136,20 @@ export function publishStepFetch(fetchFn: StepFetch | undefined): void {
 }
 
 /**
+ * Does this body arrive in CHUNKS, i.e. does `fetch` need `duplex: "half"`?
+ *
+ * Narrowed off the declared union rather than by a `typeof … === "object" &&
+ * … !== null` test, which is the open-coded record guard `guard-invariants`
+ * rule 17 exists to keep out — and `isRecord` is not the remedy here, because an
+ * async iterable is not a record. Excluding the two non-object arms is enough:
+ * what is left is bytes (which `fetch` buffers) or a stream.
+ */
+function isStreamingBody(body: StepFetchInit["body"]): boolean {
+  if (body === undefined || typeof body === "string") return false;
+  return !(ArrayBuffer.isView(body) || body instanceof ArrayBuffer || body instanceof Blob);
+}
+
+/**
  * Make one HTTP request from inside a step.
  *
  * Prefer this to `fetch` in any `"use step"` function, and especially in a
@@ -181,7 +195,22 @@ export async function stepFetch(url: string, init: StepFetchInit = {}): Promise<
     // No host in this process — a spec, or a script calling an exported step.
     // The global is the only fetch there is, and a spec that stubs it is the
     // ordinary way a step's HTTP is tested.
-    return await globalThis.fetch(url, init as RequestInit);
+    //
+    // `duplex: "half"` for a STREAMING body, because `undici` requires it and
+    // refuses without one: `TypeError: RequestInit: duplex option is required
+    // when sending a body`. `StepFetchInit.body`'s own doc has always said the
+    // published fetch adds it and the caller passes only the iterable — and
+    // this path added nothing, so the promise held for a deployed run and broke
+    // for every other caller. Measured on a real upload: `stepTranscribeUpload`
+    // streams window by window, so a `spoken-summary` run driven from an eval or
+    // a spec died before it reached the provider. Only the streaming form needs
+    // it (bytes and strings are already buffered), and adding it unconditionally
+    // is not free — a `duplex` on a bodiless GET is a different rejection.
+    const streaming = isStreamingBody(init.body);
+    return await globalThis.fetch(
+      url,
+      (streaming ? { ...init, duplex: "half" } : init) as RequestInit,
+    );
   } catch (err: unknown) {
     throw new StepTransportError(url, { cause: err });
   }

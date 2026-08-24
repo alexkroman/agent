@@ -142,3 +142,52 @@ describe("openEvalSession", () => {
     }
   });
 });
+
+describe("a scripted tool call", () => {
+  test("drives the real tool executor, so a stub run covers a tool agent", async () => {
+    const { installStubLlm } = await import("./stub-llm.ts");
+    const stub = installStubLlm([{ tool: "look_up", args: { id: "W1234" } }, "It shipped."]);
+    const session = await openEvalSession({
+      agent: withTools(agent({ name: "Order Desk" }), { look_up: lookUp }),
+      llm: stub.llm,
+      providerEnv: stub.env,
+    });
+    try {
+      const turn = await session.say("where is order W1234");
+      // The tool really ran: the result is the tool's own, not the script's.
+      expect(turn.toolCalls).toEqual([
+        {
+          toolCallId: "stub-call-1",
+          name: "look_up",
+          args: { id: "W1234" },
+          result: expect.stringContaining("W1234 shipped"),
+        },
+      ]);
+      expect(turn.text).toContain("It shipped.");
+    } finally {
+      await session.close();
+      stub.release();
+    }
+  });
+
+  test("a script ending on a tool call still ENDS the turn", async () => {
+    const { installStubLlm } = await import("./stub-llm.ts");
+    // No line after the call: without the appended default the model would be
+    // asked for the same tool call until the step budget ran out.
+    const stub = installStubLlm([{ tool: "look_up", args: { id: "W1" } }]);
+    const session = await openEvalSession({
+      agent: withTools(agent({ name: "Order Desk" }), { look_up: lookUp }),
+      llm: stub.llm,
+      providerEnv: stub.env,
+    });
+    try {
+      const turn = await session.say("where is order W1");
+      expect(turn.completed).toBe(true);
+      expect(turn.toolCalls).toHaveLength(1);
+      expect(turn.text).not.toBe("");
+    } finally {
+      await session.close();
+      stub.release();
+    }
+  });
+});

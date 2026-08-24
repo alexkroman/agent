@@ -26,6 +26,7 @@ const agentDef = withDiscoveredTools(
 
 import {
   calculateTotal,
+  MENU,
   orderProjection,
   orderSlot,
   orderView,
@@ -70,6 +71,20 @@ describe("pricing (shared.ts)", () => {
 
   test("cheese-only pizza costs base + crust", () => {
     expect(pizzaPrice({ id: 1, ...margherita })).toBeCloseTo(11.99, 5);
+  });
+
+  test("a topping named the way the MENU PROSE spells it is charged menu price", () => {
+    // `menuText()` writes `extra_cheese` as "extra cheese", so that is what a
+    // model reading the prompt asks for. Before `toppingKey`, the table missed
+    // and charged the $1.00 unknown-topping default for a $1.50 topping —
+    // found live by `agent.eval.test.ts`, which priced the same pizza off MENU
+    // and got $17.99 against the tool's $17.49.
+    const keyed = pizzaPrice({ id: 1, ...margherita, toppings: ["extra_cheese"] });
+    expect(pizzaPrice({ id: 1, ...margherita, toppings: ["extra cheese"] })).toBeCloseTo(keyed, 5);
+    expect(pizzaPrice({ id: 1, ...margherita, toppings: ["Green Peppers"] })).toBeCloseTo(
+      11.99 + MENU.toppings.green_peppers,
+      5,
+    );
   });
 
   test("unknown topping falls back to the $1.00 default", () => {

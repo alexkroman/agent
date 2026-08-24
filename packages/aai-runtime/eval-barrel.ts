@@ -37,12 +37,25 @@
  * they are covered; `eval/session.ts` and `eval/fake-speech.ts` repeat the
  * warning at the seams where it would be forgotten.
  *
- * The three assertion READERS ({@link saidIn}, {@link toolCallsIn},
- * {@link TURN_ENDS}) are here rather than a vocabulary of matchers because an
- * eval already has a runner: `expect` in a vitest file is the simple case, and a
- * case that must PROFILE rather than bisect on the first failure wants a
+ * `openEvalWorkflows` is the same idea for a `workflowApp()`, which has no
+ * session at all: it starts a real run of the real body over an in-process
+ * engine. **That engine is not durable** — see `eval/workflow-engine.ts`, which
+ * carries the whole account and the four `WorkflowClient` methods that have no
+ * honest answer without a queue. Its `client` is also what
+ * {@link openEvalSession}'s `workflows` option takes, which is what makes a
+ * VOICE agent's run-starting tool executable in an eval.
+ *
+ * The assertion READERS ({@link saidIn}, {@link toolCallsIn}, {@link TURN_ENDS},
+ * {@link toolArgsIn}, {@link toolResultIn}, {@link toolResultsIn},
+ * {@link lastStateIn}, {@link statesIn}, {@link customEventsIn},
+ * {@link completedOutput}) are here rather than a vocabulary of matchers because
+ * an eval already has a runner: `expect` in a vitest file is the simple case, and
+ * a case that must PROFILE rather than bisect on the first failure wants a
  * recording runner, which is a different tool. What both need is one honest
- * answer to "what did the agent say" and "which tools did it call".
+ * answer to "what did the agent say" and "which tools did it call". Each of them
+ * THROWS rather than returning something empty when it has nothing to read —
+ * that is the half a hand-rolled `find`/`?? ""` gets wrong, and it turns a case
+ * asserting against `undefined` into a case that names what actually happened.
  *
  * Exports are enumerated explicitly (no `export *`) so the public surface is
  * deliberate: a new symbol in one of these modules does not ship as public API
@@ -51,11 +64,29 @@
  * @module eval
  */
 
+// The two types a CASE names, re-exported so an eval imports from this subpath
+// and nothing else.
+//
+// That is not a convenience. `@alexkroman1/aai-runtime`'s root barrel reaches
+// `agent-server.ts` → `server.ts` → `workflow-install.ts` → `step-fetch.ts`, so
+// a template eval that imports the root for one type drags the runtime's
+// node-reaching modules into a program that may have no node types — three
+// `BodyInit`/`exactOptionalPropertyTypes` errors in files the eval never calls.
+// It happened the day this shipped, in three template evals reaching for
+// `RunCodeExecutor`. Same hazard `@alexkroman1/aai/host-internal`'s own note
+// records, arriving by a new route.
+export type { RunCodeExecutor, StepFetch } from "@alexkroman1/aai/host-internal";
 export {
+  customEventsIn,
   type EvalToolCall,
+  lastStateIn,
   saidIn,
+  statesIn,
   TURN_ENDS,
+  toolArgsIn,
   toolCallsIn,
+  toolResultIn,
+  toolResultsIn,
 } from "./eval/events.ts";
 // The fake speech stages, and the env var they resolve their unused credential
 // from. Public because the seam is the interesting part: they register through
@@ -82,4 +113,32 @@ export {
 // The scripted model a keyless run falls back to. Public because the FALLBACK
 // is public policy: a suite that runs without a credential is checking wiring
 // rather than behaviour, and a harness of its own has to be able to say so.
-export { installStubLlm, STUB_LLM_API_KEY_ENV, type StubLlm } from "./eval/stub-llm.ts";
+export {
+  installStubLlm,
+  STUB_LLM_API_KEY_ENV,
+  type StubLlm,
+  type StubScript,
+  type StubStep,
+} from "./eval/stub-llm.ts";
+// The `node:vm` `run_code` executor. Public because the `run_code` builtin
+// REFUSES without one off-platform (the Modal container is the security
+// boundary), so a case about an agent that answers by running code cannot assert
+// the answer at all until a host supplies this — and four template evals had
+// each written the same eleven lines to get one.
+export { createVmRunCode, type VmRunCodeOptions } from "./eval/vm-run-code.ts";
+// The two records a workflow run leaves behind. Public because they are what a
+// case asserts on, and because the SLEEP one is the harness admitting what it
+// cannot do: a durable suspension is recorded, never taken.
+export type { EvalEmitted, EvalSleep } from "./eval/workflow-engine.ts";
+// Driving a WORKFLOW. The engine underneath is NOT durable — no journal, no
+// replay, no retry — and `eval/workflow-engine.ts` is where that is spelled out;
+// a case declared here may not be reported as covering any of the three.
+export {
+  completedOutput,
+  type EvalRunOptions,
+  type EvalWorkflowRun,
+  type EvalWorkflows,
+  type EvalWorkflowsOptions,
+  evalWorkflowCredentials,
+  openEvalWorkflows,
+} from "./eval/workflows.ts";

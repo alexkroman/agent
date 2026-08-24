@@ -7,15 +7,24 @@ import { tripProjection } from "./shared.ts";
  * two mechanisms worth reading for are the dialog stack (`routing.ts`) and the
  * confirmation gate (`stageAction` / `confirm_action`).
  *
- * **Every tool in `tools/` belongs to this one agent — the delegation is in the
- * PROMPT, not in the tool list.** Their graph gives each specialist node its
- * own bound tool set, so a specialist physically cannot call another desk's
- * tools. A voice session has one model with one tool list for its whole life,
- * so the specialist's brief arrives as a tool result and the narrowing is
- * something the model is asked to honour rather than something the runtime
- * enforces. That is the honest limit of the port, and it is why
- * `complete_or_escalate` is described the way it is: the stack is what the
- * caller and the sidebar can both see, even when the model reaches past it.
+ * **Every tool in `tools/` belongs to this one agent, and the delegation is
+ * ENFORCED anyway.** Their graph gives each specialist node its own bound tool
+ * set, so a specialist physically cannot call another desk's tools. A voice
+ * session has one model with one tool list for its whole life, so a list cannot
+ * be narrowed here — but a TOOL can refuse, which is the same guarantee by a
+ * route that works mid-call: every desk tool checks the stack first
+ * (`requireDesk` in `shared.ts`) and answers a `ToolFailure` naming the
+ * `to_…_assistant` to call. So the position the sidebar renders is always the
+ * position the work is being done at, and the specialist's brief has always
+ * been read before that desk's first search.
+ *
+ * This used to be asked for in the prompt instead, described here as the honest
+ * limit of the port. It was measured and the prompt lost — 0 of 5 live runs, the
+ * model searching hotels from the concierge desk every time — so the eval case
+ * that predicted it (`agent.eval.test.ts`, "a hotel request goes to the hotel
+ * desk") is what turned the narrowing into a mechanism. `complete_or_escalate`
+ * is still described the way it is for the other half of the reason: the stack
+ * is what the caller and the sidebar can both see.
  */
 export default agent({
   name: "Swiss Air Concierge",

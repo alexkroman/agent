@@ -5,15 +5,29 @@
 ```ts
 
 import type { AgentDef } from '@alexkroman1/aai';
+import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { GenerateOptions } from '@alexkroman1/aai';
+import type { GenerateResult } from '@alexkroman1/aai';
+import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
+import type { StartOptions } from '@alexkroman1/aai/workflow-api';
+import { StepFetch } from '@alexkroman1/aai/host-internal';
 import type { SttOpener } from '@alexkroman1/aai/host-internal';
 import type { SttProvider } from '@alexkroman1/aai/stt';
 import type { SttSession } from '@alexkroman1/aai/host-internal';
+import type { ToolInputSchema } from '@alexkroman1/aai';
 import type { TtsOpener } from '@alexkroman1/aai/host-internal';
 import type { TtsProvider } from '@alexkroman1/aai/tts';
 import type { TtsSession } from '@alexkroman1/aai/host-internal';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
 export function createFakeSttOpener(name: string): SttOpener & {
@@ -24,6 +38,12 @@ export function createFakeSttOpener(name: string): SttOpener & {
 export function createFakeTtsOpener(name: string): TtsOpener & {
     last(): FakeTtsSession | undefined;
 };
+
+// @public
+export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
+    readonly event: string;
+    readonly data: unknown;
+}[];
 
 // @public
 export type EvalCredentials = {
@@ -37,7 +57,19 @@ export type EvalCredentials = {
 export function evalCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
 
 // @public
+export type EvalEmitted = {
+    readonly namespace: string;
+    readonly chunk: unknown;
+};
+
+// @public
+export type EvalRunOptions = StartOptions & {
+    readonly timeoutMs?: number | undefined;
+};
+
+// @public
 export type EvalSession = {
+    readonly id: string;
     say(text: string): Promise<EvalTurn>;
     events(): readonly SessionEvent[];
     said(): readonly string[];
@@ -51,8 +83,18 @@ export type EvalSessionOptions = {
     readonly env?: Record<string, string>;
     readonly providerEnv?: ProviderEnv;
     readonly llm?: LlmProvider;
+    readonly runCode?: RunCodeExecutor;
+    readonly fetch?: typeof globalThis.fetch;
+    readonly toolTimeoutMs?: number;
+    readonly generate?: HostGenerateFn;
+    readonly workflows?: WorkflowClient | undefined;
     readonly turnTimeoutMs?: number;
     readonly logger?: Logger;
+};
+
+// @public
+export type EvalSleep = {
+    readonly duration: string | number | Date;
 };
 
 // @public
@@ -69,6 +111,58 @@ export type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
+};
+
+// @public
+export function evalWorkflowCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
+type EvalWorkflowEngineOptions = {
+    readonly workflows: Readonly<Record<string, WorkflowDef>>;
+    readonly env: Readonly<Record<string, string>>;
+    readonly stepFetch?: StepFetch | undefined;
+    readonly speech?: SpeechSynthesizer | undefined;
+};
+
+// @public
+export type EvalWorkflowRun<R = unknown> = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly key: string | undefined;
+    readonly status: WorkflowRunStatus;
+    readonly output: R | undefined;
+    readonly error: string | undefined;
+    readonly completed: boolean;
+    readonly reported: readonly string[];
+    readonly emitted: readonly EvalEmitted[];
+    readonly slept: readonly EvalSleep[];
+    readonly elapsedMs: number | undefined;
+    readonly snapshot: WorkflowRunSnapshot<R>;
+};
+
+// @public
+export type EvalWorkflows = {
+    readonly client: WorkflowClient;
+    run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
+    run(workflow: string, input?: unknown, options?: EvalRunOptions): Promise<EvalWorkflowRun>;
+    settle<R>(runId: string, of: AnyWorkflowDef<R>, options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<EvalWorkflowRun<R>>;
+    settle(runId: string, of?: undefined, options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<EvalWorkflowRun>;
+    runs(): Promise<readonly EvalWorkflowRun[]>;
+    close(): Promise<void>;
+};
+
+// @public
+export type EvalWorkflowsOptions = {
+    readonly agent: AgentDef;
+    readonly env?: Record<string, string> | undefined;
+    readonly stepFetch?: EvalWorkflowEngineOptions["stepFetch"];
+    readonly speech?: EvalWorkflowEngineOptions["speech"];
+    readonly timeoutMs?: number | undefined;
+    readonly logger?: Logger | undefined;
 };
 
 // @public
@@ -95,11 +189,22 @@ export type FakeTtsSession = TtsSession & {
     readonly spoken: readonly string[];
 };
 
+// @internal
+type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+    signal?: AbortSignal | undefined;
+}) => Promise<GenerateResult>;
+
 // @public
 export function installFakeSpeech(): FakeSpeech;
 
 // @public
-export function installStubLlm(replies: string | readonly string[]): StubLlm;
+export function installStubLlm(script: StubScript): StubLlm;
+
+// @public
+export function lastStateIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): T | undefined;
+
+// @public (undocumented)
+export function lastStateIn(events: readonly SessionEvent[]): unknown;
 
 // @public
 type LogContext = Record<string, unknown>;
@@ -117,7 +222,14 @@ type LogLevel = "info" | "warn" | "error" | "debug";
 export function openEvalSession(opts: EvalSessionOptions): Promise<EvalSession>;
 
 // @public
+export function openEvalWorkflows(opts: EvalWorkflowsOptions): EvalWorkflows;
+
+export { RunCodeExecutor }
+
+// @public
 export function saidIn(events: readonly SessionEvent[]): readonly string[];
+
+export { StepFetch }
 
 // @public
 export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
@@ -130,7 +242,21 @@ export type StubLlm = {
 };
 
 // @public
+export type StubScript = string | readonly (string | StubStep)[];
+
+// @public
+export type StubStep = {
+    readonly text: string;
+} | {
+    readonly tool: string;
+    readonly args?: Record<string, unknown>;
+};
+
+// @public
 export function toolCallsIn(events: readonly SessionEvent[]): readonly EvalToolCall[];
+
+// @public
+export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
 
 // @public
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;

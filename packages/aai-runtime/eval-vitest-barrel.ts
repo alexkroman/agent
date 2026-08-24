@@ -14,10 +14,21 @@
  */
 
 export {
+  type DescribeEvalOptions,
   describeEval,
   type EvalCaseOptions,
   type EvalMode,
   type EvalTest,
   type EvalTestContext,
   resolveEvalMode,
+  resolveWorkflowEvalMode,
 } from "./eval/describe.ts";
+// The workflow-app suite. Its own function rather than a flag on `describeEval`
+// because the two gate on different credentials and hand a case different
+// things — see the module doc.
+export {
+  describeWorkflowEval,
+  type EvalWorkflowCaseOptions,
+  type EvalWorkflowTest,
+  type EvalWorkflowTestContext,
+} from "./eval/describe-workflows.ts";

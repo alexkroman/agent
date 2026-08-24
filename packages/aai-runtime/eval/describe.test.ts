@@ -15,9 +15,14 @@
  * exported.
  */
 
-import { agent } from "@alexkroman1/aai";
+import { agent, tool } from "@alexkroman1/aai";
+import { withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
+import { createFakeLanguageModel } from "../_fake-llm.ts";
+import { registerLlmKind } from "../providers/resolve.ts";
 import { describeEval, resolveEvalMode } from "./describe.ts";
+import { toolResultIn } from "./events.ts";
 import { installStubLlm, STUB_LLM_API_KEY_ENV } from "./stub-llm.ts";
 
 const def = agent({ name: "Mode" });
@@ -45,6 +50,30 @@ describe("resolveEvalMode", () => {
 
   test("AAI_REQUIRE_EVAL turns a missing credential into a failure, not a downgrade", () => {
     expect(() => resolveEvalMode(def, { AAI_REQUIRE_EVAL: "1" })).toThrow(/ASSEMBLYAI_API_KEY/);
+  });
+
+  test("an llm OVERRIDE decides the credential question with it", () => {
+    // The agent wants Anthropic; the case overrides the model with one this
+    // machine has a key for. Reading the mode off the agent alone announced
+    // SCRIPTED while holding the key the run would really have used.
+    const anthropicAgent = agent({ name: "Override", llm: { kind: "anthropic", options: {} } });
+    const env = { ASSEMBLYAI_API_KEY: "k" };
+    expect(resolveEvalMode(anthropicAgent, env).mode).toBe("stub");
+    expect(
+      resolveEvalMode(anthropicAgent, env, { llm: { kind: "assemblyai", options: {} } }).mode,
+    ).toBe("live");
+  });
+
+  test("an override the machine has no key for still reports stub, naming it", () => {
+    const { mode, reason } = resolveEvalMode(
+      agent({ name: "Override" }),
+      {},
+      {
+        llm: { kind: "anthropic", options: {} },
+      },
+    );
+    expect(mode).toBe("stub");
+    expect(reason).toContain("ANTHROPIC_API_KEY");
   });
 
   test("AAI_REQUIRE_EVAL is satisfied by a credential", () => {
@@ -82,7 +111,16 @@ describe("installStubLlm", () => {
 // which is fine: the mode was already decided.
 vi.stubEnv("AAI_EVAL_STUB", "1");
 
-describeEval(agent({ name: "Stub Suite" }), (test) => {
+/** A tool that REASONS with a model — the shape `stubGenerate` exists for. */
+const judge = tool({
+  description: "Judge a claim.",
+  inputSchema: z.object({ claim: z.string() }),
+  execute: async ({ claim }, ctx) =>
+    (await ctx.generate({ prompt: `judge: ${claim}`, schema: z.object({ verdict: z.string() }) }))
+      .object,
+});
+
+describeEval(withTools(agent({ name: "Stub Suite" }), { judge }), (test) => {
   test(
     "drives a real session against the scripted model",
     async ({ session, mode }) => {
@@ -103,5 +141,100 @@ describeEval(agent({ name: "Stub Suite" }), (test) => {
       expect.fail("a { live: true } case must be skipped in stub mode");
     },
     { live: true },
+  );
+
+  test(
+    "a scripted-only case DOES run here — it is the mirror of live",
+    async ({ session, mode }) => {
+      expect(mode).toBe("stub");
+      // The shape this marker exists for: only a script will call a tool the
+      // model would decline, so only a script can watch the gate refuse.
+      expect((await session.say("go on then")).text).toContain("scripted");
+    },
+    { scripted: true, stubReply: "scripted, and only the model is" },
+  );
+
+  test(
+    "a SCHEMA generate call answers too — the shape `ai` reads, not the v3 string",
+    async ({ session }) => {
+      // The half that was broken while plain text worked: `ctx.generate({ schema })`
+      // is `generateText` + `Output.object`, and `generateText` reads
+      // `finishReason.unified`. With the bare string the output branch never ran
+      // and a grader-shaped tool got `{"error":"No output generated."}`.
+      const { createGenerateFn } = await import("../generate.ts");
+      const release = registerLlmKind("eval-spec-schema", {
+        envVar: "EVAL_SPEC_SCHEMA_KEY",
+        label: "Spec schema",
+        create: () =>
+          createFakeLanguageModel({
+            script: [{ type: "text", text: '{"grounded":true,"score":7}' }],
+          }),
+      });
+      try {
+        const generate = createGenerateFn({
+          llm: { kind: "eval-spec-schema", options: {} },
+          env: { EVAL_SPEC_SCHEMA_KEY: "k" },
+        });
+        const answer = await generate({
+          prompt: "grade it",
+          schema: z.object({ grounded: z.boolean(), score: z.number() }),
+        });
+        expect(answer.object).toEqual({ grounded: true, score: 7 });
+      } finally {
+        release();
+      }
+      expect((await session.say("still there?")).completed).toBe(true);
+    },
+    { stubReply: "still here." },
+  );
+
+  test(
+    "stubGenerate is a SEPARATE cursor, and it really reaches ctx.generate",
+    async ({ session }) => {
+      // One script cannot serve both: `ctx.generate` resolves its own model
+      // instance, so element 0 would have to be the turn's first move AND the
+      // first generate answer. Here the turn calls a tool that reasons with a
+      // model, and the two scripts do not interleave.
+      //
+      // The assertion is on the TOOL'S RESULT deliberately. An earlier version
+      // asserted only the turn's text, which passes whether or not the scripted
+      // generate is wired to anything — and for a while it was not: the option
+      // installed a stub, released it, and forwarded nothing. A no-op that its
+      // own test cannot see is the failure this file exists to prevent.
+      const turn = await session.say("what do you make of it?");
+      expect(turn.text).toBe("the turn's own line");
+      expect(toolResultIn(turn.toolCalls, "judge")).toEqual({ verdict: "sound" });
+    },
+    {
+      stubReply: [{ tool: "judge", args: { claim: "it holds" } }, "the turn's own line"],
+      stubGenerate: '{"verdict":"sound"}',
+    },
+  );
+
+  test(
+    "ctx.generate answers from the same script, so a reasoning tool works",
+    async ({ session }) => {
+      // `generateText` calls `doGenerate`, which the fake used to refuse — so
+      // every tool that reasons with a model returned "doGenerate not
+      // implemented" in a scripted run, and it read as the agent being broken.
+      const { createGenerateFn } = await import("../generate.ts");
+      const generate = createGenerateFn({
+        llm: { kind: "eval-spec-generate", options: {} },
+        env: { EVAL_SPEC_GENERATE_KEY: "k" },
+      });
+      const release = registerLlmKind("eval-spec-generate", {
+        envVar: "EVAL_SPEC_GENERATE_KEY",
+        label: "Spec generate",
+        create: () => createFakeLanguageModel({ script: [{ type: "text", text: "graded: yes" }] }),
+      });
+      try {
+        expect((await generate({ prompt: "grade this" })).text).toContain("graded: yes");
+      } finally {
+        release();
+      }
+      // The session itself is untouched by that probe and still answers.
+      expect((await session.say("still there?")).completed).toBe(true);
+    },
+    { stubReply: "still here." },
   );
 });

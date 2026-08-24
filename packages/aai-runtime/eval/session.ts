@@ -53,11 +53,13 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
-import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
+import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import type { HostGenerateFn } from "../generate.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntime } from "../runtime.ts";
@@ -72,8 +74,14 @@ const POLL_MS = 25;
 
 const dropLine = (): undefined => undefined;
 
-/** A logger that says nothing — the default, so a report stays readable. */
-const silentLogger: Logger = {
+/**
+ * A logger that says nothing — the default, so a report stays readable.
+ *
+ * Exported for `eval/workflows.ts`, which owes the same default for the same
+ * reason and is not on the barrel: one silent logger rather than the second copy
+ * of six lines.
+ */
+export const silentLogger: Logger = {
   debug: dropLine,
   info: dropLine,
   warn: dropLine,
@@ -156,6 +164,13 @@ export type EvalTurn = {
 /** One live eval session. */
 export type EvalSession = {
   /**
+   * This session's id — what its tools read as `ctx.sessionId`.
+   *
+   * Exposed because it is what a tool CORRELATES a durable run with, so a case
+   * asserting "the run it started is this conversation's" needs both halves.
+   */
+  readonly id: string;
+  /**
    * Commit a user turn, wait for the reply to end, and hand back that turn.
    *
    * Waits for a reply TERMINATOR rather than for a timer, which is what makes a
@@ -199,6 +214,55 @@ export type EvalSessionOptions = {
   readonly providerEnv?: ProviderEnv;
   /** Override the LLM the case runs on. Defaults to the agent's own. */
   readonly llm?: LlmProvider;
+  /**
+   * Backs the `run_code` builtin.
+   *
+   * Without one the builtin is registered and permanently refuses, exactly as it
+   * does off-platform — the Modal container is the security boundary and nothing
+   * here pretends otherwise. What that COSTS was measured on the three tutor
+   * templates: their headline feature was unevaluable, because the agent calls
+   * `run_code`, reads "only available in the sandboxed runtime", and then does
+   * the arithmetic in its head — so a case could asserted the CALL and never the
+   * answer. An eval on a developer's own machine may supply an executor; a
+   * deployed agent still cannot.
+   */
+  readonly runCode?: RunCodeExecutor;
+  /**
+   * The `fetch` the builtin web tools use. Pass one to keep a case off the
+   * network — a scripted `visit_webpage` really visits.
+   */
+  readonly fetch?: typeof globalThis.fetch;
+  /**
+   * Per-tool-call deadline. Defaults to the session's own (30s, a voice-turn
+   * budget). A tool whose work legitimately outruns that — a graded retrieval
+   * loop making eleven model calls, measured at 22-30s — cannot otherwise be
+   * evaluated at all: the executor answers a timeout and the case measures the
+   * deadline instead of the agent.
+   */
+  readonly toolTimeoutMs?: number;
+  /**
+   * What tool code calls as `ctx.generate`. Absent, it is the agent's own LLM.
+   *
+   * `describeEval`'s `stubGenerate` builds one of these; the reason it must be
+   * separate from the turn's script is in `RuntimeOptions.generate`.
+   */
+  readonly generate?: HostGenerateFn;
+  /**
+   * `ctx.workflows` for this session — what a tool that starts a durable run
+   * calls.
+   *
+   * Without one, a workflow-declaring agent gets the client the runtime builds
+   * over the Workflow DevKit, and every `start()` through it throws: the
+   * compiler's transform never ran on a body imported through a test runner, so
+   * `def.run.workflowId` is absent and there is nothing for the adapter to
+   * start. That is a tool an eval cannot execute at all, which is the gap this
+   * closes. Build one with `openEvalWorkflows({ agent })` and pass its `client`;
+   * `describeEval` does that for you.
+   *
+   * The engine under it is not durable — no journal, no replay, no retry. See
+   * `eval/workflow-engine.ts` before writing a claim about a run.
+   */
+  readonly workflows?: WorkflowClient | undefined;
   readonly turnTimeoutMs?: number;
   /** Defaults to silent. Pass `consoleLogger` when diagnosing a case. */
   readonly logger?: Logger;
@@ -263,6 +327,18 @@ async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promis
     agent: { ...opts.agent, stt: fake.stt, tts: fake.tts, ...omitUndefined({ llm: opts.llm }) },
     env: { ...opts.env, ...fake.env },
     providerEnv: { ...providerEnv, ...fake.env },
+    // Absent, the runtime builds its own over the DevKit — which is right
+    // everywhere but here. See `EvalSessionOptions.workflows`.
+    //
+    // One `omitUndefined` over the four optional seams rather than four
+    // conditional spreads: `guard-invariants` rule 2.
+    ...omitUndefined({
+      workflows: opts.workflows,
+      runCode: opts.runCode,
+      fetch: opts.fetch,
+      toolTimeoutMs: opts.toolTimeoutMs,
+      generate: opts.generate,
+    }),
     logger: opts.logger ?? silentLogger,
   });
 
@@ -301,8 +377,9 @@ async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promis
     return at !== -1 && since.slice(at).some((e) => TURN_ENDS.has(e.type));
   };
 
+  const sessionId = `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const session = runtime.createSession({
-    id: `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    id: sessionId,
     agent: opts.agent.name,
     client: sink,
   });
@@ -336,6 +413,7 @@ async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promis
   }
 
   return {
+    id: sessionId,
     events: () => events,
     said: () => saidIn(events),
     toolCalls: () => toolCallsIn(events),

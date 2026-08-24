@@ -5,24 +5,59 @@
 ```ts
 
 import type { AgentDef } from '@alexkroman1/aai';
+import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { GenerateOptions } from '@alexkroman1/aai';
+import type { GenerateResult } from '@alexkroman1/aai';
+import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import type { StartOptions } from '@alexkroman1/aai/workflow-api';
+import { StepFetch } from '@alexkroman1/aai/host-internal';
+import type { ToolInputSchema } from '@alexkroman1/aai';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-export function describeEval(agent: AgentDef, define: (test: EvalTest) => void, options?: Omit<EvalSessionOptions, "agent">): void;
+export function describeEval(agent: AgentDef, define: (test: EvalTest) => void, options?: DescribeEvalOptions): void;
+
+// @public
+export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
+    readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
+};
+
+// @public
+export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
 
 // @public
 export type EvalCaseOptions = {
-    readonly stubReply?: string | readonly string[];
+    readonly stubReply?: StubScript;
+    readonly stubGenerate?: StubScript;
     readonly live?: boolean;
+    readonly scripted?: boolean;
+};
+
+// @public
+type EvalEmitted = {
+    readonly namespace: string;
+    readonly chunk: unknown;
 };
 
 // @public
 export type EvalMode = "live" | "stub";
 
 // @public
+type EvalRunOptions = StartOptions & {
+    readonly timeoutMs?: number | undefined;
+};
+
+// @public
 type EvalSession = {
+    readonly id: string;
     say(text: string): Promise<EvalTurn>;
     events(): readonly SessionEvent[];
     said(): readonly string[];
@@ -36,8 +71,18 @@ type EvalSessionOptions = {
     readonly env?: Record<string, string>;
     readonly providerEnv?: ProviderEnv;
     readonly llm?: LlmProvider;
+    readonly runCode?: RunCodeExecutor;
+    readonly fetch?: typeof globalThis.fetch;
+    readonly toolTimeoutMs?: number;
+    readonly generate?: HostGenerateFn;
+    readonly workflows?: WorkflowClient | undefined;
     readonly turnTimeoutMs?: number;
     readonly logger?: Logger;
+};
+
+// @public
+type EvalSleep = {
+    readonly duration: string | number | Date;
 };
 
 // @public
@@ -47,6 +92,7 @@ export type EvalTest = (name: string, body: (ctx: EvalTestContext) => Promise<vo
 export type EvalTestContext = {
     readonly session: EvalSession;
     readonly mode: EvalMode;
+    readonly workflows: EvalWorkflows | undefined;
 };
 
 // @public
@@ -66,6 +112,74 @@ type EvalTurn = {
 };
 
 // @public
+export type EvalWorkflowCaseOptions = {
+    readonly live?: boolean;
+};
+
+// @public
+type EvalWorkflowEngineOptions = {
+    readonly workflows: Readonly<Record<string, WorkflowDef>>;
+    readonly env: Readonly<Record<string, string>>;
+    readonly stepFetch?: StepFetch | undefined;
+    readonly speech?: SpeechSynthesizer | undefined;
+};
+
+// @public
+type EvalWorkflowRun<R = unknown> = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly key: string | undefined;
+    readonly status: WorkflowRunStatus;
+    readonly output: R | undefined;
+    readonly error: string | undefined;
+    readonly completed: boolean;
+    readonly reported: readonly string[];
+    readonly emitted: readonly EvalEmitted[];
+    readonly slept: readonly EvalSleep[];
+    readonly elapsedMs: number | undefined;
+    readonly snapshot: WorkflowRunSnapshot<R>;
+};
+
+// @public
+type EvalWorkflows = {
+    readonly client: WorkflowClient;
+    run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
+    run(workflow: string, input?: unknown, options?: EvalRunOptions): Promise<EvalWorkflowRun>;
+    settle<R>(runId: string, of: AnyWorkflowDef<R>, options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<EvalWorkflowRun<R>>;
+    settle(runId: string, of?: undefined, options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<EvalWorkflowRun>;
+    runs(): Promise<readonly EvalWorkflowRun[]>;
+    close(): Promise<void>;
+};
+
+// @public
+type EvalWorkflowsOptions = {
+    readonly agent: AgentDef;
+    readonly env?: Record<string, string> | undefined;
+    readonly stepFetch?: EvalWorkflowEngineOptions["stepFetch"];
+    readonly speech?: EvalWorkflowEngineOptions["speech"];
+    readonly timeoutMs?: number | undefined;
+    readonly logger?: Logger | undefined;
+};
+
+// @public
+export type EvalWorkflowTest = (name: string, body: (ctx: EvalWorkflowTestContext) => Promise<void>, options?: EvalWorkflowCaseOptions) => void;
+
+// @public
+export type EvalWorkflowTestContext = {
+    readonly app: EvalWorkflows;
+    readonly mode: EvalMode;
+};
+
+// @internal
+type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+    signal?: AbortSignal | undefined;
+}) => Promise<GenerateResult>;
+
+// @public
 type LogContext = Record<string, unknown>;
 
 // @public
@@ -78,9 +192,29 @@ type Logger = Record<LogLevel, LogFn>;
 type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
-export function resolveEvalMode(agent: AgentDef, env?: Record<string, string | undefined>): {
+export function resolveEvalMode(agent: AgentDef, env?: Record<string, string | undefined>,
+overrides?: {
+    readonly llm?: LlmProvider;
+}): {
     mode: EvalMode;
     reason: string;
+};
+
+// @public
+export function resolveWorkflowEvalMode(agent: AgentDef, env?: Record<string, string | undefined>): {
+    mode: EvalMode;
+    reason: string;
+};
+
+// @public
+type StubScript = string | readonly (string | StubStep)[];
+
+// @public
+type StubStep = {
+    readonly text: string;
+} | {
+    readonly tool: string;
+    readonly args?: Record<string, unknown>;
 };
 
 // (No @packageDocumentation comment for this package)

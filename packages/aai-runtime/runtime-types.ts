@@ -14,6 +14,7 @@ import type { ClientSink, ReadyConfig } from "@alexkroman1/aai/protocol";
 import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import type { HostGenerateFn } from "./generate.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -112,6 +113,26 @@ export type RuntimeOptions = {
    */
   db?: Db | undefined;
   /**
+   * `ctx.workflows` for this runtime, supplied rather than built.
+   *
+   * Defaults to the client `buildWorkflowClient` assembles over the Workflow
+   * DevKit, which is what every deployment wants. It is overridable for the one
+   * caller that has no DevKit to assemble over: an EVAL drives a
+   * `"use workflow"` body imported through a test runner, where the compiler's
+   * transform never ran, so `def.run.workflowId` is absent and the real adapter
+   * cannot start anything. `openEvalSession` passes the in-process client
+   * `openEvalWorkflows` builds (`eval/workflows.ts`) so a tool that calls
+   * `ctx.workflows.start` runs at all.
+   *
+   * A seam rather than a flag, and the same shape as `createWebSocket` beside
+   * it: what is replaced is the ENGINE under the client, so everything above it
+   * — the schema validation, the name mapping, the correlation-key index, the
+   * snapshot union — is the code a deployment runs.
+   *
+   * @internal
+   */
+  workflows?: WorkflowClient | undefined;
+  /**
    * Custom WebSocket factory for the S2S connection (testing seam).
    * @internal
    */
@@ -194,6 +215,33 @@ export type RuntimeOptions = {
    * this process (the self-hosted guard).
    */
   runCode?: ((code: string) => Promise<string | { error: string }>) | undefined;
+  /**
+   * Per-tool-call deadline for this runtime's sessions. Defaults to
+   * `TOOL_EXECUTION_TIMEOUT_MS` (30s), which is a VOICE-turn budget: a caller
+   * waiting on speech has left by then.
+   *
+   * It is an option because that budget is not universal, and the tool executor
+   * has always accepted one — `text-agent.ts` passes `toolTimeoutMs` and the
+   * SESSION path passed nothing, so a session's 30s was unreachable from any
+   * caller. A `support-line`-shaped tool (a graded retrieval loop, up to eleven
+   * sequential model calls, measured at 22-30s against ~10x gateway variance)
+   * therefore times out in a way its author cannot fix from the agent
+   * definition. Raising it trades a voice-turn promise for a tool that finishes;
+   * that is the caller's trade to make, not this file's.
+   */
+  toolTimeoutMs?: number | undefined;
+  /**
+   * Override what tool code calls as `ctx.generate`.
+   *
+   * @internal A testing seam, shaped like `executeTool` and `createWebSocket`.
+   * It exists because `ctx.generate` resolves the agent's LLM DESCRIPTOR into a
+   * model of its own (`setupGenerate` → `createGenerateFn` → `resolveLlm`), so a
+   * scripted provider hands it a SECOND instance walking that script from the
+   * start, in parallel with the turn's. One script cannot serve both: element 0
+   * has to be the turn's first move AND the first `generate` answer at once.
+   * With this, an eval scripts the two independently.
+   */
+  generate?: HostGenerateFn | undefined;
   /**
    * STT provider descriptor ({@link SttProvider}). Must be set together with
    * `llm` and `tts` to route sessions through the pipeline path; leave all

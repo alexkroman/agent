@@ -175,7 +175,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // outlives the session that started it, so nothing about the client is
   // session-scoped. Undefined for an agent that declares none, which is what
   // makes the executor's rejecting stub name the right reason.
-  const workflows = buildWorkflowClient(agent, resolvedDb, opts.publicUrl, logger);
+  // A caller-supplied client wins, and exactly one has one: an eval, whose
+  // bodies were never through the WDK compiler. See `RuntimeOptions.workflows`.
+  const workflows =
+    opts.workflows ?? buildWorkflowClient(agent, resolvedDb, opts.publicUrl, logger);
 
   // Watches runs a tool asked to be told about (`start(…, { notify })`) and
   // makes the agent say so — see `workflow-notify.ts`. The session map is the

@@ -63,11 +63,23 @@ import type { dailyDigest } from "../agent.ts";
 import { discoverEpisodes, type Episode } from "./feeds.ts";
 import { sendDigestToSlack } from "./slack.ts";
 
-/** Between polling rounds. Transcription is minutes, so this is not a busy wait. */
-const POLL_DELAY = "20 seconds";
+/**
+ * Between polling rounds. Transcription is minutes, so this is not a busy wait.
+ *
+ * Exported so `agent.eval.test.ts` can assert on the wait a run RECORDED without
+ * restating the number — an eval skips the sleep, so the duration asked for is
+ * the only observable there is.
+ */
+export const POLL_DELAY = "20 seconds";
 
-/** 180 rounds x 20s = an hour, which is far past any podcast episode. */
-const MAX_POLL_ATTEMPTS = 180;
+/**
+ * 180 rounds x 20s = an hour, which is far past any podcast episode.
+ *
+ * Exported for the same reason as {@link POLL_DELAY}: the eval drives a job past
+ * this budget and reads the degraded entry, and a restated 180 in two files is a
+ * second place for the number to be wrong.
+ */
+export const MAX_POLL_ATTEMPTS = 180;
 
 /**
  * How much transcript the model reads.
@@ -218,33 +230,54 @@ export async function dailyDigestFlow(input: DigestInput): Promise<DailyDigestOu
  * an hour becomes `unavailable` with a reason, and the digest goes out with the
  * other four — a partial digest being obviously better than none, and the
  * reason being printed where a reader will see it.
+ *
+ * **What comes back is in the order it went in**, which is not what a first
+ * draft does. Appending each episode as it finishes — and concatenating the
+ * ones that never did on the end — makes the digest's running order a report of
+ * TRANSCRIPTION LATENCY: `discoverEpisodes` sorted the feed newest first, and a
+ * reader then sees whichever episode the provider happened to finish first at
+ * the top. Found by `agent.eval.test.ts`, which is the only tier that can see
+ * it, a per-step spec having no batch to order.
  */
 async function waitForTranscripts(jobs: TranscriptJob[]): Promise<TranscriptState[]> {
   let pending = jobs;
-  const completed: TranscriptState[] = [];
+  // Keyed by episode id rather than appended, and that is what keeps the digest
+  // in PUBLICATION order — see this function's doc.
+  const settled = new Map<string, TranscriptState>();
 
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS && pending.length > 0; attempt += 1) {
     const polled = await mapConcurrent(pending, POLL_CONCURRENCY, pollTranscript);
     for (const state of polled) {
-      if (state.transcriptStatus !== "submitted") completed.push(state);
+      if (state.transcriptStatus !== "submitted") settled.set(state.id, state);
     }
     pending = polled.filter((state) => state.transcriptStatus === "submitted");
     if (pending.length > 0) await sleep(POLL_DELAY);
   }
 
-  return completed.concat(
-    pending.map((job) => ({
-      ...job,
-      transcriptStatus: "unavailable" as const,
-      reason:
-        job.transcriptStatus === "submitted"
-          ? // The transcript is not lost — it is still on the provider, and the
-            // message says where, the same way the other transcription templates do.
-            `Transcript ${job.transcriptId} was still unfinished after ${MAX_POLL_ATTEMPTS} ` +
-            `checks. It is not lost — read it with GET ${TRANSCRIBE_API}/v2/transcript/${job.transcriptId}.`
-          : job.reason,
-    })),
-  );
+  for (const job of pending) settled.set(job.id, gaveUpOn(job));
+  // The list `jobs` arrived in, which `discoverEpisodes` sorted newest first.
+  return jobs.map((job) => settled.get(job.id) ?? gaveUpOn(job));
+}
+
+/**
+ * One episode the run is done waiting for.
+ *
+ * Its own function because {@link waitForTranscripts} needs it in two places —
+ * the jobs still pending when the budget ran out, and the unreachable fallback
+ * the ordered rebuild above needs for a lookup that cannot miss.
+ */
+function gaveUpOn(job: TranscriptJob): TranscriptState {
+  return {
+    ...job,
+    transcriptStatus: "unavailable" as const,
+    reason:
+      job.transcriptStatus === "submitted"
+        ? // The transcript is not lost — it is still on the provider, and the
+          // message says where, the same way the other transcription templates do.
+          `Transcript ${job.transcriptId} was still unfinished after ${MAX_POLL_ATTEMPTS} ` +
+          `checks. It is not lost — read it with GET ${TRANSCRIBE_API}/v2/transcript/${job.transcriptId}.`
+        : job.reason,
+  };
 }
 
 /**
