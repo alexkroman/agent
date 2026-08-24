@@ -53,8 +53,15 @@ BUILD_IGNORE = [
     "**/.env.*",
 ]
 
-# SDK + UI (default client) + CLI (client bundler) + guest harness + studio
-# client + the server entry. Order matters: each depends on the ones before it.
+# SDK + host runtime + UI (default client) + CLI (client bundler) + guest
+# harness + studio client + the server entry. Order matters: each depends on the
+# ones before it.
+#
+# aai-runtime is NOT optional here even though nothing in this list is named
+# after it: aai-studio-server imports `@alexkroman1/aai-runtime/internal`, which
+# resolves to `dist/internal.js` in the image and to `internal.ts` only under the
+# `@dev/source` condition. Omitting it built a green image whose entry died at
+# warm-up on ERR_MODULE_NOT_FOUND for that exact path.
 #
 # aai-server is deliberately absent: it has no build. Its subpath exports point
 # at `.ts` source, so aai-studio-server — the composition root for both apps and
@@ -62,6 +69,7 @@ BUILD_IGNORE = [
 # aai-server build` would fail outright now, not no-op.)
 BUILD_COMMAND = (
     "pnpm --filter aai build"
+    " && pnpm --filter aai-runtime build"
     " && pnpm --filter aai-ui build"
     " && pnpm --filter @alexkroman1/aai-cli build"
     " && pnpm --filter aai-guest build"

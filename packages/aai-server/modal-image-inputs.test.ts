@@ -23,7 +23,7 @@
  * Read as text rather than imported, because the source of truth is Python.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
@@ -260,6 +260,70 @@ describe("modal image container re-import", () => {
       (m) => m[0].includes("REPO_ROOT") && !m[0].startsWith("def build_image"),
     );
     expect(readers.map((m) => m[1])).toEqual(["_stage_install_inputs"]);
+  });
+});
+
+/**
+ * `BUILD_COMMAND` is a hand-ordered list of `pnpm --filter … build` steps, and
+ * nothing about the workspace forces a new package into it. `aai-runtime` was
+ * extracted into its own package and left out of it: the image built GREEN and
+ * the entry then died at warm-up on `ERR_MODULE_NOT_FOUND` for
+ * `/app/packages/aai-studio-server/node_modules/@alexkroman1/aai-runtime/dist/internal.js`.
+ * Nothing local could see it — that subpath resolves to `internal.ts` under the
+ * `@dev/source` condition, so only an install without that condition, i.e. the
+ * image, reaches `dist/`.
+ *
+ * DERIVED, not pinned: every `workspace:*` dependency of the studio server that
+ * HAS a build script must be built. That is what excludes `aai-server` and
+ * `aai-templates` without naming them — they have no build, which is exactly
+ * the reason the Python's own comment gives for omitting `aai-server`.
+ */
+describe("modal image build command", () => {
+  type Manifest = {
+    name?: string;
+    scripts?: Record<string, string>;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const manifest = (dir: string): Manifest =>
+    JSON.parse(readFileSync(path.join(REPO_ROOT, "packages", dir, "package.json"), "utf-8"));
+
+  test("builds every workspace dependency of the server entry that has a build", () => {
+    const dirByName = new Map<string, string>();
+    // `withFileTypes` because `packages/` collects non-package entries (a
+    // stray `.DS_Store` made the first version of this throw ENOTDIR).
+    for (const entry of readdirSync(path.join(REPO_ROOT, "packages"), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const name = manifest(entry.name).name;
+      if (name !== undefined) dirByName.set(name, entry.name);
+    }
+
+    const studio = manifest("aai-studio-server");
+    const needsBuild = Object.entries({ ...studio.dependencies, ...studio.devDependencies })
+      .filter(([, range]) => range.startsWith("workspace:"))
+      .map(([name]) => name)
+      .filter((name) => {
+        const dir = dirByName.get(name);
+        return dir !== undefined && manifest(dir).scripts?.build !== undefined;
+      });
+
+    // A floor, because the whole assertion below is a loop over this list: a
+    // scan that stopped resolving manifests would pass vacuously. Measured 4.
+    expect(
+      needsBuild.length,
+      "no buildable workspace deps found — the scan is broken",
+    ).toBeGreaterThan(2);
+
+    const built = pyTuple("BUILD_COMMAND").join("");
+    for (const name of needsBuild) {
+      // The list filters by unscoped name for most packages and by the scoped
+      // name for aai-cli; accept either. The trailing ` build` is what stops
+      // `aai` matching the `aai-runtime` step.
+      const unscoped = name.replace(/^@[^/]+\//, "");
+      expect(built, `BUILD_COMMAND does not build ${name}`).toMatch(
+        new RegExp(`--filter (?:@[^/]+/)?${unscoped} build`),
+      );
+    }
   });
 });
 
