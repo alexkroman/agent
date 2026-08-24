@@ -11,6 +11,7 @@ function makeState(authenticatedUserId: string | null): RetailState {
     callSeq: 3,
     activity: [{ seq: 3, tool: "get_order_details", summary: "read #W5866402", at: 0 }],
     focus: { orderId: "#W5866402" },
+    pending: null,
   };
 }
 
@@ -194,5 +195,46 @@ describe("buildScriptBullets", () => {
   test("bullets stay short enough to render in a sidebar", () => {
     const bullets = buildScriptBullets(makeState("olivia_ito_3591"));
     expect(bullets.length).toBeLessThanOrEqual(6);
+  });
+});
+
+describe("the staged change in the projection", () => {
+  function stagedState(authenticatedUserId: string | null): RetailState {
+    const state = makeState(authenticatedUserId);
+    state.pending = {
+      kind: "cancel_pending_order",
+      plan: {
+        readBack: "cancel order #W5866402 and refund $12.00 to gift_card_7794233",
+        orderId: "#W5866402",
+        reason: "no longer needed",
+        refunds: [{ methodId: "gift_card_7794233", amount: 12 }],
+        total: 12,
+      },
+    };
+    return state;
+  }
+
+  test("carries the sentence the agent is supposed to be reading back", () => {
+    const view = storeView(stagedState("olivia_ito_3591"));
+    expect(view.pending?.kind).toBe("cancel_pending_order");
+    expect(view.pending?.readBack).toContain("#W5866402");
+  });
+
+  test("is null when nothing is waiting", () => {
+    expect(storeView(makeState("olivia_ito_3591")).pending).toBeNull();
+  });
+
+  test("is withheld before authentication, like everything else here", () => {
+    // Unreachable in practice — a change cannot be staged before the caller is
+    // identified — but the projection does not lean on that: it gates `pending`
+    // on `user` exactly as it gates the orders it describes.
+    expect(storeView(stagedState(null)).pending).toBeNull();
+  });
+
+  test("the script offers the answer to the question, not a new request", () => {
+    expect(buildScriptBullets(stagedState("olivia_ito_3591"))).toEqual([
+      '"Yes, go ahead"',
+      `"No, don't do that"`,
+    ]);
   });
 });

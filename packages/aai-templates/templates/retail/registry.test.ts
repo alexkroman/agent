@@ -38,8 +38,8 @@ const registry = Object.entries(retailAgent.tools);
 // distinct session, which is what these per-tool cases assume.
 const makeCtx = (): ToolContext => createToolContext();
 
-/** A context whose call flow is in `serving`, so a `when: "serving"` tool can
- *  reach its body. Moved through the FLOW rather than by writing
+/** A context whose call flow is in `serving.helping`, so a `when: "serving"`
+ *  tool can reach its body. Moved through the FLOW rather than by writing
  *  `authenticatedUserId`, because the gate reads the machine. */
 function servingCtx(): ToolContext {
   const ctx = makeCtx();
@@ -47,11 +47,44 @@ function servingCtx(): ToolContext {
   return ctx;
 }
 
+/** The two tools legal only while a change waits on the caller's yes. */
+const SETTLING_TOOLS = new Set(["cancel_change", "confirm_change"]);
+
+function toolNamed(name: string) {
+  const def = retailAgent.tools[name];
+  if (!def) throw new Error(`no tool named ${name}`);
+  return def;
+}
+
+/**
+ * A context in whatever state `name` needs to reach its BODY.
+ *
+ * The two settling tools are reached by really identifying a caller and really
+ * staging a change, rather than by sending `STAGED` at the machine: they read
+ * `state.pending`, and a position with nothing staged behind it is a state this
+ * template cannot actually be in. Everything else only needs `serving`.
+ */
+async function bodyReachableCtx(name: string): Promise<ToolContext> {
+  if (!SETTLING_TOOLS.has(name)) return servingCtx();
+  const ctx = makeCtx();
+  await toolNamed("find_user_id_by_email").execute(
+    { email: "aarav.anderson9752@example.com" },
+    ctx,
+  );
+  await toolNamed("cancel_pending_order").execute(
+    { order_id: "#W9300146", reason: "no longer needed" },
+    ctx,
+  );
+  return ctx;
+}
+
 /** Minimal args satisfying each tool's schema. Deliberately plausible-shaped
  *  but wrong — these calls are expected to fail; what is asserted is that they
  *  still moved the UI. */
 const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
+  cancel_change: {},
   cancel_pending_order: { order_id: "#W0000000", reason: "no longer needed" },
+  confirm_change: {},
   exchange_delivered_order_items: {
     order_id: "#W0000000",
     item_ids: ["0000000000"],
@@ -102,10 +135,17 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
 };
 
 describe("tool registry", () => {
-  test("registers all fifteen tau2 retail tools", () => {
+  test("registers all seventeen tools", () => {
+    // Fifteen of these are tau2's retail tool set, which this template used to
+    // hold verbatim. `confirm_change` and `cancel_change` are the two it does
+    // not have: tau2's tools apply on their first call, and here nothing does —
+    // see `pending.ts`. Departing from that set is what buys the confirmation
+    // gate, and it is the reason this list is no longer a fidelity claim.
     expect(registry.map(([name]) => name).sort()).toEqual(
       [
+        "cancel_change",
         "cancel_pending_order",
+        "confirm_change",
         "exchange_delivered_order_items",
         "find_user_id_by_email",
         "find_user_id_by_name_zip",
@@ -144,10 +184,10 @@ describe("the UI-update invariant", () => {
   // This is the one that fails if a future tool is built with tool() instead of
   // retailTool(): it would work, and the sidebar would sit still through it.
   test.each(registry)("%s increments callSeq and logs activity", async (name, def) => {
-    // `serving`, so the flow gate is not what these calls are testing: the
-    // point is that a tool which reaches its BODY moves the sidebar. A refused
-    // call deliberately does not — see `store.test.ts`.
-    const ctx = servingCtx();
+    // In whichever state lets the body run, so the flow gate is not what these
+    // calls are testing: the point is that a tool which reaches its BODY moves
+    // the sidebar. A refused call deliberately does not — see `store.test.ts`.
+    const ctx = await bodyReachableCtx(name);
     const before = retailSlot.get(ctx).callSeq;
     await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
     const state = retailSlot.get(ctx);
@@ -159,7 +199,7 @@ describe("the UI-update invariant", () => {
   test.each(registry)("%s logs its own registry key as its name", async (name, def) => {
     // Catches a copy-paste where the retailTool `name` and the registry key
     // disagree — the activity feed would then attribute calls to the wrong tool.
-    const ctx = servingCtx();
+    const ctx = await bodyReachableCtx(name);
     await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
     expect(retailSlot.get(ctx).activity.at(-1)?.tool).toBe(name);
   });
