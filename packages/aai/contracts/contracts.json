@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 19,
-    "supported": [3, 10, 11, 12, 13, 15, 16, 17, 18, 19],
+    "current": 20,
+    "supported": [3, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20],
     "dropped": {
       "1": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "2": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
@@ -36,8 +36,8 @@
     }
   },
   "dialog": {
-    "current": 4,
-    "supported": [2, 4],
+    "current": 5,
+    "supported": [2, 4, 5],
     "dropped": {
       "1": "flow() is dialog(): Flow -> Dialog, FlowPosition -> DialogPosition, FlowToolDef -> DialogToolDef, FlowToolResult -> DialogToolResult, FlowOptions -> DialogOptions. A pure rename, and the argument is the import line: 'flow' sat in the same barrel as 'workflow' meaning something entirely different (a dialog statechart bound to a session, versus durable work that outlives it), and next to graph(), whose name said equally little about which of the two you wanted. dialog() / procedure() / workflow() is a legible triple — where the conversation is, one unit of work inside a tool call, and work that survives the session.",
       "3": "`Dialog.tool` answers `ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>` now, so `InferToolOutput` on a dialog tool is the full envelope rather than `unknown`. Epoch 3's example asserted that erasure as a compile-checked fact (`declaredOutput: InferToolOutput<typeof quoteClaim> = \"unknown, deliberately\"`) and argued it was correct, because threading R out would make the answer `{ premium: number }` — \"a shape no client ever receives\". That objection does not apply to what shipped: the type answered is the WRAPPER the runtime hands back, position and all, which is exactly what the client receives. The line is now the error epoch 3 predicted, and no edit that keeps the epoch's claim can compile."
@@ -75,8 +75,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 12,
-    "supported": [8, 9, 10, 12],
+    "current": 13,
+    "supported": [8, 9, 10, 12, 13],
     "dropped": {
       "1": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
       "2": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
@@ -111,9 +111,14 @@
       "2": "Sixteen symbols an author never typed left this subpath: the eight *_KIND/*_API_KEY_ENV constants (to @alexkroman1/aai/host-internal, where the resolve*Settings helpers that read them already live) and the four narrowed *Provider aliases, which had zero references outside their own modules and restated a kind tag the factory already sets. Four renames finish it — AssemblyAIOptions to AssemblyAISttOptions, ASSEMBLYAI_STREAMING_EU_URL to ASSEMBLYAI_STT_EU_URL, DEFAULT_DEEPGRAM_ENDPOINTING_MS to DEEPGRAM_DEFAULT_ENDPOINTING_MS, and elevenlabs() to elevenLabsStt() — plus two option-field renames (languageCode to language, languageHints to languages). The epoch-2 example named eleven of the removed symbols and both old field spellings; no import list from it resolves."
     }
   },
+  "subagent": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "testing": {
-    "current": 23,
-    "supported": [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 18, 20, 22, 23],
+    "current": 24,
+    "supported": [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 18, 20, 22, 23, 24],
     "dropped": {
       "1": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
       "5": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
@@ -126,8 +131,8 @@
     }
   },
   "tool": {
-    "current": 11,
-    "supported": [3, 4, 5, 6, 8, 9, 10, 11],
+    "current": 12,
+    "supported": [3, 4, 5, 6, 8, 9, 10, 11, 12],
     "dropped": {
       "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false — a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard.",
       "2": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",

@@ -15,6 +15,7 @@
 import type { Db } from "./db.ts";
 import type { GenerateFn } from "./generate.ts";
 import type { SlotStore } from "./session-state.ts";
+import type { DelegateFn } from "./subagent.ts";
 import type { Message } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 
@@ -80,6 +81,23 @@ export type ToolContext = {
    * output ({@link GenerateFn}).
    */
   generate: GenerateFn;
+  /**
+   * Hand a bounded task to a SUBAGENT — a second tool loop with its own
+   * instructions, model, tools and context window — and get back what it
+   * concluded, not how it got there ({@link DelegateFn}).
+   *
+   * The sibling of {@link ToolContext.generate}, and the line between them is
+   * how many model turns the answer takes: `generate` is one prompt, `delegate`
+   * is a loop whose intermediate tool results the caller has no reason to
+   * carry. Executes on the host wherever the runtime runs, like `db` and
+   * `generate`.
+   *
+   * **A subagent's own tools cannot delegate further** — their `ctx.delegate`
+   * rejects naming the reason. One level is a bill a caller can quote; a
+   * subagent that may delegate can delegate to itself, and nothing at this
+   * seam can see the recursion.
+   */
+  delegate: DelegateFn;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
   /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */

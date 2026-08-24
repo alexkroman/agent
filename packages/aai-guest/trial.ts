@@ -176,6 +176,7 @@ export async function executeTool(
       throw new Error(STORAGE_DISABLED_MESSAGE);
     },
     generate: () => Promise.reject(new Error("generate is not available in trial tool runs")),
+    delegate: () => Promise.reject(new Error("delegate is not available in trial tool runs")),
     messages: [],
     sessionId: req.sessionId,
     send: () => {

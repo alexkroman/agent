@@ -496,6 +496,9 @@ export function buildSystemPrompt(config: AgentConfig, opts: {
 export function builtinFetch(env?: NodeJS.ProcessEnv): typeof globalThis.fetch;
 
 // @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
 export type BuiltinToolOptions = {
     fetch?: typeof globalThis.fetch;
     runCode?: RunCodeExecutor;
@@ -609,6 +612,23 @@ export function defaultProviders(config: ProviderFields): {
     llm?: LlmProvider;
     tts?: TtsProvider;
 } | null;
+
+// @public
+type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
 
 // @internal
 type DnsLookup = (hostname: string) => Promise<{
@@ -1264,6 +1284,24 @@ export type SttTurnMeta = {
     endOfTurnConfidence?: number;
 };
 
+// @public
+interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    instructions: string;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxSteps?: number;
+    name: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
@@ -1273,6 +1311,7 @@ type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
+    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;

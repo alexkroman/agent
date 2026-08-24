@@ -25,6 +25,8 @@ order, roughly by what a spec reaches for first:
 - `_testing-tool-results.ts` — `ok` / `okPosition`, unwrapping what a gated
   tool answered; `_testing-schema.ts` — what a tool's or workflow's input
   schema accepts, without reaching through `~standard`.
+- `testing-delegate.ts` — `stubDelegate`, the same seam one loop up: what a
+  SUBAGENT concluded, without running one.
 - `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
   slots a `"use step"` body reaches through, each answered in memory.
@@ -158,8 +160,9 @@ function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 Build a [ToolContext](index.md#toolcontext) for testing a tool's `execute` in isolation.
 
 Defaults are chosen so the context is inert: empty `env`, an empty slot store,
-a `db` and `generate` that reject with a message naming themselves, a
-`signal` that never aborts, and a `send` that records. Override any of them.
+a `db`, `generate` and `delegate` that reject with a message naming
+themselves, a `signal` that never aborts, and a `send` that records.
+Override any of them.
 
 **Each call is a distinct session.** `sessionId` auto-increments, which is
 what makes the two-context isolation test — the same tool run against two
@@ -594,6 +597,49 @@ How the schema is named in that error.
 import { schemaInputIssues } from "@alexkroman1/aai/testing";
 
 expect(await schemaInputIssues(myWorkflow.input, { voice: "not-a-voice" })).toBeDefined();
+```
+
+***
+
+### stubDelegate()
+
+```ts
+function stubDelegate(script: 
+  | StubDelegateRoute
+  | Readonly<Record<string, StubDelegateRoute>>): StubDelegate;
+```
+
+Build a fake `ctx.delegate` from a script keyed by subagent name.
+
+Pass a single route (not a record) to answer every delegation the same way,
+which is what a one-subagent tool wants.
+
+#### Parameters
+
+##### script
+
+  \| [`StubDelegateRoute`](#stubdelegateroute)
+  \| `Readonly`\<`Record`\<`string`, [`StubDelegateRoute`](#stubdelegateroute)\>\>
+
+#### Returns
+
+[`StubDelegate`](#stubdelegate)
+
+#### Example
+
+**Two subagents, one queue**
+
+```ts
+import { createToolContext, stubDelegate } from "@alexkroman1/aai/testing";
+
+const findings = ["Rain on Tuesday.", "Clear on Wednesday."];
+const desk = stubDelegate({
+  researcher: () => ({ text: findings.shift() ?? "Nothing found.", steps: 3 }),
+  "fact-checker": "Both claims check out.",
+});
+const ctx = createToolContext({ delegate: desk.delegate });
+// … run the tool, then assert on who was asked what:
+// expect(desk.calls.map((call) => call.subagent.name)).toEqual([…]);
 ```
 
 ***
@@ -1176,6 +1222,62 @@ event: string;
 
 ***
 
+### StubDelegate
+
+A fake `ctx.delegate`: the function to pass, and what it was asked.
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubDelegateCall[];
+```
+
+Every call, in order.
+
+##### delegate
+
+```ts
+delegate: DelegateFn;
+```
+
+Pass as `delegate` to `createToolContext`.
+
+***
+
+### StubDelegateCall
+
+One `ctx.delegate` call, as recorded by [stubDelegate](#stubdelegate-1).
+
+#### Properties
+
+##### options
+
+```ts
+options: DelegateOptions;
+```
+
+The whole options object, for asserting `context` and `maxSteps`.
+
+##### subagent
+
+```ts
+subagent: SubagentDef;
+```
+
+The subagent that was asked.
+
+##### task
+
+```ts
+task: string;
+```
+
+The task it was given.
+
+***
+
 ### StubGateway
 
 A fake gateway: the `fetch` to install, and what it was asked.
@@ -1382,6 +1484,40 @@ than a fixture that lies.
 `R` = `unknown`
 
 The workflow's return type, when the caller names it.
+
+***
+
+### StubDelegateReply
+
+```ts
+type StubDelegateReply = 
+  | string
+  | {
+  steps?: number;
+  text: string;
+  toolCalls?: readonly SubagentToolCall[];
+};
+```
+
+What one route answers with.
+
+A bare string is the subagent's final text with an empty cost report, which
+is what a tool that only reads `text` wants. The object form fills in
+`steps` and `toolCalls` for a tool that narrates the wait.
+
+***
+
+### StubDelegateRoute
+
+```ts
+type StubDelegateRoute = 
+  | StubDelegateReply
+  | ((call: StubDelegateCall) => StubDelegateReply);
+```
+
+How a route answers: a fixed reply, or a function of the call — the function
+form being what a route asked more than once (a subagent run per document)
+needs in order to shift its own script.
 
 ***
 

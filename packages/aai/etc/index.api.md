@@ -172,6 +172,23 @@ type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 export type DefaultToolResult = any;
 
 // @public
+export type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+export interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+export interface DelegateResult {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     readonly key: string;
     readonly machine: M;
@@ -773,6 +790,27 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
+export function subagent(def: SubagentDef): SubagentDef;
+
+// @public
+export interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    instructions: string;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxSteps?: number;
+    name: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+export interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
     text: true;
     llm?: LlmProvider | string;
@@ -803,6 +841,7 @@ export type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
+    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;

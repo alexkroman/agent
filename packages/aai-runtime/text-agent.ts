@@ -69,6 +69,7 @@ import { createGenerateFn } from "./generate.ts";
 import { resolveLlm } from "./providers/resolve.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { mergeBuiltinSurface } from "./runtime-tools.ts";
+import { createSubagentRunner } from "./subagent.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 import { createToolCallRepair } from "./tool-call-repair.ts";
 import { createToolDispatcher, executeToolCall } from "./tool-executor.ts";
@@ -260,6 +261,18 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
   });
 
   /**
+   * `ctx.delegate`, on the same descriptor and the same credential env as
+   * `generate` — a text agent's tools delegate exactly as a voice agent's do.
+   */
+  const subagents = createSubagentRunner({
+    llm: agent.llm ?? assemblyAILlm(),
+    env: opts.providerEnv ?? opts.env ?? {},
+    ...omitUndefined({ fetch: opts.fetch }),
+    ...omitUndefined({ runCode: opts.runCode }),
+    logger,
+  });
+
+  /**
    * The agent's slot state for this text agent's whole life — one store, so two
    * turns of one conversation see the same cart.
    *
@@ -285,6 +298,7 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
       workflows: opts.workflows,
       messages: call.messages,
       generate,
+      subagents,
       logger,
       signal: call.options?.signal,
       timeoutMs: opts.toolTimeoutMs,

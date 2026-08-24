@@ -25,7 +25,13 @@ import type { Logger } from "./runtime-config.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { SessionStateStore } from "./session-state-store.ts";
-import { createToolDispatcher, type ExecuteTool, executeToolCall } from "./tool-executor.ts";
+import { createSubagentRunner } from "./subagent.ts";
+import {
+  createToolDispatcher,
+  type ExecuteTool,
+  executeToolCall,
+  type SubagentRunner,
+} from "./tool-executor.ts";
 import type { RunNotifier } from "./workflow-notify.ts";
 
 /**
@@ -201,11 +207,30 @@ function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
   });
 }
 
+/**
+ * Build the ctx.delegate implementation for this runtime.
+ *
+ * The same three inputs `setupGenerate` takes, plus the two a subagent's
+ * BUILTINS need — a subagent may enable `web_search` or `run_code` whether or
+ * not the parent agent did, so the surface is resolved per delegation from the
+ * same options the parent's builtins were.
+ */
+function setupSubagents(deps: ToolSetupDeps): SubagentRunner {
+  return createSubagentRunner({
+    llm: deps.llm,
+    env: deps.providerEnv,
+    ...omitUndefined({ fetch: deps.opts.fetch }),
+    ...omitUndefined({ runCode: deps.opts.runCode }),
+    ...omitUndefined({ logger: deps.logger }),
+  });
+}
+
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
 function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): ToolSetup {
   const { agent, opts, env, resolvedDb, workflows, notifier, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
+  const subagents = setupSubagents(deps);
   const resolved = mergeBuiltinSurface(
     agent,
     builtinFetchOpt,
@@ -235,6 +260,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
         workflows: withNotify(workflows, notifier, sessionId),
         messages,
         generate,
+        subagents,
         logger,
         signal: callOpts?.signal,
       });
@@ -272,6 +298,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   const frozenEnv = Object.freeze({ ...env });
 
   const generate = setupGenerate(deps);
+  const subagents = setupSubagents(deps);
 
   /**
    * `ctx.send` → client `custom_event`, with the wire caps enforced here —
@@ -358,6 +385,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         workflows: withNotify(workflows, notifier, sid),
         messages,
         generate,
+        subagents,
         logger,
         // Always defined: `ctx.send` is a no-op when no socket holds the id
         // (the same shape a missing sink produced before), and binding it

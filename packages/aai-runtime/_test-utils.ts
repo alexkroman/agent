@@ -93,6 +93,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     // method — the laundering idiom the escape-hatch ratchet now counts.
     db: createUnusedDb(),
     generate: () => Promise.reject(new Error("generate not mocked")),
+    delegate: () => Promise.reject(new Error("delegate not mocked")),
     messages: [],
     sessionId: "test-session",
     send: vi.fn(),

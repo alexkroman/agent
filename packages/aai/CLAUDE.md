@@ -745,6 +745,16 @@ typed `object`. Note zod 4.4 stamps `~standard` onto its plain
 `toJSONSchema()` OUTPUT too — schema detection keys off the `_zod` instance
 marker, never the `~standard` interface (`isConvertibleSchema`).
 
+## `ctx.delegate` (subagents)
+
+The sibling of `ctx.generate`, and the line between them is how many model
+turns an answer takes: `generate` is one prompt, `delegate` runs a whole tool
+loop — the Vercel AI SDK's `ToolLoopAgent` — with its own instructions, model,
+tools and CONTEXT WINDOW, and hands back only what it concluded. `subagent()`
+(`sdk/subagent.ts`) declares one; the host implementation, the reuse of
+`executeToolCall` for a subagent's own tools, the one-level rule and the
+isolated `ctx.messages` are in `packages/aai-runtime/CLAUDE.md`, "Subagents".
+
 ## Concurrency primitives (use these, don't hand-roll)
 
 The repo's recurring async-coordination patterns are reified as small
@@ -1283,19 +1293,6 @@ PIPELINE, not S2S), and the host-mode audio pacing measurement — is in
 mode)".** It went there when this guide hit its size cap; `aai dev` is the
 server's principal caller and the CLI owns `AAI_DEV_HOST`, `hostModeEnv` and
 `resolveServerEnv`.
-
-## Telephony: a phone call is an ordinary session
-
-`WS /phone` (`host/telephony/`) runs a carrier's media stream — Twilio Media
-Streams, Telnyx media streaming — as an ordinary session, served by
-`createServer` with no per-agent configuration. **The whole account is in
-`packages/aai-guest/CLAUDE.md`, "A phone call is an ordinary session"** — the
-shim design and the rule that no telephony branch may exist below the bridge,
-the four SDK-side decisions (pacing, LEARNED rates, low-pass before
-downsampling), what a `CarrierCodec` owes, and the two deliberate gaps. It is
-the harness that serves this in production, and this guide is at its cap; the
-platform's TwiML webhook route is in `packages/aai-server/CLAUDE.md`,
-"Telephony".
 
 ## Pipeline-transport interleaving fuzz
 

@@ -171,6 +171,13 @@ export type { SlotStore, StateProjection } from "./sdk/session-state.ts";
 // never-guess contract, on the root barrel because it is written in a tool body
 // beside `toolFailure`, which it returns.
 export * from "./sdk/spoken.ts";
+/**
+ * `subagent()` and the `ctx.delegate` contract — the third machine, and the one
+ * that spends a MODEL rather than a turn: a second tool loop with its own
+ * context window, whose intermediate steps the caller never carries. Picking
+ * between it and `generate` — one prompt, or a loop — is the whole decision.
+ */
+export * from "./sdk/subagent.ts";
 export * from "./sdk/types.ts";
 /**
  * The utilities written INSIDE a tool body — all fifteen of them, which is the

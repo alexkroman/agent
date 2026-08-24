@@ -130,8 +130,9 @@ let sessionCounter = 0;
  * Build a {@link ToolContext} for testing a tool's `execute` in isolation.
  *
  * Defaults are chosen so the context is inert: empty `env`, an empty slot store,
- * a `db` and `generate` that reject with a message naming themselves, a
- * `signal` that never aborts, and a `send` that records. Override any of them.
+ * a `db`, `generate` and `delegate` that reject with a message naming
+ * themselves, a `signal` that never aborts, and a `send` that records.
+ * Override any of them.
  *
  * **Each call is a distinct session.** `sessionId` auto-increments, which is
  * what makes the two-context isolation test — the same tool run against two
@@ -209,6 +210,16 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
       Promise.reject(
         new Error(
           "ctx.generate was not stubbed for this test — pass `generate` to createToolContext",
+        ),
+      ),
+    // Inert for the same reason `generate` is, and NAMING `stubDelegate`: a
+    // subagent run is the one collaborator a spec must never let reach a real
+    // model, so the default has to fail rather than answer.
+    delegate: () =>
+      Promise.reject(
+        new Error(
+          "ctx.delegate was not stubbed for this test — pass `delegate` to " +
+            "createToolContext (see stubDelegate)",
         ),
       ),
     messages: [],

@@ -8,11 +8,15 @@
 
 import type {
   Db,
+  DelegateFn,
+  DelegateOptions,
+  DelegateResult,
   GenerateFn,
   GenerateOptions,
   GenerateResult,
   Message,
   SlotStore,
+  SubagentDef,
   ToolContext,
   ToolDef,
 } from "@alexkroman1/aai";
@@ -34,6 +38,33 @@ import type { Logger } from "./runtime-config.ts";
 
 export type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
 
+/**
+ * Everything one tool call is given EXCEPT the tool — the bag a subagent's own
+ * tools are run with, derived by subtraction so a capability added to a tool
+ * context cannot be silently missing from a delegated one.
+ *
+ * @internal
+ */
+export type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
+
+/**
+ * Run a subagent to completion (`ctx.delegate`) — implemented by
+ * `createSubagentRunner` in `subagent.ts`, which is the only caller of
+ * {@link executeToolCall} that passes a bag it did not build itself.
+ *
+ * Declared HERE rather than beside its implementation because
+ * {@link ExecuteToolCallOptions} carries one and the two types are mutually
+ * recursive: a delegated run's tools are ordinary tool calls, whose context
+ * carries the runner again (refusing — delegation is one level deep).
+ *
+ * @internal
+ */
+export type SubagentRunner = (
+  subagent: SubagentDef,
+  options: DelegateOptions,
+  parent: ToolCallDefaults,
+) => Promise<DelegateResult>;
+
 // setImmediate rather than setTimeout(0): same yield-to-I/O semantics without
 // Node's ~1ms timer clamp — saves a couple of ms on every tool call.
 const yieldTick = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -51,6 +82,15 @@ type ExecuteToolCallOptions = {
   messages?: readonly Message[] | undefined;
   /** Host LLM generation (ctx.generate); absent contexts throw on use. */
   generate?: HostGenerateFn | undefined;
+  /**
+   * Host subagent runner (ctx.delegate); absent contexts reject on use.
+   *
+   * Passed as a FUNCTION rather than as the pieces one would need to build it,
+   * because a delegated run re-enters {@link executeToolCall} with this same
+   * bag — so what the runner needs from a tool call is exactly what a tool call
+   * already has.
+   */
+  subagents?: SubagentRunner | undefined;
   logger?: Logger | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
   /** Turn-scoped cancellation: unblocks the await (and is exposed to the tool
@@ -82,7 +122,8 @@ type ExecuteToolCallOptions = {
 // context's signal is the per-call controller `executeToolCall` always builds,
 // which is what makes `ToolContext.signal` non-optional.
 function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
-  const { env, slots, db, messages, sessionId, send, signal, generate, workflows } = opts;
+  const { env, slots, db, messages, sessionId, send, signal, generate, subagents, workflows } =
+    opts;
   return {
     env,
     // A caller with no session gets its own detached store rather than a shared
@@ -114,6 +155,19 @@ function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }
       // now that `ToolContext.signal` is.
       return generate(genOpts, { signal });
     }) as GenerateFn,
+    // The runner is handed this call's whole option bag — MINUS the tool, which
+    // is the one thing a delegated run supplies itself — plus the per-call
+    // signal, so cancelling the turn cancels the subagent's loop and every tool
+    // call inside it. `tool` is dropped by destructuring rather than by a cast:
+    // a new option is then carried into a delegated run automatically, which is
+    // the property `ToolCallDefaults` exists to keep.
+    delegate: ((subagent: SubagentDef, delegateOpts: DelegateOptions): Promise<DelegateResult> => {
+      if (!subagents) {
+        return Promise.reject(new Error("delegate is not available in this execution context"));
+      }
+      const { tool: _tool, ...defaults } = opts;
+      return subagents(subagent, delegateOpts, { ...defaults, signal });
+    }) satisfies DelegateFn,
     messages: messages ?? [],
     // No session → a unique per-call id, NOT "": the builtin remember/recall
     // notes are keyed by sessionId in a process-wide map, so sessionless

@@ -25,6 +25,8 @@
  * - `_testing-tool-results.ts` — `ok` / `okPosition`, unwrapping what a gated
  *   tool answered; `_testing-schema.ts` — what a tool's or workflow's input
  *   schema accepts, without reaching through `~standard`.
+ * - `testing-delegate.ts` — `stubDelegate`, the same seam one loop up: what a
+ *   SUBAGENT concluded, without running one.
  * - `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
  *   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
  *   slots a `"use step"` body reaches through, each answered in memory.
@@ -64,6 +66,13 @@ export {
   type StubTranscribeOptions,
   stubTranscribe,
 } from "./_testing-transcribe.ts";
+export {
+  type StubDelegate,
+  type StubDelegateCall,
+  type StubDelegateReply,
+  type StubDelegateRoute,
+  stubDelegate,
+} from "./testing-delegate.ts";
 export { withDiscoveredTools } from "./testing-discovery.ts";
 export {
   type StubGateway,
