@@ -21,6 +21,11 @@
       "1": "Epoch 1's shape — `const rates: Rates = await fetchJson<Rates>(url)` — no longer compiles, deliberately. The three network builtins ANSWER with `{ error }` rather than throwing (a model-facing contract that is not changing), and typing them `Promise<T>` made that invisible: all three callers in this repo wrote `?? []` / `?? \"\"` and turned a live DuckDuckGo 403 into \"the web has nothing\". The return type is `T | ToolFailure` now, so a caller that names a shape must narrow with `isToolFailure`. An UNTYPED call is unaffected — `DefaultToolResult` is `any` — so only the call sites precise enough to have a shape are asked to handle the failure they were already receiving."
     }
   },
+  "channels": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "defaults": {
     "current": 4,
     "supported": [4],
@@ -89,8 +94,8 @@
     "dropped": {}
   },
   "step-errors": {
-    "current": 3,
-    "supported": [1, 2, 3],
+    "current": 4,
+    "supported": [1, 2, 3, 4],
     "dropped": {}
   },
   "step-files": {

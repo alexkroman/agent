@@ -48,15 +48,7 @@ import {
   stableEpisodeId,
   titleMatchesSpotify,
 } from "./workflows/feeds.ts";
-import {
-  escapeSlack,
-  isSlackWebhookUrl,
-  isSlackWorkflowTriggerUrl,
-  renderPlainTextDigest,
-  renderSlackPayload,
-  sendDigestToSlack,
-  slackAdvice,
-} from "./workflows/slack.ts";
+import { renderDigestMessage, sendDigestToSlack } from "./workflows/slack.ts";
 
 /**
  * Validate through the SDK's reader, as `start()` does.
@@ -290,60 +282,39 @@ describe("reading a feed", () => {
   });
 });
 
-describe("Slack delivery", () => {
-  test.each([
-    ["https://hooks.slack.com/triggers/E0A/118/abc", true],
-    ["https://hooks.slack.com/services/T000/B000/abc", false],
-    ["https://example.com/triggers/T000/B000/abc", false],
-  ])("isSlackWorkflowTriggerUrl(%s) === %s", (url, expected) => {
-    expect(isSlackWorkflowTriggerUrl(url)).toBe(expected);
-  });
+describe("the digest as a channel message", () => {
+  /**
+   * What is left to test here after the channel concept landed: the MESSAGE,
+   * not the payload. Slack's two webhook shapes, the Block Kit assembly, the
+   * mrkdwn escaping and the advice each refusal deserves are
+   * `@alexkroman1/aai/channels`' and are covered by its own specs — a template
+   * asserting them again would pin the SDK's rendering from the outside, which
+   * is exactly the duplication moving them was for.
+   */
+  test("carries every episode as its own section, linked and attributed", () => {
+    const message = renderDigestMessage(slackInput("https://hooks.slack.com/services/T/B/a"));
 
-  test("the host check and the schema agree on what a webhook is", () => {
-    expect(isSlackWebhookUrl("https://hooks.slack.com/services/T/B/a")).toBe(true);
-    expect(isSlackWebhookUrl("https://hooks.slack.com.evil.test/services/a")).toBe(false);
-  });
-
-  /** The distinction the module exists for — the two URLs take different bodies. */
-  test("sends Block Kit to an incoming webhook", () => {
-    const payload = renderSlackPayload(slackInput("https://hooks.slack.com/services/T/B/a"));
-    expect(payload).toHaveProperty("blocks");
-    // Without `text`, Slack notifies as "[no preview]".
-    expect(payload.text).toContain("Podcast digest 1/2");
-  });
-
-  test("sends flat variables to a workflow trigger, under the configured name", () => {
-    const payload = renderSlackPayload({
-      ...slackInput("https://hooks.slack.com/triggers/T/B/a"),
-      slackWorkflowTextParam: "digest_body",
+    expect(message.heading).toBe("Podcast digest 1/2");
+    expect(message.subtitle).toContain("Feeds:");
+    expect(message.sections).toHaveLength(1);
+    expect(message.sections?.[0]).toMatchObject({
+      title: "Example Episode",
+      subtitle: "Example Podcast",
+      body: "A concise episode summary.",
+      bullets: ["First point", "Second point"],
     });
-    expect(Object.keys(payload)).toEqual(["digest_body"]);
-    expect(payload).not.toHaveProperty("blocks");
-    expect(String(payload.digest_body)).toContain("Podcast digest 1/2");
+    expect(message.sections?.[0]?.url).toContain("http");
   });
 
-  test("a trigger body carries every episode's summary and points", () => {
-    const text = renderPlainTextDigest(slackInput("https://hooks.slack.com/triggers/T/B/a"));
-    expect(text).toContain("Example Episode");
-    expect(text).toContain("A concise episode summary.");
-    expect(text).toContain("- First point");
-  });
+  /**
+   * `text` is the notification line, and on a Slack workflow trigger it is the
+   * WHOLE message — so it has to stand on its own rather than repeat the
+   * heading a trigger will never render.
+   */
+  test("says how much arrived in the notification line", () => {
+    const message = renderDigestMessage(slackInput("https://hooks.slack.com/triggers/T/B/a"));
 
-  test("escapes only Slack's three reserved characters, ampersand first", () => {
-    expect(escapeSlack("Tom & Jerry <b>")).toBe("Tom &amp; Jerry &lt;b&gt;");
-    // Apostrophes are not reserved — escaping them would litter every summary.
-    expect(escapeSlack("it's fine")).toBe("it's fine");
-  });
-
-  test("names the unpublished-workflow case, which no generic message explains", () => {
-    const advice = slackAdvice("https://hooks.slack.com/triggers/T/B/a", "workflow_not_published");
-    expect(advice).toContain("not published");
-  });
-
-  test("tells an incoming-webhook caller to check the webhook, not the workflow", () => {
-    const advice = slackAdvice("https://hooks.slack.com/services/T/B/a", "invalid_payload");
-    expect(advice).toContain("revoked");
-    expect(advice).not.toContain("workflow");
+    expect(message.text).toBe("Podcast digest 1/2: 1 episode summaries");
   });
 });
 

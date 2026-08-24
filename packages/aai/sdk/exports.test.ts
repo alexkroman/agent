@@ -65,6 +65,7 @@ const SUBPATH_IMPORTS: ReadonlyArray<{
   { subpath: "./step", load: () => import("@alexkroman1/aai/step") },
   { subpath: "./testing", load: () => import("@alexkroman1/aai/testing") },
   { subpath: "./testing/vitest", load: () => import("@alexkroman1/aai/testing/vitest") },
+  { subpath: "./channels", load: () => import("@alexkroman1/aai/channels") },
   { subpath: "./step-errors", load: () => import("@alexkroman1/aai/step-errors") },
   { subpath: "./step-files", load: () => import("@alexkroman1/aai/step-files") },
   { subpath: "./workflow-api", load: () => import("@alexkroman1/aai/workflow-api") },
