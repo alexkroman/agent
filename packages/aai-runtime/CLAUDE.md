@@ -411,6 +411,23 @@ Wired in three places, all of them the same two lines: `setupSubagents` in
 OBJECT like `createGenerateFn`, so a subagent declared at module scope reuses
 one client across a session's delegations.
 
+**The worked example is the `briefing-desk` template**, which exists for this
+and is arranged so the three reasons to pay a subagent's latency are each
+visible in one place: a context window the caller does not pay for (a researcher
+reads whole pages; what crosses back is its final paragraph), parallelism
+(`tools/research_topic.ts` fans every angle out at once, so the caller waits for
+the slowest rather than the sum — `allSettled`, because a caller on the phone
+would rather hear three angles and an apology than an error), and tools isolated
+by capability (`researcher` searches AND browses on six steps, `factChecker`
+only searches, on two, on a cheaper model). Compare `web-researcher`, which puts
+the search builtins on the agent ITSELF — right for one lookup, wrong the moment
+a question has four sides. Two things it states in place because they are how a
+subagent disappoints: its instructions END with "your final message is the only
+thing the desk receives", and every angle is written as a COMPLETE brief, since
+a subagent has not heard the call. This account lives here rather than in
+`packages/aai-templates/CLAUDE.md` because that guide is at its 120,000-char
+cap; the row there points back.
+
 **Testing it does not mean running a model.** `createScriptedOneShotModel`
 (`_fake-llm.ts`) answers a script one entry per `doGenerate`, which is what a
 non-streaming tool loop needs; on the SDK side `stubDelegate`
