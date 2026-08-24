@@ -1,11 +1,13 @@
-import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { EXCURSIONS, formatPrice } from "../shared.ts";
+import { EXCURSIONS, formatPrice, requireDesk, tripSlot } from "../shared.ts";
 
 /** Their `search_trip_recommendations` — city plus a loose keyword, matched
  *  against the name and the kind so "boat" and "sail" both land. */
-export default tool({
-  description: "Find things to do in a city. The keyword is optional and matched loosely.",
+export default tripSlot.tool({
+  description:
+    "The EXCURSIONS DESK's search: things to do in a city, with an optional keyword matched " +
+    "loosely. Only usable while the call is at that desk — from anywhere else it refuses, so " +
+    "call to_excursion_assistant first.",
   inputSchema: z.object({
     city: z.string().max(80).describe("City to search, e.g. 'Boston'"),
     keyword: z
@@ -14,7 +16,9 @@ export default tool({
       .describe("What they enjoy, e.g. 'food', 'boat', 'history'")
       .optional(),
   }),
-  execute(args) {
+  execute(args, trip) {
+    const offDesk = requireDesk(trip, "excursion");
+    if (offDesk) return offDesk;
     const city = args.city.trim().toLowerCase();
     const keyword = args.keyword?.trim().toLowerCase();
     const inCity = EXCURSIONS.filter((e) => e.city.toLowerCase().includes(city));

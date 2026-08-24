@@ -2,11 +2,12 @@
 
 exports[`cli usage snapshots > aai --help 1`] = `
 "Voice agent development kit (aai vX.X.X)
-USAGE aai init|dev|test|build|eject|list|pull|push|publish|delete|login|secret|logs|storage|workflow|templates
+USAGE aai init|dev|test|eval|build|eject|list|pull|push|publish|delete|login|secret|logs|storage|workflow|templates
 COMMANDS
        init    Scaffold a new agent project
         dev    Start a local development server
        test    Run agent tests
+       eval    Run agent behaviour evals against a live model
       build    Bundle agent without deploying
       eject    Add the self-hosted server.mjs entrypoint to an older project
        list    List your studio projects
@@ -56,6 +57,13 @@ USAGE dev [OPTIONS]
 OPTIONS
   -p, --port=<port>    Port to listen on (Default: 3000)
              --json    Output JSON (auto-detected in non-TTY)"
+`;
+
+exports[`cli usage snapshots > aai eval --help 1`] = `
+"Run agent behaviour evals against a live model (eval)
+USAGE eval [OPTIONS]
+OPTIONS
+  --json    Output JSON (auto-detected in non-TTY)"
 `;
 
 exports[`cli usage snapshots > aai init --help 1`] = `

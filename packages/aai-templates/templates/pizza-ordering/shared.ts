@@ -62,11 +62,30 @@ export function menuText(): string {
   ].join("\n");
 }
 
+/**
+ * A topping name as the price table keys it.
+ *
+ * `menuText()` renders `extra_cheese` as "extra cheese", so the menu the model
+ * reads and the table that charges for it are spelled differently — and the raw
+ * lookup below then missed and charged the $1.00 unknown-topping default for a
+ * $1.50 topping. `agent.eval.test.ts` found it against a live model: a large
+ * pepperoni with extra cheese was quoted at the menu's $17.99 and rung up at
+ * $17.49. Normalizing here keeps ONE spelling authoritative for pricing while
+ * the cart still stores what the caller actually said, which is what the
+ * sidebar and the read-back description show.
+ */
+export function toppingKey(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[\s-]+/g, "_");
+}
+
 export function pizzaPrice(p: ReadonlyPizza): number {
   const base = MENU.sizes[p.size];
   const crust = MENU.crusts[p.crust];
   const toppings = p.toppings.reduce(
-    (sum, t) => sum + (MENU.toppings[t as keyof typeof MENU.toppings] ?? 1.0),
+    (sum, t) => sum + (MENU.toppings[toppingKey(t) as keyof typeof MENU.toppings] ?? 1.0),
     0,
   );
   return (base + crust + toppings) * p.quantity;

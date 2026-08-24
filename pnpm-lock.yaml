@@ -328,9 +328,6 @@ importers:
       eventsource-parser:
         specifier: 'catalog:'
         version: 4.0.0
-      nanoevents:
-        specifier: 'catalog:'
-        version: 10.0.0
       undici:
         specifier: ^8.10.0
         version: 8.10.0

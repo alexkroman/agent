@@ -5,8 +5,10 @@ export default retailTool({
   name: "transfer_to_human_agents",
   description:
     "Hand the caller to a human agent. Use this ONLY when the caller explicitly asks for a human, " +
-    "or when their request cannot be handled with the other tools and the policy. Call this FIRST, " +
-    "then say 'You are being transferred to a human agent. Please hold on.' and nothing else.",
+    "or when their request cannot be handled with the other tools and the policy. The caller is " +
+    "transferred by THIS CALL and by nothing else: call it before you say anything about a " +
+    "transfer, and never say 'You are being transferred' until it has answered. Once it has, say " +
+    "'You are being transferred to a human agent. Please hold on.' and nothing else.",
   inputSchema: z.object({
     summary: z.string().max(2000).describe("A short summary of the caller's issue for the human"),
   }),

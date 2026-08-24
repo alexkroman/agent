@@ -50,9 +50,12 @@ the assertion.**
 | Eval | `pnpm test:eval` | a live model on a real key, `*.eval.test.ts` | 1800s |
 | Templates | `pnpm test:templates` | template agent example tests | 5s |
 
-**The eval tier REPORTS and does not gate** — absent from `pnpm check` and CI,
-because a measurably noisy instrument must not block a merge. Runs repeat and the
-report carries a spread; `packages/aai-evals/CLAUDE.md` owns it.
+**A LIVE eval REPORTS and does not gate** — a measurably noisy instrument must
+not block a merge. Runs repeat and the report carries a spread. What `pnpm check`
+and CI do run is the same files with `AAI_EVAL_STUB=1`: a SCRIPTED model, so the
+run is deterministic and free and what it gates is wiring, not behaviour (see
+"A keyless run gets a SCRIPTED model" in `packages/aai-runtime/CLAUDE.md`).
+`packages/aai-evals/CLAUDE.md` owns the live half.
 
 They used to be separated by TIMEOUT, a proxy for the rule above that stops being
 one as soon as two tests are slow for unrelated reasons. `pipeline-fuzz` (pure

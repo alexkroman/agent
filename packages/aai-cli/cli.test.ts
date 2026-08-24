@@ -38,7 +38,7 @@ function normalize(s: string): string {
 }
 
 describe("cli", () => {
-  test.each(["init", "dev", "test", "build", "deploy", "delete", "secret", "storage"])(
+  test.each(["init", "dev", "test", "eval", "build", "deploy", "delete", "secret", "storage"])(
     "main command declares the %s subcommand",
     (cmd) => {
       const subs = mainCommand.subCommands as Record<string, unknown>;
@@ -97,10 +97,13 @@ describe("cli usage snapshots", () => {
       name
     ] as Parameters<typeof renderUsage>[0];
 
-  test.each(["init", "dev", "test", "build", "deploy", "delete"])("aai %s --help", async (name) => {
-    const usage = await renderUsage(sub(name));
-    expect(normalize(usage)).toMatchSnapshot();
-  });
+  test.each(["init", "dev", "test", "eval", "build", "deploy", "delete"])(
+    "aai %s --help",
+    async (name) => {
+      const usage = await renderUsage(sub(name));
+      expect(normalize(usage)).toMatchSnapshot();
+    },
+  );
 
   test("aai secret --help", async () => {
     const usage = await renderUsage(sub("secret"));

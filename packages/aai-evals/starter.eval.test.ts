@@ -42,7 +42,7 @@ import {
   EXPECTATIONS,
   parseLoadedConfig,
 } from "../../scripts/starter-eval/expectations.mjs";
-import { describeEvalWhen, evalApiKey, evalOrigin } from "./_gate.ts";
+import { describeEvalTierWhen, evalApiKey, evalOrigin } from "./_gate.ts";
 import { registerEvalCases } from "./_register.ts";
 import type { EvalRecorder } from "./runner.ts";
 import { createStudioClient, type StudioTurn } from "./studio-target.ts";
@@ -59,7 +59,7 @@ const PROBE_MS = 3000;
  * Probed rather than assumed, for the reason `_gate.ts` exists: with a key but
  * no studio every case would fail as a HARNESS error, which reads like the
  * codegen being broken. The announcing and the `AAI_REQUIRE_EVAL` hard failure
- * are `describeEvalWhen`'s — this file states the precondition, not the policy.
+ * are `describeEvalTierWhen`'s — this file states the precondition, not the policy.
  */
 async function studioReachable(origin: string): Promise<boolean> {
   try {
@@ -140,7 +140,7 @@ function gradeStarter(
   }
 }
 
-const describeStarters = describeEvalWhen(
+const describeStarters = describeEvalTierWhen(
   await studioReachable(ORIGIN),
   `no studio answered at ${ORIGIN}`,
   "Start one with `pnpm dev:aai-server`, or set AAI_EVAL_ORIGIN.",

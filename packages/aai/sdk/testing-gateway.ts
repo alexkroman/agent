@@ -17,7 +17,9 @@
  * or an explicit `vi.unstubAllGlobals()`.
  */
 
+import type { StubStepAnswer, StubStepRequest } from "./_testing-step-fetch.ts";
 import { isRecord } from "./is-record.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
 
 /** One request a {@link StubGateway} answered. */
@@ -115,14 +117,143 @@ export function stubGateway(
       // The last reply repeats — see the doc above.
       const content = scripted.at(Math.min(calls.length - 1, scripted.length - 1)) ?? "";
       return Promise.resolve(
-        new Response(
-          status === 200
-            ? JSON.stringify({ choices: [{ message: { content } }] })
-            : JSON.stringify({ error: { message: `stub gateway: HTTP ${status}` } }),
-          { status, headers: { "Content-Type": "application/json", ...opts.headers } },
-        ),
+        new Response(JSON.stringify(completionBody(content, status)), {
+          status,
+          headers: { "Content-Type": "application/json", ...opts.headers },
+        }),
       );
     },
+  };
+}
+
+/**
+ * The path every OpenAI-compatible completion request ends in — what
+ * `stepGenerate` dials, whatever base URL it was pointed at.
+ *
+ * The predicate is on the PATH and not on the host, and that is a correction
+ * rather than a taste: template evals routing a model leg by URL had written
+ * both `url.includes("/chat/completions")` and `url.includes("llm-gateway")`,
+ * and the second is wrong for any caller passing `stepGenerate`'s own
+ * `gatewayUrl` option — including the EU endpoint, which is a different host.
+ */
+const COMPLETIONS_PATH = "/chat/completions";
+
+/** A gateway answer for a `stepFetch`-published slot, plus what it was asked. */
+export interface StubGatewayRoute {
+  /**
+   * Answers a completion request and `undefined` for anything else, so the
+   * caller composes it: `?? { body: html }` for a flow that also fetches a
+   * page, `?? someThrow()` for one where an unexpected request is a finding, or
+   * straight into `stubTranscribe`'s `otherwise`.
+   */
+  route: (request: StubStepRequest) => StubStepAnswer | undefined;
+  /** Every completion request this route answered, DECODED, in call order. */
+  calls: StubGatewayCall[];
+}
+
+/**
+ * A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot
+ * rather than the global `fetch`.
+ *
+ * {@link stubGateway} answers over `globalThis.fetch`, which is the wrong seam
+ * whenever anything has published a `stepFetch`: publishing REPLACES, so a flow
+ * that transcribes AND calls a model — or fetches a page and calls a model — can
+ * install only one fake and has to route by URL inside it. Seven eval files did
+ * exactly that, and each hand-typed the same two things:
+ *
+ * 1. **The envelope.** `{ body: { choices: [{ message: { content } }] } }`,
+ *    written out six times in six spellings. It is a WIRE shape, so a typo in
+ *    it does not fail — `stepGenerate` reads no content and reports an empty
+ *    completion, i.e. the fake and the code under test disagree and the case
+ *    blames the code.
+ * 2. **The cursor.** `contents.at(Math.min(next, contents.length - 1))`,
+ *    re-derived twice, because a model call inside a LOOP cannot know how many
+ *    calls it will make: a script that repeats one line can only drive the loop
+ *    into its budget, and one that runs out mid-loop fails on the script. The
+ *    last reply repeats, which is {@link stubGateway}'s convention and now
+ *    literally the same code.
+ *
+ * And it hands back DECODED calls — `prompt`, `system`, `body`, `headers` — which
+ * is the half no hand-rolled version had. Reading what the model was ASKED off a
+ * `StubStepRequest` means `String(call.body)`, i.e. the raw JSON of the whole
+ * request; one eval asserted its prompts that way and was really asserting
+ * against the serialized `model` and `temperature` too.
+ *
+ * ```ts no-check
+ * // `no-check`: the step under test is in another file, which is the point.
+ * import { stubGatewayRoute } from "@alexkroman1/aai/testing";
+ * import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+ *
+ * const model = stubGatewayRoute(['{"verdict":"ship"}']);
+ * installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
+ * // … run the workflow …
+ * expect(model.calls[0]?.prompt).toContain("the brief");
+ * ```
+ *
+ * @param replies - Completion contents, in order; the last repeats. A bare
+ *   string is one reply.
+ * @public
+ */
+export function stubGatewayRoute(
+  replies: string | readonly string[],
+  opts: StubGatewayOptions = {},
+): StubGatewayRoute {
+  const scripted = typeof replies === "string" ? [replies] : replies;
+  const status = opts.status ?? 200;
+  const calls: StubGatewayCall[] = [];
+  return {
+    calls,
+    route: (request) => {
+      if (!request.url.includes(COMPLETIONS_PATH)) return;
+      calls.push(recordGatewayCall(request.url, request.body, request.headers));
+      // The last reply repeats — see the doc above.
+      const content = scripted.at(Math.min(calls.length - 1, scripted.length - 1)) ?? "";
+      return {
+        status,
+        body: completionBody(content, status),
+        ...omitUndefined({ headers: opts.headers }),
+      };
+    },
+  };
+}
+
+/**
+ * The response body a gateway answers with, success or failure.
+ *
+ * Shared by both fakes so a spec that moves from one seam to the other cannot
+ * find the envelope spelled differently — the same reason `toStepResponse` is
+ * shared between `stubStepFetch` and `stubTranscribe`.
+ */
+function completionBody(content: string, status: number): unknown {
+  return status === 200
+    ? { choices: [{ message: { content } }] }
+    : { error: { message: `stub gateway: HTTP ${status}` } };
+}
+
+/**
+ * One recorded request, decoded the way {@link StubGatewayCall} promises.
+ *
+ * Shared for the same reason: `prompt` and `system` are what a spec asserts on,
+ * and the reach into `body.messages[n].content` is exactly what a caller should
+ * not be re-deriving.
+ */
+function recordGatewayCall(
+  url: string,
+  body: Uint8Array | string | undefined,
+  headers: Record<string, string>,
+): StubGatewayCall {
+  const decoded = decodeBody(typeof body === "string" ? body : undefined);
+  const messages = readMessages(decoded);
+  return {
+    url,
+    prompt: contentOf(messages, "user"),
+    system: messages.some((message) => message.role === "system")
+      ? contentOf(messages, "system")
+      : undefined,
+    body: decoded,
+    headers: Object.fromEntries(
+      Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]),
+    ),
   };
 }
 

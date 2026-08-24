@@ -267,7 +267,16 @@ export {
   freezeStorable,
 } from "./sdk/session-state.ts";
 export { sleep } from "./sdk/sleep.ts";
-export { formatSchemaIssues } from "./sdk/standard-schema.ts";
+// The formatter AND the two types beside it. The type was reachable from no
+// published subpath at all, so the runtime's eval readers — which validate a
+// caller's schema rather than casting the value — had no way to name their own
+// parameter. Not authoring API: an author writes `z.object(…)` and never spells
+// the spec's interface.
+export {
+  formatSchemaIssues,
+  type StandardSchemaIssue,
+  type StandardSchemaV1,
+} from "./sdk/standard-schema.ts";
 export { publishStepEnv } from "./sdk/step-env.ts";
 export {
   publishStepFetch,

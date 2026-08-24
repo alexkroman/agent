@@ -28,6 +28,7 @@ import {
   activeAssistant,
   FLIGHTS,
   gateFlow,
+  type SpecialistId,
   tripProjection,
   tripSlot,
   tripView,
@@ -49,6 +50,20 @@ const run = toolRunner(agentDef);
 function stateOf(ctx: ToolContext) {
   return tripSlot.get(ctx);
 }
+
+/**
+ * Put the call at a desk the way the model has to: through that desk's own
+ * delegation tool.
+ *
+ * Every desk tool checks the stack first (`requireDesk`) and refuses from
+ * anywhere else, so a spec driving one has to stand where the model would. It is
+ * one line per test rather than a shared `beforeEach` deliberately — which desk
+ * a tool belongs to is what the block below is about, so it stays visible at the
+ * call site.
+ */
+const atDesk = async (id: SpecialistId, ctx: ToolContext): Promise<void> => {
+  await run(`to_${id}_assistant`, { request: "what the caller asked for" }, ctx);
+};
 
 // ─── 1. The dialog stack ─────────────────────────────────────────────────────
 
@@ -98,6 +113,72 @@ describe("dialog stack (routing.ts)", () => {
   });
 });
 
+// ─── 1b. The desk gate ───────────────────────────────────────────────────────
+//
+// What their graph gets from binding a tool set per node, and what this port
+// used to only ask the prompt for. The eval (`agent.eval.test.ts`) is what
+// measured the asking losing — 0 of 5 live runs, the model searching hotels
+// while the stack said `primary` — so these are the tests that make the stack
+// binding rather than descriptive.
+
+describe("the desk gate (requireDesk)", () => {
+  const DESK_TOOLS = [
+    ["search_flights", { route: "Boston" }, "flight"],
+    ["update_ticket", { flightId: "LX52" }, "flight"],
+    ["cancel_ticket", {}, "flight"],
+    ["search_hotels", { city: "Boston" }, "hotel"],
+    ["book_hotel", { hotelId: "H1", nights: 2 }, "hotel"],
+    ["search_car_rentals", { city: "Boston" }, "car_rental"],
+    ["book_car_rental", { carId: "C2", days: 3 }, "car_rental"],
+    ["search_excursions", { city: "Boston" }, "excursion"],
+    ["book_excursion", { excursionId: "E2" }, "excursion"],
+  ] as const;
+
+  test.each(DESK_TOOLS)("%s refuses at the concierge desk", async (name, args, desk) => {
+    const ctx = makeCtx();
+    const refused = (await run(name, args, ctx)) as { error?: string };
+    // The refusal NAMES the way in, which is what the model recovers from
+    // inside the same turn — a bare "not allowed" would leave it guessing.
+    expect(refused.error).toContain(`to_${desk}_assistant`);
+    // And nothing happened: no search result, no staging, no stack movement.
+    expect(stateOf(ctx).pending).toBeNull();
+    expect(activeAssistant(stateOf(ctx))).toBe("primary");
+    expect(gateFlow.position(ctx).state).toBe("browsing");
+  });
+
+  test.each(DESK_TOOLS)("%s refuses from ANOTHER desk", async (name, args, desk) => {
+    const ctx = makeCtx();
+    // The excursions desk for anything that is not its own, and the flight desk
+    // for the excursion tools — so every case really is a wrong desk rather
+    // than a coincidence of ordering.
+    const wrong = desk === "excursion" ? "flight" : "excursion";
+    await atDesk(wrong, ctx);
+    const refused = (await run(name, args, ctx)) as { error?: string };
+    expect(refused.error).toContain(`to_${desk}_assistant`);
+    expect(refused.error).toContain(desk === "excursion" ? "flight desk" : "excursions desk");
+    expect(stateOf(ctx).pending).toBeNull();
+  });
+
+  test.each(DESK_TOOLS)("%s works once its own desk holds the call", async (name, args, desk) => {
+    // The other half, and the one that makes the block above non-vacuous: a
+    // gate that refused everywhere would pass every assertion up to here.
+    const ctx = makeCtx();
+    await atDesk(desk, ctx);
+    expect(await run(name, args, ctx)).not.toMatchObject({
+      error: expect.stringContaining("belongs to the"),
+    });
+  });
+
+  test("the concierge's own tools are NOT gated", async () => {
+    // `lookup_booking` is the concierge's, and the gate must not make the desk
+    // unable to answer "what am I holding?" from wherever the call is.
+    const ctx = makeCtx();
+    await atDesk("hotel", ctx);
+    const booking = (await run("lookup_booking", ctx)) as { passenger: string };
+    expect(booking.passenger).toBe("Nadia Rossi");
+  });
+});
+
 // ─── 2. The confirmation gate ────────────────────────────────────────────────
 //
 // Their graph halts before a sensitive tool (`interrupt_before`) and resumes on
@@ -107,13 +188,14 @@ describe("dialog stack (routing.ts)", () => {
 
 describe("sensitive tools stage rather than act", () => {
   test.each([
-    ["update_ticket", { flightId: "LX52" }],
-    ["cancel_ticket", {}],
-    ["book_hotel", { hotelId: "H1", nights: 2 }],
-    ["book_car_rental", { carId: "C2", days: 3 }],
-    ["book_excursion", { excursionId: "E2" }],
-  ])("%s changes nothing on its own", async (name, args) => {
+    ["update_ticket", { flightId: "LX52" }, "flight"],
+    ["cancel_ticket", {}, "flight"],
+    ["book_hotel", { hotelId: "H1", nights: 2 }, "hotel"],
+    ["book_car_rental", { carId: "C2", days: 3 }, "car_rental"],
+    ["book_excursion", { excursionId: "E2" }, "excursion"],
+  ] as const)("%s changes nothing on its own", async (name, args, desk) => {
     const ctx = makeCtx();
+    await atDesk(desk, ctx);
     const before = structuredClone(stateOf(ctx));
 
     const staged = (await run(name, args, ctx)) as { awaitingConfirmation: boolean };
@@ -127,6 +209,7 @@ describe("sensitive tools stage rather than act", () => {
 
   test("confirm_action applies the staged change, and only then", async () => {
     const ctx = makeCtx();
+    await atDesk("hotel", ctx);
     await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
 
     // Staging moved the gate, in the same window it wrote `pending`.
@@ -160,6 +243,7 @@ describe("sensitive tools stage rather than act", () => {
 
   test("cancel_action drops the staged change and leaves the booking alone", async () => {
     const ctx = makeCtx();
+    await atDesk("flight", ctx);
     await run("update_ticket", { flightId: "LX54" }, ctx);
     const dropped = okPosition<{ discarded: string }>(await run("cancel_action", ctx));
     expect(dropped.result.discarded).toContain("LX54");
@@ -177,6 +261,7 @@ describe("sensitive tools stage rather than act", () => {
     // Refused where the model can still recover — before the caller is asked to
     // confirm a flight the airline does not fly.
     const ctx = makeCtx();
+    await atDesk("flight", ctx);
     expect(await run("update_ticket", { flightId: "ZZ99" }, ctx)).toEqual({
       error: "No flight ZZ99 in the schedule.",
     });
@@ -185,6 +270,7 @@ describe("sensitive tools stage rather than act", () => {
 
   test("cancelling the ticket makes a later ticket change impossible", async () => {
     const ctx = makeCtx();
+    await atDesk("flight", ctx);
     await run("cancel_ticket", ctx);
     await run("confirm_action", ctx);
     expect(stateOf(ctx).ticket).toBeNull();
@@ -197,17 +283,22 @@ describe("sensitive tools stage rather than act", () => {
 
   test("a second staging is REFUSED rather than overwriting the first", async () => {
     // The LLM loop runs a step's tool calls concurrently, so two sensitive
-    // tools in one step is ordinary: the model hears "move my flight and book
-    // the hotel" and emits both. Assigning `pending` unconditionally made the
+    // tools in one step is ordinary: the model hears "move my flight and cancel
+    // the old one" and emits both. Assigning `pending` unconditionally made the
     // second win — both answered `awaitingConfirmation`, the caller said yes
     // once, and one of the two changes was silently dropped forever.
     const ctx = makeCtx();
+    await atDesk("flight", ctx);
     const first = (await run("update_ticket", { flightId: "LX52" }, ctx)) as {
       awaitingConfirmation: boolean;
     };
     expect(first.awaitingConfirmation).toBe(true);
 
-    const second = (await run("book_hotel", { hotelId: "H1", nights: 2 }, ctx)) as {
+    // Both from ONE desk, which is what a concurrent pair looks like now that
+    // `requireDesk` is enforced. Another desk's tool would be refused by the
+    // DESK gate first, which is a different refusal and would leave this one
+    // unexercised.
+    const second = (await run("cancel_ticket", ctx)) as {
       error: string;
     };
     // The refusal NAMES what is already waiting, which is what lets the model
@@ -226,7 +317,8 @@ describe("sensitive tools stage rather than act", () => {
     expect(applied.applied).toContain("LX52");
     expect(stateOf(ctx).bookings).toEqual([]);
 
-    // Once the queue is clear, the hotel can be staged after all.
+    // Once the queue is clear, the next desk's booking can be staged after all.
+    await atDesk("hotel", ctx);
     const retried = (await run("book_hotel", { hotelId: "H1", nights: 2 }, ctx)) as {
       awaitingConfirmation: boolean;
     };
@@ -235,8 +327,10 @@ describe("sensitive tools stage rather than act", () => {
 
   test("cancel_action clears the block, so a declined change does not wedge the desk", async () => {
     const ctx = makeCtx();
+    await atDesk("car_rental", ctx);
     await run("book_car_rental", { carId: "C2", days: 3 }, ctx);
     await run("cancel_action", ctx);
+    await atDesk("excursion", ctx);
     const staged = (await run("book_excursion", { excursionId: "E2" }, ctx)) as {
       awaitingConfirmation: boolean;
     };
@@ -272,6 +366,7 @@ describe("sensitive tools stage rather than act", () => {
 describe("search tools", () => {
   test("an unmatched route widens to the whole schedule rather than answering nothing", async () => {
     const ctx = makeCtx();
+    await atDesk("flight", ctx);
     const hit = (await run("search_flights", { route: "Zurich to Boston" }, ctx)) as {
       widened: boolean;
       flights: unknown[];
@@ -289,6 +384,7 @@ describe("search tools", () => {
 
   test("hotels come back cheapest first, and a ceiling filters them", async () => {
     const ctx = makeCtx();
+    await atDesk("hotel", ctx);
     const all = (await run("search_hotels", { city: "Boston" }, ctx)) as {
       hotels: { perNight: string }[];
     };
@@ -303,6 +399,7 @@ describe("search tools", () => {
 
   test("an excursion keyword that matches nothing falls back to the city", async () => {
     const ctx = makeCtx();
+    await atDesk("excursion", ctx);
     const result = (await run("search_excursions", { city: "Boston", keyword: "skiing" }, ctx)) as {
       widened: boolean;
       excursions: unknown[];
@@ -313,6 +410,7 @@ describe("search tools", () => {
 
   test("lookup_booking reports the ticket the caller is actually holding", async () => {
     const ctx = makeCtx();
+    await atDesk("flight", ctx);
     await run("update_ticket", { flightId: "LX52" }, ctx);
     await run("confirm_action", ctx);
     const booking = (await run("lookup_booking", ctx)) as {
@@ -357,8 +455,10 @@ describe("tripView projection", () => {
 
   test("totals every confirmed booking", async () => {
     const ctx = makeCtx();
+    await atDesk("hotel", ctx);
     await run("book_hotel", { hotelId: "H3", nights: 2 }, ctx); // 2 × 180
     await run("confirm_action", ctx);
+    await atDesk("excursion", ctx);
     await run("book_excursion", { excursionId: "E1" }, ctx); // 35
     await run("confirm_action", ctx);
 

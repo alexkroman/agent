@@ -48,6 +48,11 @@ type StreamPart =
       finishReason: string;
     };
 
+/** What `doGenerate` answers with — the non-streaming twin of {@link StreamPart}. */
+type GeneratedContent =
+  | { type: "text"; text: string }
+  | { type: "tool-call"; toolCallId: string; toolName: string; input: string };
+
 function scriptedPartToStreamPart(part: ScriptedPart, textId: string): StreamPart {
   switch (part.type) {
     case "text":
@@ -191,9 +196,10 @@ export function createScriptedOneShotModel(script: readonly ScriptedTurn[]): Fak
 }
 
 /**
- * Create a fake `LanguageModel` that yields a scripted sequence of
- * parts when `streamText` drives `doStream()`. The fake ignores the prompt
- * and tools — it simply replays the script.
+ * Create a fake `LanguageModel` that answers from a scripted sequence of parts,
+ * through `doStream()` (what `streamText` drives) or `doGenerate()` (what
+ * `generateText`, and therefore `ctx.generate`, drives). The fake ignores the
+ * prompt and tools — it simply replays the script.
  *
  * Pass `{ delayMs: N }` to space out parts with `setTimeout(N)` so that
  * barge-in tests can abort mid-stream deterministically.
@@ -201,11 +207,14 @@ export function createScriptedOneShotModel(script: readonly ScriptedTurn[]): Fak
  * Pass `{ steps: ScriptedPart[][] }` (instead of `script`) for multi-step
  * scenarios: each call to `doStream()` consumes the next step's parts.
  * This is how `streamText` drives multi-turn tool loops under `stopWhen`.
+ *
+ * Pass `{ repeatLast: true }` to answer every call past the last scripted step
+ * with that step again, instead of with nothing.
  */
 export function createFakeLanguageModel(
   options:
-    | { script: ScriptedPart[]; delayMs?: number }
-    | { steps: ScriptedPart[][]; delayMs?: number },
+    | { script: ScriptedPart[]; delayMs?: number; repeatLast?: boolean }
+    | { steps: ScriptedPart[][]; delayMs?: number; repeatLast?: boolean },
 ): FakeLanguageModel {
   const delayMs = options.delayMs;
   const steps: ScriptedPart[][] = "steps" in options ? options.steps : [options.script];
@@ -217,16 +226,72 @@ export function createFakeLanguageModel(
     modelId: "fake-llm-1",
     supportedUrls: {} as Record<string, RegExp[]>,
     calls,
-    async doGenerate(): Promise<never> {
-      throw new Error("fake LLM: doGenerate not implemented");
+    /**
+     * The non-streaming half, answered from the SAME script.
+     *
+     * It used to throw, and what that cost was invisible until the eval harness
+     * shipped: `ctx.generate` goes through `generateText`, which calls THIS —
+     * so every tool that reasons with a model (a grader, a planner, a rewriter)
+     * answered `fake LLM: doGenerate not implemented` in a scripted eval run.
+     * Two templates' central tools are exactly that shape, and the failure read
+     * as the agent being broken rather than the fake being half-written.
+     *
+     * A `text` step answers as text; a `tool-call` step answers as a tool call,
+     * so a scripted step means the same thing whichever entry point consumes
+     * it. `ctx.generate`'s SCHEMA overload parses that text as JSON, which is
+     * why a case scripting an object writes it as a JSON string.
+     */
+    async doGenerate(opts: Record<string, unknown> & { abortSignal?: AbortSignal }): Promise<{
+      content: GeneratedContent[];
+      finishReason: { unified: string; raw: string };
+      usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+      warnings: never[];
+    }> {
+      calls.push(opts);
+      const current = steps[stepIndex] ?? (options.repeatLast ? (steps.at(-1) ?? []) : []);
+      stepIndex++;
+      const finishReason = current.some((p) => p.type === "tool-call") ? "tool-calls" : "stop";
+      const content: GeneratedContent[] = [];
+      for (const part of current) {
+        if (part.type === "text") content.push({ type: "text", text: part.text });
+        else if (part.type === "tool-call") {
+          content.push({
+            type: "tool-call",
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            input: part.input,
+          });
+        }
+      }
+      return {
+        content,
+        // `{ unified }`, not the bare v3 string: `generateText` reads
+        // `currentModelResponse.finishReason.unified` (four sites in ai@7.0.65),
+        // and `asLanguageModelV4` is a Proxy that rewrites `specificationVersion`
+        // and does NOT translate the result. With a string, `lastStep.finishReason`
+        // is `undefined`, the `=== "stop"` branch that assembles structured output
+        // never runs, and a SCHEMA call surfaces as
+        // `{"error":"No output generated."}` — so `ctx.generate({ schema })`, which
+        // is `generateText` + `Output.object`, failed while plain text worked
+        // (text is read off `content`). Two templates' central tools are schema
+        // calls, so this was the difference between a scripted run covering them
+        // and not.
+        finishReason: { unified: finishReason, raw: finishReason },
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        warnings: [],
+      };
     },
     async doStream(opts: Record<string, unknown> & { abortSignal?: AbortSignal }): Promise<{
       stream: ReadableStream<StreamPart>;
     }> {
       calls.push(opts);
       // Advance one step per call; after the last scripted step, keep
-      // yielding an empty step so an unexpected extra call completes cleanly.
-      const current = steps[stepIndex] ?? [];
+      // yielding an empty step so an unexpected extra call completes cleanly —
+      // or, with `repeatLast`, keep answering with the last one. That option is
+      // for a caller who cannot know how many calls a turn will make (the eval
+      // stub provider: one scripted reply has to serve however many steps the
+      // pipeline takes), where an empty tail reads as an agent that went silent.
+      const current = steps[stepIndex] ?? (options.repeatLast ? (steps.at(-1) ?? []) : []);
       stepIndex++;
       const stream = new ReadableStream<StreamPart>({
         start(controller) {

@@ -14,6 +14,7 @@
  * | `ToFlightBookingAssistant` & friends (delegation tools) | the four tools {@link SPECIALISTS} generates in `routing.ts` |
  * | `CompleteOrEscalate` | `complete_or_escalate`, which pops the same stack |
  * | `interrupt_before=["…_sensitive_tools"]` | {@link stageAction} + `confirm_action` |
+ * | a specialist node's BOUND tool set | {@link requireDesk}, checked by every desk tool |
  * | `fetch_user_flight_information` (sqlite) | `lookup_booking` over {@link seedTrip} |
  *
  * **The dialog stack is what keeps a long call on the rails.** Their insight is
@@ -23,7 +24,9 @@
  * session's prompt is fixed at connect — so the specialist's brief arrives as
  * the DELEGATION TOOL'S RESULT, which is the last thing the model reads before
  * it answers. The stack itself is real state either way, which is what
- * `complete_or_escalate` pops and what the sidebar renders.
+ * `complete_or_escalate` pops and what the sidebar renders — and what
+ * {@link requireDesk} makes binding, so the position is never merely a label on
+ * work that happened somewhere else.
  *
  * **`interrupt_before` becomes a spoken confirmation, and that is not a
  * downgrade.** Their graph halts before a sensitive tool and waits for a human
@@ -207,6 +210,19 @@ export interface Specialist {
   instructions: string;
 }
 
+/**
+ * Each brief spells the STAGE-then-read-back ORDER out, and that is a fix
+ * measured rather than a preference.
+ *
+ * The flight desk's used to say "read the fare change back to the caller before
+ * you change a ticket", which is true of `confirm_action` and reads as a rule
+ * about `update_ticket` — and live, that is how it was read: the desk searched,
+ * quoted a fare it had not staged, waited for a yes, and then called
+ * `confirm_action` with nothing waiting for it. Two of three runs never staged
+ * anything at all. The sentence to read back IS the staging tool's return
+ * value, so a brief that puts the read-back first describes a call the desk
+ * cannot make.
+ */
 export const SPECIALISTS: Record<SpecialistId, Specialist> = {
   flight: {
     title: "flight desk",
@@ -214,9 +230,22 @@ export const SPECIALISTS: Record<SpecialistId, Specialist> = {
       "You are now the flight desk. Handle searching and changing flights only.",
       "Search before you quote anything, and be persistent: if the first search",
       "finds nothing, widen it rather than telling the caller there is nothing.",
-      "Read the flight number, the day, the departure time and the fare change",
-      "back to the caller before you change a ticket. A ticket is only changed",
-      "once confirm_action has run.",
+      "update_ticket is a QUOTE, not a change: it moves nothing, so call it as",
+      "soon as you know which flight they want and never ask permission first.",
+      "Changing a ticket is TWO steps and never one: call update_ticket first —",
+      "it changes nothing and hands you the sentence to say — then read the",
+      "flight number, the day, the departure time and the fare change back to",
+      "the caller and ask them plainly to confirm. A ticket is only changed once",
+      "confirm_action has run, and confirm_action has nothing to apply until",
+      "update_ticket has staged it.",
+      "Never quote a departure time or a fare you did not just read out of a",
+      "tool result, and never end a turn on 'shall I confirm?' with nothing",
+      "staged: update_ticket goes out in the SAME turn as that question, before",
+      "you stop. There is nothing for a yes to apply until it has.",
+      "Your next action, right now, is a TOOL and not a sentence: call",
+      "update_ticket if you already know which flight they want, or",
+      "search_flights if you do not. Do not speak until one of them has",
+      "answered — anything you would say before that is invented.",
       "If the caller wants a hotel, a car or something to do, or changes their",
       "mind, call complete_or_escalate instead of improvising.",
     ].join(" "),
@@ -227,8 +256,18 @@ export const SPECIALISTS: Record<SpecialistId, Specialist> = {
       "You are now the hotel desk. Handle searching and booking hotels only.",
       "Ask which city and roughly what budget, then search. Offer at most three",
       "options out loud, cheapest first, with the neighbourhood and nightly rate.",
-      "Confirm the hotel, the number of nights and the total before booking.",
-      "A room is only held once confirm_action has run.",
+      "book_hotel is a QUOTE, not a change: it holds nothing, so call it as",
+      "soon as you know what the caller wants and never ask permission",
+      "first.",
+      "Booking is TWO steps and never one: call book_hotel first — it holds",
+      "nothing and hands you the sentence to say — then read the hotel, the",
+      "number of nights and the total back and ask them to confirm. A room is",
+      "only held once confirm_action has run, and confirm_action has nothing to",
+      "apply until book_hotel has staged it.",
+      "Your next action, right now, is a TOOL and not a sentence: call",
+      "book_hotel if you already know which room and how many nights, or",
+      "search_hotels if you do not. Do not speak until one of them has",
+      "answered — anything you would say before that is invented.",
       "If the caller wants flights, a car or an excursion, call",
       "complete_or_escalate.",
     ].join(" "),
@@ -238,8 +277,19 @@ export const SPECIALISTS: Record<SpecialistId, Specialist> = {
     instructions: [
       "You are now the car rental desk. Handle searching and booking cars only.",
       "Ask the city and how many days, then search. Name the vendor, the tier",
-      "and the daily rate, and confirm the total before booking.",
-      "A car is only reserved once confirm_action has run.",
+      "and the daily rate.",
+      "book_car_rental is a QUOTE, not a change: it holds nothing, so call it as",
+      "soon as you know what the caller wants and never ask permission",
+      "first.",
+      "Reserving is TWO steps and never one: call book_car_rental first — it",
+      "reserves nothing and hands you the sentence to say — then read the total",
+      "back and ask them to confirm. A car is only reserved once confirm_action",
+      "has run, and confirm_action has nothing to apply until book_car_rental",
+      "has staged it.",
+      "Your next action, right now, is a TOOL and not a sentence: call",
+      "book_car_rental if you already know which car and how many days, or",
+      "search_car_rentals if you do not. Do not speak until one of them has",
+      "answered — anything you would say before that is invented.",
       "If the caller wants flights, a hotel or an excursion, call",
       "complete_or_escalate.",
     ].join(" "),
@@ -251,7 +301,17 @@ export const SPECIALISTS: Record<SpecialistId, Specialist> = {
       "to do only. Ask the city and what kind of thing they enjoy, then search.",
       "Describe two or three options in a sentence each — this is the part of",
       "the call a caller actually wants to hear about.",
-      "A booking is only made once confirm_action has run.",
+      "book_excursion is a QUOTE, not a change: it holds nothing, so call it as",
+      "soon as you know what the caller wants and never ask permission",
+      "first.",
+      "Booking is TWO steps and never one: call book_excursion first — it books",
+      "nothing and hands you the sentence to say — then read it back and ask",
+      "them to confirm. A booking is only made once confirm_action has run, and",
+      "confirm_action has nothing to apply until book_excursion has staged it.",
+      "Your next action, right now, is a TOOL and not a sentence: call",
+      "book_excursion if you already know which one they want, or",
+      "search_excursions if you do not. Do not speak until one of them has",
+      "answered — anything you would say before that is invented.",
       "If the caller wants flights, a hotel or a car, call complete_or_escalate.",
     ].join(" "),
   },
@@ -345,6 +405,47 @@ export function activeAssistant(state: FrozenTripState): DialogState {
 
 export function note(state: TripState, entry: string): void {
   pushCapped(state.log, entry, MAX_LOG_ENTRIES);
+}
+
+// ─── The desk gate ───────────────────────────────────────────────────────────
+
+/**
+ * Is the call at `id`'s desk? A {@link ToolFailure} naming the way in if not.
+ *
+ * **This is the narrowing their graph gets for free, and it used to be prose.**
+ * Each specialist node there binds its own tool set, so a node physically cannot
+ * call another desk's tools; a voice session has ONE model with ONE tool list
+ * for its whole life, so for a long time the stack was real state that the model
+ * was merely ASKED to respect — `agent.ts` said so in place, and this guide's
+ * own eval predicted the failure. Measured: the prompt lost 0 of 5 live runs.
+ * The caller said "I need a hotel in Boston" and the model called
+ * `search_hotels` at the concierge desk every time, so `dialogState` said
+ * `primary` while the call was plainly doing hotel work — a stack the sidebar
+ * renders and nothing keeps true.
+ *
+ * A tool list cannot be narrowed mid-session, but a tool can REFUSE, and a
+ * refusal is a thing the model recovers from inside the same turn: it reads the
+ * failure, calls `to_hotel_assistant`, gets the desk's brief, and searches. So
+ * the delegation is now structural — every desk tool is reachable only from its
+ * own desk — and the brief the delegation returns is guaranteed to have been
+ * read before any of that desk's work happens, which was the whole point of
+ * handing it back as a tool result.
+ *
+ * It costs one wasted round trip the first time the model reaches past the
+ * stack, which is the right price: the alternative is a desk whose position is
+ * decoration.
+ */
+export function requireDesk(state: FrozenTripState, id: SpecialistId): ToolFailure | undefined {
+  const at = activeAssistant(state);
+  if (at === id) return undefined;
+  const here = at === "primary" ? "the main concierge" : SPECIALISTS[at].title;
+  return {
+    error:
+      `That tool belongs to the ${SPECIALISTS[id].title} and this call is at ${here}. ` +
+      `Nothing was searched, staged or booked. Call to_${id}_assistant with what the ` +
+      "caller asked for — its answer is that desk's brief — and then call this tool again. " +
+      "Do not tell the caller about any of this; they should hear one continuous conversation.",
+  };
 }
 
 // ─── The confirmation gate ───────────────────────────────────────────────────

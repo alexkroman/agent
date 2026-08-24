@@ -29,11 +29,51 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    agent that no longer exists. When a test fails after your change, decide
    which side is stale: updating the test to match the new agent is a normal
    fix, not a workaround. Do not delete a test to make it pass.
-3. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
+3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
+   the agent's shape; an eval drives a real session and asserts what it did.
+   Cases live in `agent.eval.test.ts` (the `simple` template ships one):
+
+   ```ts no-check
+   import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+   import { expect } from "vitest";
+   import agentDef from "./agent.ts";
+
+   describeEval(agentDef, (test) => {
+     test(
+       "looks the order up before answering",
+       async ({ session }) => {
+         // `say()` returns THAT turn — the reply, its tool calls, its events.
+         const turn = await session.say("where is order W1234?");
+         expect(turn.toolCalls.map((c) => c.name)).toContain("look_up");
+         expect(turn.text).toMatch(/shipped/i);
+       },
+       // What a SCRIPTED model answers with when there is no key (below).
+       { stubReply: "Order W1234 shipped yesterday." },
+     );
+   });
+   ```
+
+   Everything is real except the microphone and the speaker: your tools run,
+   your prompt runs, the session's own event stream is what you assert over.
+   Two things to know before reading a green run:
+
+   - **With a provider key it uses a LIVE model** — it spends tokens, and it is
+     a noisy instrument. One failure is a question, not a verdict; re-run before
+     believing either answer.
+   - **Without one it uses a SCRIPTED model** answering each case's `stubReply`,
+     and says so. That still proves the agent boots, the tools resolve and the
+     session reaches a reply — it proves nothing about what the agent SAYS. Give
+     a case `{ live: true }` instead when no script could honestly stand in
+     (a tool the model has to choose for itself, a refusal, a judgement).
+
+   No eval can see anything below the audio boundary — when the agent decides
+   you stopped talking, barge-in, two sentences merging into one turn. Those
+   need `pnpm dev` and your own voice.
+4. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
    type-checks, and validates the manifest. Catches issues `dev` won't.
-4. **Make small, focused changes** — verify each one before stacking the
+5. **Make small, focused changes** — verify each one before stacking the
    next.
-5. **Look at templates before writing custom code** — the CLI ships working
+6. **Look at templates before writing custom code** — the CLI ships working
    examples inside its own package, at
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest
@@ -62,6 +102,7 @@ npx @alexkroman1/aai-cli init             # Scaffold a new agent
 npx @alexkroman1/aai-cli templates        # List available templates
 npx @alexkroman1/aai-cli dev              # Start local dev server
 npx @alexkroman1/aai-cli test             # Run agent.test.ts via vitest
+npx @alexkroman1/aai-cli eval             # Run agent.eval.test.ts against a model
 npx @alexkroman1/aai-cli build            # Bundle and validate
 npx @alexkroman1/aai-cli deploy           # Deploy to production
 npx @alexkroman1/aai-cli delete           # Remove deployed agent
@@ -70,9 +111,9 @@ npx @alexkroman1/aai-cli secret delete NAME
 npx @alexkroman1/aai-cli secret list
 ```
 
-The scaffold's `package.json` exposes `dev`, `build`, `test`, and `deploy`
-as `pnpm <name>` shortcuts. Other commands (`init`, `templates`, `delete`, `secret`)
-are CLI-only.
+The scaffold's `package.json` exposes `dev`, `build`, `test`, `eval` and
+`deploy` as `pnpm <name>` shortcuts. Other commands (`init`, `templates`,
+`delete`, `secret`) are CLI-only.
 
 ## Running it yourself (`npm start`)
 
@@ -110,6 +151,7 @@ it needs the platform's sandbox and refuses outside one.
 my-agent/
   agent.ts            # Agent definition (required)
   agent.test.ts       # Unit tests (optional)
+  agent.eval.test.ts  # Behaviour evals, run by `pnpm eval` (optional)
   client.tsx          # Custom UI (optional, React)
   shared.ts           # Types shared between agent.ts and client.tsx
   system-prompt.md    # The system prompt — discovered, not imported

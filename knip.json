@@ -146,15 +146,16 @@
         "templates/**",
         "scaffold/**"
       ],
-      // `scaffold/**` is ignored above, and `scaffold/server.mjs` is the only
-      // thing that imports the runtime — but the dependency is real: the
-      // scaffold is shipped to users by `aai init`, and
-      // `check:template-types` compiles that file from inside this package,
-      // so it has to resolve here. Unused by knip's reading, load-bearing by
-      // the gate's.
-      "ignoreDependencies": [
-        "@alexkroman1/aai-runtime"
-      ]
+      // NO `ignoreDependencies` for `@alexkroman1/aai-runtime` any more, and the
+      // reason is worth knowing before adding one back. It sat here because
+      // `scaffold/server.mjs` — ignored above, shipped to users, and compiled
+      // from inside this package by `check:template-types` — was its only
+      // importer, so the dependency was unused by knip's reading and
+      // load-bearing by the gate's. `templates/simple/agent.eval.test.ts`
+      // imports `@alexkroman1/aai-runtime/eval/vitest` now, which knip DOES
+      // count, so the entry became a redundant-pattern error. If that eval ever
+      // goes away, restore the entry with the paragraph above rather than
+      // dropping the dependency: the scaffold still needs it to resolve.
     },
     "packages/aai-guest": {
       "entry": [

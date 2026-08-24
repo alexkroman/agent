@@ -420,6 +420,26 @@ jobs:
       # Postgres started above — but they share this job's checkout and build, and
       # splitting them into two jobs would pay for that twice for ~20s of work.
       - run: pnpm exec turbo run check:integration check:scenario
+      # The TEMPLATE evals, against a SCRIPTED model — and this is not the eval
+      # tier arriving in CI by the back door.
+      #
+      # The eval tier reports and does not gate, because a live model is a noisy
+      # instrument and a flaky required check is worse than a number nobody is
+      # forced to believe. `AAI_EVAL_STUB=1` is the other mode: the real runtime,
+      # the real pipeline, the real tool executor and the real event stream, with
+      # the model scripted — deterministic, free, ~1s, and no key involved. What
+      # it gates is WIRING, which is what silently rots in a suite that skips:
+      # a template whose `agent.ts` no longer boots, whose tools no longer
+      # resolve, or whose eval file no longer drives anything would otherwise
+      # ship green. Nothing here asserts what a model SAYS.
+      #
+      # Set EXPLICITLY rather than relied upon being absent: a key reaching this
+      # environment one day must not silently turn the required check into a paid,
+      # flaky job. `--filter` for the same reason — `aai-evals`' own tier is the
+      # live one and stays out of CI entirely.
+      - run: pnpm exec turbo run check:eval --filter aai-templates
+        env:
+          AAI_EVAL_STUB: "1"
 
   e2e:
     needs: setup

@@ -8,8 +8,10 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { stubStepFetch } from "./_testing-step-fetch.ts";
+import { stepFetch } from "./step-fetch.ts";
 import { stepGenerate } from "./step-generate.ts";
-import { stubGateway } from "./testing-gateway.ts";
+import { stubGateway, stubGatewayRoute } from "./testing-gateway.ts";
 
 beforeEach(() => {
   vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
@@ -81,5 +83,99 @@ describe("stubGateway", () => {
     expect((err as { retryAfter?: Date }).retryAfter?.getTime()).toBeGreaterThan(
       Date.now() + 25_000,
     );
+  });
+});
+
+describe("stubGatewayRoute", () => {
+  test("answers the completion shape stepGenerate reads, through the STEP slot", async () => {
+    // Driven through the real `stepGenerate` and the real published slot, which
+    // is the seam the seven hand-rolled copies were routing on: a fake that
+    // only agrees with itself about the envelope proves nothing.
+    const model = stubGatewayRoute("Otters use tools.");
+    const fetched = stubStepFetch((request) => model.route(request) ?? { status: 404 });
+    try {
+      expect(await stepGenerate("What do otters do?")).toBe("Otters use tools.");
+    } finally {
+      fetched.restore();
+    }
+  });
+
+  test("DECLINES a non-gateway request, so a caller composes the other leg", async () => {
+    const model = stubGatewayRoute("ignored");
+    const fetched = stubStepFetch(
+      (request) => model.route(request) ?? { body: "<p>hi</p>", headers: { "X-Leg": "page" } },
+    );
+    try {
+      const page = await stepFetch("https://example.test/post");
+      expect(page.headers.get("X-Leg")).toBe("page");
+      // Declining also means not RECORDING it: `calls` is the gateway's log.
+      expect(model.calls).toEqual([]);
+    } finally {
+      fetched.restore();
+    }
+  });
+
+  test("matches on the PATH, so a custom gatewayUrl still routes", async () => {
+    const model = stubGatewayRoute("from the EU");
+    const fetched = stubStepFetch((request) => model.route(request) ?? { status: 404 });
+    try {
+      expect(await stepGenerate("hi", { gatewayUrl: "https://llm.example.test/v9" })).toBe(
+        "from the EU",
+      );
+      expect(model.calls[0]?.url).toBe("https://llm.example.test/v9/chat/completions");
+    } finally {
+      fetched.restore();
+    }
+  });
+
+  test("the LAST reply repeats, so a model call in a LOOP cannot run the script out", async () => {
+    const model = stubGatewayRoute(["first", "second"]);
+    const fetched = stubStepFetch((request) => model.route(request) ?? { status: 404 });
+    try {
+      expect(await stepGenerate("a")).toBe("first");
+      expect(await stepGenerate("b")).toBe("second");
+      expect(await stepGenerate("c")).toBe("second");
+      expect(model.calls).toHaveLength(3);
+    } finally {
+      fetched.restore();
+    }
+  });
+
+  test("records the DECODED prompt and system, which no hand-rolled version had", async () => {
+    const model = stubGatewayRoute("ok");
+    const fetched = stubStepFetch((request) => model.route(request) ?? { status: 404 });
+    try {
+      await stepGenerate("Summarize this brief.", { system: "Be terse." });
+      const call = model.calls[0];
+      // `String(request.body)` — what one eval asserted its prompts against —
+      // is the whole serialized request, model and temperature included.
+      expect(call?.prompt).toBe("Summarize this brief.");
+      expect(call?.system).toBe("Be terse.");
+      expect(call?.body.model).toBeTypeOf("string");
+      expect(call?.headers.authorization).toBe("Bearer sk-test");
+    } finally {
+      fetched.restore();
+    }
+  });
+
+  test("a call with no system message reports `undefined`, not an empty string", async () => {
+    const model = stubGatewayRoute("ok");
+    const fetched = stubStepFetch((request) => model.route(request) ?? { status: 404 });
+    try {
+      await stepGenerate("just a prompt");
+      expect(model.calls[0]?.system).toBeUndefined();
+    } finally {
+      fetched.restore();
+    }
+  });
+
+  test("a status answers the error body stepGenerate quotes back", async () => {
+    const model = stubGatewayRoute("never read", { status: 503 });
+    const fetched = stubStepFetch((request) => model.route(request) ?? { status: 404 });
+    try {
+      await expect(stepGenerate("hi")).rejects.toThrow(/503/);
+    } finally {
+      fetched.restore();
+    }
   });
 });

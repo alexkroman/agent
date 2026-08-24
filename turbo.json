@@ -399,6 +399,19 @@
       ],
       "env": [
         "AAI_REQUIRE_EVAL",
+        // Forces the SCRIPTED model even where a key is present — how CI runs
+        // the template evals as a wiring gate. In `env` rather than
+        // `globalPassThroughEnv` because it selects what the task DOES, so a
+        // stub run and a live run must not share a cache entry (this task is
+        // `cache: false` anyway; the rule is the rule).
+        "AAI_EVAL_STUB",
+        // The key the tier spends. `aai-evals` reads it through its own gate
+        // (which also falls back to what `aai login` saved), but a TEMPLATE's
+        // eval reads the environment and nothing else — it ships to users, so
+        // it may not go looking in a developer's CLI config — and strict env
+        // mode strips an undeclared variable silently, which would leave every
+        // template case skipping with a key exported right there in the shell.
+        "ASSEMBLYAI_API_KEY",
         "AAI_EVAL_ORIGIN",
         "AAI_EVAL_REPEAT",
         "AAI_EVAL_ONLY",

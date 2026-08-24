@@ -11,6 +11,8 @@ import type { Db } from '@alexkroman1/aai';
 import { Duplex } from 'node:stream';
 import { ExecuteTool } from '@alexkroman1/aai/host-internal';
 import { ExecuteToolOptions } from '@alexkroman1/aai/host-internal';
+import type { GenerateOptions } from '@alexkroman1/aai';
+import type { GenerateResult } from '@alexkroman1/aai';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
 import { LanguageModel } from 'ai';
@@ -243,6 +245,11 @@ type HeaderWebSocket = {
 
 export { HostCredentialEnv }
 
+// @internal
+type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+    signal?: AbortSignal | undefined;
+}) => Promise<GenerateResult>;
+
 // @public
 export interface HostServerOptions extends PassthroughServerOptions {
     defaults?: HostSessionDefaults;
@@ -402,6 +409,7 @@ export type RuntimeOptions = {
     env: AgentEnv;
     providerEnv?: ProviderEnv | undefined;
     db?: Db | undefined;
+    workflows?: WorkflowClient | undefined;
     createWebSocket?: CreateS2sWebSocket | undefined;
     createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
     publicUrl?: string | undefined;
@@ -421,6 +429,8 @@ export type RuntimeOptions = {
     runCode?: ((code: string) => Promise<string | {
         error: string;
     }>) | undefined;
+    toolTimeoutMs?: number | undefined;
+    generate?: HostGenerateFn | undefined;
     stt?: SttProvider | undefined;
     llm?: LlmProvider | undefined;
     tts?: TtsProvider | undefined;

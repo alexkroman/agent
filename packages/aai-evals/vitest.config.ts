@@ -27,14 +27,17 @@ export default defineConfig({
       "dist",
     ],
     coverage: {
-      // The two TARGETS are excluded, and this is the one exclusion in the repo
-      // that is not "test infrastructure": they only run when a live API key and
-      // a live studio are present, i.e. never in the unit run, so left in they
-      // count ~350 lines at 0% and drag the floors below what they measure. What
-      // the floors do cover is everything a unit test CAN reach — the runner,
-      // the assertion vocabulary, and the report — which is where a silent
-      // regression would actually hide.
-      exclude: [...sharedCoverageExclude, "session-target.ts", "studio-target.ts", "_gate.ts"],
+      // The studio TARGET is excluded, and this is the one exclusion in the repo
+      // that is not "test infrastructure": it only runs when a live API key and
+      // a live studio are present, i.e. never in the unit run, so left in it
+      // counts ~270 lines at 0% and drags the floors below what they measure.
+      // What the floors do cover is everything a unit test CAN reach — the
+      // runner, the assertion vocabulary, and the report — which is where a
+      // silent regression would actually hide. (The level-1 SESSION target is no
+      // longer here at all: it is published from
+      // `@alexkroman1/aai-runtime/eval` and unit-tested in that package against
+      // a scripted model.)
+      exclude: [...sharedCoverageExclude, "studio-target.ts", "_gate.ts"],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
       // Measured: 99.20 / 98.27 / 92.20 / 99.30.

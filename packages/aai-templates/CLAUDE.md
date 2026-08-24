@@ -258,12 +258,10 @@ Four rules came out of converting `dispatch-center`, `retail` and `solo-rpg`,
 each a trap rather than a preference:
 
 - **A tool legal in EVERY state is not a flow tool.** `when` is required, so an
-  ungated one would list every state — a gate that gates nothing, paying the
-  wrapper for it. It stays an ordinary `tool()`/`slot.updateTool` and calls
-  `dialog.send` itself, which is what that method is public for
-  (`incident_create`, `setup_character`, `load_game`, `start_plan`). Each still
-  reports the position it landed in: the READOUT is most of the value and needs
-  no gate.
+  ungated one would list every state — a gate that gates nothing. It stays an
+  ordinary `tool()`/`slot.updateTool` and calls `dialog.send` itself, which is
+  what that method is public for (`incident_create`, `setup_character`,
+  `load_game`, `start_plan`), and still reports the position it landed in.
 - **`sendFrom` goes BELOW `execute`** — the rule SHRANK with `NoInfer` rather
   than going away; the section of that name below has the A/B. It is also the
   field for "did this actually do the thing": `resources_dispatch` sends nothing
@@ -405,9 +403,8 @@ transcribes what is new, summarizes it, posts a Slack digest — and then
 
 There is **no cron anywhere in it**. A durable `sleep()` inside the body IS the
 scheduler: the run suspends, nothing is resident, nothing is billed, and the
-platform brings it back days later. That makes a recurring job something a
-template can demonstrate in forty lines with no infrastructure behind it, and it
-is the cheapest correct answer to "run this every morning" on this platform.
+platform brings it back days later — a recurring job in forty lines with no
+infrastructure behind it.
 
 Three consequences the template states in place, because each is a trap:
 
@@ -930,6 +927,13 @@ failure. The WAV half carries its own weight there: a cut that lands mid-frame,
 or an off-by-one in the RIFF chunk walk, produces audio the decoder happily
 transcribes into confident nonsense rather than anything that fails.
 
+## Every template ships an EVAL
+
+`templates/*/agent.eval.test.ts` — 25 of them, run by `aai eval` and gated in CI
+against a scripted model. **The harness, the two modes, what a template owes, and
+what these evals found: `packages/aai-runtime/CLAUDE.md`, "Driving an agent from
+text is a published surface".**
+
 ## The authoring guide ships inside the SDK
 
 `scaffold/CLAUDE.md` is already the one source of truth for how to write an aai
@@ -986,15 +990,19 @@ the three above it are voice agents. Getting that wrong in either direction is
 the expensive mistake: a voice agent that goes silent for ninety seconds, or a
 page for work that a caller could simply have been told.
 
-**`travel-concierge` — the two mechanisms, and the honest limit.** Their graph
-gives each specialist node its own bound tool set and swaps the assistant's
-prompt as `dialog_state` is pushed and popped. A voice session has ONE model
-with ONE tool list and a system prompt fixed at connect, so the port splits the
-difference: the stack is real state (`routing.ts`, projected to the sidebar), and
-the specialist's brief arrives as the delegation tool's return value, which is
-the last thing the model reads before it speaks. The narrowing is therefore
-asked for rather than enforced, and `agent.ts` says so in place — do not "fix"
-that by pretending otherwise.
+**`travel-concierge` — the two mechanisms, and the narrowing that is enforced
+now.** Their graph gives each specialist node its own bound tool set and swaps
+the assistant's prompt as `dialog_state` is pushed and popped. A voice session
+has ONE model with ONE tool list and a system prompt fixed at connect, so the
+stack is real state (`routing.ts`, projected to the sidebar) and the
+specialist's brief arrives as the delegation tool's return value.
+
+**This guide used to call the narrowing "asked for rather than enforced". Its own
+eval disproved the ask — 0 of 5 live runs delegated.** So it is a mechanism:
+`requireDesk` (`shared.ts`) gates all nine desk tools on the dialog stack and
+answers a `ToolFailure` naming the `to_…_assistant` to call. 7 of 7 after. The
+gate then exposed two prompt defects a wording fix would have hidden, both in
+`packages/aai-runtime/CLAUDE.md`'s eval section.
 
 The half that IS enforced is the confirmation gate, and it is the bit worth
 copying into any agent that can spend someone's money. Every sensitive tool
@@ -1104,15 +1112,12 @@ the rationale for the two judgement calls in it.
 
 **The subject is real because the provider's BATCH API is real.** A polling port
 needs something that genuinely takes minutes, and `POST /v2/transcript` answers
-with a job id in milliseconds and finishes later — so the wait belongs to the
-provider rather than to a `setTimeout` the template chose. The compensation is
-the same argument: `DELETE /v2/transcript/:id` really removes the transcript,
-which is what makes "a failed run leaves nothing on the account" a claim rather
-than a stub. That is the line this guide draws for `transcription-workflow`'s
-removed webhook demo, applied forwards — and it is also the split between the
-two: `transcription-workflow` takes the SYNC endpoint (answers in the request, hard
-cap, therefore a fan-out), this one takes the batch endpoint (job id, therefore
-a poll).
+with a job id and finishes later, so the wait belongs to the provider rather than
+to a `setTimeout` the template chose; `DELETE /v2/transcript/:id` really removes
+the transcript, which makes "a failed run leaves nothing on the account" a claim
+rather than a stub. That is also the split between the two:
+`transcription-workflow` takes the SYNC endpoint (hard cap, therefore a fan-out),
+this one the batch endpoint (job id, therefore a poll).
 
 **A phone caller cannot read a URL aloud, so the desk supplies its own.**
 `SAMPLE_RECORDING` is the provider's documented public sample, and it exists so

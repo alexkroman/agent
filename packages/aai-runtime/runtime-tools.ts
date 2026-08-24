@@ -201,10 +201,14 @@ function withNotify(
  * effective LLM descriptor with credentials from `providerEnv`.
  */
 function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
-  return createGenerateFn({
-    llm: deps.llm,
-    env: deps.providerEnv,
-  });
+  // A caller-supplied one wins — see `RuntimeOptions.generate`.
+  return (
+    deps.opts.generate ??
+    createGenerateFn({
+      llm: deps.llm,
+      env: deps.providerEnv,
+    })
+  );
 }
 
 /**
@@ -263,6 +267,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
         subagents,
         logger,
         signal: callOpts?.signal,
+        timeoutMs: opts.toolTimeoutMs,
       });
     }
     // Delegate custom tools (and run_code) to the isolate via RPC. Forward
@@ -387,6 +392,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         generate,
         subagents,
         logger,
+        timeoutMs: opts.toolTimeoutMs,
         // Always defined: `ctx.send` is a no-op when no socket holds the id
         // (the same shape a missing sink produced before), and binding it
         // late is what lets a resumed client receive it.

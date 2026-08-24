@@ -256,3 +256,33 @@ describe("multipartBody", () => {
     expect(body.byteLength).toBe(head.length + bytes.byteLength + tail.length);
   });
 });
+
+describe("the unpublished fallback and a streaming body", () => {
+  test("adds duplex: half for an async iterable, which undici refuses without", async () => {
+    const seen: RequestInit[] = [];
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+      seen.push(init);
+      return Promise.resolve(new Response("ok"));
+    });
+    async function* windows(): AsyncIterable<Uint8Array> {
+      yield new Uint8Array([1, 2, 3]);
+    }
+    await stepFetch("https://upload.test/v2/upload", { method: "POST", body: windows() });
+    // The promise `StepFetchInit.body` makes: the caller passes only the
+    // iterable. It held for a deployed run and broke for every other caller.
+    expect((seen[0] as { duplex?: string }).duplex).toBe("half");
+  });
+
+  test("does NOT add it for bytes or a string — a duplex on those is its own rejection", async () => {
+    const seen: RequestInit[] = [];
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+      seen.push(init);
+      return Promise.resolve(new Response("ok"));
+    });
+    await stepFetch("https://upload.test/a", { method: "POST", body: new Uint8Array([1]) });
+    await stepFetch("https://upload.test/b", { method: "POST", body: "{}" });
+    await stepFetch("https://upload.test/c");
+    for (const init of seen) expect((init as { duplex?: string }).duplex).toBeUndefined();
+    expect(seen).toHaveLength(3);
+  });
+});

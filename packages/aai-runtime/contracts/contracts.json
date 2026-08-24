@@ -4,6 +4,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "eval": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "keys": {
     "current": 1,
     "supported": [1],
@@ -20,13 +25,13 @@
     "dropped": {}
   },
   "runtime": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "server": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "session": {

@@ -10,6 +10,7 @@
     "start": "node server.mjs",
     "build": "aai build",
     "test": "aai test",
+    "eval": "aai eval",
     "publish:agent": "aai publish"
   },
   "dependencies": {

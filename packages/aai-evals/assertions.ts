@@ -26,17 +26,19 @@
  */
 
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
+// The event READERS and the terminator set are published, because the harness
+// that produces the events is: `openEvalSession` waits on `TURN_ENDS` to decide
+// a reply has ended, and these assertions use the same set to partition a run
+// into turns. Two copies must agree by construction — a third terminator added
+// to one would make `say()` return mid-reply while these still thought the turn
+// was open, which reads as the agent misbehaving rather than as a harness bug.
+import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsIn } from "@alexkroman1/aai-runtime/eval";
 import type { EvalRecorder } from "./runner.ts";
 
-/** One tool call, paired with its result when the stream carries one. */
-export type EvalToolCall = {
-  readonly toolCallId: string;
-  readonly name: string;
-  readonly args: Record<string, unknown>;
-  /** The serialized result, or undefined when the call never completed. */
-  readonly result?: string;
-};
+// Re-exported from the SOURCE rather than import-then-export: a scope's
+// `toolCalls` is typed with it, so a reader of this vocabulary needs the name.
+export type { EvalToolCall } from "@alexkroman1/aai-runtime/eval";
 
 /** What {@link EvalScope.calledTool} may claim beyond the name. */
 export type CalledToolOptions = {
@@ -102,21 +104,6 @@ export type EvalScope = {
 };
 
 /**
- * The events that END a reply.
- *
- * They partition a scope into turns here, and they are what `say()` waits for in
- * `session-target.ts` — one declaration, because those two must agree by
- * construction. They did not: the set was written out twice, and a third
- * terminator added to one copy would make `say()` return mid-reply while these
- * assertions still thought the turn was open, which reads as the agent
- * misbehaving rather than as a harness bug.
- */
-export const TURN_ENDS: ReadonlySet<SessionEvent["type"]> = new Set([
-  "reply.completed",
-  "reply.cancelled",
-]);
-
-/**
  * Split a scope into per-reply slices.
  *
  * Everything up to and including a terminator belongs to that reply, which puts
@@ -136,26 +123,6 @@ function turnsOf(events: readonly SessionEvent[]): SessionEvent[][] {
     }
   }
   return turns;
-}
-
-/** Tool calls in a scope, each paired with the result event that answered it. */
-function toolCallsOf(events: readonly SessionEvent[]): EvalToolCall[] {
-  const results = new Map<string, string>();
-  for (const event of events) {
-    if (event.type === "tool.completed") results.set(event.toolCallId, event.result);
-  }
-  const calls: EvalToolCall[] = [];
-  for (const event of events) {
-    if (event.type !== "tool.called") continue;
-    const result = results.get(event.toolCallId);
-    calls.push({
-      toolCallId: event.toolCallId,
-      name: event.toolName,
-      args: event.args,
-      ...omitUndefined({ result }),
-    });
-  }
-  return calls;
 }
 
 /** Deep PARTIAL match: every key of `expected` present and equal in `actual`. */
@@ -259,7 +226,7 @@ export function eventScope(
   events: readonly SessionEvent[],
   prefix = "",
 ): EvalScope {
-  const calls = toolCallsOf(events);
+  const calls = toolCallsIn(events);
   const names = calls.map((c) => c.name);
   const types = events.map((e) => e.type);
   // Partitioned ONCE, beside the other derived views: `turn()` and `turns()` each
@@ -267,7 +234,7 @@ export function eventScope(
   // list four times — and, more to the point, the two reads could disagree with
   // `types`/`said`/`calls`, which are snapshots taken here.
   const slices = turnsOf(events);
-  const said = events.flatMap((e) => (e.type === "agent-transcript.committed" ? [e.text] : []));
+  const said = saidIn(events);
   const check = (ok: boolean, label: string, detail?: string): void => {
     recorder.check(ok, `${prefix}${label}`, detail);
   };
@@ -436,4 +403,20 @@ export function eventScope(
       return slices.length;
     },
   };
+}
+
+/**
+ * A scope over everything a live eval session has emitted so far.
+ *
+ * The session itself carries no assertion vocabulary — it is published from
+ * `@alexkroman1/aai-runtime/eval`, where a matcher library would be a promise
+ * this tier is not ready to make (see this package's guide: the recording runner
+ * and this vocabulary are the noisy-instrument half, and they are ours). This is
+ * the one line that joins the two.
+ */
+export function scopeOf(
+  recorder: EvalRecorder,
+  session: { events(): readonly SessionEvent[] },
+): EvalScope {
+  return eventScope(recorder, session.events());
 }
