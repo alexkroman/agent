@@ -31,18 +31,28 @@ export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { gateway } from "@alexkroman1/aai/llm";
+ * import { gatewayLlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   llm: gateway({ model: "zai/glm-4.6" }),
+ *   llm: gatewayLlm({ model: "zai/glm-4.6" }),
  * });
  * ```
  *
  * One key, hundreds of models, addressed `"creator/model"`. See
  * https://vercel.com/ai-gateway/models for the list.
  */
-export function gateway(opts: ModelOptions): LlmProvider {
+/**
+ * Options for {@link gatewayLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface GatewayLlmOptions extends ModelOptions {}
+
+export function gatewayLlm(opts: GatewayLlmOptions): LlmProvider {
   return { kind: GATEWAY_KIND, options: { ...opts } };
 }

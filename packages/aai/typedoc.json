@@ -25,6 +25,14 @@
     }
   },
   "intentionallyNotExported": [
+    // The two mutation-window guards. Same shape as the `AgentParams` misuse
+    // types below: they are the IMPLEMENTATION of a compile error — an author
+    // meets `RejectThenable` as the message tsc prints when a slot mutation
+    // body is `async`, never by name — so they stay off the root barrel and out
+    // of the docs while still rendering inline in `update`'s and `after`'s
+    // signatures, where they are what a reader needs to see.
+    "RejectThenable",
+    "RejectThenableResult",
     "StandardSchemaV1",
     // The issue type from the same vendor interface, reached the same way:
     // `schemaInputIssues` (`@alexkroman1/aai/testing`) answers

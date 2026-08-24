@@ -17,7 +17,12 @@ import { claimKey, type KeyOwner, shapeOf } from "./_slot-owners.ts";
 import type { DeepReadonly } from "./deep-readonly.ts";
 import { isRecord } from "./is-record.ts";
 import type { ToolInputSchema } from "./schema.ts";
-import type { SessionSlotOptions, SlotToolDef } from "./session-slot-types.ts";
+import type {
+  RejectThenable,
+  RejectThenableResult,
+  SessionSlotOptions,
+  SlotToolDef,
+} from "./session-slot-types.ts";
 import type { SlotStore, StateProjection } from "./session-state.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
@@ -104,7 +109,7 @@ export interface SessionSlot<K extends string, T> {
    * that, and this method no longer takes a lock at all: a synchronous window
    * has nothing to serialize.
    */
-  update<R>(ctx: ToolContext, mutate: (draft: T) => R): R;
+  update<R>(ctx: ToolContext, mutate: (draft: T) => R): RejectThenableResult<R>;
   /**
    * Replace this session's value wholesale (a load, an import, a restore), and
    * return it as `get` would.
@@ -191,7 +196,7 @@ export interface SessionSlot<K extends string, T> {
    * ```
    */
   updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
-    def: SlotToolDef<P, T, R>,
+    def: SlotToolDef<P, T, R> & RejectThenable<R>,
   ): ToolDef<P, R>;
   /**
    * A `syncState` projection over this slot: read the value (defaulting when
@@ -277,10 +282,10 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  *
  * @public
  */
-export function sessionSlot<const K extends string, T>(
+export function sessionSlot<const K extends string, T, After = void>(
   key: K,
   create: () => T,
-  options: SessionSlotOptions<T> = {},
+  options: SessionSlotOptions<T, After> = {},
 ): SessionSlot<K, T> {
   const durable = options.durable ?? true;
   /**
@@ -395,7 +400,11 @@ export function sessionSlot<const K extends string, T>(
     create,
     durable,
     get,
-    update,
+    // The public signature answers `RejectThenableResult<R>`, an authoring
+    // guard the implementation has no way to satisfy generically — at run time
+    // it hands back exactly what the mutator returned, which is `R` on every
+    // path the guard permits.
+    update: update as SessionSlot<K, T>["update"],
     set(ctx, value) {
       assertNoOpenDraft(ctx, "set");
       // A copy, so the freeze lands on the slot's own object rather than on the
@@ -419,7 +428,12 @@ export function sessionSlot<const K extends string, T>(
       ...rest,
       execute: (args, ctx) => execute(args, get(ctx), ctx),
     }),
-    updateTool: ({ execute, ...rest }) => {
+    // The public signature intersects `RejectThenable<R>` into `def`, which is
+    // an authoring guard and not a shape this body can destructure — spreading
+    // the rest off an intersection with `unknown` loses `inputSchema`'s
+    // optionality. Narrow to the plain def here; the guard has already done its
+    // work at the call site.
+    updateTool: (({ execute, ...rest }: SlotToolDef<ToolInputSchema, T, unknown>) => {
       // At DECLARATION, where the overwhelming majority of this mistake is
       // visible. The check below still stands for a sync function that RETURNS
       // a promise, which only the call can see.
@@ -445,7 +459,7 @@ export function sessionSlot<const K extends string, T>(
             return result;
           }),
       };
-    },
+    }) as SessionSlot<K, T>["updateTool"],
     projection(project) {
       const projection = (value?: unknown): ReturnType<typeof project> =>
         project((value === undefined ? create() : value) as DeepReadonly<T>);

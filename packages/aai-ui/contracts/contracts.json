@@ -1,7 +1,7 @@
 {
   "client": {
-    "current": 3,
-    "supported": [1, 2, 3],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "client-dir": {
@@ -10,31 +10,29 @@
     "dropped": {}
   },
   "components": {
-    "current": 3,
-    "supported": [1, 2, 3],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "forms": {
-    "current": 4,
-    "supported": [1, 2, 3, 4],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "hooks": {
-    "current": 3,
-    "supported": [1, 2, 3],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "page": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "session": {
-    "current": 5,
-    "supported": [2, 3, 4, 5],
-    "dropped": {
-      "1": "SessionCoreOptions was removed: it was an exact alias of VoiceSessionOptions with exactly one referent (createSessionCore's parameter), and client() never took it. The epoch 1 example annotated a value with it, so the epoch 1 authoring style no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "theme": {
     "current": 1,
@@ -42,8 +40,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 14,
-    "supported": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   }
 }

@@ -27,15 +27,25 @@ export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { anthropic } from "@alexkroman1/aai/llm";
+ * import { anthropicLlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   llm: anthropic({ model: "claude-sonnet-5" }),
+ *   llm: anthropicLlm({ model: "claude-sonnet-5" }),
  * });
  * ```
  */
-export function anthropic(opts: ModelOptions): LlmProvider {
+/**
+ * Options for {@link anthropicLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface AnthropicLlmOptions extends ModelOptions {}
+
+export function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider {
   return { kind: ANTHROPIC_KIND, options: { ...opts } };
 }

@@ -655,10 +655,10 @@ Parse JSON, returning `undefined` on malformed input. JSON cannot encode
 ### sessionSlot()
 
 ```ts
-function sessionSlot<K, T>(
+function sessionSlot<K, T, After>(
    key: K, 
    create: () => T, 
-options?: SessionSlotOptions<T>): SessionSlot<K, T>;
+options?: SessionSlotOptions<T, After>): SessionSlot<K, T>;
 ```
 
 Declare a named slot of per-session state.
@@ -683,6 +683,10 @@ module needs neither an annotated context nor a `slot.get(ctx)` line.
 
 `T`
 
+##### After
+
+`After` = `void`
+
 #### Parameters
 
 ##### key
@@ -705,7 +709,7 @@ Factory for a fresh value. Called once per session on first
 
 ##### options?
 
-[`SessionSlotOptions`](#sessionslotoptions)\<`T`\>
+[`SessionSlotOptions`](#sessionslotoptions)\<`T`, `After`\>
 
 #### Returns
 
@@ -1350,7 +1354,7 @@ optional llm?: LlmProvider;
 ```
 
 Pluggable LLM provider descriptor from `@alexkroman1/aai/llm` (e.g.
-`anthropic({ model })`) for pipeline mode. Unset (with no `s2s`), the
+`anthropicLlm({ model })`) for pipeline mode. Unset (with no `s2s`), the
 stage defaults to the AssemblyAI LLM Gateway. Note this is pure
 serializable data, not a Vercel AI SDK `LanguageModel` instance — the
 host resolves the descriptor into a `LanguageModel` at session start,
@@ -1527,7 +1531,7 @@ optional s2s?: S2sProvider;
 
 Pluggable S2S provider descriptor — the explicit opt-in to
 speech-to-speech mode (e.g. `assemblyAIS2s()` for AssemblyAI's Voice
-Agent API, or `openaiRealtime()`). Unset, the agent runs the default
+Agent API, or `openaiS2s()`). Unset, the agent runs the default
 cascaded pipeline. Mutually exclusive with the `stt`/`llm`/`tts`
 pipeline triple.
 
@@ -1862,6 +1866,10 @@ Deliberately absent: `turn_detection`. Its service default is adaptive and
 entity-aware — it waits out a spelled-out value — and setting
 `min_silence`/`max_silence` disables both for the rest of the session.
 
+#### Extends
+
+- [`ProviderCredentialOptions`](#providercredentialoptions)
+
 #### Properties
 
 ##### apiKeyEnv?
@@ -1870,20 +1878,12 @@ entity-aware — it waits out a spelled-out value — and setting
 optional apiKeyEnv?: string;
 ```
 
-Env var holding this stage's credential, replacing the provider default
-(`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
-stays secret-free and safe to serialize.
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
 
-For running this session against a different account or cluster than the
-agent's other credentials — AssemblyAI keys are environment-scoped, so a
-staging cluster rejects a production key and vice versa. The variable must
-be present in the agent's env (`.env` or `aai secret put`), like any other
-credential.
+###### Inherited from
 
-The three pipeline AssemblyAI stages carry the same field, and the host
-has always read it off any descriptor generically (`resolveS2sEnvVar`) —
-so S2S honoured an `apiKeyEnv` that its own options type had no way to
-spell.
+[`ProviderCredentialOptions`](#providercredentialoptions).[`apiKeyEnv`](#apikeyenv-1)
 
 ##### keyterms?
 
@@ -2824,6 +2824,61 @@ further, and `run` then throws rather than returning a half-built output.
 
 ***
 
+### ProviderCredentialOptions
+
+The credential override every provider descriptor accepts.
+
+Names an env VARIABLE holding this stage's key, replacing the provider
+default (`DEEPGRAM_API_KEY`, `ASSEMBLYAI_API_KEY`, …). It names a variable
+and never a key, so the descriptor stays secret-free and safe to serialize
+across the CLI → server → guest boundary. The variable must be present in
+the agent's env (`.env`, or `aai secret put`), like any other credential.
+
+#### Remarks
+
+**Every provider options interface extends this, because the host has always
+honoured the field on every provider.** `descriptorEnvVar()` in
+`@alexkroman1/aai-runtime` reads `apiKeyEnv` off any descriptor's options
+through an untyped cast, so all thirteen factories accepted it at runtime
+while only the four AssemblyAI options types could spell it — a shape that
+cost `aai:s2s` epoch 1, where the field was added to one stage and left off
+the rest.
+
+The argument for keeping it AssemblyAI-only was that AssemblyAI keys are
+environment-scoped, so a mixed staging/production pipeline needs two live at
+once, and no other vendor has that problem. True, and not the whole test: a
+type that cannot spell what the runtime accepts is wrong regardless of who
+needs it, and per-stage key separation is equally the answer for two accounts
+with one vendor, for per-tenant keys, and for a rotation that runs both keys
+briefly.
+
+#### Extended by
+
+- [`AssemblyAIS2sOptions`](#assemblyais2soptions)
+- [`AssemblyAISttOptions`](stt.md#assemblyaisttoptions)
+- [`DeepgramSttOptions`](stt.md#deepgramsttoptions)
+- [`ElevenLabsSttOptions`](stt.md#elevenlabssttoptions)
+- [`SonioxSttOptions`](stt.md#sonioxsttoptions)
+- [`AssemblyAITtsOptions`](tts.md#assemblyaittsoptions)
+- [`CartesiaTtsOptions`](tts.md#cartesiattsoptions)
+- [`RimeTtsOptions`](tts.md#rimettsoptions)
+- [`AssemblyAILlmOptions`](llm.md#assemblyaillmoptions)
+- [`ModelOptions`](llm.md#modeloptions)
+- [`OpenAIS2sOptions`](s2s.md#openais2soptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+***
+
 ### ProviderDescriptor
 
 Base shape for a provider descriptor. A `kind` tag + opaque `options`
@@ -3134,7 +3189,7 @@ export default cartSlot.tool({
 ##### update()
 
 ```ts
-update<R>(ctx: ToolContext, mutate: (draft: T) => R): R;
+update<R>(ctx: ToolContext, mutate: (draft: T) => R): RejectThenableResult<R>;
 ```
 
 Mutate this session's value, and store the result.
@@ -3171,7 +3226,7 @@ export default tool({
 
 A mutator that throws stores NOTHING: the draft is discarded and the
 mutator's error propagates. The `after` hook does not run either — see
-[SessionSlotOptions.after](#after).
+[SessionSlotOptions.after](#after-1).
 
 For serialized work that is not a slot mutation — an external resource, a
 key that isn't the session id, or a mutation that must fail rather than
@@ -3197,12 +3252,12 @@ has nothing to serialize.
 
 ###### Returns
 
-`R`
+`RejectThenableResult`\<`R`\>
 
 ##### updateTool()
 
 ```ts
-updateTool<P, R>(def: SlotToolDef<P, T, R>): ToolDef<P, R>;
+updateTool<P, R>(def: SlotToolDef<P, T, R> & RejectThenable<R>): ToolDef<P, R>;
 ```
 
 Define a MUTATING tool over this slot: the body runs inside
@@ -3240,7 +3295,7 @@ is the other half, and only the call can catch it.
 
 ###### def
 
-[`SlotToolDef`](#slottooldef)\<`P`, `T`, `R`\>
+[`SlotToolDef`](#slottooldef)\<`P`, `T`, `R`\> & `RejectThenable`\<`R`\>
 
 ###### Returns
 
@@ -3295,12 +3350,16 @@ Options for [sessionSlot](#sessionslot-1).
 
 `T`
 
+##### After
+
+`After` = `void`
+
 #### Properties
 
 ##### after?
 
 ```ts
-optional after?: (draft: T) => void;
+optional after?: (draft: T) => After & RejectThenable<After>;
 ```
 
 Invariant restoration, run on the draft at the end of every successful
@@ -3316,15 +3375,12 @@ may have left the draft in a shape the hook itself cannot handle, and an
 error thrown from the hook would replace the one that actually explains the
 failure. Nothing is stored in that case either.
 
-###### Parameters
-
-###### draft
-
-`T`
-
-###### Returns
-
-`void`
+**It runs INSIDE the mutation window, so it is synchronous too** — an
+`async` hook is a compile error naming the rule — see `RejectThenable`,
+which is off the docs for the reason the `AgentParams` misuse types are:
+you meet it in what tsc prints, never by name.
+The `After` parameter exists only to carry that check: it is inferred from
+the hook and defaults to `void`, so a caller never writes it.
 
 ##### durable?
 
@@ -3677,7 +3733,7 @@ discriminant already set.
 
 ```ts
 type AssemblyAITtsVoice = 
-  | keyof typeof ASSEMBLYAI_TTS_VOICES
+  | AssemblyAITtsVoiceId
 | string & Record<never, never>;
 ```
 
@@ -4269,7 +4325,7 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 ```
 
 Descriptor for an LLM provider. Returned by factories like
-`anthropic(...)` from `@alexkroman1/aai/llm`.
+`anthropicLlm(...)` from `@alexkroman1/aai/llm`.
 
 #### Type Declaration
 
@@ -4490,7 +4546,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 ```
 
 Descriptor for an S2S provider. Returned by `assemblyAIS2s(...)` (root
-export) or `openaiRealtime(...)` from `@alexkroman1/aai/s2s`.
+export) or `openaiS2s(...)` from `@alexkroman1/aai/s2s`.
 
 #### Type Declaration
 
@@ -5079,6 +5135,22 @@ rejects naming the reason. One level is a bill a caller can quote; a
 subagent that may delegate can delegate to itself, and nothing at this
 seam can see the recursion.
 
+###### Remarks
+
+The TENTH field on this type, and the one that raised `guard-invariants`
+rule 24 from nine. Recorded here because that is where a baselined
+occurrence's reason belongs: a field on this type is a capability the
+runtime must supply on EVERY tool call, on every host, in every test
+double — so it is a promise, not a convenience, and the rule exists to make
+adding one an argued decision rather than a diff nobody reads.
+
+The argument for this one is that it passes the test the rule sets: it is
+per-CALL and it cannot be reached any other way. A tool body cannot build a
+subagent runner itself — resolving the model, the builtins, the step budget
+and the nesting refusal are all the host's, exactly as they are for
+`generate`. Anything reachable from a value the author already holds is not
+this, and belongs in that value's own module.
+
 ##### env
 
 ```ts
@@ -5297,7 +5369,7 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 ```
 
 Descriptor for a TTS provider. Returned by factories like
-`cartesia(...)` from `@alexkroman1/aai/tts`.
+`cartesiaTts(...)` from `@alexkroman1/aai/tts`.
 
 #### Type Declaration
 
@@ -5988,249 +6060,24 @@ that happened to carry it. The property itself stays an ordinary
 ### ASSEMBLYAI\_TTS\_VOICES
 
 ```ts
-const ASSEMBLYAI_TTS_VOICES: {
-  alba: {
-     accent: "US";
-     language: "en";
-  };
-  anna: {
-     accent: "US";
-     language: "en";
-  };
-  charles: {
-     accent: "US";
-     language: "en";
-  };
-  estelle: {
-     accent: "FR";
-     language: "fr";
-  };
-  eve: {
-     accent: "US";
-     language: "en";
-  };
-  george: {
-     accent: "US";
-     language: "en";
-  };
-  giovanni: {
-     accent: "IT";
-     language: "it";
-  };
-  jane: {
-     accent: "US";
-     language: "en";
-  };
-  jean: {
-     accent: "US";
-     language: "en";
-  };
-  juergen: {
-     accent: "DE";
-     language: "de";
-  };
-  lola: {
-     accent: "ES";
-     language: "es";
-  };
-  mary: {
-     accent: "US";
-     language: "en";
-  };
-  michael: {
-     accent: "US";
-     language: "en";
-  };
-  paul: {
-     accent: "UK";
-     language: "en";
-  };
-  rafael: {
-     accent: "PT";
-     language: "pt";
-  };
-  vera: {
-     accent: "UK";
-     language: "en";
-  };
-};
+const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 ```
 
-The voice catalog — voice id → the language it speaks and its accent.
-The accent is descriptive metadata for choosing a voice, not a settable
-option: [AssemblyAITtsOptions](tts.md#assemblyaittsoptions) has no `accent` field.
+The voice catalog and the type `agent({ voice })` is written against.
 
-A constant rather than a sentence in a doc comment, because a wrong voice
-id is a *silent* failure: it is a free-form string the service rejects
-in-band after the socket opens, so the agent connects, reports ready, and
-never speaks — the same shape as the unmapped-`language` bug below, and
-nothing upstream of a live session catches it.
-
-It is a constant for a second reason, learned the hard way. The list this
-replaced lived in a doc comment and was simply wrong — it carried ten names
-(`azelma`, `cosette`, `fantine`, `javert`, `marius`, `peter_yearsley` …)
-that are in no published catalog, while omitting most of the real ones. A
-list nobody can check drifts into fiction, and here the fiction is
-indistinguishable, at authoring time, from a working agent.
-
-Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
-
-Anything that shows an author their choices — the scaffold guide, a picker
-— should read this rather than restate it. A partial list is what sends
-someone guessing, which is the failure being prevented.
-
-#### Type Declaration
-
-##### alba
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### anna
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### charles
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### estelle
-
-```ts
-{
-  accent: "FR";
-  language: "fr";
-}
-```
-
-##### eve
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### george
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### giovanni
-
-```ts
-{
-  accent: "IT";
-  language: "it";
-}
-```
-
-##### jane
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### jean
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### juergen
-
-```ts
-{
-  accent: "DE";
-  language: "de";
-}
-```
-
-##### lola
-
-```ts
-{
-  accent: "ES";
-  language: "es";
-}
-```
-
-##### mary
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### michael
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### paul
-
-```ts
-{
-  accent: "UK";
-  language: "en";
-}
-```
-
-##### rafael
-
-```ts
-{
-  accent: "PT";
-  language: "pt";
-}
-```
-
-##### vera
-
-```ts
-{
-  accent: "UK";
-  language: "en";
-}
-```
+Both were FORGOTTEN exports here — `AgentParams.voice` is typed
+`AssemblyAITtsVoice`, and the catalog is the only place the ids are
+checkable — so an author reaching for the field this barrel documents had to
+import from `@alexkroman1/aai/tts` to name either. The TTS subpath keeps
+them too: it is where an explicit `assemblyAITts({ voice })` stage is
+written.
 
 ***
 
 ### DEFAULT\_SYSTEM\_PROMPT
 
 ```ts
-const DEFAULT_SYSTEM_PROMPT: string;
+const DEFAULT_SYSTEM_PROMPT: "You are a voice agent in a real-time spoken conversation. What you\nreceive is a live speech transcript, and everything you write will be\nspoken aloud by a text-to-speech system and shown as plain text.\nAgent-specific instructions may follow these defaults. They decide WHAT\nyou do — policy, persona, scope, what to collect and when — and they win\non all of it. They do not change how this channel works: the LISTENING\nand SPEAKING sections below are facts about a live transcript and a\nreal-time voice, not preferences, and they hold whatever a later\ninstruction says. When a later instruction asks for something those\nfacts make useless — most often asking the caller to repeat or spell\nsomething you already have — honour what it is trying to achieve and\nfollow the section's method for achieving it.\n\n## PERSONALITY\n- Unless the agent's instructions say otherwise: warm, calm, and\n  competent. Sound like a capable person, not a phone tree.\n\n## SPEAKING\n- Keep the whole reply to two sentences, about thirty spoken words.\n  Going long is the single most expensive habit on a phone call: the\n  longer you talk, the more likely the caller cuts in, and everything\n  after that point is never heard.\n- Your FIRST sentence is at most eight words and carries the answer or\n  the next question — never a preface, an acknowledgment, or a\n  restatement of what the caller just said.\n  Too long: \"Thanks for that. I will look up your account now. I found\n  your account, and I can see two orders on it.\"\n  Say instead: \"Found your account. Two orders — which has the water\n  bottle?\"\n- Write exactly as you would say it out loud to a friend. Contractions\n  sound better spoken (\"I'll\", \"it's\", \"don't\"). No markdown, bullet\n  points, code, headings, emoji, stage directions, or sound effects —\n  none of it can be spoken.\n- When the caller asks HOW MANY, lead with the number that answers what\n  they asked — how many records actually match their question, not how\n  big the list you looked at was. Leave the ones that don't qualify out\n  of the number and never make the caller do the subtraction; a total\n  plus an exclusion is not an answer.\n  Asked \"how many can I still pick from?\": say \"Ten to choose from.\"\n  Not: \"There are twelve, and two are out.\"\n- To list things, say \"First,\" \"Next,\" \"Finally.\" Never read out a long\n  list: give the count that matches what they asked for, name at most\n  two, and ask which one they mean (\"Five items on that order — the\n  headphones and the vacuum, plus three more. Which one?\").\n- Say numbers, amounts, and dates the way a person says them (\"one\n  hundred fifty-four dollars, on March third\"). An IDENTIFIER is the\n  exception, and the rule for it is all-or-nothing: any code that mixes\n  letters and digits, or that is not a word, is spoken one character at\n  a time from end to end.\n  Right: \"A-B-C-one-two-three.\"\n  Wrong: \"ABC one hundred twenty three\" — the letters spelled and the\n  digits read as a number is the common failure, and it is unusable:\n  the caller cannot tell \"123\" from \"one two three\" from \"one twenty\n  three\".\n  Wrong: \"Delive\" — a code is never pronounced as if it were a word.\n  When a quantity sits next to a code, put the unit between them, or\n  they run together into one unsayable token: \"two of K-two\", never\n  \"two K two\".\n- Speak the language the caller is speaking. Switch only when they do —\n  never on your own.\n- Ask at most one question per turn, and make it the one that unblocks\n  the most.\n- Vary your openers — don't start consecutive replies with the same\n  acknowledgment. If the caller interrupts, stop and address what they\n  said.\n- Never verbalize internal reasoning, tool names, system mechanics, or\n  technical failures.\n\n## LISTENING\n- The transcript carries fillers, pauses, false starts, and\n  self-corrections. Read through the noise to the caller's final intent\n  and act on it. When they correct themselves (\"Boston... actually,\n  Chicago\"), use only the last value.\n- Respond only to speech directed at you. If a turn is empty, garbled,\n  or clearly background noise or a side conversation, say briefly that\n  you didn't catch that — never act on it. Otherwise act on your best\n  understanding rather than stalling.\n- Take a value the way a person says it, in one piece, and TRY it before\n  asking for it spelled. A spelling request costs a full round trip and\n  transcribes no better: spelled letters lose their word boundaries and\n  lose their tail to a pause, a cough, or a breath, which reads as a\n  valid value and is not. If the caller volunteers something you didn't\n  ask for, use it; never re-collect what you already have in another\n  form.\n- Write spoken identifiers in their normal written form, not as they\n  were said. Drop spoken separators (\"K dash 2\" is K2, \"P dash five\n  dash two\" is P52), join spelled-out characters (\"A B C one two three\"\n  is ABC123), and add nothing the caller did not say (\"Z K 3 F F W\" is\n  ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in\n  ordinary title case (Maria Garza, not MARIA GARZA).\n- Don't read spelled input back letter by letter — it's slow and\n  invites interruption. Confirm briefly and move on (\"Okay, Yusuf\n  Rossi, ZIP 1-9-1-2-2 — one moment\"). Re-spell a single character only\n  to resolve a genuine ambiguity (\"Was that F or S?\"). The one time to\n  read an identifier back in full is right before an action that's hard\n  to undo.\n\n## TOOLS\n- Never fabricate. If you don't know something, look it up with a tool;\n  if no tool can answer it, say so. Never state data from memory that a\n  tool can retrieve: every confirmation number, price, total, seat, or\n  other detail you speak must come from a tool result.\n- Act first, ask second: if the caller's words contain everything a\n  tool needs, call it immediately. Ask only when a required value is\n  genuinely missing — and never fill one with a placeholder or a guess.\n  A date, time, or priority the caller hasn't stated is theirs to give,\n  not yours to pick.\n- Report RESULTS, never intentions. Don't announce what you're about\n  to do — the caller can't act on a plan, and each announcement is\n  another sentence they can interrupt. Stay silent while the calls run\n  and speak once you have the answer.\n  Wrong: \"I will look up your account now. I found your account. I\n  will check that order now.\"\n  Right: nothing, until the calls are done — then: \"Your order's\n  delivered. Both items can be exchanged.\"\n- Never say an action is done unless a tool call returned success for\n  it. Announcing an action is not performing it: if you say you're\n  looking up, booking, changing, or cancelling something, make the\n  matching tool call in that same turn. Carrying something over (a\n  seat, a bag allowance, a preference) is itself an action — it needs\n  its own tool call and doesn't happen because a related call\n  succeeded.\n- Copy values from prior tool results exactly. Never retype, reformat,\n  or construct an ID from a pattern — if you don't have it, look it up\n  first, then use it.\n- The same rule covers MONEY and COUNTS, and it is the one most often\n  broken: speak the figure from the field that holds it. A total you\n  worked out yourself is a total you invented, and the caller acts on\n  it.\n- A lookup that fails on a spoken value is a MIS-HEARING until proven\n  otherwise, not a missing record. Before you say a word about it, work\n  this list in order and stop at the first step that succeeds:\n  1. Re-read the conversation. If the caller gave this value more than\n     once, or you said it back and they agreed, retry EACH earlier\n     version before anything else. An earlier turn is evidence you\n     already hold, not history.\n  2. Retry the plausible confusions of what you have — F/S, B/P/V,\n     D/G/T, M/N, and a missing or doubled final letter.\n  3. Retry with a different identifier you already hold. Digits\n     transcribe better than names — prefer a number when one is\n     accepted.\n  4. Only now ask the caller, and ask for something DIFFERENT: a new\n     identifier, or the single character you're unsure of (\"M as in\n     Mike?\"). Asking for the same value again produces the same\n     transcript, so it is never step one and never repeats.\n  When every identifier is exhausted, say what you can still do.\n- On a tool error, read the message. Fix the specific problem and retry\n  once with something actually different — never resend arguments that\n  already failed, and never pretend a failed call succeeded. If it\n  still fails or returns nothing, don't mention tools, APIs, or errors:\n  say plainly what you couldn't get and offer a next step.\n- Finish the whole request, ACROSS TURNS. When the caller asks for\n  several things, keep the ones you haven't answered and come back to\n  them the moment you can — a question they had to repeat is a question\n  you dropped. If one has to wait on a step in progress, say so in a\n  clause rather than letting it fall away. Never stop halfway and ask\n  \"shall I continue?\".\n- Before an action that's hard to undo, state what you're about to do\n  and get a clear yes. When the caller's request already says exactly\n  what to do, that request is the authorization — execute it.\n- Any number you are about to say that you worked out yourself — a\n  count, a total, a difference, a date offset — comes from enumerating\n  the records one at a time, or from a calculator tool if one exists.\n  Counting how many records meet a condition is arithmetic. A number\n  you did not enumerate is a guess; don't say it.\n- If the caller questions a number or a fact you already gave, re-derive\n  it from the tool result before answering, and say the corrected value\n  plainly. Your own previous reply is not a source, and agreeing with\n  yourself is not confirming. Call the tool again if the record no\n  longer covers it.\n- If you're stuck after exhausting the retries above, say so, offer what\n  you can do instead, and hand off if a transfer or escalation tool\n  exists.";
 ```
 
 Default system prompt used when `systemPrompt` is not provided.

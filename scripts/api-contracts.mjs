@@ -151,7 +151,6 @@ function init() {
       if (table[capability] !== undefined) continue;
       table[capability] = { current: 1, supported: [1], dropped: {} };
       writeEpoch(pkg, capability, 1, epochRecord(capability, 1, generated));
-      scaffoldFixture(pkg, capability, 1);
       created += 1;
     }
     writeTable(pkg, Object.fromEntries(Object.entries(table).sort()));
@@ -230,7 +229,10 @@ function bump(target) {
   };
   writeEpoch(pkg, capability, next, epochRecord(capability, next, generated));
   writeTable(pkg, table);
-  const fixture = scaffoldFixture(pkg, capability, next);
+  // The RETAINED epoch is the one that just became a promise, so it is the one
+  // that owes an example. The new epoch is current and owes none until it is
+  // superseded and retained in its turn.
+  const fixture = retain ? scaffoldFixture(pkg, capability, contract.current) : undefined;
 
   // A dropped epoch's example does not compile — that is what "dropped" MEANS —
   // and it sits under the package tsconfig, so leaving it behind turns the
@@ -245,12 +247,29 @@ function bump(target) {
     `api-contracts: "${id}" is now epoch ${next}.\n` +
       (removed.length > 0 ? `  removed: ${removed.join(", ")}\n` : "") +
       (added.length > 0 ? `  added:   ${added.join(", ")}\n` : "") +
-      `  epoch ${contract.current}: ${retain ? "RETAINED as supported" : `DROPPED — ${reason}`}\n` +
-      `  Write the epoch ${next} example: ${rel(fixture)}\n` +
-      (retain
-        ? `  Epoch ${contract.current}'s example must keep compiling: ${rel(retired)}\n`
-        : `  Removed epoch ${contract.current}'s example (${rel(retired)}) — a dropped epoch has no promise left to evidence.\n`) +
-      `  Suggested changeset bump: ${retain ? suggested : "major"}.`,
+      bumpVerdict({ contract, fixture, retain, reason, retired, suggested }),
+  );
+}
+
+/**
+ * The classification half of what `bump` prints — extracted so `bump` itself
+ * stays under the cognitive-complexity cap, which the epoch-vs-fixture
+ * branching pushed it over.
+ */
+function bumpVerdict({ contract, fixture, retain, reason, retired, suggested }) {
+  const previous = contract.current;
+  if (retain) {
+    return (
+      `  epoch ${previous}: RETAINED as supported\n` +
+      `  Write epoch ${previous}'s example — it is a promise now: ${rel(fixture)}\n` +
+      `  Suggested changeset bump: ${suggested}.`
+    );
+  }
+  const removedNote = existsSync(retired) ? ` (removed ${rel(retired)})` : "";
+  return (
+    `  epoch ${previous}: DROPPED — ${reason}\n` +
+    `  Epoch ${previous} evidences nothing now${removedNote}.\n` +
+    "  Suggested changeset bump: major."
   );
 }
 

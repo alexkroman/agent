@@ -114,14 +114,19 @@ export const TRANSCRIBE_API = "https://api.assemblyai.com";
  * default; naming it is what stops a default change silently moving a
  * workflow's output.
  */
-export const TRANSCRIBE_MODELS: readonly string[] = ["universal-3-5-pro"];
+export const TRANSCRIBE_MODELS = ["universal-3-5-pro"] as const;
 
 /**
  * How much of a stored upload one outbound window carries.
  *
  * The recording is never held whole — see {@link stepTranscribeUpload}.
  */
-export const TRANSCRIBE_WINDOW_BYTES = 4 * 1024 * 1024;
+// 4 MiB, spelled as the literal rather than as `4 * 1024 * 1024`: an
+// arithmetic initializer widens to `number`, which drops the VALUE out of the
+// rolled-up .d.ts and so out of this capability's contract hash — the budget
+// could then move under a green gate. See "Value-carrying constants carry a
+// LITERAL type" in AGENTS.md.
+export const TRANSCRIBE_WINDOW_BYTES = 4_194_304;
 
 /**
  * Deadline for the upload leg.
@@ -130,7 +135,8 @@ export const TRANSCRIBE_WINDOW_BYTES = 4 * 1024 * 1024;
  * the FILE rather than of the service, and a deadline sized for a JSON round
  * trip would cancel exactly the uploads this exists to handle.
  */
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 30 * 60_000;
+// 30 minutes, spelled as the literal — see TRANSCRIBE_WINDOW_BYTES above.
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 1_800_000;
 
 /** A finished transcript, as {@link stepTranscribePoll} answers with one. */
 export type Transcript = {

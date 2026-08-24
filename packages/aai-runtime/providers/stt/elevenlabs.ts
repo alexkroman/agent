@@ -15,13 +15,13 @@
 import {
   ELEVENLABS_API_KEY_ENV,
   makeSttError,
-  resolveElevenLabsSettings,
+  resolveElevenLabsSttSettings,
   type SttEvents,
   type SttOpener,
   type SttOpenOptions,
   type SttSession,
 } from "@alexkroman1/aai/host-internal";
-import type { ElevenLabsOptions } from "@alexkroman1/aai/stt";
+import type { ElevenLabsSttOptions } from "@alexkroman1/aai/stt";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import {
   AudioFormat,
@@ -59,7 +59,7 @@ function audioFormatFor(sampleRate: number): AudioFormat {
 }
 
 /** Build an {@link SttOpener} from resolved ElevenLabs descriptor options. */
-export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
+export function openElevenLabs(opts: ElevenLabsSttOptions = {}): SttOpener {
   return {
     name: "elevenlabs",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
@@ -70,7 +70,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
         (msg) => makeSttError("stt_auth_failed", msg),
       );
 
-      const settings = resolveElevenLabsSettings(opts);
+      const settings = resolveElevenLabsSttSettings(opts);
       const client = new ElevenLabsClient({ apiKey });
 
       const connection = await connectOrThrow(

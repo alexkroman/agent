@@ -685,14 +685,14 @@ descriptor (the descriptor owns its own voice). A raw config that skips
 ```ts
 import { agent } from "@alexkroman1/aai";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
-import { anthropic } from "@alexkroman1/aai/llm";
-import { cartesia } from "@alexkroman1/aai/tts";
+import { anthropicLlm } from "@alexkroman1/aai/llm";
+import { cartesiaTts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
-  llm: anthropic({ model: "claude-haiku-4-5" }),
-  tts: cartesia(),
+  llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+  tts: cartesiaTts(),
 });
 ```
 
@@ -716,7 +716,7 @@ one-word backchannels like "yeah" don't cut it off);
 500 ms; `0` disables; interim transcripts only — committed turns always
 land). End-of-turn detection (how long a pause ends the user's turn)
 belongs to the STT provider: `assemblyAIStt({ minTurnSilenceMs })` (default
-1600 ms) / `deepgram({ endpointing })` (default 1500 ms), so mid-utterance
+1600 ms) / `deepgramStt({ endpointing })` (default 1500 ms), so mid-utterance
 pauses don't split a request.
 `deadAirCoverMs` is how long a turn may go silent before the transport speaks
 a short filler, so a long tool chain doesn't sound like a dropped call. It is
@@ -753,15 +753,15 @@ for the providers you actually use.
 | Factory         | Default model          | Env var              |
 | --------------- | ---------------------- | -------------------- |
 | `assemblyAIStt` | `"universal-3-5-pro"`  | `ASSEMBLYAI_API_KEY` |
-| `deepgram`      | `"nova-3"`             | `DEEPGRAM_API_KEY`   |
+| `deepgramStt`   | `"nova-3"`             | `DEEPGRAM_API_KEY`   |
 | `elevenLabsStt` | `"scribe_v2_realtime"` | `ELEVENLABS_API_KEY` |
-| `soniox`        | `"stt-rt-v3"`          | `SONIOX_API_KEY`     |
+| `sonioxStt`     | `"stt-rt-v3"`          | `SONIOX_API_KEY`     |
 
 All STT factories accept `{ model?: string, ... }`. Bare calls
-(`deepgram()`, `soniox()`, etc.) use the default model. Language is spelled
-`language` where the vendor takes one code (`deepgram`, `elevenLabsStt`) and
-`languages` where it takes a list (`assemblyAIStt`, `soniox`) — and only
-`deepgram`'s unset value means English; the other three auto-detect.
+(`deepgramStt()`, `sonioxStt()`, etc.) use the default model. Language is spelled
+`language` where the vendor takes one code (`deepgramStt`, `elevenLabsStt`) and
+`languages` where it takes a list (`assemblyAIStt`, `sonioxStt`) — and only
+`deepgramStt`'s unset value means English; the other three auto-detect.
 
 `elevenLabsStt` carries the stage in its name because ElevenLabs is
 better known for TTS: when that stage arrives, `elevenLabs` is the name it
@@ -776,32 +776,32 @@ API keys require it; the US endpoints reject them. Example:
 
 | Factory         | SDK package         | Env var                        |
 | --------------- | ------------------- | ------------------------------ |
-| `anthropic`     | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
-| `openai`        | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
-| `google`        | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| `mistral`       | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
-| `xai`           | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
-| `groq`          | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
-| `openrouter`    | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
-| `gateway`       | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
+| `anthropicLlm`  | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
+| `openaiLlm`     | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
+| `googleLlm`     | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `mistralLlm`    | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
+| `xaiLlm`        | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
+| `groqLlm`       | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
+| `openrouterLlm` | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
+| `gatewayLlm`    | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
 | `assemblyAILlm` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
 
 LLM factories require `{ model: string }` — the `ModelOptions` interface,
 shared by all of them except `assemblyAILlm`. Example:
-`anthropic({ model: "claude-haiku-4-5" })`. The argument is required because a
-third-party vendor's catalog is not this SDK's to default from;
+`anthropicLlm({ model: "claude-haiku-4-5" })`. The argument is required
+because a third-party vendor's catalog is not this SDK's to default from;
 `assemblyAILlm()` is the one bare call, since it has a default model.
 
-`openrouter` routes through [OpenRouter](https://openrouter.ai) — an
+`openrouterLlm` routes through [OpenRouter](https://openrouter.ai) — an
 OpenAI-compatible endpoint fronting hundreds of models addressed as
 `"creator/model"`, e.g.
-`openrouter({ model: "meta-llama/llama-3.3-70b-instruct" })`. It needs
+`openrouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" })`. It needs
 no extra SDK install (it reuses the `@ai-sdk/openai` client).
 
-`gateway` routes through the [Vercel AI
+`gatewayLlm` routes through the [Vercel AI
 Gateway](https://vercel.com/docs/ai-gateway) — one endpoint fronting
 hundreds of models addressed as `"creator/model"`, e.g.
-`gateway({ model: "zai/glm-4.6" })`. It needs no extra SDK install
+`gatewayLlm({ model: "zai/glm-4.6" })`. It needs no extra SDK install
 (the gateway client ships inside the `ai` package).
 
 `assemblyAILlm` routes through the [AssemblyAI LLM
@@ -826,12 +826,12 @@ Mixing providers works the same way — declare the stages you're changing:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { cartesia } from "@alexkroman1/aai/tts";
+import { cartesiaTts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
   llm: "claude-sonnet-4-6",
-  tts: cartesia(),
+  tts: cartesiaTts(),
 });
 ```
 
@@ -840,10 +840,10 @@ export default agent({
 | Factory         | Default voice                            | Env var              |
 | --------------- | ---------------------------------------- | -------------------- |
 | `assemblyAITts` | `"jane"`                                 | `ASSEMBLYAI_API_KEY` |
-| `cartesia`      | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
-| `rime`          | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
+| `cartesiaTts`   | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
+| `rimeTts`       | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
 
-Bare calls (`assemblyAITts()`, `cartesia()`, `rime()`) use the defaults.
+Bare calls (`assemblyAITts()`, `cartesiaTts()`, `rimeTts()`) use the defaults.
 Override with `{ voice, model, language }`.
 
 **AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the

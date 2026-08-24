@@ -23,7 +23,7 @@ import {
   GROQ_KIND,
   MISTRAL_KIND,
   OPENAI_KIND,
-  OPENAI_REALTIME_KIND,
+  OPENAI_S2S_KIND,
   OPENROUTER_KIND,
   XAI_KIND,
 } from "@alexkroman1/aai/host-internal";
@@ -472,7 +472,7 @@ describe("requiredProviderEnvVars", () => {
 describe("resolveS2sEnvVar", () => {
   it("maps each S2S kind to its own vendor's credential", () => {
     expect(resolveS2sEnvVar({ kind: ASSEMBLYAI_S2S_KIND, options: {} })).toBe("ASSEMBLYAI_API_KEY");
-    expect(resolveS2sEnvVar({ kind: OPENAI_REALTIME_KIND, options: {} })).toBe("OPENAI_API_KEY");
+    expect(resolveS2sEnvVar({ kind: OPENAI_S2S_KIND, options: {} })).toBe("OPENAI_API_KEY");
   });
 
   it("throws on an unknown kind, listing what is supported", () => {

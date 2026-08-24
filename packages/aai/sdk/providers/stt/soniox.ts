@@ -8,7 +8,7 @@
  * Soniox's real-time WebSocket directly (no Node-targeted SDK is published).
  */
 
-import type { SttProvider } from "../../providers.ts";
+import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const SONIOX_KIND = "soniox" as const;
@@ -16,8 +16,8 @@ export const SONIOX_KIND = "soniox" as const;
 /** Agent-env variable holding the Soniox API key. */
 export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
 
-/** Options for {@link soniox}. */
-export interface SonioxOptions {
+/** Options for {@link sonioxStt}. */
+export interface SonioxSttOptions extends ProviderCredentialOptions {
   /**
    * Streaming model. Defaults to `"stt-rt-v3"`. Any string is forwarded
    * verbatim so users can opt in to future models.
@@ -29,7 +29,7 @@ export interface SonioxOptions {
    *
    * **Unset means AUTO-DETECT, not English.** The field is omitted from the
    * request entirely, so Soniox decides — which is the same default
-   * `assemblyAIStt` and `elevenlabs` have, and the opposite of `deepgram`,
+   * `assemblyAIStt` and `elevenlabs` have, and the opposite of `deepgramStt`,
    * whose unset `language` is `"en"`. Pass the codes for a line you know is
    * monolingual, or the handful you expect on one that is not.
    */
@@ -46,19 +46,19 @@ export interface SonioxOptions {
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { soniox } from "@alexkroman1/aai/stt";
+ * import { sonioxStt } from "@alexkroman1/aai/stt";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   stt: soniox({ model: "stt-rt-v3", languages: ["en", "es"] }),
+ *   stt: sonioxStt({ model: "stt-rt-v3", languages: ["en", "es"] }),
  * });
  * ```
  *
  * Unset, `languages` is omitted from the request and Soniox
  * auto-detects — which is not the same as English.
  */
-export function soniox(opts: SonioxOptions = {}): SttProvider {
+export function sonioxStt(opts: SonioxSttOptions = {}): SttProvider {
   return { kind: SONIOX_KIND, options: { ...opts } };
 }
 
@@ -70,7 +70,7 @@ export const SONIOX_DEFAULT_MODEL = "stt-rt-v3";
  * options with every host-side default filled in. Shared by the opener and
  * the runtime's "Session mode resolved" log.
  */
-export function resolveSonioxSettings(opts: SonioxOptions): {
+export function resolveSonioxSttSettings(opts: SonioxSttOptions): {
   model: string;
   languageHints?: readonly string[];
 } {

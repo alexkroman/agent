@@ -1,73 +1,58 @@
 {
   "agent": {
-    "current": 20,
-    "supported": [3, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20],
-    "dropped": {
-      "1": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
-      "2": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
-      "4": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
-      "5": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
-      "6": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
-      "7": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
-      "8": "`agent({ tools })` is gone: a tool is declared by its FILE. `tools/incident_create.ts` that default-exports `tool({ … })` IS the tool `incident_create`, enumerated where the bundle is assembled and named by nothing — so the map every epoch up to 8 was authored with no longer type-checks, and `tools` on the parameter shape is now the InlineToolsMisuse message naming the file to create. The map restated a rule the filesystem already carried, and the cost was not its 62 lines: forgetting one was SILENT, so the file compiled, every gate passed, and the tool never reached the model. A resolved registry goes on with `withTools`, which is what the build and `withDiscoveredTools` both call.",
-      "9": "AgentDef lost its state type parameter, its `state` factory and `InferAgentState`: session state belongs to a sessionSlot, which types and stores its own value, so there is no per-agent state shape to thread. `syncState` takes that slot's projection rather than a function over the whole bag.",
-      "14": "The ten field-list and message types behind AgentParams' four arms (DefaultedAgentField, FrontDoorField, InlineToolsField, InlineToolsMisuse, PipelineOnlyField, PipelineOnlyMisuse, ProviderField, StaticFrontDoorMisuse, WorkflowAppMisuse, WorkflowAppOnlyField) left the root barrel. They are the IMPLEMENTATION of a compile error — an author reads them in the message tsc prints, never by name — and the root's own membership test is whether an agent.ts would name a symbol. They still type the arms, so every error message is unchanged; what is gone is ten entries in an authoring autocomplete. Epoch 14's example named PipelineOnlyMisuse directly, which nothing outside this repo had reason to do."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "builtins": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "Epoch 1's shape — `const rates: Rates = await fetchJson<Rates>(url)` — no longer compiles, deliberately. The three network builtins ANSWER with `{ error }` rather than throwing (a model-facing contract that is not changing), and typing them `Promise<T>` made that invisible: all three callers in this repo wrote `?? []` / `?? \"\"` and turned a live DuckDuckGo 403 into \"the web has nothing\". The return type is `T | ToolFailure` now, so a caller that names a shape must narrow with `isToolFailure`. An UNTYPED call is unaffected — `DefaultToolResult` is `any` — so only the call sites precise enough to have a shape are asked to handle the failure they were already receiving."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "channels": {
     "current": 1,
     "supported": [1],
     "dropped": {}
   },
+  "db": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "defaults": {
-    "current": 4,
-    "supported": [4],
-    "dropped": {
-      "1": "Three constants left the root barrel for @alexkroman1/aai/internal: MAX_PLAYBACK_BUFFERED_MS and PLAYBACK_PROGRESS_INTERVAL_MS are client-audio budgets and DEFAULT_SESSION_START_TIMEOUT_MS is a runtime deadline, none of which an agent() field sets. This capability is the published answer to 'what happens if I leave this field off', and those three answer no field.",
-      "2": "Dropped with epoch 3 and for the same reason: this example imports the same 21 constants from `@alexkroman1/aai`, and they are on `@alexkroman1/aai/internal` now. It was retained past epoch 3 only because that bump narrowed three types rather than moving anything; there is no import path left that makes it compile.",
-      "3": "The 21 constants this epoch published from `@alexkroman1/aai` are on `@alexkroman1/aai/internal`, so no import written against epoch 3 resolves. They answered \"what happens if I leave this field off\" a second time, after the field's own JSDoc had already answered it with the value — and no template, scaffold or line of the shipped authoring guide named one. Epoch 1 was dropped for exactly this reason on three constants; this is the rest of it. Reproducing a default still works, from the new path."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "dialog": {
-    "current": 5,
-    "supported": [2, 4, 5],
-    "dropped": {
-      "1": "flow() is dialog(): Flow -> Dialog, FlowPosition -> DialogPosition, FlowToolDef -> DialogToolDef, FlowToolResult -> DialogToolResult, FlowOptions -> DialogOptions. A pure rename, and the argument is the import line: 'flow' sat in the same barrel as 'workflow' meaning something entirely different (a dialog statechart bound to a session, versus durable work that outlives it), and next to graph(), whose name said equally little about which of the two you wanted. dialog() / procedure() / workflow() is a legible triple — where the conversation is, one unit of work inside a tool call, and work that survives the session.",
-      "3": "`Dialog.tool` answers `ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>` now, so `InferToolOutput` on a dialog tool is the full envelope rather than `unknown`. Epoch 3's example asserted that erasure as a compile-checked fact (`declaredOutput: InferToolOutput<typeof quoteClaim> = \"unknown, deliberately\"`) and argued it was correct, because threading R out would make the answer `{ premium: number }` — \"a shape no client ever receives\". That objection does not apply to what shipped: the type answered is the WRAPPER the runtime hands back, position and all, which is exactly what the client receives. The line is now the error epoch 3 predicted, and no edit that keeps the epoch's claim can compile."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "ffmpeg": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "generate": {
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "llm": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "Thirty-nine symbols left this subpath: the nine *_KIND/*_API_KEY_ENV pairs (to @alexkroman1/aai/host-internal), the nine narrowed *Provider aliases (to nowhere — zero references outside their own modules), ProviderDescriptor (to the root barrel, where one interface has one reference page instead of four), and the generated gateway catalog ASSEMBLYAI_GATEWAY_MODELS/GatewayModelInfo/gatewayModelIds, whose 30 inlined rows made a routine regeneration move this contract's hash. The eight byte-identical vendor option interfaces collapsed into one ModelOptions. The epoch-1 example named twenty-eight of the removed symbols."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "procedure": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "graph() is procedure(): Graph -> Procedure, GraphRunOptions -> ProcedureRunOptions, GraphNotFinishedError -> ProcedureNotFinishedError, and the error's `graph` field is `procedure`. Same rename, same argument as aai:dialog — 'graph' described the implementation (an XState machine) rather than the job (a unit of work you invoke and that returns), and gave a reader no way to tell it from flow()."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "s2s": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "Six symbols left this subpath: the four *_KIND/*_API_KEY_ENV constants (to @alexkroman1/aai/host-internal) and both narrowed *Provider aliases. The epoch-1 example named all six. AssemblyAIS2sOptions also became an interface, matching the other three stages, and gained apiKeyEnv — a field the host had always read off any descriptor generically, so S2S honoured an override its own options type could not spell."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "spoken": {
     "current": 1,
@@ -75,18 +60,9 @@
     "dropped": {}
   },
   "state": {
-    "current": 13,
-    "supported": [8, 9, 10, 12, 13],
-    "dropped": {
-      "1": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
-      "2": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
-      "3": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now — the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
-      "4": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now — the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
-      "5": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now — the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
-      "6": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now — the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
-      "7": "The slot API changed shape with the durable store: `update` is synchronous and hands the body a draft, `get` returns a frozen `Readonly<T>`, `read`/`state`/`SlotState`/`SlotStateOf` are gone with `ctx.state`, and `projection` returns a callable carrying the slot's key and default.",
-      "11": "`SessionSlot.tool` and `.updateTool` answer `ToolDef<P, R>` now, so `InferToolOutput` on a slot tool is the body's own value. Epoch 11's example asserted the erasure as a compile-checked fact (`addItemOutput: InferToolOutput<typeof addItem> = \"still unknown at the slot boundary\"`, doc: \"were R threaded through the constructor, this line would be the error that says so\"). Unlike the dialog case there was never a wrapper to justify keeping it — a slot tool returns the mutator's value unchanged, so `unknown` was only the type system dropping it at the boundary. That line is now the predicted error, and an epoch whose stated claim is the erasure cannot be repaired without contradicting itself."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "step": {
     "current": 1,
@@ -94,8 +70,8 @@
     "dropped": {}
   },
   "step-errors": {
-    "current": 4,
-    "supported": [1, 2, 3, 4],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "step-files": {
@@ -104,12 +80,9 @@
     "dropped": {}
   },
   "stt": {
-    "current": 3,
-    "supported": [3],
-    "dropped": {
-      "1": "The STT opener contract (SttOpenOptions, SttSession, SttEvents, SttError, SttTurnMeta, Unsubscribe) moved to @alexkroman1/aai-runtime, beside registerSttKind — a host application registers a kind and an agent author never does. contracts/compatibility/stt/v1.ts imports them from /stt, so the v1 authoring style no longer compiles.",
-      "2": "Sixteen symbols an author never typed left this subpath: the eight *_KIND/*_API_KEY_ENV constants (to @alexkroman1/aai/host-internal, where the resolve*Settings helpers that read them already live) and the four narrowed *Provider aliases, which had zero references outside their own modules and restated a kind tag the factory already sets. Four renames finish it — AssemblyAIOptions to AssemblyAISttOptions, ASSEMBLYAI_STREAMING_EU_URL to ASSEMBLYAI_STT_EU_URL, DEFAULT_DEEPGRAM_ENDPOINTING_MS to DEEPGRAM_DEFAULT_ENDPOINTING_MS, and elevenlabs() to elevenLabsStt() — plus two option-field renames (languageCode to language, languageHints to languages). The epoch-2 example named eleven of the removed symbols and both old field spellings; no import list from it resolves."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "subagent": {
     "current": 1,
@@ -117,27 +90,14 @@
     "dropped": {}
   },
   "testing": {
-    "current": 24,
-    "supported": [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 18, 20, 22, 23, 24],
-    "dropped": {
-      "1": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
-      "5": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
-      "6": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
-      "10": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
-      "11": "`createToolContext` takes no state type parameter and supplies `slots` (a real slot store, applying the same storability check the deployed one does) in place of the `state` bag.",
-      "17": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
-      "19": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
-      "21": "`stubUploads` answers `StubUploads` — `{ restore, writes, read }` — where it answered a bare `() => void`. It was the only fake in this family whose shape a spec had to remember was different, and the only way to assert that a WRITE happened was to read it back through `uploadInfo`/`readUpload`, i.e. through the very seam the step wrote it through; a bare restore function had no room to carry the log. Epoch 21's own example does not happen to call it, but the epoch's CONTRACT published the old signature and code written against it no longer builds, so retaining it would be a promise with nothing behind it. Epochs 5, 6, 17 and 19 are dropped with it and for the same reason — their examples assign `stubUploads(...)` to a `() => void` and are the compile errors that prove it. This is the breaking change in the set; everything else added names."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "tool": {
-    "current": 12,
-    "supported": [3, 4, 5, 6, 8, 9, 10, 11, 12],
-    "dropped": {
-      "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false — a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard.",
-      "2": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
-      "7": "`ToolContext` and `ToolDef` take no state type parameter: a tool reads and writes session state through a sessionSlot, which types the value in the module that declares it."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "transcribe": {
     "current": 1,
@@ -145,51 +105,28 @@
     "dropped": {}
   },
   "tts": {
-    "current": 3,
-    "supported": [3],
-    "dropped": {
-      "1": "The TTS opener contract (TtsOpenOptions, TtsSession, TtsEvents, TtsError, TtsWordTiming, Unsubscribe) moved to @alexkroman1/aai-runtime, beside registerTtsKind. contracts/compatibility/tts/v1.ts imports them from /tts, so the v1 authoring style no longer compiles.",
-      "2": "Ten symbols left this subpath: the six *_KIND/*_API_KEY_ENV constants and the 21-element ASSEMBLYAI_TTS_DEPRECATED_VOICES tuple (to @alexkroman1/aai/host-internal — the retired list answers the template gate's question, not an author's, and no template read it), and the three narrowed *Provider aliases. The epoch-2 example named seven of them. The voice catalog an author does read, ASSEMBLYAI_TTS_VOICES, is unchanged and now on the root barrel as well."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "uploads": {
-    "current": 4,
-    "supported": [1, 2, 3, 4],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "utils": {
-    "current": 14,
-    "supported": [2, 3, 8, 12, 13, 14],
-    "dropped": {
-      "1": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
-      "4": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
-      "5": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
-      "6": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
-      "7": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
-      "9": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
-      "10": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
-      "11": "The step surface left /utils for @alexkroman1/aai/step, and the platform contracts and wire helpers left it for /internal. That subpath's membership rule was a BUILD property — 'zod-free, so the CLI can import it on every invocation' — which is true, load-bearing, and not something anybody imports BY: nobody reaches for a module because of its dependency graph. Seventy-nine exports served three unrelated readers (a step body, a tool body, and the framework's own plumbing), so the import line said nothing about which layer you were in. It is fifteen now, all of them written inside a tool body. The zod-free budget is unchanged and now holds on /internal too."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "workflow": {
-    "current": 10,
-    "supported": [7, 9, 10],
-    "dropped": {
-      "1": "Dropped with epoch 8 and for the same reason: this epoch's authoring example reads the RUN vocabulary off the root barrel, which now lives on `@alexkroman1/aai/workflow-api`. See epoch 8's entry for the whole argument.",
-      "2": "Dropped with epoch 8 and for the same reason: this epoch's authoring example reads the RUN vocabulary off the root barrel, which now lives on `@alexkroman1/aai/workflow-api`. See epoch 8's entry for the whole argument.",
-      "3": "Dropped with epoch 8 and for the same reason: this epoch's authoring example reads the RUN vocabulary off the root barrel, which now lives on `@alexkroman1/aai/workflow-api`. See epoch 8's entry for the whole argument.",
-      "4": "Dropped with epoch 8 and for the same reason: this epoch's authoring example reads the RUN vocabulary off the root barrel, which now lives on `@alexkroman1/aai/workflow-api`. See epoch 8's entry for the whole argument.",
-      "5": "Dropped with epoch 8 and for the same reason: this epoch's authoring example reads the RUN vocabulary off the root barrel, which now lives on `@alexkroman1/aai/workflow-api`. See epoch 8's entry for the whole argument.",
-      "6": "Dropped with epoch 8 and for the same reason: this epoch's authoring example reads the RUN vocabulary off the root barrel, which now lives on `@alexkroman1/aai/workflow-api`. See epoch 8's entry for the whole argument.",
-      "8": "The RUN vocabulary moved to @alexkroman1/aai/workflow-api: the four option bags, the status union and its terminal set, the snapshot and its guard, WorkflowOutputOf, WorkflowBody, AnyWorkflowDef, WorkflowSummary and the wait cap. Seventeen names whose reader is never agent.ts — a page renders a run, a script polls one, and a tool that starts one gets a typed value back without importing anything — against a root barrel whose stated membership test is 'would an agent.ts, a tool module, or a workflow() NAME it'. Declaring a workflow is unchanged: workflow(), WorkflowDef and WorkflowClient are still on the root, because an author writes those in agent.ts."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "workflow-api": {
-    "current": 11,
-    "supported": [2, 3, 4, 5, 6, 7, 8, 10, 11],
-    "dropped": {
-      "1": "Dropped with epoch 9: this example reads `WORKFLOW_API_PREFIX` off `@alexkroman1/aai/workflow-api`, and the prefix is on `@alexkroman1/aai/internal` now — a caller of a deployed agent composes no URL of its own. Epochs 2-8 name none of the four and still compile.",
-      "9": "The four names this epoch published from `@alexkroman1/aai/workflow-api` are on `@alexkroman1/aai/internal`: `clampWorkflowWait`, `MAX_WORKFLOW_WAIT_MS`, `TERMINAL_WORKFLOW_STATUSES` and `WORKFLOW_API_PREFIX`. All four are the SERVER's half — `@alexkroman1/aai-runtime` was the only importer of each, and a caller of a deployed agent passes `wait` a number the client clamps for it and composes no URL of its own. `./v9.ts` names `clampWorkflowWait`, so no import written against epoch 9 resolves."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   }
 }

@@ -8,7 +8,7 @@
  * `CARTESIA_API_KEY` from the agent's env.
  */
 
-import type { TtsProvider } from "../../providers.ts";
+import type { ProviderCredentialOptions, TtsProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const CARTESIA_KIND = "cartesia" as const;
@@ -17,14 +17,14 @@ export const CARTESIA_KIND = "cartesia" as const;
 export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
 
 /**
- * Default voice used when callers invoke `cartesia()` with no `voice`. This
- * is the same voice the example templates ship with, so a bare `cartesia()`
+ * Default voice used when callers invoke `cartesiaTts()` with no `voice`. This
+ * is the same voice the example templates ship with, so a bare `cartesiaTts()`
  * works out of the box for new agents.
  */
 export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 
-/** Options for {@link cartesia}. */
-export interface CartesiaOptions {
+/** Options for {@link cartesiaTts}. */
+export interface CartesiaTtsOptions extends ProviderCredentialOptions {
   /** Cartesia voice ID. Defaults to {@link CARTESIA_DEFAULT_VOICE}. */
   voice?: string;
   /** Model ID. Defaults to `"sonic-2"`. */
@@ -40,16 +40,16 @@ export interface CartesiaOptions {
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { CARTESIA_DEFAULT_VOICE, cartesia } from "@alexkroman1/aai/tts";
+ * import { CARTESIA_DEFAULT_VOICE, cartesiaTts } from "@alexkroman1/aai/tts";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   tts: cartesia({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
+ *   tts: cartesiaTts({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
  * });
  * ```
  */
-export function cartesia(opts: CartesiaOptions = {}): TtsProvider {
+export function cartesiaTts(opts: CartesiaTtsOptions = {}): TtsProvider {
   return {
     kind: CARTESIA_KIND,
     options: { ...opts, voice: opts.voice ?? CARTESIA_DEFAULT_VOICE },
@@ -68,7 +68,7 @@ export const CARTESIA_DEFAULT_LANGUAGE = "en";
  * the runtime's "Session mode resolved" log, so the reported settings are by
  * construction the ones dialled.
  */
-export function resolveCartesiaSettings(opts: CartesiaOptions): {
+export function resolveCartesiaTtsSettings(opts: CartesiaTtsOptions): {
   voice: string;
   model: string;
   language: string;

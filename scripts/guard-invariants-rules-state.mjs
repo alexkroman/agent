@@ -19,9 +19,11 @@ import {
   ON_NAME,
 } from "./guard-invariants-ere.mjs";
 import {
+  CHANNEL_MESSAGE_PATHS,
   SESSION_SURFACE_PATHS,
   SOURCE_PATHSPECS,
   TMP_RULE_PATHSPECS,
+  TOOL_CONTEXT_PATHS,
 } from "./guard-invariants-scopes.mjs";
 
 /** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
@@ -128,5 +130,67 @@ export const STATE_RULES = [
       "    `SessionEventContext` draws by carrying no `send`.\n\n" +
       "Minting an event to dodge this rule is worse than the callback: an event is\n" +
       "AUTHOR-VISIBLE (`agent({ events })`) and retained, so it is a promise.",
+  },
+  {
+    id: 24,
+    key: "rule24_toolContextField",
+    label: "field on ToolContext (the capability bag grows)",
+    re: `${AT_LINE_START}${IDENT}${DECLARES}`,
+    paths: TOOL_CONTEXT_PATHS,
+    skipComments: true,
+    samples: {
+      matches: ["  db: Db;", "  send(event: string, data: unknown): void;"],
+      ignores: ["   * `ctx.db` is the database.", "export type ToolContext = {"],
+    },
+    remedy:
+      "`ToolContext` is the one type every tool body reads, and it has grown a\n" +
+      "field per runtime capability — `db`, then `generate`, then `workflows`.\n" +
+      "Its own module doc says so. That growth is the single largest source of\n" +
+      "SIGNATURE-ONLY contract churn in this repo: `aai:tool` ran NINE\n" +
+      "consecutive epochs (v3-v11) at a constant 17 exports, every one a forced\n" +
+      "classification for a type the capability does not name.\n\n" +
+      "A rollup follows every type a signature reaches, so the shape of\n" +
+      "whatever you add lands in the tool-authoring contract AND in\n" +
+      "`/testing`'s — moving the name to another capability does not change\n" +
+      "that, because API Extractor rolls up FORGOTTEN exports (`Db` is in\n" +
+      "`etc/testing.api.md` today under a bare `type Db = {`).\n\n" +
+      "So the bar is high, and it is a DESIGN decision rather than a field. A\n" +
+      "field here is a capability the runtime must supply on every tool call, on\n" +
+      "every host and in every test double — a promise, not a convenience. It\n" +
+      "earns one only if it is per-CALL and cannot be reached any other way:\n" +
+      "anything an author can get from a value they already hold belongs in that\n" +
+      "value's own module, with its own capability root under\n" +
+      "`contracts/entrypoints/`. This is rule 16 for session callbacks, one\n" +
+      "layer up, and rule 25 for the channel message shape is its sibling.\n\n" +
+      "Raising the budget is allowed and is meant to cost something: write the\n" +
+      "argument in the field's own doc, the way `delegate` does — the tenth, and\n" +
+      "the one that moved this from nine. Lowering it means a capability came\n" +
+      "OUT, which is the direction this moves.",
+  },
+  {
+    id: 25,
+    key: "rule25_channelMessageField",
+    label: "field on the shared channel message shape",
+    re: `${AT_LINE_START}(readonly )?${IDENT}${DECLARES}`,
+    paths: CHANNEL_MESSAGE_PATHS,
+    skipComments: true,
+    samples: {
+      matches: ["  readonly title?: string;", "  readonly kind: string;"],
+      ignores: ["   * `title` is the headline.", "export interface ChannelSection {"],
+    },
+    remedy:
+      "`ChannelMessage` and `ChannelSection` are the platform-NEUTRAL half of a\n" +
+      "channel, and the half `aai:channels`' contract hash watches. A field added\n" +
+      "here is a signature change for every channel kind, including the ones that\n" +
+      "cannot render it — so a Slack-only affordance charges a version bump to\n" +
+      "Discord, to Teams, and to whatever is added next.\n\n" +
+      "A knob only one platform has belongs in that kind's OWN options type,\n" +
+      "which nothing else reads and which is free to grow. `textParam` is the\n" +
+      "worked example: a Slack workflow-trigger detail on `SlackChannelOptions`,\n" +
+      "invisible to this file and to every other channel.\n\n" +
+      "This is rule 24 one layer up, and for the same reason: `ToolContext` grew\n" +
+      "a field per runtime capability and `aai:tool` ran NINE consecutive\n" +
+      "signature-only epochs for it. Add here only what a new channel would have\n" +
+      "to INVENT to render at all.",
   },
 ];

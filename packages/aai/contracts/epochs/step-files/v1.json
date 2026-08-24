@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "step-files",
   "epoch": 1,
-  "sha256": "451f3ec7512a35b9e730e9b9209887e9be65e1681c60fd2b1137e10738b3d30d",
+  "sha256": "2a33443952fc32be925bef53cb7caca86e83cf5ea34dacd6fe9642328fd9c6b8",
   "exports": [
     "ReadUploadToFileOptions",
     "STEP_FILE_WINDOW_BYTES",

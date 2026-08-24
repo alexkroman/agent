@@ -14,13 +14,13 @@ session start, so importing this barrel pulls in no vendor SDK.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { deepgram } from "@alexkroman1/aai/stt";
+import { deepgramStt } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
   // `llm` and `tts` keep their AssemblyAI defaults.
-  stt: deepgram({ model: "nova-3", language: "en" }),
+  stt: deepgramStt({ model: "nova-3", language: "en" }),
 });
 ```
 
@@ -42,11 +42,11 @@ from the per-symbol docs. The row that surprises people is Deepgram's:
 | factory | field | unset means |
 | --- | --- | --- |
 | [assemblyAIStt](#assemblyaistt) | `languages` | detect per turn (code-switches across 18) |
-| [deepgram](#deepgram) | `language` | **English** — `"en"` is sent for you |
+| [deepgramStt](#deepgramstt) | `language` | **English** — `"en"` is sent for you |
 | [elevenLabsStt](#elevenlabsstt) | `language` | auto-detect (the field is omitted) |
-| [soniox](#soniox) | `languages` | auto-detect (the field is omitted) |
+| [sonioxStt](#sonioxstt) | `languages` | auto-detect (the field is omitted) |
 
-So moving an agent from [assemblyAIStt](#assemblyaistt) to [deepgram](#deepgram) silently
+So moving an agent from [assemblyAIStt](#assemblyaistt) to [deepgramStt](#deepgramstt) silently
 drops multilingual transcription, and moving the other way silently gains
 code-switching — read [AssemblyAISttOptions.languages](#languages) before you do,
 because that default has a measured failure mode with no obvious symptom.
@@ -117,10 +117,10 @@ Pinning `languages` to one code turns code-switching OFF. Unset means
 
 ***
 
-### deepgram()
+### deepgramStt()
 
 ```ts
-function deepgram(opts?: DeepgramOptions): SttProvider;
+function deepgramStt(opts?: DeepgramSttOptions): SttProvider;
 ```
 
 Build a Deepgram STT descriptor.
@@ -133,7 +133,7 @@ descriptor stays free of secrets and safe to serialize.
 
 ##### opts?
 
-[`DeepgramOptions`](#deepgramoptions)
+[`DeepgramSttOptions`](#deepgramsttoptions)
 
 #### Returns
 
@@ -143,12 +143,12 @@ descriptor stays free of secrets and safe to serialize.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { deepgram } from "@alexkroman1/aai/stt";
+import { deepgramStt } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  stt: deepgram({ model: "nova-3", language: "en" }),
+  stt: deepgramStt({ model: "nova-3", language: "en" }),
 });
 ```
 
@@ -160,7 +160,7 @@ auto-detect: `"en"` is sent for you. Name the code you mean.
 ### elevenLabsStt()
 
 ```ts
-function elevenLabsStt(opts?: ElevenLabsOptions): SttProvider;
+function elevenLabsStt(opts?: ElevenLabsSttOptions): SttProvider;
 ```
 
 Build an ElevenLabs Scribe STT descriptor.
@@ -173,7 +173,7 @@ the descriptor stays free of secrets and safe to serialize.
 
 ##### opts?
 
-[`ElevenLabsOptions`](#elevenlabsoptions)
+[`ElevenLabsSttOptions`](#elevenlabssttoptions)
 
 #### Returns
 
@@ -197,10 +197,10 @@ auto-detects — which is not the same as English.
 
 ***
 
-### soniox()
+### sonioxStt()
 
 ```ts
-function soniox(opts?: SonioxOptions): SttProvider;
+function sonioxStt(opts?: SonioxSttOptions): SttProvider;
 ```
 
 Build a Soniox STT descriptor.
@@ -213,7 +213,7 @@ descriptor stays free of secrets and safe to serialize.
 
 ##### opts?
 
-[`SonioxOptions`](#sonioxoptions)
+[`SonioxSttOptions`](#sonioxsttoptions)
 
 #### Returns
 
@@ -223,12 +223,12 @@ descriptor stays free of secrets and safe to serialize.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { soniox } from "@alexkroman1/aai/stt";
+import { sonioxStt } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  stt: soniox({ model: "stt-rt-v3", languages: ["en", "es"] }),
+  stt: sonioxStt({ model: "stt-rt-v3", languages: ["en", "es"] }),
 });
 ```
 
@@ -241,6 +241,10 @@ auto-detects — which is not the same as English.
 
 Options for [assemblyAIStt](#assemblyaistt).
 
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
+
 #### Properties
 
 ##### apiKeyEnv?
@@ -249,25 +253,12 @@ Options for [assemblyAIStt](#assemblyaistt).
 optional apiKeyEnv?: string;
 ```
 
-Env var holding this stage's credential, replacing the provider default
-(`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
-stays secret-free and safe to serialize.
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
 
-For running one stage against a different account or cluster than the
-others — AssemblyAI keys are environment-scoped, so a staging STT cluster
-rejects a production key and vice versa, and a mixed setup needs both keys
-live at once. The variable must be present in the agent's env (`.env` or
-`aai secret put`), like any other credential.
+###### Inherited from
 
-**Only the three AssemblyAI stages carry this field, and that is
-deliberate.** The host reads `apiKeyEnv` off a descriptor generically
-(the host reads it generically), so adding it to `deepgram`, `elevenlabs`,
-`soniox`, `cartesia`, `rime` or any LLM vendor would be one line each and
-work — but none of them has the problem it solves. AssemblyAI keys are
-ENVIRONMENT-SCOPED, so a staging cluster and production need two live keys
-at once and a per-stage override is the only way to run a mixed pipeline.
-Every other vendor here has one account-wide key, which the provider
-default already names.
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
 
 ##### connectTimeoutMs?
 
@@ -290,7 +281,7 @@ Languages to bias the model toward, sent as the `language_codes` connection
 parameter (e.g. `["en"]`, `["en", "es"]`).
 
 **Unset means DETECT PER TURN, not English** — the same default
-`elevenlabs` and `soniox` have, and the opposite of `deepgram`, whose
+`elevenlabs` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
 unset `language` is `"en"`.
 
 Universal-3.5 Pro **code-switches across 18 languages by default**, so an
@@ -422,11 +413,28 @@ Ignored when [voiceFocus](#voicefocus) is off — it tunes that filter.
 
 ***
 
-### DeepgramOptions
+### DeepgramSttOptions
 
-Options for [deepgram](#deepgram).
+Options for [deepgramStt](#deepgramstt).
+
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
 
 #### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
 
 ##### endpointing?
 
@@ -452,8 +460,8 @@ BCP-47 language code for transcription. Examples: `"en"`, `"es"`, `"fr"`,
 **Unset means ENGLISH, not auto-detect.** Deepgram is the one STT provider
 here that behaves that way: `DEEPGRAM_DEFAULT_LANGUAGE` (`"en"`) is
 filled in and sent on every connection, where `assemblyAIStt` detects per
-turn and `elevenlabs`/`soniox` omit the field entirely so the vendor
-auto-detects. So an agent moved from any of those three to `deepgram()`
+turn and `elevenlabs`/`sonioxStt` omit the field entirely so the vendor
+auto-detects. So an agent moved from any of those three to `deepgramStt()`
 silently loses non-English transcription — and the symptom is a caller
 whose speech comes back as plausible English words, which reads as a
 mis-hearing rather than as a language setting.
@@ -472,11 +480,28 @@ to the SDK unchanged, which allows opt-in to future models.
 
 ***
 
-### ElevenLabsOptions
+### ElevenLabsSttOptions
 
 Options for [elevenLabsStt](#elevenlabsstt).
 
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
+
 #### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
 
 ##### language?
 
@@ -489,7 +514,7 @@ utterances.
 
 **Unset means AUTO-DETECT, not English.** The field is omitted from the
 request entirely, so ElevenLabs decides — which is the same default
-`assemblyAIStt` and `soniox` have, and the opposite of `deepgram`, whose
+`assemblyAIStt` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
 unset `language` is `"en"`. Pass a code for a line you know is
 monolingual.
 
@@ -505,11 +530,28 @@ future models without an SDK release.
 
 ***
 
-### SonioxOptions
+### SonioxSttOptions
 
-Options for [soniox](#soniox).
+Options for [sonioxStt](#sonioxstt).
+
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
 
 #### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
 
 ##### languages?
 
@@ -522,7 +564,7 @@ languages, sent as Soniox's `language_hints`. Example: `["en", "es"]`.
 
 **Unset means AUTO-DETECT, not English.** The field is omitted from the
 request entirely, so Soniox decides — which is the same default
-`assemblyAIStt` and `elevenlabs` have, and the opposite of `deepgram`,
+`assemblyAIStt` and `elevenlabs` have, and the opposite of `deepgramStt`,
 whose unset `language` is `"en"`. Pass the codes for a line you know is
 monolingual, or the handful you expect on one that is not.
 
@@ -574,6 +616,12 @@ nothing here for a maximum to bound.
 the `*_DEFAULT_MODEL` and `*_DEFAULT_VOICE` shapes.
 
 ## References
+
+### ProviderCredentialOptions
+
+Re-exports [ProviderCredentialOptions](index.md#providercredentialoptions)
+
+***
 
 ### SttProvider
 

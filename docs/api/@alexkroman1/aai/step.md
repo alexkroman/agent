@@ -2433,7 +2433,7 @@ The async API's base.
 ### TRANSCRIBE\_MODELS
 
 ```ts
-const TRANSCRIBE_MODELS: readonly string[];
+const TRANSCRIBE_MODELS: readonly ["universal-3-5-pro"];
 ```
 
 The models a job asks for when a caller names none.
@@ -2499,7 +2499,7 @@ with an id and a poll answers with a status, both immediately.
 ### TRANSCRIBE\_UPLOAD\_TIMEOUT\_MS
 
 ```ts
-const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
+const TRANSCRIBE_UPLOAD_TIMEOUT_MS: 1800000 = 1800000;
 ```
 
 Deadline for the upload leg.
@@ -2513,7 +2513,7 @@ trip would cancel exactly the uploads this exists to handle.
 ### TRANSCRIBE\_WINDOW\_BYTES
 
 ```ts
-const TRANSCRIBE_WINDOW_BYTES: number;
+const TRANSCRIBE_WINDOW_BYTES: 4194304 = 4194304;
 ```
 
 How much of a stored upload one outbound window carries.

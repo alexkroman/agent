@@ -2,7 +2,7 @@
 /** Unit test for the ElevenLabs Scribe STT adapter (mocked SDK). */
 
 import { ELEVENLABS_DEFAULT_MODEL } from "@alexkroman1/aai/host-internal";
-import type { ElevenLabsOptions } from "@alexkroman1/aai/stt";
+import type { ElevenLabsSttOptions } from "@alexkroman1/aai/stt";
 import { describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
 import { openElevenLabs } from "./elevenlabs.ts";
@@ -73,7 +73,7 @@ vi.mock("@elevenlabs/elevenlabs-js/wrapper/realtime", () => ({
   },
 }));
 
-async function openSession(sampleRate = 16_000, opts: ElevenLabsOptions = {}) {
+async function openSession(sampleRate = 16_000, opts: ElevenLabsSttOptions = {}) {
   captured.connections.length = 0;
   const opener = openElevenLabs(opts);
   const controller = new AbortController();

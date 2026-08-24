@@ -2,14 +2,14 @@
 
 import {
   makeSttError,
-  resolveSonioxSettings,
+  resolveSonioxSttSettings,
   SONIOX_API_KEY_ENV,
   type SttEvents,
   type SttOpener,
   type SttOpenOptions,
   type SttSession,
 } from "@alexkroman1/aai/host-internal";
-import type { SonioxOptions } from "@alexkroman1/aai/stt";
+import type { SonioxSttOptions } from "@alexkroman1/aai/stt";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
@@ -57,10 +57,10 @@ function consumeTokens(tokens: SonioxToken[], appendFinal: (text: string) => voi
 
 function buildConfigFrame(
   apiKey: string,
-  opts: SonioxOptions,
+  opts: SonioxSttOptions,
   sampleRate: number,
 ): Record<string, unknown> {
-  const settings = resolveSonioxSettings(opts);
+  const settings = resolveSonioxSttSettings(opts);
   const config: Record<string, unknown> = {
     api_key: apiKey,
     model: settings.model,
@@ -132,7 +132,7 @@ function handleResponse(res: SonioxResponse, emit: SonioxEmit, finalBuf: { value
   }
 }
 
-export function openSoniox(opts: SonioxOptions = {}): SttOpener {
+export function openSoniox(opts: SonioxSttOptions = {}): SttOpener {
   return {
     name: "soniox",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {

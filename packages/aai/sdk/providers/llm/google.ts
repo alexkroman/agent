@@ -26,15 +26,25 @@ export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { google } from "@alexkroman1/aai/llm";
+ * import { googleLlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   llm: google({ model: "gemini-2.5-flash" }),
+ *   llm: googleLlm({ model: "gemini-2.5-flash" }),
  * });
  * ```
  */
-export function google(opts: ModelOptions): LlmProvider {
+/**
+ * Options for {@link googleLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface GoogleLlmOptions extends ModelOptions {}
+
+export function googleLlm(opts: GoogleLlmOptions): LlmProvider {
   return { kind: GOOGLE_KIND, options: { ...opts } };
 }

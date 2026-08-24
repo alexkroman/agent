@@ -36,18 +36,28 @@ export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { openrouter } from "@alexkroman1/aai/llm";
+ * import { openrouterLlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   llm: openrouter({ model: "meta-llama/llama-3.3-70b-instruct" }),
+ *   llm: openrouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" }),
  * });
  * ```
  *
  * One key, hundreds of models, addressed `"creator/model"`. See
  * https://openrouter.ai/models for the list.
  */
-export function openrouter(opts: ModelOptions): LlmProvider {
+/**
+ * Options for {@link openrouterLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface OpenRouterLlmOptions extends ModelOptions {}
+
+export function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider {
   return { kind: OPENROUTER_KIND, options: { ...opts } };
 }

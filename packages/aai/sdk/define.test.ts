@@ -6,12 +6,12 @@ import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { DEFAULT_MAX_STEPS, DEFAULT_MIN_TURN_SILENCE_MS } from "./constants.ts";
 import { agent, tool, workflowApp } from "./define.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
-import { anthropic } from "./providers/llm/anthropic.ts";
+import { anthropicLlm } from "./providers/llm/anthropic.ts";
 import { assemblyAILlm } from "./providers/llm/assemblyai.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt, resolveAssemblyAISttSettings } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
-import { cartesia } from "./providers/tts/cartesia.ts";
+import { cartesiaTts } from "./providers/tts/cartesia.ts";
 import { createToolContext } from "./testing.ts";
 import { type AgentDef, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 import { workflow } from "./workflow.ts";
@@ -200,8 +200,8 @@ describe("agent()", () => {
 
   function pipelineAgent() {
     const stt = assemblyAIStt({ model: "universal-3-5-pro" });
-    const tts = cartesia({ voice: "v" });
-    const llm = anthropic({ model: "claude-haiku-4-5" });
+    const tts = cartesiaTts({ voice: "v" });
+    const llm = anthropicLlm({ model: "claude-haiku-4-5" });
     return { stt, llm, tts, def: agent({ name: "t", systemPrompt: "p", stt, llm, tts }) };
   }
 
@@ -240,7 +240,7 @@ describe("agent()", () => {
   });
 
   test("a single declared stage keeps it; the rest fill from the default pipeline", () => {
-    const llm = anthropic({ model: "claude-haiku-4-5" });
+    const llm = anthropicLlm({ model: "claude-haiku-4-5" });
     const parsed = toAgentConfig(agent({ name: "t", llm }));
     expect(parsed.mode).toBe("pipeline");
     expect(parsed.llm).toStrictEqual(llm);
@@ -262,7 +262,7 @@ describe("agent()", () => {
 
   test("`voice` combined with an explicit tts descriptor throws", () => {
     expect(() =>
-      agentMisuse({ name: "t", voice: "michael", tts: cartesia({ voice: "v" }) }),
+      agentMisuse({ name: "t", voice: "michael", tts: cartesiaTts({ voice: "v" }) }),
     ).toThrow(/`voice` picks the default pipeline's TTS voice/);
   });
 

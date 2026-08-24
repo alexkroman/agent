@@ -90,7 +90,11 @@ import { type WriteUploadOptions, writeUpload } from "../sdk/step-uploads-write.
  * option, which is what makes their multi-window paths reachable from a spec
  * without writing 16 MB to a disk.
  */
-export const STEP_FILE_WINDOW_BYTES = 8 * 1024 * 1024;
+// 8 MiB, spelled as the literal rather than as `8 * 1024 * 1024`: an
+// arithmetic initializer widens to `number` and drops the value out of the
+// contract hash. See "Value-carrying constants carry a LITERAL type" in
+// AGENTS.md.
+export const STEP_FILE_WINDOW_BYTES = 8_388_608;
 
 /** Options for {@link withTempDir}. */
 export type WithTempDirOptions = {

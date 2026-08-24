@@ -27,8 +27,8 @@ import {
   DEEPGRAM_KIND,
   ELEVENLABS_API_KEY_ENV,
   ELEVENLABS_KIND,
-  OPENAI_REALTIME_API_KEY_ENV,
-  OPENAI_REALTIME_KIND,
+  OPENAI_S2S_API_KEY_ENV,
+  OPENAI_S2S_KIND,
   RIME_API_KEY_ENV,
   RIME_KIND,
   SONIOX_API_KEY_ENV,
@@ -38,15 +38,15 @@ import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { S2sProvider } from "@alexkroman1/aai/s2s";
 import type {
   AssemblyAISttOptions,
-  DeepgramOptions,
-  ElevenLabsOptions,
-  SonioxOptions,
+  DeepgramSttOptions,
+  ElevenLabsSttOptions,
+  SonioxSttOptions,
   SttProvider,
 } from "@alexkroman1/aai/stt";
 import type {
   AssemblyAITtsOptions,
-  CartesiaOptions,
-  RimeOptions,
+  CartesiaTtsOptions,
+  RimeTtsOptions,
   TtsProvider,
 } from "@alexkroman1/aai/tts";
 import type { LanguageModel } from "ai";
@@ -117,21 +117,21 @@ const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
     envVar: DEEPGRAM_API_KEY_ENV,
     open: (d) =>
       lazyOpener(DEEPGRAM_KIND, async () =>
-        (await import("./stt/deepgram.ts")).openDeepgram(options<DeepgramOptions>(d)),
+        (await import("./stt/deepgram.ts")).openDeepgram(options<DeepgramSttOptions>(d)),
       ),
   },
   [ELEVENLABS_KIND]: {
     envVar: ELEVENLABS_API_KEY_ENV,
     open: (d) =>
       lazyOpener(ELEVENLABS_KIND, async () =>
-        (await import("./stt/elevenlabs.ts")).openElevenLabs(options<ElevenLabsOptions>(d)),
+        (await import("./stt/elevenlabs.ts")).openElevenLabs(options<ElevenLabsSttOptions>(d)),
       ),
   },
   [SONIOX_KIND]: {
     envVar: SONIOX_API_KEY_ENV,
     open: (d) =>
       lazyOpener(SONIOX_KIND, async () =>
-        (await import("./stt/soniox.ts")).openSoniox(options<SonioxOptions>(d)),
+        (await import("./stt/soniox.ts")).openSoniox(options<SonioxSttOptions>(d)),
       ),
   },
 };
@@ -141,14 +141,14 @@ const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
     envVar: CARTESIA_API_KEY_ENV,
     open: (d) =>
       lazyOpener(CARTESIA_KIND, async () =>
-        (await import("./tts/cartesia.ts")).openCartesia(options<CartesiaOptions>(d)),
+        (await import("./tts/cartesia.ts")).openCartesia(options<CartesiaTtsOptions>(d)),
       ),
   },
   [RIME_KIND]: {
     envVar: RIME_API_KEY_ENV,
     open: (d) =>
       lazyOpener(RIME_KIND, async () =>
-        (await import("./tts/rime.ts")).openRime(options<RimeOptions>(d)),
+        (await import("./tts/rime.ts")).openRime(options<RimeTtsOptions>(d)),
       ),
   },
   [ASSEMBLYAI_TTS_KIND]: {
@@ -166,7 +166,7 @@ const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
  * `runtime-transport.ts` is exhaustive — adding a kind here is a compile
  * error there until it has a builder.
  */
-export type S2sKind = typeof ASSEMBLYAI_S2S_KIND | typeof OPENAI_REALTIME_KIND;
+export type S2sKind = typeof ASSEMBLYAI_S2S_KIND | typeof OPENAI_S2S_KIND;
 
 /**
  * One registry entry per S2S provider kind.
@@ -184,7 +184,7 @@ export type S2sKind = typeof ASSEMBLYAI_S2S_KIND | typeof OPENAI_REALTIME_KIND;
  */
 const S2S_REGISTRY: Record<S2sKind, { readonly envVar: string }> = {
   [ASSEMBLYAI_S2S_KIND]: { envVar: ASSEMBLYAI_S2S_API_KEY_ENV },
-  [OPENAI_REALTIME_KIND]: { envVar: OPENAI_REALTIME_API_KEY_ENV },
+  [OPENAI_S2S_KIND]: { envVar: OPENAI_S2S_API_KEY_ENV },
 };
 
 /** Is `kind` an S2S provider this build can resolve? Narrows for the dispatch. */

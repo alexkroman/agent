@@ -21,7 +21,7 @@
 
 import { isRecord } from "../../is-record.ts";
 import { omitUndefined } from "../../omit-undefined.ts";
-import type { TtsProvider } from "../../providers.ts";
+import type { ProviderCredentialOptions, TtsProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_TTS_KIND = "assemblyai" as const;
@@ -66,24 +66,71 @@ export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "jane";
  * — should read this rather than restate it. A partial list is what sends
  * someone guessing, which is the failure being prevented.
  */
-export const ASSEMBLYAI_TTS_VOICES = {
-  alba: { language: "en", accent: "US" },
-  anna: { language: "en", accent: "US" },
-  charles: { language: "en", accent: "US" },
-  eve: { language: "en", accent: "US" },
-  george: { language: "en", accent: "US" },
-  jane: { language: "en", accent: "US" },
-  jean: { language: "en", accent: "US" },
-  mary: { language: "en", accent: "US" },
-  michael: { language: "en", accent: "US" },
-  paul: { language: "en", accent: "UK" },
-  vera: { language: "en", accent: "UK" },
-  giovanni: { language: "it", accent: "IT" },
-  lola: { language: "es", accent: "ES" },
-  juergen: { language: "de", accent: "DE" },
-  rafael: { language: "pt", accent: "PT" },
-  estelle: { language: "fr", accent: "FR" },
-} as const satisfies Record<string, { language: string; accent: string }>;
+/**
+ * What the catalog records about one voice: the language it speaks and the
+ * accent it speaks with.
+ *
+ * A named interface rather than an inferred `as const` shape, because the
+ * inferred one put every row into the rolled-up `.d.ts` — 16 voices as 64
+ * lines of `readonly language: "en"; readonly accent: "US"` — and so into the
+ * `aai:tts` contract hash. Re-accenting a voice is a catalog refresh, not an
+ * API change, and it was forcing an epoch classification.
+ *
+ * The IDS stay literal ({@link AssemblyAITtsVoiceId}), because those are the
+ * half an author types and the half autocomplete exists for; a voice arriving
+ * or leaving really is a change to what may be written. That is the split:
+ * which voices exist is contract, what each one sounds like is data.
+ */
+export interface AssemblyAITtsVoiceInfo {
+  /** ISO 639-1 code of the language this voice speaks. */
+  readonly language: AssemblyAITtsLanguage;
+  /** Accent tag as the service publishes it, e.g. `"US"`, `"UK"`, `"FR"`. */
+  readonly accent: string;
+}
+
+/**
+ * The voice ids this release's catalog carries.
+ *
+ * Spelled out rather than derived with `keyof typeof`, so that annotating the
+ * map below does not cost the literals — see {@link AssemblyAITtsVoiceInfo}.
+ */
+export type AssemblyAITtsVoiceId =
+  | "alba"
+  | "anna"
+  | "charles"
+  | "eve"
+  | "george"
+  | "jane"
+  | "jean"
+  | "mary"
+  | "michael"
+  | "paul"
+  | "vera"
+  | "giovanni"
+  | "lola"
+  | "juergen"
+  | "rafael"
+  | "estelle";
+
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>> =
+  {
+    alba: { language: "en", accent: "US" },
+    anna: { language: "en", accent: "US" },
+    charles: { language: "en", accent: "US" },
+    eve: { language: "en", accent: "US" },
+    george: { language: "en", accent: "US" },
+    jane: { language: "en", accent: "US" },
+    jean: { language: "en", accent: "US" },
+    mary: { language: "en", accent: "US" },
+    michael: { language: "en", accent: "US" },
+    paul: { language: "en", accent: "UK" },
+    vera: { language: "en", accent: "UK" },
+    giovanni: { language: "it", accent: "IT" },
+    lola: { language: "es", accent: "ES" },
+    juergen: { language: "de", accent: "DE" },
+    rafael: { language: "pt", accent: "PT" },
+    estelle: { language: "fr", accent: "FR" },
+  };
 
 /**
  * Voices the service still accepts but has scheduled for removal.
@@ -144,7 +191,7 @@ export const ASSEMBLYAI_TTS_DEPRECATED_VOICES = [
  * compiler to check you did.
  */
 export type AssemblyAITtsVoice =
-  | keyof typeof ASSEMBLYAI_TTS_VOICES
+  | AssemblyAITtsVoiceId
   // `string & Record<never, never>` is the `string & {}` trick without the
   // banned empty-object type: it is still `string`, but being an
   // intersection stops the union collapsing to `string`, which is what keeps
@@ -294,7 +341,7 @@ export function assemblyAIVoiceWarning(descriptor: unknown): string | undefined 
   return `AssemblyAI voice "${voice}" is not in this release's catalog. If it is a typo the agent will connect, report ready and never speak — the service refuses an unknown voice after the socket opens. Check it against ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts); a voice added since this release is fine.`;
 }
 
-export interface AssemblyAITtsOptions {
+export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
   /**
    * Voice id, e.g. `"jane"`, `"michael"`, `"vera"`. Defaults to
    * {@link ASSEMBLYAI_TTS_DEFAULT_VOICE}. Each voice speaks exactly one
@@ -323,18 +370,6 @@ export interface AssemblyAITtsOptions {
    * production.
    */
   host?: string;
-  /**
-   * Env var holding this stage's credential, replacing the provider default
-   * (`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
-   * stays secret-free and safe to serialize.
-   *
-   * For running one stage against a different account or cluster than the
-   * others — AssemblyAI keys are environment-scoped, so a staging STT cluster
-   * rejects a production key and vice versa, and a mixed setup needs both keys
-   * live at once. The variable must be present in the agent's env (`.env` or
-   * `aai secret put`), like any other credential.
-   */
-  apiKeyEnv?: string;
 }
 
 /**

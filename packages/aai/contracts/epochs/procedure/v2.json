@@ -1,7 +1,0 @@
-{
-  "kind": "aai-authoring-capability-contract",
-  "capability": "procedure",
-  "epoch": 2,
-  "sha256": "c0fb72d66cdb67b26eee621a24108a992eb8a8be96e24946ef4d7cff8018fcb7",
-  "exports": ["Procedure", "ProcedureNotFinishedError", "ProcedureRunOptions", "procedure"]
-}

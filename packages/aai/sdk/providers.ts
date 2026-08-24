@@ -6,7 +6,7 @@
  *
  * - The *descriptor* layer (`SttProvider` / `LlmProvider` / `TtsProvider`) is
  *   pure data — `{ kind, options }` objects returned by the user-facing
- *   factories (`assemblyAIStt(...)`, `anthropic(...)`, `cartesia(...)`). They
+ *   factories (`assemblyAIStt(...)`, `anthropicLlm(...)`, `cartesiaTts(...)`). They
  *   are JSON-serializable, contain no functions, and can cross the CLI →
  *   server → guest boundary without evaluating any third-party SDK.
  *   They live in `sdk/` alongside `Manifest` and have zero Node-only deps.
@@ -39,9 +39,43 @@ export interface ProviderDescriptor<Kind extends string, Options> {
   readonly options: Options;
 }
 
+/**
+ * The credential override every provider descriptor accepts.
+ *
+ * Names an env VARIABLE holding this stage's key, replacing the provider
+ * default (`DEEPGRAM_API_KEY`, `ASSEMBLYAI_API_KEY`, …). It names a variable
+ * and never a key, so the descriptor stays secret-free and safe to serialize
+ * across the CLI → server → guest boundary. The variable must be present in
+ * the agent's env (`.env`, or `aai secret put`), like any other credential.
+ *
+ * @remarks
+ * **Every provider options interface extends this, because the host has always
+ * honoured the field on every provider.** `descriptorEnvVar()` in
+ * `@alexkroman1/aai-runtime` reads `apiKeyEnv` off any descriptor's options
+ * through an untyped cast, so all thirteen factories accepted it at runtime
+ * while only the four AssemblyAI options types could spell it — a shape that
+ * cost `aai:s2s` epoch 1, where the field was added to one stage and left off
+ * the rest.
+ *
+ * The argument for keeping it AssemblyAI-only was that AssemblyAI keys are
+ * environment-scoped, so a mixed staging/production pipeline needs two live at
+ * once, and no other vendor has that problem. True, and not the whole test: a
+ * type that cannot spell what the runtime accepts is wrong regardless of who
+ * needs it, and per-stage key separation is equally the answer for two accounts
+ * with one vendor, for per-tenant keys, and for a rotation that runs both keys
+ * briefly.
+ */
+export interface ProviderCredentialOptions {
+  /**
+   * Env var holding this stage's credential, replacing the provider default.
+   * Names a VARIABLE, not a key.
+   */
+  apiKeyEnv?: string;
+}
+
 // The `__stage` property on each descriptor alias below is a compile-time
 // stage tag, so a descriptor built for one pipeline stage cannot be assigned
-// to another — `agent({ stt: cartesia() })` is a type error instead of a
+// to another — `agent({ stt: cartesiaTts() })` is a type error instead of a
 // runtime failure. It is optional and never present at runtime (factories
 // don't set it), so plain `{ kind, options }` objects — e.g. configs parsed
 // off the wire — remain assignable to every stage.
@@ -57,7 +91,7 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 /**
  * Descriptor for an LLM provider. Returned by factories like
- * `anthropic(...)` from `@alexkroman1/aai/llm`.
+ * `anthropicLlm(...)` from `@alexkroman1/aai/llm`.
  */
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
   /** Compile-time stage tag; never present at runtime. */
@@ -66,7 +100,7 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 /**
  * Descriptor for a TTS provider. Returned by factories like
- * `cartesia(...)` from `@alexkroman1/aai/tts`.
+ * `cartesiaTts(...)` from `@alexkroman1/aai/tts`.
  */
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
   /** Compile-time stage tag; never present at runtime. */
@@ -75,7 +109,7 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 /**
  * Descriptor for an S2S provider. Returned by `assemblyAIS2s(...)` (root
- * export) or `openaiRealtime(...)` from `@alexkroman1/aai/s2s`.
+ * export) or `openaiS2s(...)` from `@alexkroman1/aai/s2s`.
  */
 export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
   /** Compile-time stage tag; never present at runtime. */

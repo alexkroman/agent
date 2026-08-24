@@ -6,7 +6,7 @@ import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "@alexkroman1/aai/
 import { toArgsRecord } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
-import type { OpenaiRealtimeOptions } from "@alexkroman1/aai/s2s";
+import type { OpenAIS2sOptions } from "@alexkroman1/aai/s2s";
 import { errorMessage, isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createAudioSendGate } from "../_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
@@ -36,7 +36,7 @@ export type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
 
 type OpenaiRealtimeTransportOptions = {
   apiKey: string;
-  options: OpenaiRealtimeOptions;
+  options: OpenAIS2sOptions;
   sessionConfig: TransportSessionConfig;
   toolSchemas: ToolSchema[];
   toolChoice: ToolChoice;

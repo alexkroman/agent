@@ -9,16 +9,16 @@ import { agentConfigWarnings, assertProviderTriple } from "./config-rules.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
 import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
-import { anthropic } from "./providers/llm/anthropic.ts";
+import { anthropicLlm } from "./providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
-import { cartesia } from "./providers/tts/cartesia.ts";
+import { cartesiaTts } from "./providers/tts/cartesia.ts";
 
 const pipelineFields = {
   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
-  llm: anthropic({ model: "claude-haiku-4-5" }),
-  tts: cartesia({ voice: "v" }),
+  llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+  tts: cartesiaTts({ voice: "v" }),
 };
 
 function config(fields: Record<string, unknown>): AgentConfig {
@@ -169,7 +169,7 @@ describe("agentConfigWarnings", () => {
   });
 
   test("says nothing about another vendor's voice, which it cannot judge", () => {
-    expect(agentConfigWarnings({ tts: cartesia({ voice: "not-a-uuid" }) })).toEqual([]);
+    expect(agentConfigWarnings({ tts: cartesiaTts({ voice: "not-a-uuid" }) })).toEqual([]);
   });
 
   test("says nothing when no voice is declared", () => {

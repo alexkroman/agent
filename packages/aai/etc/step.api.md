@@ -211,7 +211,7 @@ export function stripJsonFence(reply: string): string;
 export const TRANSCRIBE_API = "https://api.assemblyai.com";
 
 // @public
-export const TRANSCRIBE_MODELS: readonly string[];
+export const TRANSCRIBE_MODELS: readonly ["universal-3-5-pro"];
 
 // @public
 export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
@@ -226,10 +226,10 @@ export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
 export const TRANSCRIBE_TIMEOUT_MS = 60000;
 
 // @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 1800000;
 
 // @public
-export const TRANSCRIBE_WINDOW_BYTES: number;
+export const TRANSCRIBE_WINDOW_BYTES = 4194304;
 
 // @public
 export class TranscribeError extends Error {

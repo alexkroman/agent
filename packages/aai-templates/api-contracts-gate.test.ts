@@ -278,8 +278,15 @@ describe("capability contracts", () => {
     }
   });
 
-  test.each(contracts)("$id evidences every epoch it advertises", (entry) => {
-    for (const version of (entry.table[entry.capability] as Contract).supported) {
+  test.each(contracts)("$id evidences every SUPERSEDED epoch it advertises", (entry) => {
+    const { current, supported } = entry.table[entry.capability] as Contract;
+    for (const version of supported) {
+      // The current epoch owes no fixture: an example proves that source
+      // written against an OLD epoch still compiles, and for the current one
+      // that claim is "today's API compiles", which `pnpm typecheck` already
+      // makes over the real source. See `checkFixtures` in
+      // `scripts/_api-contracts-checks.mjs`.
+      if (version === current) continue;
       const where = `${entry.pkg}/contracts/compatibility/${entry.capability}/v${version}`;
       const fixture = entry.fixture(entry.capability, version);
       expect(

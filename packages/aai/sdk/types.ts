@@ -367,7 +367,7 @@ export interface AgentDef extends PipelineVoiceTuning {
   stt?: SttProvider;
   /**
    * Pluggable LLM provider descriptor from `@alexkroman1/aai/llm` (e.g.
-   * `anthropic({ model })`) for pipeline mode. Unset (with no `s2s`), the
+   * `anthropicLlm({ model })`) for pipeline mode. Unset (with no `s2s`), the
    * stage defaults to the AssemblyAI LLM Gateway. Note this is pure
    * serializable data, not a Vercel AI SDK `LanguageModel` instance — the
    * host resolves the descriptor into a `LanguageModel` at session start,
@@ -383,7 +383,7 @@ export interface AgentDef extends PipelineVoiceTuning {
   /**
    * Pluggable S2S provider descriptor — the explicit opt-in to
    * speech-to-speech mode (e.g. `assemblyAIS2s()` for AssemblyAI's Voice
-   * Agent API, or `openaiRealtime()`). Unset, the agent runs the default
+   * Agent API, or `openaiS2s()`). Unset, the agent runs the default
    * cascaded pipeline. Mutually exclusive with the `stt`/`llm`/`tts`
    * pipeline triple.
    */

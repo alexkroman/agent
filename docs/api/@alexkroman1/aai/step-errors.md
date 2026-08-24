@@ -121,12 +121,12 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 #### Example
 
 ```ts
-import { slack } from "@alexkroman1/aai/channels";
+import { slackChannel } from "@alexkroman1/aai/channels";
 import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
 
 export async function announce(webhookUrl: string, headline: string): Promise<string> {
   "use step";
-  return await sendToChannelClassified(slack({ webhookUrl }), { text: headline });
+  return await sendToChannelClassified(slackChannel({ webhookUrl }), { text: headline });
 }
 ```
 

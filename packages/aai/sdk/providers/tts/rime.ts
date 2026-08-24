@@ -11,7 +11,7 @@
  * This differs from many APIs that use ISO 639-1 two-letter codes like `"en"`.
  */
 
-import type { TtsProvider } from "../../providers.ts";
+import type { ProviderCredentialOptions, TtsProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const RIME_KIND = "rime" as const;
@@ -20,14 +20,14 @@ export const RIME_KIND = "rime" as const;
 export const RIME_API_KEY_ENV = "RIME_API_KEY";
 
 /**
- * Default Rime speaker used when callers invoke `rime()` with no `voice`.
+ * Default Rime speaker used when callers invoke `rimeTts()` with no `voice`.
  * `cove` is a `mistv2` speaker, matching the default model below — so a
- * bare `rime()` works out of the box for new agents.
+ * bare `rimeTts()` works out of the box for new agents.
  */
 export const RIME_DEFAULT_VOICE = "cove";
 
-/** Options for {@link rime}. */
-export interface RimeOptions {
+/** Options for {@link rimeTts}. */
+export interface RimeTtsOptions extends ProviderCredentialOptions {
   /** Rime speaker ID. Defaults to {@link RIME_DEFAULT_VOICE}. */
   voice?: string;
   /**
@@ -51,16 +51,16 @@ export interface RimeOptions {
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { RIME_DEFAULT_VOICE, rime } from "@alexkroman1/aai/tts";
+ * import { RIME_DEFAULT_VOICE, rimeTts } from "@alexkroman1/aai/tts";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   tts: rime({ voice: RIME_DEFAULT_VOICE, model: "mistv2" }),
+ *   tts: rimeTts({ voice: RIME_DEFAULT_VOICE, model: "mistv2" }),
  * });
  * ```
  */
-export function rime(opts: RimeOptions = {}): TtsProvider {
+export function rimeTts(opts: RimeTtsOptions = {}): TtsProvider {
   return {
     kind: RIME_KIND,
     options: { ...opts, voice: opts.voice ?? RIME_DEFAULT_VOICE },
@@ -78,7 +78,7 @@ export const RIME_DEFAULT_LANGUAGE = "eng";
  * options with every host-side default filled in. Shared by the opener and
  * the runtime's "Session mode resolved" log.
  */
-export function resolveRimeSettings(opts: RimeOptions): {
+export function resolveRimeTtsSettings(opts: RimeTtsOptions): {
   voice: string;
   model: string;
   language: string;

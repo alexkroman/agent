@@ -7,7 +7,7 @@
  * it into an openable `SttOpener` during `createRuntime`.
  */
 
-import type { SttProvider } from "../../providers.ts";
+import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const DEEPGRAM_KIND = "deepgram" as const;
@@ -15,8 +15,8 @@ export const DEEPGRAM_KIND = "deepgram" as const;
 /** Agent-env variable holding the Deepgram API key. */
 export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
 
-/** Options for {@link deepgram}. */
-export interface DeepgramOptions {
+/** Options for {@link deepgramStt}. */
+export interface DeepgramSttOptions extends ProviderCredentialOptions {
   /**
    * Streaming speech model. Defaults to `"nova-3"`. Any string is forwarded
    * to the SDK unchanged, which allows opt-in to future models.
@@ -29,8 +29,8 @@ export interface DeepgramOptions {
    * **Unset means ENGLISH, not auto-detect.** Deepgram is the one STT provider
    * here that behaves that way: `DEEPGRAM_DEFAULT_LANGUAGE` (`"en"`) is
    * filled in and sent on every connection, where `assemblyAIStt` detects per
-   * turn and `elevenlabs`/`soniox` omit the field entirely so the vendor
-   * auto-detects. So an agent moved from any of those three to `deepgram()`
+   * turn and `elevenlabs`/`sonioxStt` omit the field entirely so the vendor
+   * auto-detects. So an agent moved from any of those three to `deepgramStt()`
    * silently loses non-English transcription — and the symptom is a caller
    * whose speech comes back as plausible English words, which reads as a
    * mis-hearing rather than as a language setting.
@@ -80,19 +80,19 @@ export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { deepgram } from "@alexkroman1/aai/stt";
+ * import { deepgramStt } from "@alexkroman1/aai/stt";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   stt: deepgram({ model: "nova-3", language: "en" }),
+ *   stt: deepgramStt({ model: "nova-3", language: "en" }),
  * });
  * ```
  *
  * Deepgram is the one STT vendor here whose unset `language` is not
  * auto-detect: `"en"` is sent for you. Name the code you mean.
  */
-export function deepgram(opts: DeepgramOptions = {}): SttProvider {
+export function deepgramStt(opts: DeepgramSttOptions = {}): SttProvider {
   return { kind: DEEPGRAM_KIND, options: { ...opts } };
 }
 
@@ -108,7 +108,7 @@ export const DEEPGRAM_DEFAULT_LANGUAGE = "en";
  * the runtime's "Session mode resolved" log, so the reported settings are by
  * construction the ones dialled.
  */
-export function resolveDeepgramSettings(opts: DeepgramOptions): {
+export function resolveDeepgramSttSettings(opts: DeepgramSttOptions): {
   model: string;
   language: string;
   endpointingMs: number;

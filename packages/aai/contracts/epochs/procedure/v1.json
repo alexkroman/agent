@@ -2,6 +2,6 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "procedure",
   "epoch": 1,
-  "sha256": "1ece5e3637584e4ffa964e236603f27a02c12fbbd696b5d6338097c6081d04bc",
-  "exports": ["Graph", "GraphNotFinishedError", "GraphRunOptions", "graph"]
+  "sha256": "c0fb72d66cdb67b26eee621a24108a992eb8a8be96e24946ef4d7cff8018fcb7",
+  "exports": ["Procedure", "ProcedureNotFinishedError", "ProcedureRunOptions", "procedure"]
 }

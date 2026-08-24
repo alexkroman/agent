@@ -11,13 +11,13 @@
  * @example Swap the STT stage of an otherwise default agent
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { deepgram } from "@alexkroman1/aai/stt";
+ * import { deepgramStt } from "@alexkroman1/aai/stt";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
  *   // `llm` and `tts` keep their AssemblyAI defaults.
- *   stt: deepgram({ model: "nova-3", language: "en" }),
+ *   stt: deepgramStt({ model: "nova-3", language: "en" }),
  * });
  * ```
  *
@@ -39,11 +39,11 @@
  * | factory | field | unset means |
  * | --- | --- | --- |
  * | {@link assemblyAIStt} | `languages` | detect per turn (code-switches across 18) |
- * | {@link deepgram} | `language` | **English** — `"en"` is sent for you |
+ * | {@link deepgramStt} | `language` | **English** — `"en"` is sent for you |
  * | {@link elevenLabsStt} | `language` | auto-detect (the field is omitted) |
- * | {@link soniox} | `languages` | auto-detect (the field is omitted) |
+ * | {@link sonioxStt} | `languages` | auto-detect (the field is omitted) |
  *
- * So moving an agent from {@link assemblyAIStt} to {@link deepgram} silently
+ * So moving an agent from {@link assemblyAIStt} to {@link deepgramStt} silently
  * drops multilingual transcription, and moving the other way silently gains
  * code-switching — read {@link AssemblyAISttOptions.languages} before you do,
  * because that default has a measured failure mode with no obvious symptom.
@@ -74,7 +74,7 @@
 // `noReExportAll` suppression per line, and the escape-hatch ratchet only moves
 // down. Listing them also makes the public surface of this subpath readable in
 // one place — add new symbols here when a provider gains one.
-export type { SttProvider } from "../providers.ts";
+export type { ProviderCredentialOptions, SttProvider } from "../providers.ts";
 export {
   ASSEMBLYAI_STT_EU_URL,
   type AssemblyAISttOptions,
@@ -82,8 +82,8 @@ export {
 } from "./stt/assemblyai.ts";
 export {
   DEEPGRAM_DEFAULT_ENDPOINTING_MS,
-  type DeepgramOptions,
-  deepgram,
+  type DeepgramSttOptions,
+  deepgramStt,
 } from "./stt/deepgram.ts";
-export { type ElevenLabsOptions, elevenLabsStt } from "./stt/elevenlabs.ts";
-export { type SonioxOptions, soniox } from "./stt/soniox.ts";
+export { type ElevenLabsSttOptions, elevenLabsStt } from "./stt/elevenlabs.ts";
+export { type SonioxSttOptions, sonioxStt } from "./stt/soniox.ts";

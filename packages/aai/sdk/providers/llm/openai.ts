@@ -25,15 +25,25 @@ export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { openai } from "@alexkroman1/aai/llm";
+ * import { openaiLlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   llm: openai({ model: "gpt-5.5" }),
+ *   llm: openaiLlm({ model: "gpt-5.5" }),
  * });
  * ```
  */
-export function openai(opts: ModelOptions): LlmProvider {
+/**
+ * Options for {@link openaiLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface OpenAILlmOptions extends ModelOptions {}
+
+export function openaiLlm(opts: OpenAILlmOptions): LlmProvider {
   return { kind: OPENAI_KIND, options: { ...opts } };
 }

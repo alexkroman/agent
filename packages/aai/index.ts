@@ -123,9 +123,14 @@ export {
  * the narrower one's. `ProviderDescriptor` is the exception and left them: one
  * interface had four reference pages, and the base all four narrow spans every
  * stage, so the root is the narrowest thing that can own it.
+ *
+ * `ProviderCredentialOptions` is here for the same reason. Every provider
+ * options interface on all four stages extends it, so no one stage owns it,
+ * and the root is again the narrowest place it fits.
  */
 export type {
   LlmProvider,
+  ProviderCredentialOptions,
   ProviderDescriptor,
   S2sProvider,
   SttProvider,

@@ -11,13 +11,13 @@
  * @example Swap the TTS stage of an otherwise default agent
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { CARTESIA_DEFAULT_VOICE, cartesia } from "@alexkroman1/aai/tts";
+ * import { CARTESIA_DEFAULT_VOICE, cartesiaTts } from "@alexkroman1/aai/tts";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
  *   // `stt` and `llm` keep their AssemblyAI defaults.
- *   tts: cartesia({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
+ *   tts: cartesiaTts({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
  * });
  * ```
  *
@@ -61,7 +61,7 @@
 // `noReExportAll` suppression per line, and the escape-hatch ratchet only moves
 // down. Listing them also makes the public surface of this subpath readable in
 // one place — add new symbols here when a provider gains one.
-export type { TtsProvider } from "../providers.ts";
+export type { ProviderCredentialOptions, TtsProvider } from "../providers.ts";
 export {
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
   ASSEMBLYAI_TTS_LANGUAGES,
@@ -69,7 +69,9 @@ export {
   type AssemblyAITtsLanguage,
   type AssemblyAITtsOptions,
   type AssemblyAITtsVoice,
+  type AssemblyAITtsVoiceId,
+  type AssemblyAITtsVoiceInfo,
   assemblyAITts,
 } from "./tts/assemblyai.ts";
-export { CARTESIA_DEFAULT_VOICE, type CartesiaOptions, cartesia } from "./tts/cartesia.ts";
-export { RIME_DEFAULT_VOICE, type RimeOptions, rime } from "./tts/rime.ts";
+export { CARTESIA_DEFAULT_VOICE, type CartesiaTtsOptions, cartesiaTts } from "./tts/cartesia.ts";
+export { RIME_DEFAULT_VOICE, type RimeTtsOptions, rimeTts } from "./tts/rime.ts";

@@ -12,12 +12,12 @@
  * @example An OpenAI Realtime agent
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { openaiRealtime } from "@alexkroman1/aai/s2s";
+ * import { openaiS2s } from "@alexkroman1/aai/s2s";
  *
  * export default agent({
  *   name: "Concierge",
  *   systemPrompt: "You are a hotel concierge. Be brief.",
- *   s2s: openaiRealtime({ model: "gpt-realtime", voice: "marin" }),
+ *   s2s: openaiS2s({ model: "gpt-realtime", voice: "marin" }),
  * });
  * ```
  *
@@ -28,7 +28,7 @@
  * **{@link assemblyAIS2s} is also on the root barrel**, which is the one
  * exception to "provider factories live on subpaths". S2S became opt-in when
  * the pipeline became the default mode, so the descriptor that opts in sits
- * beside `agent()` where an author meets it. `openaiRealtime` is on this
+ * beside `agent()` where an author meets it. `openaiS2s` is on this
  * subpath alone, like every other vendor.
  *
  * **Credentials are never passed here.** Each factory's vendor names the env
@@ -55,10 +55,10 @@
 // `noReExportAll` suppression per line, and the escape-hatch ratchet only moves
 // down. Listing them also makes the public surface of this subpath readable in
 // one place — add new symbols here when a provider gains one.
-export type { S2sProvider } from "../providers.ts";
+export type { ProviderCredentialOptions, S2sProvider } from "../providers.ts";
 export { type AssemblyAIS2sOptions, assemblyAIS2s } from "./s2s/assemblyai.ts";
 export {
-  type OpenaiRealtimeOptions,
-  type OpenaiRealtimeVoice,
-  openaiRealtime,
-} from "./s2s/openai-realtime.ts";
+  type OpenAIS2sOptions,
+  type OpenAIS2sVoice,
+  openaiS2s,
+} from "./s2s/openai.ts";

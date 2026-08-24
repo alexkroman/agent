@@ -9,11 +9,11 @@
  */
 
 import type { SttOpener, TtsOpener } from "@alexkroman1/aai/host-internal";
-import { ASSEMBLYAI_S2S_KIND, OPENAI_REALTIME_KIND } from "@alexkroman1/aai/host-internal";
+import { ASSEMBLYAI_S2S_KIND, OPENAI_S2S_KIND } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_TOOL_CHOICE } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
-import type { OpenaiRealtimeOptions } from "@alexkroman1/aai/s2s";
+import type { OpenAIS2sOptions } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { LanguageModel } from "ai";
 import {
@@ -198,7 +198,7 @@ export function createTransportFactory(
     const { sessionOpts, systemPrompt, callbacks } = args;
     return createOpenaiRealtimeTransport({
       apiKey: s2sApiKey(),
-      options: (agent.s2s?.options ?? {}) as OpenaiRealtimeOptions,
+      options: (agent.s2s?.options ?? {}) as OpenAIS2sOptions,
       sessionConfig: {
         systemPrompt,
         ...omitUndefined({ greeting: agentConfig.greeting }),
@@ -256,7 +256,7 @@ export function createTransportFactory(
         throw new Error(`Unknown s2s provider kind: ${kind ?? "<missing>"}`);
       }
       switch (kind) {
-        case OPENAI_REALTIME_KIND:
+        case OPENAI_S2S_KIND:
           return buildOpenaiRealtimeTransport(args);
         case ASSEMBLYAI_S2S_KIND:
           return buildAssemblyS2sTransport(args);

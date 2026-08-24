@@ -2,8 +2,9 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "providers",
   "epoch": 1,
-  "sha256": "e6653dd4563a61d2f0d6daaeb3f20c9ad50f12d73a290e41cbeb2753ddd5cf0c",
+  "sha256": "ae4837409453df46e7f304ad79734d1b7f9f5a94bd74930bbe72e91649aba9ad",
   "exports": [
+    "LlmRegistryEntry",
     "OpenerRegistryEntry",
     "S2SConfig",
     "SttError",
@@ -20,6 +21,7 @@
     "TtsWordTiming",
     "Unsubscribe",
     "createToolCallRepair",
+    "registerLlmKind",
     "registerSttKind",
     "registerTtsKind",
     "resolveLlm",

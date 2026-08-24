@@ -374,79 +374,10 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-const ASSEMBLYAI_TTS_VOICES: {
-    readonly alba: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly anna: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly charles: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly eve: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly george: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jane: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jean: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly mary: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly michael: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly paul: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly vera: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly giovanni: {
-        readonly language: "it";
-        readonly accent: "IT";
-    };
-    readonly lola: {
-        readonly language: "es";
-        readonly accent: "ES";
-    };
-    readonly juergen: {
-        readonly language: "de";
-        readonly accent: "DE";
-    };
-    readonly rafael: {
-        readonly language: "pt";
-        readonly accent: "PT";
-    };
-    readonly estelle: {
-        readonly language: "fr";
-        readonly accent: "FR";
-    };
-};
-
-// @public
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
 
 // @public
-interface AssemblyAISttOptions {
-    apiKeyEnv?: string;
+interface AssemblyAISttOptions extends ProviderCredentialOptions {
     connectTimeoutMs?: number;
     languages?: string[];
     maxConnectRetries?: number;
@@ -466,15 +397,17 @@ type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 export function assemblyAITtsLanguageCodes(): string[];
 
 // @public (undocumented)
-interface AssemblyAITtsOptions {
-    apiKeyEnv?: string;
+interface AssemblyAITtsOptions extends ProviderCredentialOptions {
     host?: string;
     language?: AssemblyAITtsLanguage;
     voice?: AssemblyAITtsVoice;
 }
 
 // @public
-type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
+type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
+
+// @public
+type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
 
 // @internal
 export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
@@ -511,7 +444,7 @@ export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
 export const CARTESIA_KIND: "cartesia";
 
 // @public
-interface CartesiaOptions {
+interface CartesiaTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
     voice?: string;
@@ -561,7 +494,7 @@ export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
 export const DEEPGRAM_KIND: "deepgram";
 
 // @public
-interface DeepgramOptions {
+interface DeepgramSttOptions extends ProviderCredentialOptions {
     endpointing?: number;
     language?: string;
     model?: "nova-3" | "nova-2" | string;
@@ -645,7 +578,7 @@ export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
 export const ELEVENLABS_KIND: "elevenlabs";
 
 // @public
-interface ElevenLabsOptions {
+interface ElevenLabsSttOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
 }
@@ -866,10 +799,10 @@ export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
 export const OPENAI_KIND: "openai";
 
 // @public
-export const OPENAI_REALTIME_API_KEY_ENV = "OPENAI_API_KEY";
+export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
 
 // @public
-export const OPENAI_REALTIME_KIND: "openai-realtime";
+export const OPENAI_S2S_KIND: "openai-realtime";
 
 // @public
 export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
@@ -924,6 +857,11 @@ export const PLAYBACK_FILL_MS = 200;
 
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
+
+// @public
+interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -1009,7 +947,7 @@ export function resolveBuiltin(name: string, opts?: BuiltinToolOptions): (ToolDe
 }) | undefined;
 
 // @public
-export function resolveCartesiaSettings(opts: CartesiaOptions): {
+export function resolveCartesiaTtsSettings(opts: CartesiaTtsOptions): {
     voice: string;
     model: string;
     language: string;
@@ -1023,27 +961,27 @@ export type ResolvedBuiltins = {
 };
 
 // @public
-export function resolveDeepgramSettings(opts: DeepgramOptions): {
+export function resolveDeepgramSttSettings(opts: DeepgramSttOptions): {
     model: string;
     language: string;
     endpointingMs: number;
 };
 
 // @public
-export function resolveElevenLabsSettings(opts: ElevenLabsOptions): {
+export function resolveElevenLabsSttSettings(opts: ElevenLabsSttOptions): {
     model: string;
     languageCode?: string;
 };
 
 // @public
-export function resolveRimeSettings(opts: RimeOptions): {
+export function resolveRimeTtsSettings(opts: RimeTtsOptions): {
     voice: string;
     model: string;
     language: string;
 };
 
 // @public
-export function resolveSonioxSettings(opts: SonioxOptions): {
+export function resolveSonioxSttSettings(opts: SonioxSttOptions): {
     model: string;
     languageHints?: readonly string[];
 };
@@ -1064,7 +1002,7 @@ export const RIME_DEFAULT_MODEL = "mistv2";
 export const RIME_KIND: "rime";
 
 // @public
-interface RimeOptions {
+interface RimeTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
     voice?: string;
@@ -1124,7 +1062,7 @@ export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
 export const SONIOX_KIND: "soniox";
 
 // @public
-interface SonioxOptions {
+interface SonioxSttOptions extends ProviderCredentialOptions {
     languages?: readonly string[];
     model?: string;
 }

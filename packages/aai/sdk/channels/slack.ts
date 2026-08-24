@@ -35,7 +35,13 @@
  * was wrong.
  */
 
-import type { Channel, ChannelMessage, ChannelPayload, ChannelSection } from "./channel-types.ts";
+import type {
+  Channel,
+  ChannelKind,
+  ChannelMessage,
+  ChannelPayload,
+  ChannelSection,
+} from "./channel-types.ts";
 
 /** The `kind` tag on a Slack channel descriptor. */
 export const SLACK_CHANNEL_KIND = "slack";
@@ -47,7 +53,7 @@ const SLACK_HEADER_MAX = 150;
 const DEFAULT_TEXT_PARAM = "text";
 
 /**
- * What {@link slack} takes.
+ * What {@link slackChannel} takes.
  *
  * **No credential is read from the environment**, and that is a deliberate
  * difference from a provider descriptor. A webhook URL IS the credential —
@@ -75,7 +81,7 @@ export interface SlackChannelOptions {
   readonly textParam?: string;
 }
 
-/** A Slack channel descriptor, as returned by {@link slack}. */
+/** A Slack channel descriptor, as returned by {@link slackChannel}. */
 export type SlackChannel = Channel & {
   readonly kind: typeof SLACK_CHANNEL_KIND;
   readonly options: SlackChannelOptions & Record<string, unknown>;
@@ -86,12 +92,12 @@ export type SlackChannel = Channel & {
  *
  * @example Post a digest to Slack from a step
  * ```ts
- * import { slack } from "@alexkroman1/aai/channels";
+ * import { slackChannel } from "@alexkroman1/aai/channels";
  * import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
  *
  * export async function postDigest(webhookUrl: string, summary: string): Promise<string> {
  *   "use step";
- *   return await sendToChannelClassified(slack({ webhookUrl }), {
+ *   return await sendToChannelClassified(slackChannel({ webhookUrl }), {
  *     text: `Daily digest: ${summary}`,
  *     heading: "Daily digest",
  *     sections: [{ body: summary }],
@@ -101,7 +107,7 @@ export type SlackChannel = Channel & {
  *
  * @public
  */
-export function slack(options: SlackChannelOptions): SlackChannel {
+export function slackChannel(options: SlackChannelOptions): SlackChannel {
   return { kind: SLACK_CHANNEL_KIND, options: { ...options } };
 }
 
@@ -302,3 +308,44 @@ export function slackChannelAdvice(options: SlackChannelOptions, detail: string)
   }
   return `Slack rejected the incoming webhook: ${detail}. Check that the webhook is still active and has not been revoked.`;
 }
+
+/**
+ * A descriptor's options, NARROWED rather than cast.
+ *
+ * A cast would be the short way and it would be wrong twice over: a channel
+ * descriptor round-trips through a durable run's journal and can arrive as
+ * whatever was written there, and `sendToChannel` is reachable from a body that
+ * built its descriptor from parsed input. So the field is checked, and a
+ * descriptor missing it fails with the call that would have produced a valid
+ * one rather than with `POST undefined`.
+ *
+ * It lives HERE, beside the options type it narrows to, rather than in the
+ * generic send path where it started: the shared module knowing one platform's
+ * option shape is what makes a second channel an edit to a shared file.
+ */
+function slackOptions(options: Record<string, unknown>): SlackChannelOptions {
+  const { textParam, webhookUrl } = options;
+  if (typeof webhookUrl !== "string") {
+    throw new Error(
+      "A Slack channel needs a string `webhookUrl`. Build one with `slackChannel({ webhookUrl })`.",
+    );
+  }
+  return typeof textParam === "string" ? { textParam, webhookUrl } : { webhookUrl };
+}
+
+/**
+ * Slack as a {@link ChannelKind} — what `sendToChannel` dispatches to for a
+ * `"slack"` descriptor.
+ *
+ * Exported so a host that assembles its own channel set can name it, and so
+ * this module is a complete unit: everything the send path needs to handle
+ * Slack is here, and `send.ts` imports this one value rather than four
+ * functions and an options type.
+ *
+ * @public
+ */
+export const SLACK_CHANNEL: ChannelKind = {
+  kind: SLACK_CHANNEL_KIND,
+  render: (message, options) => renderSlackChannelPayload(message, slackOptions(options)),
+  advice: (options, detail) => slackChannelAdvice(slackOptions(options), detail),
+};

@@ -28,7 +28,7 @@ type ProviderFields = {
  * `createTextAgent` instead, since that is the only stage it has).
  *
  * A declared stage is never overridden, so
- * `agent({ llm: anthropic(...) })` means "the default pipeline with that
+ * `agent({ llm: anthropicLlm(...) })` means "the default pipeline with that
  * LLM" — one stage swapped, the other two on AssemblyAI — rather than a
  * configuration error. Before this, the triple was all-or-nothing and the
  * only way to swap one stage was spreading `assemblyAIPipeline()` first.

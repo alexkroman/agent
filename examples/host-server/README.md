@@ -150,15 +150,15 @@ LLM gateway and TTS. To choose your own, declare it in `defaults` — descriptor
 are plain data, so this still costs no credential:
 
 ```ts no-check
-import { anthropic } from "@alexkroman1/aai/llm";
-import { deepgram } from "@alexkroman1/aai/stt";
-import { cartesia } from "@alexkroman1/aai/tts";
+import { anthropicLlm } from "@alexkroman1/aai/llm";
+import { deepgramStt } from "@alexkroman1/aai/stt";
+import { cartesiaTts } from "@alexkroman1/aai/tts";
 
 const server = createHostServer({
   defaults: {
-    stt: deepgram({ model: "nova-3" }),
-    llm: anthropic({ model: "claude-sonnet-4-5" }),
-    tts: cartesia({ voice: "…" }),
+    stt: deepgramStt({ model: "nova-3" }),
+    llm: anthropicLlm({ model: "claude-sonnet-4-5" }),
+    tts: cartesiaTts({ voice: "…" }),
     idleTimeoutMs: 120_000,
   },
 });

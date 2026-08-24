@@ -158,10 +158,27 @@ function checkInventory(pkg, table) {
   }
 }
 
-/** A supported epoch is a promise, and a fixture is the evidence for it. */
+/**
+ * A supported epoch is a promise, and a fixture is the evidence for it.
+ *
+ * The CURRENT epoch is exempt, and the distinction is the whole point: an
+ * example proves that source written against an OLD epoch still compiles, which
+ * is a claim only a superseded epoch can make. For the current one the claim is
+ * "today's API compiles", which `pnpm typecheck` proves over the real source and
+ * a frozen copy restates.
+ *
+ * It used to be required from an epoch's first commit, on the argument that the
+ * value should not wait for a bump. What that bought at v1 was one file per
+ * capability asserting that the shape in the report is the shape in the tree —
+ * and what it cost was visible at the reset: 129 frozen examples, none of them
+ * evidence for any promise, because nothing had shipped for them to be
+ * compatible WITH. `bump --retain` scaffolds the retained epoch's example at the
+ * moment it becomes a promise, which is when there is something to write.
+ */
 function checkFixtures(pkg, table) {
-  for (const [capability, { supported = [] }] of Object.entries(table)) {
+  for (const [capability, { supported = [], current }] of Object.entries(table)) {
     for (const version of supported) {
+      if (version === current) continue;
       const path = fixturePath(pkg, capability, version);
       if (!existsSync(path)) {
         fail(

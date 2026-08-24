@@ -2,7 +2,7 @@
 /**
  * Cartesia TTS opener (host-only).
  *
- * The user-facing descriptor factory (`cartesia(...)`) lives in
+ * The user-facing descriptor factory (`cartesiaTts(...)`) lives in
  * `sdk/providers/tts/cartesia.ts`. This module is the host-side
  * counterpart: it takes the descriptor options + an API key and
  * returns a {@link TtsOpener} that the pipeline session drives.
@@ -24,13 +24,13 @@ import { randomUUID } from "node:crypto";
 import {
   CARTESIA_API_KEY_ENV,
   makeTtsError,
-  resolveCartesiaSettings,
+  resolveCartesiaTtsSettings,
   type TtsEvents,
   type TtsOpener,
   type TtsOpenOptions,
   type TtsSession,
 } from "@alexkroman1/aai/host-internal";
-import type { CartesiaOptions } from "@alexkroman1/aai/tts";
+import type { CartesiaTtsOptions } from "@alexkroman1/aai/tts";
 import { errorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
 import { Cartesia } from "@cartesia/cartesia-js";
 import type { TTSWSContext } from "@cartesia/cartesia-js/resources/tts/ws";
@@ -56,7 +56,7 @@ export interface CartesiaSession extends TtsSession {
 }
 
 /** Build a {@link TtsOpener} from resolved Cartesia descriptor options. */
-export function openCartesia(opts: CartesiaOptions): TtsOpener {
+export function openCartesia(opts: CartesiaTtsOptions): TtsOpener {
   return {
     name: "cartesia",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
@@ -67,7 +67,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const sampleRate: Pcm16Rate = assertPcm16Rate(openOpts.sampleRate, "Cartesia TTS", (msg) =>
         makeTtsError("tts_connect_failed", msg),
       );
-      const { model, language, voice } = resolveCartesiaSettings(opts);
+      const { model, language, voice } = resolveCartesiaTtsSettings(opts);
 
       const client = new Cartesia({ apiKey });
 

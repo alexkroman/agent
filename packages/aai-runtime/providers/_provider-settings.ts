@@ -30,11 +30,11 @@ import {
   RIME_KIND,
   resolveAssemblyAISttSettings,
   resolveAssemblyAITtsSettings,
-  resolveCartesiaSettings,
-  resolveDeepgramSettings,
-  resolveElevenLabsSettings,
-  resolveRimeSettings,
-  resolveSonioxSettings,
+  resolveCartesiaTtsSettings,
+  resolveDeepgramSttSettings,
+  resolveElevenLabsSttSettings,
+  resolveRimeTtsSettings,
+  resolveSonioxSttSettings,
   SONIOX_KIND,
 } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
@@ -42,15 +42,15 @@ import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import type { S2sProvider } from "@alexkroman1/aai/s2s";
 import type {
   AssemblyAISttOptions,
-  DeepgramOptions,
-  ElevenLabsOptions,
-  SonioxOptions,
+  DeepgramSttOptions,
+  ElevenLabsSttOptions,
+  SonioxSttOptions,
   SttProvider,
 } from "@alexkroman1/aai/stt";
 import type {
   AssemblyAITtsOptions,
-  CartesiaOptions,
-  RimeOptions,
+  CartesiaTtsOptions,
+  RimeTtsOptions,
   TtsProvider,
 } from "@alexkroman1/aai/tts";
 
@@ -70,15 +70,15 @@ type SettingsFor = (options: ProviderSettings) => ProviderSettings;
  */
 const STT_SETTINGS: Record<string, SettingsFor> = {
   [ASSEMBLYAI_STT_KIND]: (o) => resolveAssemblyAISttSettings(o as AssemblyAISttOptions),
-  [DEEPGRAM_KIND]: (o) => resolveDeepgramSettings(o as DeepgramOptions),
-  [ELEVENLABS_KIND]: (o) => resolveElevenLabsSettings(o as ElevenLabsOptions),
-  [SONIOX_KIND]: (o) => resolveSonioxSettings(o as SonioxOptions),
+  [DEEPGRAM_KIND]: (o) => resolveDeepgramSttSettings(o as DeepgramSttOptions),
+  [ELEVENLABS_KIND]: (o) => resolveElevenLabsSttSettings(o as ElevenLabsSttOptions),
+  [SONIOX_KIND]: (o) => resolveSonioxSttSettings(o as SonioxSttOptions),
 };
 
 const TTS_SETTINGS: Record<string, SettingsFor> = {
   [ASSEMBLYAI_TTS_KIND]: (o) => resolveAssemblyAITtsSettings(o as AssemblyAITtsOptions),
-  [CARTESIA_KIND]: (o) => resolveCartesiaSettings(o as CartesiaOptions),
-  [RIME_KIND]: (o) => resolveRimeSettings(o as RimeOptions),
+  [CARTESIA_KIND]: (o) => resolveCartesiaTtsSettings(o as CartesiaTtsOptions),
+  [RIME_KIND]: (o) => resolveRimeTtsSettings(o as RimeTtsOptions),
 };
 
 /**

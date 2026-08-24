@@ -166,16 +166,16 @@ the AssemblyAI default. `llm` also takes a bare model id, so
 
 | Subpath | Factories |
 | --- | --- |
-| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgram`, `elevenLabsStt`, `soniox` |
-| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway` |
-| `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesia`, `rime` |
+| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt` |
+| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropicLlm`, `openaiLlm`, `googleLlm`, `mistralLlm`, `xaiLlm`, `groqLlm`, `openrouterLlm`, `gatewayLlm` |
+| `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesiaTts`, `rimeTts` |
 
 Factories return pure descriptors — serializable data, not SDK clients — so
 no provider SDK and no secret ever enters the agent bundle; credentials
 resolve server-side from the agent's own env.
 
 Speech-to-speech is an explicit opt-in, never something you reach by
-omission: `s2s: assemblyAIS2s()`, or `openaiRealtime()` from
+omission: `s2s: assemblyAIS2s()`, or `openaiS2s()` from
 `@alexkroman1/aai/s2s`. There the transcription, the model loop and the
 voice all run service-side over one socket.
 

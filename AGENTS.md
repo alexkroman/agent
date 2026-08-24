@@ -485,7 +485,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   `kebabToCamelMap` is DERIVED from `kebabToPascalMap` when absent, so
   declaring `openai: OpenAI` for the type names silently turns the expected
   factory name into `openAI`. The identity entries in `kebabToCamelMap`
-  (`openai: openai`, `openrouter`, `elevenlabs`) look redundant and are what
+  (`openai: openai`, `openrouterLlm`, `elevenlabs`) look redundant and are what
   keep `openai()` right.
 
   The version is pinned **exactly** (`1.0.0-beta.4`, the registry's `latest`)

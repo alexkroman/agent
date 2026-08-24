@@ -268,7 +268,10 @@ describe("sessionSlot", () => {
 
       test("does NOT run when the mutator throws, and nothing is stored", () => {
         const ctx = createToolContext();
-        const after = vi.fn();
+        // Typed rather than a bare `vi.fn()`: an untyped mock returns `any`, and
+        // `RejectThenable<any>` resolves to the misuse message — the hook guard
+        // cannot tell `any` from a promise, which is the correct side to err on.
+        const after = vi.fn<(draft: { entries: string[] }) => void>();
         const slot = sessionSlot("hooked", (): { entries: string[] } => ({ entries: [] }), {
           after,
         });
@@ -521,6 +524,10 @@ describe("sessionSlot", () => {
       // the line. The module holding this is loaded by `aai dev`, by the build,
       // and by the agent's own spec.
       expect(() =>
+        // @ts-expect-error - `RejectThenable` refuses this at COMPILE time now,
+        // which is the point; the runtime guard stays because a generic wrapper
+        // (retail's `retailTool`) and any JS caller still reach this path, and
+        // this test is what keeps that guard covered.
         cartSlot.updateTool({
           description: "Awaits",
           execute: async (_args, cart) => {
@@ -534,6 +541,9 @@ describe("sessionSlot", () => {
     test("refuses a sync body that RETURNS a promise, on the call", () => {
       // The half the declaration check cannot see: this is an ordinary
       // function, so only the returned value gives it away.
+      // @ts-expect-error - refused at compile time by `RejectThenable`; the
+      // runtime check below is what a JS caller or a generic wrapper still
+      // hits, so it stays covered.
       const bad = cartSlot.updateTool({
         description: "Returns a promise",
         execute: (_args, cart) => {

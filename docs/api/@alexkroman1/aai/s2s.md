@@ -15,12 +15,12 @@ here opens a socket or reads a credential.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { openaiRealtime } from "@alexkroman1/aai/s2s";
+import { openaiS2s } from "@alexkroman1/aai/s2s";
 
 export default agent({
   name: "Concierge",
   systemPrompt: "You are a hotel concierge. Be brief.",
-  s2s: openaiRealtime({ model: "gpt-realtime", voice: "marin" }),
+  s2s: openaiS2s({ model: "gpt-realtime", voice: "marin" }),
 });
 ```
 
@@ -31,7 +31,7 @@ because it is the service that synthesizes.
 **[assemblyAIS2s](index.md#assemblyais2s) is also on the root barrel**, which is the one
 exception to "provider factories live on subpaths". S2S became opt-in when
 the pipeline became the default mode, so the descriptor that opts in sits
-beside `agent()` where an author meets it. `openaiRealtime` is on this
+beside `agent()` where an author meets it. `openaiS2s` is on this
 subpath alone, like every other vendor.
 
 **Credentials are never passed here.** Each factory's vendor names the env
@@ -53,10 +53,10 @@ one interface with four reference pages was three too many.
 
 ## Functions
 
-### openaiRealtime()
+### openaiS2s()
 
 ```ts
-function openaiRealtime(opts?: OpenaiRealtimeOptions): S2sProvider;
+function openaiS2s(opts?: OpenAIS2sOptions): S2sProvider;
 ```
 
 Build an OpenAI Realtime S2S descriptor — the explicit opt-in to
@@ -67,7 +67,7 @@ host-side from the agent's env (`OPENAI_API_KEY`).
 
 ##### opts?
 
-[`OpenaiRealtimeOptions`](#openairealtimeoptions)
+[`OpenAIS2sOptions`](#openais2soptions)
 
 #### Returns
 
@@ -77,12 +77,12 @@ host-side from the agent's env (`OPENAI_API_KEY`).
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { openaiRealtime } from "@alexkroman1/aai/s2s";
+import { openaiS2s } from "@alexkroman1/aai/s2s";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  s2s: openaiRealtime({ model: "gpt-realtime", voice: "marin" }),
+  s2s: openaiS2s({ model: "gpt-realtime", voice: "marin" }),
 });
 ```
 
@@ -90,11 +90,28 @@ Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline.
 
 ## Interfaces
 
-### OpenaiRealtimeOptions
+### OpenAIS2sOptions
 
-Options for [openaiRealtime](#openairealtime).
+Options for [openaiS2s](#openais2s).
+
+#### Extends
+
+- [`ProviderCredentialOptions`](index.md#providercredentialoptions)
 
 #### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ProviderCredentialOptions`](index.md#providercredentialoptions).[`apiKeyEnv`](index.md#apikeyenv-1)
 
 ##### model?
 
@@ -115,17 +132,17 @@ Override the WebSocket base URL (testing/proxy).
 ##### voice?
 
 ```ts
-optional voice?: OpenaiRealtimeVoice;
+optional voice?: OpenAIS2sVoice;
 ```
 
 TTS voice. Default applied by the host (currently `"alloy"`).
 
 ## Type Aliases
 
-### OpenaiRealtimeVoice
+### OpenAIS2sVoice
 
 ```ts
-type OpenaiRealtimeVoice = 
+type OpenAIS2sVoice = 
   | "alloy"
   | "ash"
   | "ballad"
@@ -151,6 +168,12 @@ Re-exports [assemblyAIS2s](index.md#assemblyais2s)
 ### AssemblyAIS2sOptions
 
 Re-exports [AssemblyAIS2sOptions](index.md#assemblyais2soptions)
+
+***
+
+### ProviderCredentialOptions
+
+Re-exports [ProviderCredentialOptions](index.md#providercredentialoptions)
 
 ***
 

@@ -41,6 +41,13 @@ export interface ChannelDescriptor<Kind extends string, Options> {
 }
 
 // @public
+export interface ChannelKind {
+    readonly advice: (options: Record<string, unknown>, detail: string) => string;
+    readonly kind: string;
+    readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
+}
+
+// @public
 export interface ChannelMessage {
     readonly heading?: string;
     readonly sections?: readonly ChannelSection[];
@@ -74,6 +81,12 @@ export function isSlackWebhookUrl(value: string): boolean;
 export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
+export function registerChannelKind(kind: ChannelKind): void;
+
+// @public
+export function registeredChannelKinds(): readonly string[];
+
+// @public
 export function renderChannelPayload(channel: Channel, message: ChannelMessage): ChannelPayload;
 
 // @public
@@ -86,7 +99,7 @@ export function renderSlackPlainText(message: ChannelMessage): string;
 export function sendToChannel(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
-export function slack(options: SlackChannelOptions): SlackChannel;
+export const SLACK_CHANNEL: ChannelKind;
 
 // @public
 export const SLACK_CHANNEL_KIND = "slack";
@@ -96,6 +109,9 @@ export type SlackChannel = Channel & {
     readonly kind: typeof SLACK_CHANNEL_KIND;
     readonly options: SlackChannelOptions & Record<string, unknown>;
 };
+
+// @public
+export function slackChannel(options: SlackChannelOptions): SlackChannel;
 
 // @public
 export function slackChannelAdvice(options: SlackChannelOptions, detail: string): string;
