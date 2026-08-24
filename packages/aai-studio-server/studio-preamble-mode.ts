@@ -135,7 +135,7 @@ how can I help?"
 
 [User] Use Deepgram for the speech-to-text
 [Assistant] *Calls edit_file to swap only the stt stage to
-deepgram({ model: "nova-3" }), leaving llm and tts on AssemblyAI.* *Runs
+deepgramStt({ model: "nova-3" }), leaving llm and tts on AssemblyAI.* *Runs
 test_agent.* Notes that DEEPGRAM_API_KEY must be added in the Secrets
 panel after publishing, since only ASSEMBLYAI_API_KEY is seeded
 automatically.

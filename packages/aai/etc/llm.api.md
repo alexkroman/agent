@@ -4,8 +4,12 @@
 
 ```ts
 
+// @public (undocumented)
+export function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
+
 // @public
-export function anthropic(opts: ModelOptions): LlmProvider;
+export interface AnthropicLlmOptions extends ModelOptions {
+}
 
 // @public
 export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
@@ -23,8 +27,7 @@ export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-
 export function assemblyAILlm(opts?: AssemblyAILlmOptions): LlmProvider;
 
 // @public
-export interface AssemblyAILlmOptions {
-    apiKeyEnv?: string;
+export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
     gatewayUrl?: string;
     model?: AssemblyAIGatewayModel | (string & Record<never, never>);
     reasoningEffort?: AssemblyAIReasoningEffort;
@@ -34,36 +37,65 @@ export interface AssemblyAILlmOptions {
 // @public
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
-// @public
-export function gateway(opts: ModelOptions): LlmProvider;
+// @public (undocumented)
+export function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
 
 // @public
-export function google(opts: ModelOptions): LlmProvider;
+export interface GatewayLlmOptions extends ModelOptions {
+}
+
+// @public (undocumented)
+export function googleLlm(opts: GoogleLlmOptions): LlmProvider;
 
 // @public
-export function groq(opts: ModelOptions): LlmProvider;
+export interface GoogleLlmOptions extends ModelOptions {
+}
+
+// @public (undocumented)
+export function groqLlm(opts: GroqLlmOptions): LlmProvider;
+
+// @public
+export interface GroqLlmOptions extends ModelOptions {
+}
 
 // @public
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
 
-// @public
-export function mistral(opts: ModelOptions): LlmProvider;
+// @public (undocumented)
+export function mistralLlm(opts: MistralLlmOptions): LlmProvider;
 
 // @public
-export interface ModelOptions {
-    model: string;
+export interface MistralLlmOptions extends ModelOptions {
 }
 
 // @public
-export function openai(opts: ModelOptions): LlmProvider;
+export interface ModelOptions extends ProviderCredentialOptions {
+    model: string;
+}
+
+// @public (undocumented)
+export function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
 
 // @public
-export function openrouter(opts: ModelOptions): LlmProvider;
+export interface OpenAILlmOptions extends ModelOptions {
+}
 
 // @public
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+// @public (undocumented)
+export function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
+
+// @public
+export interface OpenRouterLlmOptions extends ModelOptions {
+}
+
+// @public
+export interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -73,8 +105,12 @@ interface ProviderDescriptor<Kind extends string, Options> {
     readonly options: Options;
 }
 
+// @public (undocumented)
+export function xaiLlm(opts: XaiLlmOptions): LlmProvider;
+
 // @public
-export function xai(opts: ModelOptions): LlmProvider;
+export interface XaiLlmOptions extends ModelOptions {
+}
 
 // (No @packageDocumentation comment for this package)
 

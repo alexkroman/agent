@@ -25,15 +25,25 @@ export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { groq } from "@alexkroman1/aai/llm";
+ * import { groqLlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   llm: groq({ model: "llama-3.3-70b-versatile" }),
+ *   llm: groqLlm({ model: "llama-3.3-70b-versatile" }),
  * });
  * ```
  */
-export function groq(opts: ModelOptions): LlmProvider {
+/**
+ * Options for {@link groqLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface GroqLlmOptions extends ModelOptions {}
+
+export function groqLlm(opts: GroqLlmOptions): LlmProvider {
   return { kind: GROQ_KIND, options: { ...opts } };
 }

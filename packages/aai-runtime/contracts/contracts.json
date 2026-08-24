@@ -15,8 +15,8 @@
     "dropped": {}
   },
   "providers": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "runtime": {
@@ -25,13 +25,13 @@
     "dropped": {}
   },
   "server": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "session": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "session-state": {
@@ -60,8 +60,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   }
 }

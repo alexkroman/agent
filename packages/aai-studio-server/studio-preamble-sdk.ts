@@ -54,7 +54,7 @@ export const STUDIO_SDK_GUIDANCE = `## Data Persistence and Storage
   add provider imports just to set a voice.
   To change a stage, declare just that field — every stage you leave unset
   stays on the AssemblyAI default:
-    agent({ name: "…", tts: cartesia({ voice: "…" }) });
+    agent({ name: "…", tts: cartesiaTts({ voice: "…" }) });
   The gateway LLM model works the same way — llm accepts the model id as a
   plain string:
     agent({ name: "…", llm: "claude-sonnet-4-6" });

@@ -14,7 +14,7 @@
 
 import type { LlmProvider } from "../../providers.ts";
 import { assemblyAILlm } from "./assemblyai.ts";
-import { gateway } from "./gateway.ts";
+import { gatewayLlm } from "./gateway.ts";
 
 /**
  * One descriptor per model id, so repeated desugaring of the same string
@@ -29,7 +29,7 @@ export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider
   if (typeof llm !== "string") return llm;
   let descriptor = byModelId.get(llm);
   if (!descriptor) {
-    descriptor = llm.includes("/") ? gateway({ model: llm }) : assemblyAILlm({ model: llm });
+    descriptor = llm.includes("/") ? gatewayLlm({ model: llm }) : assemblyAILlm({ model: llm });
     byModelId.set(llm, descriptor);
   }
   return descriptor;

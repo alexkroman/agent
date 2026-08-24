@@ -7,7 +7,7 @@
  * resolver turns it into an openable `SttOpener` during `createRuntime`.
  */
 
-import type { SttProvider } from "../../providers.ts";
+import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const ELEVENLABS_KIND = "elevenlabs" as const;
@@ -16,7 +16,7 @@ export const ELEVENLABS_KIND = "elevenlabs" as const;
 export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
 
 /** Options for {@link elevenLabsStt}. */
-export interface ElevenLabsOptions {
+export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
   /**
    * Streaming speech model. Defaults to `"scribe_v2_realtime"`. Any
    * string is forwarded to the SDK unchanged so users can opt in to
@@ -29,7 +29,7 @@ export interface ElevenLabsOptions {
    *
    * **Unset means AUTO-DETECT, not English.** The field is omitted from the
    * request entirely, so ElevenLabs decides — which is the same default
-   * `assemblyAIStt` and `soniox` have, and the opposite of `deepgram`, whose
+   * `assemblyAIStt` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
    * unset `language` is `"en"`. Pass a code for a line you know is
    * monolingual.
    */
@@ -58,7 +58,7 @@ export interface ElevenLabsOptions {
  * Unset, `language` is omitted from the request and Scribe
  * auto-detects — which is not the same as English.
  */
-export function elevenLabsStt(opts: ElevenLabsOptions = {}): SttProvider {
+export function elevenLabsStt(opts: ElevenLabsSttOptions = {}): SttProvider {
   return { kind: ELEVENLABS_KIND, options: { ...opts } };
 }
 
@@ -70,7 +70,7 @@ export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
  * options with every host-side default filled in. Shared by the opener and
  * the runtime's "Session mode resolved" log.
  */
-export function resolveElevenLabsSettings(opts: ElevenLabsOptions): {
+export function resolveElevenLabsSttSettings(opts: ElevenLabsSttOptions): {
   model: string;
   languageCode?: string;
 } {

@@ -109,10 +109,10 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/workflow-api` | `sdk/workflow-api-barrel.ts` → 4 modules | The CLIENT of everything a deployed agent answers — the surface for a caller OUTSIDE the agent (a page, a script, a cron job). **`createAgentClient` is the one to reach for**: one object over `config()` and every workflow route. Zod-FREE, because a workflow app's page bundles it — hence `sdk/client-config-path.ts`. **The SERVER's half left for `/internal`** (`clampWorkflowWait`, `MAX_WORKFLOW_WAIT_MS`, `TERMINAL_WORKFLOW_STATUSES`, `WORKFLOW_API_PREFIX`) — nothing a caller writes. **A lone in-repo importer is NOT the test**: six more names have only `aai-runtime` too and stay, being the parameter and member types of `WorkflowClient`/`WorkflowDef`, so moving them fails the docs build. The barrel's doc argues it — read that before trimming further. `aai-ui`'s guide owns the HTTP surface and the iterators over it; each module's doc carries why |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts. (The subpath name is historical — the old `parseManifest()`/`Manifest` layer was deleted; renaming the published subpath wasn't worth the break.) |
-| `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + options (`assemblyAIStt`, `deepgram`, `elevenLabsStt`, `soniox`) |
-| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`, `assemblyAILlm`); eight of the nine take one shared `ModelOptions` rather than eight byte-identical `{ model: string }` interfaces |
-| `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + options (`cartesia`, `rime`, `assemblyAITts`), and the voice catalog |
-| `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + their options (`openaiRealtime`; the root re-exports `assemblyAIS2s`) |
+| `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + options (`assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt`) |
+| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropicLlm`, `openaiLlm`, `googleLlm`, `mistralLlm`, `xaiLlm`, `groqLlm`, `openrouterLlm`, `gatewayLlm`, `assemblyAILlm`); eight of the nine take one shared `ModelOptions` rather than eight byte-identical `{ model: string }` interfaces |
+| `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + options (`cartesiaTts`, `rimeTts`, `assemblyAITts`), and the voice catalog |
+| `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + their options (`openaiS2s`; the root re-exports `assemblyAIS2s`) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
 | `@alexkroman1/aai/ffmpeg` | `host/ffmpeg.ts` (direct) | ffmpeg from a step — `runFfmpeg`/`probeMedia`/`transcodeToWav`; why, in `aai-guest/CLAUDE.md`. **Body-use only** — see the row below |
 | `@alexkroman1/aai/step-files` | `host/step-files.ts` (direct) | The upload ↔ local-FILE plumbing an ffmpeg step spends most of its lines on (ffmpeg needs a real path: a pipe cannot seek an m4a's trailing `moov` atom, and piped output is capped at 64 MiB). `withTempDir` (a temp directory whose lifetime is a lexical scope), `readUploadToFile` (windowed `readUpload` → a path, size defaulted from `uploadInfo`), `writeUploadFromFile` (a path → `writeUpload`, streamed) and `STEP_FILE_WINDOW_BYTES`. **A subpath of its own, not `/step`**: `/step` reaches 28 modules and zero `node:` builtins and every `workflows/*.ts` holds it at module scope, so `node:fs` there would ride into the workflow VM bundle and every run would die at replay with `ReferenceError: require is not defined`. This module reaches exactly three; `host/step-files.import-graph.test.ts` pins both halves. `writeUploadFromFile` absorbs the COMPOSITION rather than exporting a `fileChunks` generator, so the reused-read-buffer aliasing trap two templates each warned about in prose has one home and one spec (A/B-verified: deleting the `.slice()` fails the round trip). `readUploadToFile` advances by what was actually READ and stops short, where both templates strode by the window size and would leave a hole mid-file on a streamed upload |
@@ -165,7 +165,7 @@ present in the `agent()` config:
   against the one that needs a deterministic spec.
 
 - **S2S mode** (explicit opt-in — `s2s: assemblyAIS2s()` from the main
-  export, or `openaiRealtime()` from `@alexkroman1/aai/s2s`) uses
+  export, or `openaiS2s()` from `@alexkroman1/aai/s2s`) uses
   `createS2sTransport()` in `packages/aai/host/transports/s2s-transport.ts`.
   The host opens a single WebSocket to AssemblyAI's speech-to-speech
   service; STT, the LLM loop, and TTS all run service-side and audio/events
@@ -278,7 +278,7 @@ The default injection runs at every mode-derivation site — `toAgentConfig`
 provider resolution — before `assertProviderTriple`.
 Partial provider configs are FILLED, not rejected: `defaultProviders`
 supplies the AssemblyAI default for each unset stage of `stt`/`llm`/`tts`
-(when `s2s` is unset), so `agent({ llm: anthropic(...) })` means "the
+(when `s2s` is unset), so `agent({ llm: anthropicLlm(...) })` means "the
 default pipeline with that LLM". The compile-time union (`AgentParams` in
 `sdk/define.ts`) matches: any subset of the triple is legal, while `s2s`
 combined with a pipeline provider or a pipeline-only tuning field still
@@ -316,11 +316,11 @@ Reference providers shipped today:
 
 - **STT**: one of
   - `assemblyAIStt({ model: "universal-3-5-pro" })` — `ASSEMBLYAI_API_KEY`
-  - `deepgram({ model: "nova-3" })` — `DEEPGRAM_API_KEY`
+  - `deepgramStt({ model: "nova-3" })` — `DEEPGRAM_API_KEY`
   - `elevenLabsStt({ model: "scribe_v2_realtime" })` — `ELEVENLABS_API_KEY`;
     stage-suffixed like `assemblyAIStt`, so the bare name is free for the TTS
     stage ElevenLabs is better known for
-  - `soniox({ model: "stt-rt-v3" })` — `SONIOX_API_KEY`
+  - `sonioxStt({ model: "stt-rt-v3" })` — `SONIOX_API_KEY`
 
   **Never inherit the `assemblyai` SDK's connect deadline.** Its default
   `connectTimeout` is 1000 ms and covers far more than a socket open, so a
@@ -342,14 +342,14 @@ Reference providers shipped today:
 - **LLM**: one of the typed factories below — each returns a pure
   descriptor; the `@ai-sdk/*` package is only imported by the host-side
   resolver (`host/providers/resolve.ts`), never by the agent bundle:
-  - `anthropic({ model })` — `ANTHROPIC_API_KEY`
-  - `openai({ model })` — `OPENAI_API_KEY`
-  - `google({ model })` — `GOOGLE_GENERATIVE_AI_API_KEY`
-  - `mistral({ model })` — `MISTRAL_API_KEY`
-  - `xai({ model })` — `XAI_API_KEY`
-  - `groq({ model })` — `GROQ_API_KEY`
-  - `openrouter({ model })` — `OPENROUTER_API_KEY`; and
-  - `gateway({ model })` — `AI_GATEWAY_API_KEY`. Both are AGGREGATORS
+  - `anthropicLlm({ model })` — `ANTHROPIC_API_KEY`
+  - `openaiLlm({ model })` — `OPENAI_API_KEY`
+  - `googleLlm({ model })` — `GOOGLE_GENERATIVE_AI_API_KEY`
+  - `mistralLlm({ model })` — `MISTRAL_API_KEY`
+  - `xaiLlm({ model })` — `XAI_API_KEY`
+  - `groqLlm({ model })` — `GROQ_API_KEY`
+  - `openrouterLlm({ model })` — `OPENROUTER_API_KEY`; and
+  - `gatewayLlm({ model })` — `AI_GATEWAY_API_KEY`. Both are AGGREGATORS
     addressed as `"creator/model"`, and neither needs an extra `@ai-sdk/*`
     dependency (`@ai-sdk/openai`'s `.chat()` client repointed, and
     `createGateway` from `ai`). Each module's doc carries the rest.
@@ -424,8 +424,8 @@ Reference providers shipped today:
     default has neither paired latency numbers nor a quality run, and neither
     did terra. Treat it as unverified on both axes.
 - **TTS**: one of
-  - `cartesia({ voice })` — `CARTESIA_API_KEY`
-  - `rime({ voice })` — `RIME_API_KEY`
+  - `cartesiaTts({ voice })` — `CARTESIA_API_KEY`
+  - `rimeTts({ voice })` — `RIME_API_KEY`
   - `assemblyAITts({ voice, language? })` — `ASSEMBLYAI_API_KEY`; AssemblyAI's
     streaming TTS over `wss://streaming-tts.assemblyai.com/v1/ws/`. Sharing one
     key with STT and the gateway means an all-AssemblyAI pipeline needs exactly
@@ -1248,7 +1248,7 @@ defaults that affect agent behavior:
 | `interruptionMinDurationMs` | 500 (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`) | `constants.ts` | Pipeline only: sustained speech (ms since the utterance's first partial) required before an interim-triggered barge-in fires — LiveKit's `min_interruption_duration` analog. Non-zero by default: room noise and echo of the agent's own voice produce short interim transcripts, and each one used to abandon a reply mid-word. Finals are never gated. 0 disables. |
 | AssemblyAI `min_turn_silence` / `max_turn_silence` | 1600 / 3500 (`DEFAULT_MIN_TURN_SILENCE_MS`, `DEFAULT_MAX_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | **Two knobs, not one, and the pause-tolerance one is the MAX.** The minimum is when the model runs its end-of-turn CHECK (the turn ends only if it READS as complete), so it is the latency floor on every finished utterance; the maximum force-ends regardless of content and is paid only by utterances that never read complete. Both are always sent, because the service defaults them independently and sending only one is how they invert — the bug this pair replaced, where raising the minimum past the unset maximum's 1536 made every ending come from the acoustic fallback that splits utterances. **The evidence lives in `sdk/endpointing-constants.ts`'s module doc** — the 800 and 3000 reverts, the 600-2000 sweep putting the knee at 1600, why a pause histogram is the wrong instrument, and the measured no-ops (`interruption_delay`, `mode`, ~470 ms to first partial being a model floor). Read it before changing either number. Override via `assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })`. |
 | AssemblyAI `voice_focus` / `voice_focus_threshold` | `near-field` / 0.9 (`DEFAULT_VOICE_FOCUS_THRESHOLD`) | `host/providers/stt/assemblyai.ts` | **Both are always sent together; the threshold is above the service's own 0.7.** The interferer this tunes for is background SPEECH, and the symptom reads as a hallucinating model and is not one. **`DEFAULT_VOICE_FOCUS_THRESHOLD`'s doc owns the evidence** — why no VAD setting substitutes (suppression before the model vs. a frame gate after it), the 15 dB SNR tau2-bench measurement behind 0.9, why `far-field` is much worse, and why disabling Voice Focus surfaces as a TURN-TAKING failure rather than a transcription one. What it does not carry is the **`vad_threshold` sweep run in the same harness, which loses in BOTH directions** — why that knob stays unset. 0.6 cut leakage to 15% but collapsed recall to 51% and took key facts *below* baseline (8/12): the caller's quiet spelled letters are what a stricter gate discards. 0.05-0.20 left recall flat at 70-71% (voice focus had saturated it) while leakage rose 19% -> 27%, buying one content-free recovered utterance for five words of traffic report. Override via `assemblyAIStt({ voiceFocus, voiceFocusThreshold })`; the threshold is omitted entirely when voice focus is off. |
-| Deepgram `endpointing` | 1500 (`DEEPGRAM_DEFAULT_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Same role as `min_turn_silence` above — the provider owns end-of-turn; override via `deepgram({ endpointing })`. |
+| Deepgram `endpointing` | 1500 (`DEEPGRAM_DEFAULT_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Same role as `min_turn_silence` above — the provider owns end-of-turn; override via `deepgramStt({ endpointing })`. |
 | `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |
 | `deadAirCoverMs` (dead-air cover) | 5000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream-parts.ts` | Pipeline only, **ON by default**: a turn that sends nothing to TTS for this long gets a short filler, armed as the turn's stream opens and re-armed across every tool call so it covers the pre-first-token gap as well as the chain; `0` disables. **It used to be silently disabled in the shipped default** — the enable was `holdPhrase.length > 0` and `holdPhrase` defaulted to `""`, so one knob turned off two mechanisms and no spec noticed. **Why 5000 rather than 2000 or t=0 is argued on `DEFAULT_DEAD_AIR_COVER_MS`**, and **`DEAD_AIR_COVER_PHRASES` owns the rule that a phrase must be purely declarative**, with the call it derailed. The fillers are emitted `record: false`: they reach TTS and the INTERIM transcript so the caption matches the audio, and never `onDelta`, so they stay out of history, `ctx.messages`, resume and the STT agent-context hint. That flag has a SECOND consumer — the heard cursor (`pipeline-heard.ts`) reads it, so filler moves the heard position (it is audible) and is never truncatable into the record. **The prompt no longer asks for a holding line either** — see `PROMPT_TOOLS`, which records the 15% -> 43% -> 29% measurement that retired it. |
 | `resumeFalseInterruption` | `true` | `pipeline-transport-options.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn. `false` disables. **It is a boolean because the WAIT cannot be an author knob** — it fires when the transcript stream goes quiet with no committed final (the speaking edge's idle watchdog, `DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, 4000, internal), and the rule is stated on `PipelineVoiceTuning.resumeFalseInterruption`. Nothing shorter is safe: this was a `falseInterruptionTimeoutMs: number` defaulting to 2000, measured from roughly the same instant as the STT's `min_turn_silence`, so EVERY genuine barge-in raced its own resume and the resume won often enough to be the common case — each costing a billed LLM turn, putting "the user did not actually say anything" in history directly ahead of the real user turn, and making the caller hear the agent continue the reply they had just interrupted. The floor on the deadline is the STT's endpointing plus final-emission latency, which the transport cannot see, and the ceiling is patience — no useful range to expose, and the old number never governed anything anyway (a probe at `falseInterruptionTimeoutMs: 3` resumed at ~3500ms). A mid-turn cut resumes from the `[interrupted]` history marker only when no cut point is known; otherwise the prompt quotes the estimated last-heard words (`buildTailResumePrompt`) — measured, resuming from the marker instead repeated 60%+ of the words in 10% of consecutive agent utterances. That anchor is the SAME cursor history is truncated with (`pipeline-heard.ts`), so it can never name words the record denies. |

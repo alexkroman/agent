@@ -2,8 +2,9 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "session",
   "epoch": 1,
-  "sha256": "0000291879f8982d9214a3d3e8092088bff89be50934693ced209da6d06760dd",
+  "sha256": "a87ffe3f36302f87a0383ab1758c31d437342ea083f3cbe5357119ad53c100b3",
   "exports": [
+    "SESSION_EVENTS_TOKEN_ENV",
     "SessionCore",
     "SessionEventPage",
     "SessionEventStream",

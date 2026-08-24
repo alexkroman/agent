@@ -18,14 +18,14 @@
 import {
   makeTtsError,
   RIME_API_KEY_ENV,
-  resolveRimeSettings,
+  resolveRimeTtsSettings,
   type TtsEvents,
   type TtsOpener,
   type TtsOpenOptions,
   type TtsSession,
   WS_OPEN,
 } from "@alexkroman1/aai/host-internal";
-import type { RimeOptions } from "@alexkroman1/aai/tts";
+import type { RimeTtsOptions } from "@alexkroman1/aai/tts";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
@@ -98,7 +98,7 @@ function handleRimeMessage(
   }
 }
 
-export function openRime(opts: RimeOptions): TtsOpener {
+export function openRime(opts: RimeTtsOptions): TtsOpener {
   return {
     name: "rime",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
@@ -108,7 +108,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
       const connectError = (msg: string) => makeTtsError("tts_connect_failed", msg);
 
       const sampleRate = assertPcm16Rate(openOpts.sampleRate, "Rime TTS", connectError);
-      const { model, language: lang, voice } = resolveRimeSettings(opts);
+      const { model, language: lang, voice } = resolveRimeTtsSettings(opts);
 
       const url = `wss://users-ws.rime.ai/ws2?speaker=${encodeURIComponent(voice)}&modelId=${encodeURIComponent(model)}&audioFormat=pcm&samplingRate=${sampleRate}&lang=${encodeURIComponent(lang)}`;
 

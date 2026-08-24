@@ -17,8 +17,8 @@
 export {
   type AssemblyAIS2sOptions,
   assemblyAIS2s,
-  type OpenaiRealtimeOptions,
-  type OpenaiRealtimeVoice,
-  openaiRealtime,
+  type OpenAIS2sOptions,
+  type OpenAIS2sVoice,
+  openaiS2s,
   type S2sProvider,
 } from "../../sdk/providers/s2s-barrel.ts";

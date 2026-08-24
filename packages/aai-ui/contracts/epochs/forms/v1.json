@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "forms",
   "epoch": 1,
-  "sha256": "06aeddd04dd4759c395a9eae36384606ffd1a231101f6313126c7a3a7bcbcdf2",
+  "sha256": "6c9f982fa5caeb593346f73e689f7b6b453fc600dd2f302281c5ced7cc6d0cb7",
   "exports": [
     "CheckboxField",
     "Field",

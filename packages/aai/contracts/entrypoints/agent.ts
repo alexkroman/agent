@@ -18,6 +18,13 @@
  * name left the hash byte-identical and shipped as a `patch` that broke a build.
  * Contracting the union of names makes that a classification instead.
  *
+ * `ProviderCredentialOptions` is here for the same reason as
+ * `ProviderDescriptor`: every provider options interface on all four stages
+ * extends it, so no one stage owns it and the root is the narrowest place it
+ * fits. It is what lets a descriptor repoint its own credential — the field the
+ * host has always read off ANY descriptor generically, and which until now only
+ * the four AssemblyAI options types could spell.
+ *
  * `ProviderDescriptor` is here because it is the only one of the five
  * descriptor types with no stage of its own: `AgentDef` names all four stages,
  * and the base they narrow used to be re-exported from every stage subpath —
@@ -45,6 +52,7 @@ export {
   type BuiltinTool,
   type PipelineAgentParams,
   type PipelineVoiceTuning,
+  type ProviderCredentialOptions,
   type ProviderDescriptor,
   type S2sAgentParams,
   type SessionEventContext,

@@ -22,6 +22,7 @@ import {
   SESSION_SURFACE_PATHS,
   SOURCE_PATHSPECS,
   TMP_RULE_PATHSPECS,
+  TOOL_CONTEXT_PATHS,
 } from "./guard-invariants-scopes.mjs";
 
 /** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
@@ -128,5 +129,35 @@ export const STATE_RULES = [
       "    `SessionEventContext` draws by carrying no `send`.\n\n" +
       "Minting an event to dodge this rule is worse than the callback: an event is\n" +
       "AUTHOR-VISIBLE (`agent({ events })`) and retained, so it is a promise.",
+  },
+  {
+    id: 24,
+    key: "rule24_toolContextField",
+    label: "field on ToolContext (the capability bag grows)",
+    re: `${AT_LINE_START}${IDENT}${DECLARES}`,
+    paths: TOOL_CONTEXT_PATHS,
+    skipComments: true,
+    samples: {
+      matches: ["  db: Db;", "  send(event: string, data: unknown): void;"],
+      ignores: ["   * `ctx.db` is the database.", "export type ToolContext = {"],
+    },
+    remedy:
+      "`ToolContext` is the one type every tool body reads, and it has grown a\n" +
+      "field per runtime capability — `db`, then `generate`, then `workflows`.\n" +
+      "Its own module doc says so. That growth is the single largest source of\n" +
+      "SIGNATURE-ONLY contract churn in this repo: `aai:tool` ran NINE\n" +
+      "consecutive epochs (v3-v11) at a constant 17 exports, every one a forced\n" +
+      "classification for a type the capability does not name.\n\n" +
+      "A rollup follows every type a signature reaches, so the shape of\n" +
+      "whatever you add lands in the tool-authoring contract AND in\n" +
+      "`/testing`'s — moving the name to another capability does not change\n" +
+      "that, because API Extractor rolls up FORGOTTEN exports (`Db` is in\n" +
+      "`etc/testing.api.md` today under a bare `type Db = {`).\n\n" +
+      "So a new capability is a DESIGN decision, not a field: give it its own\n" +
+      "capability root under `contracts/entrypoints/`, and reach it through an\n" +
+      "existing field rather than a new one. This is the same rule as 16 for\n" +
+      "session callbacks, one layer up.\n\n" +
+      "The nine baselined occurrences are the fields that exist. Lowering the\n" +
+      "budget means one came OUT, which is the direction this moves.",
   },
 ];

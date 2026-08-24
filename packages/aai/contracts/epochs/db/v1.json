@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "db",
+  "epoch": 1,
+  "sha256": "af2fa0d802f178c3bcb49a0bf1b57745753808f5c64ec43e266c1a5c061f5108",
+  "exports": ["Db"]
+}

@@ -8,25 +8,29 @@
 export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
-export interface AssemblyAIS2sOptions {
-    apiKeyEnv?: string;
+export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
     keyterms?: readonly string[];
     languages?: readonly string[];
     voice?: string;
 }
 
 // @public
-export function openaiRealtime(opts?: OpenaiRealtimeOptions): S2sProvider;
+export function openaiS2s(opts?: OpenAIS2sOptions): S2sProvider;
 
 // @public
-export interface OpenaiRealtimeOptions {
+export interface OpenAIS2sOptions extends ProviderCredentialOptions {
     model?: string;
     url?: string;
-    voice?: OpenaiRealtimeVoice;
+    voice?: OpenAIS2sVoice;
 }
 
 // @public
-export type OpenaiRealtimeVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse";
+export type OpenAIS2sVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse";
+
+// @public
+export interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {

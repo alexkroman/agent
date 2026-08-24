@@ -28,7 +28,7 @@ test("SttOpener.open returns Promise<SttSession>", () => {
 
 test("SttEvents.partial takes a string plus optional turn metadata", () => {
   // The meta arg is OPTIONAL so that a provider with no end-of-turn signal
-  // (deepgram, elevenlabs, soniox) keeps emitting `emit("partial", text)`
+  // (deepgramStt, elevenlabs, sonioxStt) keeps emitting `emit("partial", text)`
   // unchanged — adding a signal to one provider must not touch the others.
   expectTypeOf<SttEvents["partial"]>().parameters.toEqualTypeOf<
     [text: string, meta?: SttTurnMeta | undefined]

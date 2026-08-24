@@ -1,7 +1,0 @@
-{
-  "kind": "aai-authoring-capability-contract",
-  "capability": "hooks",
-  "epoch": 3,
-  "sha256": "a75b6783ae5bd9ea0b9ff384d42e50eb76333a4365902fc6ca7195162552a9b2",
-  "exports": ["ToolCallInfo", "useAgentState", "useEvent", "useToolCallStart", "useToolResult"]
-}

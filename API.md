@@ -639,79 +639,10 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-const ASSEMBLYAI_TTS_VOICES: {
-    readonly alba: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly anna: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly charles: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly eve: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly george: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jane: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jean: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly mary: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly michael: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly paul: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly vera: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly giovanni: {
-        readonly language: "it";
-        readonly accent: "IT";
-    };
-    readonly lola: {
-        readonly language: "es";
-        readonly accent: "ES";
-    };
-    readonly juergen: {
-        readonly language: "de";
-        readonly accent: "DE";
-    };
-    readonly rafael: {
-        readonly language: "pt";
-        readonly accent: "PT";
-    };
-    readonly estelle: {
-        readonly language: "fr";
-        readonly accent: "FR";
-    };
-};
-
-// @public
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
 
 // @public
-interface AssemblyAISttOptions {
-    apiKeyEnv?: string;
+interface AssemblyAISttOptions extends ProviderCredentialOptions {
     connectTimeoutMs?: number;
     languages?: string[];
     maxConnectRetries?: number;
@@ -731,15 +662,17 @@ type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 export function assemblyAITtsLanguageCodes(): string[];
 
 // @public (undocumented)
-interface AssemblyAITtsOptions {
-    apiKeyEnv?: string;
+interface AssemblyAITtsOptions extends ProviderCredentialOptions {
     host?: string;
     language?: AssemblyAITtsLanguage;
     voice?: AssemblyAITtsVoice;
 }
 
 // @public
-type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
+type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
+
+// @public
+type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
 
 // @internal
 export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
@@ -761,9 +694,6 @@ export function buildSystemPrompt(config: AgentConfig, opts: {
 export function builtinFetch(env?: NodeJS.ProcessEnv): typeof globalThis.fetch;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
-
-// @public
 export type BuiltinToolOptions = {
     fetch?: typeof globalThis.fetch;
     runCode?: RunCodeExecutor;
@@ -776,7 +706,7 @@ export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
 export const CARTESIA_KIND: "cartesia";
 
 // @public
-interface CartesiaOptions {
+interface CartesiaTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
     voice?: string;
@@ -826,7 +756,7 @@ export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
 export const DEEPGRAM_KIND: "deepgram";
 
 // @public
-interface DeepgramOptions {
+interface DeepgramSttOptions extends ProviderCredentialOptions {
     endpointing?: number;
     language?: string;
     model?: "nova-3" | "nova-2" | string;
@@ -878,23 +808,6 @@ export function defaultProviders(config: ProviderFields): {
     tts?: TtsProvider;
 } | null;
 
-// @public
-type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
-
-// @public
-interface DelegateOptions {
-    context?: string;
-    maxSteps?: number;
-    task: string;
-}
-
-// @public
-interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
-}
-
 // @internal
 type DnsLookup = (hostname: string) => Promise<{
     address: string;
@@ -910,7 +823,7 @@ export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
 export const ELEVENLABS_KIND: "elevenlabs";
 
 // @public
-interface ElevenLabsOptions {
+interface ElevenLabsSttOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
 }
@@ -1131,10 +1044,10 @@ export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
 export const OPENAI_KIND: "openai";
 
 // @public
-export const OPENAI_REALTIME_API_KEY_ENV = "OPENAI_API_KEY";
+export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
 
 // @public
-export const OPENAI_REALTIME_KIND: "openai-realtime";
+export const OPENAI_S2S_KIND: "openai-realtime";
 
 // @public
 export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
@@ -1189,6 +1102,11 @@ export const PLAYBACK_FILL_MS = 200;
 
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
+
+// @public
+interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -1274,7 +1192,7 @@ export function resolveBuiltin(name: string, opts?: BuiltinToolOptions): (ToolDe
 }) | undefined;
 
 // @public
-export function resolveCartesiaSettings(opts: CartesiaOptions): {
+export function resolveCartesiaTtsSettings(opts: CartesiaTtsOptions): {
     voice: string;
     model: string;
     language: string;
@@ -1288,27 +1206,27 @@ export type ResolvedBuiltins = {
 };
 
 // @public
-export function resolveDeepgramSettings(opts: DeepgramOptions): {
+export function resolveDeepgramSttSettings(opts: DeepgramSttOptions): {
     model: string;
     language: string;
     endpointingMs: number;
 };
 
 // @public
-export function resolveElevenLabsSettings(opts: ElevenLabsOptions): {
+export function resolveElevenLabsSttSettings(opts: ElevenLabsSttOptions): {
     model: string;
     languageCode?: string;
 };
 
 // @public
-export function resolveRimeSettings(opts: RimeOptions): {
+export function resolveRimeTtsSettings(opts: RimeTtsOptions): {
     voice: string;
     model: string;
     language: string;
 };
 
 // @public
-export function resolveSonioxSettings(opts: SonioxOptions): {
+export function resolveSonioxSttSettings(opts: SonioxSttOptions): {
     model: string;
     languageHints?: readonly string[];
 };
@@ -1329,7 +1247,7 @@ export const RIME_DEFAULT_MODEL = "mistv2";
 export const RIME_KIND: "rime";
 
 // @public
-interface RimeOptions {
+interface RimeTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
     voice?: string;
@@ -1389,7 +1307,7 @@ export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
 export const SONIOX_KIND: "soniox";
 
 // @public
-interface SonioxOptions {
+interface SonioxSttOptions extends ProviderCredentialOptions {
     languages?: readonly string[];
     model?: string;
 }
@@ -1549,24 +1467,6 @@ export type SttTurnMeta = {
     endOfTurnConfidence?: number;
 };
 
-// @public
-interface SubagentDef {
-    builtinTools?: readonly BuiltinTool[];
-    instructions: string;
-    llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxSteps?: number;
-    name: string;
-    temperature?: number;
-    tools?: Readonly<Record<string, ToolDef>>;
-}
-
-// @public
-interface SubagentToolCall {
-    input: unknown;
-    name: string;
-}
-
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
@@ -1576,7 +1476,6 @@ type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
-    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;
@@ -1865,72 +1764,17 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-export const ASSEMBLYAI_TTS_VOICES: {
-    readonly alba: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly anna: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly charles: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly eve: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly george: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jane: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jean: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly mary: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly michael: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly paul: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly vera: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly giovanni: {
-        readonly language: "it";
-        readonly accent: "IT";
-    };
-    readonly lola: {
-        readonly language: "es";
-        readonly accent: "ES";
-    };
-    readonly juergen: {
-        readonly language: "de";
-        readonly accent: "DE";
-    };
-    readonly rafael: {
-        readonly language: "pt";
-        readonly accent: "PT";
-    };
-    readonly estelle: {
-        readonly language: "fr";
-        readonly accent: "FR";
-    };
+const ASSEMBLYAI_TTS_LANGUAGES: {
+    readonly en: "english";
+    readonly fr: "french";
+    readonly de: "german";
+    readonly it: "italian";
+    readonly pt: "portuguese";
+    readonly es: "spanish";
 };
+
+// @public (undocumented)
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
 export function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
@@ -1951,15 +1795,26 @@ export interface AssemblyAIPipelineOptions {
 export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
-export interface AssemblyAIS2sOptions {
-    apiKeyEnv?: string;
+export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
     keyterms?: readonly string[];
     languages?: readonly string[];
     voice?: string;
 }
 
 // @public
-export type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
+type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
+
+// @public
+export type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
+
+// @public
+type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+
+// @public
+interface AssemblyAITtsVoiceInfo {
+    readonly accent: string;
+    readonly language: AssemblyAITtsLanguage;
+}
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
@@ -1978,30 +1833,13 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T ex
 } : T;
 
 // @public
-export const DEFAULT_SYSTEM_PROMPT: string;
+export const DEFAULT_SYSTEM_PROMPT: "You are a voice agent in a real-time spoken conversation. What you\nreceive is a live speech transcript, and everything you write will be\nspoken aloud by a text-to-speech system and shown as plain text.\nAgent-specific instructions may follow these defaults. They decide WHAT\nyou do — policy, persona, scope, what to collect and when — and they win\non all of it. They do not change how this channel works: the LISTENING\nand SPEAKING sections below are facts about a live transcript and a\nreal-time voice, not preferences, and they hold whatever a later\ninstruction says. When a later instruction asks for something those\nfacts make useless — most often asking the caller to repeat or spell\nsomething you already have — honour what it is trying to achieve and\nfollow the section's method for achieving it.\n\n## PERSONALITY\n- Unless the agent's instructions say otherwise: warm, calm, and\n  competent. Sound like a capable person, not a phone tree.\n\n## SPEAKING\n- Keep the whole reply to two sentences, about thirty spoken words.\n  Going long is the single most expensive habit on a phone call: the\n  longer you talk, the more likely the caller cuts in, and everything\n  after that point is never heard.\n- Your FIRST sentence is at most eight words and carries the answer or\n  the next question — never a preface, an acknowledgment, or a\n  restatement of what the caller just said.\n  Too long: \"Thanks for that. I will look up your account now. I found\n  your account, and I can see two orders on it.\"\n  Say instead: \"Found your account. Two orders — which has the water\n  bottle?\"\n- Write exactly as you would say it out loud to a friend. Contractions\n  sound better spoken (\"I'll\", \"it's\", \"don't\"). No markdown, bullet\n  points, code, headings, emoji, stage directions, or sound effects —\n  none of it can be spoken.\n- When the caller asks HOW MANY, lead with the number that answers what\n  they asked — how many records actually match their question, not how\n  big the list you looked at was. Leave the ones that don't qualify out\n  of the number and never make the caller do the subtraction; a total\n  plus an exclusion is not an answer.\n  Asked \"how many can I still pick from?\": say \"Ten to choose from.\"\n  Not: \"There are twelve, and two are out.\"\n- To list things, say \"First,\" \"Next,\" \"Finally.\" Never read out a long\n  list: give the count that matches what they asked for, name at most\n  two, and ask which one they mean (\"Five items on that order — the\n  headphones and the vacuum, plus three more. Which one?\").\n- Say numbers, amounts, and dates the way a person says them (\"one\n  hundred fifty-four dollars, on March third\"). An IDENTIFIER is the\n  exception, and the rule for it is all-or-nothing: any code that mixes\n  letters and digits, or that is not a word, is spoken one character at\n  a time from end to end.\n  Right: \"A-B-C-one-two-three.\"\n  Wrong: \"ABC one hundred twenty three\" — the letters spelled and the\n  digits read as a number is the common failure, and it is unusable:\n  the caller cannot tell \"123\" from \"one two three\" from \"one twenty\n  three\".\n  Wrong: \"Delive\" — a code is never pronounced as if it were a word.\n  When a quantity sits next to a code, put the unit between them, or\n  they run together into one unsayable token: \"two of K-two\", never\n  \"two K two\".\n- Speak the language the caller is speaking. Switch only when they do —\n  never on your own.\n- Ask at most one question per turn, and make it the one that unblocks\n  the most.\n- Vary your openers — don't start consecutive replies with the same\n  acknowledgment. If the caller interrupts, stop and address what they\n  said.\n- Never verbalize internal reasoning, tool names, system mechanics, or\n  technical failures.\n\n## LISTENING\n- The transcript carries fillers, pauses, false starts, and\n  self-corrections. Read through the noise to the caller's final intent\n  and act on it. When they correct themselves (\"Boston... actually,\n  Chicago\"), use only the last value.\n- Respond only to speech directed at you. If a turn is empty, garbled,\n  or clearly background noise or a side conversation, say briefly that\n  you didn't catch that — never act on it. Otherwise act on your best\n  understanding rather than stalling.\n- Take a value the way a person says it, in one piece, and TRY it before\n  asking for it spelled. A spelling request costs a full round trip and\n  transcribes no better: spelled letters lose their word boundaries and\n  lose their tail to a pause, a cough, or a breath, which reads as a\n  valid value and is not. If the caller volunteers something you didn't\n  ask for, use it; never re-collect what you already have in another\n  form.\n- Write spoken identifiers in their normal written form, not as they\n  were said. Drop spoken separators (\"K dash 2\" is K2, \"P dash five\n  dash two\" is P52), join spelled-out characters (\"A B C one two three\"\n  is ABC123), and add nothing the caller did not say (\"Z K 3 F F W\" is\n  ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in\n  ordinary title case (Maria Garza, not MARIA GARZA).\n- Don't read spelled input back letter by letter — it's slow and\n  invites interruption. Confirm briefly and move on (\"Okay, Yusuf\n  Rossi, ZIP 1-9-1-2-2 — one moment\"). Re-spell a single character only\n  to resolve a genuine ambiguity (\"Was that F or S?\"). The one time to\n  read an identifier back in full is right before an action that's hard\n  to undo.\n\n## TOOLS\n- Never fabricate. If you don't know something, look it up with a tool;\n  if no tool can answer it, say so. Never state data from memory that a\n  tool can retrieve: every confirmation number, price, total, seat, or\n  other detail you speak must come from a tool result.\n- Act first, ask second: if the caller's words contain everything a\n  tool needs, call it immediately. Ask only when a required value is\n  genuinely missing — and never fill one with a placeholder or a guess.\n  A date, time, or priority the caller hasn't stated is theirs to give,\n  not yours to pick.\n- Report RESULTS, never intentions. Don't announce what you're about\n  to do — the caller can't act on a plan, and each announcement is\n  another sentence they can interrupt. Stay silent while the calls run\n  and speak once you have the answer.\n  Wrong: \"I will look up your account now. I found your account. I\n  will check that order now.\"\n  Right: nothing, until the calls are done — then: \"Your order's\n  delivered. Both items can be exchanged.\"\n- Never say an action is done unless a tool call returned success for\n  it. Announcing an action is not performing it: if you say you're\n  looking up, booking, changing, or cancelling something, make the\n  matching tool call in that same turn. Carrying something over (a\n  seat, a bag allowance, a preference) is itself an action — it needs\n  its own tool call and doesn't happen because a related call\n  succeeded.\n- Copy values from prior tool results exactly. Never retype, reformat,\n  or construct an ID from a pattern — if you don't have it, look it up\n  first, then use it.\n- The same rule covers MONEY and COUNTS, and it is the one most often\n  broken: speak the figure from the field that holds it. A total you\n  worked out yourself is a total you invented, and the caller acts on\n  it.\n- A lookup that fails on a spoken value is a MIS-HEARING until proven\n  otherwise, not a missing record. Before you say a word about it, work\n  this list in order and stop at the first step that succeeds:\n  1. Re-read the conversation. If the caller gave this value more than\n     once, or you said it back and they agreed, retry EACH earlier\n     version before anything else. An earlier turn is evidence you\n     already hold, not history.\n  2. Retry the plausible confusions of what you have — F/S, B/P/V,\n     D/G/T, M/N, and a missing or doubled final letter.\n  3. Retry with a different identifier you already hold. Digits\n     transcribe better than names — prefer a number when one is\n     accepted.\n  4. Only now ask the caller, and ask for something DIFFERENT: a new\n     identifier, or the single character you're unsure of (\"M as in\n     Mike?\"). Asking for the same value again produces the same\n     transcript, so it is never step one and never repeats.\n  When every identifier is exhausted, say what you can still do.\n- On a tool error, read the message. Fix the specific problem and retry\n  once with something actually different — never resend arguments that\n  already failed, and never pretend a failed call succeeded. If it\n  still fails or returns nothing, don't mention tools, APIs, or errors:\n  say plainly what you couldn't get and offer a next step.\n- Finish the whole request, ACROSS TURNS. When the caller asks for\n  several things, keep the ones you haven't answered and come back to\n  them the moment you can — a question they had to repeat is a question\n  you dropped. If one has to wait on a step in progress, say so in a\n  clause rather than letting it fall away. Never stop halfway and ask\n  \"shall I continue?\".\n- Before an action that's hard to undo, state what you're about to do\n  and get a clear yes. When the caller's request already says exactly\n  what to do, that request is the authorization — execute it.\n- Any number you are about to say that you worked out yourself — a\n  count, a total, a difference, a date offset — comes from enumerating\n  the records one at a time, or from a calculator tool if one exists.\n  Counting how many records meet a condition is arithmetic. A number\n  you did not enumerate is a guess; don't say it.\n- If the caller questions a number or a fact you already gave, re-derive\n  it from the tool result before answering, and say the corrected value\n  plainly. Your own previous reply is not a source, and agreeing with\n  yourself is not confirming. Call the tool again if the record no\n  longer covers it.\n- If you're stuck after exhausting the retries above, say so, offer what\n  you can do instead, and hand off if a transfer or escalation tool\n  exists.";
 
 // @public
 type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 
 // @public
 export type DefaultToolResult = any;
-
-// @public
-export type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
-
-// @public
-export interface DelegateOptions {
-    context?: string;
-    maxSteps?: number;
-    task: string;
-}
-
-// @public
-export interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
-}
 
 // @public
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
@@ -2243,6 +2081,11 @@ export interface ProcedureRunOptions {
 }
 
 // @public
+export interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
+
+// @public
 export interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -2255,6 +2098,9 @@ type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 
 // @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
+
+// @public
+type RejectThenable<R> = [R] extends [never] ? unknown : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : unknown;
 
 // @public
 export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
@@ -2485,8 +2331,8 @@ export interface SessionSlot<K extends string, T> {
     reset(ctx: ToolContext): DeepReadonly<T>;
     set(ctx: ToolContext, value: T): DeepReadonly<T>;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
-    update<R>(ctx: ToolContext, mutate: (draft: T) => R): R;
-    updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R>): ToolDef<P, R>;
+    update<R>(ctx: ToolContext, mutate: ((draft: T) => R) & RejectThenable<R>): R;
+    updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R> & RejectThenable<R>): ToolDef<P, R>;
 }
 
 // @public
@@ -2494,7 +2340,7 @@ export function sessionSlot<const K extends string, T>(key: K, create: () => T, 
 
 // @public
 export interface SessionSlotOptions<T> {
-    after?: (draft: T) => void;
+    after?: (draft: T) => SyncHookResult;
     durable?: boolean;
 }
 
@@ -2605,25 +2451,12 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export function subagent(def: SubagentDef): SubagentDef;
+type SyncHookResult = void | {
+    then?: never;
+};
 
 // @public
-export interface SubagentDef {
-    builtinTools?: readonly BuiltinTool[];
-    instructions: string;
-    llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxSteps?: number;
-    name: string;
-    temperature?: number;
-    tools?: Readonly<Record<string, ToolDef>>;
-}
-
-// @public
-export interface SubagentToolCall {
-    input: unknown;
-    name: string;
-}
+type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
@@ -2656,7 +2489,6 @@ export type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
-    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;
@@ -3206,8 +3038,12 @@ export const WS_OPEN = 1;
 ## `@alexkroman1/aai/llm`
 
 ```ts
+// @public (undocumented)
+export function anthropicLlm(opts: AnthropicLlmOptions): LlmProvider;
+
 // @public
-export function anthropic(opts: ModelOptions): LlmProvider;
+export interface AnthropicLlmOptions extends ModelOptions {
+}
 
 // @public
 export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
@@ -3225,8 +3061,7 @@ export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-
 export function assemblyAILlm(opts?: AssemblyAILlmOptions): LlmProvider;
 
 // @public
-export interface AssemblyAILlmOptions {
-    apiKeyEnv?: string;
+export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
     gatewayUrl?: string;
     model?: AssemblyAIGatewayModel | (string & Record<never, never>);
     reasoningEffort?: AssemblyAIReasoningEffort;
@@ -3236,36 +3071,65 @@ export interface AssemblyAILlmOptions {
 // @public
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
-// @public
-export function gateway(opts: ModelOptions): LlmProvider;
+// @public (undocumented)
+export function gatewayLlm(opts: GatewayLlmOptions): LlmProvider;
 
 // @public
-export function google(opts: ModelOptions): LlmProvider;
+export interface GatewayLlmOptions extends ModelOptions {
+}
+
+// @public (undocumented)
+export function googleLlm(opts: GoogleLlmOptions): LlmProvider;
 
 // @public
-export function groq(opts: ModelOptions): LlmProvider;
+export interface GoogleLlmOptions extends ModelOptions {
+}
+
+// @public (undocumented)
+export function groqLlm(opts: GroqLlmOptions): LlmProvider;
+
+// @public
+export interface GroqLlmOptions extends ModelOptions {
+}
 
 // @public
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
 
-// @public
-export function mistral(opts: ModelOptions): LlmProvider;
+// @public (undocumented)
+export function mistralLlm(opts: MistralLlmOptions): LlmProvider;
 
 // @public
-export interface ModelOptions {
-    model: string;
+export interface MistralLlmOptions extends ModelOptions {
 }
 
 // @public
-export function openai(opts: ModelOptions): LlmProvider;
+export interface ModelOptions extends ProviderCredentialOptions {
+    model: string;
+}
+
+// @public (undocumented)
+export function openaiLlm(opts: OpenAILlmOptions): LlmProvider;
 
 // @public
-export function openrouter(opts: ModelOptions): LlmProvider;
+export interface OpenAILlmOptions extends ModelOptions {
+}
 
 // @public
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+// @public (undocumented)
+export function openrouterLlm(opts: OpenRouterLlmOptions): LlmProvider;
+
+// @public
+export interface OpenRouterLlmOptions extends ModelOptions {
+}
+
+// @public
+export interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -3275,8 +3139,12 @@ interface ProviderDescriptor<Kind extends string, Options> {
     readonly options: Options;
 }
 
+// @public (undocumented)
+export function xaiLlm(opts: XaiLlmOptions): LlmProvider;
+
 // @public
-export function xai(opts: ModelOptions): LlmProvider;
+export interface XaiLlmOptions extends ModelOptions {
+}
 ```
 
 ## `@alexkroman1/aai/manifest`
@@ -3413,23 +3281,6 @@ type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_j
 type Db = {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
-
-// @public
-type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
-
-// @public
-interface DelegateOptions {
-    context?: string;
-    maxSteps?: number;
-    task: string;
-}
-
-// @public
-interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
-}
 
 // @public
 type FindOptions = {
@@ -3783,24 +3634,6 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-interface SubagentDef {
-    builtinTools?: readonly BuiltinTool[];
-    instructions: string;
-    llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxSteps?: number;
-    name: string;
-    temperature?: number;
-    tools?: Readonly<Record<string, ToolDef>>;
-}
-
-// @public
-interface SubagentToolCall {
-    input: unknown;
-    name: string;
-}
-
-// @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
 // @public
@@ -3815,7 +3648,6 @@ type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
-    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;
@@ -4310,25 +4142,29 @@ export { SessionEventSchema }
 export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
-export interface AssemblyAIS2sOptions {
-    apiKeyEnv?: string;
+export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
     keyterms?: readonly string[];
     languages?: readonly string[];
     voice?: string;
 }
 
 // @public
-export function openaiRealtime(opts?: OpenaiRealtimeOptions): S2sProvider;
+export function openaiS2s(opts?: OpenAIS2sOptions): S2sProvider;
 
 // @public
-export interface OpenaiRealtimeOptions {
+export interface OpenAIS2sOptions extends ProviderCredentialOptions {
     model?: string;
     url?: string;
-    voice?: OpenaiRealtimeVoice;
+    voice?: OpenAIS2sVoice;
 }
 
 // @public
-export type OpenaiRealtimeVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse";
+export type OpenAIS2sVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse";
+
+// @public
+export interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -4561,7 +4397,7 @@ export function stripJsonFence(reply: string): string;
 export const TRANSCRIBE_API = "https://api.assemblyai.com";
 
 // @public
-export const TRANSCRIBE_MODELS: readonly string[];
+export const TRANSCRIBE_MODELS: readonly ["universal-3-5-pro"];
 
 // @public
 export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
@@ -4576,10 +4412,10 @@ export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
 export const TRANSCRIBE_TIMEOUT_MS = 60000;
 
 // @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 1800000;
 
 // @public
-export const TRANSCRIBE_WINDOW_BYTES: number;
+export const TRANSCRIBE_WINDOW_BYTES = 4194304;
 
 // @public
 export class TranscribeError extends Error {
@@ -4856,7 +4692,7 @@ export type ReadUploadToFileOptions = {
 };
 
 // @public
-export const STEP_FILE_WINDOW_BYTES: number;
+export const STEP_FILE_WINDOW_BYTES = 8388608;
 
 // @public
 type UploadInfo = {
@@ -4907,8 +4743,7 @@ export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
 export function assemblyAIStt(opts?: AssemblyAISttOptions): SttProvider;
 
 // @public
-export interface AssemblyAISttOptions {
-    apiKeyEnv?: string;
+export interface AssemblyAISttOptions extends ProviderCredentialOptions {
     connectTimeoutMs?: number;
     languages?: string[];
     maxConnectRetries?: number;
@@ -4922,26 +4757,31 @@ export interface AssemblyAISttOptions {
 }
 
 // @public
-export function deepgram(opts?: DeepgramOptions): SttProvider;
-
-// @public
 export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
 
 // @public
-export interface DeepgramOptions {
+export function deepgramStt(opts?: DeepgramSttOptions): SttProvider;
+
+// @public
+export interface DeepgramSttOptions extends ProviderCredentialOptions {
     endpointing?: number;
     language?: string;
     model?: "nova-3" | "nova-2" | string;
 }
 
 // @public
-export interface ElevenLabsOptions {
+export function elevenLabsStt(opts?: ElevenLabsSttOptions): SttProvider;
+
+// @public
+export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
 }
 
 // @public
-export function elevenLabsStt(opts?: ElevenLabsOptions): SttProvider;
+export interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -4952,10 +4792,10 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function soniox(opts?: SonioxOptions): SttProvider;
+export function sonioxStt(opts?: SonioxSttOptions): SttProvider;
 
 // @public
-export interface SonioxOptions {
+export interface SonioxSttOptions extends ProviderCredentialOptions {
     languages?: readonly string[];
     model?: string;
 }
@@ -4978,9 +4818,6 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
-
-// @public
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
 
 // @public
@@ -4999,23 +4836,6 @@ export function createUnusedDb(): Db;
 type Db = {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
-
-// @public
-type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
-
-// @public
-interface DelegateOptions {
-    context?: string;
-    maxSteps?: number;
-    task: string;
-}
-
-// @public
-interface DelegateResult {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
-}
 
 // @public
 interface DialogPosition {
@@ -5176,32 +4996,6 @@ type StreamOptions = {
 
 // @public
 export const STUB_SPEECH_PCM_BYTES = 12000;
-
-// @public
-export interface StubDelegate {
-    calls: StubDelegateCall[];
-    delegate: DelegateFn;
-}
-
-// @public
-export function stubDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubDelegate;
-
-// @public
-export interface StubDelegateCall {
-    options: DelegateOptions;
-    subagent: SubagentDef;
-    task: string;
-}
-
-// @public
-export type StubDelegateReply = string | {
-    text: string;
-    steps?: number;
-    toolCalls?: readonly SubagentToolCall[];
-};
-
-// @public
-export type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
 
 // @public
 export type StubEmitted = {
@@ -5386,24 +5180,6 @@ export type StubUploadWrite = {
 };
 
 // @public
-interface SubagentDef {
-    builtinTools?: readonly BuiltinTool[];
-    instructions: string;
-    llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxSteps?: number;
-    name: string;
-    temperature?: number;
-    tools?: Readonly<Record<string, ToolDef>>;
-}
-
-// @public
-interface SubagentToolCall {
-    input: unknown;
-    name: string;
-}
-
-// @public
 export type TestToolContext = ToolContext & {
     readonly sent: SentEvent[];
 };
@@ -5419,7 +5195,6 @@ type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
-    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;
@@ -5892,73 +5667,8 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
     readonly es: "spanish";
 };
 
-// @public
-export const ASSEMBLYAI_TTS_VOICES: {
-    readonly alba: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly anna: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly charles: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly eve: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly george: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jane: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jean: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly mary: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly michael: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly paul: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly vera: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly giovanni: {
-        readonly language: "it";
-        readonly accent: "IT";
-    };
-    readonly lola: {
-        readonly language: "es";
-        readonly accent: "ES";
-    };
-    readonly juergen: {
-        readonly language: "de";
-        readonly accent: "DE";
-    };
-    readonly rafael: {
-        readonly language: "pt";
-        readonly accent: "PT";
-    };
-    readonly estelle: {
-        readonly language: "fr";
-        readonly accent: "FR";
-    };
-};
+// @public (undocumented)
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
 export function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
@@ -5967,27 +5677,40 @@ export function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
 export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 // @public (undocumented)
-export interface AssemblyAITtsOptions {
-    apiKeyEnv?: string;
+export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
     host?: string;
     language?: AssemblyAITtsLanguage;
     voice?: AssemblyAITtsVoice;
 }
 
 // @public
-export type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
+export type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
 
 // @public
-export function cartesia(opts?: CartesiaOptions): TtsProvider;
+export type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+
+// @public
+export interface AssemblyAITtsVoiceInfo {
+    readonly accent: string;
+    readonly language: AssemblyAITtsLanguage;
+}
 
 // @public
 export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 
 // @public
-export interface CartesiaOptions {
+export function cartesiaTts(opts?: CartesiaTtsOptions): TtsProvider;
+
+// @public
+export interface CartesiaTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
     voice?: string;
+}
+
+// @public
+export interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
 }
 
 // @public
@@ -5999,13 +5722,13 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function rime(opts?: RimeOptions): TtsProvider;
-
-// @public
 export const RIME_DEFAULT_VOICE = "cove";
 
 // @public
-export interface RimeOptions {
+export function rimeTts(opts?: RimeTtsOptions): TtsProvider;
+
+// @public
+export interface RimeTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
     voice?: string;
@@ -7323,8 +7046,6 @@ export type WorkflowKeyStore = {
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai';
-import type { DelegateOptions } from '@alexkroman1/aai';
-import type { DelegateResult } from '@alexkroman1/aai';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { IncomingMessage } from 'node:http';
@@ -7340,7 +7061,6 @@ import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai/protocol';
 import { SessionEventBody } from '@alexkroman1/aai/protocol';
 import type { SlotStore } from '@alexkroman1/aai';
-import type { SubagentDef } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
 import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
 import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';
@@ -7423,7 +7143,6 @@ type ExecuteToolCallOptions = {
     db?: Db | undefined;
     messages?: readonly Message[] | undefined;
     generate?: HostGenerateFn | undefined;
-    subagents?: SubagentRunner | undefined;
     logger?: Logger | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
@@ -7588,9 +7307,6 @@ type StoredSessionEvent = {
     json: string;
 };
 
-// @internal
-type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: ToolCallDefaults) => Promise<DelegateResult>;
-
 // @public
 type SweepDeps = {
     createDb?: (url: string) => CloseableDb;
@@ -7603,9 +7319,6 @@ type SweepSkip =
 "another-pool-is-live"
 /** Presence is ours and there was nothing locked. The healthy case. */
 | "no-orphaned-locks";
-
-// @internal
-type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
 
 // @public
 type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;

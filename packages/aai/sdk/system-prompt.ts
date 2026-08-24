@@ -43,7 +43,7 @@ import type { AgentConfig } from "./_internal-types.ts";
  * one-rule-one-section invariant, which is what let the repeat-ask budget
  * drift into three different numbers in the first place.
  */
-export const PROMPT_ROLE: string = `\
+export const PROMPT_ROLE = `\
 You are a voice agent in a real-time spoken conversation. What you
 receive is a live speech transcript, and everything you write will be
 spoken aloud by a text-to-speech system and shown as plain text.
@@ -58,7 +58,7 @@ something you already have — honour what it is trying to achieve and
 follow the section's method for achieving it.`;
 
 /** Default persona — fully overridable by agent instructions. */
-export const PROMPT_PERSONALITY: string = `\
+export const PROMPT_PERSONALITY = `\
 ## PERSONALITY
 - Unless the agent's instructions say otherwise: warm, calm, and
   competent. Sound like a capable person, not a phone tree.`;
@@ -78,7 +78,7 @@ export const PROMPT_PERSONALITY: string = `\
  * only part of a reply reliably heard and anything spent there is spent
  * instead of the answer.
  */
-export const PROMPT_SPEAKING: string = `\
+export const PROMPT_SPEAKING = `\
 ## SPEAKING
 - Keep the whole reply to two sentences, about thirty spoken words.
   Going long is the single most expensive habit on a phone call: the
@@ -152,7 +152,7 @@ export const PROMPT_SPEAKING: string = `\
  * a valid value and is not — one such fragment ("last name R-O-S-S") is what
  * broke the lookup that sank a task.
  */
-export const PROMPT_LISTENING: string = `\
+export const PROMPT_LISTENING = `\
 ## LISTENING
 - The transcript carries fillers, pauses, false starts, and
   self-corrections. Read through the noise to the caller's final intent
@@ -207,7 +207,7 @@ export const PROMPT_LISTENING: string = `\
  *
  * The results-not-intentions rule below is a different rule and stays.
  */
-export const PROMPT_TOOLS: string = `\
+export const PROMPT_TOOLS = `\
 ## TOOLS
 - Never fabricate. If you don't know something, look it up with a tool;
   if no tool can answer it, say so. Never state data from memory that a
@@ -338,13 +338,17 @@ export const PROMPT_TOOLS: string = `\
  * assembled from parts and is not reproduced here — a second copy in a comment
  * would drift from the one the agent runs.
  */
-export const DEFAULT_SYSTEM_PROMPT: string = [
-  PROMPT_ROLE,
-  PROMPT_PERSONALITY,
-  PROMPT_SPEAKING,
-  PROMPT_LISTENING,
-  PROMPT_TOOLS,
-].join("\n\n");
+// Composed with a template literal, and every section above is left
+// un-annotated, so this constant's TYPE is the prompt text itself. That is
+// deliberate and it is what puts the value in `aai:defaults`' contract hash:
+// a `: string` annotation (or a `.join()`) widens to `string`, the rolled-up
+// .d.ts carries no text, and ~10,000 characters of measured voice rules could
+// then be rewritten under a green gate — a behaviour change for every agent
+// that omitted `systemPrompt` and for every agent that composed against it.
+// The cost is that `etc/index.api.md` carries the prompt verbatim; that is the
+// artifact a reviewer is supposed to read a prompt change in.
+export const DEFAULT_SYSTEM_PROMPT =
+  `${PROMPT_ROLE}\n\n${PROMPT_PERSONALITY}\n\n${PROMPT_SPEAKING}\n\n${PROMPT_LISTENING}\n\n${PROMPT_TOOLS}` as const;
 
 const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   weekday: "long",

@@ -11,18 +11,18 @@
  * @example Swap the LLM of an otherwise default agent
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { anthropic } from "@alexkroman1/aai/llm";
+ * import { anthropicLlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
  *   // `stt` and `tts` keep their AssemblyAI defaults.
- *   llm: anthropic({ model: "claude-sonnet-5" }),
+ *   llm: anthropicLlm({ model: "claude-sonnet-5" }),
  * });
  * ```
  *
  * `agent({ llm })` also takes a bare gateway model id — `llm: "zai/glm-4.6"` —
- * which is the shorthand for {@link gateway}. Every other stage needs a
+ * which is the shorthand for {@link gatewayLlm}. Every other stage needs a
  * factory.
  *
  * **Credentials are never passed here.** Each factory's vendor names the env
@@ -39,7 +39,7 @@
  * ({@link ASSEMBLYAI_LLM_DEFAULT_MODEL}) and so a bare call.
  *
  * Two vendors here are AGGREGATORS rather than model owners, addressed as
- * `"creator/model"`: {@link openrouter} and {@link gateway}. A third,
+ * `"creator/model"`: {@link openrouterLlm} and {@link gatewayLlm}. A third,
  * {@link assemblyAILlm}, fronts AssemblyAI's own gateway — its ids are
  * {@link AssemblyAIGatewayModel}, and the CATALOG behind that union (which
  * model streams, calls tools, serves the EU) is on
@@ -62,8 +62,8 @@
 // `noReExportAll` suppression per line, and the escape-hatch ratchet only moves
 // down. Listing them also makes the public surface of this subpath readable in
 // one place — add new symbols here when a provider gains one.
-export type { LlmProvider } from "../providers.ts";
-export { anthropic } from "./llm/anthropic.ts";
+export type { LlmProvider, ProviderCredentialOptions } from "../providers.ts";
+export { type AnthropicLlmOptions, anthropicLlm } from "./llm/anthropic.ts";
 export {
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
@@ -72,12 +72,16 @@ export {
   type AssemblyAIReasoningEffort,
   assemblyAILlm,
 } from "./llm/assemblyai.ts";
-export { gateway } from "./llm/gateway.ts";
+export { type GatewayLlmOptions, gatewayLlm } from "./llm/gateway.ts";
 export type { AssemblyAIGatewayModel } from "./llm/gateway-models.ts";
-export { google } from "./llm/google.ts";
-export { groq } from "./llm/groq.ts";
-export { mistral } from "./llm/mistral.ts";
+export { type GoogleLlmOptions, googleLlm } from "./llm/google.ts";
+export { type GroqLlmOptions, groqLlm } from "./llm/groq.ts";
+export { type MistralLlmOptions, mistralLlm } from "./llm/mistral.ts";
 export type { ModelOptions } from "./llm/model-options.ts";
-export { openai } from "./llm/openai.ts";
-export { OPENROUTER_BASE_URL, openrouter } from "./llm/openrouter.ts";
-export { xai } from "./llm/xai.ts";
+export { type OpenAILlmOptions, openaiLlm } from "./llm/openai.ts";
+export {
+  OPENROUTER_BASE_URL,
+  type OpenRouterLlmOptions,
+  openrouterLlm,
+} from "./llm/openrouter.ts";
+export { type XaiLlmOptions, xaiLlm } from "./llm/xai.ts";

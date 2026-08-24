@@ -9,13 +9,13 @@
 import {
   DEEPGRAM_API_KEY_ENV,
   makeSttError,
-  resolveDeepgramSettings,
+  resolveDeepgramSttSettings,
   type SttEvents,
   type SttOpener,
   type SttOpenOptions,
   type SttSession,
 } from "@alexkroman1/aai/host-internal";
-import type { DeepgramOptions } from "@alexkroman1/aai/stt";
+import type { DeepgramSttOptions } from "@alexkroman1/aai/stt";
 import { DeepgramClient, type listen } from "@deepgram/sdk";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { createAudioSendGate } from "../../_audio-gate.ts";
@@ -57,7 +57,7 @@ function wireSocketEvents(connection: V1Socket, shell: SessionShell<SttEvents>):
   connection.on("close", (event: { code?: number }) => shell.onSocketClose(event?.code));
 }
 
-export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
+export function openDeepgram(opts: DeepgramSttOptions = {}): SttOpener {
   return {
     name: "deepgram",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
@@ -66,7 +66,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
       );
       const connectError = (msg: string) => makeSttError("stt_connect_failed", msg);
 
-      const settings = resolveDeepgramSettings(opts);
+      const settings = resolveDeepgramSttSettings(opts);
       const client = new DeepgramClient({ apiKey });
       const connection = await connectOrThrow("Deepgram STT", connectError, () =>
         client.listen.v1.connect({

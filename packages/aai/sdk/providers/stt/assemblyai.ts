@@ -28,7 +28,7 @@ import {
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_TIMEOUT_MS,
 } from "../../pipeline-tuning-constants.ts";
-import type { SttProvider } from "../../providers.ts";
+import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_STT_KIND = "assemblyai" as const;
@@ -43,7 +43,7 @@ export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
 
 /** Options for {@link assemblyAIStt}. */
-export interface AssemblyAISttOptions {
+export interface AssemblyAISttOptions extends ProviderCredentialOptions {
   /**
    * Streaming speech model. Defaults to `"universal-3-5-pro"` (Universal-3.5
    * Pro Real-Time). Arbitrary strings are forwarded to the SDK unchanged.
@@ -74,7 +74,7 @@ export interface AssemblyAISttOptions {
    * parameter (e.g. `["en"]`, `["en", "es"]`).
    *
    * **Unset means DETECT PER TURN, not English** — the same default
-   * `elevenlabs` and `soniox` have, and the opposite of `deepgram`, whose
+   * `elevenlabs` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
    * unset `language` is `"en"`.
    *
    * Universal-3.5 Pro **code-switches across 18 languages by default**, so an
@@ -155,28 +155,6 @@ export interface AssemblyAISttOptions {
    * note in `sdk/constants.ts`.
    */
   maxConnectRetries?: number;
-  /**
-   * Env var holding this stage's credential, replacing the provider default
-   * (`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
-   * stays secret-free and safe to serialize.
-   *
-   * For running one stage against a different account or cluster than the
-   * others — AssemblyAI keys are environment-scoped, so a staging STT cluster
-   * rejects a production key and vice versa, and a mixed setup needs both keys
-   * live at once. The variable must be present in the agent's env (`.env` or
-   * `aai secret put`), like any other credential.
-   *
-   * **Only the three AssemblyAI stages carry this field, and that is
-   * deliberate.** The host reads `apiKeyEnv` off a descriptor generically
-   * (the host reads it generically), so adding it to `deepgram`, `elevenlabs`,
-   * `soniox`, `cartesia`, `rime` or any LLM vendor would be one line each and
-   * work — but none of them has the problem it solves. AssemblyAI keys are
-   * ENVIRONMENT-SCOPED, so a staging cluster and production need two live keys
-   * at once and a per-stage override is the only way to run a mixed pipeline.
-   * Every other vendor here has one account-wide key, which the provider
-   * default already names.
-   */
-  apiKeyEnv?: string;
 }
 
 /**

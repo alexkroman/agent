@@ -47,7 +47,7 @@ export type ExecuteTool = (
 
 /**
  * Provider descriptor — a `{ kind, options }` pair produced by factories
- * like `assemblyAIStt(...)` / `anthropic(...)` / `cartesia(...)`. Kept
+ * like `assemblyAIStt(...)` / `anthropicLlm(...)` / `cartesiaTts(...)`. Kept
  * deliberately generic at the schema layer: kind-specific validation lives
  * in the host-side resolver, which knows what each adapter expects.
  *

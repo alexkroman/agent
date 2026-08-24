@@ -25,15 +25,25 @@ export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { mistral } from "@alexkroman1/aai/llm";
+ * import { mistralLlm } from "@alexkroman1/aai/llm";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   llm: mistral({ model: "mistral-large-latest" }),
+ *   llm: mistralLlm({ model: "mistral-large-latest" }),
  * });
  * ```
  */
-export function mistral(opts: ModelOptions): LlmProvider {
+/**
+ * Options for {@link mistralLlm}.
+ *
+ * Empty over {@link ModelOptions} on purpose: this vendor is reached by naming
+ * one model id, and every vendor still gets a NAME for its own options so its
+ * first vendor-specific setting is an additive field here rather than a re-split
+ * of the shared interface across eight call sites.
+ */
+export interface MistralLlmOptions extends ModelOptions {}
+
+export function mistralLlm(opts: MistralLlmOptions): LlmProvider {
   return { kind: MISTRAL_KIND, options: { ...opts } };
 }

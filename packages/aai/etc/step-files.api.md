@@ -14,7 +14,7 @@ export type ReadUploadToFileOptions = {
 };
 
 // @public
-export const STEP_FILE_WINDOW_BYTES: number;
+export const STEP_FILE_WINDOW_BYTES = 8388608;
 
 // @public
 type UploadInfo = {

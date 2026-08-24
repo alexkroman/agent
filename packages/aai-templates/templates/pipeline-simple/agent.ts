@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { anthropic } from "@alexkroman1/aai/llm";
+import { anthropicLlm } from "@alexkroman1/aai/llm";
 
 export default agent({
   name: "pipeline-simple",
@@ -8,5 +8,5 @@ export default agent({
   // left unset (STT and TTS here) runs on the AssemblyAI default, billed to
   // the one key a published agent is guaranteed to have, so swapping a stage
   // never means restating the other two.
-  llm: anthropic({ model: "claude-haiku-4-5" }),
+  llm: anthropicLlm({ model: "claude-haiku-4-5" }),
 });

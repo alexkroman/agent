@@ -9,7 +9,7 @@
   },
   "kebabToCamelMap": {
     "assemblyai": "assemblyAI",
-    "elevenlabs": "elevenlabs",
+    "elevenlabs": "elevenLabs",
     "openai": "openai",
     "openrouter": "openrouter"
   },
@@ -76,7 +76,7 @@
     },
     {
       "name": "core-package-boundary",
-      "description": "packages/aai is the base of the dependency graph — every other package depends on it and it depends on none of them.",
+      "description": "packages/aai is the base of the dependency graph \u2014 every other package depends on it and it depends on none of them.",
       "paths": [
         "packages/aai/*.ts",
         "packages/aai/host/**/*.ts",
@@ -120,7 +120,7 @@
     },
     {
       "name": "guest-package-boundary",
-      "description": "The guest never imports server code — that hard boundary is the reason the guest is its own package. aai-server depends on aai-guest only to resolve its built artifact, never to import guest source.",
+      "description": "The guest never imports server code \u2014 that hard boundary is the reason the guest is its own package. aai-server depends on aai-guest only to resolve its built artifact, never to import guest source.",
       "paths": "packages/aai-guest/*.ts",
       "mustNot": {
         "importFrom": [
@@ -135,7 +135,7 @@
     },
     {
       "name": "browser-package-boundary",
-      "description": "aai-ui is a browser client. It may depend on the core SDK and nothing else in the workspace — a platform or CLI import here would pull server code into a browser bundle.",
+      "description": "aai-ui is a browser client. It may depend on the core SDK and nothing else in the workspace \u2014 a platform or CLI import here would pull server code into a browser bundle.",
       "paths": [
         "packages/aai-ui/*.ts",
         "packages/aai-ui/*.tsx",
@@ -162,7 +162,7 @@
     },
     {
       "name": "runtime-package-boundary",
-      "description": "aai-runtime is the published Node host runtime. It sits one level above the core SDK and below everything else: it may import @alexkroman1/aai and nothing else in the workspace. The CLI, the guest and the platform all depend on it, so an import in this direction would close a cycle — and it ships to users, so a private-package import here would be unresolvable in a consumer's install.",
+      "description": "aai-runtime is the published Node host runtime. It sits one level above the core SDK and below everything else: it may import @alexkroman1/aai and nothing else in the workspace. The CLI, the guest and the platform all depend on it, so an import in this direction would close a cycle \u2014 and it ships to users, so a private-package import here would be unresolvable in a consumer's install.",
       "paths": [
         "packages/aai-runtime/*.ts",
         "packages/aai-runtime/integration/**/*.ts",
@@ -200,7 +200,7 @@
     },
     {
       "name": "studio-browser-boundary",
-      "description": "aai-studio-client is a browser bundle. It may import the core SDK and aai-ui; a platform, CLI or host-runtime import here would pull server code — and server credentials handling — into a bundle served to browsers. Same hazard as browser-package-boundary, for the repo's other front-end.",
+      "description": "aai-studio-client is a browser bundle. It may import the core SDK and aai-ui; a platform, CLI or host-runtime import here would pull server code \u2014 and server credentials handling \u2014 into a bundle served to browsers. Same hazard as browser-package-boundary, for the repo's other front-end.",
       "paths": [
         "packages/aai-studio-client/src/*.ts",
         "packages/aai-studio-client/src/*.tsx",
@@ -224,7 +224,7 @@
     },
     {
       "name": "llm-providers",
-      "description": "Every LLM provider module exports the same three-symbol shape: a kind tag, the env var its key is read from, and the factory. The narrowed *Provider alias each used to export is gone — a factory returns the stage type, and nothing narrowed on the kind. A vendor that occupies more than ONE stage suffixes the stage on its symbols, and the shared {providerId} template cannot express that — so those modules are excluded and checked by nothing here. AssemblyAI spans all four stages (ASSEMBLYAI_STT_KIND, AssemblyAILlmOptions, ASSEMBLYAI_TTS_KIND, assemblyAIS2s) and ElevenLabs spans STT today with the obvious TTS name still free, which is why its factory is elevenLabsStt. Every other vendor here occupies one stage and takes the bare name. The eight single-setting vendors share one ModelOptions interface (llm/model-options.ts), so no per-vendor Options name is checked here.",
+      "description": "Every LLM provider module exports the same three-symbol shape: a kind tag, the env var its key is read from, and the factory. The narrowed *Provider alias each used to export is gone \u2014 a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here.",
       "paths": [
         "packages/aai/sdk/providers/llm/{providerId}.ts",
         "!packages/aai/sdk/providers/llm/assemblyai.ts",
@@ -239,17 +239,19 @@
           "${providerId.toConstantCase()}_API_KEY_ENV"
         ],
         "exportFunctions": [
-          "${providerId.toCamelCase()}"
+          "${providerId.toCamelCase()}Llm"
+        ],
+        "exportInterfaces": [
+          "${providerId.toPascalCase()}LlmOptions"
         ]
       }
     },
     {
       "name": "stt-providers",
-      "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults. The narrowed *Provider alias each used to export is gone — a factory returns the stage type, and nothing narrowed on the kind. A vendor that occupies more than ONE stage suffixes the stage on its symbols, and the shared {providerId} template cannot express that — so those modules are excluded and checked by nothing here. AssemblyAI spans all four stages (ASSEMBLYAI_STT_KIND, AssemblyAILlmOptions, ASSEMBLYAI_TTS_KIND, assemblyAIS2s) and ElevenLabs spans STT today with the obvious TTS name still free, which is why its factory is elevenLabsStt. Every other vendor here occupies one stage and takes the bare name.",
+      "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults. The narrowed *Provider alias each used to export is gone \u2014 a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here.",
       "paths": [
         "packages/aai/sdk/providers/stt/{providerId}.ts",
         "!packages/aai/sdk/providers/stt/assemblyai.ts",
-        "!packages/aai/sdk/providers/stt/elevenlabs.ts",
         "!packages/aai/sdk/providers/stt/*.test.ts"
       ],
       "must": {
@@ -259,17 +261,17 @@
           "${providerId.toConstantCase()}_DEFAULT_MODEL"
         ],
         "exportInterfaces": [
-          "${providerId.toPascalCase()}Options"
+          "${providerId.toPascalCase()}SttOptions"
         ],
         "exportFunctions": [
-          "${providerId.toCamelCase()}",
-          "resolve${providerId.toPascalCase()}Settings"
+          "${providerId.toCamelCase()}Stt",
+          "resolve${providerId.toPascalCase()}SttSettings"
         ]
       }
     },
     {
       "name": "tts-providers",
-      "description": "Every TTS provider module exports the STT shape plus a default voice — the one setting a TTS provider cannot infer. The narrowed *Provider alias each used to export is gone — a factory returns the stage type, and nothing narrowed on the kind. A vendor that occupies more than ONE stage suffixes the stage on its symbols, and the shared {providerId} template cannot express that — so those modules are excluded and checked by nothing here. AssemblyAI spans all four stages (ASSEMBLYAI_STT_KIND, AssemblyAILlmOptions, ASSEMBLYAI_TTS_KIND, assemblyAIS2s) and ElevenLabs spans STT today with the obvious TTS name still free, which is why its factory is elevenLabsStt. Every other vendor here occupies one stage and takes the bare name.",
+      "description": "Every TTS provider module exports the STT shape plus a default voice \u2014 the one setting a TTS provider cannot infer. The narrowed *Provider alias each used to export is gone \u2014 a factory returns the stage type, and nothing narrowed on the kind. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here.",
       "paths": [
         "packages/aai/sdk/providers/tts/{providerId}.ts",
         "!packages/aai/sdk/providers/tts/assemblyai.ts",
@@ -283,32 +285,31 @@
           "${providerId.toConstantCase()}_DEFAULT_VOICE"
         ],
         "exportInterfaces": [
-          "${providerId.toPascalCase()}Options"
+          "${providerId.toPascalCase()}TtsOptions"
         ],
         "exportFunctions": [
-          "${providerId.toCamelCase()}",
-          "resolve${providerId.toPascalCase()}Settings"
+          "${providerId.toCamelCase()}Tts",
+          "resolve${providerId.toPascalCase()}TtsSettings"
         ]
       }
     },
     {
       "name": "s2s-providers",
-      "description": "S2S providers take the same kind/env-var pair as the pipeline providers, and declare Options as an interface like the other three stages. A vendor that occupies more than ONE stage suffixes the stage on its symbols, and the shared {providerId} template cannot express that — so those modules are excluded and checked by nothing here. AssemblyAI spans all four stages (ASSEMBLYAI_STT_KIND, AssemblyAILlmOptions, ASSEMBLYAI_TTS_KIND, assemblyAIS2s) and ElevenLabs spans STT today with the obvious TTS name still free, which is why its factory is elevenLabsStt. Every other vendor here occupies one stage and takes the bare name.",
+      "description": "S2S providers take the same kind/env-var pair as the pipeline providers, and declare Options as an interface like the other three stages. Every vendor here is stage-qualified on its authoring symbols \u2014 factory, options interface and resolve*Settings helper all carry the stage \u2014 so a vendor that later takes a second stage adds a name instead of renaming one. That rule used to apply to AssemblyAI and ElevenLabs alone, and every other vendor took the bare name; renaming `elevenlabs()` to `elevenLabsStt()` had already cost one epoch, and nine more factories were queued up behind it. The *_KIND / *_API_KEY_ENV constants are NOT stage-qualified for the single-stage vendors: they are `@alexkroman1/aai/host-internal`, outside every authoring contract, and AssemblyAI's are qualified only because it needs one per stage \u2014 which is why its modules are still excluded from the constant templates here. The kind/env constants ARE stage-qualified on this stage, because both vendors here also occupy another one: `openai` is an LLM module too, so an unqualified OPENAI_KIND would collide across the two.",
       "paths": [
         "packages/aai/sdk/providers/s2s/{providerId}.ts",
-        "!packages/aai/sdk/providers/s2s/assemblyai.ts",
         "!packages/aai/sdk/providers/s2s/*.test.ts"
       ],
       "must": {
         "exportConstants": [
-          "${providerId.toConstantCase()}_KIND",
-          "${providerId.toConstantCase()}_API_KEY_ENV"
+          "${providerId.toConstantCase()}_S2S_KIND",
+          "${providerId.toConstantCase()}_S2S_API_KEY_ENV"
         ],
         "exportFunctions": [
-          "${providerId.toCamelCase()}"
+          "${providerId.toCamelCase()}S2s"
         ],
         "exportInterfaces": [
-          "${providerId.toPascalCase()}Options"
+          "${providerId.toPascalCase()}S2sOptions"
         ]
       }
     },

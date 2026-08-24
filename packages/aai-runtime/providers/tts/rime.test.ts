@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { RIME_DEFAULT_LANGUAGE, RIME_DEFAULT_MODEL } from "@alexkroman1/aai/host-internal";
-import { RIME_DEFAULT_VOICE, type RimeOptions } from "@alexkroman1/aai/tts";
+import { RIME_DEFAULT_VOICE, type RimeTtsOptions } from "@alexkroman1/aai/tts";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 async function openSession(
-  opts: RimeOptions = {},
+  opts: RimeTtsOptions = {},
   sampleRate = 16_000,
 ): Promise<{
   session: RimeSession;

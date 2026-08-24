@@ -17,73 +17,8 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
     readonly es: "spanish";
 };
 
-// @public
-export const ASSEMBLYAI_TTS_VOICES: {
-    readonly alba: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly anna: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly charles: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly eve: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly george: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jane: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly jean: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly mary: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly michael: {
-        readonly language: "en";
-        readonly accent: "US";
-    };
-    readonly paul: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly vera: {
-        readonly language: "en";
-        readonly accent: "UK";
-    };
-    readonly giovanni: {
-        readonly language: "it";
-        readonly accent: "IT";
-    };
-    readonly lola: {
-        readonly language: "es";
-        readonly accent: "ES";
-    };
-    readonly juergen: {
-        readonly language: "de";
-        readonly accent: "DE";
-    };
-    readonly rafael: {
-        readonly language: "pt";
-        readonly accent: "PT";
-    };
-    readonly estelle: {
-        readonly language: "fr";
-        readonly accent: "FR";
-    };
-};
+// @public (undocumented)
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
 export function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
@@ -92,27 +27,40 @@ export function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
 export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 // @public (undocumented)
-export interface AssemblyAITtsOptions {
-    apiKeyEnv?: string;
+export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
     host?: string;
     language?: AssemblyAITtsLanguage;
     voice?: AssemblyAITtsVoice;
 }
 
 // @public
-export type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
+export type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
 
 // @public
-export function cartesia(opts?: CartesiaOptions): TtsProvider;
+export type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+
+// @public
+export interface AssemblyAITtsVoiceInfo {
+    readonly accent: string;
+    readonly language: AssemblyAITtsLanguage;
+}
 
 // @public
 export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 
 // @public
-export interface CartesiaOptions {
+export function cartesiaTts(opts?: CartesiaTtsOptions): TtsProvider;
+
+// @public
+export interface CartesiaTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
     voice?: string;
+}
+
+// @public
+export interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
 }
 
 // @public
@@ -124,13 +72,13 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function rime(opts?: RimeOptions): TtsProvider;
-
-// @public
 export const RIME_DEFAULT_VOICE = "cove";
 
 // @public
-export interface RimeOptions {
+export function rimeTts(opts?: RimeTtsOptions): TtsProvider;
+
+// @public
+export interface RimeTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
     voice?: string;

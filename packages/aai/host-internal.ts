@@ -185,9 +185,9 @@ export {
   ASSEMBLYAI_S2S_KIND,
 } from "./sdk/providers/s2s/assemblyai.ts";
 export {
-  OPENAI_REALTIME_API_KEY_ENV,
-  OPENAI_REALTIME_KIND,
-} from "./sdk/providers/s2s/openai-realtime.ts";
+  OPENAI_S2S_API_KEY_ENV,
+  OPENAI_S2S_KIND,
+} from "./sdk/providers/s2s/openai.ts";
 export {
   ASSEMBLYAI_STT_API_KEY_ENV,
   ASSEMBLYAI_STT_DEFAULT_MODEL,
@@ -197,16 +197,16 @@ export {
 export {
   DEEPGRAM_API_KEY_ENV,
   DEEPGRAM_KIND,
-  resolveDeepgramSettings,
+  resolveDeepgramSttSettings,
 } from "./sdk/providers/stt/deepgram.ts";
 export {
   ELEVENLABS_API_KEY_ENV,
   ELEVENLABS_DEFAULT_MODEL,
   ELEVENLABS_KIND,
-  resolveElevenLabsSettings,
+  resolveElevenLabsSttSettings,
 } from "./sdk/providers/stt/elevenlabs.ts";
 export {
-  resolveSonioxSettings,
+  resolveSonioxSttSettings,
   SONIOX_API_KEY_ENV,
   SONIOX_KIND,
 } from "./sdk/providers/stt/soniox.ts";
@@ -222,14 +222,14 @@ export {
 export {
   CARTESIA_API_KEY_ENV,
   CARTESIA_KIND,
-  resolveCartesiaSettings,
+  resolveCartesiaTtsSettings,
 } from "./sdk/providers/tts/cartesia.ts";
 export {
   RIME_API_KEY_ENV,
   RIME_DEFAULT_LANGUAGE,
   RIME_DEFAULT_MODEL,
   RIME_KIND,
-  resolveRimeSettings,
+  resolveRimeTtsSettings,
 } from "./sdk/providers/tts/rime.ts";
 export {
   makeSttError,

@@ -24,7 +24,7 @@
  */
 
 import { omitUndefined } from "../../omit-undefined.ts";
-import type { LlmProvider } from "../../providers.ts";
+import type { LlmProvider, ProviderCredentialOptions } from "../../providers.ts";
 import type { AssemblyAIGatewayModel } from "./gateway-models.ts";
 
 /** Kind tag recognised by the host-side resolver. */
@@ -100,7 +100,7 @@ export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | 
 const TOOLS_REQUIRE_NO_REASONING: ReadonlySet<string> = new Set(["gpt-5.6-luna", "gpt-5.6-terra"]);
 
 /** Options for {@link assemblyAILlm}. */
-export interface AssemblyAILlmOptions {
+export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
   /**
    * Gateway model id — {@link AssemblyAIGatewayModel} is the generated union
    * of what `/v1/models` advertises. (The catalog BEHIND it, recording which
@@ -163,18 +163,6 @@ export interface AssemblyAILlmOptions {
    * this exception applies only once a `gpt-5.6` id is named.
    */
   reasoningEffort?: AssemblyAIReasoningEffort;
-  /**
-   * Env var holding this stage's credential, replacing the provider default
-   * (`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
-   * stays secret-free and safe to serialize.
-   *
-   * For running one stage against a different account or cluster than the
-   * others — AssemblyAI keys are environment-scoped, so a staging STT cluster
-   * rejects a production key and vice versa, and a mixed setup needs both keys
-   * live at once. The variable must be present in the agent's env (`.env` or
-   * `aai secret put`), like any other credential.
-   */
-  apiKeyEnv?: string;
 }
 
 /**

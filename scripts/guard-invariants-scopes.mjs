@@ -28,6 +28,16 @@
  * `guard-invariants-gate.test.ts` asserts every path here exists, because a
  * hand-kept list's one real failure mode is a rename quietly emptying the rule.
  */
+/**
+ * The one file declaring `ToolContext` — the per-CALL context handed to every
+ * tool body, and the type rule 24 keeps from growing.
+ *
+ * A single path rather than a glob, because "is this the tool context" is not
+ * derivable from a filename; the gate spec asserts it exists so a rename cannot
+ * silently empty the corpus.
+ */
+export const TOOL_CONTEXT_PATHS = ["packages/aai/sdk/tool-context.ts"];
+
 export const SESSION_SURFACE_PATHS = [
   "packages/aai-runtime/session-core.ts",
   "packages/aai-runtime/session-commands.ts",
