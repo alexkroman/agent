@@ -36,13 +36,15 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { ERE_UNSUPPORTED } from "./_gate-support.ts";
+import { ERE_UNSUPPORTED, sole } from "./_gate-support.ts";
 
-const script = import.meta.glob("../../scripts/check-escape-hatches.mjs", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../scripts/check-escape-hatches.mjs"];
+const script = sole(
+  import.meta.glob("../../scripts/check-escape-hatches.mjs", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 /**
  * The shared ratchet ENGINE, which both baseline gates now run on.
@@ -55,18 +57,22 @@ const script = import.meta.glob("../../scripts/check-escape-hatches.mjs", {
  * thing lives, which is the cost of scraping and the reason it is worth it here
  * — the alternative is trusting that a gate still contains its own gate.
  */
-const engine = import.meta.glob("../../scripts/_ratchet.mjs", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../scripts/_ratchet.mjs"];
+const engine = sole(
+  import.meta.glob("../../scripts/_ratchet.mjs", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 /** A real, human-written guide in this repo — prose, not code. */
-const scaffoldGuide = import.meta.glob("./scaffold/CLAUDE.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["./scaffold/CLAUDE.md"];
+const scaffoldGuide = sole(
+  import.meta.glob("./scaffold/CLAUDE.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 /**
  * The whole markdown corpus the PER-PATTERN liveness assertion is made against:
@@ -121,12 +127,12 @@ const proseLines: { doc: string; line: string }[] = Object.entries(proseDocs).fl
  * here, in the ordinary test run, instead of at the next `pnpm check:hatches`.
  */
 const baseline: Record<string, unknown> =
-  Object.values(
+  sole(
     import.meta.glob<Record<string, unknown>>("../../scripts/escape-hatch-baseline.json", {
       import: "default",
       eager: true,
     }),
-  )[0] ?? {};
+  ) ?? {};
 
 /**
  * Pull the gate's patterns out of its source: entries read

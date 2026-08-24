@@ -208,6 +208,28 @@ export function createPcmFrameAccumulator(opts: {
   };
 }
 
+/**
+ * The `close` an STT session with a frame accumulator owes: flush the tail
+ * first, then tear down.
+ *
+ * Both halves are load-bearing and both were written out per opener. The FLUSH
+ * is what stops the last sub-target frame of a session being dropped — the
+ * accumulator holds anything shorter than {@link STT_FRAME_TARGET_MS}, which on
+ * a short final utterance is the whole thing. The CLOSED CHECK is what stops the
+ * abort path flushing onto a socket that is already gone: `closeOnAbort` calls
+ * `shell.close` directly, so by the time a caller's own `close()` lands the
+ * latch may already be set and `send` would reach a dead socket.
+ */
+export function closeAfterFlush(
+  shell: SessionShell<SttEvents>,
+  frames: PcmFrameAccumulator,
+): () => Promise<void> {
+  return () => {
+    if (!shell.isClosed()) frames.flush();
+    return shell.close();
+  };
+}
+
 /** Scaffolding shared by every opener's session — see {@link createSessionShell}. */
 export interface SessionShell<Events extends EventsMap> {
   /** True once `close()` has run (directly or via the abort signal). */

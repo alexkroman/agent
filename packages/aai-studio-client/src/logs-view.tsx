@@ -67,9 +67,14 @@ const TARGET_LABEL: Record<LogsTarget, string> = {
 type Gap = { kind: "gap"; seq: number; count: number };
 type Row = (AgentLogLine & { kind?: undefined }) | Gap;
 
+/** Hoisted: `timeOf` runs once per rendered row, and there are up to
+ * {@link MAX_RENDERED_LINES} of them on every re-render. */
+function pad(n: number, width = 2): string {
+  return String(n).padStart(width, "0");
+}
+
 function timeOf(at: number): string {
   const d = new Date(at);
-  const pad = (n: number, width = 2) => String(n).padStart(width, "0");
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 

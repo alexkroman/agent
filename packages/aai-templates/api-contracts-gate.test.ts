@@ -28,6 +28,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { byCodeUnit, GATE_WIRING, sole } from "./_gate-support.ts";
 
 // `import.meta.glob` is compiled away by Vite, so its options must be a literal
 // at every call site — a shared `const raw = {…}` fails the transform.
@@ -60,23 +61,18 @@ const tables: Record<string, string> = import.meta.glob("../*/contracts/contract
 });
 
 const exportsSource: string =
-  import.meta.glob("../../API-EXPORTS.json", {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  })["../../API-EXPORTS.json"] ?? "{}";
-const checkScript: string =
-  import.meta.glob("../../scripts/check.sh", {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  })["../../scripts/check.sh"] ?? "";
-const ciWorkflow: string =
-  import.meta.glob("../../.github/workflows/check.yml", {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  })["../../.github/workflows/check.yml"] ?? "";
+  sole(
+    import.meta.glob("../../API-EXPORTS.json", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  ) ?? "{}";
+// The two RUNNERS come from the shared wiring block — the same three sources
+// every gate spec here reads. `?? ""` keeps a source that stopped resolving
+// visible as an empty search, which the assertions below then fail on.
+const checkScript: string = GATE_WIRING["scripts/check.sh"] ?? "";
+const ciWorkflow: string = GATE_WIRING[".github/workflows/check.yml"] ?? "";
 
 const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
 
@@ -92,12 +88,6 @@ const basename = (key: string): string =>
   (key.split("/").at(-1) ?? "").replace(/\.(tsx|ts|json)$/, "");
 /** `../aai/contracts/epochs/tool/v3.json` -> `tool`. */
 const parentDir = (key: string): string => key.split("/").at(-2) ?? "";
-
-function compareNames(a: string, b: string): number {
-  if (a < b) return -1;
-  if (a > b) return 1;
-  return 0;
-}
 
 /**
  * The names one capability root selects.
@@ -116,7 +106,7 @@ const declaredNames = (source: string): string[] =>
     .flatMap((match) => (match[1] ?? "").split(","))
     .map((entry) => entry.trim().replace(/^type\s+/, ""))
     .filter((entry) => /^[A-Za-z_$][\w$]*$/.test(entry))
-    .sort(compareNames);
+    .sort(byCodeUnit);
 
 /** One contract-carrying package, assembled from the globs above. */
 const packages = Object.entries(tables)
@@ -126,7 +116,7 @@ const packages = Object.entries(tables)
     return {
       pkg,
       table,
-      capabilities: Object.keys(table).sort(compareNames),
+      capabilities: Object.keys(table).sort(byCodeUnit),
       roots: Object.entries(entrypoints)
         .filter(([path]) => packageOf(path) === pkg)
         .map(([path, text]) => ({
@@ -135,7 +125,7 @@ const packages = Object.entries(tables)
           source: text,
           names: declaredNames(text),
         }))
-        .sort((a, b) => compareNames(a.capability, b.capability)),
+        .sort((a, b) => byCodeUnit(a.capability, b.capability)),
       epochs: Object.entries(epochFiles)
         .filter(([path]) => packageOf(path) === pkg)
         .map(([path, source_]) => ({
@@ -149,7 +139,7 @@ const packages = Object.entries(tables)
         fixtures[`../${pkg}/contracts/compatibility/${capability}/v${version}.tsx`],
     };
   })
-  .sort((a, b) => compareNames(a.pkg, b.pkg));
+  .sort((a, b) => byCodeUnit(a.pkg, b.pkg));
 
 /** Every (package, capability) pair, for the per-capability cases below. */
 const contracts = packages.flatMap((entry) =>
@@ -268,7 +258,7 @@ describe("capability contracts", () => {
       expect(record.sha256, `v${version}.json has no usable hash`).toMatch(/^[0-9a-f]{64}$/);
       expect(record.exports.length, `v${version}.json exports nothing`).toBeGreaterThan(0);
       expect(record.exports, `v${version}.json's exports are unsorted`).toEqual(
-        [...record.exports].sort(compareNames),
+        [...record.exports].sort(byCodeUnit),
       );
     }
   });
@@ -325,12 +315,12 @@ describe("capability contracts", () => {
   test("the gate is wired into both check.sh and CI", () => {
     // It lived only in check.sh for the ratchets, and `git push --no-verify`
     // skipped every one of them. Both, or neither is enforcement.
-    expect(checkScript, "scripts/check.sh does not run check:api-contracts").toContain(
-      "check:api-contracts",
-    );
-    expect(ciWorkflow, ".github/workflows/check.yml does not run check:api-contracts").toContain(
-      "check:api-contracts",
-    );
+    for (const [path, text] of Object.entries(GATE_WIRING)) {
+      expect(text, `${path} not found`).toBeTypeOf("string");
+      expect(text, `${path} no longer references check:api-contracts`).toContain(
+        "check:api-contracts",
+      );
+    }
     // Ordering matters: the contracts read the authoring surface out of the
     // committed API reports, so a stale report would be believed.
     for (const [label, source] of [
@@ -356,7 +346,7 @@ describe("API-EXPORTS.json", () => {
     expect(specifiers).toContain("@alexkroman1/aai-cli/typecheck");
     for (const [specifier, names] of Object.entries(surface)) {
       expect(names.length, `${specifier} exports nothing`).toBeGreaterThan(0);
-      expect(names, `${specifier} is unsorted`).toEqual([...names].sort(compareNames));
+      expect(names, `${specifier} is unsorted`).toEqual([...names].sort(byCodeUnit));
       expect(new Set(names).size, `${specifier} repeats a name`).toBe(names.length);
     }
   });

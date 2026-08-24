@@ -38,7 +38,7 @@
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { contentLength, IDENTITY_ENCODING, type UploadBlobs } from "./_upload-blobs.ts";
 import { UPLOAD_STORAGE_BUCKET_ENV, UPLOAD_STORAGE_URL_ENV } from "./_upload-env.ts";
-import { concat, UploadTooLargeError } from "./_upload-store.ts";
+import { collectCapped } from "./_upload-store.ts";
 
 export type HttpUploadBlobsOptions = {
   /** Project URL (`https://<ref>.supabase.co`), or any Storage-compatible origin. */
@@ -81,15 +81,7 @@ export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs
       // file — `UPLOAD_PART_BYTES`, i.e. megabytes, not the two gigabytes
       // `MAX_WORKFLOW_UPLOAD_BYTES` allows — which is the whole reason the store
       // cuts a body into windows before it reaches here.
-      const held: Uint8Array[] = [];
-      let size = 0;
-      for await (const piece of body) {
-        size += piece.length;
-        if (options?.limit !== undefined && size > options.limit) {
-          throw new UploadTooLargeError(options.limit);
-        }
-        held.push(piece);
-      }
+      const bytes = await collectCapped(body, options?.limit);
       const res = await call(objectUrl(key), {
         method: "PUT",
         headers: {
@@ -98,10 +90,10 @@ export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs
           // See the module doc: a retried part must be the same object.
           "x-upsert": "true",
         },
-        body: concat(held, size),
+        body: bytes,
       });
       if (!res.ok) throw await storageError("write", key, res);
-      return size;
+      return bytes.length;
     },
 
     async read(key, start, end): Promise<Uint8Array> {

@@ -1480,13 +1480,18 @@ could be: it is a real agent doing real work, on the same SDK it builds with.
 
 ## A gate spec's SOURCES are shared; its assertions are not
 
-`_gate-support.ts` holds the three things every gate spec here reads and none of
-them owns: `GATE_WIRING` (the three files a gate must be NAMED in —
-`package.json`, `scripts/check.sh`, `.github/workflows/check.yml`),
-`ERE_UNSUPPORTED` (the regex constructs POSIX ERE has no answer for, banned by
-both pattern-shipping gates), and `repoPathOf` (a Vite glob key as a
-repo-relative path). The wiring block alone stood in FIVE specs at seventeen
-lines each, differing only in the gate name the caller then asserts.
+`_gate-support.ts` holds what every gate spec here reads and none of them owns:
+`GATE_WIRING` (the three files a gate must be NAMED in — `package.json`,
+`scripts/check.sh`, `.github/workflows/check.yml`), `ERE_UNSUPPORTED` (the regex
+constructs POSIX ERE has no answer for, banned by both pattern-shipping gates),
+`repoPathOf` (a Vite glob key as a repo-relative path), `sole` (the one value a
+single-file glob resolved to), `byCodeUnit` (the explicit comparator the repo
+requires of anything a gate reads) and `numericConstant` (a cap read out of a
+gate script's source rather than restated). The wiring block alone stood in FIVE
+specs at seventeen lines each, differing only in the gate name the caller then
+asserts; `sole` replaced two dozen reads that spelled the globbed path TWICE,
+once for the transform and once to index the result — a pair that drifted would
+have read `undefined`, i.e. a gate checking an empty string.
 
 Sharing them is safe precisely because none of it is an assertion: each spec
 still makes its own, over its own gate, and a glob that stopped resolving leaves

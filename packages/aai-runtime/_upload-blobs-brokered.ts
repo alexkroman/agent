@@ -44,7 +44,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import type { UploadBlobs } from "./_upload-blobs.ts";
 import { contentLength, IDENTITY_ENCODING } from "./_upload-blobs.ts";
-import { concat, UploadTooLargeError } from "./_upload-store.ts";
+import { collectCapped } from "./_upload-store.ts";
 
 /**
  * How long one byte operation may take.
@@ -93,26 +93,18 @@ export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): Upl
     async put(key, body, options): Promise<number> {
       // Buffered for the reason `_upload-blobs-http.ts` gives — the far side stores
       // one object and needs its length — and bounded by the window, not the file.
-      const held: Uint8Array[] = [];
-      let size = 0;
-      for await (const piece of body) {
-        size += piece.length;
-        if (options?.limit !== undefined && size > options.limit) {
-          throw new UploadTooLargeError(options.limit);
-        }
-        held.push(piece);
-      }
+      const bytes = await collectCapped(body, options?.limit);
       const res = await send(
         key,
         {
           method: "PUT",
           headers: { "Content-Type": options?.type || "application/octet-stream" },
-          body: concat(held, size),
+          body: bytes,
         },
         "write",
       );
       if (!res.ok) throw await brokerError("write", key, res);
-      return size;
+      return bytes.length;
     },
 
     async read(key, start, end): Promise<Uint8Array> {

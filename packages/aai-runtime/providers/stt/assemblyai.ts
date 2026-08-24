@@ -18,6 +18,7 @@ import { createNanoEvents, type Emitter } from "nanoevents";
 import { createAudioSendGate } from "../../_audio-gate.ts";
 import { consoleLogger } from "../../runtime-config.ts";
 import {
+  closeAfterFlush,
   closeOnAbort,
   connectOrThrow,
   createPcmFrameAccumulator,
@@ -315,10 +316,7 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
           frames.push(pcm);
         },
         on: shell.on,
-        close: () => {
-          if (!shell.isClosed()) frames.flush();
-          return shell.close();
-        },
+        close: closeAfterFlush(shell, frames),
         updateAgentContext(text: string) {
           if (!agentContextCapable || shell.isClosed()) return;
           const normalized = normalizeAgentContext(text);

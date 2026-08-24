@@ -16,6 +16,7 @@
  * `-preview` is mislabeled, harmlessly).
  */
 
+import { omitUndefined } from "@alexkroman1/aai";
 import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
 
 /** What a guest sandbox was spawned (or acquired) to do. */
@@ -64,5 +65,5 @@ export function resolveSandboxRole(opts: SpawnIdentity): SandboxRole {
 
 /** The tag set attached to every guest sandbox at creation. */
 export function sandboxTags(role: SandboxRole, slug?: string): Record<string, string> {
-  return { service: "aai-guest", role, ...(slug ? { slug } : {}) };
+  return { service: "aai-guest", role, ...omitUndefined({ slug }) };
 }

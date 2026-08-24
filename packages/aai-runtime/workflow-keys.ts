@@ -36,6 +36,7 @@
 
 import type { Db } from "@alexkroman1/aai";
 import { ensureOnce } from "./_ensure-once.ts";
+import { getOrCreate } from "./_get-or-create.ts";
 
 /** How many runs a keyed or keyless lookup returns when the caller names no limit. */
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
@@ -85,10 +86,9 @@ export function createMemoryKeyStore(): WorkflowKeyStore {
   const compositeKey = (workflow: string, key: string): string => `${workflow}\u0000${key}`;
   return {
     record(workflow, key, runId) {
-      const k = compositeKey(workflow, key);
-      const runs = byKey.get(k);
-      if (runs) runs.unshift(runId);
-      else byKey.set(k, [runId]);
+      // Newest first, matching what the Postgres store's `order by ... desc`
+      // hands back — `lookup` slices from the front.
+      getOrCreate(byKey, compositeKey(workflow, key), () => []).unshift(runId);
       return Promise.resolve();
     },
     lookup(workflow, key, limit) {

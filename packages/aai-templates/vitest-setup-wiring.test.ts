@@ -26,7 +26,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { repoPathOf } from "./_gate-support.ts";
+import { repoPathOf, sole } from "./_gate-support.ts";
 
 /** Every package's own vitest config, as source. */
 const packageConfigs = Object.entries(
@@ -46,21 +46,21 @@ const rootConfigs = Object.entries(
   }),
 ).map(([key, source]) => ({ path: repoPathOf(key), source }));
 
-const shared = Object.values(
+const shared = sole(
   import.meta.glob<string>("../../vitest.shared.ts", {
     query: "?raw",
     import: "default",
     eager: true,
   }),
-)[0];
+);
 
-const turbo = Object.values(
+const turbo = sole(
   import.meta.glob<string>("../../turbo.json", {
     query: "?raw",
     import: "default",
     eager: true,
   }),
-)[0];
+);
 
 /** `setupFiles:` declared anywhere in a config's source. */
 const declaresSetupFiles = (source: string): boolean => /setupFiles:/.test(source);

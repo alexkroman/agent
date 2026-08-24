@@ -19,8 +19,6 @@
  * client.tsx) rather than writing a file that breaks at publish time.
  */
 
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { safeFetch } from "@alexkroman1/aai-runtime/internal";
@@ -29,7 +27,11 @@ import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { WORKSPACE_DEPENDENCIES } from "./studio-project-shape.ts";
 import { NPM_TIMEOUT_MS, outputWithKillNote, PACKAGE_NAME_RE, runNpm } from "./studio-spawn.ts";
 import { STUDIO_TOOL_DESCRIPTIONS } from "./studio-tool-descriptions.ts";
-import { resolveInside, writeFileWithParents } from "./studio-workspace-fs.ts";
+import {
+  readWorkspaceManifest,
+  resolveInside,
+  writeFileWithParents,
+} from "./studio-workspace-fs.ts";
 
 /** Deadline for one asset download. */
 const DOWNLOAD_TIMEOUT_MS = 30_000;
@@ -88,6 +90,15 @@ function invalidSpec(spec: string): string {
   return `Error: "${spec}" is not a valid npm package spec (expected name, @scope/name, or name@version)`;
 }
 
+/**
+ * The non-zero-exit answer both npm tools give. One spelling, so the
+ * `(no output)` placeholder and the `[exit code N]` shape cannot drift
+ * between `npm_info` and the install/uninstall pair.
+ */
+function npmFailure(label: string, exitCode: number | null, body: string): string {
+  return `${label} failed [exit code ${exitCode}]\n${body || "(no output)"}`;
+}
+
 async function npmTool(dir: string, verb: "install" | "uninstall", spec: string): Promise<string> {
   if (!PACKAGE_SPEC_RE.test(spec)) return invalidSpec(spec);
   try {
@@ -96,7 +107,7 @@ async function npmTool(dir: string, verb: "install" | "uninstall", spec: string)
     if (exitCode === 0) {
       return `npm ${verb} ${spec} succeeded${body ? `\n${body}` : ""}`;
     }
-    return `npm ${verb} ${spec} failed [exit code ${exitCode}]\n${body || "(no output)"}`;
+    return npmFailure(`npm ${verb} ${spec}`, exitCode, body);
   } catch (err) {
     return `Error: ${errorMessage(err)}`;
   }
@@ -116,15 +127,6 @@ function declaredSpecs(manifest: unknown): Record<string, string> {
     return isRecord(value) ? (value as Record<string, string>) : {};
   };
   return { ...pick("devDependencies"), ...pick("dependencies") };
-}
-
-/** Parse the workspace manifest, or `null` when it is missing/unparseable. */
-async function readManifest(dir: string): Promise<unknown | null> {
-  try {
-    return JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8")) as unknown;
-  } catch {
-    return null;
-  }
 }
 
 /** One `name: before → after` line per package the install was asked about. */
@@ -154,9 +156,10 @@ function partitionTargets(
   const targets: string[] = [];
   const pinned: string[] = [];
   const undeclared: string[] = [];
+  const isDeclared = new Set(declared);
   for (const name of requested.length > 0 ? requested : declared) {
     if (TOOLCHAIN_MANAGED.has(name)) pinned.push(name);
-    else if (!declared.includes(name)) undeclared.push(name);
+    else if (!isDeclared.has(name)) undeclared.push(name);
     else targets.push(name);
   }
   return { targets, pinned, undeclared };
@@ -199,7 +202,7 @@ async function updateDependencies(dir: string, requested?: string[]): Promise<st
       "Pass names only; the target version is always the registry's latest."
     );
   }
-  const manifest = await readManifest(dir);
+  const manifest = await readWorkspaceManifest(dir);
   if (manifest === null) {
     return "Error: package.json is missing or is not valid JSON — fix it before updating dependencies";
   }
@@ -216,7 +219,7 @@ async function updateDependencies(dir: string, requested?: string[]): Promise<st
       ...targets.map((name) => `${name}@latest`),
     ]);
     const body = output.trim();
-    const after = declaredSpecs(await readManifest(dir));
+    const after = declaredSpecs(await readWorkspaceManifest(dir));
     // A failure is diffed too, and only the diff decides whether to claim
     // nothing changed: npm aborts a resolution conflict before touching the
     // manifest, but a lifecycle-script failure lands after the write, and
@@ -293,7 +296,7 @@ export function createProjectTools(deps: ProjectToolDeps): Record<string, ToolDe
           const { exitCode, output } = await npmOutput(dir, ["view", spec, ...NPM_INFO_FIELDS]);
           const body = output.trim();
           if (exitCode !== 0) {
-            return `npm view ${spec} failed [exit code ${exitCode}]\n${body || "(no output)"}`;
+            return npmFailure(`npm view ${spec}`, exitCode, body);
           }
           return body || `No registry metadata for ${spec}`;
         } catch (err) {

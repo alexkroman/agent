@@ -45,6 +45,41 @@ const REQUIRE_CALL = /(?<![\w$.])require\(\s*"([^"]+)"\s*\)/g;
 /** esbuild's per-module header — `// node_modules/pkg/index.js`, and nothing else. */
 const MODULE_COMMENT = /^\/\/ (\S+\.[cm]?[jt]sx?)$/;
 
+/**
+ * The bundle's lines, each already attributed to the module esbuild's last
+ * `// <path>` header named (undefined before the first one). Header lines are
+ * consumed rather than yielded — no scan has anything to say about them.
+ *
+ * Both scans below walk the bundle exactly this way; sharing the walk is what
+ * keeps "how a line is attributed" one answer rather than two copies that can
+ * disagree.
+ */
+function* attributedLines(
+  workflowCode: string,
+): Generator<{ line: string; module: string | undefined }> {
+  let module: string | undefined;
+  for (const line of workflowCode.split("\n")) {
+    const header = MODULE_COMMENT.exec(line.trim());
+    if (header) {
+      module = header[1];
+      continue;
+    }
+    yield { line, module };
+  }
+}
+
+/**
+ * The dedupe key for one finding — what was found, and where.
+ *
+ * A NUL separates the two halves (neither can contain one, so the key cannot
+ * collide) and is spelled as an ESCAPE, never the raw byte: one control
+ * character makes a file binary to `git grep`, and every ratchet here is a
+ * `git grep`. See "Never write a control character" in AGENTS.md.
+ */
+function siteKey(found: string, module: string | undefined): string {
+  return `${found}\u0000${module ?? ""}`;
+}
+
 /** One `require` the workflow VM cannot answer, and the module it was written for. */
 export type VmRequireSite = {
   /** The module specifier — `node:child_process`. */
@@ -89,20 +124,10 @@ export type VmRequireSite = {
 export function findVmRequires(workflowCode: string): VmRequireSite[] {
   const found: VmRequireSite[] = [];
   const seen = new Set<string>();
-  let module: string | undefined;
-  for (const line of workflowCode.split("\n")) {
-    const header = MODULE_COMMENT.exec(line.trim());
-    if (header) {
-      module = header[1];
-      continue;
-    }
+  for (const { line, module } of attributedLines(workflowCode)) {
     for (const [, specifier] of line.matchAll(REQUIRE_CALL)) {
       if (specifier === undefined || !RUNTIME_MODULES.has(specifier)) continue;
-      // A NUL separates the two halves (neither can contain one, so the key
-      // cannot collide) and is spelled as an ESCAPE, never the raw byte: one
-      // control character makes a file binary to `git grep`, and every ratchet
-      // here is a `git grep`. See "Never write a control character" in AGENTS.md.
-      const key = `${specifier}\u0000${module ?? ""}`;
+      const key = siteKey(specifier, module);
       if (seen.has(key)) continue;
       seen.add(key);
       found.push({ specifier, module });
@@ -177,18 +202,11 @@ export type ReplayUnsafeSite = {
 export function findReplayUnsafeCalls(workflowCode: string): ReplayUnsafeSite[] {
   const found: ReplayUnsafeSite[] = [];
   const seen = new Set<string>();
-  let module: string | undefined;
-  for (const line of workflowCode.split("\n")) {
-    const header = MODULE_COMMENT.exec(line.trim());
-    if (header) {
-      module = header[1];
-      continue;
-    }
+  for (const { line, module } of attributedLines(workflowCode)) {
     if (module === undefined || !isProjectWorkflowModule(module)) continue;
     for (const { re, fix } of REPLAY_UNSAFE) {
       for (const [call] of line.matchAll(re)) {
-        // Same NUL-as-escape rule as `findVmRequires`.
-        const key = `${call}\u0000${module}`;
+        const key = siteKey(call, module);
         if (seen.has(key)) continue;
         seen.add(key);
         found.push({ call, fix, module });

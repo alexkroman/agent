@@ -115,6 +115,30 @@ function windowedRead(content: string, offset = 1, limit = READ_LIMIT): string {
   return body + note;
 }
 
+/**
+ * Read a workspace file, or null when it is not there.
+ *
+ * The resolve is INSIDE the catch on purpose: a path that escapes the
+ * workspace reads to these tools as a file that is not there, which is the
+ * answer `read_file` has always given (`write_file` lets the throw out, so the
+ * executor turns a real escape into an error result the model cannot mistake
+ * for a typo). The three tools that open a path by hand then answer with the
+ * same prose sentence ({@link noSuchFile}), and the `try`/`catch` that decides
+ * "missing" lives here rather than at each of them.
+ */
+async function readWorkspaceFile(dir: string, rel: string): Promise<string | null> {
+  try {
+    return await readFile(resolveInside(dir, rel), "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+/** The answer every path-taking tool gives for a path that is not there. */
+function noSuchFile(rel: string): string {
+  return `Error: no such file: ${rel}`;
+}
+
 /** Run one bash command in the workspace; the token never enters its env. */
 async function runBash(
   dir: string,
@@ -209,12 +233,8 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
         limit: z.number().optional().describe(`Max lines to read (default ${READ_LIMIT})`),
       }),
       execute: async ({ path: rel, offset, limit }) => {
-        let content: string;
-        try {
-          content = await readFile(resolveInside(dir, rel), "utf-8");
-        } catch {
-          return `Error: no such file: ${rel}`;
-        }
+        const content = await readWorkspaceFile(dir, rel);
+        if (content === null) return noSuchFile(rel);
         return windowedRead(content, offset, limit);
       },
     }),
@@ -276,12 +296,8 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
       }),
       execute: async ({ path: rel, oldText, newText, replaceAll }) => {
         const abs = resolveInside(dir, rel);
-        let current: string;
-        try {
-          current = await readFile(abs, "utf-8");
-        } catch {
-          return `Error: no such file: ${rel}`;
-        }
+        const current = await readWorkspaceFile(dir, rel);
+        if (current === null) return noSuchFile(rel);
         try {
           const { content, diff, replacements } = applyEdit(rel, current, oldText, newText, {
             replaceAll,
@@ -308,7 +324,7 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
         try {
           entry = await stat(abs);
         } catch {
-          return `Error: no such file: ${rel}`;
+          return noSuchFile(rel);
         }
         // `stat` admits directories, and `rm` without `recursive` rejects one
         // with a raw `ERR_FS_EISDIR` — the only failure in this tool set that
@@ -349,10 +365,11 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
           const files: Record<string, string> = {};
           await Promise.all(
             paths.map(async (rel) => {
-              const st = await stat(path.join(dir, rel));
+              const abs = path.join(dir, rel);
+              const st = await stat(abs);
               // Oversized artifacts are never searched (nor synced).
               if (st.size > MAX_STUDIO_FILE_BYTES) return;
-              files[rel] = await readFile(path.join(dir, rel), "utf-8");
+              files[rel] = await readFile(abs, "utf-8");
             }),
           );
           return grepWorkspace(files, pattern, opts);
@@ -416,7 +433,7 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
         // Reported after the config rather than gating on it: a failing test
         // usually means the test and the agent drifted, which the agent can
         // only judge with the config in front of it.
-        const tests = formatTestRun(await runWorkspaceTests(deps.dir));
+        const tests = formatTestRun(await runWorkspaceTests(dir));
         const base = `${summary}\n${tests}`;
         if (!trialTool) return base;
         if (!toolNames.includes(trialTool)) {

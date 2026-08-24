@@ -127,6 +127,18 @@ export type ModalSpawnContext = {
  */
 export const DEFAULT_SANDBOX_IMAGE = "node:26-slim";
 
+/**
+ * The base image tag a guest sandbox is built on — {@link DEFAULT_SANDBOX_IMAGE}
+ * unless `MODAL_SANDBOX_IMAGE` overrides it. One reader rather than a
+ * `process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE` per call site:
+ * the tag is an INPUT to the harness image hash (`localHarnessImageTag`), so a
+ * site that read the env differently would key the snapshot on a different
+ * image than the one the spawn actually uses.
+ */
+export function sandboxBaseTag(): string {
+  return process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
+}
+
 /** Modal App the sandboxes are created under. Override with `MODAL_APP_NAME`. */
 const DEFAULT_MODAL_APP_NAME = "aai-server";
 
@@ -312,7 +324,7 @@ async function buildContext(): Promise<ModalSpawnContext> {
   const client = modalClient();
   const appName = process.env.MODAL_APP_NAME ?? DEFAULT_MODAL_APP_NAME;
   const app = await client.apps.fromName(appName, { createIfMissing: true });
-  const baseTag = process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
+  const baseTag = sandboxBaseTag();
   const baseImage = client.images.fromRegistry(baseTag);
 
   // Snapshot image with the harness baked in — see modal-harness-image.ts.

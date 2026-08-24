@@ -16,7 +16,7 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createParser } from "eventsource-parser";
 import { Agent, fetch as undiciFetch } from "undici";
 
@@ -59,6 +59,21 @@ const WRITE_DIAGNOSTIC_PREAMBLE = /^[\s\S]*?Type errors after writing (\S+)[^:]*
  */
 const TEST_AGENT_PREAMBLE =
   /^\s*Bundle loaded[^.]*\.\s*Agent "[^"]*" \([a-z0-9]+ mode\)[^\n.]*\.\s*/i;
+
+/**
+ * The tools whose output carries a TypeScript verification.
+ *
+ * A SET rather than a chain of `===`, and it covers more than `test_agent`
+ * deliberately: counting only the test tool makes the metric movable by
+ * REORDERING tools, since an agent whose cheaper checks catch the errors first
+ * scores zero repairs while having written exactly the same wrong code.
+ */
+const VERIFYING_TOOLS: ReadonlySet<string> = new Set([
+  "test_agent",
+  "check_types",
+  "write_file",
+  "edit_file",
+]);
 
 /** One line of at most {@link MAX_RED_EXCERPT} characters — both readers end here. */
 function condense(text: string): string {
@@ -112,16 +127,9 @@ function recordToolOutput(turn: MutableTurn, name: string | undefined, out: stri
     });
     turn.lastTestAgentOutput = out;
   }
-  // Any verification that came back red, whichever tool ran it. Counting only
-  // test_agent makes the metric movable by REORDERING tools: an agent whose
-  // cheaper checks catch the errors first scores zero repairs while having
-  // written exactly the same wrong code.
-  const verifies =
-    name === "test_agent" ||
-    name === "check_types" ||
-    name === "write_file" ||
-    name === "edit_file";
-  if (verifies && /error TS\d/i.test(out)) {
+  // Any verification that came back red, whichever tool ran it — see
+  // {@link VERIFYING_TOOLS}.
+  if (name !== undefined && VERIFYING_TOOLS.has(name) && /error TS\d/i.test(out)) {
     turn.redChecks.push(name);
     turn.redExcerpts.push(redExcerpt(name, out));
   }
@@ -219,11 +227,11 @@ export function createStudioClient(origin: string, key: string): StudioClient {
     const parser = createParser({
       onEvent(event) {
         if (event.data === "" || event.data === "[DONE]") return;
-        try {
-          applyPart(turn, pending, JSON.parse(event.data));
-        } catch {
-          // Unparsable frame; see above.
-        }
+        // `safeJsonParse` rather than a `try`/`catch` around `JSON.parse`: an
+        // unparsable frame becomes `undefined`, which `applyPart` drops on its
+        // `isRecord` guard — same skip, without a catch block wide enough to
+        // also swallow a real fault in `applyPart`.
+        applyPart(turn, pending, safeJsonParse(event.data));
       },
     });
     const decoder = new TextDecoder();

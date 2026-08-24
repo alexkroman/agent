@@ -50,11 +50,11 @@
  */
 
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
 import { createKeyedLock, isRecord, KeyedLockTimeoutError, withLock } from "@alexkroman1/aai/utils";
 import { NPM_TIMEOUT_MS, runNpm } from "./studio-spawn.ts";
+import { readWorkspaceManifest } from "./studio-workspace-fs.ts";
 
 /**
  * The budget for the session-install path, which is the one with a caller
@@ -130,12 +130,9 @@ export async function ensureWorkspaceDependencies(
   dir: string,
   opts: WorkspaceDependencyOptions,
 ): Promise<string | null> {
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8")) as unknown;
-  } catch {
-    return null; // No manifest, or mid-edit — nothing to reify.
-  }
+  // No manifest, or mid-edit — nothing to reify.
+  const manifest = await readWorkspaceManifest(dir);
+  if (manifest === null) return null;
 
   const { toolchainModules } = opts;
   const isResolvable = (name: string): boolean =>

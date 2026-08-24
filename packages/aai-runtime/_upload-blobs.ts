@@ -62,7 +62,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { type ByteRange, concat, UploadTooLargeError } from "./_upload-store.ts";
+import { type ByteRange, collectCapped } from "./_upload-store.ts";
 
 /** One window of an upload, and the object holding it. */
 export type UploadPart = {
@@ -133,20 +133,9 @@ export function createMemoryUploadBlobs(): UploadBlobs {
   const objects = new Map<string, Uint8Array>();
   return {
     async put(key, body, opts): Promise<number> {
-      const held: Uint8Array[] = [];
-      let size = 0;
-      // Counted as it arrives rather than from a declared length, the same rule
-      // `chunked` follows: a client controls that header independently of what it
-      // really sends.
-      for await (const piece of body) {
-        size += piece.length;
-        if (opts?.limit !== undefined && size > opts.limit) {
-          throw new UploadTooLargeError(opts.limit);
-        }
-        held.push(piece);
-      }
-      objects.set(key, concat(held, size));
-      return size;
+      const bytes = await collectCapped(body, opts?.limit);
+      objects.set(key, bytes);
+      return bytes.length;
     },
     async read(key, start, end): Promise<Uint8Array> {
       const held = objects.get(key);

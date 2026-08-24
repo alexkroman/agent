@@ -55,6 +55,7 @@ import {
   partsPlan,
   partsSettings,
   type UploadParallel,
+  type UploadPartsRequest,
   uploadInParts,
 } from "./workflow-upload-parts.ts";
 
@@ -287,6 +288,35 @@ function newClientUploadId(): string {
 }
 
 /**
+ * Run the parts path to completion across resume rounds.
+ *
+ * The two entry points below differ in exactly two things — where the id comes
+ * from, and whether the FIRST round counts as a resume. Everything else (the
+ * eleven fields {@link uploadInParts} takes, threading each round's `resume`
+ * through the options, and lifting the signal for the backoff) was written out
+ * twice, so a field added to `UploadPartsRequest` had two call sites to reach
+ * and one of them would be found by a test.
+ *
+ * Answers `undefined` when the parts path declined, exactly as `uploadInParts`
+ * does — the file has not moved and the caller falls through to the single-body
+ * route.
+ */
+function storeInParts(
+  req: Omit<UploadPartsRequest, "send">,
+  firstResume: boolean | undefined,
+): Promise<UploadRef | undefined> {
+  return withResumes(
+    (round) =>
+      uploadInParts({
+        ...req,
+        send: sendUpload,
+        options: { ...req.options, resume: round.resume },
+      }),
+    { resume: firstResume, ...omitUndefined({ signal: req.options?.signal }) },
+  );
+}
+
+/**
  * Store one file against an already-resolved API base.
  *
  * @param base - The API root (`…/workflows`), as the client resolved it.
@@ -316,24 +346,11 @@ export async function uploadFile(
     // Minted ONCE, outside the loop: an id that changed per round would make every
     // round a fresh upload of the whole file, which is the thing being fixed.
     const id = newClientUploadId();
-    const stored = await withResumes(
-      (round) =>
-        uploadInParts({
-          base,
-          headers,
-          fail,
-          send: sendUpload,
-          id,
-          file,
-          name,
-          type,
-          options: { ...options, resume: round.resume },
-          settings,
-          plan,
-        }),
-      // No `resume` on the first round: nothing has been stored under an id minted
-      // one line above.
-      { resume: undefined, ...omitUndefined({ signal: options?.signal }) },
+    // No `resume` on the first round: nothing has been stored under an id minted
+    // one line above.
+    const stored = await storeInParts(
+      { base, headers, fail, id, file, name, type, options, settings, plan },
+      undefined,
     );
     // `undefined` means this path declined; the file has not moved, so it goes the
     // ordinary way below.
@@ -395,25 +412,12 @@ export async function streamUploadFile(
     // parts compose with this at all: a run started on this id reads the
     // contiguous prefix as the parts fill it in, exactly as it reads a single
     // streaming `PUT`.
-    const stored = await withResumes(
-      (round) =>
-        uploadInParts({
-          base,
-          headers,
-          fail,
-          send: sendUpload,
-          id,
-          file,
-          name,
-          type,
-          options: { ...options, resume: round.resume },
-          settings,
-          plan,
-        }),
-      // The caller's own `resume` decides the FIRST round, because only the caller
-      // knows whether this id already holds bytes — it chose the id. Every round
-      // after a failure is a resume regardless.
-      { resume: options?.resume, ...omitUndefined({ signal: options?.signal }) },
+    // The caller's own `resume` decides the FIRST round, because only the caller
+    // knows whether this id already holds bytes — it chose the id. Every round
+    // after a failure is a resume regardless.
+    const stored = await storeInParts(
+      { base, headers, fail, id, file, name, type, options, settings, plan },
+      options?.resume,
     );
     if (stored) return stored;
   }
