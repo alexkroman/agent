@@ -1,5 +1,93 @@
 # aai-evals
 
+## 0.1.17
+
+### Patch Changes
+
+- d98169a: Hash the starter-eval corpus in this package's cached test tasks.
+  `starter-expectations.test.ts` imports `EXPECTATIONS` and `checkCapabilities`
+  from `../../scripts/starter-eval/expectations.mjs` and asserts directly over
+  that data, but `inputs` globs resolve relative to the PACKAGE — so editing an
+  expectation replayed a cached green `aai-evals#test:coverage`, the very task the
+  CI coverage matrix added so these suites are gated at all. Verified the
+  documented way: the task hash was byte-identical across a change to the corpus
+  before this, and moves with it after.
+  
+  Scoped to a package `turbo.json` rather than the root `globalDependencies`,
+  whose five entries are all files every task reads; this corpus is read by one.
+- 76ca287: **BREAKING — the last 76 `@internal` names come off the two packages' public
+  barrels: 68 to `@alexkroman1/aai-runtime/internal`, 8 to a new
+  `@alexkroman1/aai-ui/internal`.** Both `contracts/internal-surface.json`
+  ratchets are now at zero, which is where `@alexkroman1/aai` already stood.
+  
+  The exemption those files record is the one hole in the capability contracts: a
+  name tagged `@internal` at its declaration site but reachable anyway from a
+  public subpath belongs to no capability, gets no epoch and no frozen compiling
+  template, and is held to nothing but a comment. It is a ratchet that may shrink
+  and may never grow, and counting it is what got it paid off — `aai` went 71 to
+  0, `aai-runtime` 68 to 0, `aai-ui` 8 to 0.
+  
+  A release tag cannot close it from the barrel. API Extractor reads `@internal`
+  at the DECLARATION site, so the tag on a re-export clause member is silently
+  ignored and the name stays `@public` in the report. A deny-listed subpath is the
+  mechanism, and it is the third time this repo has reached for it.
+  
+  **`@alexkroman1/aai-runtime`** — the second tranche off that root barrel, after
+  the 31 host-internal pass-throughs that made the subpath exist. These 68 are the
+  package's OWN host infrastructure: the host-mode server and its tool relay, both
+  transports and the `Transport` contract they satisfy, the session core, the
+  session-state backends and the table names and DDL they own, the workflow
+  serving half (API handler, surface, world, install), the wake hint, the
+  queue-lock sweep, the step-slot publishers, and the two shipped `Logger` values.
+  What stays on the root barrel is exactly what a capability covers.
+  
+  Where a type is contracted and its constructor is not, the two now split: the
+  `SessionCore`, `SessionStateBackend`, `SessionStateStore`, `SessionEventPage`,
+  `SessionEventStream`, `Logger` and `S2SConfig` TYPES — the shapes a host
+  implementing one has to name — stay on the root barrel; `createSessionCore`,
+  `createMemoryStateBackend`, `createSessionStateStore`, `createSessionEventStream`
+  and `consoleLogger` move. The 17-name OPENER CONTRACT deliberately did not move,
+  for the reason it did not move last time: relocating it would make a custom
+  speech provider import from two subpaths, one labelled not-semver-covered.
+  
+  **`@alexkroman1/aai-ui`** gains its first `./internal` subpath, carrying
+  `SessionProvider`, `ThemeProvider`, `ToolConfigContext`, the three URL chips
+  (`ApiUrlChip`, `SessionUrlChips`, `UiUrlChip`), `buildAgentUrl` and
+  `loadClientConfig` — none of which a `client.tsx` names, and all of which sat in
+  a client author's autocomplete beside `client()` and `useAgentState`.
+  
+  `aai-server`, `aai-guest`, `aai-cli`, `aai-evals` and `aai-studio-server` import
+  the moved names from the new subpaths — the cross-package consumers the seam
+  exists for.
+  
+  Both barrels now state the rule in their module docs, so the next name does not
+  re-open the ratchet: a name on `/internal` that wants to become public gets its
+  `@internal` tag REMOVED at the declaration site and joins a capability under
+  `contracts/entrypoints/`, which is what buys it an epoch. It is never
+  re-exported from the public barrel with the tag still on it.
+- Updated dependencies [12ead27]
+- Updated dependencies [028044a]
+- Updated dependencies [429126e]
+- Updated dependencies [abfc018]
+- Updated dependencies [43ceb43]
+- Updated dependencies [8c9ce20]
+- Updated dependencies [9b9051a]
+- Updated dependencies [55d5ec1]
+- Updated dependencies [d98169a]
+- Updated dependencies [ea0c9c9]
+- Updated dependencies [d1e7c56]
+- Updated dependencies [abfc018]
+- Updated dependencies [a7309a5]
+- Updated dependencies [51d571d]
+- Updated dependencies [43ceb43]
+- Updated dependencies [6596e4b]
+- Updated dependencies [df8effa]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [abfc018]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+  - @alexkroman1/aai@7.0.0
+
 ## 0.1.16
 
 ### Patch Changes

@@ -1,5 +1,183 @@
 # @alexkroman1/aai-ui
 
+## 7.0.0
+
+### Major Changes
+
+- d98169a: **Breaking (nominally): `@alexkroman1/aai-ui/default-client/*` is removed.** It
+  had no consumer in any form — not one import specifier in the repo, the
+  templates, the scaffold, or any README — because every real consumer reaches
+  those files by filesystem path through `./package.json` (`client-dir.ts`,
+  `aai-server/transport-websocket.ts`). `files: ["dist"]` still ships them, so
+  nothing that worked stops working. `aai-studio-client`'s `./dist/*` goes for the
+  same reason: both of its consumers `require.resolve` the manifest and join
+  `"dist"` themselves.
+  
+  Also widens `check:attw`. `aai-ui` pinned `--entrypoints .`, which silently
+  excluded `./client-dir` — a typed, contracted subpath — and `aai-runtime`
+  inherited the same pin. `aai-ui` now uses `--exclude-entrypoints styles.css`
+  (a CSS entry point has no type declarations, which is the only reason the pin
+  existed) and `aai-runtime` drops it entirely, so a NEW subpath defaults into
+  being checked instead of out.
+- abfc018: Say the duplicated types once, and stop the config union refusing what
+  `client()` can render.
+  
+  `WorkflowStreamSubmission<R>` was `WorkflowSubmission<R>` character for
+  character — eight fields, identical types, differing only in prose — and
+  `UseWorkflowStreamOptions` restated `Omit<UseWorkflowSubmitOptions, "wait">` the
+  same way. Both are aliases now. The property the copies existed to describe is
+  that the two hooks are drop-in siblings, and a copy is exactly the thing that
+  cannot hold it: `contracts/compatibility/workflow/v9.tsx` asserted the result
+  half by hand ("if these two return types ever diverge, this function stops
+  compiling — which is the assertion"), which is a test that the copying was done
+  correctly rather than a reason not to copy. The stream-specific prose moved onto
+  the aliases, and epoch 13's example adds the options half, which the copy could
+  never guarantee.
+  
+  `ClientConfig` is one flat type instead of a union of `ConfigTier` and
+  `ComponentTier` over a shared `BaseOptions`, and the three are no longer
+  exported. The union existed only to express "`component` and `sidebar` are
+  mutually exclusive", spelled with `?: never` — and that shape had already
+  backfired twice, both recorded in `define-client.tsx`: `client({ name,
+  component })` and `client({ component, tools })` are the natural things to
+  write, both were refused with *"Type 'string' is not assignable to type
+  'undefined'"*, and both bans were lifted after costing build rounds. What was
+  left banned was `sidebar` beside a `component`, inviting the identical failure
+  for a combination `client()` can simply render — so it renders it, wrapping the
+  custom component in the same `SidebarLayout` the default shell uses. `sidebar`
+  beside a `component` was silently dropped before; now it is a pane.
+  
+  `VOICE_CAPTURE_CONSTRAINTS` moves to `@alexkroman1/aai-ui/internal`. It is a
+  framework decision with no `client()` field to set — the same category as the
+  audio budgets `types.ts` already re-exports from the SDK's own `/internal` —
+  and no `client.tsx` in the tree ever named it. A chrome that bypasses
+  `client()` and opens its own microphone reaches it there, beside the providers
+  it also needs.
+  
+  `aai-ui:session` also gained the guard it was missing. The capability froze
+  `useUserTranscript` and the headless `createSessionCore` path, which has no
+  real consumers, and left out `useSession` — the third-most-used session export
+  across the templates. Epoch 4's example renders from it: the snapshot, the
+  controls, and `AgentState` in the `satisfies Record<AgentState, string>` idiom
+  three templates use.
+- 76ca287: **BREAKING — the last 76 `@internal` names come off the two packages' public
+  barrels: 68 to `@alexkroman1/aai-runtime/internal`, 8 to a new
+  `@alexkroman1/aai-ui/internal`.** Both `contracts/internal-surface.json`
+  ratchets are now at zero, which is where `@alexkroman1/aai` already stood.
+  
+  The exemption those files record is the one hole in the capability contracts: a
+  name tagged `@internal` at its declaration site but reachable anyway from a
+  public subpath belongs to no capability, gets no epoch and no frozen compiling
+  template, and is held to nothing but a comment. It is a ratchet that may shrink
+  and may never grow, and counting it is what got it paid off — `aai` went 71 to
+  0, `aai-runtime` 68 to 0, `aai-ui` 8 to 0.
+  
+  A release tag cannot close it from the barrel. API Extractor reads `@internal`
+  at the DECLARATION site, so the tag on a re-export clause member is silently
+  ignored and the name stays `@public` in the report. A deny-listed subpath is the
+  mechanism, and it is the third time this repo has reached for it.
+  
+  **`@alexkroman1/aai-runtime`** — the second tranche off that root barrel, after
+  the 31 host-internal pass-throughs that made the subpath exist. These 68 are the
+  package's OWN host infrastructure: the host-mode server and its tool relay, both
+  transports and the `Transport` contract they satisfy, the session core, the
+  session-state backends and the table names and DDL they own, the workflow
+  serving half (API handler, surface, world, install), the wake hint, the
+  queue-lock sweep, the step-slot publishers, and the two shipped `Logger` values.
+  What stays on the root barrel is exactly what a capability covers.
+  
+  Where a type is contracted and its constructor is not, the two now split: the
+  `SessionCore`, `SessionStateBackend`, `SessionStateStore`, `SessionEventPage`,
+  `SessionEventStream`, `Logger` and `S2SConfig` TYPES — the shapes a host
+  implementing one has to name — stay on the root barrel; `createSessionCore`,
+  `createMemoryStateBackend`, `createSessionStateStore`, `createSessionEventStream`
+  and `consoleLogger` move. The 17-name OPENER CONTRACT deliberately did not move,
+  for the reason it did not move last time: relocating it would make a custom
+  speech provider import from two subpaths, one labelled not-semver-covered.
+  
+  **`@alexkroman1/aai-ui`** gains its first `./internal` subpath, carrying
+  `SessionProvider`, `ThemeProvider`, `ToolConfigContext`, the three URL chips
+  (`ApiUrlChip`, `SessionUrlChips`, `UiUrlChip`), `buildAgentUrl` and
+  `loadClientConfig` — none of which a `client.tsx` names, and all of which sat in
+  a client author's autocomplete beside `client()` and `useAgentState`.
+  
+  `aai-server`, `aai-guest`, `aai-cli`, `aai-evals` and `aai-studio-server` import
+  the moved names from the new subpaths — the cross-package consumers the seam
+  exists for.
+  
+  Both barrels now state the rule in their module docs, so the next name does not
+  re-open the ratchet: a name on `/internal` that wants to become public gets its
+  `@internal` tag REMOVED at the declaration site and joins a capability under
+  `contracts/entrypoints/`, which is what buys it an epoch. It is never
+  re-exported from the public barrel with the tag still on it.
+- 23e8b3f: **Breaking: `SessionCoreOptions` is removed.** It was an exact alias of
+  `VoiceSessionOptions` with a single referent — `createSessionCore`'s parameter,
+  which now names `VoiceSessionOptions` directly — and `client()` never took it.
+  Replace `SessionCoreOptions` with `VoiceSessionOptions`; nothing else changes.
+  
+  `fetchClientConfig` is now public and part of the `page` capability. A workflow
+  app mounted with `page()` makes no `GET client-config` request of its own, so
+  this is how a page reads the agent's declared `name` and `greeting` — which two
+  published doc comments already told authors to do while the function was
+  `@internal` and absent from the reference.
+  
+  `SubmitButton` accepts `variant` and every `<button>` attribute except `type`
+  and `disabled` (which it owns, setting both from `pending`). It was the only
+  form control taking neither, so `aria-label` on an icon-only submit was a type
+  error on the one button a workflow-app form has.
+  
+  `Markdown`, `Controls` and `MessageList` now name their props —
+  `MarkdownProps`, `ControlsProps`, `MessageListProps` — so a wrapper can forward
+  them without restating the shape, and so the published reference describes them
+  at all: all three previously rendered as `MemoExoticComponent` with no props,
+  leaving `Markdown`'s required `text` named nowhere.
+  
+  Documentation, throughout: component props are documented on the properties
+  rather than in `@param` tags that TypeDoc discarded (eighteen components,
+  including `AutoScroll`'s bounded-height requirement and `WorkflowProgress`'s
+  `className`-replaces-the-default rule); every `SessionSnapshot` field and every
+  `AgentState` member carries prose, `userTranscript`'s `null`-vs-`""` distinction
+  included; `useWorkflowRun`, `useToolResult`, `useToolCallStart`, `useTheme`,
+  `useSessionSelector`, `useWorkflows`, `createWorkflowApi`, `Field`,
+  `SubmitButton`, `Markdown` and `ToolCallRow` gained examples; the two
+  `useToolResult` / `useToolCallStart` overloads have their own descriptions
+  instead of sharing one that said "optionally filter by tool name" on the
+  overload taking no tool name; `WorkflowSubmission` and `WorkflowStreamSubmission`
+  cross-reference each other and name the two fields that actually differ; and the
+  README no longer tells readers to call `session.connect()`, which `Session` does
+  not have.
+
+### Patch Changes
+
+- 23e8b3f: Document the `@alexkroman1/aai-ui/client-dir` subpath. It is published and has
+  always carried a worked `createAgentServer` example on `defaultClientDir()`, but
+  it was absent from the API reference — the package declared one TypeDoc entry
+  point. It now has its own page, and its module comment carries an `@module` tag
+  so the page is named after the subpath a consumer imports rather than the file
+  TypeDoc read.
+- Updated dependencies [12ead27]
+- Updated dependencies [028044a]
+- Updated dependencies [429126e]
+- Updated dependencies [abfc018]
+- Updated dependencies [43ceb43]
+- Updated dependencies [8c9ce20]
+- Updated dependencies [9b9051a]
+- Updated dependencies [55d5ec1]
+- Updated dependencies [d98169a]
+- Updated dependencies [ea0c9c9]
+- Updated dependencies [d1e7c56]
+- Updated dependencies [abfc018]
+- Updated dependencies [a7309a5]
+- Updated dependencies [51d571d]
+- Updated dependencies [43ceb43]
+- Updated dependencies [6596e4b]
+- Updated dependencies [df8effa]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [abfc018]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+  - @alexkroman1/aai@7.0.0
+
 ## 6.11.0
 
 ### Patch Changes
