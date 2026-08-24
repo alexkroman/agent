@@ -33,7 +33,8 @@ function setup(script: readonly ScriptedTurn[]) {
 }
 
 /** Silent, so a forced-final-answer log line does not print through the run. */
-const silent = { debug() {}, info() {}, warn() {}, error() {} };
+const noop = (): void => undefined;
+const silent = { debug: noop, info: noop, warn: noop, error: noop };
 
 /** The bag a tool call carries, as a parent tool's context would hand it over. */
 function parentCall(overrides: Partial<ToolCallDefaults> = {}): ToolCallDefaults {
@@ -201,7 +202,10 @@ describe("createSubagentRunner", () => {
     );
 
     const tools = model.calls[0]?.tools as { name: string }[];
-    expect(tools.map((one) => one.name).toSorted()).toEqual(["calculate", "web_search"]);
+    expect(tools.map((one) => one.name).toSorted((a, b) => a.localeCompare(b))).toEqual([
+      "calculate",
+      "web_search",
+    ]);
   });
 
   it("rejects naming the subagent when no LLM is configured or named", async () => {

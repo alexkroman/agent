@@ -25,9 +25,9 @@ import {
   type InferToolOutput,
   isToolFailure,
   sessionSlot,
+  subagent,
   type ToolDef,
   type ToolInputSchema,
-  subagent,
   tool,
   toolFailure,
 } from "../../../index.ts";

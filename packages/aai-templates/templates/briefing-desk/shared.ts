@@ -24,8 +24,8 @@ import {
   type DelegateOptions,
   type DelegateResult,
   pushCapped,
-  sessionSlot,
   type SubagentToolCall,
+  sessionSlot,
   subagent,
 } from "@alexkroman1/aai";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
