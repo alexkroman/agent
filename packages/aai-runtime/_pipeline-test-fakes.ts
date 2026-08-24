@@ -252,7 +252,13 @@ export function createFailingTtsProvider(code: TtsErrorCode, message: string): T
 
 // Re-exported so `_pipeline-test-fakes.ts` stays the one import path for specs;
 // the fake model itself lives in `_fake-llm.ts` for file-length reasons.
-export { createFakeLanguageModel, type ScriptedPart } from "./_fake-llm.ts";
+export {
+  createFakeLanguageModel,
+  createScriptedOneShotModel,
+  type FakeLanguageModel,
+  type ScriptedPart,
+  type ScriptedTurn,
+} from "./_fake-llm.ts";
 
 // ─── Registering fakes as provider kinds ─────────────────────────────────────
 

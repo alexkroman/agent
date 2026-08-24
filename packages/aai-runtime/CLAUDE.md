@@ -82,6 +82,20 @@ lifecycle), `workflow-*` (the durable-workflow half), `ws-*` / `_ws*` (the
 socket layer), `_upload-*` (the upload store), and the three subdirectories
 that did keep a directory — `providers/`, `transports/`, `telephony/`.
 
+## Telephony: a phone call is an ordinary session
+
+`WS /phone` (`telephony/`) runs a carrier's media stream — Twilio Media
+Streams, Telnyx media streaming — as an ordinary session, served by
+`createServer` with no per-agent configuration. **The whole account is in
+`packages/aai-guest/CLAUDE.md`, "A phone call is an ordinary session"** — the
+shim design and the rule that no telephony branch may exist below the bridge,
+the four decisions above the bridge (pacing, LEARNED rates, low-pass before
+downsampling), what a `CarrierCodec` owes, and the two deliberate gaps. It is
+the harness that serves this in production; the platform's TwiML webhook route
+is in `packages/aai-server/CLAUDE.md`, "Telephony". This pointer used to sit in
+`packages/aai/CLAUDE.md` under a `host/telephony/` path that has not existed
+since the split, and that guide is at its cap.
+
 ## The published surface is versioned in epochs
 
 Thirteen capabilities under `contracts/`, each a named slice of what an
@@ -335,6 +349,74 @@ and sandbox seams (`executeTool`, `toolSchemas`, `createWebSocket`,
 `stt`/`llm`/`tts` (which the agent declares), and the three tuning numbers
 (`s2sConfig`, `sessionStartTimeoutMs`, `shutdownTimeoutMs`). Forward one of those
 when somebody needs it, not before.
+
+## Subagents: `ctx.delegate` is a second tool loop
+
+`subagent.ts` implements the `ctx.delegate` capability (`sdk/subagent.ts` in
+`@alexkroman1/aai` holds the contract). A subagent is the AI SDK's own subagent
+pattern — a `ToolLoopAgent` invoked from inside a tool's `execute` — with the
+three things that pattern leaves to the author supplied by the runtime instead,
+and each of the three is a bug an author would otherwise write:
+
+- **The model** resolves through the same `resolveLlm` registry as the pipeline
+  and `ctx.generate`, credentials from the agent env. A hand-built
+  `new ToolLoopAgent({ model })` in a tool body has no way to reach that env, so
+  it reads `process.env` — on a platform where every provider key is
+  user-provided and `process.env` holds none of them.
+- **The tools** go through `executeToolCall` like every other tool call, so a
+  subagent's tools get argument coercion, Standard Schema validation, the
+  per-call deadline, a real `ToolContext`, and failure-shaped-as-a-tool-result.
+  The alternative is a second, thinner tool runtime inside the first.
+- **The step budget** spends its last step with `toolChoice: "none"`, via the
+  same `forceFinalAnswer` the voice pipeline and `createTextAgent` use, so a
+  capped subagent ANSWERS rather than stopping mid-chain — which for a subagent
+  is worse than for a turn, because its final message is the ONLY thing that
+  crosses back.
+
+**The runner is handed a tool call's own option bag, not a list of
+dependencies.** `SubagentRunner` (declared in `tool-executor.ts`, beside the
+bag) takes `ToolCallDefaults` — `Omit<ExecuteToolCallOptions, "tool">`, derived
+by subtraction — because a delegated run's tools are ORDINARY tool calls and
+re-enter `executeToolCall` with that same bag. So what the runner needs from a
+tool call is exactly what a tool call already has, and a capability added to a
+tool context cannot be silently missing from a delegated one. The two types are
+mutually recursive for the same reason, which is why one of them is declared
+next to the other rather than beside its implementation.
+
+**A subagent's context is the parent's, minus the conversation.** Its tools see
+the same `env`, slots, `db` and `sessionId` — it is the same session, and a
+subagent that could not read the cart would be a worse tool than the one that
+delegated to it. What it does not see is `ctx.messages`: the isolation a
+subagent exists FOR is the context window, and one handed the transcript has
+given that back. `DelegateOptions.task` is what carries anything from the
+conversation, which is why the contract insists it be a complete brief.
+
+**Delegation is one level deep.** A subagent's own tools get a `ctx.delegate`
+that rejects with `NESTED_DELEGATE_MESSAGE`, naming the rule. A subagent that
+may delegate can delegate to itself, and nothing at this seam can see the
+recursion — a depth counter would bound the bill without making it quotable,
+which on a phone call is the number that matters. The refusal REPLACES the
+runner rather than dropping it, so the message says why rather than reporting a
+capability that happens not to be wired here.
+
+**What crosses back is the answer plus a cost report, never a transcript.**
+`DelegateResult.toolCalls` carries the CALLS and not their results: the results
+are what stayed inside the subagent's window, and a caller handed them back has
+undone the delegation. The calls are enough for a voice agent to say something
+true about the wait ("I checked four sources"), which is what the field is for.
+
+Wired in three places, all of them the same two lines: `setupSubagents` in
+`runtime-tools.ts` (both the sandbox and self-hosted paths) and
+`createTextAgent`. `createSubagentRunner` memoizes its models per descriptor
+OBJECT like `createGenerateFn`, so a subagent declared at module scope reuses
+one client across a session's delegations.
+
+**Testing it does not mean running a model.** `createScriptedOneShotModel`
+(`_fake-llm.ts`) answers a script one entry per `doGenerate`, which is what a
+non-streaming tool loop needs; on the SDK side `stubDelegate`
+(`@alexkroman1/aai/testing`) fakes the capability itself, routed by subagent
+name. Both exist because the alternative — a spec that asserts on a subagent's
+steps — is a spec asserting on a provider's choices.
 
 ## Tool discovery off the platform
 

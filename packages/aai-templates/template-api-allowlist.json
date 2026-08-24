@@ -53,6 +53,7 @@
     "StateProjection",
     "StaticAgentParams",
     "SttProvider",
+    "SubagentDef",
     "TextAgentParams",
     "ToolChoice",
     "TtsProvider",

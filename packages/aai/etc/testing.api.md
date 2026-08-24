@@ -13,6 +13,9 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
 
 // @public
@@ -31,6 +34,23 @@ export function createUnusedDb(): Db;
 type Db = {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
+
+// @public
+type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
 
 // @public
 interface DialogPosition {
@@ -191,6 +211,32 @@ type StreamOptions = {
 
 // @public
 export const STUB_SPEECH_PCM_BYTES = 12000;
+
+// @public
+export interface StubDelegate {
+    calls: StubDelegateCall[];
+    delegate: DelegateFn;
+}
+
+// @public
+export function stubDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubDelegate;
+
+// @public
+export interface StubDelegateCall {
+    options: DelegateOptions;
+    subagent: SubagentDef;
+    task: string;
+}
+
+// @public
+export type StubDelegateReply = string | {
+    text: string;
+    steps?: number;
+    toolCalls?: readonly SubagentToolCall[];
+};
+
+// @public
+export type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
 
 // @public
 export type StubEmitted = {
@@ -375,6 +421,24 @@ export type StubUploadWrite = {
 };
 
 // @public
+interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    instructions: string;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxSteps?: number;
+    name: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
 export type TestToolContext = ToolContext & {
     readonly sent: SentEvent[];
 };
@@ -390,6 +454,7 @@ type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
+    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;

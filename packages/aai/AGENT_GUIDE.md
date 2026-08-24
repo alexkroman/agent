@@ -919,6 +919,8 @@ ctx.sessionId: string                          // unique session ID
 ctx.send(event: string, data: unknown): void   // push custom event to browser client (silently dropped over 64 KB JSON)
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
                                                // with a `schema`, `object` is REQUIRED and typed by it
+ctx.delegate(sub, opts): Promise<DelegateResult> // run a subagent — a whole tool loop with its own
+                                               // context window (see "Subagents")
 ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
 ```
 
@@ -1047,6 +1049,68 @@ string to use another provider whose API key is in the agent's secrets —
 that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
 structured output (`generateObject`-style): the result's `object` carries
 the parsed, typed value. A plain JSON Schema object also works.
+
+### Subagents (`ctx.delegate`)
+
+`ctx.generate` is ONE prompt. When answering takes an unknown number of tool
+calls whose intermediate results the conversation has no reason to carry,
+delegate to a **subagent** instead: a second tool loop with its own
+instructions, model, tools and — the whole point — its own context window.
+
+```ts
+import { subagent, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const researcher = subagent({
+  name: "researcher",
+  instructions:
+    "Research the task with the tools you have. IMPORTANT: your final message " +
+    "is the only thing the caller sees — end with a self-contained summary.",
+  builtinTools: ["web_search", "visit_webpage"],
+  maxSteps: 6,
+});
+
+export default tool({
+  description: "Research a question in depth",
+  inputSchema: z.object({ question: z.string() }),
+  execute: async ({ question }, ctx) => {
+    const { text, toolCalls } = await ctx.delegate(researcher, { task: question });
+    return { answer: text, lookups: toolCalls.length };
+  },
+});
+```
+
+Four rules, each of which is how a subagent disappoints when you skip it:
+
+- **Tell it to summarize.** You receive its FINAL message. A subagent that
+  signs off with "Done." has thrown away everything it read.
+- **Write the task as a complete brief.** Its context is isolated — it has not
+  heard the conversation. Anything it needs from the call goes in `task`, or in
+  the optional `context` string.
+- **Give it a budget.** `maxSteps` (default: the framework's) bounds the loop;
+  past it the subagent is asked for its answer with its tools withheld, so a
+  capped run still answers. In a voice session the tool timeout bounds the
+  whole thing, so keep it small.
+- **Say you are looking it up before you call.** A delegated run takes a
+  moment, and a silent line is the worst thing on a phone call.
+
+Runs are ordinary promises, so several fan out at once — this is the other
+reason to reach for a subagent:
+
+```ts no-check
+const runs = await Promise.allSettled(
+  angles.map((angle) => ctx.delegate(researcher, { task: angle })),
+);
+```
+
+A subagent may name its own `llm` (a cheaper model for a narrower job) and its
+own `tools` — an explicit map of `tool()` values, which is how you give one
+run a strictly smaller surface than the agent has. **Delegation is one level
+deep**: a subagent's own tools get a `ctx.delegate` that refuses.
+
+In tests, `stubDelegate` from `@alexkroman1/aai/testing` fakes the capability,
+routed by subagent name; `createToolContext()` defaults `delegate` to a
+rejection so an unstubbed run cannot reach a real model.
 
 ### A tool that calls an API
 

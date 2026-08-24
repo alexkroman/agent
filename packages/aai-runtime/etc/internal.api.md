@@ -7,6 +7,8 @@
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai';
+import type { DelegateOptions } from '@alexkroman1/aai';
+import type { DelegateResult } from '@alexkroman1/aai';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { IncomingMessage } from 'node:http';
@@ -22,6 +24,7 @@ import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai/protocol';
 import { SessionEventBody } from '@alexkroman1/aai/protocol';
 import type { SlotStore } from '@alexkroman1/aai';
+import type { SubagentDef } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
 import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
 import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';
@@ -104,6 +107,7 @@ type ExecuteToolCallOptions = {
     db?: Db | undefined;
     messages?: readonly Message[] | undefined;
     generate?: HostGenerateFn | undefined;
+    subagents?: SubagentRunner | undefined;
     logger?: Logger | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
@@ -268,6 +272,9 @@ type StoredSessionEvent = {
     json: string;
 };
 
+// @internal
+type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: ToolCallDefaults) => Promise<DelegateResult>;
+
 // @public
 type SweepDeps = {
     createDb?: (url: string) => CloseableDb;
@@ -280,6 +287,9 @@ type SweepSkip =
 "another-pool-is-live"
 /** Presence is ours and there was nothing locked. The healthy case. */
 | "no-orphaned-locks";
+
+// @internal
+type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
 
 // @public
 type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;

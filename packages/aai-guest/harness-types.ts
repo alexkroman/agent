@@ -35,6 +35,12 @@ export type ToolContext = {
    * session's ctx.generate comes from the embedded SDK runtime instead.
    */
   generate: () => Promise<never>;
+  /**
+   * ctx.delegate. Rejecting for the same reason `generate` is, and it matters
+   * more here: a trial has no session, so a subagent run would spend real
+   * tokens against a context that is thrown away when the trial returns.
+   */
+  delegate: () => Promise<never>;
   sessionId: string;
   messages: readonly Message[];
   send(event: string, data: unknown): void;

@@ -198,6 +198,7 @@ once, and the templates are now their reference use:
 | `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
 | `dialog()` + `dialog.tool` + `dialog.send` | six templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity) |
 | `procedure()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
+| `subagent()` + `ctx.delegate` | `briefing-desk` ONLY, and it exists for this — see below. Two subagents with different tool surfaces, models and budgets; the researcher fanned out one run per angle with `Promise.allSettled`. `stubDelegate` drives its spec, routed by subagent name |
 | `workflow()` + `ctx.workflows` + `isTerminal` | `research-workflow` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below); `recap-workflow` is the same shape with `cancel` and a live-run check on top |
 | `page()` + `useWorkflowSubmit` | `link-digest` — the WORKFLOW APP whose FORM is still hand-written and its own `useState`, which is the point of it and what its module doc now says specifically. **`useWorkflowRun` is exercised by no template at all** since `link-digest` and `podcast-digest` moved to `useWorkflowSubmit`; it is an allowlist entry, and see "The last remover pays" below |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-workflow` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
@@ -230,6 +231,37 @@ were each exercised by exactly three clients, and three agents converting three
 chromes in parallel each removed one. The last removal of an export's only
 examples owes an allowlist entry or a retained example, and only whoever lands
 last can see it is owed.
+
+## `briefing-desk` is where a subagent has to earn its latency
+
+The desk has NO web tools. Everything it knows comes back from a `ctx.delegate`
+run started inside a tool call, and the template is arranged so the three
+reasons to pay for that are each visible in one place:
+
+- **A context window the caller does not pay for.** A researcher reads whole
+  pages; what crosses back is its final paragraph, because that is all
+  `DelegateResult.text` is. `web-researcher` is the counter-example to compare
+  it against — search builtins on the agent ITSELF, which is right for one
+  lookup and wrong the moment a question has four sides.
+- **Parallelism.** `tools/research_topic.ts` fans every angle out at once, so
+  the caller waits for the slowest rather than the sum. `allSettled`, not
+  `all`: a caller on the phone would rather hear three angles and an apology
+  than an error, and the spec asserts exactly that.
+- **Tools isolated by capability.** `researcher` searches AND browses on six
+  steps; `factChecker` only searches, on two, on a cheaper model. A capability
+  a run does not need is one it cannot misuse.
+
+Two things the template states in place because they are the ways a subagent
+disappoints. Its instructions END with "your final message is the only thing
+the desk receives" — a run that signs off with "Done." has thrown away
+everything it read, and no budget recovers it. And every angle is written as a
+COMPLETE brief: a subagent has not heard the call, so "the same but for Europe"
+is not an angle. `angleBrief()` is where the one line of conversation it does
+get is decided.
+
+Its spec runs no model. `stubDelegate` answers by subagent NAME, which is what
+tells a research run from a check; a subagent's own tools are ordinary `tool()`
+defs and are tested with an ordinary `createToolContext()`.
 
 ## A flow is WHERE A CONVERSATION IS, and a board is not one
 

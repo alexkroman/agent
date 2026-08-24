@@ -137,6 +137,23 @@ type Db = {
 };
 
 // @public
+type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -488,6 +505,24 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+interface SubagentDef {
+    builtinTools?: readonly BuiltinTool[];
+    instructions: string;
+    llm?: LlmProvider | string;
+    maxOutputTokens?: number;
+    maxSteps?: number;
+    name: string;
+    temperature?: number;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
 // @public
@@ -502,6 +537,7 @@ type ToolContext = {
     slots: SlotStore;
     db: Db;
     generate: GenerateFn;
+    delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
     send(event: string, data: unknown): void;

@@ -814,6 +814,30 @@ spokenOrdinal("cancel my order"); // undefined
 
 ***
 
+### subagent()
+
+```ts
+function subagent(def: SubagentDef): SubagentDef;
+```
+
+Define a subagent.
+
+An identity function, like [tool](#tool-2) — it exists for the type, for the
+name to grep for, and so a subagent is declared at module scope rather than
+rebuilt inside `execute` on every call.
+
+#### Parameters
+
+##### def
+
+[`SubagentDef`](#subagentdef)
+
+#### Returns
+
+[`SubagentDef`](#subagentdef)
+
+***
+
 ### tool()
 
 ```ts
@@ -1900,6 +1924,81 @@ failure mode is the one `ASSEMBLYAI_TTS_VOICES` (from
 catalog as unproven: a voice the service rejects comes back in-band after
 the socket opens, leaving an agent that connects, reports ready, and never
 speaks.
+
+***
+
+### DelegateOptions
+
+Per-call options for [DelegateFn](#delegatefn).
+
+#### Properties
+
+##### context?
+
+```ts
+optional context?: string;
+```
+
+Extra context appended after the subagent's own `instructions` for this
+call — the caller's name, what has already been ruled out, the format the
+answer should take. Absent by default, because a subagent that needs the
+conversation to make sense is one whose task was underspecified.
+
+##### maxSteps?
+
+```ts
+optional maxSteps?: number;
+```
+
+Override the subagent's step budget for this call.
+
+##### task
+
+```ts
+task: string;
+```
+
+The task, as the subagent's first user message. Write it as a complete
+brief: the subagent's context is ISOLATED, so it has not read the
+conversation and knows nothing the task does not say.
+
+***
+
+### DelegateResult
+
+What one delegated run returns.
+
+`text` is the answer; `steps` and `toolCalls` are what the run COST, which
+is the half a voice agent needs in order to say something true about the
+wait ("I checked four sources"). They are a report, not a transcript: the
+tool RESULTS stay inside the subagent's context, which is the entire reason
+to have delegated.
+
+#### Properties
+
+##### steps
+
+```ts
+steps: number;
+```
+
+How many steps the run took, including the final answering step.
+
+##### text
+
+```ts
+text: string;
+```
+
+The subagent's final message — see [SubagentDef.instructions](#instructions).
+
+##### toolCalls
+
+```ts
+toolCalls: readonly SubagentToolCall[];
+```
+
+Every tool call the subagent made, in order.
 
 ***
 
@@ -3386,6 +3485,136 @@ readonly key: string;
 
 The slot key whose value this projects.
 
+***
+
+### SubagentDef
+
+A subagent definition — what [subagent](#subagent) returns and
+[DelegateFn](#delegatefn) runs.
+
+Every field except `name` and `instructions` is optional, and the defaults
+are the parent agent's: the same LLM descriptor, no tools, and
+the framework default (`DEFAULT_MAX_STEPS`) steps.
+
+#### Properties
+
+##### builtinTools?
+
+```ts
+optional builtinTools?: readonly BuiltinTool[];
+```
+
+Builtins this subagent may call, resolved exactly as `agent({
+builtinTools })` resolves them. Independent of the parent's: a parent that
+enables none can still delegate to a subagent that searches the web.
+
+##### instructions
+
+```ts
+instructions: string;
+```
+
+The subagent's system prompt.
+
+**Tell it to summarize.** The parent gets [DelegateResult.text](#text-1),
+which is the subagent's FINAL message — so a subagent that ends its run by
+saying "Done." has thrown away everything it learned, and no amount of
+step budget recovers it. This is the single most common way a subagent
+disappoints, and the remedy is one sentence in the instructions.
+
+##### llm?
+
+```ts
+optional llm?: string | LlmProvider;
+```
+
+LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
+model-id string — the same shorthand as `agent({ llm })` and
+[GenerateOptions.llm](#llm-2). Defaults to the parent agent's own LLM.
+
+Naming a cheaper model here is the usual reason to set it: a subagent
+doing lookups is spending most of its tokens on tool results, not on
+reasoning.
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+Cap on generated tokens per step, passed through to the provider.
+
+##### maxSteps?
+
+```ts
+optional maxSteps?: number;
+```
+
+Tool-calling steps this subagent may take before it must answer. Defaults
+to the framework's `DEFAULT_MAX_STEPS`.
+
+The budget is the mechanism: a subagent told to "keep looking until sure"
+is a subagent whose cost nobody can quote. Past the cap it is asked for
+its answer with tools withheld, so a capped run still returns prose rather
+than stopping mid-chain.
+
+##### name
+
+```ts
+name: string;
+```
+
+What this subagent is called. It reaches the model only as the id on the
+subagent's own requests; its reader is a log line and a failure message
+("subagent \"researcher\" ran out of steps"), which is why it is required
+and why an anonymous subagent is not expressible.
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+Sampling temperature passed through to the provider.
+
+##### tools?
+
+```ts
+optional tools?: Readonly<Record<string, ToolDef>>;
+```
+
+The tools this subagent may call, by the name the model calls them by.
+
+A MAP rather than the filesystem registration `agent()` uses, and the
+difference is deliberate: `tools/` declares what the CALLER can reach, and
+this declares the strictly narrower set one delegated task can reach. A
+subagent with no entry here and no `builtinTools` is a pure reasoning
+pass — legal, and occasionally what you want.
+
+***
+
+### SubagentToolCall
+
+One tool call a subagent made, as reported back to the caller.
+
+#### Properties
+
+##### input
+
+```ts
+input: unknown;
+```
+
+The arguments it was called with.
+
+##### name
+
+```ts
+name: string;
+```
+
+The tool's name, as the subagent's model called it.
+
 ## Type Aliases
 
 ### AgentParams
@@ -3618,6 +3847,36 @@ round-tripped through JSON — the client already knows its shape, and the
 framework cannot. The strict default (`unknown`) made reading one field a
 compile error in a client that runs correctly, which blocked publishing
 once `aai build` type-checked.
+
+***
+
+### DelegateFn
+
+```ts
+type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+```
+
+Run a subagent to completion — the signature of `ctx.delegate`.
+
+Rejects when the run cannot be started (no LLM configured or named, an
+unknown builtin) and when the parent turn is cancelled. A subagent whose own
+TOOL fails does not reject: the failure goes back to the subagent as a tool
+result, exactly as it would in the parent loop, and the subagent gets to
+recover from it.
+
+#### Parameters
+
+##### subagent
+
+[`SubagentDef`](#subagentdef)
+
+##### options
+
+[`DelegateOptions`](#delegateoptions)
+
+#### Returns
+
+`Promise`\<[`DelegateResult`](#delegateresult)\>
 
 ***
 
@@ -4719,6 +4978,7 @@ SDK's `toolChoice`.
 ```ts
 type ToolContext = {
   db: Db;
+  delegate: DelegateFn;
   env: Readonly<Record<string, string>>;
   generate: GenerateFn;
   messages: readonly Message[];
@@ -4797,6 +5057,27 @@ db: Db;
 SQL database scoped to this app. Available when storage is enabled
 (`aai storage enable`, or Settings → Database in the studio); accessing
 it otherwise throws.
+
+##### delegate
+
+```ts
+delegate: DelegateFn;
+```
+
+Hand a bounded task to a SUBAGENT — a second tool loop with its own
+instructions, model, tools and context window — and get back what it
+concluded, not how it got there ([DelegateFn](#delegatefn)).
+
+The sibling of [ToolContext.generate](#generate), and the line between them is
+how many model turns the answer takes: `generate` is one prompt, `delegate`
+is a loop whose intermediate tool results the caller has no reason to
+carry. Executes on the host wherever the runtime runs, like `db` and
+`generate`.
+
+**A subagent's own tools cannot delegate further** — their `ctx.delegate`
+rejects naming the reason. One level is a bill a caller can quote; a
+subagent that may delegate can delegate to itself, and nothing at this
+seam can see the recursion.
 
 ##### env
 

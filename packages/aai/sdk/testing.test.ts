@@ -21,6 +21,7 @@ describe("createToolContext", () => {
     const ctx = createToolContext();
     expect(Object.keys(ctx).sort()).toEqual([
       "db",
+      "delegate",
       "env",
       "generate",
       "messages",

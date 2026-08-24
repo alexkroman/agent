@@ -113,6 +113,83 @@ async function streamScript(
   }
 }
 
+/** A fake model plus the record of what it was asked. */
+export type FakeLanguageModel = LanguageModel & {
+  readonly calls: readonly Record<string, unknown>[];
+};
+
+/**
+ * The ONE narrowing in this file, and every fake here goes through it.
+ *
+ * A fake implements the provider shape STRUCTURALLY — importing the full
+ * `@ai-sdk/provider` types into this package to type it nominally is a
+ * dependency nothing else needs — so a cast is unavoidable. What is avoidable
+ * is a second one: the escape-hatch ratchet counts occurrences, and a
+ * concentration of identical casts is a missing typed seam. This is the seam.
+ */
+function asFakeLanguageModel(model: object): FakeLanguageModel {
+  return model as unknown as FakeLanguageModel;
+}
+
+/**
+ * One scripted `doGenerate` reply: a final answer, or a tool call the loop is
+ * expected to run and come back from.
+ */
+export type ScriptedTurn =
+  | { text: string }
+  | { call: { name: string; input: Record<string, unknown>; id?: string } };
+
+/**
+ * A fake model that answers a SCRIPT one entry per `doGenerate` — what a
+ * non-streaming TOOL LOOP needs, and what the single-reply fakes in
+ * `generate.test.ts` cannot be.
+ *
+ * Past the end of the script it ANSWERS rather than throwing: a loop that took
+ * one step more than a spec expected should fail on the assertion that names
+ * the difference, not on a fake running dry.
+ */
+export function createScriptedOneShotModel(script: readonly ScriptedTurn[]): FakeLanguageModel {
+  const calls: Record<string, unknown>[] = [];
+  let index = 0;
+  return asFakeLanguageModel({
+    specificationVersion: "v3" as const,
+    provider: "fake-llm",
+    modelId: "fake-llm-1",
+    supportedUrls: {} as Record<string, RegExp[]>,
+    calls,
+    async doGenerate(opts: Record<string, unknown>) {
+      calls.push(opts);
+      const turn = script[index++] ?? { text: "(script exhausted)" };
+      return {
+        content:
+          "text" in turn
+            ? [{ type: "text", text: turn.text }]
+            : [
+                {
+                  type: "tool-call",
+                  toolCallId: turn.call.id ?? `call-${index}`,
+                  toolName: turn.call.name,
+                  input: JSON.stringify(turn.call.input),
+                },
+              ],
+        // The `{ unified, raw }` PAIR the current provider spec reads, not a
+        // bare string — `generateText` parses structured output only when the
+        // last step finished with `stop`, so the old shape resolves `undefined`
+        // and throws `NoOutputGeneratedError` naming an empty model reply.
+        finishReason: {
+          unified: "text" in turn ? ("stop" as const) : ("tool-calls" as const),
+          raw: undefined,
+        },
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        warnings: [],
+      };
+    },
+    async doStream(): Promise<never> {
+      throw new Error("scripted one-shot LLM: doStream not implemented");
+    },
+  });
+}
+
 /**
  * Create a fake `LanguageModel` that yields a scripted sequence of
  * parts when `streamText` drives `doStream()`. The fake ignores the prompt
@@ -124,16 +201,12 @@ async function streamScript(
  * Pass `{ steps: ScriptedPart[][] }` (instead of `script`) for multi-step
  * scenarios: each call to `doStream()` consumes the next step's parts.
  * This is how `streamText` drives multi-turn tool loops under `stopWhen`.
- *
- * The returned value is cast to the `LanguageModel` union because we
- * implement the provider shape structurally rather than importing the
- * full `@ai-sdk/provider` types into the aai package.
  */
 export function createFakeLanguageModel(
   options:
     | { script: ScriptedPart[]; delayMs?: number }
     | { steps: ScriptedPart[][]; delayMs?: number },
-): LanguageModel & { readonly calls: readonly Record<string, unknown>[] } {
+): FakeLanguageModel {
   const delayMs = options.delayMs;
   const steps: ScriptedPart[][] = "steps" in options ? options.steps : [options.script];
   let stepIndex = 0;
@@ -163,5 +236,5 @@ export function createFakeLanguageModel(
       return { stream };
     },
   };
-  return model as unknown as LanguageModel & { readonly calls: readonly Record<string, unknown>[] };
+  return asFakeLanguageModel(model);
 }
