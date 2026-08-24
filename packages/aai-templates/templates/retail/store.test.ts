@@ -245,7 +245,7 @@ describe("retailTool", () => {
     // the envelope this test is about, and a refusal fails here naming what the
     // flow said instead of reading `undefined` off a field nobody assigned.
     const answered = okPosition<{ ok: boolean }>(await gated.execute({}, ctx));
-    expect(answered).toMatchObject({ state: "serving", done: false });
+    expect(answered).toMatchObject({ state: "serving.helping", done: false });
     expect(answered.instruction).toMatch(/one identified customer/);
   });
 

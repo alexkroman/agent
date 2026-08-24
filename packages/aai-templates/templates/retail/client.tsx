@@ -13,6 +13,7 @@ import type {
   OrderStatus,
   OrderView,
   PaymentMethodView,
+  PendingView,
   StoreView,
   SwapOptionView,
 } from "./shared.ts";
@@ -155,6 +156,42 @@ function OrderCard({ order, focused }: { order: OrderView; focused: boolean }) {
 
 /** Character select. Rendered before authentication, because a user with no
  *  email to give cannot start the conversation at all. */
+/**
+ * The change waiting on the caller's word.
+ *
+ * The one panel that renders BECAUSE nothing has happened. A staged change is
+ * the agent's promise about what it is going to do, so showing it beside the
+ * orders it has not touched is what lets a watcher catch a readback that does
+ * not match the request — which is the failure the whole gate is aimed at, and
+ * the one nobody can see from a transcript alone.
+ */
+function PendingChange({ pending }: { pending: PendingView }) {
+  return (
+    <div
+      className="rounded-lg p-3"
+      style={{
+        background: "#fffbeb",
+        border: "1px solid #fcd34d",
+        animation: "rt-slide-in 180ms ease-out",
+      }}
+    >
+      <div
+        className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1.5"
+        style={{ color: "#b45309" }}
+      >
+        <span style={{ animation: "rt-pulse 1.4s ease-in-out infinite" }}>●</span>
+        Awaiting the caller's yes
+      </div>
+      <div className="text-xs leading-relaxed" style={{ color: "#78350f" }}>
+        {pending.readBack}
+      </div>
+      <div className="text-[10px] mt-1.5" style={{ color: "#a16207" }}>
+        Nothing has changed yet — {pending.kind}
+      </div>
+    </div>
+  );
+}
+
 function PersonaList() {
   return (
     <div className="flex flex-col gap-2">
@@ -489,6 +526,8 @@ function App() {
             className="rt-scroll overflow-y-auto p-3 flex flex-col gap-3"
             style={{ background: "#f4f4f5" }}
           >
+            {view.pending && <PendingChange pending={view.pending} />}
+
             {!view.customer && (
               <Panel title="Who to be">
                 <PersonaList />

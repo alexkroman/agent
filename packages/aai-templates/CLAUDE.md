@@ -196,7 +196,7 @@ once, and the templates are now their reference use:
 | `WorkflowProgress` | `transcription-workflow` and `redline` render a run's WHOLE narration; `link-digest` and `podcast-digest` pass `lines={1}` for the newest one, deleting two hand-rolled versions. `WORKFLOW_STATUS_LABELS` replaced two byte-identical status maps the same way |
 | `useDownloadUrl` (`@alexkroman1/aai-ui`) | `spoken-summary` and `call-audit`, the two that exist BECAUSE of the audio round trip and had copied the 38-line object-URL lifecycle byte-for-byte |
 | `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
-| `dialog()` + `dialog.tool` + `dialog.send` | six templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity) |
+| `dialog()` + `dialog.tool` + `dialog.send` | six templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, nested, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity) |
 | `procedure()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
 | `workflow()` + `ctx.workflows` + `isTerminal` | `research-workflow` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below); `recap-workflow` is the same shape with `cancel` and a live-run check on top |
 | `page()` + `useWorkflowSubmit` | `link-digest` — the WORKFLOW APP whose FORM is still hand-written and its own `useState`, which is the point of it and what its module doc now says specifically. **`useWorkflowRun` is exercised by no template at all** since `link-digest` and `podcast-digest` moved to `useWorkflowSubmit`; it is an allowlist entry, and see "The last remover pays" below |
@@ -249,7 +249,8 @@ summary of the data, and do not reach for a flow when the thing to constrain is
 per-entity; a `ToolFailure` from a data lookup is what that is for. Read the
 other four in this order: `travel-concierge` (two states, one gate),
 `plan-and-execute` (three, a lifecycle), `retail` (a call ending in a TERMINAL
-state), `solo-rpg` (nested, plus a `final` one).
+state, with a confirmation gate nested inside it), `solo-rpg` (nested, plus a
+`final` one).
 
 Four rules came out of converting `dispatch-center`, `retail` and `solo-rpg`,
 each a trap rather than a preference:
@@ -336,10 +337,12 @@ already return a `DialogPosition` of the right shape, so the fix is a spread —
 sites. `solo-rpg`'s prompt had asserted the invariant "every other tool answers
 with the same pair" while three of its tools did not.
 
-**Two things a flow deleted outright, and both were dead guarantees.** `retail`'s
-policy said to say one sentence after `transfer_to_human_agents` "and nothing
-else", enforced by nothing — every tool stayed callable, so a model that kept
-going kept acting on a call it had given away. `solo-rpg`'s `gameOver` was written
+**Three things a flow deleted outright, and all three were dead guarantees.**
+`retail`'s policy said to say one sentence after `transfer_to_human_agents` "and
+nothing else", enforced by nothing — every tool stayed callable, so a model that
+kept going kept acting on a call it had given away. Its "confirm every change
+out loud … never act on an implied yes" was carried by nothing too, and cost
+more to fix than one line — see below. `solo-rpg`'s `gameOver` was written
 by `updateCrisisFlags` and read by nobody who could act on it, so a player with
 both tracks empty could roll forever. A terminal state is one line of config for
 each. `solo-rpg` also lost a FIELD: `phase: "genre" | "playing"` was
@@ -352,6 +355,44 @@ rather than twenty-four. Pin the POSITION as well
 as the refusal: that a tool refuses in the wrong state is half of it, and that
 the position moved (and did NOT move on a failure) is the half a dead transition
 hides in.
+
+### A rule the model can skip is not a rule: `retail`'s confirmation gate
+
+`retail` is the worked example of the expensive case, where a prose rule and the
+tool surface disagree. "Confirm every change out loud … never act on an implied
+yes" was in the prompt and in seven tool descriptions, and
+`cancel_pending_order` cancelled and refunded on its first call regardless — a
+`grep` for "confirm" over its source returned nothing. Three things, in order:
+
+- **Nothing mutates.** The seven changing tools became STAGERS: each validates,
+  prices, writes a `PendingAction` and returns the sentence to read back.
+  `confirm_change` is the only tool in the template that writes to the store;
+  `cancel_change` drops a staged change unconditionally.
+- **`serving` grew two children** (`helping`, `awaitingConfirmation`).
+  `confirm_change` is gated on the second, reachable ONLY by staging, so
+  confirming what nobody staged is refused before the body runs. `when:
+  "serving"` matches both children, which keeps a read and a transfer legal
+  while a change waits — "what was the total again?", or asking for a human.
+- **`IDENTIFIED` came OFF `serving`.** It was there so a caller repeating their
+  email did not error. With children, that self-transition RE-ENTERS and resets
+  to `helping`, stranding the change `state.pending` still holds — the one way
+  the position and the store could disagree. An unhandled event is ignored,
+  which was the behaviour wanted all along.
+
+**Validate at STAGE time, not at confirm time.** `travel-concierge` re-derives
+its effect in `confirm_action`; `retail` computes each plan once and every
+`apply*` is total, because a "yes" followed by a refusal is the exact sequence
+the gate exists to prevent. Hence plans of ids and amounts rather than the
+`Order`/`Variant` references their in-tool-call ancestor held: those alias the
+store, and a persisted session could not carry them.
+
+**And the tool set stopped being tau2's** — fifteen names `registry.test.ts`
+pinned as a fidelity claim; the gate needs seventeen. Two improvements the
+fidelity was holding back came with it: `exchange_items`/`exchange_new_items`
+hold the PAIRING that was priced rather than two independently sorted sets
+(which read as espresso -> sneaker if anything treated them as one), and
+`return_items` keeps the order the caller named. Check what a fidelity
+constraint COSTS before treating it as fixed.
 
 ## A run can be the SCHEDULE
 

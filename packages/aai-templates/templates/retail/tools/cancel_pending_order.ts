@@ -1,20 +1,20 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { creditRefund, REFUND_DELAY_NOTE, REFUND_IMMEDIATE_NOTE } from "../refund.ts";
-import { OrderIdField, resolveOrder } from "../resolve.ts";
-import { authenticatedUser, retailTool, setFocus } from "../store.ts";
-
-/** tau2 accepts exactly these two. Anything else is refused. */
-const CANCEL_REASONS = ["no longer needed", "ordered by mistake"] as const;
+import { CANCEL_REASONS, planCancel } from "../cancel.ts";
+import { stageAction } from "../pending.ts";
+import { OrderIdField } from "../resolve.ts";
+import { retailTool, setFocus } from "../store.ts";
 
 export default retailTool({
   name: "cancel_pending_order",
   when: "serving",
+  send: { type: "STAGED" },
   description:
-    "Cancel a pending order. Only an order whose status is exactly 'pending' can be cancelled — " +
-    "check the status first. The reason must be either 'no longer needed' or 'ordered by mistake'. " +
-    "State the order, its total and the refund destination to the caller and get an explicit yes " +
-    "before calling this.",
+    "STAGE a cancellation of a pending order — this does NOT cancel anything. Only an order whose " +
+    "status is exactly 'pending' can be cancelled, and the reason must be either 'no longer " +
+    "needed' or 'ordered by mistake'. The order, its total and where the refund goes come back as " +
+    "a sentence to read to the caller; nothing happens until you hear an explicit yes and call " +
+    "confirm_change.",
   inputSchema: z.object({
     order_id: OrderIdField,
     reason: z
@@ -22,54 +22,10 @@ export default retailTool({
       .describe("Either 'no longer needed' or 'ordered by mistake' — no other reason is accepted"),
   }),
   execute: (args, state) => {
-    const user = authenticatedUser(state);
-    if (isToolFailure(user)) return user;
-
-    const order = resolveOrder(state, args.order_id);
-    if (isToolFailure(order)) return order;
-    setFocus(state, { orderId: order.order_id });
-
-    if (order.status !== "pending") {
-      return {
-        error: `Order ${order.order_id} is ${order.status}, and only a pending order can be cancelled.`,
-      };
-    }
-    // The enum makes this unreachable from a well-formed call; it stays because
-    // the reason is the one field a caller supplies in free speech.
-    if (!CANCEL_REASONS.includes(args.reason)) {
-      return {
-        error: `'${args.reason}' is not an accepted cancellation reason. It must be 'no longer needed' or 'ordered by mistake'.`,
-      };
-    }
-
-    let immediate = false;
-    const refunds = order.payment_history
-      .filter((payment) => payment.transaction_type === "payment")
-      .map((payment) => {
-        const credited = creditRefund(user, payment.payment_method_id, payment.amount);
-        immediate = immediate || credited.immediate;
-        return {
-          transaction_type: "refund" as const,
-          amount: payment.amount,
-          payment_method_id: payment.payment_method_id,
-        };
-      });
-
-    order.status = "cancelled";
-    order.cancel_reason = args.reason;
-    order.payment_history.push(...refunds);
-
-    const total = refunds.reduce((sum, refund) => sum + refund.amount, 0);
-    return {
-      order_id: order.order_id,
-      status: order.status,
-      cancel_reason: order.cancel_reason,
-      refunded: total,
-      refund_immediate: immediate,
-      message: `Order ${order.order_id} is cancelled and $${total.toFixed(2)} is being refunded. ${
-        immediate ? REFUND_IMMEDIATE_NOTE : REFUND_DELAY_NOTE
-      }`,
-    };
+    const plan = planCancel(state, args.order_id, args.reason);
+    if (isToolFailure(plan)) return plan;
+    setFocus(state, { orderId: plan.orderId });
+    return stageAction(state, { kind: "cancel_pending_order", plan });
   },
-  summary: (_args, result) => `cancelled ${result.order_id}`,
+  summary: (_args, result) => `staged: ${result.read_back}`,
 });
