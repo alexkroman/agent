@@ -14,6 +14,7 @@ npm i -g @alexkroman1/aai-cli   # or: npx @alexkroman1/aai-cli@latest
 | `aai templates` | List the shipped project templates |
 | `aai dev` | Local dev server: loads `agent.ts`, rebuilds on change, serves the browser client (`--port`) |
 | `aai test` | Run the project's vitest suite |
+| `aai eval` | Run the project's behaviour evals (`agent.eval.test.ts`) — a real session, a live model with a key, a scripted one without |
 | `aai build` | Bundle without deploying (type-checks first; `--skipTypecheck` opts out) |
 | `aai list` | List your studio projects |
 | `aai pull <project>` | Pull a studio project into a local directory, ready for `aai dev` |

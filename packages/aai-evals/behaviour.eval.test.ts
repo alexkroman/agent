@@ -11,7 +11,7 @@
  *
  * **These cases cannot see an endpointing bug, a split utterance, a merge, or a
  * barge-in.** All four are properties of the audio boundary, which
- * `fake-speech.ts` removes; that is LEVEL 2, and it is not built. Nothing here
+ * the fake speech stages remove; that is LEVEL 2, and it is not built. Nothing here
  * should be read as covering it.
  *
  * @module
@@ -19,10 +19,11 @@
 
 import { agent, tool } from "@alexkroman1/aai";
 import { withTools } from "@alexkroman1/aai/manifest";
+import { openEvalSession } from "@alexkroman1/aai-runtime/eval";
 import { z } from "zod";
-import { describeEval, evalApiKey } from "./_gate.ts";
+import { describeEvalTier, evalApiKey } from "./_gate.ts";
 import { registerEvalCases } from "./_register.ts";
-import { openEvalSession } from "./session-target.ts";
+import { scopeOf } from "./assertions.ts";
 
 /** The two orders the fixture agent knows about. */
 const ORDERS: Record<string, { status: string; item: string }> = {
@@ -76,7 +77,7 @@ function supportAgent() {
   );
 }
 
-describeEval("behaviour eval — level 1 (text-driven)", () => {
+describeEvalTier("behaviour eval — level 1 (text-driven)", () => {
   const open = () =>
     openEvalSession({ agent: supportAgent(), env: { ASSEMBLYAI_API_KEY: evalApiKey() } });
 
@@ -87,7 +88,7 @@ describeEval("behaviour eval — level 1 (text-driven)", () => {
         const session = await open();
         try {
           await session.say("Hi, what's the status of order W one two three four?");
-          const all = session.scope(t);
+          const all = scopeOf(t, session);
           all.succeeded();
           all.noErrors();
           all.calledTool("lookup_order", { args: { orderId: "W1234" }, count: 1 });
@@ -105,7 +106,7 @@ describeEval("behaviour eval — level 1 (text-driven)", () => {
         try {
           await session.say("What's happening with order W nine eight seven six?");
           await session.say("Please cancel it.");
-          const all = session.scope(t);
+          const all = scopeOf(t, session);
           all.succeeded();
           all.toolOrder(["lookup_order", "cancel_order"]);
           all.maxToolCalls(4);
@@ -124,7 +125,7 @@ describeEval("behaviour eval — level 1 (text-driven)", () => {
         const session = await open();
         try {
           await session.say("That's all I needed, thanks very much.");
-          const all = session.scope(t);
+          const all = scopeOf(t, session);
           all.succeeded();
           all.turn(1).usedNoTools();
         } finally {
@@ -138,7 +139,7 @@ describeEval("behaviour eval — level 1 (text-driven)", () => {
         const session = await open();
         try {
           await session.say("Is order W1234 on its way?");
-          const all = session.scope(t);
+          const all = scopeOf(t, session);
           all.eventOrder([
             "session.configured",
             "user-transcript.committed",

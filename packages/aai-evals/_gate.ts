@@ -71,24 +71,24 @@ function announceOrThrow(reason: string, howTo: string): void {
 if (KEY === undefined) announceOrThrow("no API key resolved", HOW_TO);
 
 /** `describe` when a key resolved, `describe.skip` otherwise — announced above. */
-export const describeEval: GatedDescribe = KEY === undefined ? describe.skip : describe;
+export const describeEvalTier: GatedDescribe = KEY === undefined ? describe.skip : describe;
 
 /**
- * {@link describeEval}, narrowed by one more precondition of the caller's.
+ * {@link describeEvalTier}, narrowed by one more precondition of the caller's.
  *
  * The gates COMPOSE: a file needs the key AND its own precondition, so a missing
  * key still skips even when `ok` holds. The starter eval's `/health` probe of the
  * studio origin is the one caller — with a key but no studio every one of its
  * cases would fail as a harness error, which reads like the codegen being broken.
  */
-export function describeEvalWhen(ok: boolean, reason: string, howTo: string): GatedDescribe {
-  if (ok) return describeEval;
+export function describeEvalTierWhen(ok: boolean, reason: string, howTo: string): GatedDescribe {
+  if (ok) return describeEvalTier;
   announceOrThrow(reason, howTo);
   return describe.skip;
 }
 
 /**
- * The key as a plain `string`, for use inside a `describeEval` body.
+ * The key as a plain `string`, for use inside a `describeEvalTier` body.
  *
  * Read it in a hook or a test, never at the top of the `describe` body: vitest
  * EXECUTES a skipped describe's callback to enumerate what it is skipping, so a
@@ -96,7 +96,7 @@ export function describeEvalWhen(ok: boolean, reason: string, howTo: string): Ga
  */
 export function evalApiKey(): string {
   if (KEY === undefined) {
-    throw new Error("evalApiKey() read with no key — call it inside describeEval.");
+    throw new Error("evalApiKey() read with no key — call it inside describeEvalTier.");
   }
   return KEY;
 }

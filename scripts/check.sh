@@ -132,6 +132,16 @@ if [ "$MODE" = "--local" ]; then
   # local run and the pre-push hook: the green-locally/red-in-CI shape, on the
   # one gate whose failure is hardest to predict from a diff.
   pnpm run check:coverage-per-file || RATCHET_STATUS=1
+  # The TEMPLATE evals, against a SCRIPTED model. Not the eval tier: that one
+  # needs a live model, is a measured-noisy instrument, and deliberately gates
+  # nothing (`packages/aai-evals/CLAUDE.md`). With `AAI_EVAL_STUB=1` the same
+  # files run the real runtime, the real pipeline and the real tool executor
+  # against a scripted reply — deterministic, free, ~1s — so what is gated is
+  # that a template still BOOTS and its eval still drives a session. Set
+  # explicitly, and filtered to the templates, so a key in the environment can
+  # never turn this into a paid run. CI runs the same command in its
+  # integration-and-scenario job.
+  AAI_EVAL_STUB=1 pnpm exec turbo run check:eval --filter aai-templates || exit 1
   pnpm run check:publish-names
   # After build, and it PACKS: `catalog:` / `workspace:` are pnpm-only
   # protocols that pnpm rewrites when it makes a tarball, and that rewrite is
@@ -173,6 +183,7 @@ if [ "$MODE" = "--local" ]; then
   echo "  check:integration   multiple modules in memory — the fast-check harnesses"
   echo "  check:scenario      a real subprocess, port, bundler, or Postgres (pnpm test:pg)"
   echo "  check:e2e           full process spawn + Playwright"
+  echo "  check:eval          the template evals against a scripted model"
   echo "  docs                TypeDoc, with treatWarningsAsErrors"
   echo -e "  Run \`pnpm check\` for all of them.\n"
 else

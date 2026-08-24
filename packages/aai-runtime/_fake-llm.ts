@@ -201,11 +201,14 @@ export function createScriptedOneShotModel(script: readonly ScriptedTurn[]): Fak
  * Pass `{ steps: ScriptedPart[][] }` (instead of `script`) for multi-step
  * scenarios: each call to `doStream()` consumes the next step's parts.
  * This is how `streamText` drives multi-turn tool loops under `stopWhen`.
+ *
+ * Pass `{ repeatLast: true }` to answer every call past the last scripted step
+ * with that step again, instead of with nothing.
  */
 export function createFakeLanguageModel(
   options:
-    | { script: ScriptedPart[]; delayMs?: number }
-    | { steps: ScriptedPart[][]; delayMs?: number },
+    | { script: ScriptedPart[]; delayMs?: number; repeatLast?: boolean }
+    | { steps: ScriptedPart[][]; delayMs?: number; repeatLast?: boolean },
 ): FakeLanguageModel {
   const delayMs = options.delayMs;
   const steps: ScriptedPart[][] = "steps" in options ? options.steps : [options.script];
@@ -225,8 +228,12 @@ export function createFakeLanguageModel(
     }> {
       calls.push(opts);
       // Advance one step per call; after the last scripted step, keep
-      // yielding an empty step so an unexpected extra call completes cleanly.
-      const current = steps[stepIndex] ?? [];
+      // yielding an empty step so an unexpected extra call completes cleanly —
+      // or, with `repeatLast`, keep answering with the last one. That option is
+      // for a caller who cannot know how many calls a turn will make (the eval
+      // stub provider: one scripted reply has to serve however many steps the
+      // pipeline takes), where an empty tail reads as an agent that went silent.
+      const current = steps[stepIndex] ?? (options.repeatLast ? (steps.at(-1) ?? []) : []);
       stepIndex++;
       const stream = new ReadableStream<StreamPart>({
         start(controller) {

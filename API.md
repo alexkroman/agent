@@ -40,6 +40,8 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-cli/project-config` — `packages/aai-cli/etc/project-config.api.md`
 - `@alexkroman1/aai-cli/typecheck` — `packages/aai-cli/etc/typecheck.api.md`
 - `@alexkroman1/aai-cli/worker-bundler` — `packages/aai-cli/etc/worker-bundler.api.md`
+- `@alexkroman1/aai-runtime/eval` — `packages/aai-runtime/etc/eval.api.md`
+- `@alexkroman1/aai-runtime/eval/vitest` — `packages/aai-runtime/etc/eval-vitest.api.md`
 - `@alexkroman1/aai-runtime` — `packages/aai-runtime/etc/index.api.md`
 - `@alexkroman1/aai-runtime/internal` — `packages/aai-runtime/etc/internal.api.md`
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
@@ -6446,6 +6448,224 @@ type WorkflowBundleOutput = {
     manifest: unknown;
     inputFiles: readonly string[];
     warnings: readonly string[];
+};
+```
+
+## `@alexkroman1/aai-runtime/eval`
+
+```ts
+import type { AgentDef } from '@alexkroman1/aai';
+import type { LlmProvider } from '@alexkroman1/aai/llm';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SttOpener } from '@alexkroman1/aai/host-internal';
+import type { SttProvider } from '@alexkroman1/aai/stt';
+import type { SttSession } from '@alexkroman1/aai/host-internal';
+import type { TtsOpener } from '@alexkroman1/aai/host-internal';
+import type { TtsProvider } from '@alexkroman1/aai/tts';
+import type { TtsSession } from '@alexkroman1/aai/host-internal';
+
+// @public
+export function createFakeSttOpener(name: string): SttOpener & {
+    last(): FakeSttSession | undefined;
+};
+
+// @public
+export function createFakeTtsOpener(name: string): TtsOpener & {
+    last(): FakeTtsSession | undefined;
+};
+
+// @public
+export type EvalCredentials = {
+    readonly env: ProviderEnv;
+    readonly missing: readonly string[];
+    readonly ready: boolean;
+    readonly reason: string | undefined;
+};
+
+// @public
+export function evalCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
+export type EvalSession = {
+    say(text: string): Promise<EvalTurn>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
+// @public
+export type EvalSessionOptions = {
+    readonly agent: AgentDef;
+    readonly env?: Record<string, string>;
+    readonly providerEnv?: ProviderEnv;
+    readonly llm?: LlmProvider;
+    readonly turnTimeoutMs?: number;
+    readonly logger?: Logger;
+};
+
+// @public
+export type EvalToolCall = {
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly args: Record<string, unknown>;
+    readonly result?: string;
+};
+
+// @public
+export type EvalTurn = {
+    readonly text: string;
+    readonly events: readonly SessionEvent[];
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly completed: boolean;
+};
+
+// @public
+export const FAKE_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
+
+// @public
+export type FakeSpeech = {
+    readonly stt: SttProvider;
+    readonly tts: TtsProvider;
+    readonly env: Record<string, string>;
+    sttSession(): FakeSttSession | undefined;
+    ttsSession(): FakeTtsSession | undefined;
+    release(): void;
+};
+
+// @public
+export type FakeSttSession = SttSession & {
+    partial(text: string): void;
+    commit(text: string): void;
+};
+
+// @public
+export type FakeTtsSession = TtsSession & {
+    readonly spoken: readonly string[];
+};
+
+// @public
+export function installFakeSpeech(): FakeSpeech;
+
+// @public
+export function installStubLlm(replies: string | readonly string[]): StubLlm;
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (msg: string, ctx?: LogContext) => void;
+
+// @public
+type Logger = Record<LogLevel, LogFn>;
+
+// @public
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export function openEvalSession(opts: EvalSessionOptions): Promise<EvalSession>;
+
+// @public
+export function saidIn(events: readonly SessionEvent[]): readonly string[];
+
+// @public
+export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
+
+// @public
+export type StubLlm = {
+    readonly llm: LlmProvider;
+    readonly env: Record<string, string>;
+    release(): void;
+};
+
+// @public
+export function toolCallsIn(events: readonly SessionEvent[]): readonly EvalToolCall[];
+
+// @public
+export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
+```
+
+## `@alexkroman1/aai-runtime/eval/vitest`
+
+```ts
+import type { AgentDef } from '@alexkroman1/aai';
+import type { LlmProvider } from '@alexkroman1/aai/llm';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import type { SessionEvent } from '@alexkroman1/aai/protocol';
+
+// @public
+export function describeEval(agent: AgentDef, define: (test: EvalTest) => void, options?: Omit<EvalSessionOptions, "agent">): void;
+
+// @public
+export type EvalCaseOptions = {
+    readonly stubReply?: string | readonly string[];
+    readonly live?: boolean;
+};
+
+// @public
+export type EvalMode = "live" | "stub";
+
+// @public
+type EvalSession = {
+    say(text: string): Promise<EvalTurn>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
+// @public
+type EvalSessionOptions = {
+    readonly agent: AgentDef;
+    readonly env?: Record<string, string>;
+    readonly providerEnv?: ProviderEnv;
+    readonly llm?: LlmProvider;
+    readonly turnTimeoutMs?: number;
+    readonly logger?: Logger;
+};
+
+// @public
+export type EvalTest = (name: string, body: (ctx: EvalTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
+
+// @public
+export type EvalTestContext = {
+    readonly session: EvalSession;
+    readonly mode: EvalMode;
+};
+
+// @public
+type EvalToolCall = {
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly args: Record<string, unknown>;
+    readonly result?: string;
+};
+
+// @public
+type EvalTurn = {
+    readonly text: string;
+    readonly events: readonly SessionEvent[];
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly completed: boolean;
+};
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (msg: string, ctx?: LogContext) => void;
+
+// @public
+type Logger = Record<LogLevel, LogFn>;
+
+// @public
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export function resolveEvalMode(agent: AgentDef, env?: Record<string, string | undefined>): {
+    mode: EvalMode;
+    reason: string;
 };
 ```
 

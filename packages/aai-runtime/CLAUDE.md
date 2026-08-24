@@ -98,19 +98,22 @@ since the split, and that guide is at its cap.
 
 ## The published surface is versioned in epochs
 
-Thirteen capabilities under `contracts/`, each a named slice of what an
+Fourteen capabilities under `contracts/`, each a named slice of what an
 embedder writes against: `server`, `runtime`, `session`, `session-state`,
 `providers`, `telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`,
-`text`, `tools`. The
+`text`, `tools`, `eval`. The
 mechanism is the repo's — see "The authoring surface is versioned in epochs" in
 the root `AGENTS.md` — and what it means here is that a signature change on any
 of the 125 public names is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
 rather than discovered by whoever's build breaks.
 
-`tools` is the newest and the smallest — one name, `withToolsDir` — and it is
+`tools` is the smallest — one name, `withToolsDir` — and it is
 its own capability rather than part of `runtime` because it assembles the
 DEFINITION a runtime is handed rather than any part of the engine. See "Tool
 discovery off the platform" below.
+
+`eval` is the newest, and the only capability spanning TWO subpaths — see
+"Driving an agent from text is a published surface" below.
 
 The split shipped this package with no `contracts/` tree, so for its first days
 221 exports moved with nothing recording it, while `aai` and `aai-ui` could not
@@ -434,6 +437,104 @@ non-streaming tool loop needs; on the SDK side `stubDelegate`
 (`@alexkroman1/aai/testing`) fakes the capability itself, routed by subagent
 name. Both exist because the alternative — a spec that asserts on a subagent's
 steps — is a spec asserting on a provider's choices.
+## Driving an agent from text is a published surface
+
+`@alexkroman1/aai-runtime/eval` and `/eval/vitest` are how an agent is measured
+rather than merely tested: `openEvalSession` stands up a REAL session — this
+runtime, the pipeline transport, the LLM on a live key, the tool executor, `ctx`
+and its slots, history trimming, the step budget, the event stream — with the two
+speech stages replaced by fakes, and hands back a `say()` that returns the TURN
+it provoked.
+
+**It was `aai-evals/session-target.ts` + `fake-speech.ts`, and publishing it is
+what the templates forced.** That harness could answer the one question nothing
+else in the repo could ("given this utterance, did the agent do the right
+thing"), and it could only ever answer it about agents living in this repo. A
+user's project — and every template, which IS a user's project — had no way to
+ask it at all, and the alternative was each project reimplementing the two
+documented harness bugs `eval/fake-speech.ts` and `eval/session.ts` record in
+place (a fake TTS that forwards silence turns every case after the greeting into
+a barge-in; a `say()` that waits for "a reply" settles on the PREVIOUS one).
+`aai-evals` now imports it, so there is one copy of both.
+
+Four decisions worth not relitigating:
+
+- **`say()` returns an `EvalTurn`, not void.** "On that turn" is most of the
+  meaning of almost every claim an eval makes, and the run-wide view has a trap
+  in it: `agent()` injects a default GREETING, which is a real turn, so
+  `said()` already has an entry before a case has spoken. The first draft's own
+  unit test caught that.
+- **The assertion VOCABULARY is not published, and the READERS are.** `saidIn`,
+  `toolCallsIn` and `TURN_ENDS` are facts about an event list; `aai-evals`'
+  matcher surface (`calledTool`, `toolOrder`, `saidSomething`, the recording
+  runner behind them) is a promise about a NOISY instrument and stays private
+  until the variance work in that package's guide exists to measure it with. A
+  vitest `expect` over a turn is what a template needs, and it is what a
+  template gets.
+- **`TURN_ENDS` crossed the boundary with the session**, because the two must
+  agree by construction: it is what `say()` waits for AND what partitions a run
+  into turns for the assertions. It was written out twice once, and a third
+  terminator added to one copy makes `say()` return mid-reply while the
+  assertions still think the turn is open — the agent reads as misbehaving.
+- **An S2S agent is REFUSED by name.** The vendor owns the whole turn there, so
+  there is no text seam to drive, and silently running it as a pipeline agent
+  would evaluate a configuration nobody deployed.
+
+### A keyless run gets a SCRIPTED model, not a skip
+
+`describeEval` (on `/eval/vitest`, which is what pulls the optional `vitest`
+peer) resolves one of two modes and ANNOUNCES it on every run:
+
+| | model | what it proves |
+| --- | --- | --- |
+| credential present | live | the agent's BEHAVIOUR — a noisy measurement (see `packages/aai-evals/CLAUDE.md`: identical code has scored 0.56 and 0.60) |
+| none, or `AAI_EVAL_STUB` | scripted (`eval/stub-llm.ts`) | the WIRING — `agent.ts` boots, tools resolve, the session reaches a reply, the eval file drives something |
+
+The third state is the interesting one, because the two obvious states leave a
+skipped suite indistinguishable from a BROKEN one. A stub run is deterministic,
+free, ~1s, and takes the same code path as a live run below the model — the
+descriptor is the only thing swapped, and it goes in through `registerLlmKind`
+like any provider. That is what makes it worth gating on, and CI does:
+`check.yml`'s integration-and-scenario job runs the template evals with
+`AAI_EVAL_STUB=1`, set EXPLICITLY so a key reaching that environment cannot turn
+a required check into a paid, flaky one. The live eval tier still gates nothing.
+
+`AAI_REQUIRE_EVAL` is the opposite instruction — a missing credential FAILS
+rather than downgrading — for a pipeline that means to measure. A case whose
+claim no script can honestly satisfy carries `{ live: true }` and is skipped in
+stub mode; anything else carries a `stubReply` chosen so the case still passes,
+because a case that fails against its own stub measures nothing.
+
+What the stub gate CATCHES, stated because "wiring" is vague: a template whose
+`agent.ts` stopped booting, whose `tools/` stopped resolving, whose provider
+config no longer validates, or whose eval file stopped driving a session — every
+one of which a suite that skips reports as green. `templates/simple` is the
+worked example (`packages/aai-templates/CLAUDE.md`), and the two things that
+belong to a template rather than to this harness are there: the unit-tier
+exclusion for the `.eval.` infix, and a template reading the ENVIRONMENT for a
+credential and never a developer's CLI config.
+
+**A template that ships an eval owes two things**, and both are config whose
+absence is silent. Its package's unit-tier `exclude` needs the `.eval.` infix —
+`aai-templates`' `include` is `templates/*/*.test.ts`, which MATCHES an eval
+file, so without it `pnpm test` drives a live model on every developer's key
+under a 5s budget it cannot meet. And a template's eval must read the
+ENVIRONMENT for a credential and nothing else: no fallback to
+`~/.config/aai/config.json`, which `aai-evals`' own gate has, because a template
+ships to users and may not read a developer's CLI config — `aai eval` supplies
+the key out of the project's `.env`, which is also why `ASSEMBLYAI_API_KEY` is
+declared in `check:eval`'s `env` in `turbo.json` (strict env mode strips an
+undeclared variable silently, leaving every case scripted with a key exported
+right there in the shell).
+
+Two things in `describeEval`'s SIGNATURE are decided by a linter rather than by
+taste, both A/B'd against Biome 2.5 and both invisible until a user's own project
+reddens on a file this SDK told them to write: the callback parameter is named
+`test` (`noMisplacedAssertion` matches the CALLEE IDENTIFIER, so an `expect`
+inside `evalTest(…)` is an error), and a case body takes a DESTRUCTURED context
+(`noDoneCallback` reads the first positional parameter of an async test callback
+as jest's `done`, so `async (session) => …` is an error where
+`async ({ session }) => …` is vitest's own fixture shape). Do not "tidy" either.
 
 ## Tool discovery off the platform
 

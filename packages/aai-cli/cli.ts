@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineCommand, runMain, showUsage } from "citty";
 import { commandPath, defineExec, sharedArgs, unknownFlagsForArgv } from "./_cli-common.ts";
-import { CliError, fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
+import { fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
+import { logs, secret, storage } from "./_resource-commands.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
 import { log } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, readPackageJson, resolveCwd } from "./_utils.ts";
@@ -115,6 +116,21 @@ const test = defineExec({
   },
 });
 
+const evalCommand = defineExec({
+  meta: { name: "eval", description: "Run agent behaviour evals against a live model" },
+  args: {
+    json: sharedArgs.json,
+  },
+  // Same gate as `test`, for the same reason: in a directory with no agent.ts
+  // there is nothing to evaluate, and a `{ passed: true, skipped: true }` for a
+  // project that is not there reads as a passing run.
+  cwd: "agent",
+  async run({ cwd }) {
+    const { executeEval } = await import("./eval.ts");
+    return executeEval(cwd);
+  },
+});
+
 const build = defineExec({
   meta: { name: "build", description: "Bundle agent without deploying" },
   args: {
@@ -192,149 +208,6 @@ const del = defineExec({
   },
 });
 
-const secretPut = defineExec({
-  meta: { name: "put", description: "Create or update a secret" },
-  args: {
-    name: { type: "positional", description: "Secret name", required: true },
-    server: sharedArgs.server,
-    json: sharedArgs.json,
-  },
-  cwd: "any",
-  async run({ args, mode, cwd }) {
-    const { executeSecretPut, NO_INPUT, readStdin } = await import("./secret.ts");
-    const value = mode === "json" ? await readStdin() : undefined;
-    if (mode === "json" && !value) {
-      throw new CliError(...NO_INPUT);
-    }
-    return executeSecretPut(cwd, args.name, value, args.server);
-  },
-});
-
-const secretDelete = defineExec({
-  meta: { name: "delete", description: "Delete a secret" },
-  args: {
-    name: { type: "positional", description: "Secret name", required: true },
-    server: sharedArgs.server,
-    json: sharedArgs.json,
-  },
-  cwd: "any",
-  async run({ args, cwd }) {
-    const { executeSecretDelete } = await import("./secret.ts");
-    return executeSecretDelete(cwd, args.name, args.server);
-  },
-});
-
-const secretList = defineExec({
-  meta: { name: "list", description: "List all secrets" },
-  args: {
-    server: sharedArgs.server,
-    json: sharedArgs.json,
-  },
-  cwd: "any",
-  async run({ args, cwd }) {
-    const { executeSecretList } = await import("./secret.ts");
-    return executeSecretList(cwd, args.server);
-  },
-});
-
-const secret = defineCommand({
-  meta: { name: "secret", description: "Manage agent secrets" },
-  subCommands: { put: secretPut, delete: secretDelete, list: secretList },
-});
-
-/** An optional `[dir]` positional, resolved against the working directory. */
-function resolveDirArg(cwd: string, dir: string | undefined): string {
-  return dir ? path.resolve(cwd, dir) : cwd;
-}
-
-/**
- * The optional `[dir]` positional the project-scoped subcommands share.
- *
- * Named for what it is rather than for `storage`, which was the only group
- * that had one when it was written — `logs` takes the same positional and
- * read as borrowing another command's arg.
- */
-const dirArg = {
-  type: "positional",
-  description: "Project directory",
-  required: false,
-} as const;
-
-const storageStatus = defineExec({
-  meta: { name: "status", description: "Show whether storage is enabled" },
-  args: {
-    dir: dirArg,
-    server: sharedArgs.server,
-    json: sharedArgs.json,
-  },
-  cwd: "any",
-  async run({ args, cwd }) {
-    const { executeStorageStatus } = await import("./storage.ts");
-    return executeStorageStatus(resolveDirArg(cwd, args.dir), args.server);
-  },
-});
-
-const storageEnable = defineExec({
-  meta: { name: "enable", description: "Enable the agent's app database" },
-  args: {
-    dir: dirArg,
-    server: sharedArgs.server,
-    json: sharedArgs.json,
-  },
-  cwd: "any",
-  async run({ args, cwd }) {
-    const { executeStorageEnable } = await import("./storage.ts");
-    return executeStorageEnable(resolveDirArg(cwd, args.dir), args.server);
-  },
-});
-
-const storageDisable = defineExec({
-  meta: {
-    name: "disable",
-    description: "Disable storage and DROP the database schema with all its data",
-  },
-  args: {
-    dir: dirArg,
-    force: { type: "boolean", alias: "f", description: "Skip confirmation prompt" },
-    server: sharedArgs.server,
-    json: sharedArgs.json,
-  },
-  cwd: "any",
-  async run({ args, cwd }) {
-    const { executeStorageDisable } = await import("./storage.ts");
-    return executeStorageDisable(resolveDirArg(cwd, args.dir), {
-      server: args.server,
-      force: args.force,
-    });
-  },
-});
-
-const logs = defineExec({
-  meta: {
-    name: "logs",
-    description: "Show what the deployed agent has printed",
-  },
-  args: {
-    dir: dirArg,
-    follow: { type: "boolean", alias: "f", description: "Keep printing new output" },
-    server: sharedArgs.server,
-    json: sharedArgs.json,
-  },
-  cwd: "any",
-  async run({ args, cwd }) {
-    const { executeLogs } = await import("./logs.ts");
-    return executeLogs(resolveDirArg(cwd, args.dir), {
-      server: args.server,
-      follow: args.follow,
-    });
-  },
-});
-
-const storage = defineCommand({
-  meta: { name: "storage", description: "Manage the agent's app database" },
-  subCommands: { status: storageStatus, enable: storageEnable, disable: storageDisable },
-});
-
 const login = defineExec({
   meta: { name: "login", description: "Link your signed-in browser account and save your API key" },
   args: {
@@ -375,6 +248,7 @@ export const mainCommand = defineCommand({
     init,
     dev,
     test,
+    eval: evalCommand,
     build,
     eject,
     list,

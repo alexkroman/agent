@@ -6,8 +6,37 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 
 ## Commands and exports
 
-Binary: `aai` — subcommands: init, dev, test, build, eject, list, pull, push,
-publish, delete, login, secret, logs, storage, workflow, templates.
+Binary: `aai` — subcommands: init, dev, test, eval, build, eject, list, pull,
+push, publish, delete, login, secret, logs, storage, workflow, templates.
+
+**`aai eval` is a separate command from `aai test`, and the split is the
+point** (`eval.ts`). A test asserts about the config and calls no model; an eval
+drives a real session against a model, so it spends money, takes seconds a
+case, and measures a probabilistic system where one red run is a question
+rather than a verdict. Folding it into `aai test` would put all three
+properties inside the command a project runs on every save and in `aai build`,
+and would devalue the reliable half of the verdict. Three mechanics worth
+knowing:
+
+- **The two commands are disjoint BY CONSTRUCTION, not by an exclude list.** A
+  positional argument to `vitest run` is a substring FILTER over what vitest's
+  own include globs already matched, not an include glob — so `agent.test.ts`
+  cannot match `agent.eval.test.ts` and vice versa. Neither command needs to
+  know the other's file, which is what stops the pair drifting.
+- **It passes `--testTimeout`** (`EVAL_TEST_TIMEOUT_MS`, 5 min). Vitest's 5s
+  default is shorter than one live model turn, so without it every case fails as
+  a timeout and the report says nothing about the agent. The diagnostic worth
+  reaching is the harness's own 90s per-turn timeout, which names the events it
+  saw; this ceiling only exists so a wedged run ends.
+- **It hands the project's `.env` to the child**, resolved by the same
+  `resolveServerEnv` the dev server uses (declared keys only, shell wins). That
+  is where this CLI puts a key, so without it a developer would watch every case
+  skip for want of a credential the agent itself runs fine with.
+
+The harness the eval file is written against is published from
+`@alexkroman1/aai-runtime/eval` — including what a run with NO key does, which
+is not "skip". See "Driving an agent from text is a published surface" in
+`packages/aai-runtime/CLAUDE.md`.
 
 **`aai workflow` talks to the AGENT, not to the platform API** (`workflow.ts`,
 `cli-workflow.ts`): `list`, `runs <name>`, `show <runId>`, `cancel <runId>` over

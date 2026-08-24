@@ -930,6 +930,19 @@ failure. The WAV half carries its own weight there: a cut that lands mid-frame,
 or an off-by-one in the RIFF chunk walk, produces audio the decoder happily
 transcribes into confident nonsense rather than anything that fails.
 
+## `simple` ships an EVAL, and CI runs it in stub mode
+
+`templates/simple/agent.eval.test.ts` is the reference use of
+`@alexkroman1/aai-runtime/eval/vitest`, and the first template file that drives
+a model at all: a template's `agent.test.ts` asserts about the CONFIG and
+`toAgentConfig` runs no agent. **Everything about it — the harness, the two
+modes, why a keyless run is scripted rather than skipped, why CI gates on the
+scripted one, and the two things a TEMPLATE owes (the `.eval.` unit-tier
+exclusion in `vitest.config.ts`, and reading the environment for a credential
+and never a developer's CLI config) — is in `packages/aai-runtime/CLAUDE.md`,
+"Driving an agent from text is a published surface".** This guide is at its
+character cap; that one owns the mechanism.
+
 ## The authoring guide ships inside the SDK
 
 `scaffold/CLAUDE.md` is already the one source of truth for how to write an aai

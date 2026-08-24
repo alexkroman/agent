@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { requiredProviderEnvVars } from "@alexkroman1/aai-runtime";
 import { describe, expect, test } from "vitest";
+import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import {
   createFakeSttOpener,
   createFakeTtsOpener,

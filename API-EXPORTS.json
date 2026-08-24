@@ -793,6 +793,36 @@
     "BuildWorkerOptions",
     "buildWorker"
   ],
+  "@alexkroman1/aai-runtime/eval": [
+    "EvalCredentials",
+    "EvalSession",
+    "EvalSessionOptions",
+    "EvalToolCall",
+    "EvalTurn",
+    "FAKE_SPEECH_API_KEY_ENV",
+    "FakeSpeech",
+    "FakeSttSession",
+    "FakeTtsSession",
+    "STUB_LLM_API_KEY_ENV",
+    "StubLlm",
+    "TURN_ENDS",
+    "createFakeSttOpener",
+    "createFakeTtsOpener",
+    "evalCredentials",
+    "installFakeSpeech",
+    "installStubLlm",
+    "openEvalSession",
+    "saidIn",
+    "toolCallsIn"
+  ],
+  "@alexkroman1/aai-runtime/eval/vitest": [
+    "EvalCaseOptions",
+    "EvalMode",
+    "EvalTest",
+    "EvalTestContext",
+    "describeEval",
+    "resolveEvalMode"
+  ],
   "@alexkroman1/aai-runtime": [
     "AgentEnv",
     "AgentRuntime",

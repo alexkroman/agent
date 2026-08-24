@@ -26,9 +26,10 @@ The constraint eve's eval framework does not have, and the reason the harnesses
 ended up external: eve drives `t.send("What is the weather in Brooklyn?")`, and
 a voice agent's input is paced PCM.
 
-- **Level 1 — text-driven. BUILT.** `behaviour.eval.test.ts` +
-  `session-target.ts`. Everything above the audio boundary: tool choice, tool
-  arguments, tool ORDER, step count, what the agent said, history handling.
+- **Level 1 — text-driven. BUILT.** `behaviour.eval.test.ts`, over the
+  published target (`@alexkroman1/aai-runtime/eval`). Everything above the audio
+  boundary: tool choice, tool arguments, tool ORDER, step count, what the agent
+  said, history handling.
 - **Level 2 — paced audio replay. NOT BUILT.** The only level that can measure
   endpointing, splits and merges, barge-in, and the `speech.started` /
   `reply.cancelled` ratio.
@@ -39,8 +40,8 @@ so the truncated-auth regression is invisible to it)". Level 1 cannot see an
 endpointing bug; level 2 without tools cannot see the bug an endpointing change
 caused. **Nothing here may be named, documented or reported in a way that
 implies level 2 coverage** — building level 1 and claiming level 2's questions
-would be a worse outcome than having neither. `fake-speech.ts`'s module doc
-repeats the warning at the seam where it would be forgotten.
+would be a worse outcome than having neither. `eval/fake-speech.ts` in
+`aai-runtime` repeats the warning at the seam where it would be forgotten.
 
 **Level 2's corpus decision is deferred, not made.** The honest options were a
 small committed corpus of recorded caller audio or a fetch-on-demand cache, and
@@ -96,8 +97,11 @@ The instrument is noisy in a measured way: identical code has scored **0.56 and
 - an assertion a pass never REACHED is missing data, not a flip — otherwise every
   harness error would read as agent nondeterminism.
 
-**This tier is not a merge gate and must not become one.** It is absent from
-`pnpm check`, from `scripts/check.sh` and from CI. A flaky required check that
+**This tier is not a merge gate and must not become one.** THIS package's
+`check:eval` is absent from `pnpm check`, from `scripts/check.sh` and from CI —
+each of which runs `check:eval` filtered to `aai-templates`, in scripted-model
+mode, which is a wiring gate and not a live measurement (see
+`packages/aai-runtime/CLAUDE.md`). A flaky required check that
 blocks merges is worse than an unreliable number nobody is forced to believe.
 `AAI_EVAL_MIN_SCORE` makes it assert, and it asserts `score.min` — the spread's
 LOWER bound — because a mean over a flipping suite passes on a lucky repeat.
@@ -125,7 +129,8 @@ The finding is the asymmetry: at this scope the SCORE is not the noisy thing,
 LATENCY is. Read the 100% carefully — it says these four cases do not
 discriminate between a good agent and a slightly worse one; it does not say they
 check nothing. They failed loudly on two real harness bugs during development
-(see `fake-speech.ts` and `session-target.ts`'s `repliedTo`), which is the
+(see `eval/fake-speech.ts` and `eval/session.ts`'s `repliedTo` in
+`aai-runtime`), which is the
 discrimination evidence there is. A case that flips is more informative than one
 that always passes, and the way to get there is a harder case, never a lower
 floor.
@@ -193,9 +198,19 @@ Host mode is unaffected and unblocked (the per-session agent-definition resolver
 that would have needed it cannot be built safely); it is simply the wrong seam
 for a text target, and the right seam is below the wire.
 
-So `session-target.ts` drives `runtime.createSession()` with a recording
+So the level-1 target drives `runtime.createSession()` with a recording
 `ClientSink`, the agent's own `events` hooks feeding the assertions, and the two
-speech stages faked. What is REAL: `createRuntime`, the pipeline transport, the
+speech stages faked. **That target is no longer in this package**: it is
+published as `@alexkroman1/aai-runtime/eval` (`openEvalSession`, the fake speech
+stages, the event readers, and `describeEval` on `/eval/vitest`), because a
+template is a user's project and had no way to ask this question at all — see
+"Driving an agent from text is a published surface" in
+`packages/aai-runtime/CLAUDE.md`. What stays here is the half that is a promise
+about a NOISY instrument: the recording runner, the spread report, and the
+assertion vocabulary. `assertions.ts` imports `TURN_ENDS`, `saidIn` and
+`toolCallsIn` from the published subpath rather than restating them, which is the
+same one-declaration rule that section records being bitten by twice, now across
+a package boundary. What is REAL: `createRuntime`, the pipeline transport, the
 LLM on a live key, the tool executor, `ctx` and its slots, history trimming, the
 step budget, and the session event stream. What is not, stated rather than
 papered over: `ws-handler.ts`, the audio pacer, and frame ordering — all of which
@@ -229,11 +244,14 @@ of bug that would have made a report LIE rather than error:
   reporting a broken agent. The utterance's own `user-transcript.committed` is the
   anchor; every event of its reply follows it.
 
-**What ENDS a reply is declared once**, `TURN_ENDS` in `assertions.ts`, imported
-by `session-target.ts`. It was written out in both, and the two must agree by
-construction: a third terminator added to one copy makes `say()` return
-mid-reply while the assertions still think the turn is open — the same shape as
-the second bug above, arriving by a different route.
+**What ENDS a reply is declared once**, `TURN_ENDS` in
+`@alexkroman1/aai-runtime/eval`, imported by both the session that WAITS on it
+and `assertions.ts`, which partitions a run into turns with it. It was written
+out in both, and the two must agree by construction: a third terminator added to
+one copy makes `say()` return mid-reply while the assertions still think the turn
+is open — the same shape as the second bug above, arriving by a different route.
+The declaration crossing a package boundary is what makes the rule hold now that
+the target is published.
 
 **`openEvalSession` releases the fake stages when its own setup throws.**
 `installFakeSpeech()` registers a PROCESS-GLOBAL kind pair and the only thing

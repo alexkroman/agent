@@ -11,6 +11,16 @@
       "types": "./dist/runtime-barrel.d.ts",
       "import": "./dist/runtime-barrel.js"
     },
+    "./eval": {
+      "@dev/source": "./eval-barrel.ts",
+      "types": "./dist/eval-barrel.d.ts",
+      "import": "./dist/eval-barrel.js"
+    },
+    "./eval/vitest": {
+      "@dev/source": "./eval-vitest-barrel.ts",
+      "types": "./dist/eval-vitest-barrel.d.ts",
+      "import": "./dist/eval-vitest-barrel.js"
+    },
     "./internal": {
       "@dev/source": "./internal.ts",
       "types": "./dist/internal.d.ts",
@@ -67,6 +77,14 @@
     "fast-check": "catalog:",
     "tsdown": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "vitest": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=24"
