@@ -94,5 +94,8 @@
   },
   "rule24_toolContextField": {
     "packages/aai/sdk/tool-context.ts": 9
+  },
+  "rule25_channelMessageField": {
+    "packages/aai/sdk/channels/channel-types.ts": 29
   }
 }

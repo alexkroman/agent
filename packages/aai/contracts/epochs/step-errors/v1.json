@@ -2,8 +2,9 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "step-errors",
   "epoch": 1,
-  "sha256": "3181468d3cdf2f2bd3451f489879c1f4c4e06d68f733e98d916b155360135025",
+  "sha256": "c7c88e750fee47235e6297a238037fb6b950f57fc969bbbf2c808b469c3b3106",
   "exports": [
+    "sendToChannelClassified",
     "stepFetchOk",
     "stepGenerateClassified",
     "stepGenerateJsonClassified",

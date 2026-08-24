@@ -38,6 +38,16 @@
  */
 export const TOOL_CONTEXT_PATHS = ["packages/aai/sdk/tool-context.ts"];
 
+/**
+ * The platform-neutral channel message shape — `ChannelMessage` and
+ * `ChannelSection`, the fields every channel kind must render.
+ *
+ * One file, for the reason `TOOL_CONTEXT_PATHS` is one: role is not derivable
+ * from a path, and the gate spec asserts it exists so a rename cannot empty the
+ * corpus silently.
+ */
+export const CHANNEL_MESSAGE_PATHS = ["packages/aai/sdk/channels/channel-types.ts"];
+
 export const SESSION_SURFACE_PATHS = [
   "packages/aai-runtime/session-core.ts",
   "packages/aai-runtime/session-commands.ts",

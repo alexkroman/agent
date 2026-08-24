@@ -14,7 +14,7 @@ import {
   isSlackWebhookUrl,
   isSlackWorkflowTriggerUrl,
   renderSlackPlainText,
-  slack,
+  slackChannel,
 } from "./slack.ts";
 
 const MESSAGE = {
@@ -65,7 +65,7 @@ describe("recognising a Slack destination", () => {
 describe("rendering, which is where the two webhook shapes diverge", () => {
   /** The distinction the module exists for — the two URLs take different bodies. */
   test("sends Block Kit to an incoming webhook", () => {
-    const { url, body } = renderChannelPayload(slack({ webhookUrl: INCOMING }), MESSAGE);
+    const { url, body } = renderChannelPayload(slackChannel({ webhookUrl: INCOMING }), MESSAGE);
 
     expect(url).toBe(INCOMING);
     expect(body).toHaveProperty("blocks");
@@ -74,7 +74,7 @@ describe("rendering, which is where the two webhook shapes diverge", () => {
   });
 
   test("sends flat variables to a workflow trigger, under the configured name", () => {
-    const channel = slack({ webhookUrl: TRIGGER, textParam: "digest_body" });
+    const channel = slackChannel({ webhookUrl: TRIGGER, textParam: "digest_body" });
     const { body } = renderChannelPayload(channel, MESSAGE);
 
     expect(Object.keys(body)).toEqual(["digest_body"]);
@@ -83,7 +83,7 @@ describe("rendering, which is where the two webhook shapes diverge", () => {
   });
 
   test("defaults the trigger variable to the name Slack's own example uses", () => {
-    const { body } = renderChannelPayload(slack({ webhookUrl: TRIGGER }), MESSAGE);
+    const { body } = renderChannelPayload(slackChannel({ webhookUrl: TRIGGER }), MESSAGE);
     expect(Object.keys(body)).toEqual(["text"]);
   });
 
@@ -97,7 +97,7 @@ describe("rendering, which is where the two webhook shapes diverge", () => {
   });
 
   test("links a section's title when it carries a url, and does not when it does not", () => {
-    const linked = renderChannelPayload(slack({ webhookUrl: INCOMING }), {
+    const linked = renderChannelPayload(slackChannel({ webhookUrl: INCOMING }), {
       text: "t",
       sections: [{ title: "Linked", url: "https://example.test/x" }, { title: "Bare" }],
     });
@@ -113,7 +113,7 @@ describe("rendering, which is where the two webhook shapes diverge", () => {
    * rather than passed through.
    */
   test("truncates a heading past Slack's header cap", () => {
-    const { body } = renderChannelPayload(slack({ webhookUrl: INCOMING }), {
+    const { body } = renderChannelPayload(slackChannel({ webhookUrl: INCOMING }), {
       text: "t",
       heading: "H".repeat(200),
     });
@@ -128,7 +128,7 @@ describe("rendering, which is where the two webhook shapes diverge", () => {
    * literally there, so escaping the header would print "&amp;" to a reader.
    */
   test("escapes mrkdwn sections and leaves the plain-text header alone", () => {
-    const { body } = renderChannelPayload(slack({ webhookUrl: INCOMING }), {
+    const { body } = renderChannelPayload(slackChannel({ webhookUrl: INCOMING }), {
       text: "t",
       heading: "Tom & Jerry",
       sections: [{ body: "Tom & Jerry <b>" }],
@@ -146,7 +146,7 @@ describe("rendering, which is where the two webhook shapes diverge", () => {
   });
 
   test("renders a message carrying nothing but its notification line", () => {
-    const { body } = renderChannelPayload(slack({ webhookUrl: INCOMING }), {
+    const { body } = renderChannelPayload(slackChannel({ webhookUrl: INCOMING }), {
       text: "Run finished.",
     });
 
@@ -157,17 +157,17 @@ describe("rendering, which is where the two webhook shapes diverge", () => {
 
 describe("the advice a refusal deserves", () => {
   test("names the unpublished-workflow case, which no generic message explains", () => {
-    const advice = channelAdvice(slack({ webhookUrl: TRIGGER }), "workflow_not_published");
+    const advice = channelAdvice(slackChannel({ webhookUrl: TRIGGER }), "workflow_not_published");
     expect(advice).toContain("not published");
   });
 
   test("points a trigger caller at the variable name", () => {
-    const advice = channelAdvice(slack({ webhookUrl: TRIGGER }), "invalid_arguments");
+    const advice = channelAdvice(slackChannel({ webhookUrl: TRIGGER }), "invalid_arguments");
     expect(advice).toContain("text parameter");
   });
 
   test("tells an incoming-webhook caller to check the webhook, not the workflow", () => {
-    const advice = channelAdvice(slack({ webhookUrl: INCOMING }), "invalid_payload");
+    const advice = channelAdvice(slackChannel({ webhookUrl: INCOMING }), "invalid_payload");
     expect(advice).toContain("revoked");
     expect(advice).not.toContain("workflow");
   });
@@ -179,7 +179,7 @@ describe("posting", () => {
   test("posts the rendered payload and answers with what the platform said", async () => {
     const fetched = stub({ body: "ok" });
 
-    expect(await sendToChannel(slack({ webhookUrl: INCOMING }), MESSAGE)).toBe("ok");
+    expect(await sendToChannel(slackChannel({ webhookUrl: INCOMING }), MESSAGE)).toBe("ok");
     expect(fetched.calls[0]?.method).toBe("POST");
     expect(fetched.calls[0]?.url).toBe(INCOMING);
     expect(fetched.calls[0]?.headers?.["Content-Type"]).toBe("application/json");
@@ -188,7 +188,7 @@ describe("posting", () => {
 
   test("treats an empty 200 as success rather than an empty status", async () => {
     stub({ body: "" });
-    expect(await sendToChannel(slack({ webhookUrl: INCOMING }), MESSAGE)).toBe("ok");
+    expect(await sendToChannel(slackChannel({ webhookUrl: INCOMING }), MESSAGE)).toBe("ok");
   });
 
   /**
@@ -199,7 +199,7 @@ describe("posting", () => {
   test("makes a 4xx terminal, with advice a person can act on", async () => {
     stub({ status: 403, body: { error: "invalid_token" } });
 
-    const err = await sendToChannel(slack({ webhookUrl: INCOMING }), MESSAGE).catch(
+    const err = await sendToChannel(slackChannel({ webhookUrl: INCOMING }), MESSAGE).catch(
       (thrown: unknown) => thrown,
     );
 
@@ -213,7 +213,7 @@ describe("posting", () => {
   test("leaves a 5xx retryable, because that is the platform having a bad minute", async () => {
     stub({ status: 503, body: "busy" });
 
-    const err = await sendToChannel(slack({ webhookUrl: INCOMING }), MESSAGE).catch(
+    const err = await sendToChannel(slackChannel({ webhookUrl: INCOMING }), MESSAGE).catch(
       (thrown: unknown) => thrown,
     );
 
@@ -224,7 +224,7 @@ describe("posting", () => {
   test("carries a Retry-After the platform named, so a retry waits what was asked", async () => {
     stub({ status: 429, body: "slow down", headers: { "retry-after": "42" } });
 
-    const err = await sendToChannel(slack({ webhookUrl: INCOMING }), MESSAGE).catch(
+    const err = await sendToChannel(slackChannel({ webhookUrl: INCOMING }), MESSAGE).catch(
       (thrown: unknown) => thrown,
     );
 

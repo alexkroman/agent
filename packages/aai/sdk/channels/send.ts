@@ -3,13 +3,24 @@
  * Dispatch: turn a {@link Channel} into a request, post it, and classify what
  * came back.
  *
- * ## The dispatch table is a plain object, and stays one
+ * ## The dispatch is a REGISTRY, and this module knows no platform
  *
  * Every channel is render-plus-POST, so there is no host-side opener layer
- * here the way there is for a provider (`registerTtsKind` and the rest). A
- * `kind` a caller invented is a THROW rather than a silent no-op: a delivery
- * that quietly did not happen is the failure mode this whole module exists to
- * make loud.
+ * here the way there is for a provider — but there is the same reason to keep
+ * the vendors out of the shared path. This module used to hold Slack's
+ * option-narrowing and four Slack imports beside the table, which made a
+ * second channel an edit to a file that has nothing to do with it. A channel
+ * is a {@link ChannelKind} VALUE now, declared in the module that owns the
+ * platform, and the ones the SDK ships are registered below.
+ *
+ * {@link registerChannelKind} is the same door `registerSttKind` opens one
+ * layer up: a host or an agent project can add a destination the SDK does not
+ * ship without waiting for one.
+ *
+ * A `kind` nothing has registered is a THROW rather than a silent no-op: a
+ * delivery that quietly did not happen is the failure mode this whole module
+ * exists to make loud, and the message names what IS registered, because the
+ * likeliest cause is a channel module that was never imported.
  *
  * ## Why this is not a `"use step"` body
  *
@@ -24,14 +35,9 @@
 import { stepFetch } from "../step-fetch.ts";
 import { isTransientStatus, retryAfter } from "../step-retry.ts";
 import { responseErrorMessage } from "../utils.ts";
-import type { Channel, ChannelMessage, ChannelPayload } from "./channel-types.ts";
+import type { Channel, ChannelKind, ChannelMessage, ChannelPayload } from "./channel-types.ts";
 import { ChannelDeliveryError } from "./channel-types.ts";
-import {
-  renderSlackChannelPayload,
-  SLACK_CHANNEL_KIND,
-  type SlackChannelOptions,
-  slackChannelAdvice,
-} from "./slack.ts";
+import { SLACK_CHANNEL } from "./slack.ts";
 
 /**
  * A platform is not slow. A post that has not answered in 30s is not going to,
@@ -39,45 +45,48 @@ import {
  */
 export const CHANNEL_POST_TIMEOUT_MS = 30_000;
 
-/** What every channel kind supplies: how to render, and what to say when refused. */
-interface ChannelKindHandler {
-  readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
-  readonly advice: (options: Record<string, unknown>, detail: string) => string;
-}
-
-const CHANNEL_KINDS: Readonly<Record<string, ChannelKindHandler>> = {
-  [SLACK_CHANNEL_KIND]: {
-    render: (message, options) => renderSlackChannelPayload(message, slackOptions(options)),
-    advice: (options, detail) => slackChannelAdvice(slackOptions(options), detail),
-  },
-};
+const CHANNEL_KINDS = new Map<string, ChannelKind>();
 
 /**
- * A descriptor's options, NARROWED rather than cast.
+ * Register a channel kind, so `sendToChannel` can dispatch a descriptor
+ * carrying its tag.
  *
- * A cast would be the short way and it would be wrong twice over: a channel
- * descriptor round-trips through a durable run's journal and can arrive as
- * whatever was written there, and `sendToChannel` is reachable from a body
- * that built its descriptor from parsed input. So the field is checked, and a
- * descriptor missing it fails with the call that would have produced a valid
- * one rather than with `POST undefined`.
+ * The SDK registers what it ships (Slack today). Call this for a destination
+ * it does not — an internal notifier, a platform with no adapter here — and
+ * the rest of the channel surface works unchanged: `slackChannel()` has no privileges
+ * a hand-written descriptor factory lacks.
+ *
+ * **Register before the first send, and remember a descriptor outlives the
+ * process.** A channel round-trips through a durable run's journal, so a run
+ * resumed in a fresh worker dispatches on a tag whose module that worker may
+ * never have imported. Register at module load in the agent's entry, not
+ * lazily beside the first call.
+ *
+ * Re-registering a kind REPLACES it, which is what makes a shipped channel
+ * overridable — and is why the tag is the identity rather than the value.
+ *
+ * @public
  */
-function slackOptions(options: Record<string, unknown>): SlackChannelOptions {
-  const { textParam, webhookUrl } = options;
-  if (typeof webhookUrl !== "string") {
-    throw new Error(
-      "A Slack channel needs a string `webhookUrl`. Build one with `slack({ webhookUrl })`.",
-    );
-  }
-  return typeof textParam === "string" ? { textParam, webhookUrl } : { webhookUrl };
+export function registerChannelKind(kind: ChannelKind): void {
+  CHANNEL_KINDS.set(kind.kind, kind);
 }
 
-function handlerFor(channel: Channel): ChannelKindHandler {
-  const handler = CHANNEL_KINDS[channel.kind];
+/** The tags {@link sendToChannel} can dispatch, in registration order. */
+export function registeredChannelKinds(): readonly string[] {
+  return [...CHANNEL_KINDS.keys()];
+}
+
+registerChannelKind(SLACK_CHANNEL);
+
+function handlerFor(channel: Channel): ChannelKind {
+  const handler = CHANNEL_KINDS.get(channel.kind);
   if (handler === undefined) {
     throw new Error(
       `Unknown channel kind ${JSON.stringify(channel.kind)}. ` +
-        `Known kinds: ${Object.keys(CHANNEL_KINDS).join(", ")}.`,
+        `Registered kinds: ${registeredChannelKinds().join(", ") || "(none)"}. ` +
+        "A kind is registered by importing the module that declares it, or by " +
+        "calling `registerChannelKind` — a run resumed in a fresh worker has " +
+        "imported neither unless the agent's entry does it at module load.",
     );
   }
   return handler;
@@ -127,12 +136,12 @@ export function channelAdvice(channel: Channel, detail: string): string {
  *
  * @example
  * ```ts
- * import { sendToChannel, slack } from "@alexkroman1/aai/channels";
+ * import { sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  *
  * export async function announce(webhookUrl: string): Promise<string> {
  *   "use step";
- *   return await sendToChannel(slack({ webhookUrl }), { text: "Run finished." }).catch(
+ *   return await sendToChannel(slackChannel({ webhookUrl }), { text: "Run finished." }).catch(
  *     throwStepError,
  *   );
  * }

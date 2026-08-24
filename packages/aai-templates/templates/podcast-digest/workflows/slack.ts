@@ -6,7 +6,7 @@
  * This module used to carry the whole third-party contract: Slack's two
  * webhook shapes and the branch between them, Block Kit assembly, mrkdwn
  * escaping, the 4xx/5xx split and the advice each refusal deserves. All of it
- * is `@alexkroman1/aai/channels` now — `slack()` names the destination,
+ * is `@alexkroman1/aai/channels` now — `slackChannel()` names the destination,
  * `sendToChannelClassified` posts and classifies — and what is left here is the
  * part that is actually about podcasts: turning episode digests into a
  * {@link ChannelMessage}.
@@ -25,7 +25,7 @@
  * no retry while looking durable at the call site.
  */
 
-import { type ChannelMessage, slack } from "@alexkroman1/aai/channels";
+import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";
 import { report } from "@alexkroman1/aai/step";
 import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
 import type { EpisodeDigest } from "./digest.ts";
@@ -43,7 +43,7 @@ export type SlackDigestInput = {
 /**
  * The step: post one digest.
  *
- * It is three lines because the interesting decisions moved. `slack()` builds
+ * It is three lines because the interesting decisions moved. `slackChannel()` builds
  * the descriptor, {@link renderDigestMessage} says what the message contains,
  * and `sendToChannelClassified` does the render-post-classify round — throwing
  * a `FatalError` on a 4xx (a revoked webhook and a wrong variable name answer
@@ -55,7 +55,7 @@ export async function sendDigestToSlack(input: SlackDigestInput): Promise<string
 
   await report("Posting the digest to Slack.");
   return await sendToChannelClassified(
-    slack({ webhookUrl: input.slackWebhookUrl, textParam: input.slackWorkflowTextParam }),
+    slackChannel({ webhookUrl: input.slackWebhookUrl, textParam: input.slackWorkflowTextParam }),
     renderDigestMessage(input),
   );
 }

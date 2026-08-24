@@ -9,6 +9,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "channels": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "db": {
     "current": 1,
     "supported": [1],

@@ -622,11 +622,11 @@ export interface SessionSlot<K extends string, T> {
 }
 
 // @public
-export function sessionSlot<const K extends string, T>(key: K, create: () => T, options?: SessionSlotOptions<T>): SessionSlot<K, T>;
+export function sessionSlot<const K extends string, T, After = void>(key: K, create: () => T, options?: SessionSlotOptions<T, After>): SessionSlot<K, T>;
 
 // @public
-export interface SessionSlotOptions<T> {
-    after?: (draft: T) => SyncHookResult;
+export interface SessionSlotOptions<T, After = void> {
+    after?: ((draft: T) => After) & RejectThenable<After>;
     durable?: boolean;
 }
 
@@ -734,11 +734,6 @@ type StreamOptions = {
 // @public
 export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
-};
-
-// @public
-type SyncHookResult = void | {
-    then?: never;
 };
 
 // @public

@@ -19,6 +19,7 @@ import {
   ON_NAME,
 } from "./guard-invariants-ere.mjs";
 import {
+  CHANNEL_MESSAGE_PATHS,
   SESSION_SURFACE_PATHS,
   SOURCE_PATHSPECS,
   TMP_RULE_PATHSPECS,
@@ -159,5 +160,31 @@ export const STATE_RULES = [
       "session callbacks, one layer up.\n\n" +
       "The nine baselined occurrences are the fields that exist. Lowering the\n" +
       "budget means one came OUT, which is the direction this moves.",
+  },
+  {
+    id: 25,
+    key: "rule25_channelMessageField",
+    label: "field on the shared channel message shape",
+    re: `${AT_LINE_START}(readonly )?${IDENT}${DECLARES}`,
+    paths: CHANNEL_MESSAGE_PATHS,
+    skipComments: true,
+    samples: {
+      matches: ["  readonly title?: string;", "  readonly kind: string;"],
+      ignores: ["   * `title` is the headline.", "export interface ChannelSection {"],
+    },
+    remedy:
+      "`ChannelMessage` and `ChannelSection` are the platform-NEUTRAL half of a\n" +
+      "channel, and the half `aai:channels`' contract hash watches. A field added\n" +
+      "here is a signature change for every channel kind, including the ones that\n" +
+      "cannot render it — so a Slack-only affordance charges a version bump to\n" +
+      "Discord, to Teams, and to whatever is added next.\n\n" +
+      "A knob only one platform has belongs in that kind's OWN options type,\n" +
+      "which nothing else reads and which is free to grow. `textParam` is the\n" +
+      "worked example: a Slack workflow-trigger detail on `SlackChannelOptions`,\n" +
+      "invisible to this file and to every other channel.\n\n" +
+      "This is rule 24 one layer up, and for the same reason: `ToolContext` grew\n" +
+      "a field per runtime capability and `aai:tool` ran NINE consecutive\n" +
+      "signature-only epochs for it. Add here only what a new channel would have\n" +
+      "to INVENT to render at all.",
   },
 ];

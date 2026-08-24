@@ -27,6 +27,24 @@
  * route. There is no `receive`, and adding one would be a different concept
  * wearing this name — see the module doc on `sdk/channels/slack.ts` for the
  * one place that distinction has already cost somebody a red 400.
+ *
+ * ## A PLATFORM feature is a kind's options, never a field here
+ *
+ * {@link ChannelMessage} and {@link ChannelSection} are the platform-neutral
+ * half, and they are the half a contract hash watches. Every field added to
+ * them is a signature change to `aai:channels` — for every channel, including
+ * the ones that cannot render it — so a Slack-only affordance added here
+ * charges a version bump to Discord and to whatever comes next. That is the
+ * shape that produced this repo's largest single source of contract churn one
+ * layer down: `ToolContext` grew a field per runtime capability and `aai:tool`
+ * ran nine consecutive signature-only epochs for it (`guard-invariants` rule
+ * 24 caps it; rule 25 caps these).
+ *
+ * So the rule is: a knob only one platform has goes in that kind's OWN options
+ * type, which nothing else reads and which is free to grow. `textParam` is the
+ * worked example — a Slack workflow-trigger detail, on `SlackChannelOptions`,
+ * invisible to every other channel and to this file. Add here only what a new
+ * channel would have to INVENT to render at all, and expect to defend it.
  */
 
 /**
@@ -56,6 +74,35 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
   /** Compile-time surface tag; never present at runtime. */
   readonly __surface?: "channel";
 };
+
+/**
+ * Everything one channel kind supplies: how to turn a {@link ChannelMessage}
+ * into the request body that platform takes, and what to say when the platform
+ * refuses one.
+ *
+ * A channel is defined as a VALUE of this shape, in the module that owns the
+ * platform, and `sendToChannel` reaches it through the registry. The generic
+ * send path therefore imports nothing vendor-specific and adding a channel
+ * touches no shared file — which is the whole reason this interface is public
+ * rather than an internal shape inside `send.ts`, where it started with Slack's
+ * option-narrowing spelled out beside the dispatch table.
+ *
+ * `render` and `advice` are handed the descriptor's RAW options, because a
+ * descriptor round-trips through a durable run's journal and arrives as
+ * whatever was written there. Narrowing them is the kind's own job and the
+ * reason it owns this function: a cast here would fail as `POST undefined`
+ * rather than naming the field that is missing.
+ *
+ * @public
+ */
+export interface ChannelKind {
+  /** The `kind` tag its descriptors carry, e.g. `"slack"`. */
+  readonly kind: string;
+  /** Turn a message into this platform's request. */
+  readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
+  /** What to tell an author when the platform refuses a post. */
+  readonly advice: (options: Record<string, unknown>, detail: string) => string;
+}
 
 /**
  * One block of a message: a titled chunk, optionally linked, with prose and

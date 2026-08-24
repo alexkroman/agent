@@ -36,11 +36,54 @@ export type SyncMutationMisuse =
  * there and still names the rule; this makes the same rule a compile error, so
  * the gate can prove what the drop reasons had to assert by hand.
  */
-export type RejectThenable<R> = [R] extends [never]
-  ? unknown
-  : [R] extends [PromiseLike<unknown>]
-    ? SyncMutationMisuse
-    : unknown;
+export type RejectThenable<R> =
+  IsAny<R> extends true
+    ? unknown
+    : [R] extends [never]
+      ? unknown
+      : [R] extends [PromiseLike<unknown>]
+        ? SyncMutationMisuse
+        : unknown;
+
+/**
+ * The same check in RETURN position: `R`, unless `R` is thenable, in which case
+ * {@link SyncMutationMisuse}.
+ *
+ * {@link SessionSlot.update} uses this rather than {@link RejectThenable}, and
+ * the difference is generic WRAPPERS. A parameter typed
+ * `((draft: T) => R) & RejectThenable<R>` cannot be satisfied when `R` is still
+ * a type parameter — the conditional is deferred and nothing is assignable to
+ * it — so a helper that forwards its own `R` into a mutation stops compiling.
+ * This repo has one (`retailTool` in the retail template, which wraps every one
+ * of its fifteen tools), and making it and every future wrapper carry a cast
+ * would be a worse trade than the weaker check.
+ *
+ * Weaker in exactly one way: an async body whose RESULT is discarded is not an
+ * error, where the parameter form would catch it. Everything that uses the
+ * result — an annotation, a return, a `tool()` body — still gets one, and
+ * `updateTool`, which is what all four dropped `aai:state` epochs actually got
+ * wrong, keeps the strong form because its argument is an object rather than a
+ * forwarded callback. The runtime refusal covers the rest.
+ */
+export type RejectThenableResult<R> =
+  IsAny<R> extends true
+    ? R
+    : [R] extends [never]
+      ? R
+      : [R] extends [PromiseLike<unknown>]
+        ? SyncMutationMisuse
+        : R;
+
+/**
+ * Whether `T` is `any`.
+ *
+ * `any` is assignable to everything, `PromiseLike<unknown>` included, so
+ * without this arm a mutator whose return type inference lands on `any` — six
+ * of this repo's own specs, where the callback body is an expression — is
+ * reported as an async mutation. `0 extends 1 & T` is only true for `any`,
+ * because the intersection collapses to `any` and nothing else absorbs `1`.
+ */
+type IsAny<T> = 0 extends 1 & T ? true : false;
 
 /**
  * The authoring shape of a slot-backed tool: {@link ToolDef} with the slot's

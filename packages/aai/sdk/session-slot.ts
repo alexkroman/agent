@@ -17,7 +17,12 @@ import { claimKey, type KeyOwner, shapeOf } from "./_slot-owners.ts";
 import type { DeepReadonly } from "./deep-readonly.ts";
 import { isRecord } from "./is-record.ts";
 import type { ToolInputSchema } from "./schema.ts";
-import type { RejectThenable, SessionSlotOptions, SlotToolDef } from "./session-slot-types.ts";
+import type {
+  RejectThenable,
+  RejectThenableResult,
+  SessionSlotOptions,
+  SlotToolDef,
+} from "./session-slot-types.ts";
 import type { SlotStore, StateProjection } from "./session-state.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
@@ -104,7 +109,7 @@ export interface SessionSlot<K extends string, T> {
    * that, and this method no longer takes a lock at all: a synchronous window
    * has nothing to serialize.
    */
-  update<R>(ctx: ToolContext, mutate: ((draft: T) => R) & RejectThenable<R>): R;
+  update<R>(ctx: ToolContext, mutate: (draft: T) => R): RejectThenableResult<R>;
   /**
    * Replace this session's value wholesale (a load, an import, a restore), and
    * return it as `get` would.
@@ -395,7 +400,11 @@ export function sessionSlot<const K extends string, T, After = void>(
     create,
     durable,
     get,
-    update,
+    // The public signature answers `RejectThenableResult<R>`, an authoring
+    // guard the implementation has no way to satisfy generically — at run time
+    // it hands back exactly what the mutator returned, which is `R` on every
+    // path the guard permits.
+    update: update as SessionSlot<K, T>["update"],
     set(ctx, value) {
       assertNoOpenDraft(ctx, "set");
       // A copy, so the freeze lands on the slot's own object rather than on the

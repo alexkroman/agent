@@ -247,11 +247,29 @@ function bump(target) {
     `api-contracts: "${id}" is now epoch ${next}.\n` +
       (removed.length > 0 ? `  removed: ${removed.join(", ")}\n` : "") +
       (added.length > 0 ? `  added:   ${added.join(", ")}\n` : "") +
-      `  epoch ${contract.current}: ${retain ? "RETAINED as supported" : `DROPPED — ${reason}`}\n` +
-      (retain
-        ? `  Write epoch ${contract.current}'s example — it is a promise now: ${rel(fixture)}\n`
-        : `  Epoch ${contract.current} is dropped, so it evidences nothing${existsSync(retired) ? ` (removed ${rel(retired)})` : ""}.\n`) +
-      `  Suggested changeset bump: ${retain ? suggested : "major"}.`,
+      bumpVerdict({ contract, fixture, retain, reason, retired, suggested }),
+  );
+}
+
+/**
+ * The classification half of what `bump` prints — extracted so `bump` itself
+ * stays under the cognitive-complexity cap, which the epoch-vs-fixture
+ * branching pushed it over.
+ */
+function bumpVerdict({ contract, fixture, retain, reason, retired, suggested }) {
+  const previous = contract.current;
+  if (retain) {
+    return (
+      `  epoch ${previous}: RETAINED as supported\n` +
+      `  Write epoch ${previous}'s example — it is a promise now: ${rel(fixture)}\n` +
+      `  Suggested changeset bump: ${suggested}.`
+    );
+  }
+  const removedNote = existsSync(retired) ? ` (removed ${rel(retired)})` : "";
+  return (
+    `  epoch ${previous}: DROPPED — ${reason}\n` +
+    `  Epoch ${previous} evidences nothing now${removedNote}.\n` +
+    "  Suggested changeset bump: major."
   );
 }
 

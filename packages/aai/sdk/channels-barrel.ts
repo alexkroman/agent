@@ -10,12 +10,12 @@
  *
  * @example Post a run's result to Slack
  * ```ts
- * import { slack } from "@alexkroman1/aai/channels";
+ * import { slackChannel } from "@alexkroman1/aai/channels";
  * import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
  *
  * export async function postSummary(webhookUrl: string, points: string[]): Promise<string> {
  *   "use step";
- *   return await sendToChannelClassified(slack({ webhookUrl }), {
+ *   return await sendToChannelClassified(slackChannel({ webhookUrl }), {
  *     text: `Weekly summary: ${points.length} items`,
  *     heading: "Weekly summary",
  *     sections: [{ title: "Highlights", bullets: points }],
@@ -63,6 +63,7 @@ export {
   type Channel,
   ChannelDeliveryError,
   type ChannelDescriptor,
+  type ChannelKind,
   type ChannelMessage,
   type ChannelPayload,
   type ChannelSection,
@@ -70,6 +71,8 @@ export {
 export {
   CHANNEL_POST_TIMEOUT_MS,
   channelAdvice,
+  registerChannelKind,
+  registeredChannelKinds,
   renderChannelPayload,
   sendToChannel,
 } from "./channels/send.ts";
@@ -79,9 +82,10 @@ export {
   isSlackWorkflowTriggerUrl,
   renderSlackChannelPayload,
   renderSlackPlainText,
+  SLACK_CHANNEL,
   SLACK_CHANNEL_KIND,
   type SlackChannel,
   type SlackChannelOptions,
-  slack,
+  slackChannel,
   slackChannelAdvice,
 } from "./channels/slack.ts";
