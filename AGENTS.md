@@ -452,7 +452,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   — enforces **structural** conventions: the shapes that are wrong only in
   relation to their siblings, which is why no per-file tool can see them.
   Biome lints statements and tsc type-checks a program; neither can say "every
-  module in this directory must look like the others." The sixteen
+  module in this directory must look like the others." The seventeen
   conventions cover the four things this repo restates by hand — the
   per-package file set (`package.json`, `tsconfig.json`, `vitest.config.ts`,
   `CLAUDE.md`, plus README/`tsconfig.build.json`/`tsdown.config.ts` on the
@@ -464,9 +464,12 @@ one commit of history. A file in the tree has no merge base and no such modes.
   — aai-ui, the studio client — imports platform or runtime code); and the
   repeated-by-construction shapes — every
   STT/TTS/LLM/S2S provider module's `*_KIND` / `*_API_KEY_ENV` / `*Options` /
-  `*Provider` / factory / `resolve*Settings` set, and every template's
-  `agent.ts` + `client.tsx`. `pnpm check:konsistent-config` (`konsistent
-  validate`) checks the config against its schema without touching the tree.
+  `*Provider` / factory / `resolve*Settings` set, every CHANNEL module's
+  `*_CHANNEL_KIND` / `*ChannelOptions` / factory set (no `*_API_KEY_ENV`: a
+  channel's credential is its destination and is passed in, never read from the
+  agent env), and every template's `agent.ts` + `client.tsx`.
+  `pnpm check:konsistent-config` (`konsistent validate`) checks the config
+  against its schema without touching the tree.
 
   It used to be fourteen: `template-tools` checked an export NAME that no longer
   exists. A tool is now DISCOVERED — a file in `tools/` is the tool, named by its

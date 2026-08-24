@@ -123,14 +123,18 @@ export type ExportResolver = (specifier: string) => Promise<readonly string[]>;
  * hinting: the agent guessed, and the real list ends the guessing.
  */
 async function exportHints(output: string, resolveExports: ExportResolver): Promise<string[]> {
-  const out: string[] = [];
-  for (const m of output.matchAll(MODULE_RE)) {
+  const specifiers = [...output.matchAll(MODULE_RE)].flatMap((m) => {
     const specifier = m[1] ?? m[2];
-    if (!specifier) continue;
-    const names = await resolveExports(specifier);
-    if (names.length > 0) out.push(`Exports of "${specifier}": ${[...names].sort().join(", ")}`);
-  }
-  return out;
+    return specifier ? [specifier] : [];
+  });
+  // One disk read per specifier, and they do not depend on each other — a
+  // failed typecheck naming three modules should not pay for three in series.
+  const resolved = await Promise.all(
+    specifiers.map(async (specifier) => ({ specifier, names: await resolveExports(specifier) })),
+  );
+  return resolved
+    .filter(({ names }) => names.length > 0)
+    .map(({ specifier, names }) => `Exports of "${specifier}": ${[...names].sort().join(", ")}`);
 }
 
 /**
@@ -143,13 +147,16 @@ export async function annotateDiagnostics(
   output: string,
   resolveExports?: ExportResolver,
 ): Promise<string> {
-  const all = [...output.matchAll(CODE_RE)].flatMap((m) => (m[1] ? [m[1]] : []));
-  if (all.length === 0) return output;
   // One map, not a map plus a Set of its own keys — the Set was derivable from
   // the map, and reading the count back out of it needed a `?? 1` fallback that
-  // could never fire.
+  // could never fire. Counted straight off the matches, with no intermediate
+  // array of every occurrence: only the tallies are ever read.
   const counts = new Map<string, number>();
-  for (const c of all) counts.set(c, (counts.get(c) ?? 0) + 1);
+  for (const m of output.matchAll(CODE_RE)) {
+    const code = m[1];
+    if (code) counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  if (counts.size === 0) return output;
 
   const hints: string[] = [];
   for (const [code, n] of counts) {
@@ -167,7 +174,7 @@ export async function annotateDiagnostics(
     hints.push(`${code} (x${n}): ${hint}${batched}`);
   }
 
-  if ([...counts.keys()].some((c) => EXPORT_CODES.has(c)) && resolveExports) {
+  if (resolveExports && [...EXPORT_CODES].some((code) => counts.has(code))) {
     hints.push(...(await exportHints(output, resolveExports)));
   }
 

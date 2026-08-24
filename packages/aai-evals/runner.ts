@@ -117,10 +117,23 @@ export type EvalSpec = {
   readonly body: (t: EvalRecorder) => Promise<void>;
 };
 
+/**
+ * An env var's value, or undefined when it is unset OR blank.
+ *
+ * Blank counts as unset in both readers below, which matters because
+ * `AAI_EVAL_REPEAT= pnpm test:eval` is how a shell unsets one for a single
+ * command — and a rule spelled out twice is one that can come to be spelled
+ * differently.
+ */
+function envValue(env: Record<string, string | undefined>, name: string): string | undefined {
+  const raw = env[name];
+  return raw === undefined || raw.trim() === "" ? undefined : raw;
+}
+
 /** How many times each case runs, unless the spec says. */
 export function evalRepeat(env: Record<string, string | undefined> = process.env): number {
-  const raw = env.AAI_EVAL_REPEAT;
-  if (raw === undefined || raw.trim() === "") return 1;
+  const raw = envValue(env, "AAI_EVAL_REPEAT");
+  if (raw === undefined) return 1;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) {
     throw new Error(`AAI_EVAL_REPEAT must be a positive integer, got ${JSON.stringify(raw)}`);
@@ -135,8 +148,8 @@ export function evalRepeat(env: Record<string, string | undefined> = process.env
 export function evalMinScore(
   env: Record<string, string | undefined> = process.env,
 ): number | undefined {
-  const raw = env.AAI_EVAL_MIN_SCORE;
-  if (raw === undefined || raw.trim() === "") return undefined;
+  const raw = envValue(env, "AAI_EVAL_MIN_SCORE");
+  if (raw === undefined) return undefined;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0 || n > 1) {
     throw new Error(`AAI_EVAL_MIN_SCORE must be between 0 and 1, got ${JSON.stringify(raw)}`);

@@ -31,7 +31,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING, repoPathOf } from "./_gate-support.ts";
+import { GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
 
 /**
  * The `must` half of a convention, in either of the two shapes konsistent
@@ -61,11 +61,13 @@ type KonsistentConfig = {
   conventions: Convention[];
 };
 
-const raw = import.meta.glob("../../konsistent.json", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../konsistent.json"] as string | undefined;
+const raw = sole(
+  import.meta.glob("../../konsistent.json", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+) as string | undefined;
 
 /**
  * Repo-relative paths of everything a convention could plausibly point at, so a
@@ -94,7 +96,14 @@ const raw = import.meta.glob("../../konsistent.json", {
 const repoFiles = Object.keys({
   ...import.meta.glob("../../packages/*/*.{ts,tsx,json,md}", { query: "?raw", eager: false }),
   ...import.meta.glob("../../packages/*/*/*.{ts,tsx}", { query: "?raw", eager: false }),
-  ...import.meta.glob("../../packages/aai/sdk/providers/*/*.ts", { query: "?raw", eager: false }),
+  // Both levels below `sdk/`, wildcarded rather than naming `providers/`: two
+  // convention families live down there now (the four provider stages, and
+  // `channels/`), and a glob naming one subtree by hand is the shape this very
+  // test exists to catch — the next family would go unmeasured while the check
+  // printed a pass. `*/*` reaches `sdk/channels/slack.ts`, `*/*/*` reaches
+  // `sdk/providers/llm/anthropic.ts`.
+  ...import.meta.glob("../../packages/aai/sdk/*/*.ts", { query: "?raw", eager: false }),
+  ...import.meta.glob("../../packages/aai/sdk/*/*/*.ts", { query: "?raw", eager: false }),
   ...import.meta.glob("../../packages/aai-templates/templates/*/*.md", {
     query: "?raw",
     eager: false,

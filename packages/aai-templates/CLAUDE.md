@@ -196,15 +196,15 @@ once, and the templates are now their reference use:
 | `WorkflowProgress` | `transcription-workflow` and `redline` render a run's WHOLE narration; `link-digest` and `podcast-digest` pass `lines={1}` for the newest one, deleting two hand-rolled versions. `WORKFLOW_STATUS_LABELS` replaced two byte-identical status maps the same way |
 | `useDownloadUrl` (`@alexkroman1/aai-ui`) | `spoken-summary` and `call-audit`, the two that exist BECAUSE of the audio round trip and had copied the 38-line object-URL lifecycle byte-for-byte |
 | `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
-| `dialog()` + `dialog.tool` + `dialog.send` | six templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity) |
+| `dialog()` + `dialog.tool` + `dialog.send` | six templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, nested, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity) |
 | `procedure()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
 | `subagent()` + `ctx.delegate` | `briefing-desk` ONLY, and it exists for this — see below. Two subagents with different tool surfaces, models and budgets; the researcher fanned out one run per angle with `Promise.allSettled`. `stubDelegate` drives its spec, routed by subagent name |
 | `workflow()` + `ctx.workflows` + `isTerminal` | `research-workflow` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below); `recap-workflow` is the same shape with `cancel` and a live-run check on top |
 | `page()` + `useWorkflowSubmit` | `link-digest` — the WORKFLOW APP whose FORM is still hand-written and its own `useState`, which is the point of it and what its module doc now says specifically. **`useWorkflowRun` is exercised by no template at all** since `link-digest` and `podcast-digest` moved to `useWorkflowSubmit`; it is an allowlist entry, and see "The last remover pays" below |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-workflow` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
 | `TextAreaField` beside `<WorkflowFields>` | `redline` — the MIXED form: three scalars declared by the schema, one array field written by hand in the same `<Form>` and mapped on submit. The case "Forms" in `packages/aai-ui/CLAUDE.md` describes, which no template used to exercise |
-| `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-workflow` and `link-digest` for the HTTP classification each had hand-written identically, `research-workflow`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-workflow` for the two `catch`-block fatals, `recap-workflow` for both halves of a provider call it also polls, `podcast-digest` for the 4xx `FatalError` its Slack step raises from a body it has read |
-| `stepFetchOk` (`@alexkroman1/aai/step-errors`) | `link-digest`, `recap-workflow`'s `request()` and `podcast-digest`'s `fetchText` — the THIRD copy is what extracted it, on the rule below. Each had written `stepFetch` + `if (!res.ok) throw toStepError(…)`, and each threw the response BODY away, so a 4xx that said what was wrong arrived as a number. The two places that stay on raw `stepFetch` are the ones where a status is not simply a failure: `recap-workflow`'s DELETE, where a 404 means already-deleted, and `podcast-digest`'s Slack post, whose 4xx body decides which advice to print |
+| `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-workflow` and `link-digest` for the HTTP classification each had hand-written identically, `research-workflow`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-workflow` for the two `catch`-block fatals, `recap-workflow` for both halves of a provider call it also polls, `podcast-digest` for `sendToChannelClassified` (the 4xx `FatalError` its Slack step used to raise by hand, from a body it had read itself) |
+| `stepFetchOk` (`@alexkroman1/aai/step-errors`) | `link-digest`, `recap-workflow`'s `request()` and `podcast-digest`'s `fetchText` — the THIRD copy is what extracted it, on the rule below. Each had written `stepFetch` + `if (!res.ok) throw toStepError(…)`, and each threw the response BODY away, so a 4xx that said what was wrong arrived as a number. The one place that stays on raw `stepFetch` is `recap-workflow`'s DELETE, where a 404 means already-deleted. `podcast-digest`'s Slack post was the other, and it is not a template concern any more — see the `channels` row |
 | `stepGenerateJson` + `stripJsonFence` | `research-workflow` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one), `redline` (the critic's findings) and `recap-workflow` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
 | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-workflow`, `link-digest`, `redline` and `recap-workflow` specs — the bare `stubGateway` under it is exercised by no template and nothing records that, `/testing` being outside the coverage gate's scope (see the STEP row below) — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
 | `toolOf` / `runTool` / `toolRunner` (`@alexkroman1/aai/testing`) | the TEN specs driving tools through the agent's own table, each opening `const run = toolRunner(agentDef);`. `args` and `ctx` are both optional (66 `{}` placeholders are gone). **The advice that sat here — write the NARROWEST wrapper your specs need — is RETIRED: it is what produced the drift**, measured on `toolRunner` |
@@ -221,6 +221,7 @@ once, and the templates are now their reference use:
 | `throwFfmpegStepError` (`@alexkroman1/aai/step-errors`) | `call-audit` and `transcription-workflow`. **Nothing in a template names `isFfmpegError` or `FfmpegError` any more**, so both sit in `template-api-allowlist.json` deliberately: the SDK recognises the error STRUCTURALLY and makes the `exit`/`missing-binary` → fatal, `timeout`/`aborted` → retry call itself. Its inverted default is pinned in `sdk/step-errors.test.ts`, including `call-audit`'s case: a cause that is not an ffmpeg failure at all is fatal |
 | `withTempDir` / `readUploadToFile` / `writeUploadFromFile` (`@alexkroman1/aai/step-files`) | `call-audit` and `transcription-workflow`, which between them had written the temp dir, the windowed read and the `.slice()`-ing generator FOUR times, with an identical warning that the `.slice()` was load-bearing. `temp-media.ts` (138 lines) is gone |
 | `formatBytes` / `formatDuration` / `countWords` / `plural` (`@alexkroman1/aai/utils`) | seven templates, on BOTH sides of the bundle boundary — a step's `report()` and the page rendering the same run. They existed 4, 5, 4 and 17 times, and the duplication was a live bug: `call-audit` printed one recording as `1:04:09` from `workflows/media.ts` and `64:09` from `client.tsx`, and `transcription-workflow` had three copies of the same disagreement — one inside `workflows/stitch.ts`, the module that exists so the run and the page cannot drift |
+| `slack` / `sendToChannel` (`@alexkroman1/aai/channels`) | `podcast-digest`, which is where the concept came from. It carried the whole third-party contract — Slack's two webhook URLs and the branch between them, Block Kit assembly, mrkdwn escaping, the 4xx/5xx split and the advice each refusal deserves — and every one of those rules is about SLACK rather than about podcasts. What is left in `workflows/slack.ts` is the digest as a `ChannelMessage` and the `"use step"` wrapper, which stays because the DevKit's builder only rewrites bodies it finds in a project's `workflows/` directory. `isSlackWebhookUrl` is imported by `agent.ts` for the same schema refinement as before |
 | `decodeHtmlEntities` (`@alexkroman1/aai/utils`) | `link-digest` (as `decodeEntities`) and `podcast-digest` (as `decodeXml`) — one byte-identical body under two names, each arguing for the ORDERING in its own comment, which is the tell that the ordering was the whole function. Tag stripping did NOT move |
 | `WorkflowInputOf` / `WorkflowRunOf` / `lastLine` | `podcast-digest`, `call-audit` and `spoken-summary` for the input type (see below — it obliges an annotation on the def); `research-workflow` and `recap-workflow` for the other two, each dropping an eight-line `streamTail`-then-`stream` dance and the comment warning that reading a stream with nothing in it waits forever |
 | `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails. `stubUploads` answers `{ restore, writes, read }`, so a write is assertable without round-tripping through the seam that wrote it |
@@ -281,7 +282,8 @@ summary of the data, and do not reach for a flow when the thing to constrain is
 per-entity; a `ToolFailure` from a data lookup is what that is for. Read the
 other four in this order: `travel-concierge` (two states, one gate),
 `plan-and-execute` (three, a lifecycle), `retail` (a call ending in a TERMINAL
-state), `solo-rpg` (nested, plus a `final` one).
+state, with a confirmation gate nested inside it), `solo-rpg` (nested, plus a
+`final` one).
 
 Four rules came out of converting `dispatch-center`, `retail` and `solo-rpg`,
 each a trap rather than a preference:
@@ -368,10 +370,12 @@ already return a `DialogPosition` of the right shape, so the fix is a spread —
 sites. `solo-rpg`'s prompt had asserted the invariant "every other tool answers
 with the same pair" while three of its tools did not.
 
-**Two things a flow deleted outright, and both were dead guarantees.** `retail`'s
-policy said to say one sentence after `transfer_to_human_agents` "and nothing
-else", enforced by nothing — every tool stayed callable, so a model that kept
-going kept acting on a call it had given away. `solo-rpg`'s `gameOver` was written
+**Three things a flow deleted outright, and all three were dead guarantees.**
+`retail`'s policy said to say one sentence after `transfer_to_human_agents` "and
+nothing else", enforced by nothing — every tool stayed callable, so a model that
+kept going kept acting on a call it had given away. Its "confirm every change
+out loud … never act on an implied yes" was carried by nothing too, and cost
+more to fix than one line — see below. `solo-rpg`'s `gameOver` was written
 by `updateCrisisFlags` and read by nobody who could act on it, so a player with
 both tracks empty could roll forever. A terminal state is one line of config for
 each. `solo-rpg` also lost a FIELD: `phase: "genre" | "playing"` was
@@ -384,6 +388,44 @@ rather than twenty-four. Pin the POSITION as well
 as the refusal: that a tool refuses in the wrong state is half of it, and that
 the position moved (and did NOT move on a failure) is the half a dead transition
 hides in.
+
+### A rule the model can skip is not a rule: `retail`'s confirmation gate
+
+`retail` is the worked example of the expensive case, where a prose rule and the
+tool surface disagree. "Confirm every change out loud … never act on an implied
+yes" was in the prompt and in seven tool descriptions, and
+`cancel_pending_order` cancelled and refunded on its first call regardless — a
+`grep` for "confirm" over its source returned nothing. Three things, in order:
+
+- **Nothing mutates.** The seven changing tools became STAGERS: each validates,
+  prices, writes a `PendingAction` and returns the sentence to read back.
+  `confirm_change` is the only tool in the template that writes to the store;
+  `cancel_change` drops a staged change unconditionally.
+- **`serving` grew two children** (`helping`, `awaitingConfirmation`).
+  `confirm_change` is gated on the second, reachable ONLY by staging, so
+  confirming what nobody staged is refused before the body runs. `when:
+  "serving"` matches both children, which keeps a read and a transfer legal
+  while a change waits — "what was the total again?", or asking for a human.
+- **`IDENTIFIED` came OFF `serving`.** It was there so a caller repeating their
+  email did not error. With children, that self-transition RE-ENTERS and resets
+  to `helping`, stranding the change `state.pending` still holds — the one way
+  the position and the store could disagree. An unhandled event is ignored,
+  which was the behaviour wanted all along.
+
+**Validate at STAGE time, not at confirm time.** `travel-concierge` re-derives
+its effect in `confirm_action`; `retail` computes each plan once and every
+`apply*` is total, because a "yes" followed by a refusal is the exact sequence
+the gate exists to prevent. Hence plans of ids and amounts rather than the
+`Order`/`Variant` references their in-tool-call ancestor held: those alias the
+store, and a persisted session could not carry them.
+
+**And the tool set stopped being tau2's** — fifteen names `registry.test.ts`
+pinned as a fidelity claim; the gate needs seventeen. Two improvements the
+fidelity was holding back came with it: `exchange_items`/`exchange_new_items`
+hold the PAIRING that was priced rather than two independently sorted sets
+(which read as espresso -> sneaker if anything treated them as one), and
+`return_items` keeps the order the caller named. Check what a fidelity
+constraint COSTS before treating it as fixed.
 
 ## A run can be the SCHEDULE
 
@@ -1471,13 +1513,18 @@ could be: it is a real agent doing real work, on the same SDK it builds with.
 
 ## A gate spec's SOURCES are shared; its assertions are not
 
-`_gate-support.ts` holds the three things every gate spec here reads and none of
-them owns: `GATE_WIRING` (the three files a gate must be NAMED in —
-`package.json`, `scripts/check.sh`, `.github/workflows/check.yml`),
-`ERE_UNSUPPORTED` (the regex constructs POSIX ERE has no answer for, banned by
-both pattern-shipping gates), and `repoPathOf` (a Vite glob key as a
-repo-relative path). The wiring block alone stood in FIVE specs at seventeen
-lines each, differing only in the gate name the caller then asserts.
+`_gate-support.ts` holds what every gate spec here reads and none of them owns:
+`GATE_WIRING` (the three files a gate must be NAMED in — `package.json`,
+`scripts/check.sh`, `.github/workflows/check.yml`), `ERE_UNSUPPORTED` (the regex
+constructs POSIX ERE has no answer for, banned by both pattern-shipping gates),
+`repoPathOf` (a Vite glob key as a repo-relative path), `sole` (the one value a
+single-file glob resolved to), `byCodeUnit` (the explicit comparator the repo
+requires of anything a gate reads) and `numericConstant` (a cap read out of a
+gate script's source rather than restated). The wiring block alone stood in FIVE
+specs at seventeen lines each, differing only in the gate name the caller then
+asserts; `sole` replaced two dozen reads that spelled the globbed path TWICE,
+once for the transform and once to index the result — a pair that drifted would
+have read `undefined`, i.e. a gate checking an empty string.
 
 Sharing them is safe precisely because none of it is an assertion: each spec
 still makes its own, over its own gate, and a glob that stopped resolving leaves

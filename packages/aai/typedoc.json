@@ -7,6 +7,7 @@
     "dist/sdk/testing.d.ts",
     "dist/sdk/testing-vitest.d.ts",
     "dist/sdk/step-errors.d.ts",
+    "dist/sdk/channels-barrel.d.ts",
     "dist/sdk/workflow-api-barrel.d.ts",
     "dist/sdk/protocol.d.ts",
     "dist/sdk/manifest-barrel.d.ts",

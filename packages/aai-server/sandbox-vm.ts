@@ -18,7 +18,7 @@
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
 import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
-import { DEFAULT_SANDBOX_IMAGE } from "./modal-context.ts";
+import { sandboxBaseTag } from "./modal-context.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
 import type { GuestConnection } from "./rpc-schemas.ts";
@@ -180,10 +180,7 @@ const SANDBOX_BACKENDS: Record<SandboxBackend, SandboxBackendOps> = {
     // specs from package.json — so it needs no Modal credentials and never
     // dials out.
     harnessImageTag: async (harnessPath) =>
-      localHarnessImageTag(
-        process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE,
-        await readFile(harnessPath, "utf-8"),
-      ),
+      localHarnessImageTag(sandboxBaseTag(), await readFile(harnessPath, "utf-8")),
   },
   subprocess: {
     spawnWarm: spawnSubprocessWarm,

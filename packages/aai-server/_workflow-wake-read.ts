@@ -71,6 +71,7 @@
 
 import type { ReservedDb } from "@alexkroman1/aai-runtime";
 import { WORKFLOW_WAKE_TABLE } from "@alexkroman1/aai-runtime/internal";
+import { mapConcurrent } from "./_pool.ts";
 import {
   APP_DB_SCHEMA,
   type AppDatabases,
@@ -270,18 +271,18 @@ async function readOneHint(
 
 /**
  * Read every candidate's hint, at most `WORKFLOW_WAKE_READ_CONCURRENCY` at a
- * time, answering in the order they were given.
+ * time, answering in the order they were given — which is the slug order the
+ * per-tick cap depends on, never completion order.
  *
- * **A worker pool, and NOT `_semaphore.ts`, because every candidate would have to
- * ask for its slot at once.** That primitive's wait is bounded by design — right
- * for a request path, wrong here, and wrong in a way that is invisible until the
- * app count grows. The deadline would run from the moment `acquire` is called,
- * which for a `map` over the candidates is t=0 for all of them: with K=4, reads
- * of ~100ms and a 5s deadline, everything past roughly the two-hundredth app
- * lapses on EVERY tick and is reported "not due" without ever being read. That is
- * strictly worse than the serial loop this replaced, which was slow but did
- * eventually read every app. Workers pulling from a cursor have no such deadline:
- * an app's wait is bounded by the work ahead of it, and every app is read.
+ * **A worker pool (`_pool.ts`), and NOT `_semaphore.ts`, because every candidate
+ * would have to ask for its slot at once.** That primitive's wait is bounded by
+ * design — right for a request path, wrong here, and wrong in a way that is
+ * invisible until the app count grows. The deadline would run from the moment
+ * `acquire` is called, which for a `map` over the candidates is t=0 for all of
+ * them: with K=4, reads of ~100ms and a 5s deadline, everything past roughly the
+ * two-hundredth app lapses on EVERY tick and is reported "not due" without ever
+ * being read. That is strictly worse than the serial loop this replaced, which
+ * was slow but did eventually read every app.
  *
  * `readTimeoutMs` is still a bound, in the place it belongs — the `statement_timeout`
  * inside {@link readOneHint}, which is what stops one tenant's bloated table
@@ -291,21 +292,10 @@ async function readHints(
   opts: ReadDueOptions,
   candidates: [slug: string, meta: AppDbMeta][],
 ): Promise<{ slug: string; present: boolean; due: boolean }[]> {
-  const hints: { slug: string; present: boolean; due: boolean }[] = [];
-  let next = 0;
-  const drain = async (): Promise<void> => {
-    // Read the entry and test IT rather than the index, so the cursor needs no
-    // cast under `noUncheckedIndexedAccess`. `at` is captured before the await,
-    // so each result lands at its OWN index — `due`'s order is the slug order the
-    // per-tick cap depends on, never completion order.
-    for (let at = next++, entry = candidates[at]; entry; at = next++, entry = candidates[at]) {
-      const [slug, meta] = entry;
-      hints[at] = { slug, ...(await readOneHint(opts.appDb, slug, meta, opts.readTimeoutMs)) };
-    }
-  };
-  const workers = Math.min(Math.max(1, Math.round(opts.readConcurrency)), candidates.length);
-  await Promise.all(Array.from({ length: workers }, drain));
-  return hints;
+  return mapConcurrent(candidates, opts.readConcurrency, async ([slug, meta]) => ({
+    slug,
+    ...(await readOneHint(opts.appDb, slug, meta, opts.readTimeoutMs)),
+  }));
 }
 
 /** The read phase's body, with the leader lock held. */

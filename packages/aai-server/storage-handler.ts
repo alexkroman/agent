@@ -98,7 +98,7 @@ export async function storageUsage(env: StorageEnv, slug: string): Promise<AppDb
   // cluster the META locates, which is the same rule `deprovision` states — a
   // recomputed placement points at a cluster that never hosted this app.
   return appDb.usage(slug, meta).catch((err: unknown) => {
-    log.warn("app database usage read failed", { slug, error: String(err) });
+    log.warn("app database usage read failed", { slug, error: errorMessage(err) });
     return null;
   });
 }

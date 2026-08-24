@@ -14,6 +14,18 @@ import { getServerInfo } from "./_agent.ts";
 import { type ApiRequestOptions, apiRequest, HINT_NOT_DEPLOYED } from "./_api-client.ts";
 import { studioProjectApiUrl } from "./_studio.ts";
 
+/** What both requests below pass through to the API client. */
+type SlugRequestInit = Pick<ApiRequestOptions, "method" | "body" | "action">;
+
+/**
+ * The request itself — one definition so the "not deployed" 404 hint this
+ * module exists to attach cannot be present on one route and missing on the
+ * other. Only the URL differs between the two callers.
+ */
+function deployedAgentRequest<T>(url: string, init: SlugRequestInit, apiKey: string): Promise<T> {
+  return apiRequest<T>(url, { ...init, apiKey, hints: { 404: HINT_NOT_DEPLOYED } });
+}
+
 /**
  * A SECRET request, routed to the project when this directory is linked to
  * one and to the bare slug otherwise.
@@ -29,32 +41,24 @@ import { studioProjectApiUrl } from "./_studio.ts";
 export async function secretRequest<T = unknown>(
   cwd: string,
   resourcePath: string,
-  init: Pick<ApiRequestOptions, "method" | "body" | "action">,
+  init: SlugRequestInit,
   server?: string,
 ): Promise<{ data: T; target: string }> {
   const { serverUrl, slug, apiKey, studioProject } = await getServerInfo(cwd, server);
-  const url = studioProject
-    ? `${studioProjectApiUrl(serverUrl, studioProject)}/secret${resourcePath}`
-    : `${serverUrl}/${slug}/secret${resourcePath}`;
-  const data = await apiRequest<T>(url, {
-    ...init,
-    apiKey,
-    hints: { 404: HINT_NOT_DEPLOYED },
-  });
+  const base = studioProject
+    ? studioProjectApiUrl(serverUrl, studioProject)
+    : `${serverUrl}/${slug}`;
+  const data = await deployedAgentRequest<T>(`${base}/secret${resourcePath}`, init, apiKey);
   return { data, target: studioProject ?? slug };
 }
 
 export async function slugRequest<T = unknown>(
   cwd: string,
   resourcePath: string,
-  init: Pick<ApiRequestOptions, "method" | "body" | "action">,
+  init: SlugRequestInit,
   server?: string,
 ): Promise<{ data: T; slug: string }> {
   const { serverUrl, slug, apiKey } = await getServerInfo(cwd, server);
-  const data = await apiRequest<T>(`${serverUrl}/${slug}${resourcePath}`, {
-    ...init,
-    apiKey,
-    hints: { 404: HINT_NOT_DEPLOYED },
-  });
+  const data = await deployedAgentRequest<T>(`${serverUrl}/${slug}${resourcePath}`, init, apiKey);
   return { data, slug };
 }

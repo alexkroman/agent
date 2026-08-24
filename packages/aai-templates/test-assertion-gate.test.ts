@@ -17,26 +17,25 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING } from "./_gate-support.ts";
+import { GATE_WIRING, numericConstant, sole } from "./_gate-support.ts";
 
-const script = import.meta.glob("../../scripts/check-test-assertions.mjs", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../scripts/check-test-assertions.mjs"];
+const script = sole(
+  import.meta.glob("../../scripts/check-test-assertions.mjs", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
+
+/** Read a numeric constant out of the script rather than restating it here. */
+const constant = (name: string): number =>
+  numericConstant(script ?? "", name, "check-test-assertions.mjs");
 
 /**
  * Re-derive the script's two regexes from its own source rather than
  * re-typing them, so this suite cannot pass against a copy that has drifted
  * from the file CI runs.
  */
-/** Read a numeric constant out of the script rather than restating it here. */
-function constant(name: string): number {
-  const found = new RegExp(`const ${name} = ([\\d._]+)`).exec(script ?? "");
-  if (!found?.[1]) throw new Error(`check-test-assertions.mjs no longer declares ${name}`);
-  return Number(found[1].replaceAll("_", ""));
-}
-
 function patternFrom(name: string): RegExp {
   const line = new RegExp(`const ${name} = (/.*/)([a-z]*);`).exec(script ?? "");
   if (!line?.[1]) throw new Error(`check-test-assertions.mjs no longer declares ${name}`);

@@ -1,4 +1,5 @@
 import type { DeepReadonly } from "@alexkroman1/aai";
+import type { PendingAction } from "./pending.ts";
 
 // ─── Store types ─────────────────────────────────────────────────────────────
 // Field names are tau2's snake_case verbatim, because `seed.json` is tau2's
@@ -129,6 +130,15 @@ export interface RetailState {
   callSeq: number;
   activity: ActivityEntry[];
   focus: { orderId?: string; productId?: string };
+  /**
+   * The change waiting on the caller's explicit yes, or null.
+   *
+   * Lives here and not in the flow because `callFlow` holds a POSITION —
+   * "something is waiting" — and this holds the thing itself, which is what
+   * `confirm_change` applies and what the sidebar renders. One tool call always
+   * moves both. See `pending.ts`.
+   */
+  pending: PendingAction | null;
 }
 
 /**
@@ -159,6 +169,7 @@ export function emptyRetailState(): RetailState {
     callSeq: 0,
     activity: [],
     focus: {},
+    pending: null,
   };
 }
 
@@ -204,6 +215,14 @@ export interface SwapOptionView {
   alternatives: { itemId: string; options: Record<string, string>; price: number }[];
 }
 
+/** The staged change, as the browser sees it: what it is and what the agent is
+ *  supposed to be reading back. The plan itself stays on the server — the panel
+ *  only has to show the caller's own words back to them. */
+export interface PendingView {
+  kind: PendingAction["kind"];
+  readBack: string;
+}
+
 export interface StoreView {
   customer: CustomerView | null;
   orders: OrderView[];
@@ -214,6 +233,10 @@ export interface StoreView {
   activity: ActivityEntry[];
   scriptBullets: string[];
   productCount: number;
+  /** Gated on `user` like everything else here: a change staged before the
+   *  caller was identified cannot exist, but the projection does not rely on
+   *  that — it withholds it the same way it withholds their orders. */
+  pending: PendingView | null;
 }
 
 export const MAX_SWAP_ITEMS = 3;
@@ -397,6 +420,10 @@ export function storeView(state: FrozenRetailState): StoreView {
       ...(state.focus.productId ? { productId: state.focus.productId } : {}),
     },
     swapOptions: swapOptionsFor(state, focusedOrder),
+    pending:
+      user && state.pending
+        ? { kind: state.pending.kind, readBack: state.pending.plan.readBack }
+        : null,
     callSeq: state.callSeq,
     activity: state.activity.slice(-MAX_ACTIVITY),
     scriptBullets: buildScriptBullets(state),
@@ -416,6 +443,14 @@ const MAX_BULLETS = 6;
 export function buildScriptBullets(state: FrozenRetailState): string[] {
   const userId = state.authenticatedUserId;
   const user = userId ? state.store.users[userId] : undefined;
+
+  // A staged change is a QUESTION the agent has just asked, so while one waits
+  // the only two useful things a caller can say are the answer to it. Offering
+  // "cancel my pending order" here would be offering an action the gate is
+  // about to refuse.
+  if (user && state.pending) {
+    return ['"Yes, go ahead"', '"No, don\'t do that"'];
+  }
 
   // Pre-auth: only the two ways in. The personas panel (a constant, rendered
   // straight from DEMO_PERSONAS) covers WHICH customer to be.

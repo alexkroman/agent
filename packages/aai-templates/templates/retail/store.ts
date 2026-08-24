@@ -76,51 +76,50 @@ export const retailSlot = sessionSlot("retail", createDefaultState);
 /**
  * Where this call is, and what may be done from here, as a plain state map.
  *
- * A {@link DialogSpec} rather than an XState machine: this dialog said three
- * states, two events and an instruction each, which is exactly what a spec can
- * say — and the `setup({ types: {} as { events: … } })` block it used to carry
- * restated the two event names already written in the `on` maps. The
- * instruction is a declared field now instead of an untyped `meta` bag, so
- * misspelling it is a compile error rather than a refusal that arrives with no
- * recovery text. `as const` is what keeps the `on` keys literal, so `send`
- * below is checked against the events this spec actually declares.
+ * A {@link DialogSpec} rather than an XState machine: everything this dialog
+ * says is states, events and an instruction each, which is exactly what a spec
+ * can say. The instruction is a declared field instead of an untyped `meta`
+ * bag, so misspelling it is a compile error rather than a refusal that arrives
+ * with no recovery text. `as const` is what keeps the `on` keys literal, so
+ * `send` below is checked against the events this spec actually declares.
  *
- * The policy's first two sections — "Authenticate first" and "Handing off to a
- * human" — used to be prose plus a boolean. `requiresAuth` was that boolean:
- * fifteen tools declared it (five opting out), the wrapper below read it, and a
- * refusal answered one fixed sentence. Three things change by declaring the
- * states instead.
+ * Three of the policy's sections live here rather than in prose.
  *
- * **`transferred` is a real terminal state, and it was not enforced at all.**
- * The policy says to call `transfer_to_human_agents` and then say exactly one
- * sentence "and nothing else" — which nothing checked, so every tool stayed
- * callable after the handoff and a model that kept going would keep acting on a
- * call it had already given away. It is a `final` state now: no tool declares
- * itself legal there, so every one of them refuses.
+ * **"Authenticate first."** `identifying`'s instruction names both finder
+ * tools, and ten tools declare `when: "serving"`, so the gate is the SDK's.
  *
- * **The refusal quotes the state.** `when` names where a tool may run and the
- * SDK writes the sentence, so the message is one thing rather than a constant
- * threaded through a wrapper — and it says where the call actually is, which
- * "Not authenticated" could not.
+ * **"Handing off to a human."** The policy says to call
+ * `transfer_to_human_agents` and then say exactly one sentence "and nothing
+ * else" — which nothing checked, so every tool stayed callable after the handoff
+ * and a model that kept going kept acting on a call it had already given away.
+ * `transferred` is a `final` state: no tool declares itself legal there, so
+ * every one of them refuses. `TRANSFERRED` sits on the `serving` PARENT so it
+ * is reachable from either child — a caller asking for a human mid-confirmation
+ * must get one.
  *
- * **The position rides every result.** A flow tool answers the author's value
- * wrapped in the position it landed in, so the stage and its instruction reach
- * the model on every call rather than only when the prompt is still in context.
+ * **"Confirm every change out loud."** This was the last rule in the policy
+ * carried by nothing at all, and it is `serving`'s two children now. Nothing in
+ * this template mutates the store except `confirm_change`, which is legal only
+ * in `awaitingConfirmation`, which is reachable only by staging a change. See
+ * `pending.ts` for what that buys and what it still cannot promise.
  *
- * `IDENTIFIED` is declared on `serving` as well, because a caller repeating
- * their email must not hit an error — see `authenticateAs`, which is what
- * refuses a switch to a DIFFERENT customer. Whether the flow is identified and
- * WHO it is identified as are two facts: this holds the first,
- * `authenticatedUserId` holds the second.
+ * **`IDENTIFIED` is deliberately NOT declared on `serving`.** It was, while
+ * `serving` was a leaf, so that a caller repeating their email did not hit an
+ * error. Now that `serving` has children, a self-transition would RE-ENTER it
+ * and reset to `helping` — stranding a staged change that `state.pending` still
+ * holds, which is the one way the position and the store could come to
+ * disagree. An event no active state handles is ignored, and ignoring it is
+ * exactly right: re-identifying the same customer does not move the call.
+ * `authenticateAs` is what refuses a switch to a DIFFERENT customer. Whether
+ * the call is identified and WHO it is identified as are two facts: this holds
+ * the first, `authenticatedUserId` holds the second.
  */
 const callSpec = {
   initial: "identifying",
   states: {
     identifying: {
       // The instruction NAMES the two tools, because this sentence is what a
-      // refusal quotes and a refusal is the model's recovery path — the same
-      // job the removed `NOT_AUTHENTICATED` constant did, now attached to the
-      // state that means it.
+      // refusal quotes and a refusal is the model's recovery path.
       instruction:
         "You do not know who this is yet. Identify the caller with " +
         "find_user_id_by_email, or find_user_id_by_name_zip if they cannot " +
@@ -128,11 +127,25 @@ const callSpec = {
       on: { IDENTIFIED: "serving", TRANSFERRED: "transferred" },
     },
     serving: {
-      instruction:
-        "You are helping one identified customer, and only that one. Say what you " +
-        "are about to change — the order, the items, the amounts, where the money " +
-        "goes — and wait for an explicit yes before you call anything that changes it.",
-      on: { IDENTIFIED: "serving", TRANSFERRED: "transferred" },
+      initial: "helping",
+      on: { TRANSFERRED: "transferred" },
+      states: {
+        helping: {
+          instruction:
+            "You are helping one identified customer, and only that one. Nothing is " +
+            "waiting on their word. A tool that changes something only STAGES it and " +
+            "hands you a sentence to read back.",
+          on: { STAGED: "awaitingConfirmation" },
+        },
+        awaitingConfirmation: {
+          instruction:
+            "A change is staged and NOTHING HAS HAPPENED YET. Read the staged sentence " +
+            "back — the order, the items, the amounts, where the money goes — and wait " +
+            "for an explicit yes. Then call confirm_change, or cancel_change if they " +
+            "say no or want to change any part of it.",
+          on: { SETTLED: "helping" },
+        },
+      },
     },
     transferred: {
       final: true,
@@ -145,13 +158,19 @@ const callSpec = {
 
 /**
  * The flow. Its own slot key beside {@link retailSlot}: the flow holds the
- * POSITION and the store holds the customer, the orders and the activity feed.
+ * POSITION and the store holds the customer, the orders, the activity feed and
+ * the staged change itself, because an inspectable {@link PendingAction} is
+ * what `confirm_change` applies. One tool call always moves both — a staging
+ * tool writes `pending` and sends `STAGED` in the same synchronous window.
  */
 export const callFlow = dialog("call", callSpec);
 
 /** Every state a tool may run in before the call is handed to a human — i.e.
- *  everything but `transferred`. What the five formerly `requiresAuth: false`
- *  tools declare, so the terminal state gates them without an auth gate. */
+ *  everything but `transferred`. What the two finders, the three catalog reads
+ *  and the transfer itself declare, so the terminal state gates them without an
+ *  auth gate. `"serving"` matches both of its children, which is what keeps a
+ *  read legal while a change is waiting: a caller who asks "what was the total
+ *  again?" mid-confirmation must be answerable. */
 export const BEFORE_TRANSFER = ["identifying", "serving"] as const;
 
 export function setFocus(
@@ -287,17 +306,27 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
   /**
    * The state(s) this tool may run in, as `callFlow`'s states spell them.
    *
-   * Replaces the `requiresAuth` boolean this spec used to carry. Ten tools want
-   * `"serving"`; the two finders, the three catalog reads and the transfer want
-   * {@link BEFORE_TRANSFER}, which is every state but the terminal one — so
-   * "does not need a customer" and "is still legal after the handoff" stopped
-   * being the same claim, and they were never the same claim.
+   * Replaces the `requiresAuth` boolean this spec used to carry. Nine tools
+   * want `"serving"` — which matches both of its children, so a read and a
+   * staging tool are equally legal while a change waits; the two settling
+   * tools want `"serving.awaitingConfirmation"`; and the two finders, the three
+   * catalog reads and the transfer want {@link BEFORE_TRANSFER}, which is every
+   * state but the terminal one — so "does not need a customer" and "is still
+   * legal after the handoff" stopped being the same claim, and they were never
+   * the same claim.
    */
   when: string | readonly string[];
   /** The event to send once the body has succeeded, for a tool that MOVES the
-   *  call. Three do: the two finders send `IDENTIFIED`, the transfer sends
-   *  `TRANSFERRED`. Nothing is sent when the body answers a `ToolFailure`. */
-  send?: { type: "IDENTIFIED" } | { type: "TRANSFERRED" };
+   *  call. Twelve do: the two finders send `IDENTIFIED`, the transfer sends
+   *  `TRANSFERRED`, the seven staging tools send `STAGED`, and `confirm_change`
+   *  and `cancel_change` send `SETTLED`. Nothing is sent when the body answers
+   *  a `ToolFailure` — which is what stops a refused stage from moving the call
+   *  into a confirmation with nothing behind it. */
+  send?:
+    | { type: "IDENTIFIED" }
+    | { type: "TRANSFERRED" }
+    | { type: "STAGED" }
+    | { type: "SETTLED" };
   /**
    * One line for the activity feed, from the call that SUCCEEDED.
    *

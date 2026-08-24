@@ -72,6 +72,8 @@
  * ```
  */
 
+import { concatBytes } from "./_bytes.ts";
+
 /**
  * The subset of `fetch` a step needs, and all a host has to publish.
  *
@@ -328,15 +330,4 @@ export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody
  */
 function escapeHeaderQuoted(value: string): string {
   return value.replace(/\r/g, "%0D").replace(/\n/g, "%0A").replace(/"/g, "%22");
-}
-
-/** One buffer from several. */
-function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
-  let at = 0;
-  for (const part of parts) {
-    out.set(part, at);
-    at += part.byteLength;
-  }
-  return out;
 }

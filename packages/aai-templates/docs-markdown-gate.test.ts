@@ -32,7 +32,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING, repoPathOf } from "./_gate-support.ts";
+import { GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
 
 /**
  * Floors for the COMMITTED tree, deliberately looser than the script's floors
@@ -49,11 +49,13 @@ const committed = import.meta.glob<string>("../../docs/api/**/*.md", {
   eager: true,
 });
 
-const markdownConfig = import.meta.glob<string>("../../docs/typedoc.markdown.json", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../docs/typedoc.markdown.json"];
+const markdownConfig = sole(
+  import.meta.glob<string>("../../docs/typedoc.markdown.json", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 const siteConfig = import.meta.glob<string>("../*/typedoc.json", {
   query: "?raw",
@@ -73,17 +75,21 @@ const packageManifests = import.meta.glob<string>("../*/package.json", {
   eager: true,
 });
 
-const docsMarkdownScript = import.meta.glob<string>("../../scripts/docs-markdown.mjs", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../scripts/docs-markdown.mjs"];
+const docsMarkdownScript = sole(
+  import.meta.glob<string>("../../scripts/docs-markdown.mjs", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
-const markdownlintConfig = import.meta.glob<string>("../../.markdownlint-cli2.jsonc", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../.markdownlint-cli2.jsonc"];
+const markdownlintConfig = sole(
+  import.meta.glob<string>("../../.markdownlint-cli2.jsonc", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 /** Repo-relative paths of every committed markdown reference file. */
 const committedPaths = Object.keys(committed).map(repoPathOf).sort();

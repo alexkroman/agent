@@ -34,12 +34,15 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { sole } from "./_gate-support.ts";
 
-const workflow = import.meta.glob("../../.github/workflows/check.yml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../.github/workflows/check.yml"];
+const workflow = sole(
+  import.meta.glob("../../.github/workflows/check.yml", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 /** Split once — a dozen readers below walk the same file. */
 const lines: string[] = (workflow ?? "").split("\n");

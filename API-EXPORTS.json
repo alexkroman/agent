@@ -1,4 +1,26 @@
 {
+  "@alexkroman1/aai/channels": [
+    "CHANNEL_POST_TIMEOUT_MS",
+    "Channel",
+    "ChannelDeliveryError",
+    "ChannelDescriptor",
+    "ChannelMessage",
+    "ChannelPayload",
+    "ChannelSection",
+    "SLACK_CHANNEL_KIND",
+    "SlackChannel",
+    "SlackChannelOptions",
+    "channelAdvice",
+    "escapeSlackMrkdwn",
+    "isSlackWebhookUrl",
+    "isSlackWorkflowTriggerUrl",
+    "renderChannelPayload",
+    "renderSlackChannelPayload",
+    "renderSlackPlainText",
+    "sendToChannel",
+    "slack",
+    "slackChannelAdvice"
+  ],
   "@alexkroman1/aai/ffmpeg": [
     "FfmpegError",
     "FfmpegFailureKind",
@@ -536,6 +558,7 @@
     "writeUpload"
   ],
   "@alexkroman1/aai/step-errors": [
+    "sendToChannelClassified",
     "stepFetchOk",
     "stepGenerateClassified",
     "stepGenerateJsonClassified",

@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { createDefaultState, findUser } from "./store.ts";
-import { applySwap, assertCanCoverDiff, planItemSwap } from "./swap.ts";
+import { applySwapLines, assertCanCoverDiff, planItemSwap, toSwapLines } from "./swap.ts";
 
 function fixture(orderId: string) {
   const state = createDefaultState();
@@ -152,7 +152,7 @@ describe("assertCanCoverDiff", () => {
   });
 });
 
-describe("applySwap", () => {
+describe("applySwapLines", () => {
   test("each swapped line takes its OWN new price and options", () => {
     const { state, order } = fixture("#W9311069");
     // Two different products in one call — this is what catches the leaked
@@ -165,7 +165,7 @@ describe("applySwap", () => {
       { requireDifferent: true },
     );
     if (isToolFailure(plan)) throw new Error(plan.error);
-    applySwap(order, plan);
+    applySwapLines(order, toSwapLines(plan));
 
     const vacuum = order.items.find((i) => i.item_id === "4725166838");
     const kettle = order.items.find((i) => i.item_id === "3909406921");
@@ -183,7 +183,7 @@ describe("applySwap", () => {
       requireDifferent: true,
     });
     if (isToolFailure(plan)) throw new Error(plan.error);
-    applySwap(order, plan);
+    applySwapLines(order, toSwapLines(plan));
     expect(order.items.map((i) => i.item_id)).toEqual(["3909406921", "7292993796"]);
   });
 });

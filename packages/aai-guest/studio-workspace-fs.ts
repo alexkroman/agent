@@ -7,7 +7,7 @@
  * end-of-turn sync).
  */
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   isLockfile,
@@ -39,6 +39,24 @@ export function resolveInside(dir: string, rel: string): string {
 export async function writeFileWithParents(abs: string, content: string): Promise<void> {
   await mkdir(path.dirname(abs), { recursive: true });
   await writeFile(abs, content, "utf-8");
+}
+
+/**
+ * Parse the workspace's own `package.json`, or null when it is missing or is
+ * not valid JSON.
+ *
+ * Absence and a mid-edit manifest are the SAME answer on purpose, and both
+ * callers want it: the dependency reifier has nothing to reify, and
+ * `update_dependencies` has nothing to diff. Kept here rather than at either
+ * call site because a second copy is a second decision about which failures
+ * count as "no manifest".
+ */
+export async function readWorkspaceManifest(dir: string): Promise<unknown | null> {
+  try {
+    return JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8")) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 /**

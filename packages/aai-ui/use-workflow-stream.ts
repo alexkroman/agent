@@ -83,6 +83,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadParallel } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useRef, useState } from "react";
 import { useRunControls } from "./_run-controls.ts";
+import { useUploadPause } from "./_upload-pause.ts";
 import {
   createUploadGate,
   randomUploadId,
@@ -242,15 +243,12 @@ export function useWorkflowStream<R = unknown>(
     setUpload(undefined);
   }, []);
 
-  const pauseUpload = useCallback(() => {
-    gateRef.current?.pause();
-    setUpload((current) => (current ? { ...current, paused: true } : current));
-  }, []);
-
-  const resumeUpload = useCallback(() => {
-    gateRef.current?.resume();
-    setUpload((current) => (current ? { ...current, paused: false } : current));
-  }, []);
+  // The same pair `useWorkflowSubmit` returns, from the same place — see
+  // `_upload-pause.ts`.
+  const { pauseUpload, resumeUpload } = useUploadPause(
+    useCallback(() => gateRef.current, []),
+    setUpload,
+  );
 
   return {
     submit,

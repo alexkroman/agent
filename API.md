@@ -15,6 +15,7 @@ symbol exported from two subpaths appears under both.
 
 ## Contents
 
+- `@alexkroman1/aai/channels` — `packages/aai/etc/channels.api.md`
 - `@alexkroman1/aai/ffmpeg` — `packages/aai/etc/ffmpeg.api.md`
 - `@alexkroman1/aai/host-internal` — `packages/aai/etc/host-internal.api.md`
 - `@alexkroman1/aai` — `packages/aai/etc/index.api.md`
@@ -44,6 +45,112 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
 - `@alexkroman1/aai-ui` — `packages/aai-ui/etc/index.api.md`
 - `@alexkroman1/aai-ui/internal` — `packages/aai-ui/etc/internal.api.md`
+
+## `@alexkroman1/aai/channels`
+
+```ts
+// @public
+export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
+    readonly __surface?: "channel";
+};
+
+// @public
+export const CHANNEL_POST_TIMEOUT_MS = 30000;
+
+// @public
+export function channelAdvice(channel: Channel, detail: string): string;
+
+// @public
+export class ChannelDeliveryError extends Error {
+    constructor(message: string, init: {
+        readonly channelKind: string;
+        readonly status?: number | undefined;
+        readonly retryable: boolean;
+        readonly retryAfter?: Date | undefined;
+        readonly cause?: unknown;
+    });
+    readonly channelKind: string;
+    // (undocumented)
+    readonly name = "ChannelDeliveryError";
+    readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
+    readonly status: number | undefined;
+}
+
+// @public
+export interface ChannelDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+export interface ChannelMessage {
+    readonly heading?: string;
+    readonly sections?: readonly ChannelSection[];
+    readonly subtitle?: string;
+    readonly text: string;
+}
+
+// @public
+export interface ChannelPayload {
+    readonly body: Record<string, unknown>;
+    readonly headers?: Readonly<Record<string, string>>;
+    readonly url: string;
+}
+
+// @public
+export interface ChannelSection {
+    readonly body?: string;
+    readonly bullets?: readonly string[];
+    readonly subtitle?: string;
+    readonly title?: string;
+    readonly url?: string;
+}
+
+// @public
+export function escapeSlackMrkdwn(text: string): string;
+
+// @public
+export function isSlackWebhookUrl(value: string): boolean;
+
+// @public
+export function isSlackWorkflowTriggerUrl(url: string): boolean;
+
+// @public
+export function renderChannelPayload(channel: Channel, message: ChannelMessage): ChannelPayload;
+
+// @public
+export function renderSlackChannelPayload(message: ChannelMessage, options: SlackChannelOptions): ChannelPayload;
+
+// @public
+export function renderSlackPlainText(message: ChannelMessage): string;
+
+// @public
+export function sendToChannel(channel: Channel, message: ChannelMessage): Promise<string>;
+
+// @public
+export function slack(options: SlackChannelOptions): SlackChannel;
+
+// @public
+export const SLACK_CHANNEL_KIND = "slack";
+
+// @public
+export type SlackChannel = Channel & {
+    readonly kind: typeof SLACK_CHANNEL_KIND;
+    readonly options: SlackChannelOptions & Record<string, unknown>;
+};
+
+// @public
+export function slackChannelAdvice(options: SlackChannelOptions, detail: string): string;
+
+// @public
+export interface SlackChannelOptions {
+    readonly textParam?: string;
+    readonly webhookUrl: string;
+}
+```
 
 ## `@alexkroman1/aai/ffmpeg`
 
@@ -4568,7 +4675,40 @@ export type WriteUploadOptions = {
 
 ```ts
 // @public
+type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
+    readonly __surface?: "channel";
+};
+
+// @public
+interface ChannelDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+interface ChannelMessage {
+    readonly heading?: string;
+    readonly sections?: readonly ChannelSection[];
+    readonly subtitle?: string;
+    readonly text: string;
+}
+
+// @public
+interface ChannelSection {
+    readonly body?: string;
+    readonly bullets?: readonly string[];
+    readonly subtitle?: string;
+    readonly title?: string;
+    readonly url?: string;
+}
+
+// @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function sendToChannelClassified(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
 interface StandardSchemaIssue {

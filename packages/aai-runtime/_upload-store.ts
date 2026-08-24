@@ -438,3 +438,31 @@ export function concat(parts: readonly Uint8Array[], size: number): Uint8Array {
   if (parts.length === 1 && parts[0]?.length === size) return parts[0];
   return Buffer.concat(parts, size);
 }
+
+/**
+ * Drain a body into one buffer, refusing it the moment it passes `limit`.
+ *
+ * The three {@link UploadBlobs} implementations each open an object write by
+ * buffering — Storage has no append and no streaming PUT of unknown length, so
+ * an object's bytes have to be in hand to write them — and each had written the
+ * same accumulate-count-and-cap loop. The cap is what makes it safe: the size is
+ * counted AS IT ARRIVES rather than read off a declared length a client controls
+ * independently of what it really sends, so an oversized body is refused while
+ * streaming instead of buffered and then measured.
+ *
+ * @throws {UploadTooLargeError} once more than `limit` bytes have arrived.
+ * @internal
+ */
+export async function collectCapped(
+  body: AsyncIterable<Uint8Array>,
+  limit: number | undefined,
+): Promise<Uint8Array> {
+  const held: Uint8Array[] = [];
+  let size = 0;
+  for await (const piece of body) {
+    size += piece.length;
+    if (limit !== undefined && size > limit) throw new UploadTooLargeError(limit);
+    held.push(piece);
+  }
+  return concat(held, size);
+}

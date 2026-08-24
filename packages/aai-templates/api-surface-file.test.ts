@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { repoPathOf } from "./_gate-support.ts";
+import { repoPathOf, sole } from "./_gate-support.ts";
 
 /** Every committed per-entry-point report, keyed by path relative to this file. */
 const reports: Record<string, string> = import.meta.glob("../*/etc/*.api.md", {
@@ -29,11 +29,13 @@ const reports: Record<string, string> = import.meta.glob("../*/etc/*.api.md", {
   eager: true,
 });
 
-const combined: string | undefined = import.meta.glob<string>("../../API.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../API.md"];
+const combined: string | undefined = sole(
+  import.meta.glob<string>("../../API.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 /**
  * The same text, never absent — its readability is asserted in its own case

@@ -79,8 +79,11 @@ async function target(cwd: string, opts: WorkflowOptions): Promise<Target> {
   };
 }
 
+/** The failure arm of a {@link CommandResult}, which every verb here may return. */
+type Failure = Extract<CommandResult<never>, { ok: false }>;
+
 /**
- * Run one call, turning a rejection into a `CommandResult`.
+ * Run one call, turning a rejection into this command's failure result.
  *
  * The client throws with the AGENT'S own sentence — an unknown workflow names
  * the declared ones, a 503 says the sandbox is still booting — and that text is
@@ -88,14 +91,21 @@ async function target(cwd: string, opts: WorkflowOptions): Promise<Target> {
  * code. `errorMessage` rather than `instanceof Error`, because a rejection that
  * is message-bearing without being an `Error` would otherwise print as
  * `[object Object]`.
+ *
+ * It builds the failure result itself rather than handing the caller an error
+ * string: all four verbs paired it with the same `HINT_BROKER` and the same
+ * `workflow_*_failed` shape, so the hint was spelled four times and a fifth
+ * verb could quietly omit it. The caller supplies only the code and forwards
+ * the result — `if (!res.ok) return res;`.
  */
 async function attempt<T>(
+  code: string,
   call: () => Promise<T>,
-): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+): Promise<{ ok: true; value: T } | Failure> {
   try {
     return { ok: true, value: await call() };
   } catch (err) {
-    return { ok: false, error: errorMessage(err) };
+    return { ok: false, code, error: errorMessage(err), hint: HINT_BROKER };
   }
 }
 
@@ -105,8 +115,8 @@ export async function executeWorkflowList(
   opts: WorkflowOptions,
 ): Promise<CommandResult<{ workflows: WorkflowSummary[] }>> {
   const { api, slug } = await target(cwd, opts);
-  const res = await attempt(() => api.list());
-  if (!res.ok) return fail("workflow_list_failed", res.error, HINT_BROKER);
+  const res = await attempt("workflow_list_failed", () => api.list());
+  if (!res.ok) return res;
   const workflows = res.value;
   if (workflows.length === 0) {
     log.info(`${slug} declares no workflows`);
@@ -128,8 +138,10 @@ export async function executeWorkflowRuns(
   opts: WorkflowOptions & { limit?: number | undefined },
 ): Promise<CommandResult<{ runs: Run[] }>> {
   const { api } = await target(cwd, opts);
-  const res = await attempt(() => api.recent(workflow, { limit: opts.limit ?? DEFAULT_RUN_LIMIT }));
-  if (!res.ok) return fail("workflow_runs_failed", res.error, HINT_BROKER);
+  const res = await attempt("workflow_runs_failed", () =>
+    api.recent(workflow, { limit: opts.limit ?? DEFAULT_RUN_LIMIT }),
+  );
+  if (!res.ok) return res;
   const runs = res.value;
   if (runs.length === 0) log.info(`No runs of ${workflow} yet`);
   for (const run of runs) log.info(formatRun(run));
@@ -151,8 +163,8 @@ export async function executeWorkflowShow(
   opts: WorkflowOptions,
 ): Promise<CommandResult<{ run: Run }>> {
   const { api } = await target(cwd, opts);
-  const res = await attempt(() => api.get(runId));
-  if (!res.ok) return fail("workflow_show_failed", res.error, HINT_BROKER);
+  const res = await attempt("workflow_show_failed", () => api.get(runId));
+  if (!res.ok) return res;
   // `get` resolves undefined for a 404, which the API answers for BOTH an
   // unknown id and an agent that serves no workflow API at all — so the sentence
   // cannot claim to know which, and `HINT_BROKER` already names every cause.
@@ -177,8 +189,8 @@ export async function executeWorkflowCancel(
   opts: WorkflowOptions,
 ): Promise<CommandResult<{ runId: string; cancelled: boolean }>> {
   const { api } = await target(cwd, opts);
-  const res = await attempt(() => api.cancel(runId));
-  if (!res.ok) return fail("workflow_cancel_failed", res.error, HINT_BROKER);
+  const res = await attempt("workflow_cancel_failed", () => api.cancel(runId));
+  if (!res.ok) return res;
   const cancelled = res.value;
   // Not a failure when false: the run was already terminal, which is an ANSWER —
   // the same reason the route replies 200 either way.

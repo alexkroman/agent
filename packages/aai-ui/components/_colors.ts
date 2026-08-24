@@ -28,7 +28,7 @@
  * the whole reason to derive rather than hardcode.
  */
 export function inkTint(text: string, surface: string, pct: number): string {
-  return `color-mix(in srgb, ${text} ${pct}%, ${surface})`;
+  return mixInto(text, surface, pct);
 }
 
 /**
@@ -56,5 +56,17 @@ export const THINKING_COLOR = "#B98900";
  * coherent tinted bubble instead of a hardcoded indigo.
  */
 export function primaryTint(primary: string, surface: string, pct: number): string {
-  return `color-mix(in srgb, ${primary} ${pct}%, ${surface})`;
+  return mixInto(primary, surface, pct);
+}
+
+/**
+ * The blend itself — `pct` of `color` over `ground`, in sRGB.
+ *
+ * One definition rather than one per axis: {@link inkTint} and
+ * {@link primaryTint} differ in WHICH theme color they walk from, which is what
+ * their names carry, and not in how the walk is spelled. Two copies of the
+ * `color-mix()` string are two places a change of color space has to land.
+ */
+function mixInto(color: string, ground: string, pct: number): string {
+  return `color-mix(in srgb, ${color} ${pct}%, ${ground})`;
 }

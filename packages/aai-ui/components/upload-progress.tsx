@@ -2,7 +2,11 @@
 
 /** @jsxImportSource react */
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
+// `formatBytes` is the SDK's own narration formatter, not a second copy of it:
+// a size a person can read (`12.4 MB of 48.0 MB`) is the same question a step's
+// progress line asks, and it already guards the cases a bar can hand it — an
+// unknown length arriving as `NaN`, a rounding that carries into the next unit.
+import { formatBytes, omitUndefined } from "@alexkroman1/aai/utils";
 import clsx from "clsx";
 import { type ReactNode, useId } from "react";
 import { useTheme } from "../context.ts";
@@ -18,29 +22,6 @@ import { Button } from "./button.tsx";
  * as a groove against the page.
  */
 const TRACK_TINT_PCT = 12;
-
-/** Bytes per KB/MB/GB step, as a file manager counts them. */
-const BYTE_STEP = 1024;
-/** Unit labels, largest last — the index is how many times the size divides. */
-const BYTE_UNITS = ["B", "KB", "MB", "GB"] as const;
-
-/**
- * A size a person can read, because the number that matters is the SCALE.
- *
- * `12.4 MB of 48.0 MB` says how much is left in the terms someone chose the
- * file in; `13002343 of 50331648` says the same thing and answers nothing.
- */
-function formatBytes(bytes: number): string {
-  let value = bytes;
-  let unit = 0;
-  while (value >= BYTE_STEP && unit < BYTE_UNITS.length - 1) {
-    value /= BYTE_STEP;
-    unit += 1;
-  }
-  // Whole bytes are whole; anything the loop divided gets one decimal, so a bar
-  // that is visibly moving has a number that visibly moves with it.
-  return `${unit === 0 ? value : value.toFixed(1)} ${BYTE_UNITS[unit]}`;
-}
 
 /**
  * How far a form's files have got, rendered as a bar.

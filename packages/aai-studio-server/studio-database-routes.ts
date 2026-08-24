@@ -102,10 +102,9 @@ export function registerDatabaseRoutes(
   studio.get("/projects/:project/database/rows", async (c) => {
     const environment = environmentParam(c);
     if (!environment) return c.json({ error: BAD_ENVIRONMENT }, 400);
-    const url = new URL(c.req.url);
-    const schema = url.searchParams.get("schema");
-    const table = url.searchParams.get("table");
-    if (schema === null || table === null) {
+    const schema = c.req.query("schema");
+    const table = c.req.query("table");
+    if (schema === undefined || table === undefined) {
       return c.json({ error: "schema and table are required" }, 400);
     }
     const page = await projectTableRows(databaseEnvFor(c), {
@@ -117,8 +116,8 @@ export function registerDatabaseRoutes(
       table,
       // Clamped by `readAppTable` itself rather than here — a cap enforced at
       // the route is a cap the next caller of the core does not get.
-      limit: positiveParam(url.searchParams.get("limit"), DEFAULT_ROWS),
-      offset: positiveParam(url.searchParams.get("offset"), 0),
+      limit: positiveParam(c.req.query("limit"), DEFAULT_ROWS),
+      offset: positiveParam(c.req.query("offset"), 0),
     });
     // A table that is gone (a migration between the list and the click) is the
     // same 404 as no database: the pane re-reads its list either way.
@@ -142,12 +141,12 @@ const NO_DATABASE = "No database to read for this environment";
  * production.
  */
 function environmentParam(c: Context<StudioHonoEnv>): ProjectEnvironment | undefined {
-  const value = new URL(c.req.url).searchParams.get("environment");
+  const value = c.req.query("environment");
   return PROJECT_ENVIRONMENTS.find((environment) => environment === value);
 }
 
 /** A non-negative integer query parameter, or the default for anything else. */
-function positiveParam(value: string | null, fallback: number): number {
+function positiveParam(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }

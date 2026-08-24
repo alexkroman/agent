@@ -66,6 +66,8 @@ export function createTurnBudget(
   let warned = false;
   let closing = false;
   const elapsed = () => now() - started;
+  /** Both notices open with the same clock reading; one spelling of it. */
+  const stamp = () => `[${Math.round(elapsed() / 60_000)} minutes into this turn]`;
   return {
     elapsedMs: elapsed,
     expired: () => closing && elapsed() >= hard,
@@ -73,7 +75,7 @@ export function createTurnBudget(
       if (warned || elapsed() < soft) return null;
       warned = true;
       return (
-        `[${Math.round(elapsed() / 60_000)} minutes into this turn] Wrap up now. ` +
+        `${stamp()} Wrap up now. ` +
         "Do not start new features or refactors. Finish the change you are on, " +
         "run test_agent once, and reply with what works and what does not. " +
         "A verified partial agent is worth more than an unverified complete one — " +
@@ -85,7 +87,7 @@ export function createTurnBudget(
       if (closing || elapsed() < hard) return null;
       closing = true;
       return (
-        `[${Math.round(elapsed() / 60_000)} minutes into this turn] Out of time — ` +
+        `${stamp()} Out of time — ` +
         "this is your last message and you cannot call any more tools. Tell the " +
         "user plainly what you built, what you verified, and what is still " +
         "unfinished or broken, so they know where to pick it up. Do not claim " +

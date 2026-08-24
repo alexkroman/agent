@@ -7,6 +7,7 @@
 
 import { act } from "react";
 import { vi } from "vitest";
+import { CLEARED_SESSION_STATE } from "./session-core-messages.ts";
 import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
@@ -23,13 +24,10 @@ export function createMockSessionCore(
   let snapshot: SessionSnapshot = {
     state: "disconnected",
     contentVersion: 0,
-    messages: [],
-    toolCalls: [],
-    customEvents: [],
-    agentState: null,
-    userTranscript: null,
-    agentTranscript: null,
-    error: null,
+    // The production definition of "nothing has happened yet", not a second
+    // copy of it: a snapshot field added there must appear in the mock too, and
+    // a copy is where that stops being true.
+    ...CLEARED_SESSION_STATE,
     started: false,
     running: true,
     recording: false,

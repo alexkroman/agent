@@ -26,7 +26,7 @@
  */
 
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { EvalRecorder } from "./runner.ts";
 
 /** One tool call, paired with its result when the stream carries one. */
@@ -189,6 +189,11 @@ function isSubsequence(seen: readonly string[], wanted: readonly string[]): bool
   return wanted.length === 0;
 }
 
+/** How many entries of `list` are `value` — the three counting assertions' shape. */
+function countOf<T>(list: readonly T[], value: T): number {
+  return list.filter((seen) => seen === value).length;
+}
+
 function matchesToken(text: string, token: string | RegExp): boolean {
   return typeof token === "string"
     ? text.toLowerCase().includes(token.toLowerCase())
@@ -325,7 +330,7 @@ export function eventScope(
     },
 
     notCalledTool(name) {
-      const n = names.filter((seen) => seen === name).length;
+      const n = countOf(names, name);
       check(n === 0, `notCalledTool(${name})`, `called ${n}x`);
     },
 
@@ -366,7 +371,7 @@ export function eventScope(
     },
 
     event(type, opts = {}) {
-      const n = types.filter((seen) => seen === type).length;
+      const n = countOf(types, type);
       const wanted = opts.count;
       const min = wanted ?? opts.min ?? 1;
       const max = wanted ?? opts.max ?? Number.POSITIVE_INFINITY;
@@ -381,7 +386,7 @@ export function eventScope(
     },
 
     notEvent(type) {
-      const n = types.filter((seen) => seen === type).length;
+      const n = countOf(types, type);
       check(n === 0, `notEvent(${type})`, `saw ${n}`);
     },
 
@@ -399,7 +404,7 @@ export function eventScope(
       try {
         ok = predicate(events);
       } catch (err) {
-        detail = `predicate threw: ${err instanceof Error ? err.message : String(err)}`;
+        detail = `predicate threw: ${errorMessage(err)}`;
       }
       check(ok, label, detail ?? `over ${events.length} event(s)`);
     },

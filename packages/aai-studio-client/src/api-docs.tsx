@@ -55,7 +55,7 @@ import {
   frontDoorEndpoints,
   WORKFLOW_ENDPOINTS,
 } from "./docs-content.ts";
-import { Examples } from "./docs-examples.tsx";
+import { Examples, FollowUp } from "./docs-examples.tsx";
 import {
   cliCommands,
   curlConfig,
@@ -194,10 +194,7 @@ function WorkflowApi({
             {declared.map((workflow) => (
               <WorkflowDocs key={workflow.name} base={base} workflow={workflow} token={token} />
             ))}
-            <div className="flex flex-col gap-2 border-t border-line pt-4">
-              <span className="text-[11px] text-muted">
-                Read a run back later — the id is the whole handle, from any machine.
-              </span>
+            <FollowUp note="Read a run back later — the id is the whole handle, from any machine.">
               <Examples
                 code={sdkRead(base, token)}
                 label="read a run back"
@@ -206,18 +203,15 @@ function WorkflowApi({
                   { language: "the aai CLI", code: "aai workflow show $RUN_ID" },
                 ]}
               />
-            </div>
-            <div className="flex flex-col gap-2 border-t border-line pt-4">
-              <span className="text-[11px] text-muted">
-                Follow one as it goes — its status, and everything it writes.
-              </span>
+            </FollowUp>
+            <FollowUp note="Follow one as it goes — its status, and everything it writes.">
               <Examples
                 code={sdkFollow(base, token)}
                 label="follow a run's status"
                 alternates={[{ language: "curl", code: curlFollow(base, token) }]}
               />
               <Snippet code={sdkFollowOutput(base, token)} label="read a run's output stream" />
-            </div>
+            </FollowUp>
           </div>
         </Card>
 

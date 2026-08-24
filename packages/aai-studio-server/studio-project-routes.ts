@@ -150,9 +150,13 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
     // agents are the caller's", shared with the database and secret switches,
     // and it checks the pair CONCURRENTLY where this route asked per slug.
     const owned = workspace ? await ownedProjectSlugs(c.env.store, c.var.apiKey, workspace) : [];
-    for (const slug of new Set(owned.map((entry) => entry.slug))) {
-      await deleteAgentResources(c.env, slug);
-    }
+    // The pair is independent — deleted concurrently, like the ownership
+    // check above and the three project-level deletes below.
+    await Promise.all(
+      [...new Set(owned.map((entry) => entry.slug))].map((slug) =>
+        deleteAgentResources(c.env, slug),
+      ),
+    );
     // No lock needed: a racing versioned write cannot resurrect the project —
     // `mutateWorkspace` only ever replaces an existing row.
     await Promise.all([

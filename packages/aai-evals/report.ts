@@ -16,6 +16,7 @@
  * @module
  */
 
+import { plural } from "@alexkroman1/aai/utils";
 import type { EvalCheck, EvalReport } from "./runner.ts";
 
 /** Collapse a failure detail to a comparable signature. */
@@ -128,7 +129,7 @@ function formatCase(report: EvalReport): string[] {
   const repeats = report.passes.length;
   const lines = [
     `${report.name}  score ${formatSpread(report)}  ` +
-      `${repeats} repeat${repeats === 1 ? "" : "s"}  ` +
+      `${repeats} ${plural(repeats, "repeat")}  ` +
       `${Math.round(report.ms.mean / 1000)}s/pass` +
       (report.harnessErrors > 0 ? `  HARNESS ERRORS ${report.harnessErrors}` : ""),
     ...failedChecks(report).map((check) => `  FAIL ${checkLine(check)}`),

@@ -32,7 +32,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { ERE_UNSUPPORTED, GATE_WIRING, repoPathOf } from "./_gate-support.ts";
+import { ERE_UNSUPPORTED, GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
 
 /**
  * The shared ratchet ENGINE both baseline gates run on.
@@ -42,25 +42,29 @@ import { ERE_UNSUPPORTED, GATE_WIRING, repoPathOf } from "./_gate-support.ts";
  * stopped finding its string here and failed naming a mechanism that had only
  * MOVED. See the twin note in `escape-hatch-scope.test.ts`.
  */
-const engine = import.meta.glob("../../scripts/_ratchet.mjs", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../scripts/_ratchet.mjs"];
+const engine = sole(
+  import.meta.glob("../../scripts/_ratchet.mjs", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
-const script = import.meta.glob("../../scripts/guard-invariants.mjs", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../scripts/guard-invariants.mjs"];
+const script = sole(
+  import.meta.glob("../../scripts/guard-invariants.mjs", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 const baseline: Record<string, unknown> =
-  Object.values(
+  sole(
     import.meta.glob<Record<string, unknown>>("../../scripts/guard-invariants-baseline.json", {
       import: "default",
       eager: true,
     }),
-  )[0] ?? {};
+  ) ?? {};
 
 interface RuleSamples {
   matches: string[];
@@ -113,12 +117,12 @@ const repoFiles = new Set(
  * it as a function only re-ran the `Object.values` and the `?? []` fallback.
  */
 const shippedLineRules: LineRule[] =
-  Object.values(
+  sole(
     import.meta.glob<LineRule[]>("../../scripts/guard-invariants-rules.mjs", {
       import: "LINE_RULES",
       eager: true,
     }),
-  )[0] ?? [];
+  ) ?? [];
 
 /**
  * One positive and one negative sample per rule, keyed by the rule's `key`.
@@ -511,7 +515,7 @@ describe("guard-invariants gate", () => {
  * name — so shipping it with a spec that could do the same would be the joke
  * writing itself.
  */
-const changesets = Object.values(
+const changesets = sole(
   import.meta.glob<{
     checkChangeset: (
       file: string,
@@ -526,7 +530,7 @@ const changesets = Object.values(
     workspacePackageNames: () => Set<string>;
     versionablePackageNames: () => Set<string>;
   }>("../../scripts/guard-invariants-changesets.mjs", { eager: true }),
-)[0];
+);
 
 describe("guard-invariants rule 20 (changeset package names)", () => {
   const known = new Set(["@alexkroman1/aai", "aai-server"]);

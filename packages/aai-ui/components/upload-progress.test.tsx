@@ -62,7 +62,7 @@ describe("UploadProgressBar", () => {
 
   test("reads the sizes in the units the file was chosen in", () => {
     render(<UploadProgressBar upload={status()} />);
-    expect(screen.getByText("512.0 KB of 2.0 MB")).toBeDefined();
+    expect(screen.getByText("512 KB of 2.0 MB")).toBeDefined();
     expect(screen.getByText("Uploading standup.wav")).toBeDefined();
   });
 
@@ -75,7 +75,7 @@ describe("UploadProgressBar", () => {
     expect(fill(bar).style.width).toBe("100%");
     // The loaded count is still worth showing — it is the only evidence of
     // movement an indeterminate bar has.
-    expect(screen.getByText("512.0 KB")).toBeDefined();
+    expect(screen.getByText("512 KB")).toBeDefined();
   });
 
   test("counts the files when there is more than one", () => {
