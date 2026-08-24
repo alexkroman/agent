@@ -33,6 +33,7 @@ import { uint8ToBase64 } from "../../_base64.ts";
 import { pcm16ToBytes } from "../../_pcm.ts";
 import {
   assertPcm16Rate,
+  closeAfterFlush,
   closeOnAbort,
   connectOrThrow,
   createPcmFrameAccumulator,
@@ -142,10 +143,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
           frames.push(pcm);
         },
         on: shell.on,
-        close: () => {
-          if (!shell.isClosed()) frames.flush();
-          return shell.close();
-        },
+        close: closeAfterFlush(shell, frames),
       };
     },
   };

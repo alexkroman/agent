@@ -31,7 +31,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING, repoPathOf } from "./_gate-support.ts";
+import { GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
 
 /**
  * The `must` half of a convention, in either of the two shapes konsistent
@@ -61,11 +61,13 @@ type KonsistentConfig = {
   conventions: Convention[];
 };
 
-const raw = import.meta.glob("../../konsistent.json", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../konsistent.json"] as string | undefined;
+const raw = sole(
+  import.meta.glob("../../konsistent.json", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+) as string | undefined;
 
 /**
  * Repo-relative paths of everything a convention could plausibly point at, so a

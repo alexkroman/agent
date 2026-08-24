@@ -125,6 +125,15 @@ function request<T>(key: string, path: string, init: ApiInit = {}): Promise<T> {
   return agentRequest<T>(key, `/studio${path}`, init);
 }
 
+/**
+ * One project's route prefix, with the name encoded exactly once. Every
+ * per-project call below hangs off it, and an `encodeURIComponent` spelled out
+ * per call is a per-call chance to forget it.
+ */
+function projectPath(project: string, suffix = ""): string {
+  return `/projects/${encodeURIComponent(project)}${suffix}`;
+}
+
 export const api = {
   ...tableReads(request),
 
@@ -206,12 +215,11 @@ export const api = {
 
   /** Delete a project (its workspace and chat). Deployed agents stay live. */
   deleteProject: (key: string, project: string) =>
-    request<{ ok: true }>(key, `/projects/${encodeURIComponent(project)}`, {
+    request<{ ok: true }>(key, projectPath(project), {
       method: "DELETE",
     }),
 
-  getProject: (key: string, project: string) =>
-    request<ProjectData>(key, `/projects/${encodeURIComponent(project)}`),
+  getProject: (key: string, project: string) => request<ProjectData>(key, projectPath(project)),
 
   /**
    * Does the platform serve an agent page at `/:slug/` yet? Unauthenticated,
@@ -257,7 +265,7 @@ export const api = {
    * preview rather than on every failed probe.
    */
   wakePreview: (key: string, project: string) =>
-    request<{ ok: true }>(key, `/projects/${encodeURIComponent(project)}/preview/wake`, {
+    request<{ ok: true }>(key, projectPath(project, "/preview/wake"), {
       method: "POST",
     }),
 
@@ -281,7 +289,7 @@ export const api = {
       onDown: (reason: StreamDownReason) => void;
     },
   ): (() => void) =>
-    watchEventStream(key, `/studio/projects/${encodeURIComponent(project)}/events`, {
+    watchEventStream(key, `/studio${projectPath(project, "/events")}`, {
       onFrame: (frame) => {
         if (frame.event === "project") handlers.onData(JSON.parse(frame.data) as ProjectData);
         if (frame.event === "chat") handlers.onChat?.(JSON.parse(frame.data) as UIMessage[]);
@@ -312,7 +320,7 @@ export const api = {
     }),
 
   writeFile: (key: string, project: string, path: string, content: string) =>
-    request<{ ok: boolean }>(key, `/projects/${encodeURIComponent(project)}/file`, {
+    request<{ ok: boolean }>(key, projectPath(project, "/file"), {
       method: "PUT",
       body: JSON.stringify({ path, content }),
     }),
@@ -324,7 +332,7 @@ export const api = {
    * agent's sandbox.
    */
   createChatSession: (key: string, project: string) =>
-    request<ChatSession>(key, `/projects/${encodeURIComponent(project)}/session`, {
+    request<ChatSession>(key, projectPath(project, "/session"), {
       method: "POST",
       body: "{}",
       // Longer than the default, not shorter: this one really can take two
@@ -349,9 +357,7 @@ export const api = {
   },
 
   getChat: (key: string, project: string) =>
-    request<{ messages: UIMessage[] }>(key, `/projects/${encodeURIComponent(project)}/chat`).then(
-      (r) => r.messages,
-    ),
+    request<{ messages: UIMessage[] }>(key, projectPath(project, "/chat")).then((r) => r.messages),
 
   /**
    * Publish: the project's sandbox runs `aai deploy`; `output` is the CLI's
@@ -360,7 +366,7 @@ export const api = {
   deploy: (key: string, project: string) =>
     request<{ ok: true; slug: string; url: string; output: string }>(
       key,
-      `/projects/${encodeURIComponent(project)}/deploy`,
+      projectPath(project, "/deploy"),
       { method: "POST", body: "{}" },
     ),
 
@@ -371,11 +377,11 @@ export const api = {
    * (see aai-studio-server/studio-database.ts).
    */
   getDatabase: (key: string, project: string) =>
-    request<DatabaseState>(key, `/projects/${encodeURIComponent(project)}/database`),
+    request<DatabaseState>(key, projectPath(project, "/database")),
 
   /** Provision the database for both environments. */
   enableDatabase: (key: string, project: string) =>
-    request<DatabaseState>(key, `/projects/${encodeURIComponent(project)}/database`, {
+    request<DatabaseState>(key, projectPath(project, "/database"), {
       method: "POST",
       body: "{}",
     }),
@@ -385,7 +391,7 @@ export const api = {
 
   /** Drop both environments' databases — and all their data. */
   disableDatabase: (key: string, project: string) =>
-    request<DatabaseState>(key, `/projects/${encodeURIComponent(project)}/database`, {
+    request<DatabaseState>(key, projectPath(project, "/database"), {
       method: "DELETE",
     }),
 
@@ -401,23 +407,20 @@ export const api = {
   // deployed reports all of its names that way, which is the state the panel
   // exists to make workable.
   listSecrets: (key: string, project: string) =>
-    request<{ vars: string[]; pending?: string[] }>(
-      key,
-      `/projects/${encodeURIComponent(project)}/secret`,
-    ).then((r) => ({ vars: r.vars, pending: r.pending ?? [] })),
+    request<{ vars: string[]; pending?: string[] }>(key, projectPath(project, "/secret")).then(
+      (r) => ({ vars: r.vars, pending: r.pending ?? [] }),
+    ),
 
   putSecrets: (key: string, project: string, updates: Record<string, string>) =>
-    request<{ vars: string[] }>(key, `/projects/${encodeURIComponent(project)}/secret`, {
+    request<{ vars: string[] }>(key, projectPath(project, "/secret"), {
       method: "PUT",
       body: JSON.stringify(updates),
     }),
 
   deleteSecret: (key: string, project: string, name: string) =>
-    request<{ vars: string[] }>(
-      key,
-      `/projects/${encodeURIComponent(project)}/secret/${encodeURIComponent(name)}`,
-      { method: "DELETE" },
-    ),
+    request<{ vars: string[] }>(key, projectPath(project, `/secret/${encodeURIComponent(name)}`), {
+      method: "DELETE",
+    }),
 };
 
 /**

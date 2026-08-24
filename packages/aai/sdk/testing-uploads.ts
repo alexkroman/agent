@@ -12,6 +12,7 @@
  * @module testing-uploads
  */
 
+import { collectBytes } from "./_bytes.ts";
 import { publishUploadReader } from "./step-uploads.ts";
 
 /**
@@ -175,18 +176,8 @@ export function stubUploads(
     meta: { name?: string | undefined; type?: string | undefined },
     body: AsyncIterable<Uint8Array>,
   ) => {
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    for await (const chunk of body) {
-      chunks.push(chunk);
-      size += chunk.length;
-    }
-    const bytes = new Uint8Array(size);
-    let at = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, at);
-      at += chunk.length;
-    }
+    const bytes = await collectBytes(body);
+    const size = bytes.byteLength;
     minted += 1;
     const id = `${options.idPrefix ?? "upl_stub_"}${minted}`;
     stored.set(id, { bytes, name: meta.name ?? "", type: meta.type ?? "" });

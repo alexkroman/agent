@@ -47,6 +47,7 @@
  */
 
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
+import { getOrCreate } from "../_get-or-create.ts";
 
 /** Structural `fetch`, kept loose so it satisfies the AI SDK's option type. */
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -100,12 +101,10 @@ function repairToolCall(
     // Upstream sent a real id — adopt it for this slot's continuations.
     ids.set(key, call.id);
   } else {
-    let id = ids.get(key);
-    if (id === undefined) {
-      id = newId();
-      ids.set(key, id);
-    }
-    call.id = id;
+    // Minted ONCE per slot: a continuation delta for the same
+    // `choice:index` must carry the id its first fragment was given, so the
+    // factory may only run on a miss.
+    call.id = getOrCreate(ids, key, newId);
     changed = true;
   }
 

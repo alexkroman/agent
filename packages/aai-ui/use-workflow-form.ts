@@ -44,6 +44,7 @@ import type {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRunControls } from "./_run-controls.ts";
 import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
+import { useUploadPause } from "./_upload-pause.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -394,18 +395,13 @@ export function useWorkflowSubmit<R = unknown>(
     setUpload(undefined);
   }, []);
 
-  const pauseUpload = useCallback(() => {
-    session.current?.gate.pause();
-    // The gate stops the bytes; this is what makes the page say so. Folded into
-    // the existing status rather than replacing it, because everything else about
-    // it — which file, how far, of how many — is still true.
-    setUpload((current) => (current ? { ...current, paused: true } : current));
-  }, []);
-
-  const resumeUpload = useCallback(() => {
-    session.current?.gate.resume();
-    setUpload((current) => (current ? { ...current, paused: false } : current));
-  }, []);
+  // The gate stops the bytes; the hook is what makes the page say so — see
+  // `_upload-pause.ts`, shared with `useWorkflowStream` so the two cannot
+  // disagree about what a paused bar reads.
+  const { pauseUpload, resumeUpload } = useUploadPause(
+    useCallback(() => session.current?.gate, []),
+    setUpload,
+  );
 
   return {
     submit,

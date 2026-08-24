@@ -120,8 +120,10 @@ export function createStudioApp(opts: StudioAppOpts): {
   app.get("/favicon.ico", handleStudioFavicon);
   app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
   const studioRoutes = createStudioRoutes({
-    ...omitUndefined({ rateLimiters: opts.studioRateLimiters }),
-    ...omitUndefined({ sessionRegistry: opts.studioSessionRegistry }),
+    ...omitUndefined({
+      rateLimiters: opts.studioRateLimiters,
+      sessionRegistry: opts.studioSessionRegistry,
+    }),
     previewQueue: opts.previewQueue,
     ...(opts.replicaId && { replicaId: opts.replicaId }),
   });
@@ -136,9 +138,7 @@ export function createStudioApp(opts: StudioAppOpts): {
     chats: opts.chats,
     events: opts.events ?? createMemoryPlatformEvents().events,
     secrets: opts.secrets ?? createMemorySecretStore(),
-    ...omitUndefined({ auth: opts.auth }),
-    ...omitUndefined({ keyVerifier: opts.keyVerifier }),
-    ...omitUndefined({ appDb: opts.appDb }),
+    ...omitUndefined({ auth: opts.auth, keyVerifier: opts.keyVerifier, appDb: opts.appDb }),
     // Wrapped exactly as the agent service wraps it: holding the lock must
     // also drop this replica's cached view of the slug, or a mutation
     // read-modify-writes off a pre-lock snapshot (see createMutationLock).

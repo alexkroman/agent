@@ -40,7 +40,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING, repoPathOf } from "./_gate-support.ts";
+import { GATE_WIRING, repoPathOf, sole } from "./_gate-support.ts";
 
 /** The point past which an agent's context silently drops the remainder. */
 const HARD_LIMIT = 150_000;
@@ -59,11 +59,13 @@ const guides: Record<string, string> = {
 };
 
 /** The root `CLAUDE.md` shim, read separately — it is pinned, not measured. */
-const rootShim = import.meta.glob("../../CLAUDE.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../CLAUDE.md"];
+const rootShim = sole(
+  import.meta.glob("../../CLAUDE.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 // `repoPathOf` knows all three shapes a key arrives in — the repo root, a
 // sibling package, and this package (which is what the sibling-package glob
@@ -130,11 +132,13 @@ describe("agent guide size", () => {
     // The cap is duplicated by necessity — the script runs with no bundler,
     // this suite with no node types — so assert the two agree rather than
     // letting one drift into being decorative.
-    const script = import.meta.glob("../../scripts/check-claude-md.mjs", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    })["../../scripts/check-claude-md.mjs"];
+    const script = sole(
+      import.meta.glob("../../scripts/check-claude-md.mjs", {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }),
+    );
     if (!script) throw new Error("scripts/check-claude-md.mjs not found");
     const declared = script.match(/const MAX_CHARS = ([\d_]+)/)?.[1];
     expect(declared, "scripts/check-claude-md.mjs no longer declares MAX_CHARS").toBeTypeOf(

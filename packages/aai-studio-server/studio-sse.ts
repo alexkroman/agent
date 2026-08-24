@@ -215,8 +215,9 @@ export function createSsePusher(stream: SseStream): SsePusher {
         // A failed write means the peer is gone; the abort handler cleans up.
       });
   };
+  // Through `write`, so the closed check lives in exactly one place.
   const heartbeat = setInterval(() => {
-    if (!closed) void stream.writeSSE({ event: "ping", data: "" }).catch(() => undefined);
+    void write("ping", "").catch(() => undefined);
   }, SSE_HEARTBEAT_MS);
   stream.onAbort(finish);
   const wait = async (cleanup: () => void): Promise<void> => {

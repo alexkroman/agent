@@ -29,6 +29,32 @@ export function GateCard({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * A gate's headline. Every gate screen opens with the same serif h1, and four
+ * copies of one long utility string is four places for it to drift.
+ */
+export function GateTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
+      {children}
+    </h1>
+  );
+}
+
+/** A gate's body copy — the paragraph under {@link GateTitle}. */
+export function GateBlurb({ children }: { children: React.ReactNode }) {
+  return <p className="m-0 text-[15px] leading-[21px] text-muted">{children}</p>;
+}
+
+/**
+ * A gate's inline failure line: what the last attempt said, under the controls
+ * that made it. {@link GateProblem} is the other shape — that one REPLACES the
+ * screen, where this sits inside a card the user can act on again.
+ */
+export function GateError({ children }: { children: React.ReactNode }) {
+  return <p className="m-0 text-[13px] text-err">{children}</p>;
+}
+
 export type GateProblemProps = {
   message: string;
   /** The server's own words, when it managed to say any. */

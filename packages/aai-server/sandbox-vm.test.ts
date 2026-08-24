@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { baseOpts, makeHarnessFile } from "./_sandbox-vm-test-utils.ts";
 import { emptyLogPage } from "./agent-logs.ts";
-import { DEFAULT_SANDBOX_IMAGE } from "./modal-context.ts";
+import { sandboxBaseTag } from "./modal-context.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import { guestUnderstandsBundleUrl, spawnAgentServer } from "./sandbox-vm.ts";
@@ -140,10 +140,7 @@ describe("guestUnderstandsBundleUrl", () => {
     // harness" — which is the question actually being asked.
     vi.stubEnv("SANDBOX_BACKEND", "modal");
     const harnessPath = await makeHarnessFile("// a specific harness");
-    const currentTag = localHarnessImageTag(
-      process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE,
-      "// a specific harness",
-    );
+    const currentTag = localHarnessImageTag(sandboxBaseTag(), "// a specific harness");
     expect(await guestUnderstandsBundleUrl(harnessPath, currentTag, {})).toBe(true);
     // Same backend, same harness, one character different in the tag — so the
     // `true` above is a real comparison rather than a short circuit that would

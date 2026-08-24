@@ -4,6 +4,18 @@
 
 import { defineExec, sharedArgs } from "./_cli-common.ts";
 
+/**
+ * The fast-forward override `push` and `publish` share — `publish` pushes
+ * first, so the two must always describe the same thing to the user.
+ * `pull`'s `--force` is a different act (overwriting local files) and keeps
+ * its own wording.
+ */
+const forceArg = {
+  type: "boolean",
+  alias: "f",
+  description: "Overwrite studio-side changes instead of failing the fast-forward check",
+} as const;
+
 export const list = defineExec({
   meta: { name: "list", description: "List your studio projects" },
   args: {
@@ -52,11 +64,7 @@ export const pull = defineExec({
 export const push = defineExec({
   meta: { name: "push", description: "Sync this project's source to its studio workspace" },
   args: {
-    force: {
-      type: "boolean",
-      alias: "f",
-      description: "Overwrite studio-side changes instead of failing the fast-forward check",
-    },
+    force: forceArg,
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
@@ -73,11 +81,7 @@ export const publish = defineExec({
     description: "Push to the studio and deploy to production (the studio's Publish button)",
   },
   args: {
-    force: {
-      type: "boolean",
-      alias: "f",
-      description: "Overwrite studio-side changes instead of failing the fast-forward check",
-    },
+    force: forceArg,
     server: sharedArgs.server,
     json: sharedArgs.json,
     skipTypecheck: { type: "boolean", description: "Skip type checking before publishing" },

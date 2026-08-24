@@ -29,6 +29,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { sole } from "./_gate-support.ts";
 
 /**
  * The scanner rules' PURE halves, imported as real values.
@@ -50,7 +51,7 @@ import { describe, expect, test } from "vitest";
  * below keep asserting it.
  */
 const { findUndeclaredGuestRoutes, importEscapesTemplate, resolveAgainstFile, fixtureDirs } =
-  Object.values(
+  sole(
     import.meta.glob<{
       findUndeclaredGuestRoutes: (
         literals: { file: string; line: number; literal: string }[],
@@ -60,7 +61,7 @@ const { findUndeclaredGuestRoutes, importEscapesTemplate, resolveAgainstFile, fi
       resolveAgainstFile: (readerFile: string, specifier: string) => string;
       fixtureDirs: () => string[];
     }>("../../scripts/guard-invariants-scanners.mjs", { eager: true }),
-  )[0] ?? {};
+  ) ?? {};
 
 /**
  * The SCANNER corpus that no floor and no sample protects.

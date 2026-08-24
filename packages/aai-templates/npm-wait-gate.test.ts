@@ -23,11 +23,12 @@
 
 import { fileURLToPath } from "node:url";
 import { describe, expect, test, vi } from "vitest";
+import { sole } from "./_gate-support.ts";
 
 type Spec = { name: string; version: string };
 type Pending = Spec & { detail: string };
 
-const wait = Object.values(
+const wait = sole(
   import.meta.glob<{
     publishedSpecs: (root: string) => Spec[];
     specsFrom: (root: string, dirs: string[]) => Spec[];
@@ -46,15 +47,15 @@ const wait = Object.values(
       log?: (line: string) => void;
     }) => Promise<{ ok: boolean; attempts: number; pending: Pending[] }>;
   }>("../../scripts/wait-for-npm-versions.mjs", { eager: true }),
-)[0];
+);
 
-const deployWorkflow = Object.values(
+const deployWorkflow = sole(
   import.meta.glob<string>("../../.github/workflows/deploy.yml", {
     query: "?raw",
     import: "default",
     eager: true,
   }),
-)[0];
+);
 
 /**
  * The ONE typed seam for a fake `fetch`, recording what it was asked for.

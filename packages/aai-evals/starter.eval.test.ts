@@ -73,11 +73,9 @@ async function studioReachable(origin: string): Promise<boolean> {
 const ORIGIN = evalOrigin();
 
 /** Every starter, with the project KIND that selects its coding-agent prompt. */
-function starters(): { label: string; prompt: string; kind: string }[] {
-  return Object.entries(STARTERS).flatMap(([kind, list]) =>
-    list.map((starter) => ({ ...starter, kind })),
-  );
-}
+const STARTER_CASES = Object.entries(STARTERS).flatMap(([kind, list]) =>
+  list.map((starter) => ({ ...starter, kind })),
+);
 
 /**
  * Grade one turn, recording every check.
@@ -150,7 +148,7 @@ const describeStarters = describeEvalWhen(
 
 describeStarters("starter eval — studio codegen", () => {
   registerEvalCases(
-    starters().map((starter) => ({
+    STARTER_CASES.map((starter) => ({
       name: starter.label,
       async body(t) {
         const client = createStudioClient(ORIGIN, evalApiKey());

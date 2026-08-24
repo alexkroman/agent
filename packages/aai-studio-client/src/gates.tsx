@@ -19,7 +19,7 @@ import { ApiKeyField } from "./api-key-field.tsx";
 import type { SignInCredentials } from "./auth.tsx";
 import type { SignInMethods } from "./auth-methods.ts";
 import { linkConfirmationCode } from "./cli-link.ts";
-import { GateCard } from "./gate-card.tsx";
+import { GateBlurb, GateCard, GateError, GateTitle } from "./gate-card.tsx";
 import { isEnterSubmit } from "./send-button.tsx";
 
 /**
@@ -91,10 +91,8 @@ export function SignInGate({
   const noMethod = mode === "supabase" && !methods.github && !methods.password;
   return (
     <GateCard>
-      <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-        Build your first voice agent
-      </h1>
-      <p className="m-0 text-[15px] leading-[21px] text-muted">{signInBlurb(mode, methods)}</p>
+      <GateTitle>Build your first voice agent</GateTitle>
+      <GateBlurb>{signInBlurb(mode, methods)}</GateBlurb>
 
       {methods.github && (
         <button
@@ -155,12 +153,12 @@ export function SignInGate({
         />
       )}
 
-      {error && <p className="m-0 text-[13px] text-err">{error}</p>}
+      {error && <GateError>{error}</GateError>}
       {noMethod && (
-        <p className="m-0 text-[13px] text-err">
+        <GateError>
           No sign-in method is enabled on this project's auth backend. Enable a provider (GitHub, or
           email) and try again.
-        </p>
+        </GateError>
       )}
 
       {mode === "dev" && (
@@ -219,10 +217,8 @@ export function KeyGate({
 }) {
   return (
     <GateCard>
-      <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-        Connect your AssemblyAI account
-      </h1>
-      <p className="m-0 text-[15px] leading-[21px] text-muted">
+      <GateTitle>Connect your AssemblyAI account</GateTitle>
+      <GateBlurb>
         {email ? `Signed in as ${email}. ` : ""}AssemblyAI Build runs every agent on your own
         AssemblyAI API key — get one from{" "}
         <a
@@ -234,7 +230,7 @@ export function KeyGate({
           your dashboard
         </a>
         . It's stored securely with your account; you only do this once.
-      </p>
+      </GateBlurb>
       <ApiKeyField
         bearer={bearer}
         submitLabel="Open AssemblyAI Build"
@@ -267,12 +263,10 @@ export function CliLinkGate({
   if (approve.isSuccess) {
     return (
       <GateCard>
-        <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-          Terminal linked
-        </h1>
-        <p className="m-0 text-[15px] leading-[21px] text-muted">
+        <GateTitle>Terminal linked</GateTitle>
+        <GateBlurb>
           You can return to the terminal — the CLI now uses this account's API key.
-        </p>
+        </GateBlurb>
         <button
           type="button"
           className="btn btn-primary h-10 self-start px-5"
@@ -287,21 +281,19 @@ export function CliLinkGate({
   const error = errorText(approve.error);
   return (
     <GateCard>
-      <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-        Link the AAI CLI to this account?
-      </h1>
-      <p className="m-0 text-[15px] leading-[21px] text-muted">
+      <GateTitle>Link the AAI CLI to this account?</GateTitle>
+      <GateBlurb>
         {email ? `Signed in as ${email}. ` : ""}A terminal running <code>aai login</code> opened
         this page and will receive this account's AssemblyAI API key.
-      </p>
+      </GateBlurb>
       <p className="m-0 rounded border border-line bg-cream px-4 py-2.5 text-center font-mono text-[18px] tracking-[0.15em]">
         {linkConfirmationCode(code)}
       </p>
-      <p className="m-0 text-[15px] leading-[21px] text-muted">
+      <GateBlurb>
         That terminal shows this same code. Only continue if it matches — if you didn't just run{" "}
         <code>aai login</code> yourself, close this page.
-      </p>
-      {error && <p className="m-0 text-[13px] text-err">{error}</p>}
+      </GateBlurb>
+      {error && <GateError>{error}</GateError>}
       <div className="flex gap-2.5">
         <button
           type="button"

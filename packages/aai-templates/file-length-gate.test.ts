@@ -22,13 +22,15 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { GATE_WIRING } from "./_gate-support.ts";
+import { byCodeUnit, GATE_WIRING, numericConstant, repoPathOf, sole } from "./_gate-support.ts";
 
-const script = import.meta.glob("../../scripts/check-file-length.mjs", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../scripts/check-file-length.mjs"];
+const script = sole(
+  import.meta.glob("../../scripts/check-file-length.mjs", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 /**
  * The same text, never absent.
@@ -40,27 +42,26 @@ const script = import.meta.glob("../../scripts/check-file-length.mjs", {
  */
 const source: string = script ?? "";
 
-const lefthook = import.meta.glob("../../lefthook.yml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-})["../../lefthook.yml"];
+const lefthook = sole(
+  import.meta.glob("../../lefthook.yml", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
 
 /**
  * Every file the gate's pathspecs could plausibly select, repo-relative.
  *
  * Only the KEYS are read, so these are lazy imports nothing ever calls —
  * `guard-invariants-gate.test.ts` builds its `repoFiles` the same way and for
- * the same reason.
+ * the same reason, `repoPathOf` included: the two key shapes here (a sibling
+ * package, the repo root) are two of the three it knows.
  */
 const corpus: string[] = [
-  ...Object.keys(import.meta.glob("../*/**/*.{ts,tsx}")).map((k) =>
-    k.replace(/^\.\.\//, "packages/"),
-  ),
-  ...Object.keys(import.meta.glob("../../scripts/**/*.{mjs,ts}")).map((k) =>
-    k.replace(/^\.\.\/\.\.\//, ""),
-  ),
-];
+  ...Object.keys(import.meta.glob("../*/**/*.{ts,tsx}")),
+  ...Object.keys(import.meta.glob("../../scripts/**/*.{mjs,ts}")),
+].map(repoPathOf);
 
 /**
  * Pathspecs that resolve to nothing today because the TREE has nothing to
@@ -89,20 +90,6 @@ const pathspecToRegExp = (spec: string): RegExp =>
       .replace(/[*?]/g, (c) => (c === "*" ? "[^]*" : "[^]"))}$`,
   );
 
-/**
- * Code-unit ordering, spelled out.
- *
- * A bare `.sort()` coerces and compares by UTF-16 code unit anyway, but saying
- * so is the repo's standing rule for anything a gate reads (see the API-surface
- * artifacts): an implicit comparator is one refactor away from `localeCompare`,
- * which answers to the runtime's ICU default and would make a gate report a
- * locale difference as a change.
- */
-const byCodeUnit = (a: string, b: string): number => {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-};
-
 /** The pathspecs `listAll()` really hands to `git ls-files`, parsed from source. */
 function listAllPathspecs(): string[] {
   const at = source.indexOf("const listAll = () =>");
@@ -125,11 +112,7 @@ function listAllPathspecs(): string[] {
 }
 
 /** Read a numeric constant out of the script rather than restating it here. */
-function constant(name: string): number {
-  const found = new RegExp(`const ${name} = ([\\d._]+)`).exec(source);
-  if (!found?.[1]) throw new Error(`check-file-length.mjs no longer declares ${name}`);
-  return Number(found[1].replaceAll("_", ""));
-}
+const constant = (name: string): number => numericConstant(source, name, "check-file-length.mjs");
 
 /** The body of the first `if (<cond>) {` block whose condition matches. */
 function block(opener: string): string {

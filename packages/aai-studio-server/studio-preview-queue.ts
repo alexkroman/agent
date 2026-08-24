@@ -195,10 +195,13 @@ export function createMemoryPreviewQueue(
     },
     claim(max) {
       const claimed: ClaimedPreviewJob[] = [];
+      // One clock reading for the whole claim, so every job in a batch gets
+      // the same visibility window (and a stubbed `now` is read once).
+      const at = now();
       for (const row of rows.values()) {
         if (claimed.length >= max) break;
-        if (row.visibleAt > now()) continue;
-        row.visibleAt = now() + PREVIEW_JOB_VISIBILITY_MS;
+        if (row.visibleAt > at) continue;
+        row.visibleAt = at + PREVIEW_JOB_VISIBILITY_MS;
         row.reads++;
         claimed.push({ id: row.id, job: row.job, attempts: row.reads });
       }

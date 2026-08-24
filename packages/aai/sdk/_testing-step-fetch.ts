@@ -11,6 +11,7 @@
  * @module _testing-step-fetch
  */
 
+import { collectBytes } from "./_bytes.ts";
 import { publishStepFetch, type StepFetchInit } from "./step-fetch.ts";
 
 /**
@@ -24,19 +25,7 @@ async function drainBody(
   body: Uint8Array | string | AsyncIterable<Uint8Array> | undefined,
 ): Promise<Uint8Array | string | undefined> {
   if (body === undefined || typeof body === "string" || body instanceof Uint8Array) return body;
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for await (const chunk of body) {
-    chunks.push(chunk);
-    size += chunk.length;
-  }
-  const out = new Uint8Array(size);
-  let at = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, at);
-    at += chunk.length;
-  }
-  return out;
+  return collectBytes(body);
 }
 
 /** One request a {@link stubStepFetch} recorder captured. */

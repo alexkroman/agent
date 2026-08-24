@@ -138,22 +138,35 @@ export async function walkWorkspaceFiles(
   return out.sort((a, b) => a.localeCompare(b));
 }
 
-/** One directory level of {@link walkWorkspaceFiles}, appending into `out`. */
+/**
+ * One directory level of {@link walkWorkspaceFiles}, appending into `out`.
+ *
+ * Sibling directories are descended CONCURRENTLY, for the same reason
+ * {@link snapshotWorkspaceFiles} reads its files that way: each `readdir` is
+ * independent I/O, and awaiting them one at a time made the walk's cost the SUM
+ * of every directory's latency down every branch. Interleaving cannot disturb
+ * the result — `walkWorkspaceFiles` sorts, so `out`'s order was never load
+ * bearing — and the fan-out is bounded in practice by
+ * {@link IGNORED_WORKSPACE_DIRS} keeping `node_modules` and friends out of the
+ * tree entirely.
+ */
 async function walkInto(
   root: string,
   current: string,
   skipFile: ((name: string) => boolean) | undefined,
   out: string[],
 ): Promise<void> {
+  const descend: Promise<void>[] = [];
   for (const entry of await readdir(current, { withFileTypes: true })) {
     if (entry.isSymbolicLink()) continue;
     const abs = path.join(current, entry.name);
     if (entry.isDirectory()) {
-      if (!IGNORED_WORKSPACE_DIRS.has(entry.name)) await walkInto(root, abs, skipFile, out);
+      if (!IGNORED_WORKSPACE_DIRS.has(entry.name)) descend.push(walkInto(root, abs, skipFile, out));
     } else if (entry.isFile() && !skipFile?.(entry.name)) {
       out.push(path.relative(root, abs));
     }
   }
+  await Promise.all(descend);
 }
 
 export type WorkspaceSnapshot = {

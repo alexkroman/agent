@@ -28,7 +28,7 @@
 
 import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { uploadingWorkflow } from "./docs-content.ts";
-import { Examples } from "./docs-examples.tsx";
+import { Examples, FollowUp } from "./docs-examples.tsx";
 import {
   curlUpload,
   curlUploadInfo,
@@ -66,11 +66,7 @@ export function UploadApi({
           label="upload a file"
           alternates={[{ language: "curl", code: curlUpload(base, token) }]}
         />
-        <div className="flex flex-col gap-2 border-t border-line pt-4">
-          <span className="text-[11px] text-muted">
-            Or start the run first, on an id you choose, and send the bytes into it — the run reads
-            what has arrived rather than waiting for the last byte.
-          </span>
+        <FollowUp note="Or start the run first, on an id you choose, and send the bytes into it — the run reads what has arrived rather than waiting for the last byte.">
           <Examples
             code={sdkUploadStream(base, example.workflow, token)}
             label="start a run, then stream the file into it"
@@ -78,18 +74,14 @@ export function UploadApi({
               { language: "curl", code: curlUploadStream(base, example.workflow, token) },
             ]}
           />
-        </div>
-        <div className="flex flex-col gap-2 border-t border-line pt-4">
-          <span className="text-[11px] text-muted">
-            How much of an upload has landed. The size it reports is the contiguous prefix a step
-            can read, not the count of bytes received — parts arrive out of order.
-          </span>
+        </FollowUp>
+        <FollowUp note="How much of an upload has landed. The size it reports is the contiguous prefix a step can read, not the count of bytes received — parts arrive out of order.">
           <Examples
             code={sdkUploadInfo(base, token)}
             label="read an upload's progress"
             alternates={[{ language: "curl", code: curlUploadInfo(base, token) }]}
           />
-        </div>
+        </FollowUp>
       </div>
     </Card>
   );

@@ -242,12 +242,19 @@ const secret = defineCommand({
   subCommands: { put: secretPut, delete: secretDelete, list: secretList },
 });
 
-/** A storage subcommand's optional [dir], resolved against the working directory. */
-function resolveStorageCwd(cwd: string, dir: string | undefined): string {
+/** An optional `[dir]` positional, resolved against the working directory. */
+function resolveDirArg(cwd: string, dir: string | undefined): string {
   return dir ? path.resolve(cwd, dir) : cwd;
 }
 
-const storageDir = {
+/**
+ * The optional `[dir]` positional the project-scoped subcommands share.
+ *
+ * Named for what it is rather than for `storage`, which was the only group
+ * that had one when it was written — `logs` takes the same positional and
+ * read as borrowing another command's arg.
+ */
+const dirArg = {
   type: "positional",
   description: "Project directory",
   required: false,
@@ -256,28 +263,28 @@ const storageDir = {
 const storageStatus = defineExec({
   meta: { name: "status", description: "Show whether storage is enabled" },
   args: {
-    dir: storageDir,
+    dir: dirArg,
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
   cwd: "any",
   async run({ args, cwd }) {
     const { executeStorageStatus } = await import("./storage.ts");
-    return executeStorageStatus(resolveStorageCwd(cwd, args.dir), args.server);
+    return executeStorageStatus(resolveDirArg(cwd, args.dir), args.server);
   },
 });
 
 const storageEnable = defineExec({
   meta: { name: "enable", description: "Enable the agent's app database" },
   args: {
-    dir: storageDir,
+    dir: dirArg,
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
   cwd: "any",
   async run({ args, cwd }) {
     const { executeStorageEnable } = await import("./storage.ts");
-    return executeStorageEnable(resolveStorageCwd(cwd, args.dir), args.server);
+    return executeStorageEnable(resolveDirArg(cwd, args.dir), args.server);
   },
 });
 
@@ -287,7 +294,7 @@ const storageDisable = defineExec({
     description: "Disable storage and DROP the database schema with all its data",
   },
   args: {
-    dir: storageDir,
+    dir: dirArg,
     force: { type: "boolean", alias: "f", description: "Skip confirmation prompt" },
     server: sharedArgs.server,
     json: sharedArgs.json,
@@ -295,7 +302,7 @@ const storageDisable = defineExec({
   cwd: "any",
   async run({ args, cwd }) {
     const { executeStorageDisable } = await import("./storage.ts");
-    return executeStorageDisable(resolveStorageCwd(cwd, args.dir), {
+    return executeStorageDisable(resolveDirArg(cwd, args.dir), {
       server: args.server,
       force: args.force,
     });
@@ -308,7 +315,7 @@ const logs = defineExec({
     description: "Show what the deployed agent has printed",
   },
   args: {
-    dir: storageDir,
+    dir: dirArg,
     follow: { type: "boolean", alias: "f", description: "Keep printing new output" },
     server: sharedArgs.server,
     json: sharedArgs.json,
@@ -316,7 +323,7 @@ const logs = defineExec({
   cwd: "any",
   async run({ args, cwd }) {
     const { executeLogs } = await import("./logs.ts");
-    return executeLogs(resolveStorageCwd(cwd, args.dir), {
+    return executeLogs(resolveDirArg(cwd, args.dir), {
       server: args.server,
       follow: args.follow,
     });

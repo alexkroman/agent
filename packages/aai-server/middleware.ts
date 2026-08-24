@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { omitUndefined } from "@alexkroman1/aai";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { parseBearer } from "./_bearer.ts";
@@ -171,7 +172,7 @@ export async function resolveBearer(
   if (!(env.auth && isJwtShaped(token))) {
     await assertVerifiedApiKey(token, env.keyVerifier);
     const userId = await lookupApiKeyOwner(env.secrets, token);
-    return { apiKey: token, ...(userId ? { userId } : {}) };
+    return { apiKey: token, ...omitUndefined({ userId }) };
   }
   const user = await env.auth.verifyAccessToken(token);
   if (!user) {

@@ -23,6 +23,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { LRUCache } from "lru-cache";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { createSingleFlight, type SingleFlight } from "./_memo.ts";
+import { mapConcurrent } from "./_pool.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AgentRecord, AgentRows } from "./agent-store.ts";
@@ -136,36 +137,20 @@ export function createBlobCache(
  * Run every write, at most {@link DEPLOY_BLOB_CONCURRENCY} at a time, and settle
  * once they all have.
  *
- * A worker pool rather than `_semaphore.ts`, and the reason is that primitive's
- * own contract: its wait is BOUNDED by design, so a lapsed acquire returns null
- * and the caller answers 503. That is right for a request path and wrong here —
- * there is nobody to answer, and a lapse would mean silently not writing a blob
- * the row is about to reference. (`acquire(Infinity)` is not the way out either:
- * Node clamps an out-of-range `setTimeout` delay to 1ms, so every queued write
- * would lapse immediately.) Workers draining a cursor have no deadline to get
- * wrong: the queue moves at the rate Storage accepts writes, which is the
- * behaviour wanted.
- *
- * Rejects with the FIRST failure, like the `Promise.all` it replaces — a deploy
- * that could not write a blob must not publish its row. What it does not do is
- * cancel the rest, and that is deliberate: every key here is a content hash and
- * every write is idempotent, so a blob that lands for a deploy that then failed
- * is an orphan — the same orphan a superseded deploy leaves, which
+ * The pool itself is `_pool.ts` — a worker pool rather than `_semaphore.ts`,
+ * for the reason its module doc gives. What is specific here is the WIDTH and
+ * what a failure means: the width was otherwise the caller's to choose (100
+ * client files are permitted, so this was up to 102 simultaneous PUTs at one
+ * Storage endpoint per deploy — see `DEPLOY_BLOB_CONCURRENCY`), and a deploy
+ * that could not write a blob must not publish its row, so the first failure
+ * rejects. The rest are not cancelled, deliberately: every key is a content
+ * hash and every write idempotent, so a blob that lands for a deploy that then
+ * failed is an orphan — the same orphan a superseded deploy leaves, which
  * `aai-sweep-blob-gc` already reclaims — while a half-written set the retry has
- * to redo from nothing is strictly worse. Every worker's promise is passed to
- * `Promise.all` up front, so a later failure is observed rather than unhandled.
+ * to redo from nothing is strictly worse.
  */
 async function writeAll(writes: (() => Promise<void>)[]): Promise<void> {
-  let next = 0;
-  const drain = async (): Promise<void> => {
-    // Read the entry and test IT rather than the index, so the cursor needs no
-    // cast under `noUncheckedIndexedAccess`.
-    for (let write = writes[next++]; write; write = writes[next++]) {
-      await write();
-    }
-  };
-  const workers = Math.min(DEPLOY_BLOB_CONCURRENCY, writes.length);
-  await Promise.all(Array.from({ length: workers }, drain));
+  await mapConcurrent(writes, DEPLOY_BLOB_CONCURRENCY, (write) => write());
 }
 
 export function createBundleStore(
