@@ -229,9 +229,14 @@ describe("studio session broker", () => {
     expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.files["agent.ts"]).toBe(
       "// agent-edited",
     );
-    // Traversal paths are refused exactly like a client file PUT.
+    // Traversal paths are refused exactly like a client file PUT, and the
+    // refusal names the offending path in ONE LINE. A `ZodError`'s own
+    // `message` is `JSON.stringify(issues, null, 2)`, so a prefix match here
+    // passed for as long as these three RPCs answered the guest with a
+    // multi-line array of `{ code, origin, path }` objects. Every rejection
+    // below pins the sentence for that reason.
     await expect(Promise.resolve(sync?.({ files: { "../evil.ts": "x" } }))).rejects.toThrow(
-      /Invalid workspace sync/,
+      "Invalid workspace sync: files.../evil.ts: Invalid key in record",
     );
     await broker.dispose();
   });
@@ -269,7 +274,7 @@ describe("studio session broker", () => {
     // A slug is not something the guest may pass — the schema drops it, and the
     // read still resolves the project's own preview agent.
     await expect(Promise.resolve(logs?.({ environment: "nowhere" }))).rejects.toThrow(
-      /Invalid log read/,
+      'Invalid log read: environment: Invalid option: expected one of "production"|"preview"',
     );
     await broker.dispose();
   });
@@ -348,6 +353,10 @@ describe("studio session broker", () => {
     const history = [{ id: "m1", role: "user", parts: [] }];
     await persist?.({ messages: history });
     expect(await chats.getChat(SCOPE, PROJECT)).toEqual(history);
+    // The sentence the issue carries, not the JSON blob (see sync-workspace).
+    await expect(Promise.resolve(persist?.({ messages: "all of them" }))).rejects.toThrow(
+      "Invalid chat snapshot: messages: Invalid input: expected array, received string",
+    );
     await broker.dispose();
   });
 
@@ -403,8 +412,13 @@ describe("studio session broker", () => {
     const outcome = await broker.deployWorkspace(SCOPE, PROJECT, { "agent.ts": "x" }, TARGET);
     expect(outcome).toMatchObject({
       ok: false,
-      output: expect.stringContaining("Malformed deploy response"),
+      output:
+        "Malformed deploy response from sandbox: ok: Invalid input: expected boolean, received string; output: Invalid input: expected string, received undefined",
     });
+    // Not the JSON blob (see sync-workspace) — the Publish menu renders this
+    // string to the user verbatim.
+    expect(outcome.output).not.toContain("\n");
+    expect(outcome.output).not.toContain('"code"');
   });
 
   /**

@@ -15,7 +15,7 @@
  * is not a limitation — it is why adoption needs no ownership transfer.
  */
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { ChatStore } from "aai-server/chat-store";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import type { WarmHarness } from "aai-server/sandbox-vm";
@@ -112,7 +112,7 @@ export function wireGuest(
     deps.touch();
     const parsed = GuestFilesSchema.safeParse(params);
     // Throwing rejects the RPC — the guest logs it; the turn still streams.
-    if (!parsed.success) throw new Error(`Invalid workspace sync: ${parsed.error.message}`);
+    if (!parsed.success) throw new Error(`Invalid workspace sync: ${errorMessage(parsed.error)}`);
     const doc = await mutateWorkspace(deps.workspaces, scope, project, (workspace) => ({
       ...workspace,
       files: parsed.data.files,
@@ -135,7 +135,7 @@ export function wireGuest(
   warm.conn.onRequest("studio/agent-logs", async (params) => {
     deps.touch();
     const parsed = GuestLogsSchema.safeParse(params);
-    if (!parsed.success) throw new Error(`Invalid log read: ${parsed.error.message}`);
+    if (!parsed.success) throw new Error(`Invalid log read: ${errorMessage(parsed.error)}`);
     const target = deps.previewTarget();
     if (!target) throw new Error("This session cannot read the project's agent logs");
     return await readProjectLogs(
@@ -149,7 +149,7 @@ export function wireGuest(
   warm.conn.onRequest("studio/persist-chat", async (params) => {
     deps.touch();
     const parsed = GuestChatSchema.safeParse(params);
-    if (!parsed.success) throw new Error(`Invalid chat snapshot: ${parsed.error.message}`);
+    if (!parsed.success) throw new Error(`Invalid chat snapshot: ${errorMessage(parsed.error)}`);
     await deps.chats.putChat(scope, project, parsed.data.messages);
     return { ok: true };
   });
