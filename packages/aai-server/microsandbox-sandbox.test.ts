@@ -202,8 +202,11 @@ describe("spawnMicrosandboxWarm", () => {
     expect(fake.execs[0]).toEqual(["node", "/opt/aai/harness.mjs"]);
     expect(dialed[0]?.url).toContain(GUEST_ROUTES.control);
     expect(dialed[0]?.token).toBe(warm.token);
-    // A studio guest carries no tenant DSNs, so it opens no host port at all.
-    expect(created?.hostPorts).toEqual([]);
+    // A studio guest carries no tenant DSNs — but it DOES deploy, and the
+    // in-guest `aai deploy` POSTs back to this platform. Without the port open
+    // that is a 404 the guest returns to itself, which is what the retired
+    // local-container backend was retired over.
+    expect(created?.hostPorts).toEqual([8080]);
     await warm.cleanup();
   });
 

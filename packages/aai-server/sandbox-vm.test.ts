@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { baseOpts } from "./_sandbox-vm-test-utils.ts";
 import { emptyLogPage } from "./agent-logs.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
-import { spawnAgentServer } from "./sandbox-vm.ts";
+import { guestReachableUrl, spawnAgentServer } from "./sandbox-vm.ts";
 import * as subprocessSandbox from "./subprocess-sandbox.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
@@ -94,5 +94,39 @@ describe("spawnAgentServer", () => {
       agentEnv: opts.env,
       onSpawned,
     });
+  });
+});
+
+/**
+ * The ONE seam for a URL crossing into a guest.
+ *
+ * The rule had been applied ad hoc three times before this existed — the
+ * agent's env, the worker bundle's signed URL, and the platform origin an
+ * in-guest `aai deploy` is given. The third was a 404 the guest returned to
+ * itself, which is what the retired local-container backend was retired over.
+ */
+describe("guestReachableUrl", () => {
+  it("rewrites a loopback origin for a microVM guest", () => {
+    // A VM's 127.0.0.1 is the VM: unrewritten, `POST /deploy` reaches the
+    // guest's own harness, which serves no such route.
+    expect(guestReachableUrl("http://localhost:8080", { SANDBOX_BACKEND: "microsandbox" })).toBe(
+      "http://host.microsandbox.internal:8080",
+    );
+    expect(guestReachableUrl("http://127.0.0.1:8080", { SANDBOX_BACKEND: "microsandbox" })).toBe(
+      "http://host.microsandbox.internal:8080",
+    );
+  });
+
+  it.each(["modal", "subprocess"] as const)("is identity on %s", (backend) => {
+    // Modal reaches the platform's public origin over the internet; a
+    // subprocess guest shares the host's network stack. Rewriting either would
+    // point them at a host alias that does not exist.
+    const url = "http://localhost:8080";
+    expect(guestReachableUrl(url, { SANDBOX_BACKEND: backend })).toBe(url);
+  });
+
+  it("leaves a real public origin alone under every backend", () => {
+    const url = "https://platform.example.com";
+    expect(guestReachableUrl(url, { SANDBOX_BACKEND: "microsandbox" })).toBe(url);
   });
 });

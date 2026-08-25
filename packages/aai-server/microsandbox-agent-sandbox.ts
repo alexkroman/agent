@@ -27,6 +27,7 @@ import {
   DEFAULT_GUEST_CPUS,
   DEFAULT_GUEST_MEMORY_MIB,
   defaultMicrosandboxContext,
+  guestBuildEnv,
   type MicrosandboxSpawnContext,
   microsandboxImageRef,
 } from "./microsandbox-sandbox.ts";
@@ -98,6 +99,7 @@ export async function spawnMicrosandboxAgentServer(
       hostPort,
       env: {
         ...guestExecBaseEnv(),
+        ...guestBuildEnv(),
         ...agentBootEnv({
           slug: opts.slug,
           token,

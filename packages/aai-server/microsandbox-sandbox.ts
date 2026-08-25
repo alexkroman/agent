@@ -55,6 +55,7 @@ import { access } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import type { NetworkPolicyBuilder } from "microsandbox";
+import { DEFAULT_PORT } from "./constants.ts";
 import { guestImageRef, guestImageRegistry } from "./guest-image-source.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { guestTokenFor } from "./guest-token.ts";
@@ -128,6 +129,62 @@ export const LOCAL_GUEST_IMAGE_TAG = "aai-guest-harness:local";
  */
 export const DEFAULT_GUEST_MEMORY_MIB = 4096;
 export const DEFAULT_GUEST_CPUS = 4;
+
+/**
+ * Rolldown's thread pool, pinned to one.
+ *
+ * The in-guest build's peak is NATIVE memory, not V8's — which is why
+ * `--max-old-space-size` cannot bound it (`aai-server/CLAUDE.md`) — and each
+ * Rolldown worker carries its own arena. The names come out of the binding
+ * itself (`strings` on `rolldown-binding.*.node`): `ROLLDOWN_WORKER_THREADS`
+ * and `ROLLDOWN_MAX_BLOCKING_THREADS` are Rolldown's own, `RAYON_NUM_THREADS`
+ * the rayon pool underneath. Nothing in our bundler wrappers exposes a thread
+ * count, so the env is the seam.
+ *
+ * `studio-build.ts` already serializes the two Rolldown passes for exactly this
+ * reason ("two concurrent Rolldown passes peak at roughly the SUM of their
+ * native allocations"); this is the same argument one level down, inside a
+ * single pass.
+ *
+ * MICROSANDBOX ONLY, deliberately. A Modal guest reserves one core but may
+ * burst to four (`modal_deploy.py`), so pinning there would trade production
+ * build latency for memory it is allowed to use. A dev guest is trading the
+ * other way: the memory it saves is what lets the VM be sized smaller.
+ */
+const GUEST_BUILD_ENV: Record<string, string> = {
+  ROLLDOWN_WORKER_THREADS: "1",
+  ROLLDOWN_MAX_BLOCKING_THREADS: "1",
+  RAYON_NUM_THREADS: "1",
+};
+
+/** The build-thread pins, for the agent spawner in its own module. */
+export function guestBuildEnv(): Record<string, string> {
+  return { ...GUEST_BUILD_ENV };
+}
+
+/**
+ * The host port the PLATFORM itself listens on.
+ *
+ * A studio guest has to reach it: the in-guest `aai deploy` that Publish and the
+ * auto-preview deployer run is handed the platform's own origin, and a deploy is
+ * a `POST /deploy` back to this server. Under `subprocess` that came free — the
+ * guest shared the host's stack — and in a VM `localhost:8080` is the guest's
+ * OWN harness, which serves no `/deploy`. The symptom is a 404 the guest returns
+ * to itself:
+ *
+ *     guest stderr: POST /deploy 404
+ *     Studio preview deploy failed { output: 'deploy failed (HTTP 404): Not found' }
+ *
+ * Which is exactly what the retired local-container backend was retired over —
+ * "a loopback platform origin resolves to the guest's own harness rather than
+ * the dev server, so Publish 404s against itself". Opening the port is half the
+ * answer; the other half is rewriting the origin the guest is TOLD to use, which
+ * is `guestReachableUrl` in sandbox-vm.ts.
+ */
+function platformHostPort(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.PORT);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_PORT;
+}
 
 // ── Structural sandbox types (injectable — unit tests boot no microVM) ───────
 
@@ -373,8 +430,15 @@ export async function spawnMicrosandboxWarm(
       hostPort,
       // A studio guest carries no tenant DSNs, so there is nothing to rewrite
       // and no host port to open.
-      env: { ...guestExecBaseEnv(), AAI_GUEST_TOKEN: token, AAI_GUEST_PORT: String(GUEST_PORT) },
-      hostPorts: [],
+      env: {
+        ...guestExecBaseEnv(),
+        ...GUEST_BUILD_ENV,
+        AAI_GUEST_TOKEN: token,
+        AAI_GUEST_PORT: String(GUEST_PORT),
+      },
+      // A studio guest carries no tenant DSNs — but it DOES deploy, and a
+      // deploy is a POST back to this platform. See platformHostPort.
+      hostPorts: [platformHostPort()],
       memoryLimitMiB: limits.memoryLimitMiB ?? DEFAULT_GUEST_MEMORY_MIB,
       cpus: limits.cpuLimit ?? DEFAULT_GUEST_CPUS,
       labels: { role, slug },
