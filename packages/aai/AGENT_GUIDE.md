@@ -986,29 +986,29 @@ export const lookup = tool({
 });
 ```
 
-**The project's tsconfig turns off `noImplicitAny`, so write the code first.**
-Do NOT add type annotations defensively — almost nothing requires them, and time
-spent on them is time not spent on the agent.
+**Write the code first; let inference do the work.** The project runs `strict`,
+so a variable declared empty and filled in the same scope widens from what you
+put in it — `const items = []` followed by `items.push(pick)` infers `Pick[]`
+with no annotation. Do NOT add type annotations defensively.
 
-**The one exception, and it is not optional: annotate any variable you
-declare empty.** With `noImplicitAny` off, TypeScript does not widen an empty
-initializer from what you later assign, so `[]` stays `never[]` and `null`
-stays `null` — forever, whether or not a callback is involved:
+**Annotate the DECLARATION when the first write is somewhere the compiler
+cannot follow** — inside a callback, or after the value has already been read.
+The widening only tracks straight-line code in one scope, so in those cases the
+declaration keeps its starting type:
 
 ```ts no-check
-const items = [];            // never[]  → items.push(x) is an error
-let best = null;             // null     → best = {...} is an error
-const [picks, set] = useState([]);  // never[] in a client, same thing
+const items = [];                      // stays never[] if the only push is in a callback
+let best = null;                       // stays null if the only assignment is in a callback
+const [picks, set] = useState([]);     // never[] — useState's argument is read immediately
 
-const items: Pick[] = [];    // ✅ annotate the DECLARATION
-let best: Pick | null = null;       // ✅
+const items: Pick[] = [];              // ✅ annotate the DECLARATION
+let best: Pick | null = null;          // ✅
 const [picks, set] = useState<Pick[]>([]);  // ✅
 ```
 
 Annotating the *use* instead does not help — the declaration is still wrong,
 so the next push reports the next line, and you can burn a whole session
-fixing one call site at a time. This is the single most common way a
-generated agent fails to build.
+fixing one call site at a time.
 
 ### Session state
 

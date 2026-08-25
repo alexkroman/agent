@@ -4,17 +4,18 @@
  * actually gets from `aai init` — rather than the repo's.
  *
  * The two are not the same compiler, and the difference hides real bugs. The
- * repo builds templates under its own strict config; a scaffolded project
- * runs with `noImplicitAny: false` and `useUnknownInCatchVariables: false`.
- * Turning `noImplicitAny` off disables TypeScript's evolving-array inference,
- * so `const xs = []` is `never[]` from the declaration rather than widening
- * from later pushes — which means code the repo type-checks cleanly can fail
- * for every user who scaffolds it.
+ * repo builds templates under its own strict config; a scaffolded project runs
+ * with `useUnknownInCatchVariables: false` and a different `types`/`lib` set,
+ * so code the repo type-checks cleanly can still fail for every user who
+ * scaffolds it.
  *
- * That is not hypothetical: this check found exactly that in the shipped
- * `solo-rpg` client, twice (`const pips = []` / `const segments = []`, both
- * pushed JSX). `pnpm typecheck` was green the whole time, because the repo's
- * config makes those legal.
+ * That is not hypothetical: this check found two `never[]` pushes in the
+ * shipped `solo-rpg` client while `pnpm typecheck` stayed green. Those came
+ * from the scaffold ALSO setting `noImplicitAny: false`, which disables
+ * evolving-array inference — a setting since reversed (see
+ * `studio-project-shape.ts`), and the gap it opened is the reason this gate
+ * exists rather than a reason it can now be retired: the two configs still
+ * differ, and the next divergence will not announce itself either.
  *
  * The config is DERIVED from `scaffold/tsconfig.json` at run time rather than
  * copied, so the check cannot drift from what it claims to verify — the whole

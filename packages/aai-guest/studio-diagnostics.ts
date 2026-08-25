@@ -37,30 +37,30 @@ const HINTS: Record<string, string> = {
   // The empty-initializer family.
   //
   // Get the RULE right here, because the first version of these hints did not
-  // and it cost more than saying nothing. It blamed a function boundary — true
-  // under `noImplicitAny`, where TypeScript widens `let x = null` and
-  // `const xs = []` from later assignments along straight-line code only. This
-  // project turns `noImplicitAny` OFF (see WORKSPACE_TSCONFIG), and that
-  // *disables the widening entirely*: `[]` is `never[]` and `null` is `null`
-  // from the declaration on, callback or not.
+  // and it cost more than saying nothing. It blamed a function boundary, then a
+  // configuration; both were wrong at some point and a hint whose explanation
+  // does not match the compiler is worse than none — it is a confident wrong
+  // lead. One starter chased use sites one at a time for sixteen type checks
+  // and never built.
   //
-  // So an agent read "this is inside a callback", looked, found no callback,
-  // and concluded the hint did not apply — then chased use sites one at a
-  // time. One starter spent sixteen type checks that way and never built. A
-  // hint whose explanation does not match the compiler's actual configuration
-  // is worse than none: it is a confident wrong lead.
+  // The project runs `noImplicitAny` ON (see WORKSPACE_TSCONFIG), so TypeScript
+  // DOES widen `const xs = []` and `let x = null` from later assignments — but
+  // only along straight-line code in the same scope. An assignment that happens
+  // inside a callback, or after the value has already been read, does not
+  // participate, and the declaration keeps its `never[]` / `null` type. That is
+  // the case these two hints are for.
   TS2322:
     "If the target type is `null`, the variable was declared `let x = null` " +
-    "with no annotation, which makes its type exactly `null` — assigning " +
-    "anything else is this error. Annotate the DECLARATION: " +
-    "`let best: Match | null = null`.",
+    "and first assigned somewhere the widening cannot see — inside a callback, " +
+    "or after it was already read — so its type stayed exactly `null`. " +
+    "Annotate the DECLARATION: `let best: Match | null = null`.",
   TS2345:
-    "If the parameter type is `never`, an array was declared empty with no " +
-    "annotation, which makes it `never[]` — nothing can be pushed into it. " +
-    "Annotate the DECLARATION, not the call — `const items: string[] = []`, " +
-    "or a type argument on the useState call in a client. Fixing the push " +
-    "site instead leaves the declaration wrong, and the next build reports " +
-    "the next push.",
+    "If the parameter type is `never`, an array was declared empty and first " +
+    "pushed somewhere the widening cannot see — inside a callback, or after it " +
+    "was already read — so it stayed `never[]`. Annotate the DECLARATION, not " +
+    "the call — `const items: string[] = []`, or a type argument on the " +
+    "useState call in a client. Fixing the push site instead leaves the " +
+    "declaration wrong, and the next build reports the next push.",
   TS2740:
     "A function annotated with a success shape is also returning an error " +
     "object. Widen the return type to a union (`Promise<Info | { error: string }>`) " +
