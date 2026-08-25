@@ -13,10 +13,29 @@
  *
  * - A NEW public export that no template exercises fails the suite. Either
  *   add/extend a template that uses it, or consciously record it in the
- *   allowlist (with review — an export nothing exercises is either missing
- *   its example or shouldn't be public).
+ *   allowlist, with review.
  * - A stale allowlist entry (the export gained template coverage, was
  *   renamed, or was removed) also fails, so the baseline ratchets down.
+ *
+ * **An entry here is not an accusation, and this doc used to say it was** —
+ * "an export nothing exercises is either missing its example or shouldn't be
+ * public". That framing was audited against the whole `@alexkroman1/aai` root
+ * barrel and did not survive. Of its sixty unexercised names, twenty-six are
+ * deliberate re-exports of a narrower subpath, each with a written argument in
+ * `index.ts` for why the root carries it too (four import lines to annotate a
+ * stage; a preset whose absence made the wrong mode the easy one; types that
+ * were FORGOTTEN exports an author could not name); thirty-two more are
+ * annotation-only types that templates get by inference and never spell; and
+ * the last two are documented values. Nothing on that barrel should come out,
+ * and the audit's product was that sentence rather than a deletion.
+ *
+ * So there is a third case the dichotomy had no room for: an export whose
+ * reader ANNOTATES with it rather than calling it. That is why the entries are
+ * a plain list and carry no verdict — the file records what is unexercised,
+ * and what to do about any given name is a judgement made against the code.
+ * The audit did find real removals, but in `@alexkroman1/aai-ui`: four tuning
+ * constants referenced by no public signature and named by no file outside
+ * that package, which moved to its `/internal` subpath and cost two epochs.
  *
  * Knip can't express this check: it counts *any* usage — and nearly every
  * SDK export is used internally by the host/server packages — whereas this

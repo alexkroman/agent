@@ -8595,12 +8595,6 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore;
 export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
 
 // @public
-export const DEFAULT_PROGRESS_POLL_MS = 1000;
-
-// @public
-export const DEFAULT_WORKFLOW_POLL_MS = 2000;
-
-// @public
 export function fetchClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
 
 // @public
@@ -8665,9 +8659,6 @@ export type MarkdownProps = {
 
 // @public
 export type MarkdownVariant = "default" | "compact";
-
-// @public
-export const MAX_MISSING_READS = 3;
 
 // @public
 export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps>>;
@@ -8818,9 +8809,6 @@ export type ToolDisplayConfig = Record<string, {
     icon?: string;
     label?: string;
 }>;
-
-// @public
-export const TRANSCRIBING_PLACEHOLDER = "\u2026";
 
 // @public
 export function UploadProgressBar(input: {
@@ -9101,8 +9089,17 @@ type ClientTheme = {
     border?: string;
 };
 
+// @public
+export const DEFAULT_PROGRESS_POLL_MS = 1000;
+
+// @public
+export const DEFAULT_WORKFLOW_POLL_MS = 2000;
+
 // @internal
 export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
+
+// @public
+export const MAX_MISSING_READS = 3;
 
 // @public
 type SessionCore = {
@@ -9180,6 +9177,9 @@ type ToolDisplayConfig = Record<string, {
     icon?: string;
     label?: string;
 }>;
+
+// @internal
+export const TRANSCRIBING_PLACEHOLDER = "\u2026";
 
 // @internal
 export function UiUrlChip(input: {
