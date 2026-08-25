@@ -15,7 +15,6 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createFakeGuestSocket } from "./_sandbox-vm-test-utils.ts";
 import { GUEST_ROUTES } from "./guest-routes.ts";
-import { HOST_ALIAS } from "./microsandbox-network.ts";
 import {
   _internals,
   LOCAL_GUEST_IMAGE_TAG,
@@ -24,10 +23,8 @@ import {
   type MicrosandboxSpawnContext,
   microsandboxHarnessImageTag,
   microsandboxImageRef,
-  spawnMicrosandboxAgentServer,
   spawnMicrosandboxWarm,
 } from "./microsandbox-sandbox.ts";
-import type { GuestFetch } from "./warm-harness.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -210,6 +207,44 @@ describe("spawnMicrosandboxWarm", () => {
     await warm.cleanup();
   });
 
+  it("sizes the VM for the BUILD shape when the env declares no limits", async () => {
+    // microsandbox's own defaults are 480 MiB and one core (measured in a
+    // booted guest). A workspace build there does not fail, it WEDGES — RSS
+    // pinned, no progress — and reads as a hung build. `subprocess` cannot see
+    // this: there the limit is V8's --max-old-space-size on a process with the
+    // whole machine behind it, so leaving it unset costs nothing.
+    const fake = makeCtx();
+    vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", undefined);
+    vi.stubEnv("SANDBOX_CPU_LIMIT", undefined);
+
+    const warm = await spawnMicrosandboxWarm(
+      { harnessPath: await makeHarnessFile(), name: "warm-res" },
+      fake.ctx,
+      async () => createFakeGuestSocket().ws,
+    );
+
+    // Modal reserves 1 core / 1024 MiB and caps at 4 / 4096 for builds; a VM
+    // has no burst, so the cap is the number to take.
+    expect(fake.created[0]?.memoryLimitMiB).toBe(4096);
+    expect(fake.created[0]?.cpus).toBe(4);
+    await warm.cleanup();
+  });
+
+  it("lets a declared limit win over the default", async () => {
+    const fake = makeCtx();
+    vi.stubEnv("SANDBOX_MEMORY_MB", "512");
+    vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "2048");
+
+    const warm = await spawnMicrosandboxWarm(
+      { harnessPath: await makeHarnessFile(), name: "warm-res-env" },
+      fake.ctx,
+      async () => createFakeGuestSocket().ws,
+    );
+
+    expect(fake.created[0]?.memoryLimitMiB).toBe(2048);
+    await warm.cleanup();
+  });
+
   it("hands the guest a MINIMAL env — never the server's own", async () => {
     const fake = makeCtx();
     const socket = createFakeGuestSocket();
@@ -259,118 +294,5 @@ describe("spawnMicrosandboxWarm", () => {
     ).rejects.toThrow(/Microsandbox spawn failed/);
     // Nothing was created, so there is nothing to stop.
     expect(fake.created).toHaveLength(0);
-  });
-});
-
-// ── Agent-server spawning ────────────────────────────────────────────────────
-
-describe("spawnMicrosandboxAgentServer", () => {
-  // `vi.fn<T>` rather than a widen-and-renarrow cast: the generic IS the
-  // affordance for typing a stub as the thing it stands in for.
-  const okFetch = (): GuestFetch =>
-    vi.fn<GuestFetch>(async () => new Response("ok", { status: 200 }));
-
-  it("rewrites the agent's loopback env and opens exactly those host ports", async () => {
-    const fake = makeCtx();
-    const handle = await spawnMicrosandboxAgentServer(
-      {
-        harnessPath: await makeHarnessFile(),
-        slug: "demo",
-        name: "agent-demo-v1",
-        worker: { kind: "inline", code: "// worker", sha256: "abc" },
-        agentEnv: {
-          DATABASE_URL: "postgresql://app@127.0.0.1:54322/app",
-          STORAGE_URL: "http://localhost:54321/storage",
-          ASSEMBLYAI_API_KEY: "sk-test",
-        },
-      },
-      fake.ctx,
-      okFetch(),
-    );
-
-    // The env the guest READS is a boot file, so that is where the rewrite has
-    // to land — this is the difference between ctx.db working and pointing at
-    // the VM's own loopback.
-    const envWrite = fake.writes.find((w) => w.path.endsWith("env.json"));
-    const written = JSON.parse(envWrite?.data ?? "{}") as Record<string, string>;
-    expect(written.DATABASE_URL).toBe(`postgresql://app@${HOST_ALIAS}:54322/app`);
-    expect(written.STORAGE_URL).toBe(`http://${HOST_ALIAS}:54321/storage`);
-    expect(written.ASSEMBLYAI_API_KEY).toBe("sk-test");
-    // Derived from the rewrite, not from a maintained list — and nothing else.
-    expect(fake.created[0]?.hostPorts).toEqual([54_321, 54_322]);
-    await handle.shutdown();
-  });
-
-  it("rewrites a LOOPBACK bundle URL, and opens its port too", async () => {
-    // The bug this exists for: the bundle URL rides the boot env as
-    // `AAI_BUNDLE_URL`, not in `agentEnv`, so rewriting only the agent env left
-    // the guest fetching its OWN loopback — `agent-mode boot failed: bundle
-    // fetch failed`. A dev platform database signs exactly such a URL.
-    const fake = makeCtx();
-    const handle = await spawnMicrosandboxAgentServer(
-      {
-        harnessPath: await makeHarnessFile(),
-        slug: "demo",
-        name: "agent-demo-v4",
-        worker: {
-          kind: "url",
-          url: "http://127.0.0.1:54321/storage/v1/object/sign/blobs/abc",
-          sha256: "abc",
-        },
-        agentEnv: { DATABASE_URL: "postgresql://app@127.0.0.1:54322/app" },
-      },
-      fake.ctx,
-      okFetch(),
-    );
-
-    const env = fake.created[0]?.env ?? {};
-    expect(env.AAI_BUNDLE_URL).toBe(`http://${HOST_ALIAS}:54321/storage/v1/object/sign/blobs/abc`);
-    // One port set, from every value rewritten — the URL's AND the env's.
-    expect(fake.created[0]?.hostPorts).toEqual([54_321, 54_322]);
-    await handle.shutdown();
-  });
-
-  it("writes the bundle before the exec, and only when it holds the bytes", async () => {
-    const fake = makeCtx();
-    const handle = await spawnMicrosandboxAgentServer(
-      {
-        harnessPath: await makeHarnessFile(),
-        slug: "demo",
-        name: "agent-demo-v2",
-        worker: { kind: "url", url: "https://blobs/worker.mjs", sha256: "abc" },
-        agentEnv: {},
-      },
-      fake.ctx,
-      okFetch(),
-    );
-    // A URL worker is fetched BY the guest; writing it would move the bytes
-    // through this process for nothing.
-    expect(fake.writes.map((w) => w.path)).toEqual([expect.stringContaining("env.json")]);
-    expect(fake.execs).toHaveLength(1);
-    await handle.shutdown();
-  });
-
-  it("publishes a kill BEFORE readiness, so a booting guest is killable", async () => {
-    const fake = makeCtx();
-    let published: (() => Promise<void>) | undefined;
-    const handle = await spawnMicrosandboxAgentServer(
-      {
-        harnessPath: await makeHarnessFile(),
-        slug: "demo",
-        name: "agent-demo-v3",
-        worker: { kind: "inline", code: "// w", sha256: "abc" },
-        agentEnv: {},
-        onSpawned: (terminate) => {
-          published = terminate;
-        },
-      },
-      fake.ctx,
-      okFetch(),
-    );
-    // A teardown must not depend on the boot it is tearing down.
-    expect(published).toBeTypeOf("function");
-    await published?.();
-    expect(fake.stops).toBe(1);
-    await handle.shutdown();
   });
 });

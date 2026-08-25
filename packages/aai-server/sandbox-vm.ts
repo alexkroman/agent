@@ -17,11 +17,8 @@
 
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
-import {
-  microsandboxHarnessImageTag,
-  spawnMicrosandboxAgentServer,
-  spawnMicrosandboxWarm,
-} from "./microsandbox-sandbox.ts";
+import { spawnMicrosandboxAgentServer } from "./microsandbox-agent-sandbox.ts";
+import { microsandboxHarnessImageTag, spawnMicrosandboxWarm } from "./microsandbox-sandbox.ts";
 import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
 import { sandboxBaseTag } from "./modal-context.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
