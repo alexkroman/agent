@@ -531,26 +531,37 @@ describe("starting the sweep from a composition", () => {
     expect(logs.infos()).toEqual([]);
   });
 
-  test("adminDb without appDb is an ERROR naming appDb — the bug this had", () => {
+  test("adminDb without appDb WARNS, naming appDb — the bug this had", () => {
     // The exact shape `orchestrator.ts` shipped. It must not be reportable as
-    // "no platform database": there IS one, the sweep just cannot read a hint
-    // out of it, and no operator setting produces this.
+    // "no platform database": there IS one, and the sweep simply cannot read a
+    // hint out of it.
     startWorkflowWakeSweep({ ...base, adminDb: fakeAdminDb({ hints: {} }) });
 
-    expect(logs.errors()).toHaveLength(1);
-    expect(logs.errors()[0]).toContain("no appDb");
-    expect(logs.errors()[0]).not.toContain("no platform database");
+    expect(logs.warns()).toHaveLength(1);
+    expect(logs.warns()[0]).toContain("no appDb");
+    expect(logs.warns()[0]).not.toContain("no platform database");
     expect(logs.infos()).toEqual([]);
   });
 
-  test("appDb without adminDb is the same error, naming adminDb", () => {
+  test("appDb without adminDb is the same warning, naming adminDb", () => {
     startWorkflowWakeSweep({ ...base, appDb: fakeAppDatabases() });
 
-    expect(logs.errors()).toHaveLength(1);
-    expect(logs.errors()[0]).toContain("no adminDb");
+    expect(logs.warns()).toHaveLength(1);
+    expect(logs.warns()[0]).toContain("no adminDb");
   });
 
-  test("the interval-0 kill switch is INFO, not an error", () => {
+  test("a half-wired composition is never an ERROR", () => {
+    // `error` is what this used to be, and it mislabelled the one shape that is
+    // actually reachable: a narrow spec composition passing `appDb` alone. In
+    // production both bindings arrive together in one `...base` spread, so
+    // neither direction occurs there — see the branch's own comment.
+    startWorkflowWakeSweep({ ...base, appDb: fakeAppDatabases() });
+    startWorkflowWakeSweep({ ...base, adminDb: fakeAdminDb({ hints: {} }) });
+
+    expect(logs.errors()).toEqual([]);
+  });
+
+  test("the interval-0 kill switch is INFO, not a warning", () => {
     startWorkflowWakeSweep({
       ...base,
       adminDb: fakeAdminDb({ hints: {} }),
@@ -558,7 +569,7 @@ describe("starting the sweep from a composition", () => {
       intervalMs: 0,
     });
 
-    expect(logs.errors()).toEqual([]);
+    expect(logs.warns()).toEqual([]);
     expect(logs.infos()).toEqual(["workflow.wake Workflow wake sweep not started: interval is 0"]);
   });
 });
@@ -586,9 +597,9 @@ describe("the orchestrator's wiring", () => {
       appDb: fakeAppDatabases(),
     });
 
-    // The error branch is the miswiring the composition shipped; the info line
+    // The warning branch is the miswiring the composition shipped; the info line
     // is the only positive evidence that the sweep is on.
-    expect(logs.errors().filter((m) => m.includes("wake"))).toEqual([]);
+    expect(logs.warns().filter((m) => m.includes("wake"))).toEqual([]);
     expect(logs.infos()).toContain(
       `workflow.wake sweeping for due durable runs every ${WORKFLOW_WAKE_INTERVAL_MS}ms`,
     );
@@ -597,7 +608,7 @@ describe("the orchestrator's wiring", () => {
   test("a composition with no platform database starts nothing, quietly", async () => {
     await createTestOrchestrator();
 
-    expect(logs.errors()).toEqual([]);
+    expect(logs.warns().filter((m) => m.includes("wake"))).toEqual([]);
     expect(logs.infos().filter((m) => m.includes("durable runs"))).toEqual([]);
   });
 });

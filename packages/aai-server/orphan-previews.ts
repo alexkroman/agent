@@ -51,6 +51,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { createIntervalSweep } from "./_interval-sweep.ts";
 import type { HonoEnv } from "./context.ts";
 import { deleteAgentResources } from "./delete.ts";
 import { createLogger } from "./logger.ts";
@@ -191,30 +192,14 @@ export function createOrphanPreviewSweep(opts: {
     return { swept: true, reaped, failed };
   }
 
-  let timer: NodeJS.Timeout | undefined;
-  const stop = (): void => {
-    if (timer) clearInterval(timer);
-    timer = undefined;
-  };
+  // Serialized rather than overlapped, and unref'd — see `_interval-sweep.ts`.
+  // A pass that outruns its interval would queue reaps behind each other and
+  // re-read the same candidates.
+  const ticker = createIntervalSweep(sweepOnce);
 
   return {
     sweepOnce,
-    start(intervalMs = ORPHAN_PREVIEW_INTERVAL_MS): () => void {
-      if (timer || intervalMs <= 0) return stop;
-      // Serialized rather than overlapped: a pass that outruns its interval
-      // would queue reaps behind each other and re-read the same candidates.
-      let running = false;
-      timer = setInterval(() => {
-        if (running) return;
-        running = true;
-        void sweepOnce().finally(() => {
-          running = false;
-        });
-      }, intervalMs);
-      // The sweep must never be the reason the process stays up.
-      timer.unref?.();
-      return stop;
-    },
+    start: (intervalMs = ORPHAN_PREVIEW_INTERVAL_MS) => ticker.start(intervalMs),
   };
 }
 
