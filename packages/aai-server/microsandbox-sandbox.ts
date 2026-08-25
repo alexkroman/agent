@@ -403,7 +403,21 @@ export async function spawnMicrosandboxAgentServer(
     // The agent's own env is where the loopback DSNs live. Rewriting it is what
     // makes ctx.db, storage and durable workflows work at all in a VM, and the
     // ports it reports are exactly what the network policy opens.
-    const { env: agentEnv, hostPorts } = rewriteLoopbackForGuest(opts.agentEnv);
+    const { env: agentEnv, hostPorts: envPorts } = rewriteLoopbackForGuest(opts.agentEnv);
+
+    // The BUNDLE URL needs the same treatment, and it does not travel in that
+    // env — it rides the boot env as `AAI_BUNDLE_URL`. A dev platform database
+    // signs a Storage URL on the host's own loopback, so an unrewritten one is a
+    // guest fetching itself: `agent-mode boot failed: bundle fetch failed`.
+    // `subprocess` never saw it (its guest shares the host's stack) and Modal
+    // never sees it (the signed URL is a real public one).
+    const worker =
+      opts.worker.kind === "url"
+        ? rewriteLoopbackForGuest({ url: opts.worker.url })
+        : { env: {}, hostPorts: [] };
+    const bundleUrl = worker.env.url;
+    // One port set for the policy, from every value that was rewritten.
+    const hostPorts = [...new Set([...envPorts, ...worker.hostPorts])].sort((a, b) => a - b);
 
     const sandbox = await ctx.createSandbox({
       imageRef: microsandboxImageRef(await harnessCode(opts.harnessPath)),
@@ -415,10 +429,7 @@ export async function spawnMicrosandboxAgentServer(
           slug: opts.slug,
           token,
           port: GUEST_PORT,
-          bundle:
-            opts.worker.kind === "url"
-              ? { url: opts.worker.url }
-              : { path: AGENT_BUNDLE_REMOTE_PATH },
+          bundle: bundleUrl === undefined ? { path: AGENT_BUNDLE_REMOTE_PATH } : { url: bundleUrl },
           bundleSha256: opts.worker.sha256,
           envPath: AGENT_ENV_REMOTE_PATH,
         }),

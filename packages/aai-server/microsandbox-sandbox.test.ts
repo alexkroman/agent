@@ -301,6 +301,35 @@ describe("spawnMicrosandboxAgentServer", () => {
     await handle.shutdown();
   });
 
+  it("rewrites a LOOPBACK bundle URL, and opens its port too", async () => {
+    // The bug this exists for: the bundle URL rides the boot env as
+    // `AAI_BUNDLE_URL`, not in `agentEnv`, so rewriting only the agent env left
+    // the guest fetching its OWN loopback — `agent-mode boot failed: bundle
+    // fetch failed`. A dev platform database signs exactly such a URL.
+    const fake = makeCtx();
+    const handle = await spawnMicrosandboxAgentServer(
+      {
+        harnessPath: await makeHarnessFile(),
+        slug: "demo",
+        name: "agent-demo-v4",
+        worker: {
+          kind: "url",
+          url: "http://127.0.0.1:54321/storage/v1/object/sign/blobs/abc",
+          sha256: "abc",
+        },
+        agentEnv: { DATABASE_URL: "postgresql://app@127.0.0.1:54322/app" },
+      },
+      fake.ctx,
+      okFetch(),
+    );
+
+    const env = fake.created[0]?.env ?? {};
+    expect(env.AAI_BUNDLE_URL).toBe(`http://${HOST_ALIAS}:54321/storage/v1/object/sign/blobs/abc`);
+    // One port set, from every value rewritten — the URL's AND the env's.
+    expect(fake.created[0]?.hostPorts).toEqual([54_321, 54_322]);
+    await handle.shutdown();
+  });
+
   it("writes the bundle before the exec, and only when it holds the bytes", async () => {
     const fake = makeCtx();
     const handle = await spawnMicrosandboxAgentServer(
