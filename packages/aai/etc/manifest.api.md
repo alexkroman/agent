@@ -265,6 +265,7 @@ type SessionEventContext = {
     sessionId: string;
     env: Readonly<Record<string, string>>;
     db: Db;
+    slots: SlotStore;
 };
 
 // @public

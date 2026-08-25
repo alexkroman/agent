@@ -225,9 +225,11 @@ describe("retailTool", () => {
     const ctx = makeCtx();
     await gated.execute({}, ctx);
     const state = retailSlot.get(ctx);
-    // The gate short-circuits before the wrapper's body, so a blocked call no
-    // longer records an activity entry — the trade `retailTool`'s doc names.
-    // What it buys is that a refusal cannot half-write the store.
+    // The gate short-circuits before the wrapper's body, so the EXECUTION path
+    // writes nothing at all — which is what makes a refusal unable to half-write
+    // the store. The sidebar line for a blocked call comes from `agent.ts`'s
+    // `tool.called` hook instead, which is a different path and not under test
+    // here: see `registry.test.ts`.
     expect(state.callSeq).toBe(0);
     expect(state.activity).toEqual([]);
   });

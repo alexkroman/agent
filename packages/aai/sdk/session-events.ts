@@ -3,6 +3,10 @@
  * The AUTHOR's side of the session event stream: what `agent({ events })`
  * declares and what a handler is handed.
  *
+ * A handler OBSERVES the session and MAINTAINS the session's own state; it does
+ * not drive the turn. {@link SessionEventContext} is where that line is drawn
+ * and argued.
+ *
  * Its own module rather than part of `types.ts` for the reason `tool-context.ts`
  * is: this is a per-CALL surface an author writes against, `types.ts` holds the
  * agent-level declarations, and that file is at its cap. It is also the one
@@ -16,16 +20,30 @@
 
 import type { Db } from "./db.ts";
 import type { SessionEvent } from "./protocol-events.ts";
+import type { SlotStore } from "./session-state.ts";
 
 /**
  * What a session event handler is handed alongside the event.
  *
- * Deliberately much smaller than `ToolContext`, and the omissions are the
- * design: there is no `send`, no `slots`, no `generate` and no `messages`,
- * because a handler is OBSERVE-ONLY. Giving it a way to speak would make the
- * event stream a second control path into the turn — which is the thing that
- * keeps a log honest, since anything a reader can change it can no longer
- * describe.
+ * Deliberately much smaller than `ToolContext`, and the omissions are still the
+ * design: there is no `send`, no `generate`, no `delegate` and no `messages`. A
+ * handler MAY NOT SPEAK. Giving it a way to would make the event stream a second
+ * control path into the turn — which is the thing that keeps a log honest, since
+ * anything a reader can change it can no longer describe.
+ *
+ * **`slots` is here, and it does not cross that line.** The rule the omissions
+ * enforce is that a handler cannot change the TURN — what the agent says, which
+ * tool runs, whether a reply is cancelled. Maintaining the session's own state is
+ * a different act, and one the alternative made worse: an author who wanted a
+ * fact recorded per turn had no choice but to declare a TOOL for it and instruct
+ * the model to call it, which is a model-cooperation problem standing in for a
+ * bookkeeping one — see `infocom-adventure`, whose `game_state_history` tool
+ * existed to hand the framework back a transcript it already had. A hook writes
+ * the fact directly, on every turn, whether or not the model cooperates.
+ *
+ * What a write here still cannot do is be READ by the turn it happened in: the
+ * model sees a slot's value through a tool result, and this runs beside that
+ * path rather than in front of it.
  *
  * `db` is here because the first thing an audit hook wants is somewhere to write,
  * and the agent already has one.
@@ -45,6 +63,18 @@ export type SessionEventContext = {
    * the enablement guidance, exactly as `ctx.db` does in a tool.
    */
   db: Db;
+  /**
+   * This session's slot storage — **reach for {@link sessionSlot}, not this**,
+   * exactly as in a tool. It is on the context because a slot declared in one
+   * module has no other way to find the session.
+   *
+   * A handler's writes are committed after it returns, so a hook that mutates
+   * should do so SYNCHRONOUSLY. An `await` before `slot.update` still stores the
+   * value, but it lands after the commit for this event and is not persisted
+   * until the next one (or the next tool call) commits — which for a `durable`
+   * slot means a crash in between loses it.
+   */
+  slots: SlotStore;
 };
 
 /**

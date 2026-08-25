@@ -883,6 +883,37 @@ replaced; what follows is the index plus the rule and the adopters.**
   what a caller SAID" below for the order it applies its readings in and why
   ambiguity is an ANSWER rather than a guess.
 
+## A session event hook WRITES state, and still cannot SPEAK
+
+`agent({ events })` handlers were observe-only, and the omission that made them
+so is unchanged in the half that matters: `SessionEventContext` still carries no
+`send`, no `generate`, no `delegate` and no `messages`, so nothing on the event
+stream can decide what the agent says. What it gained is `slots` — every
+`sessionSlot` and `dialog` accessor now takes a `SlotHolder` (`{ slots,
+sessionId }`, the two fields any of them ever read) rather than a full
+`ToolContext`, which a `ToolContext` satisfies structurally, so no existing call
+site moved.
+
+**The line is "cannot change the TURN", not "cannot write".** Maintaining the
+session's own state is a different act, and forbidding it made authors do
+something strictly worse: `infocom-adventure` shipped a `game_state_history`
+TOOL whose `value` argument was the player's own utterance, plus a line of system
+prompt telling the model to call it every turn. The framework already had the
+transcript. That cost a model call per turn, desynced the counter whenever the
+model forgot, and was still only advice. It is four lines of
+`user-transcript.committed` now. `retail`'s is the other shape — a `tool.called`
+hook recording the calls a dialog gate refuses, which its own tool wrapper
+structurally cannot see, because a refusal short-circuits before the body.
+
+**Write SYNCHRONOUSLY.** A hook's write is COMMITTED after the handler returns,
+so an `await` before `slot.update` still stores the value but is not durable
+until a later commit. And it is not readable by the turn it happened in: the
+model sees a slot through a tool result, and this runs beside that path rather
+than in front of it. The commit itself, and the re-entry guard that stops a
+handler for `state.updated` from emitting one forever, are wired in
+`session-emitter.ts` — see "A hook's write needs a commit, and a guard" in
+`packages/aai-runtime/CLAUDE.md`.
+
 ## A slot OWNS its session state — and stores it
 
 There is no `ctx.state`. A session's state lives in `sessionSlot()`s
@@ -1342,45 +1373,11 @@ them, and rewriting them would be churn.
 
 ## S2S property test
 
-**`aai` has a fast-check PROPERTY TEST over the S2S stack**
-(`host/integration/s2s-fuzz.integration.test.ts` plus `_s2s-fuzz-model.ts`,
-`_s2s-fuzz-harness.ts`, `_s2s-fuzz-commands.ts`; same command, also keyless).
-**The spec's own module doc and `_s2s-fuzz-model.ts`'s carry the design** — why
-the SOCKET is the only fake (every S2S spec that predates it stubs a
-neighbouring layer, and the bugs it found live in the seams), why nothing here
-uses a TIMER (the hand-rolled walk it replaced could not re-run a
-counterexample, and this one runs in ~150ms), and the ledgers the oracles read.
-Four things worth knowing before adding to it:
-
-- **Model-based COMMANDS, where the pipeline fuzz generates a script.** Legality
-  lives in each command's `check()` against a model that IS the provider state
-  machine, so an illegal frame is never generated and a counterexample contains
-  only the commands that ran — reverting the three fixes reproduces them from
-  `[session.error(rate_limited)]`, `[drop.transient, openSocket,
-  session.error(session_not_found)]` and `[drop.transient]`.
-- **Three properties, differentiated by a per-run `faultBudget`** (0 / 2 / 3):
-  turns, reconnects, retirement. One combined property cannot serve both ends —
-  at 2 faults per 40 commands a tool call rarely survived to be answered (the
-  central oracle ran 7 times out of 80 executions), and at 0 there are no
-  resumes to redeliver across.
-- **A finding is only reachable if the run does not excuse it first.** The
-  tool-answer exemptions (interrupted turn, client reset, retired session, link
-  not ready, a SIBLING call of the same reply still running — results flush per
-  reply as a BATCH) are broad enough to silence the oracle completely, so each
-  increments a `skip:<why>` counter and the floors are on the CHECKED counts.
-  `toolAnsweredAcrossResume` has been near zero through three separate
-  mistakes; it is the floor that stands between a live oracle and a decorative
-  one. `S2S_FUZZ_COVERAGE=1` prints the table. Note a resumed session inherits
-  the dead socket's unanswered tool calls — that is what `session.resume` MEANS,
-  and it is the premise the tool-answer oracle rests on.
-- **The fakes' fidelity is where the false findings came from**, every time.
-  Three drafts blamed the transport for behaviour their own fake had invented:
-  an `executeTool` ignoring its abort signal (the real one settles promptly via
-  `pTimeout({ signal })`, so `stop()` looked like it hung forever), one ignoring
-  an ALREADY-aborted signal (what a `tool.call` after a client cancel receives),
-  and one that rejected where the real executor always RESOLVES with a
-  `serializeToolFailure(...)` string. Check the real collaborator's contract
-  before believing a finding.
+The fast-check property test over the S2S stack lives with the transports it
+drives — `aai-runtime/integration/s2s-fuzz.integration.test.ts` and its four
+helpers — so its design is in `packages/aai-runtime/CLAUDE.md` under the section
+of this name. (This guide carried it, and named a `host/integration/` path those
+files have not had since the runtime split.)
 
 ## Fixture replay testing (`host/`)
 

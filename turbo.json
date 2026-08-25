@@ -417,6 +417,13 @@
         "AAI_EVAL_ONLY",
         "AAI_EVAL_MIN_SCORE",
         "AAI_STEP_CAP_HINT",
+        // `call-audit`'s eval decodes with a REAL ffmpeg and skips without one,
+        // so it takes the same require-flag as `check:scenario` — and for the
+        // same reason spelled out there: strict env mode strips an undeclared
+        // variable, which would make "a skip here is a failure" inert on the one
+        // leg that installs the binary. Declared on BOTH tasks because the CI
+        // job that sets it now runs both.
+        "AAI_REQUIRE_FFMPEG",
         "VITEST_PROFILE",
         "VITEST_INCLUDE",
         "VITEST_SETUP",

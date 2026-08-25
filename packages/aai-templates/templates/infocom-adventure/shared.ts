@@ -26,13 +26,7 @@ export const DEFAULT_GAME_STATE: GameState = {
  */
 export const MAX_HISTORY = 50;
 
-/**
- * How many of those commands a tool reports back to the model.
- *
- * Named because two tools answer with it (`game_state_get` and
- * `game_state_history`), and they live in separate files now — an inline `-5`
- * in each is a number that can disagree with itself.
- */
+/** How many of those commands `game_state_get` reports back to the model. */
 export const REPORTED_HISTORY = 5;
 
 // The game lives in one `sessionSlot`, keyed per session — each session is its
@@ -52,7 +46,24 @@ export const REPORTED_HISTORY = 5;
 // `tool()`.
 export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_GAME_STATE));
 
-/** Log a player command, holding {@link MAX_HISTORY}. */
-export function recordCommand(game: GameState, command: string): void {
+/**
+ * Log a player command and count the turn, holding {@link MAX_HISTORY}.
+ *
+ * **Nothing the MODEL can call runs this** — `agent.ts` declares it as a
+ * `user-transcript.committed` hook, so it runs once per thing the player says,
+ * whether or not the narrator cooperates. It replaced a `game_state_history`
+ * TOOL whose `value` argument was the player's own command: the framework
+ * already had the transcript, and the tool existed to hand it back. That cost a
+ * model call per turn and desynced `moves` and `history` from the game every
+ * time the model forgot the system prompt's instruction to call it.
+ *
+ * Which is also why `moves` is counted HERE and not in `game_state_move`. It
+ * used to be both, so a turn where the narrator moved the player AND logged the
+ * command counted twice, and a turn where it did neither counted nothing. A
+ * MOVE is a room change; a TURN is the player saying something, and only one of
+ * those is a thing the game can miscount.
+ */
+export function recordTurn(game: GameState, command: string): void {
   pushCapped(game.history, command, MAX_HISTORY);
+  game.moves++;
 }

@@ -17,6 +17,29 @@
  *    cannot delay a caption or a turn boundary on a live call.
  * 3. **Hooks** — the agent's typed handler for this event, then its `"*"`
  *    handler. Last, and non-fatally.
+ * 4. **Commit** — only when a hook WROTE a slot: push the `syncState`
+ *    projection, then flush the store. Same pair the tool executor runs in its
+ *    `finally`, for the same reason — a mutation the UI is not showing is worse
+ *    than one it is, and one nothing stored is worse still.
+ *
+ * ## Hooks may WRITE, and may not SPEAK
+ *
+ * `SessionEventContext` carries `slots`, so a handler can maintain the session's
+ * own state — which is what lets an author stop declaring a TOOL for bookkeeping
+ * and instructing the model to call it. It carries no `send`, so the stream stays
+ * a record of what happened rather than a second way to drive the turn.
+ *
+ * Two consequences are wired here rather than documented and hoped for:
+ *
+ *   * **A write needs a commit**, because nothing else on this path has one.
+ *     `slot.update` is synchronous by contract and cannot flush itself, and the
+ *     only other commit point in the runtime is the tool executor's — so a hook
+ *     write on a session that then runs no tool would never reach the backend.
+ *   * **Hooks do not observe themselves.** Committing emits `state.updated`, so
+ *     an unguarded handler for it that wrote would re-enter this path forever.
+ *     While hooks run — the deferred commit included — nested emits are recorded
+ *     and sent to the client but announce nothing. A hook observes the SESSION,
+ *     not the other hooks.
  *
  * eve runs its hooks after a durable write and escalates a thrown handler to a
  * failed turn. Both are wrong here and for the same reason — this is a phone
@@ -30,6 +53,7 @@ import type {
   SessionEventContext,
   SessionEventHandler,
   SessionEventHandlers,
+  SlotStore,
 } from "@alexkroman1/aai";
 import type { ClientSink, SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
@@ -57,7 +81,44 @@ export type SessionEventHookDeps = {
    * for every event it emits.
    */
   db: () => Db;
+  /**
+   * `ctx.slots` — this session's view of the state store, the same object a tool
+   * call's context carries. Not a thunk: it is a plain cache view, so resolving
+   * it throws nothing and costs nothing.
+   */
+  slots: SlotStore;
 };
+
+/**
+ * A slot store that reports whether anything was written through it.
+ *
+ * The commit is what a hook write costs, so it is paid only by a batch that
+ * actually wrote: the overwhelming majority of events reach a handler that logs
+ * a line or bumps a counter, and flushing after each of those would put a
+ * backend round trip on the transcript path of a live call.
+ *
+ * A pass-through wrapper rather than a flag the store itself sets, because
+ * `SlotStore` is one view shared with the tool executor — a flag on it could not
+ * tell a hook's write from a tool's.
+ */
+function watchWrites(inner: SlotStore): { slots: SlotStore; writes: () => number } {
+  // A COUNT rather than a boolean, and the difference is a real defect: the
+  // deferred commit below decides by comparing before against after, and a latch
+  // that is already `true` from the synchronous pass compares equal to itself —
+  // so a handler that wrote synchronously AND again after an await had its second
+  // write silently left uncommitted.
+  let writes = 0;
+  return {
+    slots: {
+      read: (key) => inner.read(key),
+      write: (key, value, durable) => {
+        inner.write(key, value, durable);
+        writes += 1;
+      },
+    },
+    writes: () => writes,
+  };
+}
 
 /**
  * Run the handlers for one event: the typed one, then `"*"`.
@@ -67,11 +128,17 @@ export type SessionEventHookDeps = {
  * log would not expect one to depend on the other. An async handler is not
  * awaited: the caller is mid-turn, and a rejection is caught off the promise for
  * the same reason a throw is caught here.
+ *
+ * `commit` runs when a handler wrote a slot — synchronously for the handlers
+ * that settled synchronously, and again once any pending promise has, since an
+ * `async` handler's write lands after the first. Both calls go through `guard`,
+ * so the `state.updated` a commit emits does not re-enter the hooks.
  */
 function runHooks(
   event: SessionEvent,
   handlers: SessionEventHandlers,
-  ctx: () => SessionEventContext,
+  ctx: (slots: SlotStore) => SessionEventContext,
+  deps: { slots: SlotStore; commit: () => void; guard: (run: () => void) => void },
   logger: Logger | undefined,
 ): void {
   // Widened at the LOOKUP, once. The handler's own type is narrower than
@@ -81,8 +148,9 @@ function runHooks(
   const typed = handlers[event.type] as SessionEventHandler | undefined;
   const wildcard = handlers["*"];
   if (!(typed || wildcard)) return;
+  const watched = watchWrites(deps.slots);
   // Built once for the pair rather than per handler.
-  const resolved = ctx();
+  const resolved = ctx(watched.slots);
   const report = (err: unknown): void => {
     logger?.warn?.("Session event hook failed", {
       type: event.type,
@@ -90,19 +158,35 @@ function runHooks(
       error: errorMessage(err),
     });
   };
+  const pending: Promise<unknown>[] = [];
   const invoke = (handler: SessionEventHandler | undefined): void => {
     if (!handler) return;
     try {
       const result = handler(event, resolved);
-      if (result instanceof Promise) result.catch(report);
+      if (result instanceof Promise) pending.push(result.catch(report));
     } catch (err: unknown) {
       report(err);
     }
   };
-  // Two calls rather than a loop over a two-element array: this runs per EVENT
-  // on a live call, and the array existed only to say "these two, in order".
-  invoke(typed);
-  invoke(wildcard);
+  deps.guard(() => {
+    // Two calls rather than a loop over a two-element array: this runs per EVENT
+    // on a live call, and the array existed only to say "these two, in order".
+    invoke(typed);
+    invoke(wildcard);
+    if (watched.writes() > 0) deps.commit();
+  });
+  if (pending.length === 0) return;
+  // Re-read AFTER the promises settle rather than captured: that is the whole
+  // point of the second commit, which exists for the handler that awaits
+  // something and then writes. Skipped when nothing further was written — which
+  // is why this counts writes rather than latching a flag.
+  const before = watched.writes();
+  void Promise.all(pending).then(() => {
+    if (watched.writes() === before) return;
+    deps.guard(() => {
+      deps.commit();
+    });
+  });
 }
 
 /**
@@ -119,6 +203,7 @@ export function hookDepsFor(opts: {
   handlers: SessionEventHandlers | undefined;
   env: Readonly<Record<string, string>>;
   db: Db | undefined;
+  slots: SlotStore;
   /** Thrown when a handler reads `ctx.db` on an agent that has no storage. */
   storageDisabledMessage: string;
 }): SessionEventHookDeps | undefined {
@@ -126,6 +211,7 @@ export function hookDepsFor(opts: {
   return {
     handlers: opts.handlers,
     env: opts.env,
+    slots: opts.slots,
     db: () => {
       if (!opts.db) throw new Error(opts.storageDisabledMessage);
       return opts.db;
@@ -143,10 +229,37 @@ export function createSessionEmitter(opts: {
   client: ClientSink;
   stream: SessionEventStream;
   hooks?: SessionEventHookDeps | undefined;
+  /**
+   * Publish and store what a hook wrote — the `syncState` push plus the store
+   * flush, i.e. the pair the tool executor runs in its own `finally`.
+   *
+   * Optional because the sandbox tool path holds no state in this process, and
+   * absent it a hook's write still lands in the store; what it loses is the
+   * commit, so nothing reaches the backend until some later tool call flushes.
+   */
+  commit?: (() => void) | undefined;
   logger?: Logger | undefined;
 }): SessionEmitter {
-  const { sessionId, client, stream, hooks, logger } = opts;
+  const { sessionId, client, stream, hooks, commit, logger } = opts;
   const handlers = hooks?.handlers;
+
+  /**
+   * True while hooks (or a commit made on their behalf) are running.
+   *
+   * The re-entry it stops is real rather than defensive: a commit emits
+   * `state.updated`, so a handler for that event which wrote would emit another,
+   * forever. See this module's header.
+   */
+  let announcing = false;
+  const guard = (run: () => void): void => {
+    const outer = announcing;
+    announcing = true;
+    try {
+      run();
+    } finally {
+      announcing = outer;
+    }
+  };
 
   /**
    * One handler's context.
@@ -160,9 +273,12 @@ export function createSessionEmitter(opts: {
    * are useful without storage (a log line, a metric), so that is exactly
    * backwards.
    */
-  const context = (): SessionEventContext => ({
+  const context = (slots: SlotStore): SessionEventContext => ({
     sessionId,
     env: hooks?.env ?? {},
+    // The WATCHED view rather than `hooks.slots`, so the commit is paid by a
+    // batch that wrote and by no other — see `watchWrites`.
+    slots,
     get db(): Db {
       // By construction: `handlers` is only set when `hooks` is, and `runHooks`
       // is the only caller.
@@ -185,7 +301,18 @@ export function createSessionEmitter(opts: {
         error: errorMessage(err),
       });
     }
-    if (handlers) runHooks(event, handlers, context, logger);
+    // `announcing` is the re-entry guard: an event emitted BY a hook, or by the
+    // commit that follows one, is recorded and sent like any other and announces
+    // nothing.
+    if (handlers && hooks && !announcing) {
+      runHooks(
+        event,
+        handlers,
+        context,
+        { slots: hooks.slots, commit: () => commit?.(), guard },
+        logger,
+      );
+    }
     return event;
   }
 

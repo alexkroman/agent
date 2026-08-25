@@ -365,13 +365,37 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
   execute: (args: z.output<S>, state: RetailState, ctx: ToolContext) => R | ToolFailure;
 }
 
-function record(state: RetailState, name: string, summary: string): void {
+/**
+ * One line of the activity feed, and the `callSeq` bump the sidebar moves on.
+ *
+ * Exported because {@link retailTool} is no longer its only caller: `agent.ts`
+ * records the calls that never reach a body — see {@link gateFor}.
+ */
+export function record(state: RetailState, name: string, summary: string): void {
   state.callSeq += 1;
   pushCapped(
     state.activity,
     { seq: state.callSeq, tool: name, summary, at: Date.now() },
     MAX_ACTIVITY,
   );
+}
+
+/**
+ * Which states each retail tool may run in, by the name the model calls it by.
+ *
+ * Populated as the fifteen `tools/` modules are loaded, because {@link retailTool}
+ * is what every one of them calls. It exists so `agent.ts`'s `tool.called` hook
+ * can ask the SAME question the gate asks — this is one fact evaluated twice, not
+ * two copies of a fact.
+ */
+const TOOL_GATES = new Map<string, readonly string[]>();
+
+/**
+ * The states `name` may run in, or `undefined` for a tool this template did not
+ * declare (a builtin, or anything a future author adds outside the wrapper).
+ */
+export function gateFor(name: string): readonly string[] | undefined {
+  return TOOL_GATES.get(name);
 }
 
 /**
@@ -384,12 +408,14 @@ function record(state: RetailState, name: string, summary: string): void {
  *
  * The third thing it used to own — the authentication gate — is
  * {@link callFlow}'s now, declared per tool as `when`. What that buys is in the
- * machine's own doc; what it COSTS is one line of the activity feed: a refused
- * call short-circuits before this wrapper's body runs, so a blocked call no
- * longer records `blocked: not authenticated` and no longer bumps `callSeq`.
- * That is the right trade — the refusal reaches the model, which the sidebar
- * line never did, and it carries the state and its instruction rather than one
- * fixed sentence.
+ * machine's own doc; what it COST was one line of the activity feed, because a
+ * refused call short-circuits before this wrapper's body runs and so recorded
+ * nothing and bumped no `callSeq`.
+ *
+ * **That line is back, and not from here.** `agent.ts` declares a `tool.called`
+ * hook, which the runtime emits for every call the model makes INCLUDING the
+ * ones the gate goes on to refuse — a place to observe from that a tool wrapper
+ * structurally does not have. See {@link gateFor}.
  *
  * **`callFlow.tool` rather than `retailSlot.updateTool`**, so the body opens the
  * store's window itself. A flow tool's own `execute` is handed `(args, ctx)`;
@@ -402,6 +428,7 @@ function record(state: RetailState, name: string, summary: string): void {
 export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
   spec: RetailToolSpec<S, R>,
 ) {
+  TOOL_GATES.set(spec.name, typeof spec.when === "string" ? [spec.when] : spec.when);
   return callFlow.tool({
     description: spec.description,
     inputSchema: spec.inputSchema,

@@ -189,19 +189,20 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     logger,
   );
 
-  const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot } = setupTools({
-    agent,
-    opts,
-    ...omitUndefined({ notifier }),
-    llm: effectiveProviders.llm,
-    env,
-    providerEnv,
-    resolvedDb,
-    workflows,
-    logger,
-    emitters,
-    stateStore: sessionState.store,
-  });
+  const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot, commitSessionState } =
+    setupTools({
+      agent,
+      opts,
+      ...omitUndefined({ notifier }),
+      llm: effectiveProviders.llm,
+      env,
+      providerEnv,
+      resolvedDb,
+      workflows,
+      logger,
+      emitters,
+      stateStore: sessionState.store,
+    });
 
   // Resolved once per runtime, and resolved EAGERLY only for a voice agent —
   // see `runtime-pipeline-providers.ts`, which owns that policy and why a
@@ -268,14 +269,23 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       handlers: agent.events,
       env,
       db: resolvedDb,
+      // The same view a tool call's `ctx.slots` is, so a hook and a tool that
+      // touch one slot are touching one value rather than two caches of it.
+      slots: sessionState.store.viewFor(sessionOpts.id),
       storageDisabledMessage: STORAGE_DISABLED_MESSAGE,
     });
+    // Fire-and-forget: `commitSessionState` never rejects, and the emit path is
+    // synchronous — a hook's write must not put a backend round trip in front of
+    // the next frame on a live call.
+    const commit = commitSessionState
+      ? (): void => void commitSessionState(sessionOpts.id)
+      : undefined;
     const emitter = createSessionEmitter({
       sessionId: sessionOpts.id,
       client: sessionOpts.client,
       stream: sessionState.stream,
       logger,
-      ...omitUndefined({ hooks }),
+      ...omitUndefined({ hooks, commit }),
     });
     const releaseEmitter = emitters.claim(sessionOpts.id, emitter);
 

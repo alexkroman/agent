@@ -1919,11 +1919,11 @@ export interface DelegateResult {
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     readonly key: string;
     readonly machine: M;
-    matches(ctx: ToolContext, state: string): boolean;
-    position(ctx: ToolContext): DialogPosition;
+    matches(ctx: SlotHolder, state: string): boolean;
+    position(ctx: SlotHolder): DialogPosition;
     projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
-    reset(ctx: ToolContext): DialogPosition;
-    send(ctx: ToolContext, event: E): DialogPosition;
+    reset(ctx: SlotHolder): DialogPosition;
+    send(ctx: SlotHolder, event: E): DialogPosition;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
 }
 
@@ -2226,6 +2226,7 @@ export type SessionEventContext = {
     sessionId: string;
     env: Readonly<Record<string, string>>;
     db: Db;
+    slots: SlotStore;
 };
 
 // @public
@@ -2405,13 +2406,13 @@ export type SessionEventType = SessionEvent["type"];
 export interface SessionSlot<K extends string, T> {
     create(): T;
     readonly durable: boolean;
-    get(ctx: ToolContext): DeepReadonly<T>;
+    get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
     projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
-    reset(ctx: ToolContext): DeepReadonly<T>;
-    set(ctx: ToolContext, value: T): DeepReadonly<T>;
+    reset(ctx: SlotHolder): DeepReadonly<T>;
+    set(ctx: SlotHolder, value: T): DeepReadonly<T>;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
-    update<R>(ctx: ToolContext, mutate: (draft: T) => R): RejectThenableResult<R>;
+    update<R>(ctx: SlotHolder, mutate: (draft: T) => R): RejectThenableResult<R>;
     updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R> & RejectThenable<R>): ToolDef<P, R>;
 }
 
@@ -2444,6 +2445,12 @@ type SilenceNudgeParams = {
 
 // @public
 type SilencePromptWithoutTimeoutMisuse = "`silencePrompt` is the instruction injected when `silenceTimeoutMs` elapses — with no timeout nothing ever injects it; set `silenceTimeoutMs`, or remove `silencePrompt`";
+
+// @public
+export type SlotHolder = {
+    readonly slots: SlotStore;
+    readonly sessionId: string;
+};
 
 // @public
 export type SlotStore = {
@@ -3508,6 +3515,7 @@ type SessionEventContext = {
     sessionId: string;
     env: Readonly<Record<string, string>>;
     db: Db;
+    slots: SlotStore;
 };
 
 // @public
@@ -5158,6 +5166,7 @@ type SessionEventContext = {
     sessionId: string;
     env: Readonly<Record<string, string>>;
     db: Db;
+    slots: SlotStore;
 };
 
 // @public
