@@ -111,6 +111,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { createIntervalSweep } from "./_interval-sweep.ts";
 import {
   type DueRead,
   NOT_LOCKED,
@@ -334,31 +335,15 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
     return { swept: true, candidates: read.candidates, due: read.due.length, woken, skipped };
   }
 
-  let timer: NodeJS.Timeout | undefined;
-  const stop = (): void => {
-    if (timer) clearInterval(timer);
-    timer = undefined;
-  };
+  // Serialized rather than overlapped, and unref'd — `_interval-sweep.ts` owns
+  // both properties and the argument for each. A pass that outruns the interval
+  // would queue reservations behind each other, and the next pass re-reads the
+  // same due set anyway.
+  const ticker = createIntervalSweep(sweepOnce);
 
   return {
     sweepOnce,
-    start(intervalMs = WORKFLOW_WAKE_INTERVAL_MS): () => void {
-      if (timer || intervalMs <= 0) return stop;
-      // Serialized rather than overlapped: a pass that outruns the interval
-      // would queue reservations behind each other, and the next pass would
-      // re-read the same due set anyway.
-      let running = false;
-      timer = setInterval(() => {
-        if (running) return;
-        running = true;
-        void sweepOnce().finally(() => {
-          running = false;
-        });
-      }, intervalMs);
-      // The sweep must never be the reason the process stays up.
-      timer.unref?.();
-      return stop;
-    },
+    start: (intervalMs = WORKFLOW_WAKE_INTERVAL_MS) => ticker.start(intervalMs),
   };
 }
 
@@ -391,10 +376,10 @@ export function startWorkflowWakeSweep(
   // and a pass with one of them reads nothing while looking healthy.
   //
   // So the three ways not to start are THREE branches, because they are not one
-  // event. Absent together is the normal state of local dev and of every spec.
-  // Exactly ONE of them is a MISWIRING — a composition that HAS a platform
-  // database and did not hand the sweep all of it — and there is no operator
-  // action that produces it, so it is an `error` naming what is missing.
+  // event. Absent together is the normal state of local dev and of every spec,
+  // and says so at `debug`. Exactly ONE of them is a MISWIRING — a composition
+  // that HAS a platform database and did not hand the sweep all of it — and is
+  // reported out loud, naming the binding that is missing.
   //
   // They had to be split, because the merged branch is what hid the real one:
   // `orchestrator.ts` passed `adminDb` and not `appDb` from #1130, the commit
@@ -405,11 +390,22 @@ export function startWorkflowWakeSweep(
   // absence. A mechanism whose entire purpose is to remove a silent failure
   // announced its own absence silently, and every parked durable run on the
   // platform stayed parked.
+  //
+  // `warn` rather than `error`, which is a correction to the commit that split
+  // these. In PRODUCTION the state is unreachable in either direction: both
+  // bindings are built from one `SUPABASE_DB_URL` in `service-config.ts` and
+  // reach `createOrchestrator` together in one `...base` spread. What IS
+  // reachable is a narrow SPEC composition — `storage-handler.test.ts` and eight
+  // others pass `appDb` alone, having no use for an admin connection — so
+  // `error` labelled twelve unrelated specs as failures and spent the level that
+  // should mean "something is broken" on the shape a test legitimately builds.
+  // `warn` still prints on every boot, still names the binding, and would still
+  // have caught #1259; it just does not cry wolf.
   if (!(adminDb && appDb)) {
     if (!(adminDb || appDb)) {
       log.debug("Workflow wake sweep not started", { reason: "no platform database" });
     } else {
-      log.error(
+      log.warn(
         `Workflow wake sweep NOT started: no ${adminDb ? "appDb" : "adminDb"}, though ` +
           "this composition has a platform database. No durable run whose sandbox " +
           "has exited will ever resume (see workflow-wake.ts).",
