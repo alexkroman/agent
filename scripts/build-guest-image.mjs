@@ -1,0 +1,333 @@
+#!/usr/bin/env node
+// Copyright 2026 the AAI authors. MIT license.
+
+/**
+ * Build the guest sandbox image from `packages/aai-server/guest-image.Dockerfile`.
+ *
+ * The image both sandbox backends pull. Its recipe used to be assembled through
+ * Modal's own image builder, which made it unresolvable outside Modal — see the
+ * Dockerfile's header for why that had to change and what got simpler.
+ *
+ * ## Where the values come from
+ *
+ * Every ARG the Dockerfile takes is READ OUT OF THE TYPESCRIPT that already
+ * declares it, never restated here:
+ *
+ * | ARG              | Source                                            |
+ * | ---------------- | ------------------------------------------------- |
+ * | `BASE_IMAGE`     | `DEFAULT_SANDBOX_IMAGE` (modal-context.ts)         |
+ * | `SYSTEM_PACKAGES`| `GUEST_SYSTEM_PACKAGES` (modal-system-packages.ts) |
+ * | `SDK_SPECS`      | `SDK_PACKAGES` (modal-harness-image.ts) at the versions this checkout installed |
+ * | `GUEST_ROOT`     | `GUEST_ROOT` (modal-harness-image.ts)              |
+ *
+ * A regex read of a source file is a liability wherever it can fail QUIETLY, so
+ * every extractor here throws when its declaration does not match — the same
+ * discipline `_patch_paths` in `scripts/modal_image.py` documents, where staging
+ * nothing would surface as an ENOENT one layer later with no clue pointing back.
+ * `guest-image-dockerfile.test.ts` closes the loop from the other side: it
+ * IMPORTS the real constants and asserts these extractors agree with them, so a
+ * renamed constant fails a test rather than building a subtly wrong image.
+ *
+ * The version resolution mirrors `resolveSdkSpecs()` deliberately, including its
+ * refusal to accept a range: the image tag and the layer cache both key on these
+ * strings, so `@alexkroman1/aai@^8` would let one tag mean two different trees.
+ *
+ * ## Usage
+ *
+ * ```sh
+ * node scripts/build-guest-image.mjs --print                     # resolve args, build nothing
+ * node scripts/build-guest-image.mjs                             # local build, this host's arch
+ * node scripts/build-guest-image.mjs --print-tag                 # the content-addressed tag
+ * node scripts/build-guest-image.mjs --registry ghcr.io/owner \
+ *     --platform linux/amd64,linux/arm64 --cache-gha --push      # what CI runs
+ * ```
+ *
+ * ## The tag is computed by the TypeScript that owns the algorithm
+ *
+ * `--registry` needs the SAME content-addressed tag the server resolves, and
+ * that hash is `localHarnessImageTag`'s: `agents.harness_image_tag` records it
+ * per deploy, so a second implementation here would be the one place a pinned
+ * image could stop resolving. Node runs the TS directly under
+ * `--conditions=@dev/source` (which is how the workspace resolves `.ts` sources
+ * at all), so this shells out to it rather than reimplementing sha256 over the
+ * bundle — including the registry join, which is `guestImageRef`'s.
+ *
+ * `--push` is required for a multi-platform build: a manifest list cannot be
+ * loaded into the local docker image store, and buildx fails late and cryptically
+ * if you ask it to, so this refuses up front.
+ */
+
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
+
+const REPO_ROOT = path.resolve(import.meta.dirname, "..");
+const SERVER_DIR = path.join(REPO_ROOT, "packages", "aai-server");
+const GUEST_DIR = path.join(REPO_ROOT, "packages", "aai-guest");
+const DOCKERFILE = path.join(SERVER_DIR, "guest-image.Dockerfile");
+
+/** Default local tag. A registry build passes `--tag` explicitly. */
+const DEFAULT_TAG = "aai-guest-harness:local";
+
+function read(file) {
+  try {
+    return readFileSync(file, "utf-8");
+  } catch (err) {
+    throw new Error(`cannot read ${path.relative(REPO_ROOT, file)}`, { cause: err });
+  }
+}
+
+/**
+ * Pull one `const NAME = "value"` string out of a module (exported or not:
+ * SDK_PACKAGES is module-private while the other three are exported).
+ *
+ * Throws rather than returning a default: a silent miss here builds an image on
+ * the wrong base, which is invisible until a guest behaves differently from
+ * production.
+ */
+function extractString(file, name) {
+  const src = read(file);
+  const match = new RegExp(`(?:export )?const ${name}\\s*=\\s*"([^"]+)"`).exec(src);
+  if (!match) {
+    throw new Error(
+      `${name} is no longer declared as a string literal in ${path.relative(REPO_ROOT, file)} — ` +
+        "update the extractor in scripts/build-guest-image.mjs",
+    );
+  }
+  return match[1];
+}
+
+/** Pull one `export const NAME = [...] as const` string array out of a module. */
+function extractStringArray(file, name) {
+  const src = read(file);
+  const match = new RegExp(`(?:export )?const ${name}\\s*=\\s*\\[([^\\]]*)\\]`).exec(src);
+  if (!match) {
+    throw new Error(
+      `${name} is no longer declared as an array literal in ${path.relative(REPO_ROOT, file)} — ` +
+        "update the extractor in scripts/build-guest-image.mjs",
+    );
+  }
+  const items = [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  if (items.length === 0) {
+    throw new Error(`${name} in ${path.relative(REPO_ROOT, file)} parsed as empty`);
+  }
+  return items;
+}
+
+/** The base image, honouring the same env override the server reads. */
+function resolveBaseImage() {
+  const declared = extractString(
+    path.join(SERVER_DIR, "modal-context.ts"),
+    "DEFAULT_SANDBOX_IMAGE",
+  );
+  return process.env.MODAL_SANDBOX_IMAGE?.trim() || declared;
+}
+
+/**
+ * `name@version` for each SDK package — EXACT versions, read from what this
+ * checkout installed. Mirrors `resolveSdkSpecs()`; see the module doc.
+ */
+function resolveSdkSpecs() {
+  const names = extractStringArray(path.join(SERVER_DIR, "modal-harness-image.ts"), "SDK_PACKAGES");
+  const guestPkg = JSON.parse(read(path.join(GUEST_DIR, "package.json")));
+  return names.map((name) => {
+    const declared = guestPkg.dependencies?.[name] ?? guestPkg.devDependencies?.[name];
+    if (!declared) {
+      throw new Error(`aai-guest package.json no longer declares SDK package ${name}`);
+    }
+    const installedPath = path.join(GUEST_DIR, "node_modules", name, "package.json");
+    if (!existsSync(installedPath)) {
+      throw new Error(
+        `SDK package ${name} is declared by aai-guest but not installed at ${installedPath} — ` +
+          "run pnpm install before building a guest image",
+      );
+    }
+    const { version } = JSON.parse(read(installedPath));
+    if (typeof version !== "string") {
+      throw new Error(`SDK package ${name} has no version in ${installedPath}`);
+    }
+    return `${name}@${version}`;
+  });
+}
+
+/** Everything the Dockerfile needs, resolved from the tree. */
+function resolveBuildArgs() {
+  const harnessImage = path.join(SERVER_DIR, "modal-harness-image.ts");
+  const systemPackages = extractStringArray(
+    path.join(SERVER_DIR, "modal-system-packages.ts"),
+    "GUEST_SYSTEM_PACKAGES",
+  );
+  return {
+    BASE_IMAGE: resolveBaseImage(),
+    // SORTED, so reordering the declaration is not a change — the same
+    // canonicalization `systemPackageList()` applies.
+    SYSTEM_PACKAGES: [...systemPackages].sort().join(" "),
+    SDK_SPECS: resolveSdkSpecs().join(" "),
+    GUEST_ROOT: extractString(harnessImage, "GUEST_ROOT"),
+  };
+}
+
+/**
+ * The value after a flag, consumed from the SAME iterator the caller loops over
+ * — so `--tag x` advances past `x` and a missing value fails by name.
+ */
+function nextValue(argv, flag) {
+  const { value, done } = argv.next();
+  if (done || typeof value !== "string") throw new Error(`${flag} needs a value`);
+  return value;
+}
+
+/**
+ * The pull reference for this tree, computed by `guest-image-source.ts` and
+ * `modal-harness-image.ts` — never reimplemented here (see the module doc).
+ *
+ * A non-zero exit is fatal: the alternative is pushing an image under a tag the
+ * server will never ask for, which looks like a successful publish and fails
+ * later as an unresolvable pull.
+ */
+function resolveRef(registry) {
+  const program = [
+    'import { readFileSync } from "node:fs";',
+    'import { localHarnessImageTag } from "../packages/aai-server/modal-harness-image.ts";',
+    'import { guestImageRef } from "../packages/aai-server/guest-image-source.ts";',
+    // `-e` puts the FIRST user argument at argv[1] — there is no script path
+    // in argv at all, so this is slice(1) and not the usual slice(2).
+    "const [baseTag, harness, registry] = process.argv.slice(1);",
+    'const tag = localHarnessImageTag(baseTag, readFileSync(harness, "utf-8"));',
+    "process.stdout.write(registry ? guestImageRef(registry, tag) : tag);",
+  ].join("\n");
+  const { status, stdout, stderr } = spawnSync(
+    process.execPath,
+    [
+      "--conditions=@dev/source",
+      "--input-type=module",
+      "-e",
+      program,
+      resolveBaseImage(),
+      path.join(GUEST_DIR, "dist", "harness.mjs"),
+      ...(registry ? [registry] : []),
+    ],
+    { cwd: path.join(REPO_ROOT, "scripts"), encoding: "utf-8" },
+  );
+  if (status !== 0 || !stdout) {
+    throw new Error(`could not compute the guest image tag: ${stderr.trim() || `exit ${status}`}`);
+  }
+  return stdout.trim();
+}
+
+/**
+ * The CLI, as two tables rather than a branch chain — which keeps the parser
+ * flat and makes the accepted surface readable in one place.
+ */
+const BOOLEAN_FLAGS = {
+  "--print": "print",
+  "--print-tag": "printTag",
+  "--push": "push",
+  "--cache-gha": "cacheGha",
+};
+const VALUE_FLAGS = {
+  "--tag": "tag",
+  "--registry": "registry",
+  "--platform": "platform",
+};
+
+function parseArgv(rawArgv) {
+  const opts = {
+    tag: undefined,
+    registry: undefined,
+    platform: undefined,
+    push: false,
+    print: false,
+    printTag: false,
+    cacheGha: false,
+  };
+  const argv = rawArgv[Symbol.iterator]();
+  for (const arg of argv) {
+    const boolean = BOOLEAN_FLAGS[arg];
+    const valued = VALUE_FLAGS[arg];
+    if (boolean !== undefined) opts[boolean] = true;
+    else if (valued !== undefined) opts[valued] = nextValue(argv, arg);
+    else throw new Error(`unknown argument ${arg}`);
+  }
+  // Both name the image; obeying one silently would push somewhere unintended.
+  if (opts.tag && opts.registry) throw new Error("pass --tag or --registry, not both");
+  // buildx cannot --load a manifest list, and says so only after the whole
+  // build. Refuse up front rather than at the end of a five-minute run.
+  if (opts.platform?.includes(",") && !opts.push) {
+    throw new Error("a multi-platform build must be --push (a manifest list cannot be --load'ed)");
+  }
+  return opts;
+}
+
+function main(argv) {
+  const opts = parseArgv(argv);
+
+  // Before the arg resolution, so `--print-tag` needs no toolchain files.
+  if (opts.printTag) {
+    console.log(resolveRef(opts.registry));
+    return 0;
+  }
+
+  const args = resolveBuildArgs();
+
+  const harness = path.join(GUEST_DIR, "dist", "harness.mjs");
+  if (!existsSync(harness)) {
+    throw new Error(
+      `the guest harness is not built at ${path.relative(REPO_ROOT, harness)} — ` +
+        "run node scripts/ensure-guest-harness.mjs",
+    );
+  }
+  for (const name of ["package.json", "package-lock.json"]) {
+    const file = path.join(GUEST_DIR, "toolchain", name);
+    if (!existsSync(file)) {
+      throw new Error(
+        `guest toolchain ${name} is missing at ${path.relative(REPO_ROOT, file)} — ` +
+          "run node scripts/sync-guest-toolchain.mjs",
+      );
+    }
+  }
+
+  // `--registry` derives the content-addressed tag; `--tag` overrides it; a
+  // bare local build gets a fixed name, since no registry is involved.
+  const tag = opts.tag ?? (opts.registry ? resolveRef(opts.registry) : DEFAULT_TAG);
+
+  const argv2 = [
+    "buildx",
+    "build",
+    "--file",
+    DOCKERFILE,
+    "--tag",
+    tag,
+    // Layer cache across runs. `mode=max` keeps the intermediate layers, which
+    // is what makes a harness-only change reuse the toolchain install.
+    ...(opts.cacheGha ? ["--cache-from", "type=gha", "--cache-to", "type=gha,mode=max"] : []),
+    ...(opts.platform ? ["--platform", opts.platform] : []),
+    ...Object.entries(args).flatMap(([k, v]) => ["--build-arg", `${k}=${v}`]),
+    opts.push ? "--push" : "--load",
+    // The CONTEXT is the guest package: it holds `toolchain/` and
+    // `dist/harness.mjs`. The Dockerfile lives beside the constants it mirrors
+    // instead, which is why `--file` points out of the context.
+    GUEST_DIR,
+  ];
+
+  if (opts.print) {
+    console.log(JSON.stringify({ tag, platform: opts.platform ?? null, args }, null, 2));
+    console.log(`\ndocker ${argv2.join(" ")}`);
+    return 0;
+  }
+
+  console.log(`Building ${tag}${opts.platform ? ` (${opts.platform})` : ""}`);
+  const { status, error } = spawnSync("docker", argv2, { stdio: "inherit" });
+  if (error) throw error;
+  return status ?? 1;
+}
+
+if (process.argv[1] === import.meta.filename) {
+  try {
+    process.exit(main(process.argv.slice(2)));
+  } catch (err) {
+    console.error(`build-guest-image: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}

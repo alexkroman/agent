@@ -778,6 +778,77 @@ this package's.
   keeps the path covered on any runner by spawning the harness there directly
   and publishing through the real CLI to a real listening orchestrator.
 
+## The image has an OCI recipe now, and nothing pulls it yet
+
+`packages/aai-server/guest-image.Dockerfile` builds the same image the section
+above describes, as a plain OCI image: `pnpm build:guest-image`.
+
+**Why it exists.** A Modal image is not an artifact anything outside Modal can
+resolve — it is assembled from `dockerfileCommands`, finished with a
+`snapshotFilesystem()` of a throwaway sandbox, and published under a name only
+`images.fromName()` answers. So no local backend could run production's guest
+environment even in principle; it had to grow a SECOND toolchain delivery
+mechanism, which is the cost that sank the previous local-container attempt (see
+"Two tiers, deliberately" in `sandbox-backend.ts`). One OCI image inverts that:
+the local backend and Modal pull the same reference.
+
+**Two things get simpler, both because a Docker build has a build CONTEXT.** The
+~17 MB harness is a `COPY` (measured: 0.2s) instead of a builder sandbox plus a
+`filesystem.writeText` plus a `snapshotFilesystem()` plus a `publish()`; and the
+toolchain manifest and lockfile are `COPY`s instead of a gzip+base64 blob
+embedded in a `RUN echo … | base64 -d | gunzip` line.
+
+**Pulling it is opt-in, and `GUEST_IMAGE_REGISTRY` is the switch.** Set it and
+every Modal spawn resolves `<registry>/aai-guest-harness:<sha16>` through
+`images.fromRegistry`; unset — the default, including production today — the
+server builds and publishes its own Modal snapshot exactly as before. The policy,
+both sources and the argument live in `aai-server/guest-image-source.ts`. Opt-in
+rather than default because nothing has published those images until
+`.github/workflows/guest-image.yml` has run, and a default that pulls a tag which
+does not exist yet turns a deploy into a total sandbox outage. Flipping it — and
+deleting the snapshot half, which is most of `modal-harness-image.ts` — is the
+follow-up.
+
+**The TAG is unchanged across the switch, deliberately.** Both sources key on the
+same `localHarnessImageTag` string and the registry source only PREPENDS a
+registry, because `agents.harness_image_tag` holds tags recorded by earlier
+deploys and a prefix is not part of the hashed byte stream. That property is
+worth a test of its own, and has one.
+
+**A missing image fails at CREATE, not at resolution** — `fromRegistry` is lazy
+— which is why the chosen source and its registry are logged at boot. "Which
+image am I pulling, and from where" has to be answerable from one line rather
+than inferred from the shape of a later pull error, the same reason
+`describeSandboxBackend` carries a reason string.
+
+**The publish workflow has the same npm race the DEPLOY job documents.** The
+image installs the SDK at exact published versions, so a run racing an
+unfinished release 404s; it waits on `scripts/wait-for-npm-versions.mjs` for
+that reason. It also runs on every push to main with no `paths` filter, because
+the tag hashes the harness BUNDLE — which bundles the SDK, the runtime, the UI
+and the CLI, so almost any change to `packages/` mints a new tag and a filter
+would silently stop publishing once it went stale.
+
+**The Dockerfile lives in `aai-server`, beside the constants it mirrors, and the
+build CONTEXT is this package.** That split is deliberate: the recipe's inputs
+(`GUEST_SYSTEM_PACKAGES`, `SDK_PACKAGES`, `GUEST_ROOT`, `DEFAULT_SANDBOX_IMAGE`)
+are the host's, and `guest-image-dockerfile.test.ts` has to be hashed by the same
+package as both the Dockerfile and those constants — `inputs` globs resolve
+relative to the PACKAGE, so a gate split across two packages is served from a
+stale cache exactly when the file it guards changes. The context is this package
+because `toolchain/` and `dist/harness.mjs` are here.
+
+**`scripts/build-guest-image.mjs` READS the ARG values out of that TypeScript**
+rather than restating them, and every extractor throws when its declaration no
+longer matches — a regex read of source is only acceptable where it cannot fail
+quietly. Two values are committed copies in the Dockerfile (the base image and
+the guest root, so a bare `docker build` works and buildx does not warn), and the
+test fails when they drift. The two ARGs whose values change every release
+(`SYSTEM_PACKAGES`, `SDK_SPECS`) deliberately carry NO default: Docker
+substitutes an empty string for an unset ARG rather than erroring, so each is
+guarded by a `test -n` that fails the build instead of shipping an image with no
+SDK in it.
+
 ## ffmpeg is installed, and a step reaches it through the SDK
 
 A media pipeline hits the same wall on its first real recording: it is an `.m4a`

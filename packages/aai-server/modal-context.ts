@@ -27,8 +27,8 @@ import {
   type SandboxCreateParams,
 } from "modal";
 import { keyedMemoAsync, memoAsync } from "./_memo.ts";
+import { createGuestImageSource, snapshotImageSource } from "./guest-image-source.ts";
 import { createLogger } from "./logger.ts";
-import { createHarnessImageResolver } from "./modal-harness-image.ts";
 import {
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
@@ -327,8 +327,17 @@ async function buildContext(): Promise<ModalSpawnContext> {
   const baseTag = sandboxBaseTag();
   const baseImage = client.images.fromRegistry(baseTag);
 
-  // Snapshot image with the harness baked in — see modal-harness-image.ts.
-  const harnessImage = createHarnessImageResolver({ client, app, baseTag, baseImage });
+  // Registry pull, or the legacy in-process snapshot build — see
+  // guest-image-source.ts for the policy. Logged because `fromRegistry` is
+  // lazy: an image that was never published fails at CREATE, and "which image
+  // am I pulling, and from where" must be answerable from one line rather than
+  // inferred from the shape of that later error.
+  const images = createGuestImageSource({
+    client,
+    baseTag,
+    snapshot: () => snapshotImageSource({ client, app, baseTag, baseImage }),
+  });
+  log.info("Guest image source", { kind: images.kind, reason: images.reason, baseTag });
 
   /**
    * Every named create funnels through here, so the "lost the race"
@@ -351,13 +360,13 @@ async function buildContext(): Promise<ModalSpawnContext> {
     async createGuestSandbox(code, params, imageTag) {
       const image = await resolveSpawnImage({
         imageTag,
-        fromName: (tag) => client.images.fromName(tag),
-        current: () => harnessImage(code),
+        fromName: images.byTag,
+        current: () => images.current(code),
       });
       return create(image, params);
     },
     async prepareGuestImage(code) {
-      await harnessImage(code);
+      await images.prepare(code);
     },
     async lookupGuestSandbox(name) {
       // `fromName` throws NotFoundError when no RUNNING sandbox holds the

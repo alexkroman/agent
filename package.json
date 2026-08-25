@@ -65,6 +65,7 @@
     "changeset": "changeset",
     "changeset:create": "bash scripts/create-changeset.sh",
     "version": "changeset version && node scripts/sync-scaffold-versions.mjs",
+    "build:guest-image": "node scripts/build-guest-image.mjs",
     "sync:guest-toolchain": "node scripts/sync-guest-toolchain.mjs",
     "release": "turbo run build && changeset publish",
     "prepare": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || lefthook install --force",
