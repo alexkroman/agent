@@ -50,12 +50,67 @@
 // property is NOT exercised and a rate-limited live run fails where a deployed
 // one would have ridden it out. `aai-cli`'s `dev-workflow.scenario.test.ts` is
 // the tier that really resumes a run.
+import { spawnSync } from "node:child_process";
 import { encodeWav } from "@alexkroman1/aai/step";
 import { installStubTranscribe, installStubUploads } from "@alexkroman1/aai/testing/vitest";
 import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
-import { expect } from "vitest";
+import { describe, expect, test } from "vitest";
 import agentDef, { audit } from "./agent.ts";
 import { ANALYSIS_FORMAT, BYTES_PER_SECOND, MAX_SEGMENT_SECONDS } from "./workflows/media.ts";
+
+/**
+ * Both binaries, or neither — every case here decodes, and three of the four
+ * read `ffprobe` back to check what the desk did.
+ */
+const HAVE_FFMPEG = ["ffmpeg", "ffprobe"].every(
+  (bin) => spawnSync(bin, ["-version"], { stdio: "ignore" }).status === 0,
+);
+
+const HOW_TO =
+  "Install ffmpeg (`apt-get install ffmpeg`, `brew install ffmpeg`) or point\n" +
+  "AAI_FFMPEG_PATH / AAI_FFPROBE_PATH at binaries. A deployed guest always has them.";
+
+// Biome's `noSkippedTests` flags the `describe.skip(…)` CALL form, so the gated
+// suite references it instead — exactly as `aai/host/ffmpeg.scenario.test.ts`
+// and `_pg-test-utils.ts` do.
+const skipSuite = describe.skip;
+
+/**
+ * `describeWorkflowEval`, gated on a real ffmpeg — and the skip ANNOUNCES itself.
+ *
+ * This file used to call `describeWorkflowEval` directly, on the reasoning (still
+ * in the header above) that "a missing binary fails these cases with the SDK's
+ * installable message, which is the same thing `aai dev` does on a laptop without
+ * one". That is right for a laptop and wrong for a RUNNER: `check.yml` installs
+ * ffmpeg on the Linux leg only — deliberately, because the scenario suite it was
+ * added for is OS-independent and brew costs minutes — so when `check:eval` joined
+ * that same job, the macOS leg went permanently red on a binary nobody had decided
+ * it should have.
+ *
+ * So this follows `describeWithFfmpeg` (`aai/host/ffmpeg.scenario.test.ts`), which
+ * follows `describeWithPg`: skip loudly, and let **`AAI_REQUIRE_FFMPEG`** — which
+ * the Linux leg's install step sets — turn the skip into a hard failure, so a
+ * broken install step cannot read as a green run. The coverage is unchanged on
+ * every machine that has the binary, which includes all of CI's Linux legs.
+ */
+const describeWorkflowEvalWithFfmpeg: typeof describeWorkflowEval = (agent, define, options) => {
+  if (HAVE_FFMPEG) {
+    describeWorkflowEval(agent, define, options);
+    return;
+  }
+  if ((process.env.AAI_REQUIRE_FFMPEG ?? "") !== "") {
+    throw new Error(`AAI_REQUIRE_FFMPEG is set but no ffmpeg was found.\n${HOW_TO}`);
+  }
+  console.warn(`\n[skipped: no ffmpeg] ${agent.name} eval not run.\n${HOW_TO}\n`);
+  skipSuite(agent.name, () => {
+    // Named `test`, not aliased: Biome's `noMisplacedAssertion` matches the
+    // CALLEE IDENTIFIER, so an `expect` inside a `vitestTest(…)` is an error.
+    // Same trap `describeEval`'s own signature documents.
+    test("needs a real ffmpeg", () => {
+      expect(HAVE_FFMPEG).toBe(true);
+    });
+  });
+};
 
 /** The id every case uploads the recording under. */
 const UPLOAD_ID = "upl_eval";
@@ -164,7 +219,7 @@ function scriptProvider(text: readonly string[]) {
   });
 }
 
-describeWorkflowEval(
+describeWorkflowEvalWithFfmpeg(
   agentDef,
   (test) => {
     test("cuts where ffmpeg heard a PAUSE, and reads the seam as a paragraph", async ({ app }) => {
