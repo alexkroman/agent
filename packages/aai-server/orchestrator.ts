@@ -350,7 +350,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   startWorkflowWakeSweep({
     store: opts.store,
     broker: brokerOpts,
+    // BOTH, and the sweep is inert without either — omitting one type-checks;
+    // see the `startWorkflowWakeSweep` branch for what that cost.
     ...omitUndefined({ adminDb: opts.adminDb }),
+    ...omitUndefined({ appDb: opts.appDb }),
     ...omitUndefined({ isDraining: opts.isDraining }),
     ...omitUndefined({ extraAppDbClusters: opts.extraAppDbClusters }),
   });

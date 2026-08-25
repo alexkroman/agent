@@ -365,10 +365,13 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
 /**
  * Wire the sweep into a composition, or say why it is not wired.
  *
- * Both branches speak, because a durable-workflow feature that silently never
- * wakes anything is exactly what this module exists to prevent — and "no
- * platform database" is the normal state of local dev, where a developer's runs
- * live in the local world and need no waking at all.
+ * Every branch speaks, because a durable-workflow feature that silently never
+ * wakes anything is exactly what this module exists to prevent — and it speaks
+ * at a level matched to WHO can act on it, which is the correction: "no platform
+ * database" is the normal state of local dev, where a developer's runs live in
+ * the local world and need no waking at all, while half a platform database is a
+ * miswiring nobody asked for. See the branch itself for the bug that taught the
+ * difference.
  *
  * @internal
  */
@@ -381,14 +384,43 @@ export function startWorkflowWakeSweep(
   },
 ): () => void {
   const intervalMs = opts.intervalMs ?? WORKFLOW_WAKE_INTERVAL_MS;
+  const { adminDb, appDb } = opts;
   // Both bindings come from a configured `SUPABASE_DB_URL`, so in practice they
   // are present or absent together — but the sweep needs BOTH to do anything
   // (the admin connection elects a leader, the app connections hold the hints),
   // and a pass with one of them reads nothing while looking healthy.
-  if (!(opts.adminDb && opts.appDb) || intervalMs <= 0) {
-    log.debug("Workflow wake sweep not started", {
-      reason: opts.adminDb && opts.appDb ? "interval is 0" : "no platform database",
-    });
+  //
+  // So the three ways not to start are THREE branches, because they are not one
+  // event. Absent together is the normal state of local dev and of every spec.
+  // Exactly ONE of them is a MISWIRING — a composition that HAS a platform
+  // database and did not hand the sweep all of it — and there is no operator
+  // action that produces it, so it is an `error` naming what is missing.
+  //
+  // They had to be split, because the merged branch is what hid the real one:
+  // `orchestrator.ts` passed `adminDb` and not `appDb` from #1130, the commit
+  // that moved each hint into its app's own database, and this reported it as
+  // "no platform database" at a level `consoleLogger` DROPS unless `AAI_DEBUG=1`
+  // (see `logger.ts`). The one line that would have contradicted it — the
+  // `log.info` below — never printed either, so the only evidence was an
+  // absence. A mechanism whose entire purpose is to remove a silent failure
+  // announced its own absence silently, and every parked durable run on the
+  // platform stayed parked.
+  if (!(adminDb && appDb)) {
+    if (!(adminDb || appDb)) {
+      log.debug("Workflow wake sweep not started", { reason: "no platform database" });
+    } else {
+      log.error(
+        `Workflow wake sweep NOT started: no ${adminDb ? "appDb" : "adminDb"}, though ` +
+          "this composition has a platform database. No durable run whose sandbox " +
+          "has exited will ever resume (see workflow-wake.ts).",
+      );
+    }
+    return () => undefined;
+  }
+  if (intervalMs <= 0) {
+    // `info` rather than `debug`: this is the documented kill switch, and an
+    // operator who set it is reading this log to confirm the sweep's state.
+    log.info("Workflow wake sweep not started: interval is 0");
     return () => undefined;
   }
   if ((opts.extraAppDbClusters ?? 0) > 0) {
@@ -400,11 +432,7 @@ export function startWorkflowWakeSweep(
         "there are NOT woken (see workflow-wake.ts, Known gaps).",
     );
   }
-  const sweep = createWorkflowWakeSweep({
-    ...opts,
-    adminDb: opts.adminDb,
-    appDb: opts.appDb,
-  });
+  const sweep = createWorkflowWakeSweep({ ...opts, adminDb, appDb });
   log.info(`sweeping for due durable runs every ${intervalMs}ms`);
   return sweep.start(intervalMs);
 }
