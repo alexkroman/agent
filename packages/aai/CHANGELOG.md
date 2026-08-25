@@ -1,5 +1,77 @@
 # @alexkroman1/aai
 
+## 8.0.0
+
+### Major Changes
+
+- 1d58f53: Remove legacy and deprecated code, and tighten the types that only existed to
+  tolerate it.
+  
+  **Removed outright.** The deprecated `mapInBatches` alias is gone from
+  `@alexkroman1/aai/step` — use `mapConcurrent`. The `aai eject` command is gone:
+  every `aai init` and `aai pull` already layers in `server.mjs` and the
+  `prestart`/`start` pair, so no project needs retrofitting. `startAndWait` no
+  longer re-reads a run for an agent that predates `wait`. The parts-upload path no
+  longer treats a 404/405 as "this agent has no `/parts` routes".
+  `TransportCallbacks.onSessionReady` is gone — it had no production
+  implementation.
+  
+  **Now required on the wire.** `error.reported.fatal` and
+  `ClientConfigResponse.page` are no longer optional. Absent used to mean "fatal"
+  and "voice"; every emitter and every server states it instead, so a turn-level
+  failure can no longer end a session by omission.
+  
+  **One name per concept.** `@alexkroman1/aai/protocol` no longer publishes the
+  direction-named aliases `ClientMessage`, `ClientMessageSchema`,
+  `CLIENT_MESSAGE_TYPES`, `ServerMessage` and `ServerMessageSchema`. Use
+  `SessionCommand`, `SessionCommandSchema`, `SESSION_COMMAND_TYPES`,
+  `SessionEvent` and `SessionEventSchema`.
+  
+  **A fix that came with it.** `toStepError` recognises a carried verdict
+  STRUCTURALLY rather than with `instanceof`, so a `retryable: false` refusal that
+  arrives rehydrated from the durable journal is still terminal instead of being
+  retried to exhaustion.
+  
+  Platform-internal: the double-encoded-jsonb self-heal and the string-vs-object
+  read tolerance are gone (settled by the 2026-08-09 normalizing migration), as are
+  the pre-per-app-database schema drop, the pre-v2 harness-image bundle-URL gate,
+  and the studio account key-mapping backfill.
+- efa6152: Close the seven API shapes that produced contract churn, and generalize the channel API.
+  
+  Provider factories, options types and resolve helpers are stage-qualified — `deepgramStt`, `cartesiaTts`, `openaiLlm`, `openaiS2s`, `ElevenLabsSttOptions` — so a vendor taking a second stage adds a name instead of renaming one. Every provider options interface extends `ProviderCredentialOptions`, so `apiKeyEnv` is spellable on all thirteen rather than the four the runtime had always honoured. Each LLM vendor has its own `*LlmOptions` extending `ModelOptions`.
+  
+  Value-carrying constants now carry literal types, so their values are in the published .d.ts and cannot change unnoticed; the AssemblyAI voice catalog is typed by `AssemblyAITtsVoiceInfo` so re-accenting a voice is not an API change. An `async` slot mutation body is a compile error rather than a runtime throw.
+  
+  Channels: `ChannelKind` and `registerChannelKind` make a destination a self-contained module, and `slack()` is `slackChannel()`.
+
+### Minor Changes
+
+- 83edc89: Add a channels concept to the API: `@alexkroman1/aai/channels` publishes a serializable channel descriptor, a platform-neutral `ChannelMessage`, and `sendToChannel`, which renders and posts one and classifies the refusal. Slack is the first channel — `slackChannel({ webhookUrl })` covers both incoming webhooks (Block Kit) and workflow triggers (flat variables), with `isSlackWebhookUrl` published so the destination can be refused at the form's edge. `sendToChannelClassified` on `/step-errors` is the pre-classified caller.
+- 6960bfa: Session event handlers can maintain session state: `SessionEventContext` carries `slots`, and every `sessionSlot`/`dialog` accessor now takes a `SlotHolder` (a `ToolContext` still satisfies it, so no call site changes). The runtime commits a hook's write — the `syncState` push plus the store flush — and does not re-run hooks for the events a commit emits. A handler still has no `send`, so the event stream stays a record of the turn rather than a second way to drive it.
+- 01b790c: Add subagents: `subagent()` and `ctx.delegate`.
+  
+  A subagent is a second tool loop started from inside a tool's `execute` — its
+  own instructions, model, tools and, above all, its own context window. Only
+  what it concludes crosses back into the conversation, so a run that reads tens
+  of thousands of tokens of web pages costs the caller a paragraph. Runs are
+  ordinary promises, so several fan out with one `Promise.allSettled`.
+  
+  - `subagent({ name, instructions, llm?, tools?, builtinTools?, maxSteps?, … })`
+    declares one; `ctx.delegate(sub, { task, context?, maxSteps? })` runs it and
+    answers `{ text, steps, toolCalls }`.
+  - A subagent's tools run through the same executor as every other tool call —
+    argument coercion, schema validation, the per-call deadline, a real
+    `ToolContext` — and its last step is spent with tools withheld, so a capped
+    run answers instead of stopping mid-chain.
+  - Delegation is one level deep: a subagent's own tools get a `ctx.delegate`
+    that refuses, naming the rule.
+  - `stubDelegate` (`@alexkroman1/aai/testing`) fakes the capability, routed by
+    subagent name; `createToolContext` defaults `delegate` to a rejection.
+  - The `briefing-desk` template is the worked example.
+- 56b775c: Deduplicate and simplify shared logic across the workspace: byte-buffer joins, a bounded-concurrency worker pool, upload pause/resume, and the guest base-image tag each now have one definition instead of two to four hand-written copies.
+  
+  Note one user-visible change: aai-ui's upload progress now formats byte counts with the SDK's formatBytes, so a KB value renders as `512 KB` rather than `512.0 KB`. The SDK helper is otherwise strictly more robust (NaN/negative guard, carries 1024 KB up to 1.0 MB, and has a TB step).
+
 ## 7.0.0
 
 ### Major Changes
