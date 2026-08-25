@@ -21,12 +21,43 @@ type HomeSidebarProps = {
   onSelectProject: (name: string) => void;
 };
 
+/**
+ * How many projects it takes before the list needs a filter.
+ *
+ * A search box over six projects is noise; over fifty it is the only way to
+ * find one, because studio project names share long prefixes by construction —
+ * the server generates `<base>-<suffix>` (`slug-generate.ts`) and a template or
+ * eval run makes many at once, so a sidebar of them truncates to near-identical
+ * strings. The threshold is deliberately well above a hand-made handful.
+ */
+const FILTER_THRESHOLD = 12;
+
 /** Home-page sidebar: previous projects (each one a chat). New projects are
  * created by the hero prompt box, so there is no button for it. */
 export function HomeSidebar({ projects, onSelectProject }: HomeSidebarProps) {
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const shown = needle ? projects?.filter((n) => n.toLowerCase().includes(needle)) : projects;
+  const filterable = (projects?.length ?? 0) >= FILTER_THRESHOLD;
+
   return (
     <aside className="flex w-[240px] flex-none flex-col gap-4 border-r border-line bg-panel px-4 py-5">
-      <span className="eyebrow ml-2">Projects</span>
+      <span className="eyebrow ml-2">
+        Projects
+        {/* The COUNT, because the list scrolls: without it there is no way to
+            tell twelve projects from ninety without reaching the bottom. */}
+        {projects !== undefined && projects.length > 0 ? ` (${projects.length})` : ""}
+      </span>
+      {filterable && (
+        <input
+          type="search"
+          className="field h-8 text-[13px]"
+          placeholder="Filter projects"
+          aria-label="Filter projects"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
         {projects === undefined && (
           <p className="m-0 px-2 text-xs leading-4 text-subtle italic">Loading projects…</p>
@@ -36,11 +67,19 @@ export function HomeSidebar({ projects, onSelectProject }: HomeSidebarProps) {
             No projects yet. Describe your first agent to create one.
           </p>
         )}
-        {projects?.map((name) => (
+        {/* A filter that matches nothing must SAY so: an empty list under a box
+            with text in it otherwise reads as the projects having gone away. */}
+        {shown?.length === 0 && projects !== undefined && projects.length > 0 && (
+          <p className="m-0 px-2 text-xs leading-4 text-subtle">No project matches “{query}”.</p>
+        )}
+        {shown?.map((name) => (
           <button
             type="button"
             key={name}
-            className="cursor-pointer truncate rounded-md border-none bg-transparent px-2 py-2 text-left text-[13px] text-muted hover:bg-cream hover:text-fg"
+            // `break-all` rather than `truncate`: these names are long and
+            // share prefixes, so cutting them at 240px hid the part that tells
+            // them apart. Wrapping costs a second line and keeps the suffix.
+            className="cursor-pointer break-all rounded-md border-none bg-transparent px-2 py-2 text-left text-[13px] text-muted hover:bg-cream hover:text-fg"
             onClick={() => onSelectProject(name)}
           >
             {name}

@@ -163,6 +163,21 @@ export type StudioClient = {
   runTurn(project: string, kind: string, prompt: string): Promise<StudioTurn>;
   /** The project's files once the guest's end-of-turn sync has landed. */
   workspace(project: string): Promise<Record<string, string> | undefined>;
+  /**
+   * `DELETE /studio/projects/:project` — remove what the case created.
+   *
+   * A case that leaves its project behind leaves DURABLE platform state: this
+   * target drives a real studio, so on a dev server against the local Supabase
+   * stack the row, its workspace and its `*-preview` agent all survive the run
+   * and every run after it. The visible cost is a projects sidebar of dead
+   * `eval-*` entries; the real one is that the dev server keeps trying to boot
+   * their preview agents, so every one is a recurring 503 in the log that names
+   * no test — the same reason the store-conformance cases remove their own rows.
+   *
+   * Best-effort by contract: a delete that fails must not fail the CASE, whose
+   * verdict is about generated source and was already decided.
+   */
+  deleteProject(project: string): Promise<void>;
 };
 
 /** A studio client against `origin`, authenticated with `key`. */
@@ -256,6 +271,12 @@ export function createStudioClient(origin: string, key: string): StudioClient {
         throw new Error("studio session returned no url/token");
       }
       return streamTurn(session.url, session.token, prompt);
+    },
+
+    async deleteProject(project) {
+      // Best-effort, per the contract above: the case's verdict is already
+      // decided, and a cleanup that throws would turn a passing eval red.
+      await api(`/projects/${project}`, { method: "DELETE" }).catch(() => undefined);
     },
 
     async workspace(project) {

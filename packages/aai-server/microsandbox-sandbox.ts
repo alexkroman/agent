@@ -55,8 +55,8 @@ import { access } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import type { NetworkPolicyBuilder } from "microsandbox";
+import { DEFAULT_PORT } from "./constants.ts";
 import { guestImageRef, guestImageRegistry } from "./guest-image-source.ts";
-import { pollGuestHealth } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { guestTokenFor } from "./guest-token.ts";
 import { createLogger } from "./logger.ts";
@@ -64,13 +64,7 @@ import {
   GUEST_EGRESS_DEFAULT,
   GUEST_INGRESS_DEFAULT,
   guestEgressRules,
-  rewriteLoopbackForGuest,
 } from "./microsandbox-network.ts";
-// The paths a guest's boot artifacts live at, from the spawner that defined
-// them: one definition of the agent-mode boot convention, and no second
-// hardcoded `/tmp` for `guard-invariants` rule 11 to count (these are paths
-// INSIDE a linux guest, which is why the Modal side is baselined).
-import { AGENT_BUNDLE_REMOTE_PATH, AGENT_ENV_REMOTE_PATH } from "./modal-agent-sandbox.ts";
 import { GUEST_PORT, harnessCode, sandboxBaseTag } from "./modal-context.ts";
 import {
   guestExecBaseEnv,
@@ -80,14 +74,10 @@ import {
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
-import type { WarmHarness, WorkerSource } from "./sandbox-vm.ts";
+import type { WarmHarness } from "./sandbox-vm.ts";
 import {
-  type AgentServerHandle,
-  agentBootEnv,
-  agentServerFromGuest,
   type DialGuest,
   dialGuest,
-  type GuestFetch,
   type GuestProcLike,
   getFreePort,
   startGuestLogging,
@@ -101,6 +91,105 @@ const log = createLogger("sandbox.microsandbox");
  * what `pnpm build:guest-image` writes locally.
  */
 export const LOCAL_GUEST_IMAGE_TAG = "aai-guest-harness:local";
+
+/**
+ * Guest resources when the env declares none.
+ *
+ * **A microVM's memory is what you boot it with, and `maxMemory` is not burst.**
+ * Measured: a guest at `memory(1024).maxMemory(4096)` is OOM-killed allocating
+ * 1.8 GB, while `memory(4096)` allocates it fine. The guest kernel does expose
+ * `/sys/devices/system/memory` with `auto_online_blocks`, so hotplug exists —
+ * but nothing drives it under pressure, so the ceiling buys nothing at runtime.
+ * Modal's reserve-the-idle-shape / cap-the-build-shape model (1 core + 1024 MiB
+ * reserved, 4 / 4096 capped — `modal_deploy.py`) therefore does NOT translate:
+ * there the cap is elastic headroom, here it would be a hard wall at the
+ * reservation.
+ *
+ * So the number has to cover the PEAK, and the peak is MEASURED: building the
+ * `link-digest` template in a guest (typecheck, then both bundles, as
+ * `studio-build.ts` runs them) peaks at **1219 MB**, and it is the WORKER
+ * bundle that gets there — 106 MB after the typecheck, ~1200 MB after
+ * `buildWorker`. That corroborates the 1.29 GB wedge `aai-server/CLAUDE.md`
+ * records, and it means 480 MiB was never survivable.
+ *
+ * 4096 is therefore ~3.4x a SMALL project's peak, kept because a real workspace
+ * is bigger than a five-file template and a guest may serve a voice session
+ * beside the build — which is the same reason production put its cap there
+ * ("clear the bundler's peak with headroom for a co-resident session"). Lower
+ * it against a measurement of a REAL project, not this one; erring low is what
+ * sent us here.
+ *
+ * Without these, microsandbox's own defaults apply: **480 MiB and one core**
+ * (measured — `MemTotal: 491608 kB`, `nproc: 1`). A workspace build there is
+ * exactly that wedge — RSS pinned flat, one core split across GC and bundler
+ * workers, no I/O and no progress — and the whole point of the account is that
+ * **it reads as a hung build, never as an OOM**. Which is how it presented: the
+ * harness logs `listening on 0.0.0.0:8080`, the studio's test-agent tool hangs,
+ * and nothing further reaches the log.
+ *
+ * `subprocess` cannot see any of this. There `SANDBOX_MEMORY_LIMIT_MB` becomes
+ * V8's `--max-old-space-size` — a JS-heap bound on a process with the whole
+ * machine's RAM behind it — so an unset limit costs nothing. Here an unset
+ * limit is a 480 MiB computer.
+ */
+export const DEFAULT_GUEST_MEMORY_MIB = 4096;
+export const DEFAULT_GUEST_CPUS = 4;
+
+/**
+ * Rolldown's thread pool, pinned to one.
+ *
+ * The in-guest build's peak is NATIVE memory, not V8's — which is why
+ * `--max-old-space-size` cannot bound it (`aai-server/CLAUDE.md`) — and each
+ * Rolldown worker carries its own arena. The names come out of the binding
+ * itself (`strings` on `rolldown-binding.*.node`): `ROLLDOWN_WORKER_THREADS`
+ * and `ROLLDOWN_MAX_BLOCKING_THREADS` are Rolldown's own, `RAYON_NUM_THREADS`
+ * the rayon pool underneath. Nothing in our bundler wrappers exposes a thread
+ * count, so the env is the seam.
+ *
+ * `studio-build.ts` already serializes the two Rolldown passes for exactly this
+ * reason ("two concurrent Rolldown passes peak at roughly the SUM of their
+ * native allocations"); this is the same argument one level down, inside a
+ * single pass.
+ *
+ * MICROSANDBOX ONLY, deliberately. A Modal guest reserves one core but may
+ * burst to four (`modal_deploy.py`), so pinning there would trade production
+ * build latency for memory it is allowed to use. A dev guest is trading the
+ * other way: the memory it saves is what lets the VM be sized smaller.
+ */
+const GUEST_BUILD_ENV: Record<string, string> = {
+  ROLLDOWN_WORKER_THREADS: "1",
+  ROLLDOWN_MAX_BLOCKING_THREADS: "1",
+  RAYON_NUM_THREADS: "1",
+};
+
+/** The build-thread pins, for the agent spawner in its own module. */
+export function guestBuildEnv(): Record<string, string> {
+  return { ...GUEST_BUILD_ENV };
+}
+
+/**
+ * The host port the PLATFORM itself listens on.
+ *
+ * A studio guest has to reach it: the in-guest `aai deploy` that Publish and the
+ * auto-preview deployer run is handed the platform's own origin, and a deploy is
+ * a `POST /deploy` back to this server. Under `subprocess` that came free — the
+ * guest shared the host's stack — and in a VM `localhost:8080` is the guest's
+ * OWN harness, which serves no `/deploy`. The symptom is a 404 the guest returns
+ * to itself:
+ *
+ *     guest stderr: POST /deploy 404
+ *     Studio preview deploy failed { output: 'deploy failed (HTTP 404): Not found' }
+ *
+ * Which is exactly what the retired local-container backend was retired over —
+ * "a loopback platform origin resolves to the guest's own harness rather than
+ * the dev server, so Publish 404s against itself". Opening the port is half the
+ * answer; the other half is rewriting the origin the guest is TOLD to use, which
+ * is `guestReachableUrl` in sandbox-vm.ts.
+ */
+function platformHostPort(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.PORT);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_PORT;
+}
 
 // ── Structural sandbox types (injectable — unit tests boot no microVM) ───────
 
@@ -266,7 +355,14 @@ function applyPolicy(
  * backend in production, so the specifier is never evaluated there — while
  * `import type` keeps the shapes above fully checked.
  */
-function realContext(): MicrosandboxSpawnContext {
+/**
+ * The real microVM context — the default for both spawners.
+ *
+ * Exported rather than `_internals`-only because the agent spawner lives in its
+ * own module now and must default to the SAME context; a second construction
+ * there is how the two paths would drift on how a guest is built.
+ */
+export function defaultMicrosandboxContext(): MicrosandboxSpawnContext {
   return {
     async createSandbox(params) {
       const { Sandbox, NetworkPolicyBuilder } = await import("microsandbox");
@@ -318,7 +414,7 @@ function realContext(): MicrosandboxSpawnContext {
  */
 export async function spawnMicrosandboxWarm(
   opts: { harnessPath: string } & SpawnIdentity,
-  ctx: MicrosandboxSpawnContext = realContext(),
+  ctx: MicrosandboxSpawnContext = defaultMicrosandboxContext(),
   dial: DialGuest = dialGuest,
 ): Promise<WarmHarness> {
   const slug = opts.slug ?? "(none)";
@@ -339,9 +435,17 @@ export async function spawnMicrosandboxWarm(
       hostPort,
       // A studio guest carries no tenant DSNs, so there is nothing to rewrite
       // and no host port to open.
-      env: { ...guestExecBaseEnv(), AAI_GUEST_TOKEN: token, AAI_GUEST_PORT: String(GUEST_PORT) },
-      hostPorts: [],
-      memoryLimitMiB: limits.memoryLimitMiB,
+      env: {
+        ...guestExecBaseEnv(),
+        ...GUEST_BUILD_ENV,
+        AAI_GUEST_TOKEN: token,
+        AAI_GUEST_PORT: String(GUEST_PORT),
+      },
+      // A studio guest carries no tenant DSNs — but it DOES deploy, and a
+      // deploy is a POST back to this platform. See platformHostPort.
+      hostPorts: [platformHostPort()],
+      memoryLimitMiB: limits.memoryLimitMiB ?? DEFAULT_GUEST_MEMORY_MIB,
+      cpus: limits.cpuLimit ?? DEFAULT_GUEST_CPUS,
       labels: { role, slug },
     });
 
@@ -374,96 +478,4 @@ export async function spawnMicrosandboxWarm(
   }
 }
 
-// ── Agent-server spawning (the HTTP-only contract) ───────────────────────────
-
-/**
- * Spawn one DEPLOYED AGENT as a server in a microVM: write the bundle and env
- * where the guest looks for them, exec the harness in agent mode, and wait for
- * `/health`. No control channel; the handle is HTTP plus terminate.
- */
-export async function spawnMicrosandboxAgentServer(
-  opts: {
-    harnessPath: string;
-    slug: string;
-    name: string;
-    worker: WorkerSource;
-    agentEnv: Record<string, string>;
-    onSpawned?: ((terminate: () => Promise<void>) => void) | undefined;
-  },
-  ctx: MicrosandboxSpawnContext = realContext(),
-  fetchFn?: GuestFetch,
-): Promise<AgentServerHandle> {
-  const t0 = performance.now();
-  try {
-    await access(opts.harnessPath);
-    const hostPort = await getFreePort();
-    const limits = parseSandboxLimitsFromEnv(process.env);
-    const token = guestTokenFor(opts.name);
-
-    // The agent's own env is where the loopback DSNs live. Rewriting it is what
-    // makes ctx.db, storage and durable workflows work at all in a VM, and the
-    // ports it reports are exactly what the network policy opens.
-    const { env: agentEnv, hostPorts } = rewriteLoopbackForGuest(opts.agentEnv);
-
-    const sandbox = await ctx.createSandbox({
-      imageRef: microsandboxImageRef(await harnessCode(opts.harnessPath)),
-      name: opts.name,
-      hostPort,
-      env: {
-        ...guestExecBaseEnv(),
-        ...agentBootEnv({
-          slug: opts.slug,
-          token,
-          port: GUEST_PORT,
-          bundle:
-            opts.worker.kind === "url"
-              ? { url: opts.worker.url }
-              : { path: AGENT_BUNDLE_REMOTE_PATH },
-          bundleSha256: opts.worker.sha256,
-          envPath: AGENT_ENV_REMOTE_PATH,
-        }),
-      },
-      hostPorts,
-      memoryLimitMiB: limits.memoryLimitMiB,
-      labels: { role: "agent", slug: opts.slug },
-    });
-
-    const terminate = async (): Promise<void> => {
-      await sandbox.stop().catch(() => undefined);
-    };
-    // Published before readiness, for the reason BackendAgentSpawn.onSpawned
-    // carries: a guest that is still starting must still be killable.
-    opts.onSpawned?.(terminate);
-
-    try {
-      if (opts.worker.kind === "inline") {
-        await sandbox.writeFile(AGENT_BUNDLE_REMOTE_PATH, opts.worker.code);
-      }
-      await sandbox.writeFile(AGENT_ENV_REMOTE_PATH, JSON.stringify(agentEnv));
-
-      const proc = await sandbox.exec(["node", HARNESS_REMOTE_PATH]);
-      // Before the readiness poll: a bundle that throws at load exits here, and
-      // its stderr IS the diagnosis.
-      startGuestLogging(proc, `microsandbox:${hostPort}`);
-      const origin = `ws://127.0.0.1:${hostPort}`;
-      await pollGuestHealth(origin, proc, fetchFn);
-      log.debug("Microsandbox agent server spawned", {
-        slug: opts.slug,
-        hostPort,
-        ms: Math.round(performance.now() - t0),
-      });
-      return agentServerFromGuest({ proc, terminate, origin, token, fetchFn });
-    } catch (err) {
-      await terminate();
-      throw err;
-    }
-  } catch (err) {
-    throw new SandboxUnavailableError(
-      `Microsandbox agent-server spawn failed: ${errorMessage(err)}`,
-      { cause: err },
-    );
-  }
-}
-
-/** @internal Exposed for unit tests only. */
-export const _internals = { procFromExec, realContext };
+export const _internals = { procFromExec, realContext: defaultMicrosandboxContext };

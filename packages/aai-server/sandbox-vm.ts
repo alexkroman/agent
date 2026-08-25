@@ -17,11 +17,9 @@
 
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
-import {
-  microsandboxHarnessImageTag,
-  spawnMicrosandboxAgentServer,
-  spawnMicrosandboxWarm,
-} from "./microsandbox-sandbox.ts";
+import { spawnMicrosandboxAgentServer } from "./microsandbox-agent-sandbox.ts";
+import { rewriteLoopbackForGuest } from "./microsandbox-network.ts";
+import { microsandboxHarnessImageTag, spawnMicrosandboxWarm } from "./microsandbox-sandbox.ts";
 import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
 import { sandboxBaseTag } from "./modal-context.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
@@ -259,6 +257,25 @@ function opFor<Op extends keyof SandboxBackendOps>(
   override: BackendMap<Op> | undefined,
 ): SandboxBackendOps[Op] {
   return override ? override[resolveSandboxBackend(process.env)] : activeBackend()[op];
+}
+
+/**
+ * A URL the platform hands a guest, made reachable FROM that guest.
+ *
+ * Every backend but one is identity: a Modal guest reaches the platform's
+ * public origin over the internet, and a subprocess guest shares the host's
+ * network stack. A microVM has neither — its `127.0.0.1` is itself — so a
+ * loopback origin has to become the host alias.
+ *
+ * This exists as ONE function because the rule has now been applied ad hoc
+ * three times: the agent's env (`rewriteLoopbackForGuest`), the worker bundle's
+ * signed URL, and the platform origin an in-guest `aai deploy` is given. The
+ * third was a 404 the guest returned to itself. Anything else that hands a URL
+ * across this boundary goes through here.
+ */
+export function guestReachableUrl(url: string, env: NodeJS.ProcessEnv = process.env): string {
+  if (resolveSandboxBackend(env) !== "microsandbox") return url;
+  return rewriteLoopbackForGuest({ url }).env.url ?? url;
 }
 
 // ── Warm-harness spawning ────────────────────────────────────────────────────

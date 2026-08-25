@@ -16,6 +16,7 @@ import type { ChatStore } from "aai-server/chat-store";
 import type { HonoEnv } from "aai-server/context";
 import type { PlatformEvents } from "aai-server/platform-events";
 import { resolvePublicOrigin } from "aai-server/public-origin";
+import { guestReachableUrl } from "aai-server/sandbox-vm";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import type { Context } from "hono";
 
@@ -67,5 +68,10 @@ export function requestPublicOrigin(
   c: Context<StudioHonoEnv>,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  return resolvePublicOrigin(c.req.raw, env);
+  // Through `guestReachableUrl`, because this value's whole job is to be dialed
+  // FROM a guest and a microVM's `127.0.0.1` is the microVM. Identity on every
+  // other backend. Without it the guest POSTs /deploy at its own harness, which
+  // serves no such route — `deploy failed (HTTP 404)`, the guest 404ing against
+  // itself, which is what the retired local-container backend was retired over.
+  return guestReachableUrl(resolvePublicOrigin(c.req.raw, env), env);
 }

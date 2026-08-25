@@ -20,6 +20,11 @@ import { resolveHarnessPath } from "./constants.ts";
 import { guestImageRegistry } from "./guest-image-source.ts";
 import { endLiveStreams } from "./live-streams.ts";
 import { createLogger } from "./logger.ts";
+// Statically: this module is already in the graph via sandbox-vm.ts, so a
+// dynamic import of it splits no chunk and rolldown says so
+// (INEFFECTIVE_DYNAMIC_IMPORT). Only the SDK import below needs to be lazy —
+// that one is a native addon the bundled entry must never require at load.
+import { LOCAL_GUEST_IMAGE_TAG } from "./microsandbox-sandbox.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-context.ts";
 import { describeSandboxBackend } from "./sandbox-backend.ts";
 
@@ -97,7 +102,6 @@ export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
  */
 async function warnOnMissingGuestImage(): Promise<void> {
   try {
-    const { LOCAL_GUEST_IMAGE_TAG } = await import("./microsandbox-sandbox.ts");
     if (guestImageRegistry(process.env) !== undefined) return;
     const { Image } = await import("microsandbox");
     await Image.get(LOCAL_GUEST_IMAGE_TAG);

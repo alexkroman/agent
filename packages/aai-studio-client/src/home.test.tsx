@@ -10,7 +10,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { input } from "./_test-utils.ts";
-import { HomeHero } from "./home.tsx";
+import { HomeHero, HomeSidebar } from "./home.tsx";
 import { AGENT_STARTERS, WORKFLOW_STARTERS } from "./starters.ts";
 
 const noop = (): void => undefined;
@@ -171,5 +171,58 @@ describe("HomeHero kind switcher", () => {
     chooseWorkflow();
     fireEvent.click(screen.getByRole("radio", { name: "Voice agent" }));
     expect(chipLabels()).toEqual(first);
+  });
+});
+
+/**
+ * The sidebar with MANY projects.
+ *
+ * Studio project names share long prefixes by construction — the server
+ * generates `<base>-<suffix>`, and a template or eval run makes many at once —
+ * so a long list truncates to near-identical strings with no way to narrow it.
+ * These pin the three parts of the answer: the count, the filter's threshold,
+ * and that a filter matching nothing SAYS so rather than looking like the
+ * projects went away.
+ */
+describe("HomeSidebar with a long list", () => {
+  const many = (n: number): string[] =>
+    Array.from({ length: n }, (_, i) => `use-transcript-workflow-${String(i).padStart(2, "0")}`);
+
+  test("shows the count, because the list scrolls", () => {
+    render(<HomeSidebar projects={many(30)} onSelectProject={noop} />);
+    expect(screen.getByText(/Projects \(30\)/)).toBeTruthy();
+  });
+
+  test("offers no filter for a handful", () => {
+    // A search box over six projects is noise.
+    render(<HomeSidebar projects={many(6)} onSelectProject={noop} />);
+    expect(screen.queryByLabelText("Filter projects")).toBeNull();
+  });
+
+  test("filters the list down, matching anywhere in the name", () => {
+    render(<HomeSidebar projects={[...many(20), "bedtime-story-reader"]} onSelectProject={noop} />);
+    fireEvent.change(input("Filter projects"), { target: { value: "bedtime" } });
+
+    expect(screen.getByRole("button", { name: "bedtime-story-reader" })).toBeTruthy();
+    // The 20 that do not match are gone, not merely reordered.
+    expect(screen.queryByRole("button", { name: "use-transcript-workflow-00" })).toBeNull();
+  });
+
+  test("says so when the filter matches nothing", () => {
+    render(<HomeSidebar projects={many(20)} onSelectProject={noop} />);
+    fireEvent.change(input("Filter projects"), { target: { value: "nothing-matches-this" } });
+
+    expect(screen.getByText(/No project matches/)).toBeTruthy();
+  });
+
+  test("a filtered row still selects the project it names", () => {
+    const onSelectProject = vi.fn();
+    render(
+      <HomeSidebar projects={[...many(20), "sweep-agent"]} onSelectProject={onSelectProject} />,
+    );
+    fireEvent.change(input("Filter projects"), { target: { value: "sweep" } });
+    fireEvent.click(screen.getByRole("button", { name: "sweep-agent" }));
+
+    expect(onSelectProject).toHaveBeenCalledWith("sweep-agent");
   });
 });

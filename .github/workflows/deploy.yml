@@ -159,6 +159,18 @@ jobs:
         # hang that gets past it.
         timeout-minutes: 30
         run: node scripts/wait-for-npm-versions.mjs
+
+      # The same race one layer out, and the same remedy. When
+      # GUEST_IMAGE_REGISTRY is set, every guest spawn pulls
+      # `<registry>/aai-guest-harness:<sha16>`, published by the SEPARATE
+      # `guest-image.yml` workflow that triggers on this same push — and Actions
+      # cannot `needs:` across workflows, so nothing orders the two. A deploy
+      # that wins the race ships a server whose every sandbox spawn 404s on the
+      # pull. A no-op (loudly) while the variable is unset, because production
+      # then builds its own Modal snapshot image and there is nothing to wait for.
+      - name: Wait for the guest image to be readable from the registry
+        timeout-minutes: 20
+        run: node scripts/wait-for-guest-image.mjs
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
