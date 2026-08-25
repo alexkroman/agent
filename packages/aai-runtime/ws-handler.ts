@@ -30,6 +30,7 @@ import type { SessionCore } from "./session-core.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createClientSink } from "./ws-client-sink.ts";
 import type { SessionWebSocket } from "./ws-frames.ts";
+import { createWsSessionLifecycle } from "./ws-session-lifecycle.ts";
 
 export { asSessionWebSocket, type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
@@ -144,6 +145,13 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   const sid = sessionId.slice(0, 8);
   const ctx = opts.logContext ?? {};
 
+  /**
+   * This socket's session, once built.
+   *
+   * A plain handle now: it used to double as the phase, meaning "not created
+   * yet", "the close handler already ran" and "start() failed" depending on
+   * where it was read. `lifecycle` below answers that question instead.
+   */
   let session: SessionCore | null = null;
   /** Release for this socket's claim on `sessions[sessionId]` — a no-op once
    *  a reconnect with ?sessionId=<same id> (resumeFrom) re-claims the key
@@ -157,11 +165,15 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   let stopPacingCurrent: (() => void) | null = null;
   /** Keepalive ping timer, armed on open and cleared on close. */
   let keepalive: ReturnType<typeof setInterval> | null = null;
-  /** Set to true once session.start() resolves. Messages arriving before
-   *  this flag is set are buffered and replayed once the session is ready,
-   *  preventing audio/frames from being dispatched to a half-initialized session. */
-  let sessionReady = false;
-  let messageBuffer: { data: unknown }[] | null = [];
+  /**
+   * Frames that arrived before the session was ready.
+   *
+   * Owned here rather than in the machine, like the socket in the two
+   * transport lifecycles: WHEN it is replayed or discarded is a phase, and the
+   * byte accounting a budget needs is not. `starting` is the only phase in
+   * which it is written — see `lifecycle.buffering()`.
+   */
+  let messageBuffer: { data: unknown }[] = [];
   /** Binary bytes currently held in `messageBuffer` (budgeted separately from
    *  the message-count cap — see bufferMessage). */
   let bufferedBinaryBytes = 0;
@@ -174,7 +186,6 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
    * count cap. Drops are logged — silent loss here cost a long debug once.
    */
   function bufferMessage(event: { data: unknown }): void {
-    if (!messageBuffer) return;
     const size = event.data instanceof Uint8Array ? event.data.byteLength : 0;
     const overBudget =
       size > 0
@@ -202,10 +213,11 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     }
   }
 
+  /** Replay the pre-ready frames. `ready`'s entry action; runs exactly once. */
   function drainBuffer(): void {
-    if (!(session && messageBuffer)) return;
     const buf = messageBuffer;
-    messageBuffer = null;
+    messageBuffer = [];
+    if (!session) return;
     for (const event of buf) {
       dispatchSafely(event.data, session);
     }
@@ -247,6 +259,62 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       log.debug("ws: close after start failure failed", { error: errorMessage(err) });
     }
   }
+
+  /**
+   * Where this socket's session is: connecting, starting (buffering), ready, or
+   * ended. Every effect below is a HOW the machine does not know; the machine
+   * owns WHEN, and in particular owns the fact that `endSession` runs once.
+   */
+  const lifecycle = createWsSessionLifecycle({
+    start: () => {
+      const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
+      // `p-timeout` rather than anything of the machine's: a rejection is what
+      // `starting` is prepared for. Note it does NOT cancel the `start()`
+      // underneath, which is why `endSession` runs on that arm.
+      if (session === null) return Promise.resolve();
+      return pTimeout(session.start(), {
+        milliseconds: timeoutMs,
+        message: `session.start() timed out after ${timeoutMs}ms`,
+      }).catch((err: unknown) => {
+        // Logged HERE rather than on the machine's `onError`, because a start
+        // that fails after the client hung up has already left `starting` — so
+        // the transition never fires, and this line is the only evidence a
+        // provider connect black-holed. Re-thrown so the machine still reacts
+        // when it IS still listening.
+        log.error("Session start failed", { ...ctx, sid, error: errorDetail(err) });
+        throw err;
+      });
+    },
+    announceReady: () => {
+      // `start()` resolving is not the same question as "this session works".
+      // A provider that cannot open at all reports a fatal error and lets the
+      // transport start anyway, so production logged `session error (fatal)`
+      // for a missing TTS key and `Session ready` 400ms later — a session that
+      // could never speak, announced as ready, with the two lines in the order
+      // that makes the second one look like the outcome.
+      //
+      // The session still starts (see `SessionCore.faultCode`: the transport
+      // owns that policy, not this log line). What changes is that the line
+      // stops claiming otherwise, and names the code so the pair reads as one
+      // event.
+      const fault = session?.faultCode;
+      if (fault === undefined) log.info("Session ready", { ...ctx, sid });
+      else log.warn("Session ready after a fatal error", { ...ctx, sid, code: fault });
+    },
+    drainBuffer,
+    dropBuffer: () => {
+      messageBuffer = [];
+    },
+    endSession: () => {
+      if (session) endSession(session);
+    },
+    failClient: () => {
+      // The client received `config` and believes the session is live; tell it
+      // the start failed and close, or it streams audio into a dead session
+      // forever with no retry signal.
+      if (clientSink) failClientAndClose(clientSink, "Session failed to start");
+    },
+  });
 
   function startKeepalive(): void {
     if (!ws.ping) return;
@@ -294,6 +362,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     } catch (err) {
       log.error("Session create failed", { ...ctx, sid, error: errorDetail(err) });
       session = null;
+      lifecycle.send({ type: "CREATE_FAILED" });
       failClientAndClose(client, "Failed to start session");
       return;
     }
@@ -326,55 +395,11 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // `SessionCore.configure`).
     session.configure(opts.readyConfig);
 
-    const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
-    const startWithTimeout = pTimeout(session.start(), {
-      milliseconds: timeoutMs,
-      message: `session.start() timed out after ${timeoutMs}ms`,
-    });
-
-    startWithTimeout
-      .then(() => {
-        // Socket closed while start() was in flight — the session is already
-        // stopped and the buffer discarded; don't mark it ready.
-        if (!session) return;
-        // `start()` resolving is not the same question as "this session works".
-        // A provider that cannot open at all reports a fatal error and lets the
-        // transport start anyway, so production logged `session error (fatal)`
-        // for a missing TTS key and `Session ready` 400ms later — a session that
-        // could never speak, announced as ready, with the two lines in the order
-        // that makes the second one look like the outcome.
-        //
-        // The session still starts (see `SessionCore.faultCode`: the transport
-        // owns that policy, not this log line). What changes is that the line
-        // stops claiming otherwise, and names the code so the pair reads as one
-        // event.
-        const fault = session.faultCode;
-        if (fault === undefined) log.info("Session ready", { ...ctx, sid });
-        else log.warn("Session ready after a fatal error", { ...ctx, sid, code: fault });
-        sessionReady = true;
-        drainBuffer();
-      })
-      .catch((err: unknown) => {
-        log.error("Session start failed", { ...ctx, sid, error: errorDetail(err) });
-        // pTimeout rejects but does NOT cancel the underlying start(), so the
-        // transport may still be establishing (or later finish) a provider
-        // connection. Tear it down and run end-of-session cleanup, otherwise
-        // the close handler below sees session === null and skips both,
-        // leaking the provider socket and the sink/state map entries.
-        const failed = session;
-        session = null;
-        messageBuffer = null;
-        // session === null means the close handler already ran endSession for
-        // this session; its identity-guarded cleanup covers the map, and a
-        // bare key delete here could evict a resumed session's entry.
-        if (failed) {
-          endSession(failed);
-          // The client received `config` and believes the session is live; tell
-          // it the start failed and close, or it streams audio into a dead
-          // session forever with no retry signal.
-          failClientAndClose(client, "Session failed to start");
-        }
-      });
+    // Every branch the continuation used to carry is a transition now: the
+    // ready log and the buffer drain, the teardown on a rejected or timed-out
+    // start, and the `if (!session) return` staleness guard, which is deleted
+    // rather than trusted — a close leaves `starting`, which stops the actor.
+    lifecycle.send({ type: "CREATED" });
   }
 
   // readyState OPEN — socket already open (e.g. from ws handleUpgrade)
@@ -385,13 +410,15 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   }
 
   ws.addEventListener("message", (event) => {
-    if (!session) return;
-    // Buffer messages until session.start() completes to avoid dispatching
-    // to a session whose transport connection isn't established yet.
-    if (!sessionReady) {
+    // Three answers, one per phase, where this used to be a null check and a
+    // boolean: buffer while `start()` is in flight so nothing reaches a session
+    // whose transport connection isn't established yet, dispatch once ready,
+    // and drop before a session exists or after it is over.
+    if (lifecycle.buffering()) {
       bufferMessage(event);
       return;
     }
+    if (!(lifecycle.dispatches() && session)) return;
     dispatchSafely(event.data, session);
   });
 
@@ -411,13 +438,11 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       code: ev?.code ?? "none",
       reason: ev?.reason || "none",
     });
-    // Null the session and buffer before stopping: if session.start() is
-    // still in flight, its .then() would otherwise mark the stopped session
-    // ready and drain buffered frames into it.
-    const closed = session;
-    session = null;
-    messageBuffer = null;
-    if (closed) endSession(closed);
+    // A close in `starting` stops the invoked `start()`, so its resolution can
+    // no longer mark a stopped session ready or drain frames into it — the
+    // nulling that used to enforce that is gone. `endSession` runs on this
+    // transition out of `starting` and `ready`, and on neither of the others.
+    lifecycle.send({ type: "SOCKET_CLOSED" });
     opts.onClose?.();
   });
 

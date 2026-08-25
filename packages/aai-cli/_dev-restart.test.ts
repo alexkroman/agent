@@ -248,6 +248,30 @@ describe("createRestartSupervisor", () => {
     expect(h.closed()).toEqual(["v0"]);
   });
 
+  test("adopting after a teardown closes the server instead of orphaning it", async () => {
+    // Ctrl-C during the initial build: `close()` runs while `current` is still
+    // undefined, so it closes nothing, and the build then finishes and adopts.
+    // Without the refusal the freshly listening server is assigned to a
+    // supervisor with no teardown left to run, and its port stays bound for the
+    // life of the process. `restartOnce` guards the same race for a REBUILD.
+    const h = makeHarness();
+    await h.supervisor.close();
+    h.supervisor.adopt({ id: "booted" });
+    await vi.waitUntil(() => h.closed().includes("booted"));
+    expect(h.supervisor.current()).toBeUndefined();
+  });
+
+  test("a request after adopting into a closed supervisor rebuilds nothing", async () => {
+    const h = makeHarness();
+    await h.supervisor.close();
+    h.supervisor.adopt({ id: "booted" });
+    // The refused adopt leaves the supervisor in its boot window, so the
+    // request queues against a boot that will never complete rather than
+    // starting a rebuild for a dev server that is gone.
+    h.supervisor.request();
+    expect(h.build).not.toHaveBeenCalled();
+  });
+
   test("a failing teardown hook still closes the current server", async () => {
     const h = makeHarness({ teardown: vi.fn(() => Promise.reject(new Error("watcher stuck"))) });
     started(h);

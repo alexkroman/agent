@@ -33,8 +33,9 @@
  * fails the shape assertions below anyway.
  */
 
+import { basename } from "node:path";
 import { describe, expect, test } from "vitest";
-import { sole } from "./_gate-support.ts";
+import { byCodeUnit, sole } from "./_gate-support.ts";
 
 const workflow = sole(
   import.meta.glob("../../.github/workflows/check.yml", {
@@ -43,6 +44,18 @@ const workflow = sole(
     eager: true,
   }),
 );
+
+/**
+ * Every workspace package manifest, for the coverage-matrix spec below.
+ *
+ * `eager` and `?raw` like the workflow above: this package carries no way to
+ * read the filesystem at test time, and the glob is what turbo hashes.
+ */
+const manifests: Record<string, string> = import.meta.glob("../*/package.json", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
 
 /** Split once — a dozen readers below walk the same file. */
 const lines: string[] = (workflow ?? "").split("\n");
@@ -299,6 +312,63 @@ describe("the Postgres image pull", () => {
     // the pull — or worse, a suite that skips itself.
     expect(pgStep, "a pull that never succeeded no longer exits non-zero").toMatch(
       /pulled:-0.*\n?[\s\S]{0,200}?exit 1/,
+    );
+  });
+});
+
+describe("the coverage test matrix", () => {
+  /**
+   * The package directory a glob key names.
+   *
+   * Vite normalizes the globbing package's OWN manifest to `./package.json`
+   * rather than `../aai-templates/package.json` — whatever spelling the glob
+   * uses, verified against both — so the self entry needs its directory from
+   * somewhere else. `import.meta` is that somewhere, rather than a literal name
+   * that would go stale if this spec moved. Getting it wrong is silent: the
+   * self entry simply drops out, and the package this spec lives in is the one
+   * the matrix stops being checked against.
+   */
+  const dirOf = (key: string): string =>
+    key.startsWith("./")
+      ? basename(import.meta.dirname)
+      : (/^\.\.\/([^/]+)\//.exec(key)?.[1] ?? "");
+
+  /** Package directory names that declare a `test:coverage` script. */
+  function packagesWithCoverage(): string[] {
+    return Object.entries(manifests)
+      .filter(([, source]) => /"test:coverage"\s*:/.test(source))
+      .map(([key]) => dirOf(key))
+      .filter((dir) => dir !== "")
+      .sort(byCodeUnit);
+  }
+
+  /** The `package: [...]` list of the `test` job's matrix. */
+  function matrixPackages(): string[] {
+    const found = /^\s*package:\s*\[([^\]]*)\]/m.exec(jobBody("test"));
+    if (found === null) throw new Error("the test job declares no bracketed `package:` matrix");
+    return bracketList(found[1]).sort(byCodeUnit);
+  }
+
+  test("both sides parse to something", () => {
+    // The floor every gate in this package carries: two empty lists agree, and
+    // "the matrix covers every package" is vacuously true of no packages.
+    expect(packagesWithCoverage().length, "no package.json declares test:coverage").toBeGreaterThan(
+      5,
+    );
+    expect(matrixPackages().length, "no matrix entries parsed").toBeGreaterThan(5);
+  });
+
+  test("it names EVERY package with a test:coverage script", () => {
+    // Twice now a package's whole suite and all four of its coverage floors
+    // have been gated by nothing in CI while passing locally, because
+    // `scripts/check.sh` runs `turbo run test:coverage` unfiltered and this
+    // list does not: `aai-evals`, and then `aai-runtime`, which arrived with
+    // the runtime split and was absent for every PR after it — 147 test files
+    // and 2143 tests, in the package that runs every agent. The comment above
+    // the list has recorded the bug class since the first one; a comment is
+    // not a gate.
+    expect(matrixPackages(), "a package with a test:coverage script is not in CI's matrix").toEqual(
+      packagesWithCoverage(),
     );
   });
 });

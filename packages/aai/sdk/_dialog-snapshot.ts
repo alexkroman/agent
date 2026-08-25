@@ -171,24 +171,3 @@ export function assertDialogSource(source: unknown): void {
       "`sessionSlot(key, …)` takes one: a dialog IS a slot with a machine over it.",
   );
 }
-
-/**
- * Refuse a machine whose `initial` names no state it declares.
- *
- * XState resolves it to a state that does not exist, so every `position()`
- * reads as that name and no event ever transitions — a dialog silently stuck
- * before the first turn. It is the same check `Dialog.tool({ when })` already
- * makes over the state it gates on, one level up, and it belongs here beside
- * {@link statePaths}, which is what "its states" means.
- */
-export function assertInitialState(
-  key: string,
-  machine: AnyStateMachine,
-  valid: ReadonlySet<string>,
-): void {
-  const initial = String(machine.config.initial);
-  if (valid.has(initial)) return;
-  throw new Error(
-    `Dialog "${key}" starts in "${initial}", which is not one of its states (${[...valid].sort().join(", ")}). Nothing would ever transition out of it.`,
-  );
-}

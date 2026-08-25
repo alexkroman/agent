@@ -18,6 +18,7 @@ import {
 } from "../_ws.ts";
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
+import { createOpenaiRealtimeLifecycle } from "./openai-realtime-lifecycle.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import {
   type SkipGreeting,
@@ -69,7 +70,6 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   const baseUrl = opts.options.url ?? DEFAULT_URL;
 
   let ws: OpenaiRealtimeWebSocket | null = null;
-  let closing = false;
   // Drop mic frames while the provider link is stalled (audio is
   // loss-tolerant; a stalled socket must not queue live speech unboundedly).
   // Only sendUserAudio is gated — control messages always go through.
@@ -81,10 +81,6 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   const agentTranscriptBuffers = new Map<string, string>();
   type ToolBuffer = { callId: string; name: string; argsBuffer: string };
   const toolBuffers = new Map<string, ToolBuffer>();
-  // Only ever tested for presence — the response id itself is passed straight
-  // to onReplyStarted from the local `id`, never correlated later. (Contrast
-  // s2s-transport.ts, where currentReplyId's value IS read.)
-  let replyInFlight = false;
   let responseCreateQueued = false;
 
   function send(payload: Record<string, unknown>): void {
@@ -148,6 +144,29 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     emitError(code, message, { fatal: false });
   }
 
+  function clearTurnBuffers(): void {
+    agentTranscriptBuffers.clear();
+    toolBuffers.clear();
+  }
+
+  /**
+   * Where the connection is, and whether a reply is in flight.
+   *
+   * Every effect below is a HOW the machine does not know; the machine owns
+   * WHEN. Note `clearTurnBuffers` is wired as an effect rather than called from
+   * the three paths that used to call it — see `openai-realtime-lifecycle.ts`.
+   */
+  const lifecycle = createOpenaiRealtimeLifecycle({
+    replyStarted: (replyId) => opts.callbacks.onReplyStarted(replyId),
+    replyCompleted: () => opts.callbacks.report({ type: "reply.completed" }),
+    replyCancelled: () => opts.callbacks.report({ type: "reply.cancelled" }),
+    cancelResponse: () => send({ type: "response.cancel" }),
+    clearTurnBuffers,
+    // No `fatal` key: the socket is gone, so the session really is over.
+    reportFatal: (detail) => emitError("connection", detail),
+    log: (level, message, fields) => log[level](message, { ...fields, sid: opts.sid }),
+  });
+
   async function start(): Promise<void> {
     const url = `${baseUrl}?model=${encodeURIComponent(model)}`;
     log.info("OpenAI Realtime connecting", { url });
@@ -163,6 +182,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
     sock.addEventListener("open", () => {
       connect.markOpen();
+      lifecycle.send({ type: "OPEN" });
       sendSessionUpdate();
       sendGreeting();
     });
@@ -196,8 +216,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         connect.fail(new Error(msg));
         return;
       }
-      if (closing) {
-        log.info("OpenAI Realtime error during close", { error: msg });
+      if (!lifecycle.reportsErrors()) {
+        log.info("OpenAI Realtime error on a finished session", { error: msg });
         return;
       }
       // The `ws` library always follows a fatal socket error with `close`, and
@@ -227,9 +247,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   function handleResponseCreated(obj: Record<string, unknown>): void {
     const resp = obj.response as { id?: unknown } | undefined;
-    const id = asString(resp?.id);
-    replyInFlight = true;
-    opts.callbacks.onReplyStarted(id);
+    lifecycle.send({ type: "REPLY_STARTED", replyId: asString(resp?.id) });
   }
 
   function handleAgentTranscriptDelta(obj: Record<string, unknown>): void {
@@ -245,15 +263,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     if (text) opts.callbacks.report({ type: "agent-transcript.committed", text });
   }
 
-  function clearTurnBuffers(): void {
-    agentTranscriptBuffers.clear();
-    toolBuffers.clear();
-  }
-
   function handleResponseDone(): void {
-    replyInFlight = false;
-    clearTurnBuffers();
-    opts.callbacks.report({ type: "reply.completed" });
+    lifecycle.send({ type: "REPLY_DONE" });
   }
 
   function handleErrorEvent(obj: Record<string, unknown>): void {
@@ -342,17 +353,10 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         opts.callbacks.report({ type: "audio.completed" });
         return;
       case "input_audio_buffer.speech_started":
-        if (replyInFlight) {
-          // Server-VAD barge-in: OpenAI cancels the in-flight response
-          // server-side, but unlike a client `cancelReply()` nothing else
-          // tells the client to flush its buffered audio, so the interrupted
-          // reply keeps playing out over the user. Emit `onCancelled` to flush
-          // playback (the pipeline transport does the same on an interim
-          // barge-in). Mirrors `cancelReply()`'s local state reset.
-          replyInFlight = false;
-          clearTurnBuffers();
-          opts.callbacks.report({ type: "reply.cancelled" });
-        }
+        // Only `replying` acts on this — under server VAD it is a barge-in, and
+        // the lifecycle reports the cancellation the client needs to flush its
+        // buffered audio with. The speaking edge is reported either way.
+        lifecycle.send({ type: "SPEECH_STARTED" });
         opts.callbacks.report({ type: "speech.started" });
         return;
       case "input_audio_buffer.speech_stopped":
@@ -392,18 +396,14 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   }
 
   function handleClose(code: number, reason: string): void {
-    if (closing) {
-      log.info("OpenAI Realtime closed", { code, reason });
-      return;
-    }
-    log.warn("OpenAI Realtime closed unexpectedly", { code, reason });
-    // No `fatal` key: the socket is gone, so the session really is over.
-    emitError("connection", `OpenAI Realtime closed (code=${code})`);
+    // Whether this close is the end of a session or the end of a hang-up is the
+    // lifecycle's to know: only `closed` has been asked for.
+    lifecycle.send({ type: "CLOSED", code, reason });
   }
 
   async function stop(): Promise<void> {
-    closing = true;
-    // Normal Closure rather than a statusless frame: the `closing` flag
+    lifecycle.send({ type: "STOP" });
+    // Normal Closure rather than a statusless frame: the `closed` phase
     // already keeps *our* logs honest, but the peer would otherwise see 1005
     // "No Status Received" and treat a deliberate stop as a dropped socket.
     ws?.close(WS_NORMAL_CLOSURE);
@@ -448,14 +448,10 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       }
     },
     cancelReply() {
-      if (!replyInFlight) return;
-      send({ type: "response.cancel" });
-      replyInFlight = false;
-      clearTurnBuffers();
-      // Do NOT report `reply.cancelled` here — the session's own `cancel` command
-      // (client-initiated, the only cancelReply caller) emits `cancelled`
-      // itself, so firing it here double-emits the frame. The S2S and
-      // pipeline transports follow the same rule.
+      // Handled only in `replying`, so the old `if (!replyInFlight) return`
+      // guard is the state rather than a latch. It reports nothing — see the
+      // `cancelResponse` action.
+      lifecycle.send({ type: "CANCEL" });
     },
   };
 }
