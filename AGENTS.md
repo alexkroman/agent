@@ -508,10 +508,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Numbered rules — `--rules` counts them, this sentence having carried a stale
-  count until it stopped naming one — each printing WHY the invariant exists
-  and what to use instead, so a violation is self-correcting and a reviewer
-  never re-explains it.
+  Numbered rules, each printing WHY the invariant exists and what to use
+  instead, so a violation is self-correcting and a reviewer never re-explains
+  it.
 
   | # | Rule | Instead |
   | --- | --- | --- |
@@ -541,7 +540,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 25 | no new field on the shared channel message shape | that kind's own options type |
   | 26 | no raw step call in a shipped `workflows/` body | the `*Classified` sibling |
 
-  Hand-kept, and it HAS gone stale — it stopped at 23 while 24 and 25 shipped.
+  Hand-kept, and it HAS gone stale (it stopped at 23); `--rules` is derived.
   Rule IDs are **stable** — they appear in commit messages and in the baseline,
   so a deleted rule leaves its number retired rather than letting a later rule
   inherit it (6, retired with `ctx.state`; 10, with the `research/` directory it
@@ -643,11 +642,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
   `packages/aai/AGENT_GUIDE.md` is the current copy of
   `packages/aai-templates/scaffold/CLAUDE.md`; see "The authoring guide ships
   inside the SDK" below. Same silent-staleness shape as `check:guest-toolchain`.
-- **`pnpm check:authoring-guide`** (`scripts/check-authoring-guide.mjs`) — the
-  other half of that: `check:agent-guide` says the shipped guide is CURRENT,
-  this says it is COMPLETE. Every contracted authoring capability must be named
-  in the guide's CODE (never prose — half the names are ordinary English);
-  thirteen were absent. The script's own doc carries the rest.
+- **`pnpm check:authoring-guide`** (`scripts/check-authoring-guide.mjs`) —
+  `check:agent-guide` says the shipped guide is CURRENT; this says it is
+  COMPLETE. Every contracted authoring capability must be named in the guide's
+  CODE, never prose. Thirteen were absent; its own doc has the rest.
 - **`pnpm check:scaffold`** (`scripts/sync-scaffold-versions.mjs --check`) —
   asserts `packages/aai-templates/scaffold/package.json` still matches the
   workspace. Third file in this committed-copy shape and the only one that
@@ -1231,8 +1229,8 @@ Six properties are load-bearing:
   recorded decision into a red typecheck.
 
   **`contracts/compatibility/` is EMPTY today** — every superseded epoch was
-  dropped pre-release ("no external consumers"), so until the first RETAINED
-  epoch this typecheck proves nothing and the value is the classification.
+  dropped pre-release, so until the first RETAINED epoch this proves nothing
+  and the value is the classification.
 - **The hash covers the rollup BODY, not the report file.** API Extractor's
   preamble is identical in every report and is the tool's, not ours; hashing it
   would make an api-extractor upgrade that reworded one line bump every epoch at
@@ -1271,22 +1269,21 @@ contract every time a playback constant moved. So the capabilities name the
 surface instead — `agent`, `tool`, `state`, `workflow`, `workflow-api`,
 `defaults`, `utils`, `testing`, `builtins`, and one per provider stage — and the
 gate asserts the naming is **exhaustive**: every `@public` export of the
-authoring subpaths this leaves `aai` with belongs to exactly one
-capability, so a new public export
-fails until somebody decides which contract it joins — which is the same decision
-as "who is promised this". Ownership is per PACKAGE, deliberately: three names
-(`isTerminal`, `WorkflowSummary`, `WorkflowOutputOf`) are on both packages'
-surfaces, the same concept from the two sides of the wire. A name published on
+authoring subpaths this leaves `aai` with belongs to exactly one capability, so
+a new public export fails until somebody decides which contract it joins — the
+same decision as "who is promised this". Ownership is per PACKAGE,
+deliberately: three names (`isTerminal`, `WorkflowSummary`, `WorkflowOutputOf`)
+are on both packages' surfaces, the same concept from the two sides of the
+wire. A name published on
 both `.` and a narrower subpath belongs to the narrower one.
 
 **That set is deliberately NOT enumerated here.** This paragraph used to list
-"the fourteen authoring subpaths"; by the time anyone checked it was fifteen and
-was missing `/channels` — a contracted capability with an epoch, a compatibility
-obligation and four template importers. A hand-kept list of the surface, inside
-the section describing the mechanism that exists to prevent one. Read it from
-`authoringSubpaths()` (`scripts/_api-contracts-tree.mjs`), which is what the
-gate evaluates; `exampleFacingSubpaths()` beside it is the same minus a second
-deny-list, and is what the template coverage ratchet reads.
+"the fourteen authoring subpaths" and was missing `/channels`, a contracted
+capability with four template importers — a hand-kept list of the surface,
+inside the section describing the mechanism that prevents one. It is
+`authoringSubpaths()` (`scripts/_api-contracts-tree.mjs`), and
+`exampleFacingSubpaths()` beside it, minus a second deny-list, is what the
+template coverage ratchet reads.
 
 **Counting them is what got them fixed, which is the argument for the whole
 gate.** The internal-tagged names are the explicit exemption, committed to
@@ -1606,19 +1603,16 @@ package.json scripts (not always obvious from test code alone):
 
 #### Windows is NOT tested, and is currently broken
 
-There is no Windows leg in CI. One was added, run once, and removed; it failed
-two of three legs on two unrelated causes, one fixed and one still open. The
-whole account — including why the middle tiers were never the right thing to
-duplicate onto Windows, and why not to re-add the matrix without a Windows
-machine to reproduce on — is in `packages/aai-cli/CLAUDE.md`, the package a
-Windows user actually runs.
+There is no Windows leg in CI; one was added, run once, and removed. The whole
+account — the two failure causes, one still open, and why not to re-add the
+matrix without a Windows machine to reproduce on — is in
+`packages/aai-cli/CLAUDE.md`, the package a Windows user actually runs.
 
 #### The e2e suite is pnpm-only in CI
 
 Why the npm and yarn legs were retired, and how to reproduce a user report under
 one anyway (`AAI_TEST_PM=npm pnpm test:e2e`), is in
-`packages/aai-cli/CLAUDE.md` — the package owning `e2e.test.ts` and
-`_e2e-test-utils.ts`. The repo-wide half is why that command works at all:
+`packages/aai-cli/CLAUDE.md`. The repo-wide half is why that command works:
 `AAI_TEST_PM` sits in the `check:e2e` task's **`env`**, because strict env mode
 strips an undeclared variable silently (see "strict env mode" above).
 
