@@ -539,6 +539,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 24 | no new field on `ToolContext` | that value's own module + capability root |
   | 25 | no new field on the shared channel message shape | that kind's own options type |
   | 26 | no raw step call in a shipped `workflows/` body | the `*Classified` sibling |
+  | 27 | no explicit `[Symbol.dispose]()` call in shipped source | `using` / `await using` |
 
   Hand-kept, and it HAS gone stale (it stopped at 23); `--rules` is derived.
   Rule IDs are **stable** — they appear in commit messages and in the baseline,
@@ -558,11 +559,11 @@ one commit of history. A file in the tree has no merge base and no such modes.
   Rule 22 counts that family instead, the first rule here **seeded as debt** (145
   across 75 files, goal zero) — its entries are lines nobody has read yet.
 
-  **Five scopes, five corpus FLOORS**, and three of the five were missing —
-  rule 11's shipped-source corpus (~1,027 files, covered by neither existing
-  call, and the Windows-portability rule whose regressions are invisible on
-  every machine that runs CI), rule 12's guest HTTP surface, and rule 13's 175
-  template files. The last two derive their corpus from `git ls-files`, which
+  **Six scopes, six corpus FLOORS**, and three were missing — the
+  shipped-source corpus rules 11 and 27 share (1,224 files, and 11 is the
+  Windows-portability rule whose regressions are invisible on every machine
+  that runs CI), rule 12's guest HTTP surface, and rule 13's 175 template
+  files. The last two derive their corpus from `git ls-files`, which
   exits **0** on a pathspec matching nothing where `git grep` exits 1 — that
   asymmetry is exactly why the grep-based rules announced their own blindness
   and these two could not.

@@ -196,6 +196,30 @@ describe("studio session broker", () => {
     await broker.dispose();
   });
 
+  /**
+   * A cold spawn whose `studio/session-init` rejects must DISPOSE the guest on
+   * the way out. The sandbox never lands in `sessions`, so nothing downstream
+   * can reach it — not the idle sweeper, not `dispose()` — and an undisposed
+   * one burns its whole orphan timeout billed while its wired handlers keep
+   * writing the project behind everyone's back.
+   *
+   * Untested until the `installOrDispose` guard was rewritten: the invariant
+   * was spelled twice (a `catch` and a trailing call) and neither spelling had
+   * a spec, so the third exit that would leak had nothing to fail against.
+   */
+  test("a guest whose session-init fails is disposed, not left orphaned", async () => {
+    const guest = fakeGuest();
+    (guest.warm.conn as { sendRequest: unknown }).sendRequest = (method: string) =>
+      method === "studio/session-init"
+        ? Promise.reject(new Error("session-init refused"))
+        : Promise.resolve({ ok: true });
+    const { broker } = await makeBroker([guest]);
+
+    await expect(broker.ensureSession(SCOPE, PROJECT, "k")).rejects.toThrow("session-init refused");
+    expect(guest.disposed()).toBe(true);
+    await broker.dispose();
+  });
+
   test("guest sync-workspace writes through to the project store, validated", async () => {
     const guest = fakeGuest();
     const { broker, workspaces } = await makeBroker([guest]);

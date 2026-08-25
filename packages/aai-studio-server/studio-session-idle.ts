@@ -67,6 +67,12 @@ export function createSessionReaper(deps: {
     // scope guard, and `WarmHarness[Symbol.asyncDispose]` already swallows its
     // own teardown failures (warm-harness.ts) — a second guard only implied it
     // could reject.
+    //
+    // Baselined under `guard-invariants` rule 27 for that same reason. The rule
+    // wants a resource BOUND with `await using` so scope exit disposes it, and
+    // this entry was acquired in another scope entirely — the session map owns
+    // it, and reaping is what this function IS. There is no scope here to hang
+    // the lifetime on, so the explicit call is the correct spelling.
     await entry.warm[Symbol.asyncDispose]();
   }
 

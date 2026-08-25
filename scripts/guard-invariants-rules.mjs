@@ -54,9 +54,9 @@ import { TIMING_RULES } from "./guard-invariants-rules-timing.mjs";
 export {
   GUEST_SURFACE_PATHSPECS,
   SESSION_SURFACE_PATHS,
+  SHIPPED_SOURCE_PATHSPECS,
   SOURCE_PATHSPECS,
   TEMPLATE_PATHSPECS,
-  TMP_RULE_PATHSPECS,
   WORKFLOW_BODY_PATHSPECS,
 } from "./guard-invariants-scopes.mjs";
 

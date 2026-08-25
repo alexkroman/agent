@@ -229,8 +229,18 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     }
   }
 
-  /** Install into a freshly spawned guest, disposing it on any failure — an
-   *  un-installed sandbox that nothing references is a billed orphan. */
+  /**
+   * Install into a freshly spawned guest, disposing it on any failure — an
+   * un-installed sandbox that nothing references is a billed orphan.
+   *
+   * The guard is a stack rather than a `try`/`catch` plus a trailing call,
+   * because the invariant is "dispose on every exit EXCEPT the installed one"
+   * and that shape cannot be written once with `try`: the success path returns
+   * from inside the `try`, so the failure disposal has to be spelled a second
+   * time in the `catch`. Both spellings were here, and a third exit added
+   * anywhere in this body would have leaked a sandbox silently. Moving the
+   * stack on the one path that KEEPS the harness is the whole difference.
+   */
   async function installOrDispose(
     warm: WarmHarness,
     key: string,
@@ -239,16 +249,16 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     apiKey: string,
     workspace: StudioWorkspace,
   ): Promise<string | null> {
-    try {
-      wire(warm, key, scope, project);
-      const token = await initSession(warm, scope, project, apiKey, workspace);
-      if (token !== null) return token;
-    } catch (err) {
-      await warm[Symbol.asyncDispose]();
-      throw err;
-    }
-    await warm[Symbol.asyncDispose]();
-    return null;
+    await using orphan = new AsyncDisposableStack();
+    orphan.use(warm);
+    wire(warm, key, scope, project);
+    const token = await initSession(warm, scope, project, apiKey, workspace);
+    if (token === null) return null;
+    // Installed: `wire` has handed the harness to the session map, which owns
+    // its teardown from here. Moving the resources out of the guard is what
+    // stops scope exit disposing a live session's sandbox.
+    orphan.move();
+    return token;
   }
 
   return {

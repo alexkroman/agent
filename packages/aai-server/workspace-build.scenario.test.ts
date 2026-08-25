@@ -123,17 +123,17 @@ describe("guest workspace/deploy (Publish = aai deploy in the sandbox)", () => {
   });
 
   async function deployInGuest(files: Record<string, string>): Promise<DeployResult> {
-    const warm = await spawnTestHarness();
-    try {
-      warm.conn.listen();
-      return (await warm.conn.sendRequest(
-        "workspace/deploy",
-        { files, serverUrl, apiKey: "integration-test-key", slug: "integration-publish" },
-        300_000,
-      )) as DeployResult;
-    } finally {
-      await warm[Symbol.asyncDispose]();
-    }
+    // `await using`: the harness is a real sandbox, so a leaked one on a failing
+    // assertion outlives the suite. Scope exit runs the same teardown the
+    // hand-written `finally` did, on every path including the ones a later
+    // early-return adds.
+    await using warm = await spawnTestHarness();
+    warm.conn.listen();
+    return (await warm.conn.sendRequest(
+      "workspace/deploy",
+      { files, serverUrl, apiKey: "integration-test-key", slug: "integration-publish" },
+      300_000,
+    )) as DeployResult;
   }
 
   test("publishes a workspace through the literal CLI", { timeout: 300_000 }, async () => {

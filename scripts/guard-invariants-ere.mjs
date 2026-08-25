@@ -258,6 +258,24 @@ export const CLASSIFIABLE_STEP_CALLS = [
 ].join("|");
 
 /**
+ * An explicit INVOCATION of a disposal symbol — `warm[Symbol.asyncDispose]()`.
+ *
+ * The leading identifier character is what tells a CALL from a DECLARATION, and
+ * it carries the whole rule: `async [Symbol.asyncDispose]() {`,
+ * `[Symbol.dispose](): void;` and `[Symbol.asyncDispose]: async () => {` are all
+ * preceded by whitespace, so none of them match — which they must not, since
+ * declaring the protocol is the thing rule 27 wants MORE of. The trailing paren
+ * is the other half: `expect(core[Symbol.dispose]).not.toHaveBeenCalled()`
+ * references the method without calling it and is not a teardown.
+ *
+ * Both symbols and both capitalizations in one fragment, because the sync and
+ * async halves have identical remedies (`using` / `await using`) and a rule
+ * spelled for one of them is a rule the other walks past — the failure mode
+ * this whole gate is a monument to.
+ */
+export const DISPOSE_CALL = `[${ID_TAIL}]\\[Symbol\\.(async)?[Dd]ispose\\]\\(`;
+
+/**
  * Not preceded by an identifier character — POSIX ERE's stand-in for `\\b`,
  * which git's matcher does not implement.
  *

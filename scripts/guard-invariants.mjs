@@ -59,9 +59,9 @@ import {
   GUEST_SURFACE_PATHSPECS,
   LINE_RULES,
   SESSION_SURFACE_PATHS,
+  SHIPPED_SOURCE_PATHSPECS,
   SOURCE_PATHSPECS,
   TEMPLATE_PATHSPECS,
-  TMP_RULE_PATHSPECS,
   WORKFLOW_BODY_PATHSPECS,
 } from "./guard-invariants-rules.mjs";
 import {
@@ -340,7 +340,7 @@ const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
  */
 const SCAN_CORPORA = [
   { what: "the line-rule source scan", pathspecs: SOURCE_PATHSPECS, minFiles: 800 }, // ~1,530
-  { what: "rule 11's shipped-source scan", pathspecs: TMP_RULE_PATHSPECS, minFiles: 600 }, // ~1,027
+  { what: "rules 11+27's shipped-source scan", pathspecs: SHIPPED_SOURCE_PATHSPECS, minFiles: 600 }, // 1,224
   // An explicit file list, so every entry must resolve — the floor IS its length.
   {
     what: "rule 16's session-surface file list",
