@@ -32,7 +32,7 @@
  *
  * ## This is the DEFAULT, and it degrades to the single request
  *
- * Three things make this path decline rather than fail, because none of them is
+ * Two things make this path decline rather than fail, because neither is
  * worth an error a caller has to handle — which is also what makes it safe to be
  * the default rather than something a caller opts into (`partsSettings`):
  *
@@ -45,11 +45,6 @@
  *   CALLER-NAMED id the path buys resumability rather than speed and a one-part
  *   file needs that as much as any other — `_upload-parts-plan.ts`'s module doc
  *   carries the rule.
- * - **An agent that does not serve `/parts`.** A deploy older than this answers
- *   404 or 405 to the `POST`, which is an ANSWER: the same file goes up the
- *   ordinary way, one request later. That is the same shape `watch`'s 404
- *   fallback takes, and for the same reason — a page cannot know which version of
- *   the SDK an agent was deployed with.
  *
  * ## A part that dies is re-sent; a part that is REFUSED is not
  *
@@ -191,9 +186,6 @@ export { partsPlan, planParts, type UploadPartsPlan } from "./_upload-parts-plan
  */
 type UploadCapability = { directParts?: boolean; claimBatch?: number };
 
-/** Statuses that mean "this agent has no `/parts` routes", as opposed to a failure. */
-const NO_SUCH_ROUTE = new Set([404, 405]);
-
 /**
  * Where the PLATFORM serves an upload's bytes, given the workflow API's own base.
  *
@@ -262,12 +254,12 @@ async function openedUpload(ctx: {
  * How many landed offsets one claim may name, as the AGENT answered — never this
  * SDK's own constant.
  *
- * The two capabilities shipped in different versions, so an agent may serve the
- * direct path and still read a single `?offset=`; batching against one records the
- * first window, answers 200, and leaves the rest as holes that read as silence in a
- * step much later. So anything that is not a whole number above one — absent, `1`,
- * a float, a string a JSON body smuggled in — means one offset per claim, which is
- * the behaviour every agent has.
+ * Absent is the ordinary answer from a deployment that does not serve the direct
+ * path, and the value arrives in a JSON body — so anything that is not a whole
+ * number above one (absent, `1`, a float, a string) means one offset per claim.
+ * Batching against an agent that reads a single `?offset=` records the first
+ * window, answers 200, and leaves the rest as holes that read as silence in a step
+ * much later.
  */
 function claimBatchOf(advertised: number | undefined): number {
   return Number.isInteger(advertised) && (advertised ?? 0) > 1 ? (advertised ?? 1) : 1;
@@ -305,9 +297,6 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
       }),
     { attempts, signal },
   );
-  // An older agent, and the file has not moved yet — so this costs one round trip
-  // and the caller falls back.
-  if (NO_SUCH_ROUTE.has(begun.status)) return undefined;
   // A 409 says the id is already claimed, and on a FIRST attempt that is exactly
   // what it sounds like — the store refusing a second upload into somebody else's
   // id, which is what makes a caller-chosen id safe. Two things make it OURS: a
@@ -434,7 +423,7 @@ export class UploadNotRecordedError extends Error {
  *
  * `complete` first, because a finished upload publishes no ranges — see
  * `UploadInfo.ranges` — and reading that absence as "nothing has landed" would
- * re-send a file that is entirely there. An agent too old to report ranges at all
+ * re-send a file that is entirely there. A store that declines to report windows
  * answers the same way an empty upload does, so a resume against one degrades to
  * sending the whole file rather than to a hole.
  */
@@ -453,9 +442,7 @@ async function storedRanges(
   return {
     ranges: info.complete ? [{ start: 0, end: info.size }] : (info.ranges ?? []),
     // The record answers the same two capability fields the claim does, precisely so
-    // this read can serve the 409 the claim answered with nothing. An agent too old
-    // to send them answers as one where the bytes come to it, which is the right
-    // degradation in both cases.
+    // this read can serve the 409 the claim answered with nothing.
     capability: info,
   };
 }

@@ -15,14 +15,14 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   MAX_TOOL_RESULT_CHARS,
 } from "./constants.ts";
-import { ClientMessageSchema, ServerMessageSchema, SessionErrorCodeSchema } from "./protocol.ts";
+import { SessionCommandSchema, SessionErrorCodeSchema, SessionEventSchema } from "./protocol.ts";
 
 const FIXTURE_DIR = join(import.meta.dirname, "compat-fixtures");
 
 type Fixture = {
   version: number;
-  ServerMessage: Record<string, unknown>[];
-  ClientMessage: Record<string, unknown>[];
+  SessionEvent: Record<string, unknown>[];
+  SessionCommand: Record<string, unknown>[];
   constants: {
     DEFAULT_STT_SAMPLE_RATE: number;
     DEFAULT_TTS_SAMPLE_RATE: number;
@@ -35,13 +35,13 @@ function loadFixture(filename: string): Fixture {
   return JSON.parse(readFileSync(join(FIXTURE_DIR, filename), "utf-8"));
 }
 
-// Wire-format fixtures (e.g. wire-v1.json) use a different shape and live in
-// wire.test.ts; filter them out by checking for the schema-compat structure.
+// Keep only files with the schema-compat structure, so a fixture of any other
+// shape dropped in this directory is skipped rather than parsed as one.
 const fixtureFiles = readdirSync(FIXTURE_DIR)
   .filter((f) => f.endsWith(".json"))
   .filter((f) => {
     const parsed = loadFixture(f) as unknown as Record<string, unknown>;
-    return "ServerMessage" in parsed && "ClientMessage" in parsed;
+    return "SessionEvent" in parsed && "SessionCommand" in parsed;
   })
   .sort();
 
@@ -92,15 +92,15 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
 
   const groups: CompatGroup[] = [
     {
-      label: "ServerMessage",
-      schema: ServerMessageSchema,
-      messages: fixture.ServerMessage,
+      label: "SessionEvent",
+      schema: SessionEventSchema,
+      messages: fixture.SessionEvent,
       discriminant: "type",
     },
     {
-      label: "ClientMessage",
-      schema: ClientMessageSchema,
-      messages: fixture.ClientMessage,
+      label: "SessionCommand",
+      schema: SessionCommandSchema,
+      messages: fixture.SessionCommand,
       discriminant: "type",
     },
   ];

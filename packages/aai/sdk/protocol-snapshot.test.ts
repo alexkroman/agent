@@ -55,7 +55,7 @@ describe("server→client event wire format", () => {
     { type: "session.timed-out" },
     { type: "session.configured", audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
     { type: "audio.completed" },
-    { type: "error.reported", code: "stt", message: "Speech recognition failed" },
+    { type: "error.reported", code: "stt", message: "Speech recognition failed", fatal: true },
     { type: "custom.emitted", event: "game_state", data: { hp: 10 } },
     { type: "state.updated", state: { items: [] } },
     {

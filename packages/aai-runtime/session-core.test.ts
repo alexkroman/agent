@@ -535,7 +535,12 @@ describe("createSessionCore — error logging", () => {
     const logger = makeLogger();
     const { core, sink } = makeCore({ logger });
 
-    core.report({ type: "error.reported", code: "stt", message: "socket closed 1000" });
+    core.report({
+      type: "error.reported",
+      code: "stt",
+      message: "socket closed 1000",
+      fatal: true,
+    });
 
     expect(logger.warn).toHaveBeenCalledWith("session error (fatal)", {
       sid: "s-test",
@@ -581,7 +586,7 @@ describe("createSessionCore — faultCode", () => {
 
   test("carries the code of a fatal error", () => {
     const { core } = makeCore({});
-    core.report({ type: "error.reported", code: "tts", message: "missing API key" });
+    core.report({ type: "error.reported", code: "tts", message: "missing API key", fatal: true });
     expect(core.faultCode).toBe("tts");
   });
 
@@ -594,8 +599,8 @@ describe("createSessionCore — faultCode", () => {
   /** The FIRST fatal is the cause; later ones are usually downstream of it. */
   test("keeps the first fatal code when several are reported", () => {
     const { core } = makeCore({});
-    core.report({ type: "error.reported", code: "tts", message: "missing API key" });
-    core.report({ type: "error.reported", code: "stt", message: "socket closed" });
+    core.report({ type: "error.reported", code: "tts", message: "missing API key", fatal: true });
+    core.report({ type: "error.reported", code: "stt", message: "socket closed", fatal: true });
     expect(core.faultCode).toBe("tts");
   });
 });

@@ -109,19 +109,6 @@ describe("sending a file as parts", () => {
 });
 
 describe("declining, rather than failing", () => {
-  test("an agent with no parts routes gets the single request instead", async () => {
-    const agent = scriptAgent({ begin: 404 });
-    const stored = await client().upload(recording(), { name: "call.wav", parallel: true });
-    // One declaration that was refused, then the ordinary POST — the file has not
-    // moved yet when the fallback is decided, so it costs a round trip.
-    expect(agent.parts).toHaveLength(0);
-    const [, fallback] = agent.calls;
-    expect(fallback?.method).toBe("POST");
-    expect(fallback?.url.pathname).toMatch(/\/uploads$/);
-    expect(fallback?.bytes).toBe(TOTAL);
-    expect(stored.complete).toBe(true);
-  });
-
   test("a file that fits in one part is not worth two extra round trips", async () => {
     const agent = scriptAgent();
     await client().upload(recording(UPLOAD_CHUNK_BYTES), { parallel: true });

@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budgets for guard-invariants' line rules \u2014 see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 12, rule 13, rule 14, rule 20, rule 21.",
+  "_description": "Per-file budgets for guard-invariants' line rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 12, rule 13, rule 14, rule 20, rule 21.",
   "rule2_spreadTernary": {
     "packages/aai-cli/_utils.ts": 1,
     "packages/aai-server/subprocess-sandbox.ts": 1,
@@ -26,15 +26,15 @@
     "packages/aai-server/modal-agent-sandbox.ts": 2
   },
   "rule16_sessionCallbackName": {
-    "packages/aai-runtime/integration/_pipeline-fuzz-model.ts": 3,
-    "packages/aai-runtime/integration/_s2s-fuzz-harness.ts": 3,
+    "packages/aai-runtime/integration/_pipeline-fuzz-model.ts": 2,
+    "packages/aai-runtime/integration/_s2s-fuzz-harness.ts": 2,
     "packages/aai-runtime/runtime-session-callbacks.ts": 2,
     "packages/aai-runtime/runtime-types.ts": 5,
     "packages/aai-runtime/runtime.ts": 1,
     "packages/aai-runtime/session-commands.ts": 1,
     "packages/aai-runtime/session-core.ts": 3,
-    "packages/aai-runtime/transports/_transport-recorder.ts": 3,
-    "packages/aai-runtime/transports/types.ts": 4,
+    "packages/aai-runtime/transports/_transport-recorder.ts": 2,
+    "packages/aai-runtime/transports/types.ts": 3,
     "packages/aai-runtime/ws-handler.ts": 4
   },
   "rule17_openCodedRecordGuard": {
@@ -60,7 +60,6 @@
     "packages/aai-runtime/_test-utils.ts": 1,
     "packages/aai-runtime/providers/stt/elevenlabs.ts": 1,
     "packages/aai-runtime/runtime.ts": 1,
-    "packages/aai-runtime/server.ts": 1,
     "packages/aai-runtime/transports/pipeline-llm-trace.ts": 1,
     "packages/aai-runtime/workflow-report.ts": 2,
     "packages/aai-server/guest-forward.ts": 1,

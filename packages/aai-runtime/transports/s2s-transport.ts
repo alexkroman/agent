@@ -135,7 +135,6 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       opts.callbacks.report({ type: "reply.cancelled" });
     },
     flushPendingToolResults,
-    notifyReady: (sessionId: string) => opts.callbacks.onSessionReady?.(sessionId),
     currentReplyId: () => currentReplyId,
     log: (level, message, fields) =>
       log[level](message, { sid: opts.sid, agent: opts.agent, ...fields }),

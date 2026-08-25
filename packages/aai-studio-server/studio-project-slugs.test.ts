@@ -12,6 +12,7 @@ import type { StudioWorkspace } from "./studio-workspace.ts";
 
 const workspace = (extra: Partial<StudioWorkspace> = {}): StudioWorkspace => ({
   files: {},
+  hash: "h",
   updatedAt: 0,
   ...extra,
 });

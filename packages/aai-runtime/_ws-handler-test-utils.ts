@@ -42,7 +42,7 @@ export function simulateBinaryFrame(ws: MockWebSocket, frame: Uint8Array): void 
   ws.dispatchEvent(new MessageEvent("message", { data: frame }));
 }
 
-/** Deliver a text client frame (a JSON `ClientMessage`). */
+/** Deliver a text client frame (a JSON `SessionCommand`). */
 export function simulateTextFrame(ws: MockWebSocket, text: string): void {
   ws.dispatchEvent(new MessageEvent("message", { data: text }));
 }

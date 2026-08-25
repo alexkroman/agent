@@ -348,7 +348,12 @@ describe("session event stream — reclamation", () => {
 
 describe("stampSessionEvent", () => {
   test("stamps a body that has no session to be recorded in", () => {
-    const event = stampSessionEvent({ type: "error.reported", code: "protocol", message: "no" });
+    const event = stampSessionEvent({
+      type: "error.reported",
+      code: "protocol",
+      message: "no",
+      fatal: true,
+    });
     expect(SessionEventSchema.safeParse(event).success).toBe(true);
   });
 });

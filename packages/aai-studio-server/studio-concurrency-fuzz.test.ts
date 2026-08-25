@@ -58,7 +58,7 @@ import {
   PREVIEW_JOB_MAX_ATTEMPTS,
   PREVIEW_JOB_VISIBILITY_MS,
 } from "./studio-preview-queue.ts";
-import { currentFilesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
+import { filesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
 
 const SCOPE = "scope";
 const PROJECTS = ["alpha-a1b2c3", "beta-d4e5f6", "gamma-g7h8i9"];
@@ -154,7 +154,8 @@ async function runPreviewPipeline(
   const problems: string[] = [];
   const store = createMemoryWorkspaceStore();
   for (const project of PROJECTS) {
-    await store.put(SCOPE, project, { files: { "agent.ts": CONTENTS[0] }, updatedAt: 0 }, null);
+    const seed: Record<string, string> = { "agent.ts": CONTENTS[0] ?? "" };
+    await store.put(SCOPE, project, { files: seed, hash: filesHash(seed), updatedAt: 0 }, null);
   }
 
   // A virtual clock: a job whose deploy THREW is left unacked on purpose and
@@ -281,9 +282,9 @@ async function checkPreviewOutcome(
     }
     const archived = queue.archived.some((job) => job.job.project === project);
     const settled = Boolean(workspace.previewError) || archived;
-    if (workspace.previewHash !== currentFilesHash(workspace) && !settled) {
+    if (workspace.previewHash !== workspace.hash && !settled) {
       problems.push(
-        `${project} never converged — stamped ${String(workspace.previewHash).slice(0, 8)}, files ${currentFilesHash(workspace).slice(0, 8)}`,
+        `${project} never converged — stamped ${String(workspace.previewHash).slice(0, 8)}, files ${workspace.hash.slice(0, 8)}`,
       );
     }
     // A `previewError` is only SETTLED while the files it names are still
@@ -299,11 +300,7 @@ async function checkPreviewOutcome(
     // 100 against the unfixed code). So the boundary has its own targeted
     // property below, the same shape as the archive cap, and this line covers
     // the interleavings that do reach it rather than pretending to be the gate.
-    if (
-      workspace.previewError &&
-      workspace.previewHash === currentFilesHash(workspace) &&
-      !archived
-    )
+    if (workspace.previewError && workspace.previewHash === workspace.hash && !archived)
       problems.push(`${project} kept a previewError over its deployed files`);
   }
   for (const job of queue.archived) {
@@ -353,7 +350,12 @@ test("preview queue: a crash-looping job is archived past the cap, never before"
       async (s, rounds) => {
         let clock = 1;
         const store = createMemoryWorkspaceStore();
-        await store.put(SCOPE, "alpha-a1b2c3", { files: { "a.ts": "//" }, updatedAt: 0 }, null);
+        await store.put(
+          SCOPE,
+          "alpha-a1b2c3",
+          { files: { "a.ts": "//" }, hash: filesHash({ "a.ts": "//" }), updatedAt: 0 },
+          null,
+        );
         const queue = createMemoryPreviewQueue({ now: () => clock });
         const deployer = createPreviewDeployer({
           workspaces: store,
@@ -410,7 +412,12 @@ test("preview queue: an undo clears the banner its failed edit left", async () =
   await fc.assert(
     fc.asyncProperty(fc.scheduler(), fc.integer({ min: 1, max: 3 }), async (s, extraJobs) => {
       const store = createMemoryWorkspaceStore();
-      await store.put(SCOPE, "alpha-a1b2c3", { files: { "a.ts": "// v0" }, updatedAt: 0 }, null);
+      await store.put(
+        SCOPE,
+        "alpha-a1b2c3",
+        { files: { "a.ts": "// v0" }, hash: filesHash({ "a.ts": "// v0" }), updatedAt: 0 },
+        null,
+      );
       const queue = createMemoryPreviewQueue();
       let ok = true;
       const deployer = createPreviewDeployer({

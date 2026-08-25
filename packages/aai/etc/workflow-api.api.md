@@ -28,10 +28,10 @@ const ClientConfigResponseSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
     greeting: z.ZodOptional<z.ZodString>;
     sessionUrl: z.ZodOptional<z.ZodString>;
-    page: z.ZodOptional<z.ZodEnum<{
+    page: z.ZodEnum<{
         static: "static";
         voice: "voice";
-    }>>;
+    }>;
 }, z.core.$strip>;
 
 // @public

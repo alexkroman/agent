@@ -19,7 +19,7 @@ function buildClientConfig(src: {
 }): {
   greeting?: string;
   name?: string;
-  page?: "voice" | "static";
+  page: "voice" | "static";
   sessionUrl?: string;
 };
 ```
@@ -56,7 +56,7 @@ surface rule can't drift between them.
 {
   greeting?: string;
   name?: string;
-  page?: "voice" | "static";
+  page: "voice" | "static";
   sessionUrl?: string;
 }
 ```
@@ -73,10 +73,10 @@ optional greeting?: string;
 optional name?: string;
 ```
 
-##### page?
+##### page
 
 ```ts
-optional page?: "voice" | "static";
+page: "voice" | "static";
 ```
 
 ##### sessionUrl?
@@ -179,7 +179,7 @@ Return value when `ok: false`:
 Passing `knownTypes` is what separates "unknown newer-version type" from
 "known type that failed validation" — without it, an invalid known message
 is silently swallowed as if it were a forward-compat unknown type. When
-parsing client→server messages, pass [CLIENT\_MESSAGE\_TYPES](#session_command_types) as
+parsing client→server messages, pass [SESSION\_COMMAND\_TYPES](#session_command_types) as
 `knownTypes`.
 
 #### Type Parameters
@@ -374,7 +374,7 @@ event(e:
      | "stt"
      | "tool"
      | "tts";
-  fatal?: boolean;
+  fatal: boolean;
   message: string;
   meta: {
      at: number;
@@ -552,7 +552,7 @@ event the stream had already recorded under another.
      \| `"stt"`
      \| `"tool"`
      \| `"tts"`;
-  `fatal?`: `boolean`;
+  `fatal`: `boolean`;
   `message`: `string`;
   `meta`: \{
      `at`: `number`;
@@ -694,11 +694,10 @@ failure came from:
 
 **Severity is `fatal`, not the code**, and the two are independent: any of
 these can arrive on a session that continues. `fatal: false` means surface
-the message and keep the session interactive; ABSENT means fatal, which is
-the historical shape (an error always followed a teardown). A fatal frame is
-not a banner — `aai-ui` answers one by releasing the microphone and ending
-the call, so a turn-level failure reported without the flag takes the whole
-session down.
+the message and keep the session interactive. It is REQUIRED: a fatal frame
+is not a banner — `aai-ui` answers one by releasing the microphone and ending
+the call — so every emitter states which it means rather than inheriting a
+default that takes the whole session down.
 
 ***
 
@@ -772,10 +771,10 @@ Relative path of the client-config endpoint under an agent's base URL.
 const ClientConfigResponseSchema: z.ZodObject<{
   greeting: z.ZodOptional<z.ZodString>;
   name: z.ZodOptional<z.ZodString>;
-  page: z.ZodOptional<z.ZodEnum<{
+  page: z.ZodEnum<{
      static: "static";
      voice: "voice";
-  }>>;
+  }>;
   sessionUrl: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 ```
@@ -860,9 +859,9 @@ Host-provided agent configuration for a host-mode connection: the caller
 greeting, and tool schemas for a single session instead of using a deployed
 agent.
 
-Validated standalone rather than as a `ClientMessageSchema` member — the
+Validated standalone rather than as a `SessionCommandSchema` member — the
 host-mode handshake consumes this message *before* `wireSessionSocket`
-attaches, so it must never reach `dispatchMessage`/`ClientMessageSchema`.
+attaches, so it must never reach `dispatchMessage`/`SessionCommandSchema`.
 
 ***
 
@@ -1097,7 +1096,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      tool: "tool";
      tts: "tts";
   }>;
-  fatal: z.ZodOptional<z.ZodBoolean>;
+  fatal: z.ZodBoolean;
   message: z.ZodString;
   meta: z.ZodObject<{
      at: z.ZodNumber;
@@ -1148,36 +1147,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 
 ## References
 
-### CLIENT\_MESSAGE\_TYPES
-
-Renames and re-exports [SESSION_COMMAND_TYPES](#session_command_types)
-
-***
-
 ### ClientConfigResponse
 
 Re-exports [ClientConfigResponse](workflow-api.md#clientconfigresponse)
-
-***
-
-### ClientMessage
-
-Renames and re-exports [SessionCommand](#sessioncommand)
-
-***
-
-### ClientMessageSchema
-
-Renames and re-exports [SessionCommandSchema](#sessioncommandschema)
-
-***
-
-### ServerMessage
-
-Renames and re-exports [SessionEvent](#sessionevent)
-
-***
-
-### ServerMessageSchema
-
-Renames and re-exports [SessionEventSchema](#sessioneventschema)

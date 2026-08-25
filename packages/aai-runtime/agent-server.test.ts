@@ -166,9 +166,9 @@ describe("createAgentServer", () => {
       const config = (await (await fetch(`${baseUrl}/client-config`)).json()) as {
         page?: string;
       };
-      // Absent, not `"voice"`: a server that never heard of the field answers
-      // the same way, which is what makes absence readable as voice.
-      expect(config.page).toBeUndefined();
+      // Stated, not absent: the override is what decides the front door, and a
+      // reader should not have to infer it from a missing key.
+      expect(config.page).toBe("voice");
     });
   });
 

@@ -14,7 +14,6 @@ import {
 import {
   assertWorkspaceLimits,
   createWorkspace,
-  currentFilesHash,
   deleteWorkspace,
   filesHash,
   getWorkspace,
@@ -379,11 +378,13 @@ describe("assertWorkspaceLimits", () => {
 });
 
 describe("hasUnpublishedChanges", () => {
-  const at = (over: Partial<StudioWorkspace> = {}): StudioWorkspace => ({
-    files: { "agent.ts": "a" },
-    updatedAt: 1,
-    ...over,
-  });
+  // `hash` is stamped from the RESULTING files, the way `stampWorkspace` does —
+  // deriving it from the base would leave an override's hash describing the
+  // wrong tree, which is the one thing these assertions read.
+  const at = (over: Partial<StudioWorkspace> = {}): StudioWorkspace => {
+    const base: StudioWorkspace = { files: { "agent.ts": "a" }, hash: "", updatedAt: 1, ...over };
+    return { ...base, hash: over.hash ?? filesHash(base.files) };
+  };
 
   test("a never-published project is not 'stale'", () => {
     // The preview says "nothing published yet"; a stale banner on top of that
@@ -435,35 +436,6 @@ describe("hasUnpublishedChanges", () => {
     expect(
       hasUnpublishedChanges(at({ files: {}, deployedSlug: "s", deployedHash: published })),
     ).toBe(true);
-  });
-});
-
-describe("currentFilesHash", () => {
-  test("uses the stored hash when present", () => {
-    // The stored value wins even when it disagrees with the files — that is
-    // the point: reads trust what the write stamped instead of recomputing.
-    const ws: StudioWorkspace = { files: { "a.ts": "1" }, hash: "stored", updatedAt: 1 };
-    expect(currentFilesHash(ws)).toBe("stored");
-  });
-
-  test("falls back to computing for pre-hash documents", () => {
-    const files = { "a.ts": "1" };
-    const ws: StudioWorkspace = { files, updatedAt: 1 };
-    expect(currentFilesHash(ws)).toBe(filesHash(files));
-  });
-});
-
-describe("hasUnpublishedChanges (stored hash)", () => {
-  test("an old document without a stored hash still compares correctly", () => {
-    const files = { "agent.ts": "a" };
-    expect(
-      hasUnpublishedChanges({
-        files,
-        updatedAt: 1,
-        deployedSlug: "s",
-        deployedHash: filesHash(files),
-      }),
-    ).toBe(false);
   });
 });
 
@@ -534,7 +506,7 @@ describe("stampWorkspaceMeta", () => {
     // Stamped from the pre-deploy snapshot, exactly as studio-deploy.ts does.
     const stamped = await stampWorkspaceMeta(store, "scope", "proj", {
       deployedSlug: "proj-x7k2",
-      deployedHash: currentFilesHash(stale as StudioWorkspace),
+      deployedHash: (stale as StudioWorkspace).hash,
     });
 
     expect(stamped?.files).toEqual({ "agent.ts": "v2" });

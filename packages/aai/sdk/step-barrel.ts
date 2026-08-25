@@ -72,7 +72,7 @@ export {
   TranscribeError,
   type TranscribeRequestOptions,
 } from "./_transcribe-shared.ts";
-export { mapConcurrent, mapInBatches } from "./map-concurrent.ts";
+export { mapConcurrent } from "./map-concurrent.ts";
 export { requireStepEnv, stepEnv } from "./step-env.ts";
 export {
   type MultipartBody,

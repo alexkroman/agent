@@ -110,7 +110,7 @@ describe("late playback drain vs teardown", () => {
 
     vi.spyOn(console, "error").mockImplementation(noop);
     socket?.simulateMessage(
-      JSON.stringify({ type: "error.reported", code: "llm", message: "boom" }),
+      JSON.stringify({ type: "error.reported", code: "llm", message: "boom", fatal: true }),
     );
     expect(core.getSnapshot().state).toBe("error");
     await advance(2000);

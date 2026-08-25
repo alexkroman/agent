@@ -26,13 +26,17 @@
   },
   "runtime": {
     "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+    }
   },
   "server": {
     "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+    }
   },
   "session": {
     "current": 1,

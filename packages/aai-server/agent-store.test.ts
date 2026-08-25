@@ -56,7 +56,7 @@ describe("createMemoryAgentRows", () => {
 
 describe("createPgAgentRows", () => {
   /** In-memory SqlExec fake covering the four statements the store issues. */
-  function fakeSql(opts: { parsedJson?: boolean } = {}): {
+  function fakeSql(): {
     sql: SqlExec;
     rows: Map<string, Record<string, unknown>>;
   } {
@@ -74,9 +74,8 @@ describe("createPgAgentRows", () => {
       });
     }
 
-    // pg parses jsonb columns to objects; some drivers return text.
+    // postgres.js — the one driver in this repo — parses jsonb columns to objects.
     function toResultRow(row: Record<string, unknown>): Record<string, unknown> {
-      if (!opts.parsedJson) return row;
       return {
         ...row,
         credential_hashes: JSON.parse(row.credential_hashes as string),
@@ -103,27 +102,24 @@ describe("createPgAgentRows", () => {
     return { sql, rows };
   }
 
-  test.each([{ parsedJson: true }, { parsedJson: false }])(
-    "put/get round-trip (driver returns jsonb %o)",
-    async (opts) => {
-      const { sql } = fakeSql(opts);
-      const store = createPgAgentRows(sql);
+  test("put/get round-trips every jsonb column, and delete clears both reads", async () => {
+    const { sql } = fakeSql();
+    const store = createPgAgentRows(sql);
 
-      await store.put(RECORD);
-      const record = await store.get("my-agent");
-      expect(record?.slug).toBe("my-agent");
-      expect(record?.credential_hashes).toEqual(["h1"]);
-      expect(record?.client_files).toEqual({ "index.html": "def456" });
-      expect(record?.version).toBe(1);
+    await store.put(RECORD);
+    const record = await store.get("my-agent");
+    expect(record?.slug).toBe("my-agent");
+    expect(record?.credential_hashes).toEqual(["h1"]);
+    expect(record?.client_files).toEqual({ "index.html": "def456" });
+    expect(record?.version).toBe(1);
 
-      await store.put({ ...RECORD, worker_hash: "v2" });
-      expect(await store.getVersion("my-agent")).toBe(2);
+    await store.put({ ...RECORD, worker_hash: "v2" });
+    expect(await store.getVersion("my-agent")).toBe(2);
 
-      await store.delete("my-agent");
-      expect(await store.get("my-agent")).toBeNull();
-      expect(await store.getVersion("my-agent")).toBeNull();
-    },
-  );
+    await store.delete("my-agent");
+    expect(await store.get("my-agent")).toBeNull();
+    expect(await store.getVersion("my-agent")).toBeNull();
+  });
 
   test("a bigint-ish version string is coerced to a number", async () => {
     const { sql, rows } = fakeSql();

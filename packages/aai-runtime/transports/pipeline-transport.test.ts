@@ -59,14 +59,6 @@ describe("PipelineTransport", () => {
       expect(stt.last()?.opts.agentContext).toBe("Hi there!");
       await t.stop();
     });
-
-    test("fires onSessionReady with the sid", async () => {
-      const { opts, callbacks } = makeOpts();
-      const t = createPipelineTransport(opts);
-      await t.start();
-      expect(callbacks.onSessionReady).toHaveBeenCalledWith("test-sid");
-      await t.stop();
-    });
   });
 
   describe("streamText config plumbing", () => {
@@ -368,6 +360,7 @@ describe("PipelineTransport", () => {
         type: "error.reported",
         code: "stt",
         message: "stt failed",
+        fatal: true,
       });
       await t.stop();
     });
@@ -381,6 +374,7 @@ describe("PipelineTransport", () => {
         type: "error.reported",
         code: "tts",
         message: "tts failed",
+        fatal: true,
       });
       await t.stop();
     });
@@ -416,6 +410,7 @@ describe("PipelineTransport", () => {
         type: "error.reported",
         code: "stt",
         message: "connect failed",
+        fatal: true,
       });
       await t.stop();
     });
@@ -430,6 +425,7 @@ describe("PipelineTransport", () => {
         type: "error.reported",
         code: "tts",
         message: "tts connect failed",
+        fatal: true,
       });
       await t.stop();
     });
@@ -461,8 +457,8 @@ describe("PipelineTransport", () => {
         type: "error.reported",
         code: "stt",
         message: "connect timed out",
+        fatal: true,
       });
-      expect(callbacks.onSessionReady).not.toHaveBeenCalled();
       await t.stop();
     });
 
@@ -495,6 +491,7 @@ describe("PipelineTransport", () => {
         type: "error.reported",
         code: "stt",
         message: "connect timed out",
+        fatal: true,
       });
       await t.stop();
     });

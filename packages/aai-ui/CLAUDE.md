@@ -35,7 +35,7 @@ new one fails `pnpm check:api-contracts` until it joins one:
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system a custom chrome is assembled from, `ConsoleShell` included. The three memoized components (`Markdown`, `Controls`, `MessageList`) each name an exported props type, which is what makes their props render at all — see below |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
-| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`, `useDownloadUrl`, `WORKFLOW_STATUS_LABELS`, `WorkflowRunStatus`. At **epoch 12**; epoch 5 is where the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type. That re-export is also what carries `follow`/`followOutput` here for free — this package's own readers do NOT use them, because a hook needs the raw `Response` to see a 404 and fall through to its poll |
+| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`, `useDownloadUrl`, `WORKFLOW_STATUS_LABELS`, `WorkflowRunStatus`. At **epoch 1** — the reset collapsed its history; the change worth knowing is that the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type. That re-export is also what carries `follow`/`followOutput` here for free — this package's own readers do NOT use them, because a hook needs the raw `Response` to see a 404 and fall through to its poll |
 | `theme` | `ClientTheme` + `useTheme`, and the five `--aai-*` CSS variables `ThemeProvider` writes — its own contract because a token is a name in somebody's CSS |
 | `client-dir` | `defaultClientDir()`, the one export a SERVER calls |
 
@@ -46,15 +46,15 @@ names a capability of both packages (the SDK declares a workflow, this reaches
 one over HTTP) and they version independently, so the CLI refuses a bare
 ambiguous name rather than guessing.
 
-**The compatibility fixtures are `.tsx`, and they are the reason to write them
-carefully.** A frozen example for a component library is JSX or it is not
-evidence — and `pnpm typecheck` is what runs them, so a break in this package's
-types surfaces as a compile error inside
-`contracts/compatibility/<capability>/v<N>.tsx` naming the epoch it broke. Two
-findings came straight out of writing the first set: `WorkflowApiOptions.token`
-cannot take an explicit `undefined` under `exactOptionalPropertyTypes`, and
-`api.get` is deliberately untyped (`useWorkflowRun<R>` is where a page names the
-shape).
+**A compatibility fixture here would be `.tsx`** — a frozen example for a
+component library is JSX or it is not evidence — and `pnpm typecheck` is what
+runs one, so a break in this package's types surfaces as a compile error inside
+`contracts/compatibility/<capability>/v<N>.tsx` naming the epoch it broke. There
+are none today: with no external consumers every superseded epoch is `--drop`ped
+rather than retained, so the directory does not exist. Two findings came out of
+writing the first set anyway: `WorkflowApiOptions.token` cannot take an explicit
+`undefined` under `exactOptionalPropertyTypes`, and `api.get` is deliberately
+untyped (`useWorkflowRun<R>` is where a page names the shape).
 
 **The `@internal` ratchet here stands at ZERO**, and `internal.ts` is what paid
 it off. It stood at eight — `SessionProvider`, `ThemeProvider`,
@@ -113,12 +113,7 @@ detail, and `buildAgentUrl` is a two-line path join.
 an exact alias of `VoiceSessionOptions` with one referent —
 `createSessionCore`'s parameter, which names `VoiceSessionOptions` directly now
 — and `client()` never took it, so the "two names, one type" note the alias
-carried was an argument for having one. Note the drop is recorded against
-**epoch 1** rather than the epoch this change bumped: `contracts/compatibility/
-session/v1.tsx` is the example that named the type, so it is the authoring
-style that stopped compiling. `--bump --drop` can only classify the CURRENT
-epoch, so that one was written into `contracts/contracts.json` by hand and the
-bump itself is a `--retain` (v2's example is untouched by the removal).
+carried was an argument for having one.
 
 ## A memoized component must NAME its props type
 

@@ -84,14 +84,12 @@
         "host/_test-utils.ts",
         "**/*.test.ts",
         "**/*.test-d.ts",
-        // The capability contracts. Nothing imports either directory and
-        // nothing is meant to: a capability root exists so api-contracts.mjs
-        // can extract a report for that slice of the authoring API, and a
-        // compatibility fixture exists so `tsc` fails when a frozen authoring
-        // example stops compiling. Both are "unused" in knip's sense and load
-        // -bearing in the only sense that matters here.
-        "contracts/entrypoints/*.ts",
-        "contracts/compatibility/**/*.ts"
+        // The capability contracts. Nothing imports the directory and nothing is
+        // meant to: a capability root exists so api-contracts.mjs can extract a
+        // report for that slice of the authoring API. "Unused" in knip's sense
+        // and load-bearing in the only sense that matters here. A `--bump
+        // --retain` that writes a compatibility fixture owes an entry for it.
+        "contracts/entrypoints/*.ts"
       ]
     },
     "packages/aai-runtime": {
@@ -104,7 +102,6 @@
         "**/*.test.ts",
         // The capability contracts — same reason as `packages/aai` above.
         "contracts/entrypoints/*.ts",
-        "contracts/compatibility/**/*.ts",
         // The tool fixtures `tools-dir.test.ts` scans. Nothing imports them by
         // name and nothing is meant to — a tool is reached by being IN the
         // directory, which is the property under test.
@@ -118,11 +115,8 @@
         "_react-test-utils.ts",
         // The capability contracts, same as `packages/aai` above: a root exists
         // so api-contracts.mjs can extract a report for that slice of the
-        // authoring API, and a compatibility fixture exists so `tsc` fails when
-        // a frozen authoring example stops compiling. The fixtures are `.tsx`
-        // here — a component library's authoring example is JSX.
-        "contracts/entrypoints/*.ts",
-        "contracts/compatibility/**/*.{ts,tsx}"
+        // authoring API.
+        "contracts/entrypoints/*.ts"
       ]
     },
     "packages/aai-cli": {

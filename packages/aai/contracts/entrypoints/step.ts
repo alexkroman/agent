@@ -38,7 +38,6 @@ export {
   type MultipartBody,
   type MultipartPart,
   mapConcurrent,
-  mapInBatches,
   multipartBody,
   type PcmFormat,
   pcmDurationMs,

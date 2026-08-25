@@ -26,6 +26,7 @@
   {
     "type": "error.reported",
     "code": "stt",
-    "message": "Speech recognition failed"
+    "message": "Speech recognition failed",
+    "fatal": true
   }
 ]

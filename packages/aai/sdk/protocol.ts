@@ -32,21 +32,8 @@ export {
  */
 export {
   SESSION_COMMAND_TYPES,
-  // The name every `lenientParse` call site already spells for the same set.
-  SESSION_COMMAND_TYPES as CLIENT_MESSAGE_TYPES,
   type SessionCommand,
-  // `ClientMessage`/`ClientMessageSchema` are the DIRECTION-named spelling of
-  // the same two things, kept because a third-party client author searches for
-  // those names first. They are re-export aliases rather than the
-  // `export const ClientMessageSchema = SessionCommandSchema` they used to be:
-  // a plain assignment is an independent declaration to API Extractor and
-  // TypeDoc, so each one re-expanded the whole union under a second name and
-  // `/protocol` documented two things four times. In this form the renderer
-  // collapses them to a "Renames and re-exports" line, exactly as it already
-  // does for `CLIENT_MESSAGE_TYPES` above.
-  type SessionCommand as ClientMessage,
   SessionCommandSchema,
-  SessionCommandSchema as ClientMessageSchema,
 } from "./protocol-commands.ts";
 export {
   EVENT_ID_PREFIX,
@@ -56,19 +43,10 @@ export {
   type SessionErrorCode,
   SessionErrorCodeSchema,
   type SessionEvent,
-  // Same story as `ClientMessage*` above, and the same remedy. `ServerMessage`
-  // is every `SessionEvent` and nothing else: `config` and `audio_done` used to
-  // be declared here, outside the event vocabulary, which is what let the
-  // handshake and a turn boundary be the two frames no event stream could
-  // contain — they are `session.configured` and `audio.completed` in
-  // `protocol-events.ts` now, and the retained stream carries them like
-  // anything else.
-  type SessionEvent as ServerMessage,
   type SessionEventBody,
   type SessionEventMeta,
   SessionEventMetaSchema,
   SessionEventSchema,
-  SessionEventSchema as ServerMessageSchema,
 } from "./protocol-events.ts";
 
 /**
@@ -81,7 +59,7 @@ const AUDIO_FORMAT = "pcm16";
 /**
  * Minimal envelope schema for two-phase message parsing.
  *
- * When a strict schema (ServerMessageSchema / ClientMessageSchema) rejects a
+ * When a strict schema (SessionEventSchema / SessionCommandSchema) rejects a
  * message, this schema determines whether the message is a valid but
  * *unrecognised* type (safe to ignore during rolling upgrades) or genuinely
  * malformed (should be warned about).
@@ -104,7 +82,7 @@ const MessageEnvelopeSchema = z.object({ type: z.string() }).passthrough();
  * Passing `knownTypes` is what separates "unknown newer-version type" from
  * "known type that failed validation" — without it, an invalid known message
  * is silently swallowed as if it were a forward-compat unknown type. When
- * parsing client→server messages, pass {@link CLIENT_MESSAGE_TYPES} as
+ * parsing client→server messages, pass {@link SESSION_COMMAND_TYPES} as
  * `knownTypes`.
  */
 export function lenientParse<T>(
@@ -163,10 +141,6 @@ export const ReadyConfigSchema = z.object({
 /** Protocol-level session config returned to the client on connect. */
 export type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
 
-// The direction-named aliases — `ServerMessage`/`ServerMessageSchema` and
-// `ClientMessage`/`ClientMessageSchema` — are re-exported at the top of this
-// file rather than declared here. See the comments on those clauses.
-
 // ─── Host mode ───────────────────────────────────────────────────────────────
 
 /**
@@ -175,9 +149,9 @@ export type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
  * greeting, and tool schemas for a single session instead of using a deployed
  * agent.
  *
- * Validated standalone rather than as a `ClientMessageSchema` member — the
+ * Validated standalone rather than as a `SessionCommandSchema` member — the
  * host-mode handshake consumes this message *before* `wireSessionSocket`
- * attaches, so it must never reach `dispatchMessage`/`ClientMessageSchema`.
+ * attaches, so it must never reach `dispatchMessage`/`SessionCommandSchema`.
  */
 export const HostConfigSchema = z.object({
   systemPrompt: z.string().min(1),

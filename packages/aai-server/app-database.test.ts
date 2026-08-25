@@ -333,12 +333,7 @@ describe("deprovisionAppDatabase", () => {
       // pool — without it the drop fails `55006 being accessed by other users`.
       // Issued on the Management API channel, recorded here by `interleavedAdmin`.
       `drop database if exists "${id}" with (force)`,
-      // A leftover SCHEMA from an app provisioned before per-app databases. It
-      // has to go before the role: a role owning it cannot be dropped (`2BP01`),
-      // which BLOCKED the delete of every such agent (a failed deprovision is a
-      // 503 in `delete.ts`). A no-op for anything provisioned since.
-      `drop schema if exists "${id}" cascade`,
-      // Last, because both of the above can own objects that depend on it.
+      // Last, because the database above can own objects that depend on it.
       `drop role if exists "${id}"`,
     ]);
   });
@@ -534,7 +529,6 @@ describe("createAppDatabases", () => {
     expect(secondaryAdmin.dropped).toEqual([appDbIdentifier("slug-a")]);
     expect(primaryAdmin.dropped).toEqual([]);
     expect(dropStatements(secondary.calls)).toEqual([
-      `drop schema if exists "${appDbIdentifier("slug-a")}" cascade`,
       `drop role if exists "${appDbIdentifier("slug-a")}"`,
     ]);
     expect(primary.calls).toEqual([]);
@@ -569,8 +563,8 @@ describe("createAppDatabases", () => {
 
     expect(primaryAdmin.dropped).toEqual([appDbIdentifier("slug-a")]);
     expect(secondaryAdmin.dropped).toEqual([appDbIdentifier("slug-a")]);
-    expect(dropStatements(primary.calls)).toHaveLength(2);
-    expect(dropStatements(secondary.calls)).toHaveLength(2);
+    expect(dropStatements(primary.calls)).toHaveLength(1);
+    expect(dropStatements(secondary.calls)).toHaveLength(1);
   });
 
   /** One unreachable cluster must not leave the others provisioned. */
@@ -599,7 +593,7 @@ describe("createAppDatabases", () => {
 
     await expect(appDb.deprovision("slug-a")).rejects.toThrow("cluster down");
     expect(healthyAdmin.dropped).toEqual([appDbIdentifier("slug-a")]);
-    expect(dropStatements(healthy.calls)).toHaveLength(2);
+    expect(dropStatements(healthy.calls)).toHaveLength(1);
   });
 });
 
@@ -607,7 +601,7 @@ describe("parseAppDbMeta", () => {
   test("parses a valid record and rejects malformed ones", () => {
     const meta = { role: "app_x", password: "p" };
     expect(parseAppDbMeta(JSON.stringify(meta))).toEqual(meta);
-    // A legacy record's extra `schema` field is ignored, not preserved.
+    // An unknown extra field is ignored, not preserved.
     expect(parseAppDbMeta(JSON.stringify({ ...meta, schema: "app_x" }))).toEqual(meta);
     expect(parseAppDbMeta(null)).toBeNull();
     expect(parseAppDbMeta("not json")).toBeNull();

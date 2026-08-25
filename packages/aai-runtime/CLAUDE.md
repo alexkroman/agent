@@ -120,10 +120,12 @@ The split shipped this package with no `contracts/` tree, so for its first days
 change a parameter without a gate asking which. That asymmetry is the whole
 reason this exists.
 
-**Every capability owes a frozen, compiling TEMPLATE** under
-`contracts/compatibility/<capability>/v1.ts`, and `pnpm typecheck` is what
-enforces it. Editing one to make an error go away defeats the mechanism — the
-error IS the finding.
+**A RETAINED epoch owes a frozen, compiling TEMPLATE** under
+`contracts/compatibility/<capability>/v<N>.ts`, and `pnpm typecheck` is what
+enforces it. There are none today: this package has no external consumers, so
+every superseded epoch is classified `--drop` rather than `--retain`. When one is
+retained, editing its template to make an error go away defeats the mechanism —
+the error IS the finding.
 
 **A template rather than an example, and the distinction is the point.** `aai`
 and `aai-ui` freeze snippets an author READS: an `agent.ts` is a short file and
@@ -222,8 +224,8 @@ to 0.
 **The division is now mechanical, and it is worth stating as a rule.**
 
 - **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`)** is exactly the 125 names
-  the thirteen capabilities select. A name here has an epoch, a report, and a
-  frozen compiling template behind its capability. Nothing on it is
+  the fourteen capabilities select. A name here has an epoch and a report.
+  Nothing on it is
   `@internal` — that is what the zero means, and the ratchet is what holds it.
 - **`@alexkroman1/aai-runtime/internal` (`internal.ts`)** is the cross-package
   infrastructure `aai-server`, `aai-cli` and `aai-guest` need: the session-state
@@ -280,9 +282,8 @@ each is a decision worth making rather than inheriting.
   neither did a signature, only the PROVENANCE line in the rollup —
   `WORKFLOW_API_PREFIX` reaches this package from `@alexkroman1/aai/internal`
   now rather than `/workflow-api`, since the prefix is the server's half of that
-  API. Epoch 1 is retained and `contracts/compatibility/workflow/v1.ts` compiles
-  unchanged, which is the evidence a host that takes the constant from
-  `@alexkroman1/aai-runtime` — every host — sees nothing.
+  API. A host that takes the constant from `@alexkroman1/aai-runtime` — every
+  host — sees nothing.
 - **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
   the honest template is fifty lines of skeleton and anything in the wild will either
   be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way
@@ -299,9 +300,7 @@ could not be spread into `ServerOptions`.** Its fields were optional WITHOUT
 doors exist precisely so one hook bag can reach all of them. The fix is on the
 TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
 `upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
-bag. Do not narrow them back. The workaround stays frozen into
-`contracts/compatibility/server/v1.ts`, where it is a record of how epoch 1 was
-written and not a shape to copy.
+bag. Do not narrow them back.
 
 ### `createAgentServer` forwards what only it can
 

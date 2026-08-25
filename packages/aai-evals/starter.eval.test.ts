@@ -6,8 +6,8 @@
  * `run.mjs` (485 lines), `report.mjs` (175) and `regrade.mjs` (85) — replaced by
  * the tier's own machinery. What did NOT move is the grading: those checks read
  * generated SOURCE rather than behaviour, which is a different job, and they
- * stay in `scripts/starter-eval/expectations.mjs` where `builtins.mjs` still
- * imports them.
+ * stay in `scripts/starter-eval/expectations.mjs`, which this suite imports —
+ * and which is also why this package's tsconfig sets `allowJs`.
  *
  * Three properties survive the move intact, each of which was learned the hard
  * way there:

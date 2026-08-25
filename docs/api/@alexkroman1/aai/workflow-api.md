@@ -183,10 +183,10 @@ type AgentClient = WorkflowApi & {
   config: Promise<{
      greeting?: z.ZodOptional<z.ZodString>;
      name?: z.ZodOptional<z.ZodString>;
-     page?: z.ZodOptional<z.ZodEnum<{
+     page: z.ZodEnum<{
         static: "static";
         voice: "voice";
-     }>>;
+     }>;
      sessionUrl?: z.ZodOptional<z.ZodString>;
   }>;
 };
@@ -219,10 +219,10 @@ trailing-slash `//workflows` 404 this normalizes away.
 config(): Promise<{
   greeting?: z.ZodOptional<z.ZodString>;
   name?: z.ZodOptional<z.ZodString>;
-  page?: z.ZodOptional<z.ZodEnum<{
+  page: z.ZodEnum<{
      static: "static";
      voice: "voice";
-  }>>;
+  }>;
   sessionUrl?: z.ZodOptional<z.ZodString>;
 }>;
 ```
@@ -245,10 +245,10 @@ this call works with no `token`, and a workflow API closed by
 `Promise`\<\{
   `greeting?`: `z.ZodOptional`\<`z.ZodString`\>;
   `name?`: `z.ZodOptional`\<`z.ZodString`\>;
-  `page?`: `z.ZodOptional`\<`z.ZodEnum`\<\{
+  `page`: `z.ZodEnum`\<\{
      `static`: `"static"`;
      `voice`: `"voice"`;
-  \}\>\>;
+  \}\>;
   `sessionUrl?`: `z.ZodOptional`\<`z.ZodString`\>;
 \}\>
 

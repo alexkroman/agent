@@ -97,13 +97,13 @@ export function readApiJson<T>(res: Response): Promise<T> {
 }
 
 /**
- * The snapshot a `startAndWait` falls back to when the run exists and cannot be
- * read back.
+ * The snapshot a `startAndWait` falls back to when the run exists and the answer
+ * carried no snapshot for it.
  *
- * Reachable only against an agent that answered `{ runId }` and then reported no
- * such run — a replica that has not yet seen its own write. Saying `pending` is
- * both true and useful: the caller has the id, and reading it again takes it
- * from there.
+ * Reachable only against an agent that answered `{ runId }` alone despite a
+ * `wait` — a proxy that rewrote the body, or a replica that has not yet seen its
+ * own write. Saying `pending` is both true and useful: the caller has the id,
+ * and reading it again takes it from there.
  *
  * Here rather than beside its one caller because `workflow-api-client.ts` is at
  * the 500-line cap and this is envelope-shaping, which is what this module is.

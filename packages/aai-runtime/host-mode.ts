@@ -233,7 +233,7 @@ function sendEvent(ws: SessionWebSocket, event: SessionEventBody, log: Logger): 
 
 function rejectHandshake(ws: SessionWebSocket, log: Logger, message: string): void {
   log.warn("host-mode handshake rejected", { message });
-  sendEvent(ws, { type: "error.reported", code: "protocol", message }, log);
+  sendEvent(ws, { type: "error.reported", code: "protocol", message, fatal: true }, log);
   // Give the frame a tick to flush before closing.
   setTimeout(() => {
     try {

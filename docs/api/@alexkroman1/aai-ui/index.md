@@ -507,7 +507,7 @@ function fetchClientConfig(platformUrl: string, fetchFn?: {
 }): Promise<{
   greeting?: string;
   name?: string;
-  page?: "static" | "voice";
+  page: "static" | "voice";
   sessionUrl?: string;
 }>;
 ```
@@ -555,7 +555,7 @@ supplies its own credentials. Defaults to the global `fetch`.
 `Promise`\<\{
   `greeting?`: `string`;
   `name?`: `string`;
-  `page?`: `"static"` \| `"voice"`;
+  `page`: `"static"` \| `"voice"`;
   `sessionUrl?`: `string`;
 \}\>
 
@@ -3814,11 +3814,10 @@ failure came from:
 
 **Severity is `fatal`, not the code**, and the two are independent: any of
 these can arrive on a session that continues. `fatal: false` means surface
-the message and keep the session interactive; ABSENT means fatal, which is
-the historical shape (an error always followed a teardown). A fatal frame is
-not a banner — `aai-ui` answers one by releasing the microphone and ending
-the call, so a turn-level failure reported without the flag takes the whole
-session down.
+the message and keep the session interactive. It is REQUIRED: a fatal frame
+is not a banner — `aai-ui` answers one by releasing the microphone and ending
+the call — so every emitter states which it means rather than inheriting a
+default that takes the whole session down.
 
 ***
 

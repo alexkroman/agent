@@ -112,16 +112,6 @@ where slug = $1 returning version`;
 const VERSION_SQL = `select version from ${TABLE} where slug = $1`;
 const SLUGS_SQL = `select slug from ${TABLE} order by slug`;
 
-/** jsonb columns may come back parsed (pg) or as text (driver-dependent). */
-function jsonColumn(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
 /** Postgres-backed agent rows over the platform admin connection. */
 export function createPgAgentRows(sql: SqlExec): AgentRows {
   return {
@@ -131,9 +121,9 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
       if (!row) return null;
       const parsed = AgentRecordSchema.safeParse({
         slug: row.slug,
-        credential_hashes: jsonColumn(row.credential_hashes),
+        credential_hashes: row.credential_hashes,
         worker_hash: row.worker_hash,
-        client_files: jsonColumn(row.client_files),
+        client_files: row.client_files,
         harness_image_tag: row.harness_image_tag ?? null,
         version: Number(row.version),
       });

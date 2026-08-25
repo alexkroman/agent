@@ -67,7 +67,7 @@ describe("browser sessions", () => {
     expect(rawView.projects).toEqual(["mine"]);
 
     // An unrelated raw key (never stored via the account route) keeps the
-    // legacy key-derived scope — its own empty namespace, never the user's.
+    // its own key-derived scope — its own empty namespace, never the user's.
     const strangerView = (await (
       await authFetch(fetch, "/studio/projects", { method: "GET", key: "some-other-key" })
     ).json()) as { projects: string[] };

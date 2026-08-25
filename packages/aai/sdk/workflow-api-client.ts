@@ -195,12 +195,10 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
     ): Promise<WorkflowRunSnapshot> {
       const wait = clampWorkflowWait(options?.wait ?? MAX_WORKFLOW_WAIT_MS);
       const body = await postRun(workflow, input, { key: options?.key, wait });
-      // An agent too old to understand `wait` answers `{ runId }` and nothing
-      // else. Reading the run back once is what turns that into the same shape
-      // rather than an `undefined` the caller has to branch on — it is one extra
-      // request against a deploy that predates this, not a fallback path anyone
-      // stays on.
-      return body.run ?? (await api.get(body.runId, { wait })) ?? pendingRun(body.runId, workflow);
+      // A `wait` is always answered with the snapshot, so the fallback covers only
+      // a body that arrived without one — a proxy that rewrote it, or a replica
+      // that has not yet seen its own write.
+      return body.run ?? pendingRun(body.runId, workflow);
     },
 
     async get(

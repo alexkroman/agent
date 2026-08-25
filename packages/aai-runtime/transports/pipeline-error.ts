@@ -27,7 +27,6 @@
  * (`pipeline-stream.test.ts`, "reports a drain timeout…").
  */
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { EmitError, TransportCallbacks } from "./types.ts";
 
 /**
@@ -38,15 +37,14 @@ import type { EmitError, TransportCallbacks } from "./types.ts";
  * call sites, where `emitError("llm", msg, { fatal: false })` is the intent and an
  * event literal would be noise. This function is the one place the two meet.
  *
- * `fatal` is omitted rather than sent as `undefined` — `exactOptionalPropertyTypes`
- * aside, an absent `fatal` is what the wire schema means by "terminal", so a
- * terminal report must not carry the key at all.
+ * `fatal` is REQUIRED on the wire, so a caller that says nothing means the
+ * terminal case and this is where that becomes explicit — the default is `true`,
+ * stated once here rather than inferred from an absent key by every reader.
  *
  * **All THREE transports use it**, despite the file's name: the S2S and OpenAI
  * Realtime transports had each written the two event literals out by hand, which
  * is four independent spellings of one decision — and the decision is "may this
- * frame end the call", where the difference between the two spellings is an
- * absent key. The module doc above is pipeline-specific because pipeline mode is
+ * frame end the call". The module doc above is pipeline-specific because pipeline mode is
  * where the reporters are numerous; the rule it states is not.
  *
  * @internal
@@ -57,7 +55,7 @@ export function createEmitError(callbacks: TransportCallbacks): EmitError {
       type: "error.reported",
       code,
       message,
-      ...omitUndefined({ fatal: errOpts?.fatal }),
+      fatal: errOpts?.fatal ?? true,
     });
   };
 }

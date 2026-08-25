@@ -47,7 +47,6 @@ describe("Transport contract", () => {
       report: (event) => seen.push(event),
       onReplyStarted: () => undefined,
       onAudioChunk: () => undefined,
-      onSessionReady: () => undefined,
     };
 
     callbacks.report({ type: "user-transcript.committed", text: "hi" });

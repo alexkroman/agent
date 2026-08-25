@@ -96,7 +96,7 @@ export const STATE_RULES = [
     skipComments: true,
     remedy:
       "Use `createKeyedLock()` / `withLock()` from @alexkroman1/aai, or\n" +
-      "`slot.update` for the ctx.state case. The parts that get missed are\n" +
+      "`slot.update` for a session slot. The parts that get missed are\n" +
       "dropping the drained entry BY OWNERSHIP and resolving your own place in\n" +
       "the chain when you abandon a timed-out acquire.",
   },

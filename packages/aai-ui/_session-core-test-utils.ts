@@ -3,7 +3,7 @@
  * Shared test doubles for the session-core test suites: a mock WebSocket
  * with server-message simulation helpers and a config-message builder.
  */
-import { ClientMessageSchema, lenientParse } from "@alexkroman1/aai/protocol";
+import { lenientParse, SessionCommandSchema } from "@alexkroman1/aai/protocol";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { vi } from "vitest";
 
@@ -160,7 +160,7 @@ export function recordingWebSocketClass(
 
 /**
  * Assert every string frame the session core sent through `socket` is a
- * valid {@link ClientMessageSchema} message. Binary frames (audio) are
+ * valid {@link SessionCommandSchema} message. Binary frames (audio) are
  * skipped. Throws on the first invalid frame — call at the end of a test to
  * pin the outbound wire contract without asserting on individual sends.
  */
@@ -169,7 +169,7 @@ export function assertValidClientFrames(socket: MockWebSocket | null): void {
   for (const call of socket.send.mock.calls) {
     const data = call[0] as unknown;
     if (typeof data !== "string") continue;
-    const parsed = lenientParse(ClientMessageSchema, JSON.parse(data));
+    const parsed = lenientParse(SessionCommandSchema, JSON.parse(data));
     if (!parsed.ok) {
       throw new Error(`invalid client frame ${data}: ${parsed.error}`);
     }

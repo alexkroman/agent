@@ -19,10 +19,6 @@
  */
 
 import { describe, expect, test } from "vitest";
-// The namespace, so the deprecated alias can be ASSERTED without an import of it
-// that lint (rightly) reports — the whole point of the tag is that a named import
-// is a finding.
-import * as fanOut from "./map-concurrent.ts";
 import { mapConcurrent } from "./map-concurrent.ts";
 
 /** A run that records its own start order and settles after `delay` ticks. */
@@ -202,12 +198,5 @@ describe("mapConcurrent", () => {
 
   test("accepts a synchronous run function", async () => {
     expect(await mapConcurrent([1, 2, 3], 2, (item) => item * 3)).toEqual([3, 6, 9]);
-  });
-
-  test("`mapInBatches` is the same function under its old name", async () => {
-    // It is public API and named in shipped templates, so the rename may not be a
-    // second implementation to drift from this one.
-    expect(fanOut.mapInBatches).toBe(mapConcurrent);
-    expect(await fanOut.mapInBatches([1, 2, 3], 2, (item) => item * 3)).toEqual([3, 6, 9]);
   });
 });

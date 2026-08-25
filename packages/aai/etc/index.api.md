@@ -586,7 +586,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         tts: "tts";
     }>;
     message: z.ZodString;
-    fatal: z.ZodOptional<z.ZodBoolean>;
+    fatal: z.ZodBoolean;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"custom.emitted">;
     meta: z.ZodObject<{

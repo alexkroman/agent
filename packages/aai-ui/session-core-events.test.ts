@@ -245,6 +245,7 @@ describe("session-core server events", () => {
         type: "error.reported",
         code: "tts",
         message: "Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the agent env.",
+        fatal: true,
       });
       send(socket, { type: "reply.cancelled" });
       send(socket, { type: "reply.completed" });

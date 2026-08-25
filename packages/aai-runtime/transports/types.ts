@@ -30,9 +30,6 @@
  * - {@link TransportCallbacks.onReplyStarted} — the wire has `reply.completed`
  *   and `reply.cancelled` and no `reply.started`. Minting one is a protocol
  *   change with a client on the other end of it, not a callback cleanup.
- * - {@link TransportCallbacks.onSessionReady} — the PROVIDER's own session id, a
- *   fact about the upstream link rather than about this session. Nothing on the
- *   wire describes it and nothing should: it is a resume token for one vendor.
  */
 
 import type { Message } from "@alexkroman1/aai";
@@ -110,8 +107,6 @@ export type TransportCallbacks = {
   onAudioChunk(bytes: Uint8Array): void;
   /** A reply is beginning. Not an event: the wire has no `reply.started`. */
   onReplyStarted(replyId: string): void;
-  /** The provider's own session id, when it issues one. Not an event. */
-  onSessionReady?(providerSessionId: string): void;
 };
 
 /** Per-error options a transport may attach — the shape `onError` takes. */

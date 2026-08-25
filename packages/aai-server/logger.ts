@@ -68,11 +68,6 @@ export function setLogSink(next: Logger): () => void {
   };
 }
 
-/** The sink in force. Exported for the few places that pass a `Logger` on. */
-export function logSink(): Logger {
-  return sink;
-}
-
 /**
  * A logger bound to `namespace` — one per module, at module scope.
  *

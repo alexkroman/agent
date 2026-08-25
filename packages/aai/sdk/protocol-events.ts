@@ -136,11 +136,10 @@ export const SessionErrorCodeSchema = z.enum([
  *
  * **Severity is `fatal`, not the code**, and the two are independent: any of
  * these can arrive on a session that continues. `fatal: false` means surface
- * the message and keep the session interactive; ABSENT means fatal, which is
- * the historical shape (an error always followed a teardown). A fatal frame is
- * not a banner — `aai-ui` answers one by releasing the microphone and ending
- * the call, so a turn-level failure reported without the flag takes the whole
- * session down.
+ * the message and keep the session interactive. It is REQUIRED: a fatal frame
+ * is not a banner — `aai-ui` answers one by releasing the microphone and ending
+ * the call — so every emitter states which it means rather than inheriting a
+ * default that takes the whole session down.
  *
  * @public
  */
@@ -320,12 +319,16 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     code: SessionErrorCodeSchema,
     message: z.string().max(MAX_ERROR_MESSAGE_CHARS),
     /**
-     * False for turn-level errors the session survives (e.g. a failed
-     * one-shot transcription): the client should surface the message but
-     * keep the session interactive. Absent means fatal — the historical
-     * semantics, where an error always followed a session teardown.
+     * Whether the session is over. False for turn-level errors it survives
+     * (e.g. a failed one-shot transcription): the client should surface the
+     * message but keep the session interactive.
+     *
+     * REQUIRED, because the two readings are not equally safe — `aai-ui`
+     * answers a fatal frame by releasing the microphone and ending the call,
+     * so an emitter that leaves it to a default takes the whole session down
+     * for a failure one turn survived.
      */
-    fatal: z.boolean().optional(),
+    fatal: z.boolean(),
   }),
   /** An event the AGENT named, via `ctx.send`. */
   z.object({

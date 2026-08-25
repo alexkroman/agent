@@ -11,14 +11,14 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
-import type { ClientMessage } from "@alexkroman1/aai/protocol";
+import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type { SessionStateMachine } from "./session-core-state.ts";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
 
 /** Dependencies `initAudioCapture` needs from the owning session core. */
 export type AudioSetupDeps = {
-  sendJson: (msg: ClientMessage) => void;
+  sendJson: (msg: SessionCommand) => void;
   sendAudio: (bytes: ArrayBuffer) => void;
   updateState: (partial: Partial<SessionSnapshot>) => void;
   /** The session's state and error, as one fact — see `session-core-state.ts`. */

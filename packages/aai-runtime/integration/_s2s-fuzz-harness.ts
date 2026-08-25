@@ -225,7 +225,6 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     report: (event) => bind().report(event),
     onReplyStarted: (id) => bind().onReplyStarted(id),
     onAudioChunk: (b) => bind().onAudioChunk(b),
-    onSessionReady: () => hit("sessionReady"),
   };
 
   const transport = createS2sTransport({

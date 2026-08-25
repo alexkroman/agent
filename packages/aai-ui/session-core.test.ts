@@ -386,7 +386,12 @@ describe("createSessionCore", () => {
 
     it("error event sets error state and stops running", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "error.reported", code: "internal", message: "Something broke" }),
+        JSON.stringify({
+          type: "error.reported",
+          code: "internal",
+          message: "Something broke",
+          fatal: true,
+        }),
       );
       const snap = core.getSnapshot();
       expect(snap.state).toBe("error");
@@ -409,7 +414,7 @@ describe("createSessionCore", () => {
 
     it("a non-error event does NOT clear a fatal one — the session is over", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "error.reported", code: "internal", message: "fail" }),
+        JSON.stringify({ type: "error.reported", code: "internal", message: "fail", fatal: true }),
       );
       expect(core.getSnapshot().state).toBe("error");
 
@@ -485,7 +490,7 @@ describe("createSessionCore", () => {
 
     it("audio chunk ignored in error state with error set", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "error.reported", code: "internal", message: "fail" }),
+        JSON.stringify({ type: "error.reported", code: "internal", message: "fail", fatal: true }),
       );
       expect(core.getSnapshot().state).toBe("error");
 

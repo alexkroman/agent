@@ -15,7 +15,7 @@
 
 import type { AgentRecord } from "./agent-store.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
-import { BROKER_READY_TIMEOUT_MS, resolveHarnessPath } from "./constants.ts";
+import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
@@ -28,7 +28,7 @@ import {
   terminateSlot,
   withSlugLock,
 } from "./sandbox-slots.ts";
-import { guestUnderstandsBundleUrl, type WorkerSource } from "./sandbox-vm.ts";
+import type { WorkerSource } from "./sandbox-vm.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -122,13 +122,9 @@ const WORKER_URL_TTL_SECONDS = 300;
  *
  * The URL is the production path and the reason this function exists — it
  * takes ~8 MB out of BOTH directions of a cold spawn (Storage → this process,
- * this process → sandbox). The byte path remains for the two cases that
- * cannot use it, neither of which is a fallback for a failure:
- *
- * - the memory blob store (local dev, tests) has no URL to hand out;
- * - a guest pinned to an older harness image does not read `AAI_BUNDLE_URL`
- *   (see {@link guestUnderstandsBundleUrl}) — so the win lands per deploy,
- *   as agents are redeployed onto a harness that understands it.
+ * this process → sandbox). The byte path remains for the one case that cannot
+ * use it, and it is not a fallback for a failure: the memory blob store (local
+ * dev, tests) has no URL to hand out.
  *
  * A signing FAILURE is not caught here: it fails the spawn, like any other.
  */
@@ -138,10 +134,8 @@ async function loadWorkerSource(
   store: BundleStore,
 ): Promise<WorkerSource | null> {
   const sha256 = agent.worker_hash;
-  if (await guestUnderstandsBundleUrl(resolveHarnessPath(), agent.harness_image_tag ?? undefined)) {
-    const url = await store.getWorkerUrl(slug, WORKER_URL_TTL_SECONDS);
-    if (url !== null) return { kind: "url", url, sha256 };
-  }
+  const url = await store.getWorkerUrl(slug, WORKER_URL_TTL_SECONDS);
+  if (url !== null) return { kind: "url", url, sha256 };
   const code = await store.getWorkerCode(slug);
   return code === null ? null : { kind: "inline", code, sha256 };
 }

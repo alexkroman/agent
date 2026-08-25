@@ -143,7 +143,7 @@ export async function setupEventInjector(browser: Browser, port: number) {
    * writes the event (`evt_` + a ULID) and the client only validates the
    * prefix. Freezing forty invented ids into six JSON files would read as data
    * the assertions care about, and none of them do — while a fixture that
-   * omits `meta` is rejected by `ServerMessageSchema` before any handler runs,
+   * omits `meta` is rejected by `SessionEventSchema` before any handler runs,
    * which is the shape of the failure this replaced.
    */
   let injected = 0;

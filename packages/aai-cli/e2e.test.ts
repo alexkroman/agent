@@ -575,7 +575,12 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
     // Inject an error event
-    await inject({ type: "error.reported", code: "internal", message: "Connection lost" });
+    await inject({
+      type: "error.reported",
+      code: "internal",
+      message: "Connection lost",
+      fatal: true,
+    });
 
     // Error banner should appear with the message
     await page.getByText("Connection lost").waitFor({ timeout: 30_000 });

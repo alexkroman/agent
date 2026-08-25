@@ -153,6 +153,7 @@ describe("S2sTransport reconnect", () => {
       type: "error.reported",
       code: "connection",
       message: expect.stringContaining("S2S closed mid-reply"),
+      fatal: true,
     });
   });
 
@@ -192,6 +193,7 @@ describe("S2sTransport reconnect", () => {
       type: "error.reported",
       code: "connection",
       message: expect.stringContaining("resume failed"),
+      fatal: true,
     });
   });
 
@@ -213,6 +215,7 @@ describe("S2sTransport reconnect", () => {
       type: "error.reported",
       code: "connection",
       message: expect.stringContaining("session expired"),
+      fatal: true,
     });
   });
 
@@ -318,6 +321,7 @@ describe("S2sTransport reconnect", () => {
         type: "error.reported",
         code: "connection",
         message: expect.stringContaining("abandoned"),
+        fatal: true,
       });
     });
     expect(handles.length).toBe(S2S_MAX_RESUME_ATTEMPTS + 1);
@@ -362,6 +366,7 @@ describe("S2sTransport reconnect", () => {
       type: "error.reported",
       code: "connection",
       message: expect.stringContaining("closed unexpectedly"),
+      fatal: true,
     });
   });
 
@@ -415,6 +420,7 @@ describe("S2sTransport reconnect", () => {
       type: "error.reported",
       code: "connection",
       message: expect.stringContaining("session expired"),
+      fatal: true,
     });
     const h2 = expectAt(handles, 1, "resumed handle");
     expect(h2.close).toHaveBeenCalled();

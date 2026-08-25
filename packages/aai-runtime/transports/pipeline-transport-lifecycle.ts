@@ -247,9 +247,6 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
         terminate();
         return;
       }
-      // S2S fires onSessionReady when the provider acks; in pipeline mode the
-      // equivalent "ready" signal is providers having opened.
-      callbacks.onSessionReady?.(sid);
       onAudioReady();
       // Covers the no-greeting case; a greeting in flight defers the nudge.
       nudger.arm();

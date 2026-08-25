@@ -233,7 +233,7 @@ function toolsBlock(source) {
 }
 
 /** Tool keys declared in agent.ts — the fallback when nothing ever loaded. */
-export function toolNamesFromSource(source) {
+function toolNamesFromSource(source) {
   if (!source) return [];
   const names = new Set();
   // `tools: { add_pizza: ..., remove_pizza: ... }` — brace-matched rather
@@ -264,7 +264,7 @@ export function toolNamesFromSource(source) {
  * Not more gameable than matching names: both are agent-authored, while the
  * capability list comes from the prompt, which the agent cannot edit.
  */
-export function toolDescriptionsFromSource(source) {
+function toolDescriptionsFromSource(source) {
   const out = [];
   // Single, double and template quotes; descriptions routinely contain
   // apostrophes, so the character class per quote style matters.
@@ -275,7 +275,7 @@ export function toolDescriptionsFromSource(source) {
 }
 
 /** Builtins the agent declared, e.g. `builtinTools: ["run_code"]`. */
-export function builtinsFromSource(source) {
+function builtinsFromSource(source) {
   const m = /builtinTools\s*:\s*\[([^\]]*)\]/.exec(source ?? "");
   if (!m) return [];
   return [...m[1].matchAll(/["'`]([\w-]+)["'`]/g)].map((x) => x[1]);
