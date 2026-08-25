@@ -1,5 +1,17 @@
 # @alexkroman1/aai-server
 
+## 3.6.9
+
+### Patch Changes
+
+- c8d7f07: Extract the two identical hand-rolled sweep schedulers into one `createIntervalSweep`, and correct the wake sweep's half-wired report from `error` to `warn`. The scheduler's overrun policy is DROP (not `createCoalescingRunner`'s coalesce, and not queueing), it always `unref`s, and moving the in-flight flag out of `start()` fixes a latent overlap on start/stop/start. The severity correction is because the half-wired state is unreachable in production — both bindings arrive together in one `...base` spread — while narrow spec compositions reach it legitimately, so `error` mislabelled twelve unrelated specs.
+- Updated dependencies [2f899e1]
+- Updated dependencies [1789a55]
+  - @alexkroman1/aai@8.1.0
+  - aai-guest@0.5.2
+  - @alexkroman1/aai-runtime@8.1.0
+  - @alexkroman1/aai-ui@8.1.0
+
 ## 3.6.8
 
 ### Patch Changes
