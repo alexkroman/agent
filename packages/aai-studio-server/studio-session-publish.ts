@@ -130,7 +130,7 @@ async function requestDeploy(
   if (!parsed.success) {
     return {
       ok: false,
-      output: `Malformed deploy response from sandbox: ${parsed.error.message}`,
+      output: `Malformed deploy response from sandbox: ${errorMessage(parsed.error)}`,
     };
   }
   return parsed.data;
