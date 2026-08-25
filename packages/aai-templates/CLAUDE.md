@@ -174,8 +174,9 @@ export is exercised by a template", over the templates AND the scaffold, and
 over a scope DERIVED from the contract tree so it and `check:api-contracts`
 cannot disagree about the authoring API. Its module doc has why.
 
-The converse is the rule to apply while EDITING one: when the same helper appears in a third template, that is the
-signal to extract it into the SDK rather than copy it again. Five came out at
+The converse is the rule to apply while EDITING one: when the same helper
+appears in a third template, that is the signal to extract it into the SDK
+rather than copy it again. Five came out at
 once, and the templates are now their reference use:
 
 | Primitive | Demonstrated by |

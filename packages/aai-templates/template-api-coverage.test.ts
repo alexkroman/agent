@@ -17,6 +17,13 @@
  * - A stale allowlist entry (the export gained template coverage, was
  *   renamed, or was removed) also fails, so the baseline ratchets down.
  *
+ * There is deliberately no `--update`: an addition should be a hand edit in a
+ * reviewable diff. A wholesale regeneration (a scope change, as when this
+ * derived its module list) is a throwaway script reusing the functions below —
+ * run `biome check --write` on the result, because `JSON.stringify(x, null, 2)`
+ * always expands an array where Biome collapses a short one, so raw output
+ * fails `pnpm lint` the moment it is written.
+ *
  * **An entry here is not an accusation, and this doc used to say it was** —
  * "an export nothing exercises is either missing its example or shouldn't be
  * public". That framing was audited against the whole `@alexkroman1/aai` root

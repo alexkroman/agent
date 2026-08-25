@@ -130,11 +130,12 @@ the result: `server.mjs` boots `.aai/worker.mjs`, the same artifact
 `aai publish` uploads. It serves your own `client.tsx` build when there is one
 and falls back to `defaultClientDir()` (`@alexkroman1/aai-ui/client-dir`), the
 prebuilt default UI shipped inside the package — the only export of `aai-ui`
-that runs on Node rather than in the browser. The build is what makes `tools/` work — a tool is
-registered by existing, and the enumeration happens where the bundle is
-assembled, so a server that loaded `agent.ts` directly would run an agent with
-none of its tools. The same build produces your `client.tsx`, so a custom UI is
-served with no extra step.
+that runs on Node rather than in the browser.
+
+The build is what makes `tools/` work — a tool is registered by existing, and
+the enumeration happens where the bundle is assembled, so a server that loaded
+`agent.ts` directly would run an agent with none of its tools. The same build
+produces your `client.tsx`, so a custom UI is served with no extra step.
 
 Secrets work the same as everywhere else: `ctx.env` holds the keys declared
 in `.env` (or `.env.example`), and a real environment variable of that name
