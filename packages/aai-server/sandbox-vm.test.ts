@@ -34,6 +34,10 @@ describe("spawnAgentServer", () => {
     const handle = fakeHandle();
     const subprocess = vi.fn(async () => handle);
     const modal = vi.fn(async () => handle);
+    // Present because `BackendMap` is exhaustive over `SandboxBackend`, which is
+    // the property that makes a new backend a compile error at every dispatch
+    // site rather than a silent fall-through to Modal.
+    const microsandbox = vi.fn(async () => handle);
     const opts = baseOpts({ imageTag: "aai-guest-harness:abcd1234" });
 
     // Named rather than inherited from an ambient default: the subject here is
@@ -41,10 +45,11 @@ describe("spawnAgentServer", () => {
     // The test env used to resolve `subprocess` by having no storage bucket,
     // which made this assertion depend on an unrelated variable being absent.
     vi.stubEnv("SANDBOX_BACKEND", "subprocess");
-    const result = await spawnAgentServer(opts, { modal, subprocess });
+    const result = await spawnAgentServer(opts, { modal, microsandbox, subprocess });
 
     expect(result).toBe(handle);
     expect(modal).not.toHaveBeenCalled();
+    expect(microsandbox).not.toHaveBeenCalled();
     // Every backend is handed the SAME spawn record — the Modal-only fields
     // included. Which of them a backend uses is that backend's business (the
     // subprocess entry in SANDBOX_BACKENDS drops them explicitly), not the

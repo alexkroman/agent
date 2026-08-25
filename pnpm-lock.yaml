@@ -632,6 +632,9 @@ importers:
       '@types/ws':
         specifier: 'catalog:'
         version: 8.18.1
+      microsandbox:
+        specifier: 0.6.10
+        version: 0.6.10
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -2751,6 +2754,38 @@ packages:
     peerDependenciesMeta:
       '@opentelemetry/api':
         optional: true
+
+  '@superradcompany/microsandbox-darwin-arm64@0.6.10':
+    resolution: {integrity: sha512-TfuRQqEsB+rdW/MZm+U+idNnJoDv8oqluvZWFpIvaC55uEZgBy7tIrmroBWbglJzGrLIPUMZWE03jVsswUNpng==}
+    engines: {node: '>= 22'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@superradcompany/microsandbox-linux-arm64-gnu@0.6.10':
+    resolution: {integrity: sha512-cHTy3391ztl3CPcKEAqQgbL7UmExAArtWnsFkHpbIenyQ02zGPuDo5ort6M7wetlul0kMQ4JVl9j3GRyJHVHLg==}
+    engines: {node: '>= 22'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@superradcompany/microsandbox-linux-x64-gnu@0.6.10':
+    resolution: {integrity: sha512-ETLUA69JraJV3m/fubZPxoPBUfrZFgN8E0/zzZ2fQ1lkI6mJ6iY2VzLWm5/EmTUnPlMeg4P+yWb2eo1oxJjgtA==}
+    engines: {node: '>= 22'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@superradcompany/microsandbox-win32-arm64-msvc@0.6.10':
+    resolution: {integrity: sha512-03YzZsRbGJFQ+sEwaBkl0CFepoMuEssUCoovdFu2AsrTZ1aVa+MzB8wbZQK1+30NeGkhRg4jNIuBN4N+W1ycrw==}
+    engines: {node: '>= 22'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@superradcompany/microsandbox-win32-x64-msvc@0.6.10':
+    resolution: {integrity: sha512-PYbiHtgJoxW369qyBn6m4fz9WcNvEYl6zS67sRnOireCaRidHnCmn5iJZhYBufw8IID6yR+KYsuUqHaJZv3B4w==}
+    engines: {node: '>= 22'}
+    cpu: [x64]
+    os: [win32]
 
   '@swc/cli@0.8.1':
     resolution: {integrity: sha512-L+ACCGHCiS0VqHVep/INLVnvRvJ2XooQFLZq4L8snhxw1jsqz+XRcY313UsyPVturPPE1shW3jic7rt3qEQTSQ==}
@@ -5941,6 +5976,11 @@ packages:
   micromatch@4.0.8:
     resolution: {integrity: sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==}
     engines: {node: '>=8.6'}
+
+  microsandbox@0.6.10:
+    resolution: {integrity: sha512-aEURaWtSsc2gwlUHpzfkfzRBBhFcAgcmfL432b/uVtogHHF3N/84iH3SV++h3uEypVyvSzFzMUwUWAx4hhxpvw==}
+    engines: {node: '>= 22'}
+    hasBin: true
 
   mime-db@1.52.0:
     resolution: {integrity: sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==}
@@ -9529,6 +9569,21 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
 
+  '@superradcompany/microsandbox-darwin-arm64@0.6.10':
+    optional: true
+
+  '@superradcompany/microsandbox-linux-arm64-gnu@0.6.10':
+    optional: true
+
+  '@superradcompany/microsandbox-linux-x64-gnu@0.6.10':
+    optional: true
+
+  '@superradcompany/microsandbox-win32-arm64-msvc@0.6.10':
+    optional: true
+
+  '@superradcompany/microsandbox-win32-x64-msvc@0.6.10':
+    optional: true
+
   '@swc/cli@0.8.1(@swc/core@1.15.3)(chokidar@5.0.0)':
     dependencies:
       '@swc/core': 1.15.3
@@ -13071,6 +13126,14 @@ snapshots:
     dependencies:
       braces: 3.0.3
       picomatch: 2.3.2
+
+  microsandbox@0.6.10:
+    optionalDependencies:
+      '@superradcompany/microsandbox-darwin-arm64': 0.6.10
+      '@superradcompany/microsandbox-linux-arm64-gnu': 0.6.10
+      '@superradcompany/microsandbox-linux-x64-gnu': 0.6.10
+      '@superradcompany/microsandbox-win32-arm64-msvc': 0.6.10
+      '@superradcompany/microsandbox-win32-x64-msvc': 0.6.10
 
   mime-db@1.52.0: {}
 
