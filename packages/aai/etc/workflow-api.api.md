@@ -62,6 +62,7 @@ export function readEventStream(body: ReadableStream<Uint8Array>, signal?: Abort
 
 // @public
 interface StandardSchemaIssue {
+    readonly errors?: unknown;
     // (undocumented)
     readonly message: string;
     // (undocumented)

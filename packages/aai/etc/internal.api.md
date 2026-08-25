@@ -281,6 +281,7 @@ export type SleepOptions = {
 
 // @public
 interface StandardSchemaIssue {
+    readonly errors?: unknown;
     // (undocumented)
     readonly message: string;
     // (undocumented)

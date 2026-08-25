@@ -702,6 +702,7 @@ export function spokenOrdinal(spoken: string): number | undefined;
 
 // @public
 interface StandardSchemaIssue {
+    readonly errors?: unknown;
     // (undocumented)
     readonly message: string;
     // (undocumented)

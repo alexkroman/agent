@@ -51,6 +51,7 @@ export type MockWorkflowsOptions = {
 
 // @public
 interface StandardSchemaIssue {
+    readonly errors?: unknown;
     // (undocumented)
     readonly message: string;
     // (undocumented)

@@ -73,11 +73,17 @@ describe("createErrorHandler", () => {
     expect(logs.all()).toEqual([]);
   });
 
-  test("returns 400 for ZodError", async () => {
+  // `toBeTruthy()` was the whole assertion here, and a 2-line JSON blob is
+  // truthy: a ZodError's own `message` is `JSON.stringify(issues, null, 2)`,
+  // which is what this route shipped for as long as the test only asked
+  // whether SOMETHING came back.
+  test("returns 400 for ZodError, as one sentence rather than a JSON dump", async () => {
     const res = await createApp().request("/zod-error");
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBeTruthy();
+    expect(body.error).toBe("name: Invalid input: expected string, received number");
+    expect(body.error).not.toContain("\n");
+    expect(body.error).not.toContain('"code"');
   });
 
   test("returns 400 for SyntaxError", async () => {
