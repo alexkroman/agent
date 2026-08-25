@@ -37,6 +37,7 @@
  * ```sh
  * node scripts/build-guest-image.mjs --print                     # resolve args, build nothing
  * node scripts/build-guest-image.mjs                             # local build, this host's arch
+ * node scripts/build-guest-image.mjs --msb                       # …and load it into microsandbox
  * node scripts/build-guest-image.mjs --print-tag                 # the content-addressed tag
  * node scripts/build-guest-image.mjs --registry ghcr.io/owner \
  *     --platform linux/amd64,linux/arm64 --cache-gha --push      # what CI runs
@@ -58,7 +59,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 
@@ -221,6 +223,7 @@ function resolveRef(registry) {
  * flat and makes the accepted surface readable in one place.
  */
 const BOOLEAN_FLAGS = {
+  "--msb": "msb",
   "--print": "print",
   "--print-tag": "printTag",
   "--push": "push",
@@ -241,6 +244,7 @@ function parseArgv(rawArgv) {
     print: false,
     printTag: false,
     cacheGha: false,
+    msb: false,
   };
   const argv = rawArgv[Symbol.iterator]();
   for (const arg of argv) {
@@ -254,23 +258,23 @@ function parseArgv(rawArgv) {
   if (opts.tag && opts.registry) throw new Error("pass --tag or --registry, not both");
   // buildx cannot --load a manifest list, and says so only after the whole
   // build. Refuse up front rather than at the end of a five-minute run.
+  // microsandbox keeps its own image store, so loading needs a local image to
+  // export — there is nothing to export from a registry push.
+  if (opts.msb && opts.push) throw new Error("--msb cannot be combined with --push");
   if (opts.platform?.includes(",") && !opts.push) {
     throw new Error("a multi-platform build must be --push (a manifest list cannot be --load'ed)");
   }
   return opts;
 }
 
-function main(argv) {
-  const opts = parseArgv(argv);
-
-  // Before the arg resolution, so `--print-tag` needs no toolchain files.
-  if (opts.printTag) {
-    console.log(resolveRef(opts.registry));
-    return 0;
-  }
-
-  const args = resolveBuildArgs();
-
+/**
+ * Fail on a missing build input, naming the command that produces it.
+ *
+ * Up front rather than as a `COPY` failure inside the build: docker reports a
+ * missing context file as a path relative to the context, which is not a path
+ * anybody can act on.
+ */
+function assertBuildContext() {
   const harness = path.join(GUEST_DIR, "dist", "harness.mjs");
   if (!existsSync(harness)) {
     throw new Error(
@@ -287,6 +291,20 @@ function main(argv) {
       );
     }
   }
+}
+
+function main(argv) {
+  const opts = parseArgv(argv);
+
+  // Before the arg resolution, so `--print-tag` needs no toolchain files.
+  if (opts.printTag) {
+    console.log(resolveRef(opts.registry));
+    return 0;
+  }
+
+  const args = resolveBuildArgs();
+
+  assertBuildContext();
 
   // `--registry` derives the content-addressed tag; `--tag` overrides it; a
   // bare local build gets a fixed name, since no registry is involved.
@@ -320,7 +338,42 @@ function main(argv) {
   console.log(`Building ${tag}${opts.platform ? ` (${opts.platform})` : ""}`);
   const { status, error } = spawnSync("docker", argv2, { stdio: "inherit" });
   if (error) throw error;
-  return status ?? 1;
+  if (status !== 0) return status ?? 1;
+  return opts.msb ? loadIntoMicrosandbox(tag) : 0;
+}
+
+/**
+ * Copy a locally-built image into microsandbox's own image store.
+ *
+ * microsandbox does not read Docker's store — it keeps its own, and a sandbox
+ * created from a reference it has never seen fails at boot rather than falling
+ * back to the daemon. So the dev flow is an explicit export/import: `docker
+ * save` to a tar, `msb load` from it. The tar is ~500 MB and is removed
+ * afterwards even when the import fails, since leaving one per build in the
+ * temp dir is how a laptop quietly loses a few gigabytes.
+ */
+function loadIntoMicrosandbox(tag) {
+  // `join(tmpdir(), …)`, never a literal path: a hardcoded `/tmp` is
+  // drive-relative on Windows (guard-invariants rule 11).
+  const archive = path.join(tmpdir(), `aai-guest-image-${process.pid}.tar`);
+  try {
+    console.log(`Exporting ${tag} for microsandbox`);
+    const save = spawnSync("docker", ["save", tag, "-o", archive], { stdio: "inherit" });
+    if (save.error) throw save.error;
+    if (save.status !== 0) return save.status ?? 1;
+
+    // Through the workspace's own msb, so the CLI and the SDK the server loads
+    // are the same pinned version.
+    const msb = path.join(SERVER_DIR, "node_modules", ".bin", "msb");
+    if (!existsSync(msb)) {
+      throw new Error(`microsandbox is not installed at ${msb} — run pnpm install`);
+    }
+    const load = spawnSync(msb, ["load", "-i", archive, "-t", tag], { stdio: "inherit" });
+    if (load.error) throw load.error;
+    return load.status ?? 1;
+  } finally {
+    rmSync(archive, { force: true });
+  }
 }
 
 if (process.argv[1] === import.meta.filename) {

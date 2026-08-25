@@ -279,6 +279,16 @@
       "env": [
         "AAI_TEST_PG_URL",
         "AAI_REQUIRE_PG",
+        // Same shape and same reason one tier over: the microVM scenario suite
+        // SKIPS without hardware virtualization or a built guest image, and this
+        // turns that skip into a hard failure on a runner that is supposed to
+        // provide both. Undeclared, strict env mode strips it before the task
+        // starts and the enforcement is silently inert.
+        "AAI_REQUIRE_MICROSANDBOX",
+        // Selects the guest image the microVM backend boots — a registry-pulled
+        // one instead of the local build — so it changes what the task DOES and
+        // must not share a cache entry with a run that used the other.
+        "GUEST_IMAGE_REGISTRY",
         // The whole local Supabase stack, resolved by `with-test-pg.mjs` out of
         // `supabase status -o env`. Declared for both of AAI_REQUIRE_PG's
         // reasons and they bite harder here: these are the ONLY arm the platform

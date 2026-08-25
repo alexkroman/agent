@@ -38,6 +38,9 @@ import mime from "mime-types";
 const SANDBOX_CONNECT_SRC: Record<SandboxBackend, string> = {
   // Modal tunnels: `https://<tunnel>.modal.host:<port>` (port is not fixed).
   modal: "https://*.modal.host:*",
+  // A microVM publishes the guest's port on loopback, so the browser reaches it
+  // at the same shape the subprocess backend serves directly.
+  microsandbox: "http://127.0.0.1:*",
   // The subprocess backend's harness binds a random loopback port directly.
   subprocess: "http://127.0.0.1:*",
 };

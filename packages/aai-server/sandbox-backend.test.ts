@@ -12,7 +12,7 @@ const DEV_ENV: NodeJS.ProcessEnv = { AAI_LOCAL_DEV: "1" };
 const PROD_ENV: NodeJS.ProcessEnv = {};
 
 describe("resolveSandboxBackend", () => {
-  it.each(["modal", "subprocess"] as const)(
+  it.each(["modal", "microsandbox", "subprocess"] as const)(
     "honors an explicit SANDBOX_BACKEND=%s override",
     (backend) => {
       expect(resolveSandboxBackend({ ...DEV_ENV, SANDBOX_BACKEND: backend })).toBe(backend);
@@ -43,8 +43,20 @@ describe("resolveSandboxBackend", () => {
     );
   });
 
-  it("gives a declared local run the subprocess backend", () => {
-    expect(resolveSandboxBackend(DEV_ENV)).toBe("subprocess");
+  it("gives a declared local run the isolated microVM backend", () => {
+    // Not `subprocess`: local dev used to default to the backend with NO
+    // boundary, which meant the studio coding agent's `bash` and `run_code` ran
+    // on the developer's machine as the server's uid unless somebody had opted
+    // out. Trading away the security model should be a decision.
+    expect(resolveSandboxBackend(DEV_ENV)).toBe("microsandbox");
+  });
+
+  it("reaches the isolation-free backend ONLY when it is named", () => {
+    // The one way in, from either side of the local-dev declaration.
+    expect(resolveSandboxBackend({ ...DEV_ENV, SANDBOX_BACKEND: "subprocess" })).toBe("subprocess");
+    expect(resolveSandboxBackend({ ...PROD_ENV, SANDBOX_BACKEND: "subprocess" })).toBe(
+      "subprocess",
+    );
   });
 
   it("never selects a host-local backend without that declaration", () => {
@@ -60,7 +72,7 @@ describe("resolveSandboxBackend", () => {
     // Running against the local Supabase stack must not demand Modal
     // credentials, and configuring no database must not hand out a host guest.
     expect(resolveSandboxBackend({ AAI_LOCAL_DEV: "1", SUPABASE_DB_URL: "postgres://x" })).toBe(
-      "subprocess",
+      "microsandbox",
     );
     expect(resolveSandboxBackend({ SUPABASE_STORAGE_BUCKET: "aai-blobs" })).toBe("modal");
   });

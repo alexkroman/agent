@@ -17,6 +17,11 @@
 
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
+import {
+  microsandboxHarnessImageTag,
+  spawnMicrosandboxAgentServer,
+  spawnMicrosandboxWarm,
+} from "./microsandbox-sandbox.ts";
 import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
 import { sandboxBaseTag } from "./modal-context.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
@@ -181,6 +186,23 @@ const SANDBOX_BACKENDS: Record<SandboxBackend, SandboxBackendOps> = {
     // dials out.
     harnessImageTag: async (harnessPath) =>
       localHarnessImageTag(sandboxBaseTag(), await readFile(harnessPath, "utf-8")),
+  },
+  microsandbox: {
+    spawnWarm: spawnMicrosandboxWarm,
+    // The Modal-only `imageTag` is dropped here for the same reason the
+    // subprocess entry drops it: a pinned MODAL image name means nothing to a
+    // microVM. What this backend pins instead is its own image reference —
+    // see microsandboxHarnessImageTag.
+    spawnAgentServer: (opts) =>
+      spawnMicrosandboxAgentServer({
+        harnessPath: opts.harnessPath,
+        slug: opts.slug,
+        name: opts.name,
+        worker: opts.worker,
+        agentEnv: opts.agentEnv,
+        onSpawned: opts.onSpawned,
+      }),
+    harnessImageTag: microsandboxHarnessImageTag,
   },
   subprocess: {
     spawnWarm: spawnSubprocessWarm,

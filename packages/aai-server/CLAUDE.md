@@ -14,12 +14,15 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   holds NO channel to them (see `packages/aai-guest/CLAUDE.md`, "Agent guests
   are servers")
 - `sandbox-vm.ts` — `spawnAgentServer` (the agent-server dispatch over the
-  two backends) and the studio-side `spawnWarmHarness` control-channel
+  three backends) and the studio-side `spawnWarmHarness` control-channel
   machinery
 - `sandbox-backend.ts` — backend selection policy (`SANDBOX_BACKEND` override,
-  production → `modal`, local dev → `subprocess`) plus the reason string
-  the boot log prints, so "which backend am I on, and why" is one log line
-- `warm-harness.ts` — backend-independent guest wiring shared by both backends:
+  production → `modal`, local dev → `microsandbox`, `subprocess` opt-in) plus
+  the reason string the boot log prints, so "which backend am I on, and why" is
+  one log line
+- `microsandbox-sandbox.ts` / `microsandbox-network.ts` — the local microVM
+  backend; see "The local backend is a microVM" below
+- `warm-harness.ts` — backend-independent guest wiring shared by all three:
   dial-with-retry, stdio draining, free-port allocation, `WarmHarness` exit and
   cleanup semantics
 - `sandbox-slots.ts` — the per-slug slot cache: `{ slug, version?, sandbox? }`
@@ -398,7 +401,7 @@ and service-role-key assertions, dev auth, and origin retention together.
 | Question | Sentinel | Set | Unset |
 | --- | --- | --- | --- |
 | Where is platform state? | `SUPABASE_DB_URL` (`hasPlatformDb`) | Postgres/Vault/Realtime/Storage, companions REQUIRED | memory, everywhere |
-| Is this a local run? | `AAI_LOCAL_DEV=1` (`isLocalDev`) | `subprocess` backend, key verification optional, origin retained | production defaults |
+| Is this a local run? | `AAI_LOCAL_DEV=1` (`isLocalDev`) | `microsandbox` backend, key verification optional, origin retained | production defaults |
 
 Three things the split fixed, all of them measured on a morning it cost:
 
@@ -690,13 +693,14 @@ Two rules from it that a reader of THIS package needs in front of them:
 
 ## Modal sandbox notes
 
-- **Two backends, selected by `sandbox-backend.ts`.** Guest sandboxes are
-  **remote Modal Sandboxes** (`modal-sandbox.ts`) in production and a plain
-  **child process** (`subprocess-sandbox.ts`) in local dev. The policy is
-  three rules: an explicit `SANDBOX_BACKEND` (`modal` | `subprocess`) always
-  wins (unknown values throw — a silent fallback would look like the override
-  not working); otherwise not-local-dev → `modal`, unconditionally; otherwise
-  → `subprocess`. `isLocalDev` is an explicit **`AAI_LOCAL_DEV=1`** and nothing
+- **Three backends, selected by `sandbox-backend.ts`.** Guest sandboxes are
+  **remote Modal Sandboxes** (`modal-sandbox.ts`) in production, a **local
+  microVM** (`microsandbox-sandbox.ts`) in local dev, and a plain **child
+  process** (`subprocess-sandbox.ts`) only when named. The policy is three
+  rules: an explicit `SANDBOX_BACKEND` always wins (unknown values throw — a
+  silent fallback would look like the override not working); otherwise
+  not-local-dev → `modal`, unconditionally; otherwise → `microsandbox`.
+  `isLocalDev` is an explicit **`AAI_LOCAL_DEV=1`** and nothing
   else, so `modal` is the DEFAULT and **production can never resolve the
   host-local backend** — it fails loudly without
   `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (or a `~/.modal.toml` profile) rather
@@ -704,10 +708,7 @@ Two rules from it that a reader of THIS package needs in front of them:
   failed spawn is a failed spawn.
 
   That sentinel was `!SUPABASE_STORAGE_BUCKET`, which inverted the rule it
-  exists for: the isolation-free branch was what a FORGOTTEN variable selected.
-  It also tied the backend to where platform state lives, so pointing a dev
-  server at the local Supabase stack silently demanded Modal credentials — see
-  "Two questions, two sentinels" below.
+  exists for — see "Two questions, two sentinels" below, which owns the account.
 - **Every spawn failure is a `SandboxUnavailableError`** (`sandbox-errors.ts`)
   — both Modal spawners, both subprocess spawners. It is a marker class, not a
   message: the message stays the backend's technical one (`Modal sandbox spawn
@@ -727,40 +728,18 @@ Two rules from it that a reader of THIS package needs in front of them:
   "try again in a minute" from "this project is broken". `SandboxNameTakenError`
   is deliberately NOT one of these — it is a routing signal the broker
   catches, never an answer to a client.
-- **Two tiers, and deliberately no middle one.** A local-container backend
-  (Apple's `container` CLI) sat between these and was removed. The reasoning
-  is worth keeping, because "run a real container locally" keeps sounding
-  like the obvious answer: it could never give production confidence — only
-  `SANDBOX_BACKEND=modal` can, since that IS production — while it cost a
-  second delivery mechanism for the in-guest build toolchain (Modal bakes one
-  into its snapshot image; a local container needs an equivalent built and
-  mounted) and invented failure modes that exist in no other environment. Two
-  of those cost real debugging time: a linux guest cannot load the host's
-  darwin-installed native binaries (vite/rolldown, lightningcss — everything
-  *resolves*, then fails to *load*), and a loopback platform origin points at
-  the guest's own harness rather than the dev server, so Publish 404s against
-  itself. So: `subprocess` for fast iteration, `modal` when the question is
-  "does this really work". A stale `SANDBOX_BACKEND=apple-container` throws
-  at boot.
-- **Subprocess backend (the local-dev default)** — `subprocess-sandbox.ts`
-  runs the harness as a child process of the server on a loopback port. It
-  has **no isolation at all**: tenant agent code, and the studio coding
-  agent's `bash`/`run_code` tools, run with the server's uid, filesystem, and
-  network. That is only acceptable because selection can never reach it in
-  production, and boot says so unconditionally
-  (`assertSandboxBackendOrWarn` logs the backend plus an isolation warning).
-  It keeps the *shape* that catches integration bugs — a real OS process, the
-  real `/ws` JSON-RPC control channel, real agent-mode file boots, real
-  `/websocket` sessions, real dial-retry and orphan-timeout behavior — and it
-  has no prerequisites, which is the whole point of it being the default.
-  The harness binds **loopback** via `AAI_GUEST_HOST` (see
-  `aai-guest/harness.ts`): with no network namespace around it, the auth-free
-  `/websocket` would otherwise be exposed to the dev machine's network.
-  In-guest builds resolve the toolchain through aai-guest's own
-  `node_modules` — the same walk-up shape as `/opt/aai` in the baked image,
-  with no cache to build. The shared harness lifecycle (exit fan-out,
-  memoized cleanup, guest dial retry, stdio draining, loopback port
-  allocation) lives in `warm-harness.ts`, used by both backends.
+- **There IS a middle tier now, and the three objections it had to answer are
+  in `sandbox-backend.ts`'s module doc** — including the one that INVERTED (one
+  image recipe, so no second toolchain delivery mechanism). A stale
+  `SANDBOX_BACKEND=apple-container` still throws at boot.
+- **`subprocess` is opt-in now, not the local default.** It has **no isolation
+  at all** — tenant agent code and the studio agent's `bash`/`run_code` run with
+  the server's uid, filesystem and network — and boot says so unconditionally
+  (`assertSandboxBackendOrWarn`). It keeps the *shape* that catches integration
+  bugs and has no prerequisites, which is why it stays; `subprocess-sandbox.ts`
+  carries what it does and does not reproduce. The shared harness lifecycle
+  (exit fan-out, memoized cleanup, dial retry, stdio draining, port allocation)
+  lives in `warm-harness.ts` and is used by all three backends.
 - The guest base image defaults to `node:26-slim`; pin via
   `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
   Modal App sandboxes are created under (default `aai-server`). **Its major
@@ -953,6 +932,31 @@ Two rules from it that a reader of THIS package needs in front of them:
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
 
+## The local backend is a microVM
+
+`microsandbox-sandbox.ts` boots the guest in a libkrun microVM from the SAME OCI
+image production pulls: the studio agent's `bash`/`run_code` stop running as the
+server's uid, and in-guest builds resolve production's `/opt/aai` toolchain
+rather than aai-guest's darwin `node_modules`. Boot WARNS when the image is
+missing, rather than letting the first session eat a 30s dial timeout:
+
+`pnpm build:guest-image --msb` builds the image and loads it into
+microsandbox's own store; `pnpm --filter aai-server test:scenario` runs the
+real-microVM tier. Three traps, all measured:
+
+- **`.network()` REPLACES the network config**, so a `.port()` called before it
+  is discarded — silently. The harness logs `listening on 0.0.0.0:8080` inside
+  the guest while every host dial gets ECONNREFUSED, which reads as a guest that
+  failed to boot. The published port therefore goes INSIDE `.network()`.
+- **A guest's `127.0.0.1` is the VM.** `microsandbox-network.ts` rewrites the
+  agent env to a host alias and opens exactly the ports that rewrite needed — a
+  policy opening the `host` GROUP would pass every "can it reach the database"
+  test while handing tenant code the whole machine.
+- **`isInstalled()` lies** (false where microVMs boot fine), so the scenario gate
+  asks the runtime a real question. That tier SKIPS without hardware
+  virtualization — GitHub's standard runners do not reliably provide it — and
+  `AAI_REQUIRE_MICROSANDBOX=1` makes the skip a failure where they do.
+
 ## A teardown may not depend on the boot it is tearing down
 
 `createSandbox` returns SYNCHRONOUSLY with a pending `vmReady`, so a spawn's
@@ -1102,10 +1106,11 @@ Host↔guest control traffic is JSON-RPC over a WebSocket the host dials
 through the same tunnel (`/ws`), authenticated by a per-sandbox bearer
 token.
 
-**In production.** A run declaring `AAI_LOCAL_DEV=1` defaults to the
-`subprocess` backend, which has **none** of the properties described below —
-the harness is a child process of the server, sharing its uid, filesystem, and
-network — see "Modal sandbox notes". Selection (`sandbox-backend.ts`) makes it
+**In production.** A run declaring `AAI_LOCAL_DEV=1` gets the `microsandbox`
+backend — a real boundary, though not this one — and `SANDBOX_BACKEND=subprocess`
+gets **none** of the properties described below, the harness being a child
+process of the server sharing its uid, filesystem and network. Selection
+(`sandbox-backend.ts`) makes the isolation-free one
 unreachable without that declaration: every other environment resolves `modal`
 unconditionally, so the boundary is what a deployment gets by DEFAULT rather
 than by remembering a variable. When reasoning about the security model, the

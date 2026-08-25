@@ -17,6 +17,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { isLocalDev } from "./_boot.ts";
 import { resolveHarnessPath } from "./constants.ts";
+import { guestImageRegistry } from "./guest-image-source.ts";
 import { endLiveStreams } from "./live-streams.ts";
 import { createLogger } from "./logger.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-context.ts";
@@ -54,6 +55,11 @@ export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
     return;
   }
 
+  if (backend === "microsandbox") {
+    void warnOnMissingGuestImage();
+    return;
+  }
+
   if (!isModalConfigured()) {
     if (isLocalDev(env)) {
       sandboxLog.warn(
@@ -71,6 +77,37 @@ export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
     // The harness path is resolved separately: it throws when the harness
     // isn't built, which must not take down boot for a prewarm.
     prewarmModal(harnessPathOrWarn());
+  }
+}
+
+/**
+ * Warn at BOOT when the microVM backend has no image to boot from.
+ *
+ * Without this the first session pays a 30-second dial timeout against a
+ * sandbox that never started, and the error reads as a guest that failed to
+ * boot rather than an image that was never built — the failure is one command
+ * away from fixed and nothing says which command.
+ *
+ * A WARNING rather than a throw, matching the Modal-credentials branch beside
+ * it: this backend is local-dev only, and refusing to boot the server over a
+ * missing dev artifact is worse than telling the developer what to run. The
+ * check is fire-and-forget for the same reason the Modal prewarm is — a
+ * diagnostic may not fail boot, and a registry-configured dev server has no
+ * local image to find in the first place.
+ */
+async function warnOnMissingGuestImage(): Promise<void> {
+  try {
+    const { LOCAL_GUEST_IMAGE_TAG } = await import("./microsandbox-sandbox.ts");
+    if (guestImageRegistry(process.env) !== undefined) return;
+    const { Image } = await import("microsandbox");
+    await Image.get(LOCAL_GUEST_IMAGE_TAG);
+  } catch (err) {
+    sandboxLog.warn(
+      "WARNING: no local guest image for the microsandbox backend — " +
+        "run `pnpm build:guest-image --msb` to build and load one, " +
+        "or set SANDBOX_BACKEND=subprocess to run guests without isolation.",
+      { error: errorMessage(err) },
+    );
   }
 }
 
