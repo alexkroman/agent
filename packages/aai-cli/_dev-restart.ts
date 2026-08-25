@@ -202,6 +202,16 @@ export function createRestartSupervisor<S>(ops: RestartOps<S>): RestartSuperviso
   return {
     request,
     adopt(server: S): void {
+      // Refused after a teardown, rather than orphaning the server the caller
+      // just built. `close()` during boot finds `current` still undefined and
+      // closes nothing, so without this the freshly listening server is
+      // assigned to a supervisor with no teardown left to run and the port
+      // stays bound for the life of the process. `restartOnce` guards the same
+      // race for a REBUILD, in as many words; the boot path had no equivalent.
+      if (closed) {
+        void closeQuietly(server);
+        return;
+      }
       current = server;
       booting = false;
       if (queuedDuringBoot) request();
