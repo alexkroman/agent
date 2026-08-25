@@ -76,13 +76,32 @@ function rawGet(port: number, path: string): { done: Promise<string> } {
 }
 
 /**
+ * A marker every response from THIS server carries.
+ *
+ * These tests take an ephemeral port (`port: 0`) and then read raw bytes off a
+ * socket, so they will happily assert against whatever answers. That produced
+ * one genuinely baffling CI failure: `expected 'HTTP/1.1 200 OK…' to match
+ * /transfer-encoding: chunked/`, on a 6293-byte `text/html` body whose title
+ * was **Ollama** — the desktop app, which listens on a random port in the same
+ * ephemeral range this asks the OS for.
+ *
+ * The exact path was never reproduced (binding a port another process holds is
+ * EADDRINUSE, and `port: 0` allocates sequentially away from it), which is
+ * precisely why the marker is here rather than a fix for a mechanism nobody
+ * pinned down: a foreign responder now fails by NAME instead of as a confusing
+ * claim about transfer encoding.
+ */
+const SERVER_MARKER = "x-live-streams-scenario";
+
+/**
  * Serve the studio's SSE shape — hold open until something ends the stream,
  * exactly as createSsePusher's `wait` does — on an ephemeral port.
  */
 async function serveHeldSse(): Promise<{ port: number; close: () => Promise<void> }> {
   const app = new Hono();
-  app.get("/events", (c) =>
-    streamSSE(c, async (stream) => {
+  app.get("/events", (c) => {
+    c.header(SERVER_MARKER, "1");
+    return streamSSE(c, async (stream) => {
       const held = Promise.withResolvers<void>();
       const unregister = registerLiveStream(() => held.resolve());
       stream.onAbort(() => held.resolve());
@@ -92,8 +111,8 @@ async function serveHeldSse(): Promise<{ port: number; close: () => Promise<void
       } finally {
         unregister();
       }
-    }),
-  );
+    });
+  });
   const server = serve({ fetch: app.fetch, port: 0 });
   await new Promise((r) => server.once("listening", r));
   const { port } = server.address() as net.AddressInfo;
@@ -112,6 +131,9 @@ describe("an SSE response ended by shutdown", () => {
     endLiveStreams();
 
     const raw = await res.done;
+    // Provenance first: see SERVER_MARKER. Without this, a foreign listener on
+    // this port fails as an inscrutable transfer-encoding mismatch.
+    expect(raw, "response did not come from this test's server").toContain(SERVER_MARKER);
     expect(raw).toMatch(/transfer-encoding: chunked/i);
     expect(raw).toContain("event: project");
     // The whole point: the terminating zero-length chunk went out.
@@ -129,6 +151,7 @@ describe("an SSE response ended by shutdown", () => {
     endLiveStreams();
 
     const raw = await rawGet(port, "/events").done;
+    expect(raw, "response did not come from this test's server").toContain(SERVER_MARKER);
     expect(raw).toMatch(/transfer-encoding: chunked/i);
     expect(raw.endsWith(CHUNKED_TERMINATOR)).toBe(true);
     // Held open instead, it would have been cut by the process exit.
