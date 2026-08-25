@@ -142,8 +142,10 @@ describe("check-test-assertions parser", () => {
     expect(parse('const src = `test("in a template", () => {})`;')).toEqual([]);
     // A substitution IS code, so a test inside one still counts. Spelled as a
     // template literal with the placeholder escaped, because an ordinary string
-    // holding `${` is a biome finding and a `biome-ignore` is a ratcheted
-    // escape hatch.
+    // holding `${` is a biome finding and a suppression comment for it would be
+    // a ratcheted escape hatch. (Naming that comment syntax here would be one
+    // too: `check:hatches` counts the five suppression patterns on comment-only
+    // lines, deliberately — only the three CAST patterns skip prose.)
     const inSubstitution = `const s = \`\${test("interpolated", () => {})}\`;`;
     expect(offenders(inSubstitution)).toEqual(["interpolated"]);
   });
