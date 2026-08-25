@@ -55,9 +55,9 @@
  */
 
 import { type AnyStateMachine, createActor, type EventFromLogic } from "xstate";
+import { assertDialogGraph } from "./_dialog-graph.ts";
 import {
   assertDialogSource,
-  assertInitialState,
   type FlowState,
   machineFromSpec,
   readState,
@@ -310,7 +310,7 @@ export function dialog(
   // machine could be read as a spec.
   const machine = "transition" in source ? source : machineFromSpec(key, source);
   const valid = statePaths(machine);
-  assertInitialState(key, machine, valid);
+  assertDialogGraph(key, machine, valid);
 
   /**
    * A started actor for this session's stored snapshot.

@@ -43,7 +43,10 @@ function nestedMachine() {
         initial: "name",
         states: {
           name: { meta: { instruction: "Ask for their name." }, on: { SUBMIT: "address" } },
-          address: {},
+          // `final` because the graph guard refuses a leaf with no way out, and
+          // an intake that has both names really is finished — this fixture is
+          // about nesting, not about being stuck in it.
+          address: { type: "final" },
         },
       },
     },
@@ -180,7 +183,9 @@ describe("tool gating", () => {
     const machine = setup({ types: {} as { events: { type: "GO" } } }).createMachine({
       id: "bare",
       initial: "start",
-      states: { start: { on: { GO: "end" } }, end: {} },
+      // `final` because the graph guard refuses a leaf with no way out, and
+      // `end` is where this dialog ends.
+      states: { start: { on: { GO: "end" } }, end: { type: "final" } },
     });
     const bare = dialog("bare", machine);
     const gated = bare.tool({ description: "Only at the end", when: "end", execute: () => "ran" });
@@ -548,7 +553,7 @@ describe("the plain-spec form", () => {
           initial: "name",
           states: {
             name: { instruction: "Ask for their name.", on: { SUBMIT: "address" } },
-            address: {},
+            address: { final: true },
           },
         },
       },
