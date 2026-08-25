@@ -137,6 +137,13 @@ export class StepGenerateError extends Error {
 /**
  * Ask the AssemblyAI LLM Gateway one question and return its reply.
  *
+ * **From a `"use step"` body, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
+ * It is this call plus `throwStepError`, and the DevKit decides its retry policy
+ * from WHICH error a step throws: raw, a terminal failure burns every remaining
+ * attempt and a rate limit backs off for one second while the delay the far side
+ * named sits unread. Reach for the raw call where the failure is not simply a
+ * failure — a `404` that means "already deleted".
+ *
  * @example
  * ```ts
  * import { stepGenerate, StepGenerateError } from "@alexkroman1/aai/step";

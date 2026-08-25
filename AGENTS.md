@@ -508,10 +508,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Twenty-two numbered rules, each printing WHY the invariant exists and what
-  to use instead, so a violation is self-correcting and a reviewer never
-  re-explains it. Every one used to live only as prose here, and prose is enforcement
-  exactly as long as somebody remembers it at review time.
+  Numbered rules — `--rules` counts them, this sentence having carried a stale
+  count until it stopped naming one — each printing WHY the invariant exists
+  and what to use instead, so a violation is self-correcting and a reviewer
+  never re-explains it.
 
   | # | Rule | Instead |
   | --- | --- | --- |
@@ -537,17 +537,20 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 21 | no `expect.poll` — a `test.concurrent` sibling clears the pointer it reads | `vi.waitFor()` |
   | 22 | no truthiness-guarded conditional spread — `...(x && { x })` | a judgement: see the rule's remedy |
   | 23 | no `async` function handed straight to `.on`/`addEventListener` | a sync listener + `void p.catch(report)` |
+  | 24 | no new field on `ToolContext` | that value's own module + capability root |
+  | 25 | no new field on the shared channel message shape | that kind's own options type |
+  | 26 | no raw step call in a shipped `workflows/` body | the `*Classified` sibling |
 
+  Hand-kept, and it HAS gone stale — it stopped at 23 while 24 and 25 shipped.
   Rule IDs are **stable** — they appear in commit messages and in the baseline,
   so a deleted rule leaves its number retired rather than letting a later rule
   inherit it (6, retired with `ctx.state`; 10, with the `research/` directory it
-  checked; 15, reserved). Rules 1, 7, 9, 12, 13, 14, 20 and 21 are at zero and enforced
+  checked; 15, reserved). Several are at zero and enforced
   absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
-  was widened** — a wrapped `Promise.race([` can only be matched by reporting the
-  opening line, which cannot see whether a timer is among the elements, so a
-  timer-free wrapped race is a legitimate entry. Over-reporting there is the
-  cheap error: every finding in this family under-reports silently. The argument
-  is on `RACE_CONTINUES` in `guard-invariants-ere.mjs`.
+  was widened**: a wrapped `Promise.race([` is matched by its opening line,
+  which cannot see whether a timer is among the elements, so a timer-free
+  wrapped race is a legitimate entry. Over-reporting is the cheap error here —
+  see `RACE_CONTINUES` in `guard-invariants-ere.mjs`.
 
   **Rule 2's `undefined` scope is a BOUNDARY, and rule 22 is why.** Rule 2 tests
   presence, which `omitUndefined` *is*, so its matches rewrite without changing
@@ -607,16 +610,12 @@ one commit of history. A file in the tree has no merge base and no such modes.
   independently.
 
   **Four of these rules found real bugs on the day they were written**, which is
-  the argument for the whole gate. Rule 2 caught two `omitUndefined`
-  conversions the documented 44-site sweep had missed (`host/s2s.ts`,
-  `secret-handler.test.ts`). Rule 11 came out of a Windows CI leg that failed on
-  two shipped modules writing to a literal `/tmp` — a path that is
-  drive-relative on Windows — both of which run on a developer's own machine
-  under `aai dev`, so the bug was never guest-only. See "Windows is NOT tested,
-  and is currently broken".
-
-  Rule 23 found the fourth, in the SHIPPED `scaffold/server.mjs`, which
-  `biome.json` excluded from linting until this change.
+  the argument for the whole gate. Rule 2 caught two `omitUndefined` conversions
+  the documented 44-site sweep had missed. Rule 11 came out of a Windows CI leg
+  failing on two shipped modules writing to a literal `/tmp` — drive-relative on
+  Windows — both of which also run under `aai dev`, so the bug was never
+  guest-only. Rule 23 found the fourth, in the SHIPPED `scaffold/server.mjs`,
+  which `biome.json` excluded from linting until then.
 
   **Rule 20 (from vercel/eve's rule 29) closes a gate that reported success over
   a mistake**, in the release path. A changeset whose package key is a typo is
@@ -627,14 +626,14 @@ one commit of history. A file in the tree has no merge base and no such modes.
   the argument, including why it is its own module, is in
   `scripts/guard-invariants-changesets.mjs`.
 
-  Rule 19 found a **sixth** hand-rolled `sleep` no gate here could see:
+  Rule 19 found a **sixth** hand-rolled `sleep` no gate could see:
   `host/workflow-notify.ts` held a raw NUL byte, making the file BINARY to
-  `git grep` — silently exempt from all nineteen rules and from
-  `check:hatches`. Fixing the byte is what let the rule find the copy.
+  `git grep` — silently exempt from every rule and from `check:hatches`.
+  Fixing the byte is what let the rule find the copy.
 
   **Rule 16 is scoped to an explicit FILE LIST** (role is not derivable from a
-  path), so its gate spec asserts every path exists; it also found
-  `SELF_REFERENTIAL` too blunt to be per-FILE, so exemptions are per rule now.
+  path), so its gate spec asserts every path exists; it also made
+  `SELF_REFERENTIAL` per-rule rather than per-file.
 
   Two things any new rule must respect — a dead pattern prints the same
   checkmark as a rule upheld, and the rules module matches its own rules.

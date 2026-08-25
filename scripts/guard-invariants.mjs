@@ -62,6 +62,7 @@ import {
   SOURCE_PATHSPECS,
   TEMPLATE_PATHSPECS,
   TMP_RULE_PATHSPECS,
+  WORKFLOW_BODY_PATHSPECS,
 } from "./guard-invariants-rules.mjs";
 import {
   scanSymlinks,
@@ -319,7 +320,7 @@ const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
  * The floors under every scan — see `_ratchet.mjs` on why they measure the
  * CORPUS.
  *
- * FIVE of them, because the rules walk five different scopes and only two were
+ * SIX of them, because the rules walk six different scopes and only two were
  * floored. Each number is set well below the measured actual, recorded beside
  * it, so ordinary movement in the tree does not trip a floor while a scan that
  * has gone blind does.
@@ -331,42 +332,31 @@ const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
  * `git ls-files`, which exits **0** on a pathspec matching nothing where
  * `git grep` exits 1: that asymmetry is exactly why the grep-based rules
  * announced their own blindness and these two could not.
+ *
+ * A TABLE rather than six near-identical calls, so a new scope is one row and
+ * cannot be added without a floor — which is how three of these came to be
+ * missing: they were spelled inline on a rule, where nobody counting floors
+ * would see them.
  */
-const MIN_SOURCE_FILES = 800; // measured: ~1,530
-const MIN_TMP_RULE_FILES = 600; // measured: ~1,027
-const MIN_GUEST_SURFACE_FILES = 20; // measured: 32
-const MIN_TEMPLATE_FILES = 100; // measured: 175
+const SCAN_CORPORA = [
+  { what: "the line-rule source scan", pathspecs: SOURCE_PATHSPECS, minFiles: 800 }, // ~1,530
+  { what: "rule 11's shipped-source scan", pathspecs: TMP_RULE_PATHSPECS, minFiles: 600 }, // ~1,027
+  // An explicit file list, so every entry must resolve — the floor IS its length.
+  {
+    what: "rule 16's session-surface file list",
+    pathspecs: SESSION_SURFACE_PATHS,
+    minFiles: SESSION_SURFACE_PATHS.length,
+  },
+  { what: "rule 12's guest HTTP-surface scan", pathspecs: GUEST_SURFACE_PATHSPECS, minFiles: 20 }, // 32
+  { what: "rule 13's template scan", pathspecs: TEMPLATE_PATHSPECS, minFiles: 100 }, // 175
+  {
+    what: "rule 26's shipped workflow-body scan",
+    pathspecs: WORKFLOW_BODY_PATHSPECS,
+    minFiles: 15,
+  }, // 24
+];
 
-assertScanCorpus({
-  gate: GATE,
-  what: "the line-rule source scan",
-  pathspecs: SOURCE_PATHSPECS,
-  minFiles: MIN_SOURCE_FILES,
-});
-assertScanCorpus({
-  gate: GATE,
-  what: "rule 11's shipped-source scan",
-  pathspecs: TMP_RULE_PATHSPECS,
-  minFiles: MIN_TMP_RULE_FILES,
-});
-assertScanCorpus({
-  gate: GATE,
-  what: "rule 16's session-surface file list",
-  pathspecs: SESSION_SURFACE_PATHS,
-  minFiles: SESSION_SURFACE_PATHS.length,
-});
-assertScanCorpus({
-  gate: GATE,
-  what: "rule 12's guest HTTP-surface scan",
-  pathspecs: GUEST_SURFACE_PATHSPECS,
-  minFiles: MIN_GUEST_SURFACE_FILES,
-});
-assertScanCorpus({
-  gate: GATE,
-  what: "rule 13's template scan",
-  pathspecs: TEMPLATE_PATHSPECS,
-  minFiles: MIN_TEMPLATE_FILES,
-});
+for (const corpus of SCAN_CORPORA) assertScanCorpus({ gate: GATE, ...corpus });
 
 /** Per-baselined-rule `{ file: count }` in the current tree, plus the lines. */
 const { counts: actual, occurrences } = scanGroups(LINE_RULES, { filter: countsAsViolation });

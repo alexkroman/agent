@@ -660,6 +660,13 @@ function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<strin
 
 Ask the AssemblyAI LLM Gateway one question and return its reply.
 
+**From a `"use step"` body, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
+It is this call plus `throwStepError`, and the DevKit decides its retry policy
+from WHICH error a step throws: raw, a terminal failure burns every remaining
+attempt and a rate limit backs off for one second while the delay the far side
+named sits unread. Reach for the raw call where the failure is not simply a
+failure — a `404` that means "already deleted".
+
 #### Parameters
 
 ##### prompt
@@ -718,6 +725,13 @@ Ask the model for JSON and return it validated.
 
 The reply is unfenced, parsed, and checked against `schema`; the validated
 value is what comes back, typed as the schema's output.
+
+**From a `"use step"` body, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
+It is this call plus `throwStepError`, and the DevKit decides its retry policy
+from WHICH error a step throws: raw, a terminal failure burns every remaining
+attempt and a rate limit backs off for one second while the delay the far side
+named sits unread. Reach for the raw call where the failure is not simply a
+failure — a `404` that means "already deleted".
 
 #### Type Parameters
 
@@ -959,6 +973,13 @@ function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Pr
 ```
 
 Transcribe one complete audio file.
+
+**From a `"use step"` body, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
+It is this call plus `throwStepError`, and the DevKit decides its retry policy
+from WHICH error a step throws: raw, a terminal failure burns every remaining
+attempt and a rate limit backs off for one second while the delay the far side
+named sits unread. Reach for the raw call where the failure is not simply a
+failure — a `404` that means "already deleted".
 
 #### Parameters
 
