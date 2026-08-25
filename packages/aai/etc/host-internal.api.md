@@ -1085,6 +1085,7 @@ export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof gl
 
 // @public
 export interface StandardSchemaIssue {
+    readonly errors?: unknown;
     // (undocumented)
     readonly message: string;
     // (undocumented)

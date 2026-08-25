@@ -1,10 +1,11 @@
 {
   "agent": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it."
+      "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
+      "3": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "builtins": {
@@ -28,10 +29,11 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "ffmpeg": {
@@ -40,9 +42,11 @@
     "dropped": {}
   },
   "generate": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+    }
   },
   "llm": {
     "current": 1,
@@ -65,23 +69,27 @@
     "dropped": {}
   },
   "state": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "step": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it."
+      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "step-errors": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+    }
   },
   "step-files": {
     "current": 1,
@@ -94,23 +102,28 @@
     "dropped": {}
   },
   "subagent": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+    }
   },
   "testing": {
-    "current": 4,
-    "supported": [4],
+    "current": 5,
+    "supported": [5],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "3": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it."
+      "3": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
+      "4": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "tool": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+    }
   },
   "transcribe": {
     "current": 1,
@@ -133,15 +146,18 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
-  },
-  "workflow-api": {
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it."
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+    }
+  },
+  "workflow-api": {
+    "current": 3,
+    "supported": [3],
+    "dropped": {
+      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   }
 }

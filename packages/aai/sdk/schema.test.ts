@@ -87,4 +87,53 @@ describe("~standard validation / formatSchemaIssues", () => {
   test("formats path-less issues as the bare message", () => {
     expect(formatSchemaIssues([{ message: "must be an object" }])).toBe("must be an object");
   });
+
+  // A union's real diagnosis lives in its per-branch `errors`, which zod passes
+  // through the `~standard` interface even though the spec does not declare it.
+  // Rendering only the parent issue printed `llm: Invalid input` — the field
+  // name and nothing about why — for exactly the shape `AgentConfigSchema` is
+  // built out of (`llm` accepts a model-id string OR a descriptor).
+  test("descends into a union's per-branch issues", async () => {
+    const schema = z.object({
+      llm: z.union([z.string(), z.object({ kind: z.literal("openai"), model: z.string() })]),
+    });
+    const result = await schema["~standard"].validate({ llm: { kind: "openai" } });
+    expect(result.issues).toBeDefined();
+    if (!result.issues) return;
+    const formatted = formatSchemaIssues(result.issues);
+    // The branch that came closest names the field it was missing...
+    expect(formatted).toContain("llm.model");
+    // ...and every branch's path is absolute, not relative to the union.
+    expect(formatted).toContain("llm: ");
+    // The parent's own placeholder is never the whole answer.
+    expect(formatted).not.toBe("llm: Invalid input");
+  });
+
+  test("joins union branches with `or` and dedupes identical ones", () => {
+    const formatted = formatSchemaIssues([
+      {
+        message: "Invalid input",
+        path: ["llm"],
+        errors: [
+          [{ message: "expected string", path: [] }],
+          [{ message: "expected string", path: [] }],
+          [{ message: "expected object", path: [] }],
+        ],
+      },
+    ]);
+    expect(formatted).toBe("llm: expected string or llm: expected object");
+  });
+
+  // The recursion crosses a vendor boundary, so it may not trust the shape it
+  // finds there: a throw from a formatter runs inside every failure path that
+  // reports one, including the platform's error handler.
+  test("falls back to the parent message when `errors` is not branch-shaped", () => {
+    // `errors` is typed `unknown` precisely so these need no cast: the field is
+    // a vendor extension and its shape is not ours to promise.
+    for (const errors of ["not an array", [], [[]], [{ nope: 1 }], null]) {
+      expect(formatSchemaIssues([{ message: "Invalid input", path: ["llm"], errors }])).toBe(
+        "llm: Invalid input",
+      );
+    }
+  });
 });

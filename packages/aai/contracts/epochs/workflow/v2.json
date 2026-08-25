@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "workflow",
+  "epoch": 2,
+  "sha256": "44f607d9ce1f951a287c039041e7f096ca9d37902bdd8c5ea82811e6fb3328cc",
+  "exports": ["WorkflowClient", "WorkflowDef", "workflow"]
+}
