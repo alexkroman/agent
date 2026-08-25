@@ -1,5 +1,20 @@
 # aai-studio-client
 
+## 0.6.6
+
+### Patch Changes
+
+- 4c55d8a: Studio Logs pane: follow-the-bottom now runs on `use-stick-to-bottom` — already a dependency of this package, and the component the chat transcript mounts — instead of a hand-rolled scroll handler. The old version re-pinned only when a line arrived, so a line that wrapped, or a monospace font that finished loading, grew the content under a pane that thought it was already at the bottom.
+- Updated dependencies [83edc89]
+- Updated dependencies [1d58f53]
+- Updated dependencies [6960bfa]
+- Updated dependencies [c0e3d85]
+- Updated dependencies [efa6152]
+- Updated dependencies [01b790c]
+- Updated dependencies [56b775c]
+  - @alexkroman1/aai@8.0.0
+  - @alexkroman1/aai-ui@8.0.0
+
 ## 0.6.5
 
 ### Patch Changes
