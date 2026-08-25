@@ -102,7 +102,7 @@ export const SOURCE_PATHSPECS = [
 ];
 
 /**
- * Rule 11's scope: SHIPPED source only, so it is a THIRD corpus.
+ * SHIPPED source only — a THIRD corpus, walked by rules 11 and 27.
  *
  * Named and exported rather than spelled inline on the rule, because neither
  * `assertScanCorpus` call covered it — the gate floored `SOURCE_PATHSPECS` and
@@ -111,13 +111,29 @@ export const SOURCE_PATHSPECS = [
  * are invisible on every machine that runs CI, so a silently-empty scan there
  * is the least detectable of the family.
  *
- * The hazard is a real filesystem write, and a spec handing `"/tmp/watched"` to
- * a fake chokidar never touches the disk — eight files' worth of those made the
- * first draft of this rule pure noise.
+ * Both rules here are about a hazard only REAL execution has, which is what
+ * makes the test exclusion part of the definition rather than noise reduction.
+ * Rule 11's is a filesystem write, and a spec handing `"/tmp/watched"` to a
+ * fake chokidar never touches the disk — eight files' worth of those made the
+ * first draft of that rule pure noise. Rule 27's is a resource whose lifetime
+ * outlives its scope, and in a spec the dispose call is routinely the SUBJECT
+ * (`test("Symbol.asyncDispose releases the audio resources")`) or a stimulus
+ * ("the sandbox dies, the client re-brokers") rather than a teardown anybody
+ * should have written as `using`.
+ *
+ * **`*.test.tsx` was in the corpus for as long as it existed**, and the name
+ * says it should not have been: 41 studio-client and aai-ui suites, measured
+ * with `git ls-files` against the pathspec list. It cost rule 11 nothing only
+ * because none of them writes a `/tmp` literal — but the exclusion beside it
+ * has always been `*.test.ts`, so a `.tsx` spec was one extension away from
+ * every finding this corpus exists to keep out, and rule 27 would have opened
+ * with two baselined test files on day one. The `_*test-utils.ts` twin needs
+ * no `.tsx` spelling: there is no such file, and `git ls-files` says so.
  */
-export const TMP_RULE_PATHSPECS = [
+export const SHIPPED_SOURCE_PATHSPECS = [
   ...SOURCE_PATHSPECS,
   ":!packages/**/*.test.ts",
+  ":!packages/**/*.test.tsx",
   ":!packages/**/_*test-utils.ts",
 ];
 

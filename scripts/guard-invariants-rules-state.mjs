@@ -1,10 +1,11 @@
 /**
- * The OWNERSHIP and HYGIENE line rules — 5, 8, 9, 11 and 16.
+ * The OWNERSHIP and HYGIENE line rules — 5, 8, 9, 11, 16 and 27.
  *
  * What they have in common is that each one is about state somebody else owns:
  * the process environment (5), a map entry another async continuation may have
  * replaced (8, 9), a filesystem path that belongs to a different machine (11),
- * and the session's observable surface (16).
+ * the session's observable surface (16), and a resource whose lifetime belongs
+ * to a scope rather than to whoever remembered to release it (27).
  *
  * Rule 6 is RETIRED and rule 15 is RESERVED; both numbers stay unused. Rule IDs
  * are STABLE across the split from `guard-invariants-rules.mjs`.
@@ -13,6 +14,7 @@
 import {
   AT_LINE_START,
   DECLARES,
+  DISPOSE_CALL,
   IDENT,
   MAP_GET,
   MEMBER,
@@ -21,8 +23,8 @@ import {
 import {
   CHANNEL_MESSAGE_PATHS,
   SESSION_SURFACE_PATHS,
+  SHIPPED_SOURCE_PATHSPECS,
   SOURCE_PATHSPECS,
-  TMP_RULE_PATHSPECS,
   TOOL_CONTEXT_PATHS,
 } from "./guard-invariants-scopes.mjs";
 
@@ -61,7 +63,7 @@ export const STATE_RULES = [
     // SHIPPED source only. The hazard is a real filesystem write, and a spec
     // handing `"/tmp/watched"` to a fake chokidar never touches the disk — eight
     // files' worth of those made the first draft of this rule pure noise.
-    paths: TMP_RULE_PATHSPECS,
+    paths: SHIPPED_SOURCE_PATHSPECS,
     skipComments: true,
     remedy:
       "Use `join(tmpdir(), …)` from node:os + node:path.\n" +
@@ -192,5 +194,55 @@ export const STATE_RULES = [
       "a field per runtime capability and `aai:tool` ran NINE consecutive\n" +
       "signature-only epochs for it. Add here only what a new channel would have\n" +
       "to INVENT to render at all.",
+  },
+  {
+    id: 27,
+    key: "rule27_explicitDisposeCall",
+    label: "explicit Symbol.dispose call (bind it with `using`)",
+    re: DISPOSE_CALL,
+    // SHIPPED source only. In a spec the dispose call is routinely the SUBJECT
+    // or a stimulus rather than a teardown — see SHIPPED_SOURCE_PATHSPECS.
+    paths: SHIPPED_SOURCE_PATHSPECS,
+    skipComments: true,
+    samples: {
+      matches: [
+        "      await warm[Symbol.asyncDispose]();",
+        "    core[Symbol.dispose]();",
+        "    await entry.warm[Symbol.asyncDispose]();",
+      ],
+      ignores: [
+        // Every DECLARATION spelling. The protocol is what the rule wants more
+        // of, so a pattern that could not tell these from a call would ban it.
+        "    async [Symbol.asyncDispose]() {",
+        "  [Symbol.dispose](): void;",
+        "    [Symbol.asyncDispose]: async () => {",
+        // A reference that is not a call.
+        "    expect(core[Symbol.dispose]).not.toHaveBeenCalled();",
+      ],
+    },
+    remedy:
+      "Bind the resource with `using` / `await using` and let scope exit\n" +
+      "dispose it.\n\n" +
+      "When ownership is CONDITIONAL — dispose on every exit but the one that\n" +
+      "hands the resource on — bind an AsyncDisposableStack instead, register\n" +
+      "the resource with its use method, and call move on the success path so\n" +
+      "that scope exit leaves it alone. See installOrDispose in\n" +
+      "packages/aai-studio-server/studio-session-ensure.ts.\n\n" +
+      "The repo implemented the protocol and then called it by hand: three\n" +
+      "modules declare `[Symbol.asyncDispose]` and every consumer invoked it as\n" +
+      "an ordinary method, so the language feature that exists to make teardown\n" +
+      "unforgettable was doing none of that work. `studio-session-ensure.ts`'s\n" +
+      "`installOrDispose` is the shape that argues it: the invariant is 'dispose\n" +
+      "on every exit EXCEPT the installed one', which `try`/`catch` cannot spell\n" +
+      "once — the success path returns from inside the `try`, so the disposal was\n" +
+      "written twice and a third exit added anywhere in the body would have\n" +
+      "leaked a billed Modal sandbox in silence.\n\n" +
+      "Baseline an occurrence only when the call is NOT a scope guard, and say so\n" +
+      "at the line. Two are:\n" +
+      "  - `studio-session-idle.ts`'s `disposeEntry`, whose whole PURPOSE is\n" +
+      "    disposal — it releases an entry the session map owns, and `using`\n" +
+      "    cannot express 'dispose a resource acquired in another scope'.\n" +
+      "  - `define-client.tsx`'s `() => session[Symbol.dispose]()`, a teardown\n" +
+      "    thunk handed to the React root. A callback is not a scope either.",
   },
 ];
