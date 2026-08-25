@@ -299,6 +299,7 @@
     "SessionSlot",
     "SessionSlotOptions",
     "SharedAgentParams",
+    "SlotHolder",
     "SlotStore",
     "SlotToolDef",
     "StateProjection",

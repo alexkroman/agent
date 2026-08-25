@@ -186,7 +186,8 @@ describe("the UI-update invariant", () => {
   test.each(registry)("%s increments callSeq and logs activity", async (name, def) => {
     // In whichever state lets the body run, so the flow gate is not what these
     // calls are testing: the point is that a tool which reaches its BODY moves
-    // the sidebar. A refused call deliberately does not — see `store.test.ts`.
+    // the sidebar. A refused call never reaches one — the hook below is what
+    // moves the sidebar for those.
     const ctx = await bodyReachableCtx(name);
     const before = retailSlot.get(ctx).callSeq;
     await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
@@ -202,6 +203,76 @@ describe("the UI-update invariant", () => {
     const ctx = await bodyReachableCtx(name);
     await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
     expect(retailSlot.get(ctx).activity.at(-1)?.tool).toBe(name);
+  });
+});
+
+describe("the blocked-call hook", () => {
+  /**
+   * A `tool.called`, delivered the way the RUNTIME delivers it.
+   *
+   * The hook is a plain function on the def, so this needs no harness — and
+   * asserting on it here is the only way the blocked lines are covered at all:
+   * they are written by something no tool call executes.
+   */
+  const called = (name: string, ctx: ToolContext) =>
+    retailAgent.events?.["tool.called"]?.(
+      {
+        type: "tool.called",
+        toolCallId: "call_1",
+        toolName: name,
+        args: {},
+        meta: { id: "evt_1", at: 0 },
+      },
+      ctx,
+    );
+
+  test.each(registry.filter(([name]) => !PUBLIC_TOOLS.has(name)))(
+    "%s records a blocked line when the model tries it too early",
+    (name) => {
+      const ctx = makeCtx();
+      called(name, ctx);
+
+      // The regression this closes: the gate moved out of `retailTool` and the
+      // sidebar stopped showing the most interesting calls the model makes.
+      const state = retailSlot.get(ctx);
+      expect(state.callSeq, `${name} recorded no blocked line`).toBe(1);
+      expect(state.activity.at(-1)?.tool).toBe(name);
+      expect(state.activity.at(-1)?.summary).toContain("blocked");
+      expect(state.activity.at(-1)?.summary).toContain("identifying");
+    },
+  );
+
+  test.each(registry.filter(([name]) => PUBLIC_TOOLS.has(name)))(
+    "%s is left to the wrapper, because it is going to run",
+    (name) => {
+      const ctx = makeCtx();
+      called(name, ctx);
+      // The double-count this avoids: a tool that reaches its body records its
+      // own line from inside it, with a real summary.
+      expect(retailSlot.get(ctx).activity, `${name} was double-recorded`).toEqual([]);
+    },
+  );
+
+  test("a tool this template did not declare is ignored", () => {
+    const ctx = makeCtx();
+    called("web_search", ctx);
+    // `gateFor` answers `undefined` for anything not built through `retailTool`
+    // — a builtin, or a tool a future author adds outside the wrapper. Recording
+    // those would put lines in the feed for calls this gate has no opinion on.
+    expect(retailSlot.get(ctx).activity).toEqual([]);
+  });
+
+  test("the same tool stops being blocked once the caller is identified", async () => {
+    const ctx = makeCtx();
+    called("get_user_details", ctx);
+    expect(retailSlot.get(ctx).activity).toHaveLength(1);
+
+    // The hook asks the flow, so it follows the flow: same tool, same session,
+    // no line once the position allows it.
+    const authed = await bodyReachableCtx("get_user_details");
+    const before = retailSlot.get(authed).activity.length;
+    called("get_user_details", authed);
+    expect(retailSlot.get(authed).activity).toHaveLength(before);
   });
 });
 

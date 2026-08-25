@@ -2028,7 +2028,7 @@ The event union [Dialog.send](#send) and a gated tool's
 ##### matches()
 
 ```ts
-matches(ctx: ToolContext, state: string): boolean;
+matches(ctx: SlotHolder, state: string): boolean;
 ```
 
 Whether the active state matches `state`, as `when` spells it.
@@ -2037,7 +2037,7 @@ Whether the active state matches `state`, as `when` spells it.
 
 ###### ctx
 
-[`ToolContext`](#toolcontext)
+[`SlotHolder`](#slotholder)
 
 ###### state
 
@@ -2050,7 +2050,7 @@ Whether the active state matches `state`, as `when` spells it.
 ##### position()
 
 ```ts
-position(ctx: ToolContext): DialogPosition;
+position(ctx: SlotHolder): DialogPosition;
 ```
 
 Where this session's conversation currently is.
@@ -2059,7 +2059,7 @@ Where this session's conversation currently is.
 
 ###### ctx
 
-[`ToolContext`](#toolcontext)
+[`SlotHolder`](#slotholder)
 
 ###### Returns
 
@@ -2098,7 +2098,7 @@ identity — `dialog.projection((at) => at)` — to push the whole position.
 ##### reset()
 
 ```ts
-reset(ctx: ToolContext): DialogPosition;
+reset(ctx: SlotHolder): DialogPosition;
 ```
 
 Discard this session's progress and start the dialog over.
@@ -2107,7 +2107,7 @@ Discard this session's progress and start the dialog over.
 
 ###### ctx
 
-[`ToolContext`](#toolcontext)
+[`SlotHolder`](#slotholder)
 
 ###### Returns
 
@@ -2116,7 +2116,7 @@ Discard this session's progress and start the dialog over.
 ##### send()
 
 ```ts
-send(ctx: ToolContext, event: E): DialogPosition;
+send(ctx: SlotHolder, event: E): DialogPosition;
 ```
 
 Advance the dialog, and store the result.
@@ -2131,7 +2131,7 @@ available. The returned position is what actually happened; compare its
 
 ###### ctx
 
-[`ToolContext`](#toolcontext)
+[`SlotHolder`](#slotholder)
 
 ###### event
 
@@ -3014,7 +3014,7 @@ A fresh default value, as `get` would install one.
 ##### get()
 
 ```ts
-get(ctx: ToolContext): DeepReadonly<T>;
+get(ctx: SlotHolder): DeepReadonly<T>;
 ```
 
 This session's value, installing the default on first access.
@@ -3030,7 +3030,7 @@ Every write goes through [SessionSlot.update](#update). See
 
 ###### ctx
 
-[`ToolContext`](#toolcontext)
+[`SlotHolder`](#slotholder)
 
 ###### Returns
 
@@ -3086,7 +3086,7 @@ export default agent({
 ##### reset()
 
 ```ts
-reset(ctx: ToolContext): DeepReadonly<T>;
+reset(ctx: SlotHolder): DeepReadonly<T>;
 ```
 
 Discard this session's value and install a fresh default, and return it.
@@ -3095,7 +3095,7 @@ Discard this session's value and install a fresh default, and return it.
 
 ###### ctx
 
-[`ToolContext`](#toolcontext)
+[`SlotHolder`](#slotholder)
 
 ###### Returns
 
@@ -3104,7 +3104,7 @@ Discard this session's value and install a fresh default, and return it.
 ##### set()
 
 ```ts
-set(ctx: ToolContext, value: T): DeepReadonly<T>;
+set(ctx: SlotHolder, value: T): DeepReadonly<T>;
 ```
 
 Replace this session's value wholesale (a load, an import, a restore), and
@@ -3122,7 +3122,7 @@ its draft is a copy; this is the same rule applied to the other writer.
 
 ###### ctx
 
-[`ToolContext`](#toolcontext)
+[`SlotHolder`](#slotholder)
 
 ###### value
 
@@ -3189,7 +3189,7 @@ export default cartSlot.tool({
 ##### update()
 
 ```ts
-update<R>(ctx: ToolContext, mutate: (draft: T) => R): RejectThenableResult<R>;
+update<R>(ctx: SlotHolder, mutate: (draft: T) => R): RejectThenableResult<R>;
 ```
 
 Mutate this session's value, and store the result.
@@ -3244,7 +3244,7 @@ has nothing to serialize.
 
 ###### ctx
 
-[`ToolContext`](#toolcontext)
+[`SlotHolder`](#slotholder)
 
 ###### mutate
 
@@ -4567,17 +4567,31 @@ type SessionEventContext = {
   db: Db;
   env: Readonly<Record<string, string>>;
   sessionId: string;
+  slots: SlotStore;
 };
 ```
 
 What a session event handler is handed alongside the event.
 
-Deliberately much smaller than `ToolContext`, and the omissions are the
-design: there is no `send`, no `slots`, no `generate` and no `messages`,
-because a handler is OBSERVE-ONLY. Giving it a way to speak would make the
-event stream a second control path into the turn — which is the thing that
-keeps a log honest, since anything a reader can change it can no longer
-describe.
+Deliberately much smaller than `ToolContext`, and the omissions are still the
+design: there is no `send`, no `generate`, no `delegate` and no `messages`. A
+handler MAY NOT SPEAK. Giving it a way to would make the event stream a second
+control path into the turn — which is the thing that keeps a log honest, since
+anything a reader can change it can no longer describe.
+
+**`slots` is here, and it does not cross that line.** The rule the omissions
+enforce is that a handler cannot change the TURN — what the agent says, which
+tool runs, whether a reply is cancelled. Maintaining the session's own state is
+a different act, and one the alternative made worse: an author who wanted a
+fact recorded per turn had no choice but to declare a TOOL for it and instruct
+the model to call it, which is a model-cooperation problem standing in for a
+bookkeeping one — see `infocom-adventure`, whose `game_state_history` tool
+existed to hand the framework back a transcript it already had. A hook writes
+the fact directly, on every turn, whether or not the model cooperates.
+
+What a write here still cannot do is be READ by the turn it happened in: the
+model sees a slot's value through a tool result, and this runs beside that
+path rather than in front of it.
 
 `db` is here because the first thing an audit hook wants is somewhere to write,
 and the agent already has one.
@@ -4609,6 +4623,22 @@ sessionId: string;
 ```
 
 The session this event belongs to — the id a stream read is keyed by.
+
+##### slots
+
+```ts
+slots: SlotStore;
+```
+
+This session's slot storage — **reach for [sessionSlot](#sessionslot-1), not this**,
+exactly as in a tool. It is on the context because a slot declared in one
+module has no other way to find the session.
+
+A handler's writes are committed after it returns, so a hook that mutates
+should do so SYNCHRONOUSLY. An `await` before `slot.update` still stores the
+value, but it lands after the commit for this event and is not persisted
+until the next one (or the next tool call) commits — which for a `durable`
+slot means a crash in between loses it.
 
 ***
 
@@ -4736,6 +4766,50 @@ optional tools?: InlineToolsMisuse;
 
 Not a field. See `InlineToolsMisuse` — a tool is declared by its
 FILE, so this is typed as the message that names the one to create.
+
+***
+
+### SlotHolder
+
+```ts
+type SlotHolder = {
+  sessionId: string;
+  slots: SlotStore;
+};
+```
+
+Anything that can reach one session's slots.
+
+Every [SessionSlot](#sessionslot) and [Dialog](#dialog) method takes this rather than a
+full [ToolContext](#toolcontext), and the widening is the whole reason a session event
+handler can maintain state: these two fields are ALL any of them ever read, so
+requiring the other eight was a statement that slots are a tool-only
+capability — which stopped being true when [SessionEventContext](#sessioneventcontext) grew
+one.
+
+Both a `ToolContext` and a [SessionEventContext](#sessioneventcontext) satisfy it
+structurally, so no existing call site changed.
+
+#### Properties
+
+##### sessionId
+
+```ts
+readonly sessionId: string;
+```
+
+Which session. Not reachable from [SlotStore](#slotstore), which is already scoped
+to one — a slot needs the id to key its open-draft guard, the check that
+refuses a `set`/`reset`/`update` issued from inside another `update`'s
+mutator.
+
+##### slots
+
+```ts
+readonly slots: SlotStore;
+```
+
+This session's slot storage.
 
 ***
 

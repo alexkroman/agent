@@ -75,8 +75,8 @@ import type {
 import { omitUndefined } from "./omit-undefined.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import { type SessionSlot, sessionSlot } from "./session-slot.ts";
-import type { StateProjection } from "./session-state.ts";
-import type { ToolContext, ToolDef } from "./types.ts";
+import type { SlotHolder, StateProjection } from "./session-state.ts";
+import type { ToolDef } from "./types.ts";
 import { isToolFailure, type ToolFailure, toolFailure } from "./utils.ts";
 
 // The authoring vocabulary lives in its own module (this file was at the
@@ -109,9 +109,9 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
   /** The machine itself, for a caller that wants to inspect or visualize it. */
   readonly machine: M;
   /** Where this session's conversation currently is. */
-  position(ctx: ToolContext): DialogPosition;
+  position(ctx: SlotHolder): DialogPosition;
   /** Whether the active state matches `state`, as `when` spells it. */
-  matches(ctx: ToolContext, state: string): boolean;
+  matches(ctx: SlotHolder, state: string): boolean;
   /**
    * Advance the dialog, and store the result.
    *
@@ -121,9 +121,9 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
    * available. The returned position is what actually happened; compare its
    * `state` to know whether anything moved.
    */
-  send(ctx: ToolContext, event: E): DialogPosition;
+  send(ctx: SlotHolder, event: E): DialogPosition;
   /** Discard this session's progress and start the dialog over. */
-  reset(ctx: ToolContext): DialogPosition;
+  reset(ctx: SlotHolder): DialogPosition;
   /**
    * Declare a tool gated on this dialog's state. See {@link DialogToolDef}.
    *
@@ -369,7 +369,7 @@ export function dialog(
   );
 
   /** Read the position without writing anything. */
-  const position = (ctx: ToolContext): DialogPosition => {
+  const position = (ctx: SlotHolder): DialogPosition => {
     const actor = actorFor(readState(slot.get(ctx)));
     try {
       return positionOf(actor);
@@ -386,7 +386,7 @@ export function dialog(
    * calls concurrently, so a read-modify-write that yielded would lose one of
    * the two transitions.
    */
-  const send = (ctx: ToolContext, event: DialogEventOf): DialogPosition =>
+  const send = (ctx: SlotHolder, event: DialogEventOf): DialogPosition =>
     slot.update(ctx, (draft) => {
       const actor = actorFor(draft);
       try {
@@ -398,7 +398,7 @@ export function dialog(
       }
     });
 
-  const matches = (ctx: ToolContext, state: string): boolean => {
+  const matches = (ctx: SlotHolder, state: string): boolean => {
     const actor = actorFor(readState(slot.get(ctx)));
     try {
       return actor.getSnapshot().matches(state);

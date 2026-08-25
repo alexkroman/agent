@@ -121,13 +121,16 @@ describeEval(agentDef, (test) => {
       const fresh = answerOf(status, "game_state_get", Status);
       expect(fresh.inventory).toEqual([]);
       expect(fresh.score).toBe(0);
-      expect(fresh.moves).toBe(0);
       expect(fresh.currentRoom).toBe(DEFAULT_GAME_STATE.currentRoom);
+      // ONE, not zero — and this is the assertion that proves the turn counter
+      // is the framework's. The reset emptied it, then the player said the line
+      // above, and the `user-transcript.committed` hook counted it before the
+      // narrator took its turn. No tool call is involved anywhere in that.
+      expect(fresh.moves).toBe(1);
     },
     {
       stubReply: [
         { tool: "game_state_take", args: { value: "rusted lantern" } },
-        { tool: "game_state_history", args: { value: "take lantern" } },
         "You lift the rusted lantern from its iron hook.",
         { tool: "game_state_restart" },
         "Very well. We begin again at the mouth of the cave.",

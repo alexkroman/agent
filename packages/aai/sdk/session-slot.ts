@@ -23,8 +23,8 @@ import type {
   SessionSlotOptions,
   SlotToolDef,
 } from "./session-slot-types.ts";
-import type { SlotStore, StateProjection } from "./session-state.ts";
-import type { ToolContext, ToolDef } from "./types.ts";
+import type { SlotHolder, SlotStore, StateProjection } from "./session-state.ts";
+import type { ToolDef } from "./types.ts";
 
 // Re-exported rather than defined here: it is the type of what `get` hands
 // back, so it belongs beside `sessionSlot` on the root barrel — and it is its
@@ -36,6 +36,10 @@ export type { DeepReadonly } from "./deep-readonly.ts";
 // 500-line cap) and are re-exported here, so `@alexkroman1/aai` — and a reader
 // who looks for them where `sessionSlot` is — still finds them in one place.
 export type { SessionSlotOptions, SlotToolDef } from "./session-slot-types.ts";
+// The seam every method above takes. Re-exported here for the reason
+// `DeepReadonly` is: a caller writing a helper around a slot names it, and it
+// should be findable where `sessionSlot` is.
+export type { SlotHolder } from "./session-state.ts";
 
 /**
  * A named slot of per-session state, created by {@link sessionSlot}.
@@ -65,7 +69,7 @@ export interface SessionSlot<K extends string, T> {
    * Every write goes through {@link SessionSlot.update}. See
    * {@link DeepReadonly} for why the type is deep rather than shallow.
    */
-  get(ctx: ToolContext): DeepReadonly<T>;
+  get(ctx: SlotHolder): DeepReadonly<T>;
   /**
    * Mutate this session's value, and store the result.
    *
@@ -109,7 +113,7 @@ export interface SessionSlot<K extends string, T> {
    * that, and this method no longer takes a lock at all: a synchronous window
    * has nothing to serialize.
    */
-  update<R>(ctx: ToolContext, mutate: (draft: T) => R): RejectThenableResult<R>;
+  update<R>(ctx: SlotHolder, mutate: (draft: T) => R): RejectThenableResult<R>;
   /**
    * Replace this session's value wholesale (a load, an import, a restore), and
    * return it as `get` would.
@@ -122,9 +126,9 @@ export interface SessionSlot<K extends string, T> {
    * nothing about this slot. {@link SessionSlot.update} was already safe because
    * its draft is a copy; this is the same rule applied to the other writer.
    */
-  set(ctx: ToolContext, value: T): DeepReadonly<T>;
+  set(ctx: SlotHolder, value: T): DeepReadonly<T>;
   /** Discard this session's value and install a fresh default, and return it. */
-  reset(ctx: ToolContext): DeepReadonly<T>;
+  reset(ctx: SlotHolder): DeepReadonly<T>;
   /**
    * Define a READ-ONLY tool over this slot: `execute` is handed the frozen
    * value, so the body needs neither a context annotation nor an opening
@@ -295,7 +299,7 @@ export function sessionSlot<const K extends string, T, After = void>(
    */
   const identity = {};
   const claim: KeyOwner = { owner: identity, shape: () => shapeOf(create) };
-  const slots = (ctx: ToolContext): SlotStore => {
+  const slots = (ctx: SlotHolder): SlotStore => {
     claimKey(ctx.slots, key, claim);
     return ctx.slots;
   };
@@ -307,7 +311,7 @@ export function sessionSlot<const K extends string, T, After = void>(
    * disagreement that surfaces as a projection and a tool seeing different
    * state.
    */
-  const current = (ctx: ToolContext): T | undefined => {
+  const current = (ctx: SlotHolder): T | undefined => {
     const existing = slots(ctx).read(key);
     return existing === undefined ? undefined : (existing as T);
   };
@@ -326,19 +330,19 @@ export function sessionSlot<const K extends string, T, After = void>(
    */
   const open = new Set<string>();
 
-  const store = (ctx: ToolContext, value: T): void => {
+  const store = (ctx: SlotHolder, value: T): void => {
     slots(ctx).write(key, value, durable);
   };
 
   /** Refuse a direct write while a draft of the same slot is open. */
-  const assertNoOpenDraft = (ctx: ToolContext, method: string): void => {
+  const assertNoOpenDraft = (ctx: SlotHolder, method: string): void => {
     if (!open.has(ctx.sessionId)) return;
     throw new Error(
       `${key}.${method}() cannot run inside ${key}.update() — the draft is stored when the mutator returns, so this write would be overwritten. Mutate the draft you were handed instead.`,
     );
   };
 
-  const get = (ctx: ToolContext): DeepReadonly<T> => {
+  const get = (ctx: SlotHolder): DeepReadonly<T> => {
     const existing = slots(ctx).read(key);
     if (existing !== undefined) return existing as DeepReadonly<T>;
     const value = create();
@@ -372,7 +376,7 @@ export function sessionSlot<const K extends string, T, After = void>(
    */
   const privateCopy = (value: T): T => (durable ? structuredClone(value) : value);
 
-  const update = <R>(ctx: ToolContext, mutate: (draft: T) => R): R => {
+  const update = <R>(ctx: SlotHolder, mutate: (draft: T) => R): R => {
     if (open.has(ctx.sessionId)) {
       throw new Error(
         `A mutation of the "${key}" slot is already open for this session. The value you were handed IS the draft — mutate that, and do not call set/reset/update on the same slot from inside it, because the draft is stored when the outer mutator returns and would overwrite it.`,

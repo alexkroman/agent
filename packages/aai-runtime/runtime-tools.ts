@@ -108,6 +108,15 @@ type ToolSetup = {
    * holds no state.
    */
   pushStateSnapshot?: (sessionId: string, emitter: SessionEmitter) => void;
+  /**
+   * Publish and store what a SESSION EVENT HOOK wrote.
+   *
+   * The same pair the tool executor runs in its own `finally` — push the
+   * projection, then flush — exposed because a hook has no tool call around it
+   * and so no other commit point. Absent on the sandbox path for the same reason
+   * `pushStateSnapshot` is: the runtime holds no state there.
+   */
+  commitSessionState?: (sessionId: string) => Promise<void>;
 };
 
 /** Runtime state the tool-setup paths close over. */
@@ -430,7 +439,27 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
     syncStateToClient(emitter, sessionId, { force: true });
   };
 
-  return { executeTool, toolSchemas, toolGuidance: builtins.guidance, pushStateSnapshot };
+  /**
+   * The hook commit. `emitters.get` is read AT CALL TIME for the reason
+   * `liveEmitter` is inside a tool call: a session survives a disconnect through
+   * the resume grace window, so the emitter under this id may be the resumed
+   * connection's by now.
+   *
+   * Never rejects — `flush` does not, and the push is synchronous — so the
+   * emitter can call it fire-and-forget.
+   */
+  const commitSessionState = async (sessionId: string): Promise<void> => {
+    syncStateToClient(emitters.get(sessionId), sessionId);
+    await stateStore.flush(sessionId);
+  };
+
+  return {
+    executeTool,
+    toolSchemas,
+    toolGuidance: builtins.guidance,
+    pushStateSnapshot,
+    commitSessionState,
+  };
 }
 
 /** Pick the tool path: RPC-backed sandbox mode when overrides are provided. */

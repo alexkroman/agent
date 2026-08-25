@@ -58,6 +58,33 @@ export type SlotStore = {
 };
 
 /**
+ * Anything that can reach one session's slots.
+ *
+ * Every {@link SessionSlot} and {@link Dialog} method takes this rather than a
+ * full {@link ToolContext}, and the widening is the whole reason a session event
+ * handler can maintain state: these two fields are ALL any of them ever read, so
+ * requiring the other eight was a statement that slots are a tool-only
+ * capability — which stopped being true when {@link SessionEventContext} grew
+ * one.
+ *
+ * Both a `ToolContext` and a {@link SessionEventContext} satisfy it
+ * structurally, so no existing call site changed.
+ *
+ * @public
+ */
+export type SlotHolder = {
+  /** This session's slot storage. */
+  readonly slots: SlotStore;
+  /**
+   * Which session. Not reachable from {@link SlotStore}, which is already scoped
+   * to one — a slot needs the id to key its open-draft guard, the check that
+   * refuses a `set`/`reset`/`update` issued from inside another `update`'s
+   * mutator.
+   */
+  readonly sessionId: string;
+};
+
+/**
  * One slot's contribution to the `agent_state` frame — what
  * {@link SessionSlot.projection} returns and what `agent({ syncState })` takes.
  *

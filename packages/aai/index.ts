@@ -171,7 +171,7 @@ export * from "./sdk/session-slot.ts";
  * public subpath is what `check:api-contracts` refuses, correctly, since it would
  * sit in an author's autocomplete beside `sessionSlot`.
  */
-export type { SlotStore, StateProjection } from "./sdk/session-state.ts";
+export type { SlotHolder, SlotStore, StateProjection } from "./sdk/session-state.ts";
 // Resolving what a caller SAID to one of the things a tool holds — the
 // never-guess contract, on the root barrel because it is written in a tool body
 // beside `toolFailure`, which it returns.

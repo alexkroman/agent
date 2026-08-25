@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "builtins": {
@@ -25,8 +25,8 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "ffmpeg": {
@@ -60,8 +60,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "step": {
@@ -90,8 +90,8 @@
     "dropped": {}
   },
   "testing": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "tool": {

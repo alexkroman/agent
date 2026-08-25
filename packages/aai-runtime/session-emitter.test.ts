@@ -1,8 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { Db, SessionEventHandlers } from "@alexkroman1/aai";
+import type { Db, SessionEventHandlers, SlotStore } from "@alexkroman1/aai";
+import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { createUnusedDb } from "@alexkroman1/aai/testing";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
 import { createSessionEmitter } from "./session-emitter.ts";
@@ -19,7 +21,21 @@ const SID = "s-1";
  */
 const UNUSED_DB: Db = createUnusedDb();
 
-function setup(opts?: { handlers?: SessionEventHandlers; db?: () => Db }) {
+/**
+ * A hook context's `slots`, per case.
+ *
+ * Detached rather than a runtime state store: these cases assert what the emitter
+ * DOES with a write (commit it, once, and only when one happened), and the store's
+ * own commit semantics are `session-state-store.test.ts`'s subject.
+ */
+const slotsFor = () => createDetachedSlotStore();
+
+function setup(opts?: {
+  handlers?: SessionEventHandlers;
+  db?: () => Db;
+  slots?: SlotStore;
+  commit?: () => void;
+}) {
   const events: SessionEvent[] = [];
   const client: ClientSink = {
     open: true,
@@ -28,22 +44,25 @@ function setup(opts?: { handlers?: SessionEventHandlers; db?: () => Db }) {
   };
   const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
   const logger = makeLogger();
+  const slots = opts?.slots ?? slotsFor();
   const emitter = createSessionEmitter({
     sessionId: SID,
     client,
     stream,
     logger,
+    ...omitUndefined({ commit: opts?.commit }),
     ...(opts?.handlers
       ? {
           hooks: {
             handlers: opts.handlers,
             env: { MY_KEY: "v" },
+            slots,
             db: opts.db ?? (() => UNUSED_DB),
           },
         }
       : {}),
   });
-  return { emitter, client, events, stream, logger };
+  return { emitter, client, events, stream, logger, slots };
 }
 
 describe("session emitter", () => {
@@ -76,7 +95,12 @@ describe("session emitter", () => {
       },
       stream,
       logger,
-      hooks: { handlers: { "*": (e) => seen.push(e.type) }, env: {}, db: () => UNUSED_DB },
+      hooks: {
+        handlers: { "*": (e) => seen.push(e.type) },
+        env: {},
+        slots: slotsFor(),
+        db: () => UNUSED_DB,
+      },
     });
 
     expect(() => boom.emit({ type: "speech.started" })).not.toThrow();
@@ -139,7 +163,12 @@ describe("session event hooks", () => {
       sessionId: SID,
       client: { open: true, event: () => order.push("client"), playAudioChunk: vi.fn() },
       stream,
-      hooks: { handlers: { "*": () => order.push("hook") }, env: {}, db: () => UNUSED_DB },
+      hooks: {
+        handlers: { "*": () => order.push("hook") },
+        env: {},
+        slots: slotsFor(),
+        db: () => UNUSED_DB,
+      },
     });
 
     emitter.emit({ type: "speech.started" });
@@ -254,6 +283,115 @@ describe("session event hooks", () => {
     );
   });
 
+  test("a hook that writes a slot gets one commit; one that only reads gets none", () => {
+    const commit = vi.fn();
+    const read = setup({
+      handlers: { "speech.started": (_e, ctx) => ctx.slots.read("k") },
+      commit,
+    });
+    read.emitter.emit({ type: "speech.started" });
+    // The commit is a backend round trip, so it is paid by a batch that WROTE
+    // and by no other — the overwhelming majority of hooks log a line.
+    expect(commit).not.toHaveBeenCalled();
+
+    const wrote = setup({
+      handlers: { "speech.started": (_e, ctx) => ctx.slots.write("k", 1, true) },
+      commit,
+    });
+    wrote.emitter.emit({ type: "speech.started" });
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(wrote.slots.read("k")).toBe(1);
+  });
+
+  test("a hook's write reaches the SAME store a tool call reads", () => {
+    const slots = slotsFor();
+    const { emitter } = setup({
+      handlers: { "user-transcript.committed": (e, ctx) => ctx.slots.write("last", e.text, true) },
+      slots,
+    });
+
+    emitter.emit({ type: "user-transcript.committed", text: "go north" });
+
+    // The point of the whole capability: a tool body reading this slot next turn
+    // sees what the hook recorded, with no model cooperation in between.
+    expect(slots.read("last")).toBe("go north");
+  });
+
+  test("the event a commit emits does not re-enter the hooks", () => {
+    const seen: string[] = [];
+    let emitter!: ReturnType<typeof setup>["emitter"];
+    const commit = vi.fn(() => {
+      // What `commitSessionState` really does: push the projection, which is an
+      // emit of its own.
+      emitter.emit({ type: "state.updated", state: { n: 1 } });
+    });
+    const built = setup({
+      handlers: {
+        "*": (e, ctx) => {
+          seen.push(e.type);
+          ctx.slots.write("k", seen.length, true);
+        },
+      },
+      commit,
+    });
+    emitter = built.emitter;
+
+    emitter.emit({ type: "speech.started" });
+
+    // Without the guard this recurses until the stack gives out: the handler
+    // writes, the commit emits `state.updated`, the handler writes again.
+    expect(seen).toEqual(["speech.started"]);
+    expect(commit).toHaveBeenCalledTimes(1);
+    // The nested event is still RECORDED and sent — it happened. What it does
+    // not do is announce itself.
+    expect(built.events.map((e) => e.type)).toEqual(["speech.started", "state.updated"]);
+  });
+
+  test("an async hook that writes after awaiting still commits", async () => {
+    const commit = vi.fn();
+    const { emitter, slots } = setup({
+      handlers: {
+        "speech.started": async (_e, ctx) => {
+          await Promise.resolve();
+          ctx.slots.write("late", true, true);
+        },
+      },
+      commit,
+    });
+
+    emitter.emit({ type: "speech.started" });
+    // Nothing was written during the synchronous pass, so nothing was committed
+    // yet — the handler had not reached its write.
+    expect(commit).not.toHaveBeenCalled();
+
+    await vi.waitFor(() => expect(commit).toHaveBeenCalledTimes(1));
+    expect(slots.read("late")).toBe(true);
+  });
+
+  test("a hook that writes synchronously AND after an await commits both", async () => {
+    const commit = vi.fn();
+    const { emitter, slots } = setup({
+      handlers: {
+        "speech.started": async (_e, ctx) => {
+          ctx.slots.write("early", 1, true);
+          await Promise.resolve();
+          ctx.slots.write("late", 2, true);
+        },
+      },
+      commit,
+    });
+
+    emitter.emit({ type: "speech.started" });
+    expect(commit).toHaveBeenCalledTimes(1);
+
+    // The regression a boolean latch produced: the deferred commit compares
+    // before against after, and a flag already `true` from the synchronous pass
+    // compares equal to itself — so the second write was never committed. This
+    // is why `watchWrites` counts.
+    await vi.waitFor(() => expect(commit).toHaveBeenCalledTimes(2));
+    expect(slots.read("late")).toBe(2);
+  });
+
   test("an agent that declares no handlers pays nothing", () => {
     const db = vi.fn(() => UNUSED_DB);
     const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
@@ -261,7 +399,7 @@ describe("session event hooks", () => {
       sessionId: SID,
       client: { open: true, event: vi.fn(), playAudioChunk: vi.fn() },
       stream,
-      hooks: { env: {}, db },
+      hooks: { env: {}, slots: slotsFor(), db },
     });
 
     emitter.emit({ type: "speech.started" });

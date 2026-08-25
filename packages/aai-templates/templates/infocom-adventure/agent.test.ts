@@ -22,6 +22,21 @@ import { DEFAULT_GAME_STATE, gameSlot, MAX_HISTORY, REPORTED_HISTORY } from "./s
 /** A tool by the name the model calls it by, bound to this agent. */
 const run = toolRunner(agentDef);
 
+/**
+ * What the player said, delivered the way the RUNTIME delivers it.
+ *
+ * A session event handler is a plain function on the def, so a template can
+ * drive one with no harness — which is the point of asserting on it here rather
+ * than trusting the wiring: `moves` and `history` are now maintained by
+ * something the model never calls, so nothing else in this file would notice if
+ * the hook stopped running.
+ */
+const say = (text: string, ctx: ReturnType<typeof makeCtx>) =>
+  agentDef.events?.["user-transcript.committed"]?.(
+    { type: "user-transcript.committed", text, meta: { id: "evt_1", at: 0 } },
+    ctx,
+  );
+
 /** Each context owns its OWN slot store, which is what makes two playthroughs
  *  independent by construction. */
 const makeCtx = () => createToolContext();
@@ -97,13 +112,15 @@ describe("the adventure's tools", () => {
     expect(nothing.inventory).toEqual(["rope"]);
   });
 
-  test("move sets the room and counts the move", async () => {
+  test("move sets the room and reports the turn count without touching it", async () => {
     const ctx = makeCtx();
     const moved = (await run("game_state_move", { value: "Echo Chamber" }, ctx)) as {
       currentRoom: string;
       moves: number;
     };
-    expect(moved).toEqual({ currentRoom: "Echo Chamber", moves: 1 });
+    // `moves` is 0 because nobody has SAID anything — see `recordTurn`. It is
+    // still reported, because it is what the narrator wants back.
+    expect(moved).toEqual({ currentRoom: "Echo Chamber", moves: 0 });
     expect(gameSlot.get(ctx).currentRoom).toBe("Echo Chamber");
   });
 
@@ -114,26 +131,42 @@ describe("the adventure's tools", () => {
     expect(total.score).toBe(15);
   });
 
-  test("history logs the command, counts the move, and reports only the recent ones", async () => {
+  test("what the player SAYS logs the command and counts the turn", async () => {
     const ctx = makeCtx();
-    for (let i = 1; i <= REPORTED_HISTORY + 2; i++) {
-      await run("game_state_history", { value: `command ${i}` }, ctx);
-    }
+    for (let i = 1; i <= REPORTED_HISTORY + 2; i++) say(`command ${i}`, ctx);
+    say("look", ctx);
 
-    const last = (await run("game_state_history", { value: "look" }, ctx)) as {
+    const game = gameSlot.get(ctx);
+    expect(game.moves).toBe(REPORTED_HISTORY + 3);
+    expect(game.history.at(-1)).toBe("look");
+
+    // And the narrator reads it back through the ordinary state tool — the hook
+    // writes, the model reads, and the two never have to agree about who counts.
+    const read = (await run("game_state_get", {}, ctx)) as {
       moves: number;
       recentHistory: string[];
     };
-    expect(last.moves).toBe(REPORTED_HISTORY + 3);
-    expect(last.recentHistory).toHaveLength(REPORTED_HISTORY);
-    expect(last.recentHistory.at(-1)).toBe("look");
+    expect(read.moves).toBe(REPORTED_HISTORY + 3);
+    expect(read.recentHistory).toHaveLength(REPORTED_HISTORY);
   });
 
-  test("the history is capped, so a long playthrough does not grow without bound", async () => {
+  test("a turn is counted once, even when the narrator also moves the player", async () => {
     const ctx = makeCtx();
-    for (let i = 0; i < MAX_HISTORY + 10; i++) {
-      await run("game_state_history", { value: `command ${i}` }, ctx);
-    }
+    say("go north", ctx);
+    await run("game_state_move", { value: "Echo Chamber" }, ctx);
+
+    // Both used to bump `moves`, so this turn scored 2 — and a turn where the
+    // narrator called neither scored 0. A move is a room change; a turn is the
+    // player saying something.
+    const game = gameSlot.get(ctx);
+    expect(game.moves).toBe(1);
+    expect(game.currentRoom).toBe("Echo Chamber");
+  });
+
+  test("the history is capped, so a long playthrough does not grow without bound", () => {
+    const ctx = makeCtx();
+    for (let i = 0; i < MAX_HISTORY + 10; i++) say(`command ${i}`, ctx);
+
     const game = gameSlot.get(ctx);
     expect(game.history).toHaveLength(MAX_HISTORY);
     // The cap drops the OLDEST — the newest command is the one a narrator needs.
@@ -147,15 +180,13 @@ describe("the adventure's tools", () => {
     await run("game_state_flag", { value: "gate_opened" }, ctx);
     await run("game_state_move", { value: "Echo Chamber" }, ctx);
     await run("game_state_score", { value: 7 }, ctx);
-    for (let i = 0; i < REPORTED_HISTORY + 3; i++) {
-      await run("game_state_history", { value: `command ${i}` }, ctx);
-    }
+    for (let i = 0; i < REPORTED_HISTORY + 3; i++) say(`command ${i}`, ctx);
 
     expect(await run("game_state_get", ctx)).toEqual({
       currentRoom: "Echo Chamber",
       inventory: ["lantern"],
       score: 7,
-      moves: REPORTED_HISTORY + 4,
+      moves: REPORTED_HISTORY + 3,
       flags: { gate_opened: true },
       recentHistory: Array.from({ length: REPORTED_HISTORY }, (_, i) => `command ${i + 3}`),
     });
