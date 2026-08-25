@@ -401,6 +401,10 @@ export function client(config: ClientConfig): ClientHandle {
           createElement(SessionProvider, { value: session }, rootNode),
         ),
       ),
+      // Baselined under `guard-invariants` rule 27: a teardown THUNK handed to
+      // the React root, which calls it on unmount. A callback is not a scope,
+      // so `using` has nothing to attach the lifetime to — the session outlives
+      // this function by design and the root owns when it ends.
       () => session[Symbol.dispose](),
     ),
   };
