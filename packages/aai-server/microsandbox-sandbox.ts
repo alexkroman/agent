@@ -105,14 +105,19 @@ export const LOCAL_GUEST_IMAGE_TAG = "aai-guest-harness:local";
  * there the cap is elastic headroom, here it would be a hard wall at the
  * reservation.
  *
- * So the number has to cover the PEAK, and these mirror production's cap
- * because that is the only sanctioned number for the build shape. It is not a
- * measured requirement: the one datum on the peak is the wedge
- * `aai-server/CLAUDE.md` records at **RSS 1.29 GB**, so the true need is
- * somewhere above that and below this, and 4096 is where production put the
- * ceiling to "clear the bundler's peak with headroom for a co-resident
- * session". Measuring the real peak in-guest and lowering this is worth doing;
- * erring low is not, because the failure is the one that sent us here.
+ * So the number has to cover the PEAK, and the peak is MEASURED: building the
+ * `link-digest` template in a guest (typecheck, then both bundles, as
+ * `studio-build.ts` runs them) peaks at **1219 MB**, and it is the WORKER
+ * bundle that gets there — 106 MB after the typecheck, ~1200 MB after
+ * `buildWorker`. That corroborates the 1.29 GB wedge `aai-server/CLAUDE.md`
+ * records, and it means 480 MiB was never survivable.
+ *
+ * 4096 is therefore ~3.4x a SMALL project's peak, kept because a real workspace
+ * is bigger than a five-file template and a guest may serve a voice session
+ * beside the build — which is the same reason production put its cap there
+ * ("clear the bundler's peak with headroom for a co-resident session"). Lower
+ * it against a measurement of a REAL project, not this one; erring low is what
+ * sent us here.
  *
  * Without these, microsandbox's own defaults apply: **480 MiB and one core**
  * (measured — `MemTotal: 491608 kB`, `nproc: 1`). A workspace build there is
