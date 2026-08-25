@@ -1,5 +1,19 @@
 # aai-studio-server
 
+## 0.10.4
+
+### Patch Changes
+
+- 95c7b66: Answer the four remaining studio guest RPCs with the sentence a validation issue carries, not the raw blob. `studio/sync-workspace`, `studio/agent-logs`, `studio/persist-chat` and the `workspace/deploy` response all interpolated `parsed.error.message` — which for a `ZodError` is `JSON.stringify(issues, null, 2)` — so one wrong field answered with a multi-line array of `{ code, origin, path }` objects. The first three reach the coding agent as an RPC rejection it is meant to act on; the fourth is rendered verbatim into the Publish menu, where a JSON dump is the only thing the user is told about a failed publish. `errorMessage(parsed.error)` renders the same issues as one line. Follow-up to the same fix in `aai-server`'s error handler.
+- Updated dependencies [2f899e1]
+- Updated dependencies [1789a55]
+- Updated dependencies [c8d7f07]
+  - @alexkroman1/aai@8.1.0
+  - aai-server@3.6.9
+  - @alexkroman1/aai-runtime@8.1.0
+  - aai-studio-client@0.6.7
+  - @alexkroman1/aai-ui@8.1.0
+
 ## 0.10.3
 
 ### Patch Changes

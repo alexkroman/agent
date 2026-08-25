@@ -1,5 +1,12 @@
 # @alexkroman1/aai
 
+## 8.1.0
+
+### Minor Changes
+
+- 2f899e1: Validate a dialog's graph at declaration — a state nothing can reach, or a non-final leaf nothing can leave, is now refused rather than silently accepted. Model the OpenAI Realtime connection and one client socket's session lifecycle as XState statecharts, and refuse a dev-server adopt after teardown instead of orphaning the built server.
+- 1789a55: `formatSchemaIssues` now descends into a union's per-branch issues. Standard Schema declares a flat `{ message, path }`, so a validator with alternatives has nowhere to record why each branch was rejected; zod passes an off-spec `errors` array through the `~standard` interface and sets the parent issue's own message to the placeholder `"Invalid input"`. Rendering only the parent meant a union failure reported the field name and nothing else — `when: Invalid input` for a tool whose argument the model got wrong, which is the message the MODEL reads to correct itself. `StandardSchemaIssue` gains an optional `errors` field, typed `unknown` because the shape is a vendor's rather than ours, and every read of it is structural so an unexpected shape degrades to the old output instead of throwing out of a formatter that error paths call. The platform's error handler also answers a `ZodError` with that one line now, where it used to send the error's own `message` — which is `JSON.stringify(issues, null, 2)`.
+
 ## 8.0.0
 
 ### Major Changes
