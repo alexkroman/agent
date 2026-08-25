@@ -1251,17 +1251,13 @@ Six properties are load-bearing:
   classification against a surface that did not move. That change is a
   changeset-and-review matter, not a gated one; same guide, same section.
 
-**A `--bump` is the moment to ask what should come OUT.** The mechanism does
-work in that direction — roughly one epoch transition in eight removes names
-(`utils` v12 dropped 35 at once, `workflow` v9 dropped 16), and about a quarter
-of all epochs were `--drop`ped; count them from `contracts/epochs/` and
-`contracts/compatibility/` rather than trusting a figure here. What a bump never
-asks about is the names that did NOT move: **57 `aai` root exports and 74
-`aai-ui` ones are exercised by no template**
-(`packages/aai-templates/template-api-allowlist.json`, whose gate says such an
-export "is either missing its example or shouldn't be public"). The delta gets
-classified and the rest accretes — read the allowlist at a bump, not only the
-diff.
+**A `--bump` is the moment to ask what should come OUT.** The mechanism works in
+that direction — an epoch transition can drop names wholesale — but a bump only
+ever asks about the names that MOVED. What accretes is everything else:
+`template-api-allowlist.json` records the exports no shipped example exercises,
+and its own gate says such an export "is either missing its example or shouldn't
+be public". Read that file at a bump, not only the diff. Every count is in it;
+none is repeated here, because the ones that were went stale.
 
 **Capabilities, not entry points, and the reason WAS the `@internal` problem.**
 `@alexkroman1/aai` used to export 174 symbols from its root, **71 of them tagged
@@ -1271,16 +1267,23 @@ autocomplete. Versioning the subpath as one unit would bump the authoring
 contract every time a playback constant moved. So the capabilities name the
 surface instead — `agent`, `tool`, `state`, `workflow`, `workflow-api`,
 `defaults`, `utils`, `testing`, `builtins`, and one per provider stage — and the
-gate asserts the naming is **exhaustive**: every `@public` export of the fourteen
-authoring subpaths this leaves `aai` with (`.`, `/utils`, `/step`,
-`/step-errors`, `/step-files`, `/testing`, `/testing/vitest`, `/workflow-api`,
-`/tools`, `/ffmpeg`, `/stt`, `/llm`, `/tts`, `/s2s`) belongs to exactly one
+gate asserts the naming is **exhaustive**: every `@public` export of the
+authoring subpaths this leaves `aai` with belongs to exactly one
 capability, so a new public export
 fails until somebody decides which contract it joins — which is the same decision
 as "who is promised this". Ownership is per PACKAGE, deliberately: three names
 (`isTerminal`, `WorkflowSummary`, `WorkflowOutputOf`) are on both packages'
 surfaces, the same concept from the two sides of the wire. A name published on
 both `.` and a narrower subpath belongs to the narrower one.
+
+**That set is deliberately NOT enumerated here.** This paragraph used to list
+"the fourteen authoring subpaths"; by the time anyone checked it was fifteen and
+was missing `/channels` — a contracted capability with an epoch, a compatibility
+obligation and four template importers. A hand-kept list of the surface, inside
+the section describing the mechanism that exists to prevent one. Read it from
+`authoringSubpaths()` (`scripts/_api-contracts-tree.mjs`), which is what the
+gate evaluates; `exampleFacingSubpaths()` beside it is the same minus a second
+deny-list, and is what the template coverage ratchet reads.
 
 **Counting them is what got them fixed, which is the argument for the whole
 gate.** The internal-tagged names are the explicit exemption, committed to
