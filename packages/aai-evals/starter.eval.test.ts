@@ -153,9 +153,25 @@ describeStarters("starter eval — studio codegen", () => {
       async body(t) {
         const client = createStudioClient(ORIGIN, evalApiKey());
         const project = `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-        const turn = await client.runTurn(project, starter.kind, starter.prompt);
-        const files = await client.workspace(project);
-        gradeStarter(t, starter.label, starter.kind, turn, files);
+        try {
+          const turn = await client.runTurn(project, starter.kind, starter.prompt);
+          const files = await client.workspace(project);
+          gradeStarter(t, starter.label, starter.kind, turn, files);
+        } finally {
+          // A case REMOVES what it wrote. This target drives a REAL studio, so
+          // the project, its workspace and its `*-preview` agent are durable —
+          // and against a dev server on the local Supabase stack they outlive
+          // the run and every run after it. What that costs is not just a
+          // sidebar full of dead `eval-*` projects: the dev server keeps
+          // brokering their preview agents, so each one becomes a recurring 503
+          // in the log that names no test, which is what makes left-behind state
+          // worse than noisy state.
+          //
+          // In `finally` rather than after the grade: a case that THREW is the
+          // one most likely to have created a project, and grading is what
+          // throws.
+          await client.deleteProject(project);
+        }
       },
     })),
   );

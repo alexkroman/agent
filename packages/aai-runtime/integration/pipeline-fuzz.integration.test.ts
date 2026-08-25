@@ -189,8 +189,21 @@ describe("pipeline transport — randomized interleaving", () => {
     expect(count("speculationDiscarded"), "no speculation was ever discarded").toBeGreaterThan(12);
     // The two rules the recorded confidence sawtooth dictated, each floored on
     // its own so a policy that stopped applying one is a failure rather than a
-    // shift in the totals. Measured: superseded 5-10, mismatch 6-13.
-    expect(count("speculationDiscarded:superseded"), "no partial ever revised").toBeGreaterThan(1);
+    // shift in the totals. Measured locally: superseded 5-10, mismatch 6-13.
+    //
+    // `superseded` is floored at 0, not under that range, because CI then
+    // produced **1** — the long left tail this file's own harness notes warn
+    // about, since what a walk reaches is correlated WITHIN a run rather than
+    // independent per step. Five local runs are not a range, and the observed
+    // minimum is what a floor has to sit under; a floor above it fails a PR that
+    // changed nothing here (#1268 did not touch this package). What the floor is
+    // FOR survives at 0: catching a rule that stopped applying at all, not
+    // pinning how often it applies.
+    //
+    // `mismatch` keeps its floor because nothing has been observed below it.
+    // It shares the same generator and the same tail risk, so if it ever does
+    // flake the answer is the same one, not a multiplier.
+    expect(count("speculationDiscarded:superseded"), "no partial ever revised").toBeGreaterThan(0);
     expect(count("speculationDiscarded:mismatch"), "no final ever mismatched").toBeGreaterThan(1);
     // ADOPTION is counted and DELIBERATELY NOT floored, on the `resumeMooted`
     // precedent above. It needs the transport IDLE at the instant a confident
