@@ -16,12 +16,18 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { WORKFLOW_WAKE_NAMESPACE } from "./_workflow-wake-read.ts";
 import { type AppDatabases, appDbIdentifier } from "./app-database.ts";
+import { WORKFLOW_WAKE_INTERVAL_MS } from "./constants.ts";
 import { type AdminDb, SLUG_LOCK_NAMESPACE } from "./platform-lock.ts";
 import type { BrokeredSession } from "./sandbox-broker.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { APP_DB_SECRET_PREFIX, type SqlExec } from "./secret-store.ts";
-import { captureLogs, createTestStore, fakeAppDatabases } from "./test-utils.ts";
-import { createWorkflowWakeSweep } from "./workflow-wake.ts";
+import {
+  captureLogs,
+  createTestOrchestrator,
+  createTestStore,
+  fakeAppDatabases,
+} from "./test-utils.ts";
+import { createWorkflowWakeSweep, startWorkflowWakeSweep } from "./workflow-wake.ts";
 
 /**
  * The two halves of a pass, faked separately — because they are now two
@@ -476,5 +482,122 @@ describe("the read phase's concurrency", () => {
     expect(result.candidates).toBe(12);
     expect(result.due).toBe(12);
     expect(logs.errors()).toEqual([]);
+  });
+});
+
+/**
+ * WIRING — the half of this feature that a policy spec cannot see.
+ *
+ * Every test above drives `createWorkflowWakeSweep`, which takes `adminDb` and
+ * `appDb` as REQUIRED fields. The composition calls `startWorkflowWakeSweep`,
+ * where both are optional so that a platform with no database starts nothing —
+ * and that optionality is what let the real bug land: #1130 moved each hint into
+ * its app's own database, making `appDb` load-bearing, and `orchestrator.ts`
+ * went on passing only `adminDb`. It type-checked, no spec touched this
+ * function, and the sweep reported "no platform database" at a level
+ * `consoleLogger` drops unless `AAI_DEBUG=1`. The durable-run wake mechanism was
+ * off in production, with the only evidence being a log line that never
+ * appeared.
+ *
+ * So these assert on the LOG, which is the whole observable surface of the
+ * decision, and the orchestrator spec below asserts the call site itself.
+ */
+describe("starting the sweep from a composition", () => {
+  const logs = captureLogs();
+  const base = { store: createTestStore(), broker: { slots: createSlotCache() } } as Parameters<
+    typeof startWorkflowWakeSweep
+  >[0];
+
+  test("both bindings present starts it, and says so", () => {
+    const stop = startWorkflowWakeSweep({
+      ...base,
+      adminDb: fakeAdminDb({ hints: {} }),
+      appDb: fakeAppDatabases(),
+    });
+    try {
+      // The recorded line carries its namespace — see `createLogger`.
+      expect(logs.infos()).toEqual([
+        `workflow.wake sweeping for due durable runs every ${WORKFLOW_WAKE_INTERVAL_MS}ms`,
+      ]);
+      expect(logs.errors()).toEqual([]);
+    } finally {
+      stop();
+    }
+  });
+
+  test("neither binding is local dev, and stays quiet", () => {
+    startWorkflowWakeSweep(base);
+    expect(logs.errors()).toEqual([]);
+    expect(logs.infos()).toEqual([]);
+  });
+
+  test("adminDb without appDb is an ERROR naming appDb — the bug this had", () => {
+    // The exact shape `orchestrator.ts` shipped. It must not be reportable as
+    // "no platform database": there IS one, the sweep just cannot read a hint
+    // out of it, and no operator setting produces this.
+    startWorkflowWakeSweep({ ...base, adminDb: fakeAdminDb({ hints: {} }) });
+
+    expect(logs.errors()).toHaveLength(1);
+    expect(logs.errors()[0]).toContain("no appDb");
+    expect(logs.errors()[0]).not.toContain("no platform database");
+    expect(logs.infos()).toEqual([]);
+  });
+
+  test("appDb without adminDb is the same error, naming adminDb", () => {
+    startWorkflowWakeSweep({ ...base, appDb: fakeAppDatabases() });
+
+    expect(logs.errors()).toHaveLength(1);
+    expect(logs.errors()[0]).toContain("no adminDb");
+  });
+
+  test("the interval-0 kill switch is INFO, not an error", () => {
+    startWorkflowWakeSweep({
+      ...base,
+      adminDb: fakeAdminDb({ hints: {} }),
+      appDb: fakeAppDatabases(),
+      intervalMs: 0,
+    });
+
+    expect(logs.errors()).toEqual([]);
+    expect(logs.infos()).toEqual(["workflow.wake Workflow wake sweep not started: interval is 0"]);
+  });
+});
+
+/**
+ * The CALL SITE, which is where the bug actually was.
+ *
+ * The suite above pins what `startWorkflowWakeSweep` does with each argument
+ * shape; nothing pinned which shape the composition hands it, and that is the
+ * gap the whole feature fell through. `appDb` is optional on the wrapper — it
+ * has to be, so a composition with no platform database starts nothing — so
+ * dropping it from this call was invisible to `tsc`, to `publint`, to every
+ * policy spec in this file, and to production logs.
+ *
+ * Asserted through `createOrchestrator` rather than by reading its argument
+ * object, because the argument object is not the claim: the claim is that a
+ * composition WITH a platform database ends up with a running sweep.
+ */
+describe("the orchestrator's wiring", () => {
+  const logs = captureLogs();
+
+  test("a composition with a platform database starts the sweep", async () => {
+    await createTestOrchestrator({
+      adminDb: fakeAdminDb({ hints: {} }),
+      appDb: fakeAppDatabases(),
+    });
+
+    // The error branch is the miswiring the composition shipped; the info line
+    // is the only positive evidence that the sweep is on.
+    expect(logs.errors().filter((m) => m.includes("wake"))).toEqual([]);
+    expect(logs.infos()).toContain(
+      `workflow.wake sweeping for due durable runs every ${WORKFLOW_WAKE_INTERVAL_MS}ms`,
+    );
+  });
+
+  test("a composition with no platform database starts nothing, quietly", async () => {
+    await createTestOrchestrator();
+
+    expect(logs.errors()).toEqual([]);
+    expect(logs.infos().filter((m) => m.includes("durable runs"))).toEqual([]);
   });
 });
