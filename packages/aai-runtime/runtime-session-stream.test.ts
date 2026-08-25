@@ -205,7 +205,7 @@ describe("attachSessionStream", () => {
     const stream = createSessionEventStream({ backend });
     const core = makeMockCore({ stop: vi.fn(() => Promise.reject(new Error("provider died"))) });
     attachSessionStream(core, { stream, sessionId: SID, resumed: false });
-    stream.append(SID, { type: "error.reported", code: "stt", message: "gone" });
+    stream.append(SID, { type: "error.reported", code: "stt", message: "gone", fatal: true });
 
     await expect(core.stop()).rejects.toThrow("provider died");
 

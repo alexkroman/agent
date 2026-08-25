@@ -34,7 +34,6 @@ function makeLifecycle(overrides: Partial<S2sLifecycleEffects> = {}) {
     reportFatal: vi.fn((_detail: string) => undefined),
     cancelInFlightReply: vi.fn(),
     flushPendingToolResults: vi.fn(),
-    notifyReady: vi.fn((_sessionId: string) => undefined),
     currentReplyId: vi.fn((): string | null => null),
     log: vi.fn(
       (_level: "info" | "warn", _message: string, _fields?: Record<string, unknown>) => undefined,
@@ -59,7 +58,6 @@ describe("createS2sLifecycle", () => {
     expect(lifecycle.phase()).toBe("live");
     expect(lifecycle.sessionId()).toBe("s1");
     expect(spies.flushPendingToolResults).toHaveBeenCalledTimes(1);
-    expect(spies.notifyReady).toHaveBeenCalledWith("s1");
   });
 
   test("a transient drop on a named session resumes it", () => {

@@ -15,11 +15,11 @@ import {
   WS_OPEN,
 } from "@alexkroman1/aai/host-internal";
 import {
-  CLIENT_MESSAGE_TYPES,
-  ClientMessageSchema,
   type ClientSink,
   lenientParse,
   type ReadyConfig,
+  SESSION_COMMAND_TYPES,
+  SessionCommandSchema,
 } from "@alexkroman1/aai/protocol";
 import { errorDetail, errorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
@@ -109,7 +109,7 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
     log.warn("ws: invalid JSON; dropping", { sid, data: data.slice(0, LOG_PREVIEW_CHARS) });
     return;
   }
-  const result = lenientParse(ClientMessageSchema, parsed, CLIENT_MESSAGE_TYPES);
+  const result = lenientParse(SessionCommandSchema, parsed, SESSION_COMMAND_TYPES);
   if (!result.ok) {
     if (result.malformed) {
       log.warn("ws: malformed client message", { sid, error: result.error });
@@ -238,7 +238,9 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   function failClientAndClose(client: ClientSink, message: string): void {
     // Stamped here rather than emitted: this is the path where the session could
     // not be BUILT, so there is no emitter and nothing to record the event in.
-    client.event(stampSessionEvent({ type: "error.reported", code: "internal", message }));
+    client.event(
+      stampSessionEvent({ type: "error.reported", code: "internal", message, fatal: true }),
+    );
     try {
       ws.close?.(WS_CLOSE_INTERNAL, "session start failed");
     } catch (err) {

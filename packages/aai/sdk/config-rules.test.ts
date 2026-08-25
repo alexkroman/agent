@@ -21,8 +21,24 @@ const pipelineFields = {
   tts: cartesiaTts({ voice: "v" }),
 };
 
+/**
+ * `toAgentConfig` over a RAW record — one seam for every "the type rejects this
+ * shape, does the runtime accept/reject it too" case below, rather than a
+ * laundering cast per assertion.
+ *
+ * `AgentConfigSource` deliberately forbids the shapes this file exercises (a
+ * `system` alias, a string `llm`, `text: true`, a `mode` on a hand-written
+ * `export default {...}`), because a TYPED caller must not write them — but the
+ * function is documented to accept them from a raw object, and that behaviour
+ * is what these tests cover. Narrowing once means adding a case costs no new
+ * suppression.
+ */
+function rawConfig(fields: Record<string, unknown>): AgentConfig {
+  return toAgentConfig(fields as never);
+}
+
 function config(fields: Record<string, unknown>): AgentConfig {
-  return toAgentConfig({ name: "x", systemPrompt: "p", greeting: "g", ...fields } as never);
+  return rawConfig({ name: "x", systemPrompt: "p", greeting: "g", ...fields });
 }
 
 describe("toAgentConfig — mode classification", () => {
@@ -389,25 +405,23 @@ describe("toAgentConfig — AssemblyAI TTS language validation", () => {
 
 describe("author conveniences on raw configs (no agent())", () => {
   test("toAgentConfig maps `system` to systemPrompt", () => {
-    const parsed = toAgentConfig({ name: "raw", system: "Be terse." } as never);
+    const parsed = rawConfig({ name: "raw", system: "Be terse." });
     expect(parsed.systemPrompt).toBe("Be terse.");
     expect("system" in parsed).toBe(false);
   });
 
   test("toAgentConfig desugars a string llm alongside a full triple", () => {
-    const parsed = toAgentConfig({
+    const parsed = rawConfig({
       name: "raw",
       stt: assemblyAIStt(),
       llm: "anthropic/claude-sonnet-4-5",
       tts: { kind: "assemblyai", options: {} },
-    } as never);
+    });
     expect(parsed.llm?.kind).toBe("gateway");
   });
 
   test("toAgentConfig rejects both system and systemPrompt", () => {
-    expect(() => toAgentConfig({ name: "raw", system: "a", systemPrompt: "b" } as never)).toThrow(
-      /aliases/,
-    );
+    expect(() => rawConfig({ name: "raw", system: "a", systemPrompt: "b" })).toThrow(/aliases/);
   });
 });
 
@@ -420,7 +434,7 @@ describe("manifest-barrel type contracts", () => {
 
 describe("toAgentConfig — text mode", () => {
   test("`text: true` classifies as text and injects no pipeline stages", () => {
-    const parsed = toAgentConfig({ name: "chat", text: true } as never);
+    const parsed = rawConfig({ name: "chat", text: true });
     expect(parsed.mode).toBe("text");
     // The pipeline-by-default fill is what a text agent must NOT get: an
     // injected stt/tts is an audio path nobody asked for, and it would
@@ -432,11 +446,11 @@ describe("toAgentConfig — text mode", () => {
   });
 
   test("keeps an explicit llm, which is the one stage it has", () => {
-    const parsed = toAgentConfig({
+    const parsed = rawConfig({
       name: "chat",
       text: true,
       llm: "anthropic/claude-sonnet-4-5",
-    } as never);
+    });
     expect(parsed.mode).toBe("text");
     expect(parsed.llm?.kind).toBe("gateway");
     expect(parsed.stt).toBeUndefined();
@@ -447,19 +461,17 @@ describe("toAgentConfig — text mode", () => {
     ["tts", { tts: { kind: "assemblyai", options: {} } }, /no audio path/],
     ["s2s", { s2s: { kind: "assemblyai", options: {} } }, /no speech stage/],
   ])("rejects text combined with %s", (_label, extra, message) => {
-    expect(() => toAgentConfig({ name: "chat", text: true, ...extra } as never)).toThrow(message);
+    expect(() => rawConfig({ name: "chat", text: true, ...extra })).toThrow(message);
   });
 
   test("rejects the pipeline-only tuning knobs, as s2s does", () => {
-    expect(() =>
-      toAgentConfig({ name: "chat", text: true, deadAirCoverMs: 5000 } as never),
-    ).toThrow(/deadAirCoverMs requires pipeline mode/);
+    expect(() => rawConfig({ name: "chat", text: true, deadAirCoverMs: 5000 })).toThrow(
+      /deadAirCoverMs requires pipeline mode/,
+    );
   });
 
   test("rejects the `voice` shorthand rather than fabricating a tts stage", () => {
-    expect(() => toAgentConfig({ name: "chat", text: true, voice: "jane" } as never)).toThrow(
-      /never speaks/,
-    );
+    expect(() => rawConfig({ name: "chat", text: true, voice: "jane" })).toThrow(/never speaks/);
   });
 
   test("assertProviderTriple only answers `text` when asked about text", () => {

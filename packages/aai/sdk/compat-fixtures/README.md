@@ -19,8 +19,8 @@ fixture stays to protect any stragglers.
 
 ## What's covered
 
-- `ServerMessage` — all server-to-client WebSocket JSON messages
-- `ClientMessage` — all client-to-server WebSocket JSON messages
+- `SessionEvent` — all server-to-client WebSocket JSON messages
+- `SessionCommand` — all client-to-server WebSocket JSON messages
 - `constants` — wire-format constants (audio format, sample rates, error codes)
 
 `KvRequest` was covered until KV support was removed from the SDK (a

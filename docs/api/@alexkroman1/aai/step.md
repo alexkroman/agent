@@ -2374,25 +2374,6 @@ inline. There is no sniffing anywhere in the store, by design.
 
 ## Variables
 
-### ~~mapInBatches~~
-
-```ts
-const mapInBatches: typeof mapConcurrent;
-```
-
-The former name of [mapConcurrent](#mapconcurrent).
-
-Kept because it is public API and named in every workflow template that has
-shipped. It is the same function: the rename is what stopped the name
-describing an implementation — sequential batches — that this no longer has
-and never needed.
-
-#### Deprecated
-
-Use [mapConcurrent](#mapconcurrent).
-
-***
-
 ### STEP\_SPEAK\_SAMPLE\_RATE
 
 ```ts

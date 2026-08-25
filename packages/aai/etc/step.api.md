@@ -19,9 +19,6 @@ export function isTransientStatus(status: number): boolean;
 // @public
 export function mapConcurrent<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
 
-// @public @deprecated
-export const mapInBatches: typeof mapConcurrent;
-
 // @public
 export type MultipartBody = {
     body: Uint8Array;

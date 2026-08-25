@@ -34,10 +34,10 @@ export const ClientConfigResponseSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
     greeting: z.ZodOptional<z.ZodString>;
     sessionUrl: z.ZodOptional<z.ZodString>;
-    page: z.ZodOptional<z.ZodEnum<{
+    page: z.ZodEnum<{
         static: "static";
         voice: "voice";
-    }>>;
+    }>;
 }, z.core.$strip>;
 
 // @public
@@ -134,20 +134,16 @@ export const RestoredToolCallSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-const SESSION_COMMAND_TYPES: ReadonlySet<string>;
-export { SESSION_COMMAND_TYPES as CLIENT_MESSAGE_TYPES }
-export { SESSION_COMMAND_TYPES }
+export const SESSION_COMMAND_TYPES: ReadonlySet<string>;
 
 // @public
 export const SESSION_EVENT_TYPES: ReadonlySet<string>;
 
 // @public
-type SessionCommand = z.infer<typeof SessionCommandSchema>;
-export { SessionCommand as ClientMessage }
-export { SessionCommand }
+export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 
 // @public
-const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+export const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"audio_ready">;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"cancel">;
@@ -162,8 +158,6 @@ const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     result: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
     error: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>], "type">;
-export { SessionCommandSchema as ClientMessageSchema }
-export { SessionCommandSchema }
 
 // @public
 export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
@@ -181,9 +175,7 @@ export const SessionErrorCodeSchema: z.ZodEnum<{
 }>;
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
-export { SessionEvent as ServerMessage }
-export { SessionEvent }
+export type SessionEvent = z.infer<typeof SessionEventSchema>;
 
 // @public
 export type SessionEventBody = DistributiveOmit<SessionEvent, "meta">;
@@ -198,7 +190,7 @@ export const SessionEventMetaSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public (undocumented)
-const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -313,7 +305,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         tts: "tts";
     }>;
     message: z.ZodString;
-    fatal: z.ZodOptional<z.ZodBoolean>;
+    fatal: z.ZodBoolean;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"custom.emitted">;
     meta: z.ZodObject<{
@@ -354,8 +346,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         afterMessageIndex: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
-export { SessionEventSchema as ServerMessageSchema }
-export { SessionEventSchema }
 
 // (No @packageDocumentation comment for this package)
 

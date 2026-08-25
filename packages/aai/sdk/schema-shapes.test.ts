@@ -26,8 +26,8 @@ function discriminatedUnionShapes(schema: {
   return result;
 }
 
-// The two unions, named as they are DECLARED. `ServerMessageSchema` and
-// `ClientMessageSchema` are literal aliases of these (`protocol.ts:153`, `:165`),
+// The two unions, named as they are DECLARED. The direction-named aliases
+// (`ServerMessageSchema`, `ClientMessageSchema`) are gone,
 // and this file used to snapshot both sides of the first one — the same object,
 // twice, identical by construction. Naming the declarations also stops the
 // aliases reading as load-bearing.

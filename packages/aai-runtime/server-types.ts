@@ -43,8 +43,7 @@ export type SessionRuntime = Pick<
  * the three matching fields on `ServerOptions` have to ACCEPT `undefined` or
  * `exactOptionalPropertyTypes` rejects the whole object (TS2379) — which meant
  * the one bag that exists to reach all three front doors could not be handed to
- * any of them, and each wrapper forwarded the fields one at a time instead
- * (`contracts/compatibility/server/v1.ts` has the workaround frozen into it).
+ * any of them, and each wrapper forwarded the fields one at a time instead.
  * They carry `| undefined` now, on both sides; do not narrow either back.
  */
 export type PassthroughServerOptions = {

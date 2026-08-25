@@ -41,12 +41,7 @@ import {
 } from "./studio-preview-queue.ts";
 import { previewSlugFor } from "./studio-project-slugs.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
-import {
-  currentFilesHash,
-  getWorkspace,
-  projectKey,
-  stampWorkspaceMeta,
-} from "./studio-workspace.ts";
+import { getWorkspace, projectKey, stampWorkspaceMeta } from "./studio-workspace.ts";
 
 /** Cap on the stored preview failure output (it renders in a banner). */
 const MAX_PREVIEW_ERROR = 16_000;
@@ -200,7 +195,7 @@ export function createPreviewDeployer(
   async function attempt(scope: string, project: string, target: PreviewTarget): Promise<void> {
     const workspace = await getWorkspace(options.workspaces, scope, project);
     if (!workspace) return;
-    const hash = currentFilesHash(workspace);
+    const hash = workspace.hash;
     if (workspace.previewHash === hash) {
       // Nothing to deploy — but a stamped failure over ALREADY-DEPLOYED files
       // is a banner nothing else can ever clear, so clear it here.

@@ -145,10 +145,9 @@ async function readJsonFile(file: string): Promise<Manifest | null> {
  * Directory holding the base scaffold — the files every project gets
  * underneath its template (package.json, tsconfig, `server.mjs`, …).
  *
- * Exported so `aai eject` can copy one file out of it rather than carrying a
- * second copy of that file's contents: the scaffold is the single definition
- * of the self-hosted entrypoint, and a project retrofitted with `eject` gets
- * byte-identical output to one `aai init` scaffolded.
+ * The scaffold is the single definition of the self-hosted entrypoint, so a
+ * caller needing one of its files resolves it here rather than carrying a
+ * second copy of that file's contents.
  */
 export function scaffoldDir(): string {
   return path.join(resolveTemplatesDir(), "scaffold");

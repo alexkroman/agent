@@ -4,7 +4,7 @@
  * Incoming-message handling for the voice session core.
  *
  * Split out of `session-core.ts`: this module owns the interpretation of
- * server→client frames (audio chunks + JSON {@link ServerMessage}s) and the
+ * server→client frames (audio chunks + JSON {@link SessionEvent}s) and the
  * turn-boundary generation counters, while `session-core.ts` owns the state
  * store and connection lifecycle. The handlers read and mutate session state
  * exclusively through the injected `getSnapshot`/`updateState` deps.
@@ -12,12 +12,7 @@
 
 import { safeJsonParse } from "@alexkroman1/aai";
 import { DEFAULT_MAX_HISTORY, toArgsRecord } from "@alexkroman1/aai/internal";
-import {
-  lenientParse,
-  type ServerMessage,
-  ServerMessageSchema,
-  type SessionEvent,
-} from "@alexkroman1/aai/protocol";
+import { lenientParse, type SessionEvent, SessionEventSchema } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { SessionStateMachine } from "./session-core-state.ts";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
@@ -79,7 +74,7 @@ type MessageHandlers = {
    * Dispatch an incoming WebSocket message.
    *
    * Binary frames carry raw PCM16 audio chunks. Text frames are JSON-encoded
-   * {@link ServerMessage} values validated via Zod.
+   * {@link SessionEvent} values validated via Zod.
    *
    * Returns the parsed config if the message is a `config` message,
    * otherwise `undefined`.
@@ -439,7 +434,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       console.warn("session-core: invalid JSON; dropping");
       return;
     }
-    const parsed = lenientParse(ServerMessageSchema, raw);
+    const parsed = lenientParse(SessionEventSchema, raw);
     if (!parsed.ok) {
       if (parsed.malformed) {
         console.warn("session-core: malformed server message", parsed.error);
@@ -447,7 +442,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       // else: unrecognised type — silently drop (rolling-upgrade tolerance)
       return;
     }
-    const msg: ServerMessage = parsed.data;
+    const msg: SessionEvent = parsed.data;
     if (msg.type === "session.configured") {
       // A completed handshake is a live session, so it supersedes whatever
       // ended the last one — the only frame that may clear the fatal latch

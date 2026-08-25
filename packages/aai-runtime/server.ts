@@ -157,9 +157,7 @@ export function createServer(options: ServerOptions): AgentServer {
       buildClientConfig({
         name,
         greeting: options.greeting,
-        // Only when static: absent already reads as "voice" everywhere, and a
-        // server that has never heard of the field answers the same way.
-        ...(isStatic ? { page: "static" as const } : {}),
+        page: isStatic ? "static" : "voice",
       }),
     );
   }

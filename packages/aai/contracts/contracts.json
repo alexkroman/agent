@@ -1,8 +1,11 @@
 {
   "agent": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "current": 3,
+    "supported": [3],
+    "dropped": {
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it."
+    }
   },
   "builtins": {
     "current": 1,
@@ -26,8 +29,10 @@
   },
   "dialog": {
     "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+    }
   },
   "ffmpeg": {
     "current": 1,
@@ -61,13 +66,17 @@
   },
   "state": {
     "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+    }
   },
   "step": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it."
+    }
   },
   "step-errors": {
     "current": 1,
@@ -90,9 +99,13 @@
     "dropped": {}
   },
   "testing": {
-    "current": 3,
-    "supported": [1, 2, 3],
-    "dropped": {}
+    "current": 4,
+    "supported": [4],
+    "dropped": {
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "3": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it."
+    }
   },
   "tool": {
     "current": 1,
@@ -125,8 +138,10 @@
     "dropped": {}
   },
   "workflow-api": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it."
+    }
   }
 }

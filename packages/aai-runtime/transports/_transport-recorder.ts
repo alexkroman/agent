@@ -67,7 +67,6 @@ export function makeCallbacks(): RecordingCallbacks {
     }),
     onReplyStarted: vi.fn(),
     onAudioChunk: vi.fn(),
-    onSessionReady: vi.fn(),
     events,
     reported: spyFor,
   };

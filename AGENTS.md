@@ -502,9 +502,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Nineteen numbered rules, each printing WHY the invariant exists and what to use
-  instead, so a violation is self-correcting and a reviewer never re-explains
-  it. Every one used to live only as prose here, and prose is enforcement
+  Twenty-two numbered rules, each printing WHY the invariant exists and what
+  to use instead, so a violation is self-correcting and a reviewer never
+  re-explains it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
 
   | # | Rule | Instead |
@@ -1165,7 +1165,7 @@ and the section above admits how it gets made: a judgement from memory, where a
 
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
 `check:api-report` in `scripts/check.sh` and in the CI check job) closes that.
-Forty-four **capabilities** — named slices of the authoring API, each
+Forty-nine **capabilities** — named slices of the authoring API, each
 declared by a file under `<package>/contracts/entrypoints/` that may contain
 nothing but
 `export { … } from "<a published subpath>"` — get a report of their own, and what

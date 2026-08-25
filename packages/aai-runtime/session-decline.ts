@@ -53,7 +53,9 @@ export function declineSocket(
 ): void {
   safeSend(
     ws,
-    JSON.stringify(stampSessionEvent({ type: "error.reported", code: "protocol", message })),
+    JSON.stringify(
+      stampSessionEvent({ type: "error.reported", code: "protocol", message, fatal: true }),
+    ),
     logger,
   );
   ws.close?.(1008);

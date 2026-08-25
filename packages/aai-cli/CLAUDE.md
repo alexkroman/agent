@@ -6,7 +6,7 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 
 ## Commands and exports
 
-Binary: `aai` — subcommands: init, dev, test, eval, build, eject, list, pull,
+Binary: `aai` — subcommands: init, dev, test, eval, build, list, pull,
 push, publish, delete, login, secret, logs, storage, workflow, templates.
 
 **`aai eval` is a separate command from `aai test`, and the split is the
@@ -72,28 +72,22 @@ second away — so only a signalled stop ends the loop. The `--json` result
 reports the LINE COUNT, not the lines: a follow has no final set, and a one-shot
 would duplicate what it just printed.
 
-**`aai eject` is a retrofit, not the self-hosting path.** Self-hosting is the
-DEFAULT now: the scaffold ships `server.mjs` plus a `prestart`/`start` pair, so
-every project `aai init`/`aai pull` produces already runs with `npm start` — no
-platform account, nothing managed (see `packages/aai-templates/CLAUDE.md`).
-`eject` exists only for projects that predate that and are missing the two
-files. It COPIES `server.mjs` out of the resolved scaffold rather than writing
-its own contents: two definitions of the entrypoint would drift, and the one
-nobody runs locally is the one that would rot. An existing `scripts.start` is
-left alone even under `--force` — that flag is about replacing the entrypoint
-file, and silently rewriting the command a project boots with is a larger act.
+**Self-hosting is the DEFAULT, and there is no command for it.** The scaffold
+ships `server.mjs` plus a `prestart`/`start` pair, so every project
+`aai init`/`aai pull` produces already runs with `npm start` — no platform
+account, nothing managed (see `packages/aai-templates/CLAUDE.md`). There used to
+be an `aai eject` that back-filled those two files into projects predating the
+scaffold; it is gone, because `layerScaffold()` copies them into every `init`
+AND every `pull`, so no project this CLI produces can be missing them.
 
 **`aai build` LEAVES its worker on disk** (`.aai/worker.mjs`, beside the built
 client), and that is what `npm start` boots — so the CLI is a build-time
 dependency of self-hosting rather than absent from it, which the paragraph above
 used to claim outright. The reason is tool discovery: `worker-bundler.ts`
 enumerates `tools/` and emits the imports, so a loader that reads `agent.ts`
-directly serves an agent with none of its tools and nothing reports it. `eject`
-therefore writes `prestart` as well as `start`, and writes it only alongside a
-`start` it wrote — bolting a build onto someone else's start command changes
-what that command does. The two constants (`PRESTART_SCRIPT`, `START_SCRIPT`)
-are a second definition of the scaffold's scripts and `eject.test.ts` pins them
-against it.
+directly serves an agent with none of its tools and nothing reports it. That is
+why the scaffold declares `prestart` beside `start`: `scaffold/package.json` is
+the single definition of both, so there is no second copy to pin against.
 
 **`bin.mjs` is the bin in BOTH layouts** — the source checkout (where it loads
 `cli.ts`) and the published tarball (where only `dist/` ships, so it loads
@@ -933,9 +927,8 @@ about Windows.
 managed. It is deliberately a FILE rather than a CLI command — a command is
 something you have to know exists, and the whole gap it closes was that
 `createAgentServer` already made self-hosting one call and nothing put that call
-in front of anyone. `aai eject` (see `packages/aai-cli/CLAUDE.md`) copies this
-same file into projects that predate it; that command must never grow its own
-copy of the contents.
+in front of anyone. Every `aai init` and every `aai pull` layers it in, so a
+project cannot end up without it.
 
 **`server.mjs` imports `.aai/worker.mjs`, and `prestart` (`aai build
 --skip-tests`) is what produces it.** It used to import `./agent.ts` directly,

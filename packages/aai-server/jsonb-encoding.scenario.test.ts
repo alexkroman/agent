@@ -115,27 +115,6 @@ describeWithPg("platform jsonb columns hold jsonb, not strings", () => {
     expect(ok?.doc).not.toHaveProperty("previewError");
   });
 
-  test("patch heals a row a previous build wrote double-encoded", async () => {
-    // Exactly what the old binding produced, reproduced through the driver so
-    // this cannot drift from the shape it is meant to rescue. Rows like it are
-    // in the database now, and a rolling deploy keeps making them.
-    await sql(
-      `insert into aai_platform.studio_workspaces (scope, project, doc)
-       values ($1, $2, $3::jsonb)`,
-      [SCOPE, "legacy", JSON.stringify({ files: {}, previewError: "old" })],
-    );
-    expect(await typeOf("studio_workspaces", "doc", "legacy")).toBe("string");
-
-    const store = createPgWorkspaceStore(sql);
-    const patched = await store.patch(SCOPE, "legacy", {
-      set: { previewHash: "h1" },
-      remove: ["previewError"],
-    });
-    expect(patched?.doc).toMatchObject({ files: {}, previewHash: "h1" });
-    expect(patched?.doc).not.toHaveProperty("previewError");
-    expect(await typeOf("studio_workspaces", "doc", "legacy")).toBe("object");
-  });
-
   test("the orphan-preview sweep can see which slug a workspace claims", async () => {
     // The sweep deletes a `-preview` agent only when NO workspace names it,
     // joining `preview_slug` — a STORED generated column over

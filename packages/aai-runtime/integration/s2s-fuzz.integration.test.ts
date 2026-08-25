@@ -106,9 +106,6 @@ const PROPERTIES = [
   { label: "retirement", runs: 120, faultBudget: 3, retirement: true },
 ] as const;
 
-/** Total generated runs, for the floors below. */
-const TOTAL_RUNS = PROPERTIES.reduce((sum, p) => sum + p.runs, 0);
-
 type Coverage = Record<string, number>;
 
 function hit(cov: Coverage, key: string): void {
@@ -285,10 +282,14 @@ async function stopAndCheckTeardown(h: Harness): Promise<string[]> {
  * `S2S_FUZZ_COVERAGE=1` and raise, never lower.
  */
 const COVERAGE_FLOORS: Record<string, number> = {
-  // One per run, plus one per completed resume. Structural rather than
-  // ratio-derived: it says "essentially every run reached ready".
-  // Measured 882-904 over 4 runs (2026-08-16).
-  sessionReady: TOTAL_RUNS - 20,
+  // `sessionReady` is RETIRED, not lowered. It counted invocations of
+  // `TransportCallbacks.onSessionReady`, which had no production implementation
+  // and was deleted — so the counter can no longer be incremented by anything,
+  // and a floor over it would be a gate that always fails. Re-pointing it at the
+  // frame this harness SENDS was rejected: that measures the generator rather
+  // than the system, which is the failure mode this file's own header warns
+  // about. `resumeCompleted` below still cannot be reached without a ready
+  // session, so the path stays floored — just not at its old resolution.
   toolExecuted: 78, // measured 234-273
   malformedDelivered: 79, // measured 237-263
   clientCancel: 108, // measured 324-395

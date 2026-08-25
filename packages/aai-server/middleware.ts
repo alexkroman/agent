@@ -158,7 +158,7 @@ async function assertVerifiedApiKey(
  * Raw keys additionally resolve a `userId` when some account owns the key
  * (the `key-user:` reverse mapping) — that is what puts a
  * linked CLI in the same studio scope as the browser session. An unmapped
- * key keeps the legacy key-derived scope.
+ * key keeps its own key-derived scope.
  */
 export async function resolveBearer(
   req: Request,

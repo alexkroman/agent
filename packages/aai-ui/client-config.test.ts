@@ -26,41 +26,45 @@ describe("buildAgentUrl", () => {
 
 describe("fetchClientConfig", () => {
   it("returns the parsed config", async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ name: "a", greeting: "hi" }));
+    const fetchFn = vi.fn(async () => jsonResponse({ name: "a", greeting: "hi", page: "voice" }));
     await expect(fetchClientConfig("http://h/a/", fetchFn)).resolves.toEqual({
       name: "a",
       greeting: "hi",
+      page: "voice",
     });
     // The init carries the deadline signal (see loadClientConfig); the URL is
     // what this case is about.
     expect(fetchFn).toHaveBeenCalledWith("http://h/a/client-config", expect.anything());
   });
 
-  it("ignores unknown fields from an older server", async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ kind: "agent", name: "a" }));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ name: "a" });
+  it("ignores a field the schema does not declare", async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ kind: "agent", name: "a", page: "voice" }));
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
+      name: "a",
+      page: "voice",
+    });
   });
 
   it("degrades to the empty default on a 404 (older server without the endpoint)", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ error: "Not found" }, 404));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({});
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ page: "voice" });
   });
 
   it("degrades to the empty default on a malformed body", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ name: 42 }));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({});
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ page: "voice" });
   });
 
   it("degrades to the empty default on a network error", async () => {
     const fetchFn = vi.fn(async () => {
       throw new Error("boom");
     });
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({});
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ page: "voice" });
   });
 
   it("degrades to the empty default on non-JSON output", async () => {
     const fetchFn = vi.fn(async () => new Response("<html>oops</html>", { status: 200 }));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({});
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ page: "voice" });
   });
 });
 
@@ -72,8 +76,11 @@ describe("loadClientConfig", () => {
   // WebSocket redirect browsers can't follow — with no path back even once
   // the agent recovered.
   it("reports a successful lookup that named no sessionUrl", async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ name: "a" }));
-    await expect(loadClientConfig("http://h/", fetchFn)).resolves.toEqual({ name: "a" });
+    const fetchFn = vi.fn(async () => jsonResponse({ name: "a", page: "voice" }));
+    await expect(loadClientConfig("http://h/", fetchFn)).resolves.toEqual({
+      name: "a",
+      page: "voice",
+    });
   });
 
   it("reports null when the server errors (sandbox still booting)", async () => {

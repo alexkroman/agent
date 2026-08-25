@@ -145,22 +145,6 @@ const build = defineExec({
   },
 });
 
-const eject = defineExec({
-  meta: {
-    name: "eject",
-    description: "Add the self-hosted server.mjs entrypoint to an older project",
-  },
-  args: {
-    force: { type: "boolean", alias: "f", description: "Replace an existing server.mjs" },
-    json: sharedArgs.json,
-  },
-  cwd: "agent",
-  async run({ args, cwd }) {
-    const { executeEject } = await import("./eject.ts");
-    return executeEject({ cwd, force: args.force });
-  },
-});
-
 // INTERNAL: the raw bundle-upload path. Not a user command — the studio's
 // Publish route runs it inside the project's sandbox (aai-guest/
 // studio-publish.ts), which is the only production deploy path. Users go
@@ -250,7 +234,6 @@ export const mainCommand = defineCommand({
     test,
     eval: evalCommand,
     build,
-    eject,
     list,
     pull,
     push,

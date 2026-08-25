@@ -585,6 +585,7 @@ describe("cancel, error, close", () => {
       type: "error.reported",
       code: "connection",
       message: expect.stringMatching(/closed/i),
+      fatal: true,
     });
   });
 });

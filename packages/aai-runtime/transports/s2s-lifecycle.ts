@@ -76,8 +76,6 @@ export type S2sLifecycleEffects = {
   cancelInFlightReply(): void;
   /** Redeliver tool results a dead socket dropped. */
   flushPendingToolResults(): void;
-  /** Hand the (possibly renamed) provider session id to the session core. */
-  notifyReady(sessionId: string): void;
   /** The reply in flight, for the diagnostics on a mid-reply close. */
   currentReplyId(): string | null;
   /** Structured, prefixed log — the transport supplies `sid`/`agent`. */
@@ -165,10 +163,9 @@ const s2sLifecycleMachine = setup({
     spendResumeAttempt: assign({ resumeAttempts: ({ context }) => context.resumeAttempts + 1 }),
     /** A reply landed, so a session that drops once always gets a fresh budget. */
     resetResumeBudget: assign({ resumeAttempts: 0 }),
-    /** Everything a `session.ready` owes the session core, in order. */
-    admitReady: ({ context, event }) => {
+    /** Everything a `session.ready` owes the session core. */
+    admitReady: ({ context }) => {
       context.effects.flushPendingToolResults();
-      if (event.type === "READY") context.effects.notifyReady(event.sessionId);
     },
     /** The service retired the session: hang up and let the close path react. */
     expireHandle: ({ context }) => {

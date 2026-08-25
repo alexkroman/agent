@@ -3,8 +3,6 @@
 // session approves a CLI-minted one-shot code, which the CLI exchanges for
 // the account's stored API key. See studio-routes.ts.
 
-import { createMemorySecretStore } from "aai-server/secret-store";
-import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
@@ -45,33 +43,6 @@ describe("CLI device link (aai login)", () => {
   // backfill, the linked CLI is scoped by the key rather than the account —
   // an empty `aai list` and "No studio project named …" for a project the
   // browser is showing.
-  test("approval backfills the key→user mapping for a pre-existing account", async () => {
-    const secrets = createMemorySecretStore();
-    const { fetch } = await withDevAuth({ secrets });
-    const bearer = devToken("a@b.c");
-    // Stored the way onboarding did before it wrote the reverse mapping.
-    await secrets.put(userApiKeySecretName("dev:a@b.c"), "users-own-key");
-    await authFetch(fetch, "/studio/projects", { body: { name: "mine" }, key: bearer });
-
-    const projectsFor = async (key: string) =>
-      (
-        (await (await authFetch(fetch, "/studio/projects", { method: "GET", key })).json()) as {
-          projects: string[];
-        }
-      ).projects;
-    // The bug, before the link: the account's own key is a stranger to it.
-    expect(await projectsFor("users-own-key")).toEqual([]);
-
-    const approve = await authFetch(fetch, "/studio/cli-link/approve", {
-      method: "POST",
-      key: bearer,
-      body: { code },
-    });
-    expect(approve.status).toBe(200);
-    expect((await exchange(fetch)).status).toBe(200);
-    // Same key, now resolved to the account — one project list for both sides.
-    expect(await projectsFor("users-own-key")).toEqual(["mine"]);
-  });
 
   test("approval requires a session with a stored key", async () => {
     const { fetch } = await withDevAuth();

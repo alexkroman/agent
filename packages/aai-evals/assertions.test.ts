@@ -195,7 +195,7 @@ describe("succeeded and noErrors", () => {
     const fatal = recorder();
     eventScope(fatal, [
       ...toolTurn(),
-      ev({ type: "error.reported", code: "stt", message: "provider gone" }),
+      ev({ type: "error.reported", code: "stt", message: "provider gone", fatal: true }),
     ]).succeeded();
     expect(fatal.failed()).toEqual(["succeeded"]);
     expect(fatal.checks.at(-1)?.detail).toContain("provider gone");

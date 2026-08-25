@@ -6,13 +6,13 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./constants.ts";
-import type { ServerMessage, SessionEvent } from "./protocol.ts";
+import type { SessionEvent } from "./protocol.ts";
 import {
   buildReadyConfig,
-  CLIENT_MESSAGE_TYPES,
-  ClientMessageSchema,
   EVENT_ID_PREFIX,
   lenientParse,
+  SESSION_COMMAND_TYPES,
+  SessionCommandSchema,
   SessionErrorCodeSchema,
   SessionEventSchema,
 } from "./protocol.ts";
@@ -66,6 +66,7 @@ describe("SessionEventSchema", () => {
       type: "error.reported",
       code: "internal",
       message: "something went wrong",
+      fatal: true,
     }).toBeValidSessionEvent();
   });
 
@@ -76,27 +77,27 @@ describe("SessionEventSchema", () => {
 
 describe("SessionCommandSchema", () => {
   test("accepts audio_ready", () => {
-    const result = ClientMessageSchema.safeParse({ type: "audio_ready" });
+    const result = SessionCommandSchema.safeParse({ type: "audio_ready" });
     expect(result.success).toBe(true);
   });
 
   test("accepts cancel", () => {
-    const result = ClientMessageSchema.safeParse({ type: "cancel" });
+    const result = SessionCommandSchema.safeParse({ type: "cancel" });
     expect(result.success).toBe(true);
   });
 
   test("accepts reset", () => {
-    const result = ClientMessageSchema.safeParse({ type: "reset" });
+    const result = SessionCommandSchema.safeParse({ type: "reset" });
     expect(result.success).toBe(true);
   });
 
   test("accepts playback_progress", () => {
-    const result = ClientMessageSchema.safeParse({ type: "playback_progress", bufferedMs: 250 });
+    const result = SessionCommandSchema.safeParse({ type: "playback_progress", bufferedMs: 250 });
     expect(result.success).toBe(true);
   });
 
   test("rejects unknown type", () => {
-    const result = ClientMessageSchema.safeParse({
+    const result = SessionCommandSchema.safeParse({
       type: "unknown_message_type",
     });
     expect(result.success).toBe(false);
@@ -147,6 +148,7 @@ describe("property: lenientParse", () => {
         type: fc.constant("error.reported" as const),
         code: fc.constantFrom(...ERROR_CODES),
         message: fc.string(),
+        fatal: fc.boolean(),
       }),
     );
     fc.assert(
@@ -173,12 +175,12 @@ describe("property: lenientParse", () => {
 
   test("a known type that fails validation is malformed (not an ignorable unknown type)", () => {
     // A tool_result missing toolCallId is a *known* type that failed strict
-    // validation — with CLIENT_MESSAGE_TYPES it must report malformed:true so
+    // validation — with SESSION_COMMAND_TYPES it must report malformed:true so
     // the host warns, not silently swallow it as a forward-compat unknown type.
     const result = lenientParse(
-      ClientMessageSchema,
+      SessionCommandSchema,
       { type: "tool_result", result: "x" },
-      CLIENT_MESSAGE_TYPES,
+      SESSION_COMMAND_TYPES,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.malformed).toBe(true);
@@ -186,9 +188,9 @@ describe("property: lenientParse", () => {
 
   test("an unknown type is not malformed (safe to ignore across versions)", () => {
     const result = lenientParse(
-      ClientMessageSchema,
+      SessionCommandSchema,
       { type: "from_a_newer_client" },
-      CLIENT_MESSAGE_TYPES,
+      SESSION_COMMAND_TYPES,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.malformed).toBe(false);
@@ -215,8 +217,8 @@ describe("protocol type contracts", () => {
     expectTypeOf<ErrorEvent>().toHaveProperty("message");
   });
 
-  test("ServerMessage has type property on all variants", () => {
-    expectTypeOf<ServerMessage>().toHaveProperty("type");
+  test("SessionEvent has type property on all variants", () => {
+    expectTypeOf<SessionEvent>().toHaveProperty("type");
   });
 
   test("lenientParse returns ok/error discriminated union", () => {

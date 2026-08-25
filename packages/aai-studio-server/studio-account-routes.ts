@@ -129,32 +129,6 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
     const user = await requireStudioUser(c.req.raw, c.env);
     const key = await c.env.secrets.get(userApiKeySecretName(user.id));
     if (!key) return c.json({ error: "No API key on file for this account" }, 409);
-    // Approving a link is the one moment this account and the raw key a CLI
-    // is about to authenticate with are both in hand, so it is also where the
-    // `key-user:` reverse mapping is BACKFILLED. The onboarding PUT above
-    // writes it — but only for keys stored since it started doing so, and an
-    // account that saved its key earlier has no mapping and no way to acquire
-    // one short of re-saving the same key. Such an account links
-    // SUCCESSFULLY and then lands in the disjoint key-derived studio scope:
-    // `aai list` is empty and `aai pull <project>` reports "No studio project
-    // named …" for a project sitting in the browser, with nothing on either
-    // side naming the cause. Writing it here heals that account on its next
-    // `aai login`. Idempotent, and it happens BEFORE the grant is stored, so
-    // the CLI cannot exchange and get a request in ahead of the mapping.
-    // It BACKFILLS, and never rebinds: a mapping already pointing at another
-    // account is left alone rather than followed (the onboarding PUT refuses
-    // the same move, for the reason spelled out there). This can only happen
-    // to two accounts that stored one key before that guard existed, and the
-    // healing case — a legacy account with NO mapping — is unaffected, which
-    // is the whole job of this write. Refusing the link outright would strand
-    // exactly the accounts this exists to heal, so the link still succeeds;
-    // it just keeps the key-derived scope it already had.
-    const ownerName = apiKeyOwnerSecretName(key);
-    const currentOwner = await c.env.secrets.get(ownerName);
-    if (currentOwner === null || currentOwner === user.id) {
-      await c.env.secrets.put(ownerName, user.id);
-      invalidateApiKeyOwner(c.env.secrets, key);
-    }
     const grant: CliLinkGrant = {
       uid: user.id,
       ...(user.email && { email: user.email }),

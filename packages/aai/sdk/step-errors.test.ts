@@ -126,6 +126,23 @@ describe("toStepError, given a TranscribeError", () => {
 
     expect(devKitVerdict(err)).toMatchObject({ retryable: true, retryAfter: at });
   });
+
+  test("reads a verdict off an error REHYDRATED from the journal", () => {
+    // The case `instanceof` cannot reach, and the reason the check is
+    // structural. `toStepError` runs inside `"use step"` bodies, where a
+    // failure can come back through the durable journal as a plain object with
+    // no prototype — under an `instanceof` chain this fell through to "no
+    // verdict available" and a terminal refusal came back out RETRYABLE, so the
+    // run asked the same unanswerable question until it exhausted its attempts.
+    const err = toStepError({
+      message: "no speech in that recording",
+      retryable: false,
+      retryAfter: undefined,
+    });
+
+    expect(devKitVerdict(err)).toEqual({ fatal: true, retryable: false });
+    expect(err.message).toBe("no speech in that recording");
+  });
 });
 
 describe("toStepError, given anything else", () => {

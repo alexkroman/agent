@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "ServerMessage": [
+  "SessionEvent": [
     {
       "type": "session.configured",
       "audioFormat": "pcm16",
@@ -140,7 +140,8 @@
       "meta": {
         "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
         "at": 1700000000000
-      }
+      },
+      "fatal": true
     },
     {
       "type": "error.reported",
@@ -174,7 +175,7 @@
       }
     }
   ],
-  "ClientMessage": [
+  "SessionCommand": [
     {
       "type": "audio_ready"
     },

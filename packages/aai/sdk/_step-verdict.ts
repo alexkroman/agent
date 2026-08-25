@@ -21,10 +21,8 @@
  */
 
 import { FatalError, RetryableError } from "workflow";
-import { TranscribeError } from "./_transcribe-shared.ts";
-import { ChannelDeliveryError } from "./channels/channel-types.ts";
+import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import { StepGenerateError } from "./step-generate.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
 import { errorMessage } from "./utils.ts";
 
@@ -78,34 +76,41 @@ export function toStepError(cause: unknown, message?: string): Error {
     if (!isTransientStatus(cause.status)) return new FatalError(sentence);
     return retryableError(sentence, retryAfter(cause));
   }
-  if (
-    cause instanceof StepGenerateError ||
-    cause instanceof TranscribeError ||
-    cause instanceof ChannelDeliveryError
-  ) {
-    return fromCarriedVerdict(cause, message);
-  }
+  if (hasCarriedVerdict(cause)) return fromCarriedVerdict(cause, message);
   // No verdict is available, so none is invented — see this function's doc.
   if (cause instanceof Error && message === undefined) return cause;
   return new Error(message ?? errorMessage(cause), { cause });
 }
 
+/** An error that has already classified its own failure. */
+type CarriedVerdict = {
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly retryAfter: Date | undefined;
+};
+
 /**
- * The three SDK errors that have already REACHED a verdict, mapped the same way.
+ * Whether `cause` carries its own verdict — recognised STRUCTURALLY, never with
+ * `instanceof`.
  *
- * They are one branch rather than three identical ones because the shape is the
- * contract: an SDK error that classifies its own failure carries `retryable`
- * and, when the far side named one, `retryAfter`. A fourth joins by having
- * those two fields, not by earning another copy of these lines.
+ * The shape IS the contract, which is what lets a fourth SDK error join by
+ * having these fields rather than by earning another branch. Structural is also
+ * the only thing that WORKS here: `toStepError` runs inside `"use step"` bodies,
+ * where an error can arrive rehydrated from the durable journal with no
+ * prototype — an `instanceof` chain silently misses those and a
+ * `retryable: false` refusal comes back out as retryable. `step-errors.ts` made
+ * the same call for `FfmpegError`, for the same reason.
  */
-function fromCarriedVerdict(
-  cause: {
-    readonly message: string;
-    readonly retryable: boolean;
-    readonly retryAfter: Date | undefined;
-  },
-  message: string | undefined,
-): Error {
+function hasCarriedVerdict(cause: unknown): cause is CarriedVerdict {
+  return (
+    isRecord(cause) &&
+    typeof cause.message === "string" &&
+    typeof cause.retryable === "boolean" &&
+    (cause.retryAfter === undefined || cause.retryAfter instanceof Date)
+  );
+}
+
+function fromCarriedVerdict(cause: CarriedVerdict, message: string | undefined): Error {
   const sentence = message ?? cause.message;
   if (!cause.retryable) return new FatalError(sentence);
   return retryableError(sentence, cause.retryAfter);

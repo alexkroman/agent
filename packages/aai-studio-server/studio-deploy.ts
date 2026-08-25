@@ -12,7 +12,7 @@
 
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
-import { currentFilesHash, getWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
+import { getWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
 
 export type StudioDeployResult =
   | { ok: true; slug: string; url: string; output: string }
@@ -40,7 +40,7 @@ export async function deployStudioProject(
   if (!workspace) return { ok: false, error: `Project not found: ${params.project}` };
 
   // Computed once and stamped as `deployedHash` below.
-  const hash = currentFilesHash(workspace);
+  const hash = workspace.hash;
   // A deploy failure is CLI output the coding agent can act on, not an
   // exception; transport failures (dead sandbox, malformed frames) throw.
   const result = await deps.deployWorkspace(params.scope, params.project, workspace.files, {

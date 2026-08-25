@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import {
-  ClientMessageSchema,
   ReadyConfigSchema,
-  ServerMessageSchema,
+  SessionCommandSchema,
+  SessionEventSchema,
 } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { MAX_WORKER_SIZE } from "./constants.ts";
@@ -217,9 +217,9 @@ describe("EnvSchema", () => {
   });
 });
 
-// ── ClientMessageSchema ────────────────────────────────────────────────
+// ── SessionCommandSchema ────────────────────────────────────────────────
 
-describe("ClientMessageSchema", () => {
+describe("SessionCommandSchema", () => {
   test.each([
     ["audio_ready", { type: "audio_ready" }, true],
     ["cancel", { type: "cancel" }, true],
@@ -241,18 +241,18 @@ describe("ClientMessageSchema", () => {
     ["history", { type: "history", messages: [{ role: "user", content: "hello" }] }, false],
     ["unknown message type", { type: "execute_code" }, false],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
-    expect(ClientMessageSchema.safeParse(input).success).toBe(expected);
+    expect(SessionCommandSchema.safeParse(input).success).toBe(expected);
   });
 
   test("rejects non-object", () => {
-    expect(ClientMessageSchema.safeParse("audio_ready").success).toBe(false);
-    expect(ClientMessageSchema.safeParse(null).success).toBe(false);
+    expect(SessionCommandSchema.safeParse("audio_ready").success).toBe(false);
+    expect(SessionCommandSchema.safeParse(null).success).toBe(false);
   });
 });
 
-// ── ServerMessageSchema ────────────────────────────────────────────────
+// ── SessionEventSchema ────────────────────────────────────────────────
 
-describe("ServerMessageSchema", () => {
+describe("SessionEventSchema", () => {
   // Bodies, with the envelope supplied below — every server frame carries one
   // now, and these cases are about the frame's own shape.
   const META = { id: "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV", at: 1_700_000_000_000 };
@@ -289,7 +289,7 @@ describe("ServerMessageSchema", () => {
     ["speech.started", { type: "speech.started" }, true],
     ["unknown event type", { type: "malicious" }, false],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
-    expect(ServerMessageSchema.safeParse({ ...(input as object), meta: META }).success).toBe(
+    expect(SessionEventSchema.safeParse({ ...(input as object), meta: META }).success).toBe(
       expected,
     );
   });
@@ -297,7 +297,7 @@ describe("ServerMessageSchema", () => {
   test("an event with no envelope is refused", () => {
     // The envelope is REQUIRED, so a platform-side reader cannot be handed a
     // frame with no `meta.id` to key on.
-    expect(ServerMessageSchema.safeParse({ type: "speech.started" }).success).toBe(false);
+    expect(SessionEventSchema.safeParse({ type: "speech.started" }).success).toBe(false);
   });
 });
 

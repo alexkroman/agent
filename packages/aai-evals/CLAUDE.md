@@ -267,8 +267,8 @@ failing agent orphaned five pairs. The runtime is shut down on that path too.
 case loop, verdict and reporter (485 + 175 + 85 = 745 lines, deleted) on the
 shared runner. The GRADING did not move: those checks read generated source
 rather than behaviour, which is a different job, and they stay in
-`scripts/starter-eval/expectations.mjs` where `builtins.mjs` still imports them
-— which is also why this package's tsconfig sets `allowJs`. See "Studio starter
+`scripts/starter-eval/expectations.mjs`, which this suite imports — which is
+also why this package's tsconfig sets `allowJs`. See "Studio starter
 evals" in `packages/aai-studio-server/CLAUDE.md` for what it measures and why
 single runs cannot adjudicate a prompt change.
 

@@ -268,17 +268,6 @@ export async function deprovisionAppDatabase(
   // Before the drop — a cron job naming a dropped database fails forever.
   await unscheduleAppSweeps(sql, id);
   await admin.dropDatabase(id);
-  // A SCHEMA of the same name, from an app provisioned before per-app databases.
-  //
-  // Not backward compatibility — there is nothing to keep working — but the drop
-  // ORDER makes it necessary anyway: `drop role` fails `2BP01 role cannot be
-  // dropped because some objects depend on it` while the role still owns a schema,
-  // so an older app's delete was blocked by it. The database drop above no-ops for
-  // such an app, the role drop then threw, and `delete.ts` turns a failed
-  // deprovision into a 503 — so the agent could not be deleted at all.
-  //
-  // `if exists`, so it is a real no-op for every app provisioned since.
-  await sql(`drop schema if exists "${id}" cascade`);
   await sql(`drop role if exists "${id}"`);
 }
 

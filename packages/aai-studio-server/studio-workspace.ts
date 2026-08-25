@@ -41,10 +41,10 @@ export type StudioWorkspace = {
   kind?: ProjectKind;
   /**
    * `filesHash` of `files`, stamped on every write so reads (project GET,
-   * deploy) never recompute it. Optional because documents written before
-   * the field existed lack it — readers fall back to computing.
+   * deploy) never recompute it. Required: `stampWorkspace` is the only way a
+   * document is written, and it always sets this.
    */
-  hash?: string;
+  hash: string;
   /** Slug of the last successful deploy — redeploys reuse it. */
   deployedSlug?: string;
   /**
@@ -102,20 +102,12 @@ export function filesHash(files: Record<string, string>): string {
   return hash("sha256", JSON.stringify(stable));
 }
 
-/**
- * `workspace.hash` when present (stamped on write), else computed. The
- * fallback covers documents written before the hash was stored.
- */
-export function currentFilesHash(workspace: StudioWorkspace): string {
-  return workspace.hash ?? filesHash(workspace.files);
-}
-
 /** True when the workspace has edits that have not been published. */
 export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
   // Never deployed: there is nothing to be out of date with, and the preview
   // says "nothing published yet" rather than showing a stale banner.
   if (!workspace.deployedSlug) return false;
-  return workspace.deployedHash !== currentFilesHash(workspace);
+  return workspace.deployedHash !== workspace.hash;
 }
 
 /**
@@ -126,7 +118,7 @@ export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
  * the project SSE stream).
  */
 export function hasPreviewChanges(workspace: StudioWorkspace): boolean {
-  return workspace.previewHash !== currentFilesHash(workspace);
+  return workspace.previewHash !== workspace.hash;
 }
 
 /**
@@ -241,6 +233,10 @@ function parseWorkspace(doc: unknown): StudioWorkspace | null {
 function stampWorkspace(workspace: WorkspaceInput, prior?: StudioWorkspace): StudioWorkspace {
   const files = normalizeFileMap(workspace.files);
   assertWorkspaceLimits(files);
+  // `prior` is a PARSED store document, so `prior.hash` is a claim rather than a
+  // value — `parseWorkspace` shape-checks `files` and casts the rest. The
+  // presence test is what stops a document that lacks one from stamping
+  // `undefined` over the whole tree's hash.
   const hashValue =
     prior?.hash !== undefined && files === prior.files ? prior.hash : filesHash(files);
   return { ...workspace, files, hash: hashValue, updatedAt: Date.now() };
@@ -316,10 +312,10 @@ export function syncWorkspaceSource(
       if (baseHash !== undefined) throw new WorkspaceConflictError(scope, project);
       const doc = stampWorkspace({ files: incoming });
       await store.put(scope, project, doc, null);
-      return { workspace: doc, sourceHash: currentFilesHash(doc), created: true, changed: true };
+      return { workspace: doc, sourceHash: doc.hash, created: true, changed: true };
     }
     const { workspace: current } = stored;
-    const storedHash = currentFilesHash(current);
+    const storedHash = current.hash;
     if (baseHash !== undefined && baseHash !== storedHash) {
       throw new WorkspaceConflictError(scope, project);
     }
@@ -328,7 +324,7 @@ export function syncWorkspaceSource(
     }
     const doc = stampWorkspace({ ...current, files: incoming }, current);
     await store.put(scope, project, doc, stored.version);
-    return { workspace: doc, sourceHash: currentFilesHash(doc), created: false, changed: true };
+    return { workspace: doc, sourceHash: doc.hash, created: false, changed: true };
   });
 }
 

@@ -91,6 +91,17 @@ test("agentToolsToSchemas - names the removed `parameters` field rather than shi
   );
 });
 
+/**
+ * `toAgentConfig` over a RAW record — one seam rather than a laundering cast per
+ * assertion. `AgentConfigSource` `Omit`s `mode` precisely so a typed caller
+ * cannot supply one, and these tests cover what the runtime does when a raw
+ * object (a hand-written `export default {...}`, or a config round-tripped
+ * through the wire) carries one anyway.
+ */
+function rawConfig(fields: Record<string, unknown>): AgentConfig {
+  return toAgentConfig(fields as never);
+}
+
 describe("AgentConfigSchema", () => {
   const base = { name: "a", systemPrompt: "p", greeting: "g" };
 
@@ -172,16 +183,12 @@ describe("toAgentConfig", () => {
     // it anyway. The derived value is the authority; `IsolateConfigSchema`'s
     // `superRefine` would otherwise reject the disagreement at deploy time,
     // which reads as a confusing deploy failure rather than as this.
-    const config = toAgentConfig({
-      ...base,
-      s2s: desc("assemblyai"),
-      mode: "pipeline",
-    } as never);
+    const config = rawConfig({ ...base, s2s: desc("assemblyai"), mode: "pipeline" });
     expect(config.mode).toBe("s2s");
   });
 
   test("…in the other direction too", () => {
-    const config = toAgentConfig({ ...base, mode: "s2s" } as never);
+    const config = rawConfig({ ...base, mode: "s2s" });
     expect(config.mode).toBe("pipeline");
   });
 });

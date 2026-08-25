@@ -145,16 +145,3 @@ export async function mapConcurrent<T, R>(
   await Promise.all(Array.from({ length: Math.min(width, items.length) }, slot));
   return results;
 }
-
-/**
- * The former name of {@link mapConcurrent}.
- *
- * Kept because it is public API and named in every workflow template that has
- * shipped. It is the same function: the rename is what stopped the name
- * describing an implementation — sequential batches — that this no longer has
- * and never needed.
- *
- * @deprecated Use {@link mapConcurrent}.
- * @public
- */
-export const mapInBatches = mapConcurrent;

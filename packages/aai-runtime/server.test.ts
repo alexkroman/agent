@@ -216,7 +216,7 @@ describe("createServer", () => {
 
     const { status, body } = await get(`http://localhost:${server.port}/client-config`);
     expect(status).toBe(200);
-    expect(JSON.parse(body)).toEqual({ name: "cfg-agent" });
+    expect(JSON.parse(body)).toEqual({ name: "cfg-agent", page: "voice" });
   });
 
   test("GET /client-config carries the declared greeting", async () => {
@@ -234,6 +234,7 @@ describe("createServer", () => {
     expect(JSON.parse(body)).toEqual({
       name: "wf-agent",
       greeting: "Hi there!",
+      page: "voice",
     });
   });
 });

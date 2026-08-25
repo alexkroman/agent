@@ -3,13 +3,13 @@
  * Host-mode protocol schema tests.
  *
  * Covers the host-mode config handshake (`HostConfigMessageSchema`,
- * validated standalone, outside `ClientMessageSchema` — see
+ * validated standalone, outside `SessionCommandSchema` — see
  * HOST_MODE_CONTRACT.md §5) and the `tool_result` inbound client message
- * (a `ClientMessageSchema` member).
+ * (a `SessionCommandSchema` member).
  */
 import { describe, expect, test } from "vitest";
 import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
-import { ClientMessageSchema, HostConfigMessageSchema, HostConfigSchema } from "./protocol.ts";
+import { HostConfigMessageSchema, HostConfigSchema, SessionCommandSchema } from "./protocol.ts";
 
 describe("HostConfigSchema", () => {
   test("parses systemPrompt + tools and exposes them", () => {
@@ -155,9 +155,9 @@ describe("HostConfigMessageSchema", () => {
   });
 });
 
-describe("ClientMessageSchema tool_result", () => {
+describe("SessionCommandSchema tool_result", () => {
   test("parses a tool_result message", () => {
-    const result = ClientMessageSchema.safeParse({
+    const result = SessionCommandSchema.safeParse({
       type: "tool_result",
       toolCallId: "tc-1",
       result: "72F and sunny",
@@ -170,7 +170,7 @@ describe("ClientMessageSchema tool_result", () => {
   });
 
   test("parses a tool_result message with error", () => {
-    const result = ClientMessageSchema.safeParse({
+    const result = SessionCommandSchema.safeParse({
       type: "tool_result",
       toolCallId: "tc-1",
       result: "",
@@ -183,7 +183,7 @@ describe("ClientMessageSchema tool_result", () => {
   });
 
   test("rejects tool_result with empty toolCallId", () => {
-    const result = ClientMessageSchema.safeParse({
+    const result = SessionCommandSchema.safeParse({
       type: "tool_result",
       toolCallId: "",
       result: "72F and sunny",
@@ -195,7 +195,7 @@ describe("ClientMessageSchema tool_result", () => {
     // Rejecting it meant the frame was dropped, so the relay call it answered
     // never settled and hung to DEFAULT_RELAY_TOOL_TIMEOUT_MS — a stuck tool
     // instead of data that didn't fit.
-    const result = ClientMessageSchema.safeParse({
+    const result = SessionCommandSchema.safeParse({
       type: "tool_result",
       toolCallId: "tc-1",
       result: "x".repeat(MAX_TOOL_RESULT_CHARS + 5000),

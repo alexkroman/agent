@@ -14,7 +14,7 @@
  */
 
 import { createEpoch, WS_OPEN } from "@alexkroman1/aai/internal";
-import type { ClientMessage } from "@alexkroman1/aai/protocol";
+import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import { initAudioCapture, loadAudioModules } from "./session-core-audio-setup.ts";
 import { createDialer } from "./session-core-dial.ts";
 import { createHandshakeGuard, HANDSHAKE_ERROR } from "./session-core-handshake.ts";
@@ -178,7 +178,7 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
     return conn.ws?.readyState === WS_OPEN ? conn.ws : null;
   }
 
-  function sendJson(msg: ClientMessage): void {
+  function sendJson(msg: SessionCommand): void {
     openSocket()?.send(JSON.stringify(msg));
   }
 

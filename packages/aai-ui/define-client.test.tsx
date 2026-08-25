@@ -145,7 +145,7 @@ describe("client", () => {
       "fetch",
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ name: "Server Name" }), {
+          new Response(JSON.stringify({ name: "Server Name", page: "voice" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }),

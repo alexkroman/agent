@@ -23,7 +23,6 @@
  * why platform-internal tables get their own namespace).
  */
 
-import { safeJsonParse } from "@alexkroman1/aai";
 import { projectKey } from "./platform-events.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -96,9 +95,8 @@ export function createPgChatStore(sql: SqlExec): ChatStore {
       ]);
       const value = rows[0]?.messages;
       if (value === undefined) return null;
-      const parsed: unknown = typeof value === "string" ? safeJsonParse(value) : value;
       // A malformed row reads as "no chat" rather than surfacing downstream.
-      return Array.isArray(parsed) ? parsed : null;
+      return Array.isArray(value) ? value : null;
     },
 
     async putChat(scope, project, messages) {

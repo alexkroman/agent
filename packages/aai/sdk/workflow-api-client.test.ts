@@ -276,29 +276,15 @@ describe("startAndWait", () => {
     expect(started).toMatchObject({ runId: "wrun_1", status: "running" });
   });
 
-  test("reads the run back when the agent is too old to understand `wait`", async () => {
-    // Such a deploy answers `{ runId }` and nothing else. One extra read turns
-    // that into the same shape rather than an `undefined` every caller branches
-    // on.
-    fetchMock
-      .mockImplementationOnce(async () => json({ runId: "wrun_9" }, 202))
-      .mockImplementationOnce(async () => json(run({ runId: "wrun_9", status: "completed" })));
-
-    const finished = await client().startAndWait("digest");
-
-    expect(call(1)[0]).toContain("/workflows/runs/wrun_9");
-    expect(finished).toMatchObject({ runId: "wrun_9", status: "completed" });
-  });
-
-  test("still reports the run id when the read back finds nothing", async () => {
-    fetchMock
-      .mockImplementationOnce(async () => json({ runId: "wrun_9" }, 202))
-      .mockImplementationOnce(async () => json({ error: "no such run" }, 404));
+  test("still reports the run id when the answer carried no snapshot", async () => {
+    // A proxy that rewrote the body, or a replica that has not yet seen its own
+    // write. The caller has the id, which is what a watch needs; saying `pending`
+    // is both true and useful — and it costs no second request.
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_9" }, 202));
 
     const started = await client().startAndWait("digest");
 
-    // The caller has the id, which is what a watch needs; saying `pending` is
-    // both true and useful.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(started).toMatchObject({ runId: "wrun_9", status: "pending" });
   });
 
@@ -357,8 +343,9 @@ describe("timeoutMs", () => {
     await api.get("wrun_1", { wait: MAX_WORKFLOW_WAIT_MS });
     await api.startAndWait("digest");
 
-    // Every request either path made, the `startAndWait` read-back included.
-    expect(timeout.mock.calls.length).toBeGreaterThanOrEqual(3);
+    // Every request either path made — the floor is what keeps the assertion
+    // below from passing vacuously on an empty call list.
+    expect(timeout.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(timeout.mock.calls.flat()).toEqual(
       timeout.mock.calls.map(() => 20_000 + MAX_WORKFLOW_WAIT_MS),
     );

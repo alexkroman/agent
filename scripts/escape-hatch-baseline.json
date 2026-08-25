@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
     "packages/aai-ui/default-client.tsx": 1,
     "packages/aai-ui/types.test.ts": 2,
@@ -9,6 +9,10 @@
     "packages/aai-cli/_mock-api.ts": 1,
     "packages/aai-cli/_utils.ts": 1,
     "packages/aai-cli/cli.test.ts": 1,
+    "packages/aai-runtime/_mock-ws.ts": 1,
+    "packages/aai-runtime/providers/_utils.ts": 1,
+    "packages/aai-runtime/transports/_pipeline-transport-harness.ts": 1,
+    "packages/aai-runtime/transports/pipeline-transport.ts": 1,
     "packages/aai-server/middleware.ts": 1,
     "packages/aai-server/orchestrator.test.ts": 1,
     "packages/aai-server/test-utils.ts": 1,
@@ -16,10 +20,6 @@
     "packages/aai-templates/templates/solo-rpg/client.tsx": 2,
     "packages/aai-ui/components/message-list.tsx": 1,
     "packages/aai/host/_ffmpeg-spawn.ts": 1,
-    "packages/aai-runtime/_mock-ws.ts": 1,
-    "packages/aai-runtime/providers/_utils.ts": 1,
-    "packages/aai-runtime/transports/_pipeline-transport-harness.ts": 1,
-    "packages/aai-runtime/transports/pipeline-transport.ts": 1,
     "packages/aai/index.ts": 1
   },
   "as unknown as": {
@@ -93,18 +93,18 @@
     "packages/aai-guest/_test-utils.ts": 1,
     "packages/aai-guest/harness-crash-guards.test.ts": 1,
     "packages/aai-guest/harness.test.ts": 10,
+    "packages/aai-runtime/transports/pipeline-stream.test.ts": 3,
+    "packages/aai-runtime/workflow-keys.test.ts": 1,
+    "packages/aai-runtime/workflow-notify.test.ts": 2,
+    "packages/aai-runtime/workflow-wake-hint.test.ts": 2,
     "packages/aai-server/delete.test.ts": 2,
     "packages/aai-server/orchestrator-key-auth.test.ts": 1,
     "packages/aai-server/realtime-events.test.ts": 1,
     "packages/aai-server/workflow-wake.test.ts": 1,
     "packages/aai-studio-client/src/chat-queue.test.ts": 1,
     "packages/aai/host/agent-tools.ts": 2,
-    "packages/aai-runtime/transports/pipeline-stream.test.ts": 3,
-    "packages/aai-runtime/workflow-keys.test.ts": 1,
-    "packages/aai-runtime/workflow-notify.test.ts": 2,
-    "packages/aai-runtime/workflow-wake-hint.test.ts": 2,
-    "packages/aai/sdk/_internal-types.test.ts": 2,
-    "packages/aai/sdk/config-rules.test.ts": 9,
+    "packages/aai/sdk/_internal-types.test.ts": 1,
+    "packages/aai/sdk/config-rules.test.ts": 1,
     "packages/aai/sdk/define.test.ts": 1
   }
 }

@@ -72,7 +72,7 @@ export type WarmHarness = {
  * `BlobStorage.signedUrl`) removes both hops. `inline` covers everything that
  * cannot sign — the memory blob store behind local dev and tests — and guests
  * pinned to a harness image that predates URL delivery (see
- * {@link guestUnderstandsBundleUrl}).
+ * the harness image tag).
  *
  * `sha256` rides along in BOTH shapes and is the agents row's `worker_hash` —
  * the deploy's own record of what it published, not a digest of whatever
@@ -268,35 +268,6 @@ const currentTagMemo = keyedMemoAsync<string | null>();
  */
 export function currentHarnessImageTag(harnessPath: string): Promise<string | null> {
   return currentTagMemo(harnessPath, () => activeBackend().harnessImageTag(harnessPath));
-}
-
-/**
- * Whether a spawn pinned to `imageTag` will run the harness THIS process
- * built — the only harness known to understand a `url` {@link WorkerSource}.
- *
- * Deployed agents spawn from the image recorded on their row at deploy time,
- * so the guest can be arbitrarily older than the platform. URL delivery is an
- * ADDITIVE boot-env change (`AAI_BUNDLE_URL` beside `AAI_BUNDLE_PATH`), and an
- * older harness reads neither — it fails boot with "agent mode requires
- * AAI_BUNDLE_PATH". Handing every pinned guest a URL would therefore have
- * broken every already-deployed agent on the next platform deploy, so the
- * caller asks first and falls back to shipping the bytes.
- *
- * The three ways the answer is yes: no pin at all (the current image), the
- * operator forced pins aside (`SANDBOX_IGNORE_IMAGE_PINS`, which
- * `resolveSpawnImage` honours by substituting the current image — this must
- * agree with it), and a pin that IS the current tag. The tag hashes the
- * harness bundle's content, so "same tag" means "same harness", exactly the
- * question being asked.
- */
-export async function guestUnderstandsBundleUrl(
-  harnessPath: string,
-  imageTag: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<boolean> {
-  if (!imageTag) return true;
-  if (env.SANDBOX_IGNORE_IMAGE_PINS === "1") return true;
-  return imageTag === (await currentHarnessImageTag(harnessPath));
 }
 
 // ── Agent-server spawning ─────────────────────────────────────────────────────

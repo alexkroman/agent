@@ -79,16 +79,18 @@ Nothing was deleted: budgets and defaults went to `./internal`, the slug/CLI
 contracts and wire helpers to `./utils`. **`index.ts`'s module doc holds the
 test in full and is the only thing enforcing membership — keep it accurate.**
 
-## Two epoch classifications the tool could not make
+## One epoch classification the tool cannot make
 
-Worked examples for the epoch rules in the root `AGENTS.md`. **`aai:testing`**:
-`stubUploads` changing from `() => void` to `{ restore, writes, read }` broke
-frozen examples at epochs 5, 6, 17 and 19 — none CURRENT, so `--bump --drop`
-(which classifies only the current epoch, 21) left four red files under
-`pnpm typecheck`, finished by hand in `contracts.json`. Epoch 21 was dropped too
-although its example compiles, because its CONTRACT published the old signature:
-an example that does not exercise a name is no evidence the name survived.
-**`aai:defaults`** could not be bumped at all — the hash saw nothing move.
+A worked example for the epoch rules in the root `AGENTS.md`. **`aai:defaults`**
+cannot be bumped at all — the hash reads the rolled-up declaration with doc
+comments stripped, so `DEFAULT_SYSTEM_PROMPT`'s CONTENT and the documented recipe
+for composing against it can both change while `--bump` refuses ("still matches
+epoch N"). That change is a changeset-and-review matter, not a gated one.
+
+The other shape — a signature change breaking frozen examples at several
+superseded epochs, which `--bump --drop` cannot reach because it classifies only
+the current one — cannot arise today: with no external consumers every superseded
+epoch is dropped rather than retained, so no frozen example exists to break.
 
 ## Subpath export → file mapping
 
@@ -107,7 +109,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai-runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/workflow-api` | `sdk/workflow-api-barrel.ts` → 4 modules | The CLIENT of everything a deployed agent answers — the surface for a caller OUTSIDE the agent (a page, a script, a cron job). **`createAgentClient` is the one to reach for**: one object over `config()` and every workflow route. Zod-FREE, because a workflow app's page bundles it — hence `sdk/client-config-path.ts`. **The SERVER's half left for `/internal`** (`clampWorkflowWait`, `MAX_WORKFLOW_WAIT_MS`, `TERMINAL_WORKFLOW_STATUSES`, `WORKFLOW_API_PREFIX`) — nothing a caller writes. **A lone in-repo importer is NOT the test**: six more names have only `aai-runtime` too and stay, being the parameter and member types of `WorkflowClient`/`WorkflowDef`, so moving them fails the docs build. The barrel's doc argues it — read that before trimming further. `aai-ui`'s guide owns the HTTP surface and the iterators over it; each module's doc carries why |
-| `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
+| `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `SessionCommand`, `SessionEvent` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts. (The subpath name is historical — the old `parseManifest()`/`Manifest` layer was deleted; renaming the published subpath wasn't worth the break.) |
 | `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + options (`assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt`) |
 | `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropicLlm`, `openaiLlm`, `googleLlm`, `mistralLlm`, `xaiLlm`, `groqLlm`, `openrouterLlm`, `gatewayLlm`, `assemblyAILlm`); eight of the nine take one shared `ModelOptions` rather than eight byte-identical `{ model: string }` interfaces |

@@ -71,7 +71,11 @@ describe("handleAgentClientConfig", () => {
     const guestUrls: string[] = [];
     const guestFetch: typeof globalThis.fetch = async (input) => {
       guestUrls.push(String(input));
-      return Response.json({ name: "guest-agent", greeting: "hello from the bundle" });
+      return Response.json({
+        name: "guest-agent",
+        greeting: "hello from the bundle",
+        page: "voice",
+      });
     };
     const { fetch, store } = await createTestOrchestrator({ slots, guestFetch });
     await seedResident(fetch, store, slots, "my-agent");
@@ -81,6 +85,7 @@ describe("handleAgentClientConfig", () => {
       name: "guest-agent",
       greeting: "hello from the bundle",
       sessionUrl: "wss://tunnel.test:443/websocket",
+      page: "voice",
     });
     // The proxy dialed the sandbox's own origin, scheme swapped ws→http
     // (URL normalization drops the default :443).
@@ -96,9 +101,13 @@ describe("handleAgentClientConfig", () => {
     await seedResident(fetch, store, slots, "my-agent");
     const res = await fetch("/my-agent/client-config");
     // Answered, with the one field a client cannot do without: the session
-    // URL. The default client renders its empty defaults for the rest.
+    // URL, plus the front door every config states. The default client renders
+    // its empty defaults for the rest.
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ sessionUrl: "wss://tunnel.test:443/websocket" });
+    expect(await res.json()).toEqual({
+      sessionUrl: "wss://tunnel.test:443/websocket",
+      page: "voice",
+    });
   });
 
   test("two slugs on one reused loopback port do not share a memoized config", async () => {
@@ -110,7 +119,7 @@ describe("handleAgentClientConfig", () => {
     const slots = createSlotCache();
     const names = ["agent-a", "agent-b"];
     const guestFetch: typeof globalThis.fetch = async () =>
-      Response.json({ name: names.shift() ?? "exhausted" });
+      Response.json({ name: names.shift() ?? "exhausted", page: "voice" });
     const { fetch, store } = await createTestOrchestrator({ slots, guestFetch });
 
     // One port, two sandboxes: A's guest exits, B's lands on the same port.

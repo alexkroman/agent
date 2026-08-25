@@ -32,7 +32,9 @@ export function buildAgentUrl(platformUrl: string, endpointPath: string): URL {
   return new URL(endpointPath, platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
 }
 
-const AGENT_DEFAULT: ClientConfigResponse = {};
+// A lookup that produced no answer degrades to the voice front door — the one
+// this client can actually mount, and what an absent `page` used to encode.
+const AGENT_DEFAULT: ClientConfigResponse = { page: "voice" };
 
 /**
  * Per-attempt deadline for the `client-config` lookup.

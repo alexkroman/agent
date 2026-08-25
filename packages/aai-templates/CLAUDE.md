@@ -877,8 +877,8 @@ genuinely unavailable is a caller-supplied step key — `ctx.step("chunk-3", …
 the one piece of the pre-DevKit engine's API that did not survive the port.
 
 **That rule is a primitive rather than a loop in a template.** `mapConcurrent`
-(`@alexkroman1/aai/step`, formerly `mapInBatches` and still exported under that
-name, deprecated) is the window; its module doc carries the argument, and
+(`@alexkroman1/aai/step`, once `mapInBatches` — that alias is gone) is the
+window; its module doc carries the argument, and
 `sdk/map-concurrent.test.ts` asserts the issue order directly at every width and
 under reversed and shuffled settle orders. Dropping the barrier is worth real
 time on a wide fan-out: a batch was only as fast as its slowest member and a run
@@ -1671,8 +1671,8 @@ injecting a type error into a file you expect to be covered.
 `scaffold/server.mjs` plus the `prestart`/`start` pair ship in every project, so
 **any** project runs on its own with `npm start` — no platform account, nothing
 managed. Every mechanism in it is the CLI's (`aai build --skip-tests` produces
-the `.aai/worker.mjs` the server imports, `aai eject` back-fills the file into
-older projects, and `aai-cli`'s e2e leg is the only tier that can prove any of
+the `.aai/worker.mjs` the server imports, `layerScaffold()` puts the file into
+every project, and `aai-cli`'s e2e leg is the only tier that can prove any of
 it), so **the account lives in `packages/aai-cli/CLAUDE.md`, "Self-hosting is
 the scaffold's default, and it runs the BUILT worker"** — including why there is
 no runtime `tools/` scan anywhere, and why `ctx.env` and provider credentials

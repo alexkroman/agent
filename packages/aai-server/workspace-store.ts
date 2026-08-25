@@ -98,8 +98,7 @@ const TABLE = "aai_platform.studio_workspaces";
  * The table is declared in `supabase/migrations` (in `aai_platform`,
  * deliberately not `public`), so this store issues no DDL. Documents are bound
  * as JSON text with a `::jsonb` cast so the statement shape is
- * driver-agnostic; reads accept either the parsed object (what the `postgres`
- * driver returns for jsonb) or a raw string.
+ * driver-agnostic; reads take the parsed object the `postgres` driver returns.
  *
  * **The cast is `::text::jsonb`, and the extra step is load-bearing.** Bound to
  * a bare `$n::jsonb`, postgres.js resolves the parameter's type FROM that cast
@@ -110,10 +109,9 @@ const TABLE = "aai_platform.studio_workspaces";
  * parse, which is what was intended all along.
  *
  * It was invisible for as long as it was because NOTHING read the column from
- * inside Postgres — every reader round-tripped the value through JS, where
- * `parseDoc` unwraps the extra layer and each sibling store grew the same
- * tolerance. The two things that DID reach into the jsonb both failed silently
- * or late:
+ * inside Postgres — every reader round-tripped the value through JS, where a
+ * string-tolerant read in each store peeled the extra layer off. The two things
+ * that DID reach into the jsonb both failed silently or late:
  *
  * - `patch` below (`doc - text[]`) threw **`cannot delete from scalar`**, which
  *   is how this was found — every metadata stamp in production, so every
@@ -125,9 +123,6 @@ const TABLE = "aai_platform.studio_workspaces";
  *   recover from; it was not a rare race, it was every preview, hourly.
  */
 export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
-  const parseDoc = (value: unknown): unknown =>
-    typeof value === "string" ? JSON.parse(value) : value;
-
   return {
     async get(scope, project) {
       const rows = await sql(
@@ -136,7 +131,7 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
       );
       const row = rows[0];
       if (!row) return null;
-      return { doc: parseDoc(row.doc), version: Number(row.version) };
+      return { doc: row.doc, version: Number(row.version) };
     },
 
     async put(scope, project, doc, expectedVersion) {
@@ -167,22 +162,15 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
       // every other writer without holding a version: there is nothing read
       // here that a concurrent write could invalidate.
       //
-      // `doc #>> '{}'` unwraps a row written by a build that stored this
-      // column DOUBLE-ENCODED (see the doc comment above). It is a no-op on a
-      // well-formed object — the empty path returns the whole document as
-      // text, which `::jsonb` parses straight back — and the assignment then
-      // heals the row. It is needed for two windows, not one: the rows already
-      // in the database, and the length of a rolling deploy, during which
-      // containers on the previous build keep writing strings.
       const rows = await sql(
-        `update ${TABLE} set doc = ((doc #>> '{}')::jsonb - $4::text[]) || $3::text::jsonb,
+        `update ${TABLE} set doc = (doc - $4::text[]) || $3::text::jsonb,
            version = version + 1, updated_at = now()
          where scope = $1 and project = $2 returning doc, version`,
         [scope, project, JSON.stringify(set), remove],
       );
       const row = rows[0];
       if (!row) return null;
-      return { doc: parseDoc(row.doc), version: Number(row.version) };
+      return { doc: row.doc, version: Number(row.version) };
     },
 
     async delete(scope, project) {

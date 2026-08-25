@@ -107,6 +107,7 @@ describe("PipelineTransport — provider-open latency", () => {
       type: "error.reported",
       code: "stt",
       message: "stt connect failed",
+      fatal: true,
     });
     expect(tts.last()?.closed.value).toBe(true);
   });

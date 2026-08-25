@@ -23,7 +23,12 @@ import { createSessionCore } from "./session-core.ts";
 import type { SessionCore } from "./session-core-types.ts";
 
 const fatalError = () =>
-  JSON.stringify({ type: "error.reported", code: "internal", message: "provider died" });
+  JSON.stringify({
+    type: "error.reported",
+    code: "internal",
+    message: "provider died",
+    fatal: true,
+  });
 
 describe("session-core error handling", () => {
   let core: SessionCore;
@@ -137,6 +142,7 @@ describe("session-core error handling", () => {
           type: "error.reported",
           code: "tts",
           message: "Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the agent env.",
+          fatal: true,
         }),
       );
       lastSocket?.simulateMessage(JSON.stringify({ type: "reply.cancelled" }));

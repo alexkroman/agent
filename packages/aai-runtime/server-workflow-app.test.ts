@@ -97,6 +97,7 @@ describe("a workflow app's server", () => {
         type: "error.reported",
         code: "protocol",
         message: expect.stringContaining("static page"),
+        fatal: true,
       }),
     );
     expect(await closed).toBe(1008);
@@ -131,11 +132,12 @@ describe("a workflow app's server", () => {
     expect(JSON.parse(res.body)).toEqual({ name: "Digest", page: "static" });
   });
 
-  test("omits `page` for a voice agent — absent already reads as voice", async () => {
+  test("states `page: voice` for a voice agent rather than leaving it absent", async () => {
+    // A reader should not have to infer the front door from a missing key.
     server = createServer({ runtime: makeRuntime(), name: "Support", logger: silentLogger });
     await server.listen(0);
     const res = await get(`http://127.0.0.1:${server.port}/client-config`);
-    expect(JSON.parse(res.body)).toEqual({ name: "Support" });
+    expect(JSON.parse(res.body)).toEqual({ name: "Support", page: "voice" });
   });
 });
 

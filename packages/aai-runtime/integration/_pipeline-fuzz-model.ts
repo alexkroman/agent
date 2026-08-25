@@ -17,8 +17,6 @@
 import type { createFakeLanguageModel, FakeTtsProvider } from "../_pipeline-test-fakes.ts";
 import type { TransportCallbacks, TransportEventBody } from "../transports/types.ts";
 
-const noop = (): void => undefined;
-
 /** Collapse whitespace so a text comparison is about content, not chunking. */
 export function norm(s: string): string {
   return s.replace(/\s+/g, " ").trim();
@@ -361,7 +359,6 @@ export function createCallbacks(mon: Monitor, tts: FakeTtsProvider): TransportCa
         mon.flag(`audio chunk after reply.completed for ${mon.current.id}`);
       }
     },
-    onSessionReady: noop,
   };
 }
 

@@ -57,8 +57,13 @@ const OUTCOMES = ["broker", "no-broker", "http-error", "network-error"] as const
 /** What `GET client-config` does, per fuzzed outcome. */
 const CONFIG_RESPONSES: Record<ConfigOutcome, () => Promise<Response>> = {
   broker: () =>
-    Promise.resolve(new Response(JSON.stringify({ sessionUrl: SESSION_URL }), { status: 200 })),
-  "no-broker": () => Promise.resolve(new Response("{}", { status: 200 })),
+    Promise.resolve(
+      new Response(JSON.stringify({ sessionUrl: SESSION_URL, page: "voice" }), { status: 200 }),
+    ),
+  // An ANSWERED lookup that names no `sessionUrl` — it still states the front
+  // door, as every server does, which is what makes it an answer at all.
+  "no-broker": () =>
+    Promise.resolve(new Response(JSON.stringify({ page: "voice" }), { status: 200 })),
   "http-error": () => Promise.resolve(new Response("nope", { status: 503 })),
   "network-error": () => Promise.reject(new Error("offline")),
 };

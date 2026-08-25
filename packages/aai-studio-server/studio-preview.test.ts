@@ -22,7 +22,7 @@ import {
 } from "./_studio-preview-test-utils.ts";
 import { wakeProjectPreview, warmPreviewSandbox } from "./studio-preview-wake.ts";
 import type { WorkspaceDeployTarget } from "./studio-session-broker.ts";
-import { currentFilesHash, getWorkspace } from "./studio-workspace.ts";
+import { getWorkspace } from "./studio-workspace.ts";
 
 describe("warmPreviewSandbox", () => {
   test("hits the platform's client-config broker for the slug, with a deadline", async () => {
@@ -102,7 +102,7 @@ describe("wakeProjectPreview", () => {
     const workspaces = await seededStore();
     await stampProject(workspaces, (current) => ({
       previewSlug: "p-preview",
-      previewHash: currentFilesHash(current),
+      previewHash: current.hash,
     }));
     const schedule = scheduleFn();
     const fetchImpl = fakeFetch();
@@ -173,7 +173,7 @@ describe("wakeProjectPreview", () => {
     await stampProject(workspaces, (current) => ({
       previewSlug: "p-preview",
       // The workspace was reverted to exactly what is deployed.
-      previewHash: currentFilesHash(current),
+      previewHash: current.hash,
       previewError: "deploy failed (HTTP 500): Internal server error",
     }));
     const schedule = scheduleFn();
@@ -206,7 +206,7 @@ describe("wakeProjectPreview", () => {
     const workspaces = await seededStore();
     await stampProject(workspaces, (current) => ({
       deployedSlug: "prod-slug",
-      deployedHash: currentFilesHash(current),
+      deployedHash: current.hash,
       previewError: "Build failed: nope",
     }));
     const schedule = scheduleFn();
@@ -224,7 +224,7 @@ describe("wakeProjectPreview", () => {
     const workspaces = await seededStore();
     await stampProject(workspaces, (current) => ({
       previewSlug: "p-preview",
-      previewHash: currentFilesHash(current),
+      previewHash: current.hash,
     }));
     const schedule = scheduleFn();
     const fetchImpl = fakeFetch(answering("nope", 404));
@@ -241,7 +241,7 @@ describe("wakeProjectPreview", () => {
     const workspaces = await seededStore();
     await stampProject(workspaces, (current) => ({
       previewSlug: "p-preview",
-      previewHash: currentFilesHash(current),
+      previewHash: current.hash,
     }));
     const schedule = scheduleFn();
     const fetchImpl = fakeFetch(answering("retry shortly", 503));
@@ -271,7 +271,7 @@ describe("wakeProjectPreview", () => {
     const workspaces = await seededStore();
     await stampProject(workspaces, (current) => ({
       previewSlug: "p-preview",
-      previewHash: currentFilesHash(current),
+      previewHash: current.hash,
       previewError: "deploy failed (HTTP 500): Internal server error",
     }));
     const schedule = scheduleFn();
