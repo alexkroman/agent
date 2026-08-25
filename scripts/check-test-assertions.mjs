@@ -20,6 +20,14 @@
  *   a bare `await`: a regression made it HANG to the suite timeout rather
  *   than fail.
  *
+ * The third of those is the one the gate itself was blind to for a while.
+ * Eleven `test.concurrent(…)` bodies in `packages/aai-cli/e2e.test.ts` stated
+ * their claims as bare `await locator.waitFor()` — a Playwright regression
+ * would have hung them to the tier's 300s timeout — and the old opener regex
+ * could not see a `test.concurrent` at all. The parser this gate runs on now
+ * walks the call chain instead of enumerating its shapes; see
+ * `_test-assertions-parse.mjs`.
+ *
  * "Does not throw" is a legitimate thing to test — it just has to be said:
  * `expect(fn).not.toThrow()`, `await expect(p).resolves.toBeUndefined()`.
  * Writing it down is what makes it survive a refactor and what tells the next
@@ -38,6 +46,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { repoRoot } from "./_fs.mjs";
+import { findTests } from "./_test-assertions-parse.mjs";
 
 const ROOT = repoRoot(import.meta.url);
 
@@ -47,189 +56,12 @@ const ROOT = repoRoot(import.meta.url);
  * "all 0 test(s) across 0 file(s) assert something ✓" is the exact shape of a
  * healthy run, so a glob that stopped matching or a parser that stopped
  * recognising `test(` would print a checkmark over nothing — which is the
- * failure this gate exists to catch, arriving in the gate itself. ~470 files and
- * ~5,800 tests today; the floors sit well under both so ordinary churn never
+ * failure this gate exists to catch, arriving in the gate itself. ~635 files and
+ * ~8,000 tests today; the floors sit well under both so ordinary churn never
  * trips them, and any plausible breakage lands at zero.
  */
 const MIN_TEST_FILES = 200;
 const MIN_TESTS_SCANNED = 2000;
-
-/**
- * Calls that count as asserting. `expectTypeOf` is included because the
- * type-level suites assert at compile time and legitimately have no runtime
- * `expect`; the `[(.<]` tail admits `expect.soft(…)`, `expect.poll(…)` and
- * `expect.hasAssertions()` alongside a bare call.
- */
-const ASSERTION = /\b(?:expect|expectTypeOf|assert)\s*[(.<]/;
-
-/**
- * Openers for a test body. `test.each(…)` / `it.skipIf(…)` included.
- *
- * The lookbehind is load-bearing: `\b` alone treats the `test` in
- * `/re/.test(x)` as an opener, and this repo calls `RegExp.prototype.test`
- * inside test files constantly — it accounted for five of the eight hits the
- * first version reported.
- */
-const TEST_OPENER = /(?<![.\w$])(?:test|it)\s*(?:\.\s*\w+\s*\([\s\S]*?\)\s*)?\(/g;
-
-/**
- * Blank out everything that is not code — comments and the literal text of
- * strings — replacing each masked character with a space so every offset and
- * line number still lines up with the original source.
- *
- * This is the whole reason the gate is trustworthy. Scanning raw text finds
- * `test()` inside a JSDoc paragraph *about* tests (three files here have one)
- * and finds `expect` inside a string that merely mentions it. Template
- * substitutions are deliberately left UNMASKED: `${…}` is code, and an
- * assertion can legitimately live inside one.
- *
- * Hand-rolled rather than pulled from a parser: these scripts are plain node
- * with no build step, and the repo's only TypeScript parser (`typescript@6`)
- * lives in the `docs/` workspace for TypeDoc's sake.
- */
-/** Index just past the `//` comment starting at `i`. */
-function endOfLineComment(src, i) {
-  const nl = src.indexOf("\n", i);
-  return nl === -1 ? src.length : nl;
-}
-
-/** Index just past the `/* *\/` comment starting at `i`. */
-function endOfBlockComment(src, i) {
-  const end = src.indexOf("*/", i + 2);
-  return end === -1 ? src.length : end + 2;
-}
-
-/** Index of the closing `/` of the regex literal at `i`, or -1 if unterminated. */
-function endOfRegex(src, i) {
-  let inClass = false;
-  for (let j = i + 1; j < src.length; j++) {
-    const c = src[j];
-    if (c === "\\") j++;
-    else if (c === "[") inClass = true;
-    else if (c === "]") inClass = false;
-    else if (c === "\n") return -1;
-    else if (c === "/" && !inClass) return j;
-  }
-  return -1;
-}
-
-/** Index of the closing quote of the `'`/`"` string at `i` (or its newline). */
-function endOfQuoted(src, i) {
-  const quote = src[i];
-  for (let j = i + 1; j < src.length; j++) {
-    if (src[j] === "\\") j++;
-    else if (src[j] === quote || src[j] === "\n") return j;
-  }
-  return src.length;
-}
-
-/** Index just past the `}` closing the `${` at `i`. */
-function endOfSubstitution(src, i) {
-  let braces = 1;
-  for (let j = i + 2; j < src.length; j++) {
-    if (src[j] === "{") braces++;
-    else if (src[j] === "}" && --braces === 0) return j + 1;
-  }
-  return src.length;
-}
-
-/**
- * Blank the literal text of the template starting at `i`, leaving every
- * `${…}` intact — those are code, and an assertion can live inside one.
- * Returns the index of the closing backtick.
- */
-function maskTemplate(src, i, blank) {
-  let textStart = i + 1;
-  for (let j = i + 1; j < src.length; j++) {
-    if (src[j] === "\\") j++;
-    else if (src[j] === "`") {
-      blank(textStart, j);
-      return j;
-    } else if (src[j] === "$" && src[j + 1] === "{") {
-      blank(textStart, j);
-      j = endOfSubstitution(src, j) - 1;
-      textStart = j + 1;
-    }
-  }
-  blank(textStart, src.length);
-  return src.length;
-}
-
-/** Whether a `/` after this character starts a regex rather than dividing. */
-const REGEX_ALLOWED_AFTER = /[([{,;:=!&|?+\-*%~^<>]/;
-
-/**
- * The fixed-extent non-code token starting at `i`, as the range to blank plus
- * the index to resume the outer scan from — or null when `i` is ordinary
- * code. `prev` is the previous significant character, which is what decides
- * whether a `/` opens a regex or divides.
- *
- * Templates are NOT handled here: they blank several disjoint ranges (the
- * literal text between substitutions), which does not fit one span.
- */
-function nonCodeSpanAt(src, i, prev) {
-  const c = src[i];
-  if (c === "/" && src[i + 1] === "/") {
-    const end = endOfLineComment(src, i);
-    return { from: i, to: end, next: end - 1 };
-  }
-  if (c === "/" && src[i + 1] === "*") {
-    const end = endOfBlockComment(src, i);
-    return { from: i, to: end, next: end - 1 };
-  }
-  if (c === "/" && (prev === "" || REGEX_ALLOWED_AFTER.test(prev))) {
-    const end = endOfRegex(src, i);
-    // -1 means unterminated, i.e. it was division after all.
-    if (end !== -1) return { from: i + 1, to: end, next: end };
-  }
-  if (c === '"' || c === "'") {
-    const end = endOfQuoted(src, i);
-    return { from: i + 1, to: end, next: end };
-  }
-  return null;
-}
-
-function maskNonCode(src) {
-  const out = src.split("");
-  const blank = (from, to) => {
-    for (let i = from; i < to && i < out.length; i++) if (out[i] !== "\n") out[i] = " ";
-  };
-  // The previous significant character, which is what decides `/`.
-  let prev = "";
-
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (c === "`") {
-      i = maskTemplate(src, i, blank);
-    } else {
-      const span = nonCodeSpanAt(src, i, prev);
-      if (span === null) {
-        if (!/\s/.test(c)) prev = c;
-        continue;
-      }
-      blank(span.from, span.to);
-      i = span.next;
-    }
-    prev = c;
-  }
-  return out.join("");
-}
-
-/**
- * Source text of the call whose opening `(` is at `open`, or null at EOF.
- * Runs over masked source, so quotes and comments cannot unbalance it.
- */
-function readCall(masked, open) {
-  let depth = 0;
-  for (let i = open; i < masked.length; i++) {
-    if (masked[i] === "(") depth++;
-    else if (masked[i] === ")") {
-      depth--;
-      if (depth === 0) return masked.slice(open, i + 1);
-    }
-  }
-  return null;
-}
 
 const files = execFileSync(
   "git",
@@ -251,26 +83,32 @@ if (files.length < MIN_TEST_FILES) {
 }
 
 const offenders = [];
+const unparsable = [];
 let scanned = 0;
 
 for (const file of files) {
-  const src = readFileSync(join(ROOT, file), "utf8");
-  const masked = maskNonCode(src);
-  TEST_OPENER.lastIndex = 0;
-  for (let m = TEST_OPENER.exec(masked); m !== null; m = TEST_OPENER.exec(masked)) {
-    const open = m.index + m[0].length - 1;
-    const call = readCall(masked, open);
-    if (call === null) continue;
-    // Skip past this call so a nested `test()` inside a helper isn't counted
-    // twice.
-    TEST_OPENER.lastIndex = open + call.length;
-    scanned++;
-    if (ASSERTION.test(call)) continue;
-    const line = src.slice(0, m.index).split("\n").length;
-    // Titles come from the ORIGINAL source — the masked copy blanked them.
-    const title = /^\(\s*(["'`])([\s\S]*?)\1/.exec(src.slice(open, open + call.length))?.[2];
-    offenders.push({ file, line, title: title?.replace(/\s+/g, " ") ?? "(untitled)" });
+  const { tests, errors } = findTests(file, readFileSync(join(ROOT, file), "utf8"));
+  if (errors.length > 0) {
+    unparsable.push({ file, why: errors[0] });
+    continue;
   }
+  for (const { line, title, asserts } of tests) {
+    scanned++;
+    if (!asserts) offenders.push({ file, line, title });
+  }
+}
+
+// A file the parser choked on is reported before anything else: it contributed
+// zero tests, so letting it through would understate every count below it.
+if (unparsable.length > 0) {
+  console.error(`check-test-assertions: ${unparsable.length} test file(s) failed to parse.\n`);
+  for (const { file, why } of unparsable) console.error(`  ${file}  ${why}`);
+  console.error(
+    "\nThe gate cannot vouch for a file it could not read. Fix the syntax, or —\n" +
+      "if the file is valid and oxc-parser disagrees — say so in\n" +
+      "packages/aai-templates/test-assertion-gate.test.ts before working around it.",
+  );
+  process.exit(1);
 }
 
 if (offenders.length > 0) {
@@ -291,10 +129,9 @@ if (scanned < MIN_TESTS_SCANNED) {
   console.error(
     `check-test-assertions: parsed ${scanned} test(s) out of ${files.length} file(s), below the ` +
       `floor of ${MIN_TESTS_SCANNED}.\n\n` +
-      "The files were found, so this is the parser: the opener regex or the\n" +
-      "comment/string masker has stopped recognising the shape a test is\n" +
-      "written in, and a gate whose success output is a count reports that as\n" +
-      "a clean run. Its spec is\n" +
+      "The files were found, so this is the parser: it has stopped recognising\n" +
+      "the shape a test is written in, and a gate whose success output is a\n" +
+      "count reports that as a clean run. Its spec is\n" +
       "packages/aai-templates/test-assertion-gate.test.ts.",
   );
   process.exit(1);

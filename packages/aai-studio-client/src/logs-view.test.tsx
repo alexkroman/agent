@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { button } from "./_test-utils.ts";
+import { button, installResizeObserver } from "./_test-utils.ts";
 import type { AgentLogsPage } from "./api-types.ts";
 import { LogsView } from "./logs-view.tsx";
 
@@ -30,8 +30,9 @@ function serve(pages: AgentLogsPage[]): { calls: string[] } {
 }
 
 beforeEach(() => {
-  // The pane's own scroll-follow reads layout, which jsdom does not compute.
-  Object.defineProperty(HTMLElement.prototype, "scrollHeight", { value: 0, configurable: true });
+  // jsdom has no ResizeObserver, and `use-stick-to-bottom` — which owns this
+  // pane's follow-the-bottom behaviour — constructs one on mount.
+  installResizeObserver();
 });
 
 afterEach(() => {
@@ -145,69 +146,37 @@ describe("LogsView", () => {
   });
 });
 
-/**
- * jsdom computes no layout, so the three numbers the follow test reads are
- * defined per element with a real backing store: `scrollTop` has to be
- * writable for the assertion to mean anything.
- */
-function stubScroll(el: Element, box: { scrollHeight: number; clientHeight: number; top: number }) {
-  let top = box.top;
-  Object.defineProperty(el, "scrollHeight", { value: box.scrollHeight, configurable: true });
-  Object.defineProperty(el, "clientHeight", { value: box.clientHeight, configurable: true });
-  Object.defineProperty(el, "scrollTop", {
-    configurable: true,
-    get: () => top,
-    set: (v: number) => {
-      top = v;
-    },
-  });
-}
-
-const scrollerIn = (root: HTMLElement) => {
-  const el = root.querySelector(".overflow-auto");
-  if (el === null) throw new Error("the pane has no scroller");
-  return el;
-};
-
 describe("following the bottom", () => {
-  test("a new line scrolls the pane down while the reader is at the bottom", async () => {
-    serve([
-      page({ lines: [line(0, "first")], cursor: 0 }),
-      page({ lines: [line(1, "second")], cursor: 1 }),
-    ]);
-    const view = render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
-    await screen.findByText("first");
+  /*
+   * This is WIRING, and deliberately not the behaviour.
+   *
+   * Following the bottom belongs to `use-stick-to-bottom` now — the same
+   * component the chat transcript mounts — and that library is driven by a
+   * ResizeObserver over real boxes. jsdom computes no layout and its
+   * ResizeObserver here is a stub, so nothing this suite can do makes content
+   * grow in a way the library can see; an assertion about `scrollTop` would
+   * pass or fail on the stub rather than on the pane.
+   *
+   * The two behavioural tests that stood here were only writable because the
+   * hand-rolled version read three numbers (`scrollHeight`, `clientHeight`,
+   * `scrollTop`) that a test could define by hand. They pinned an
+   * implementation this pane no longer owns. What is still this pane's claim,
+   * and still regresses silently, is that the lines are mounted INSIDE that
+   * scroller at all — dropping back to a plain `<div className="overflow-auto">`
+   * renders identically and follows nothing.
+   */
+  test("mounts the tail inside a stick-to-bottom scroller", async () => {
+    serve([page({ lines: [line(0, "first")], cursor: 0 })]);
+    render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
-    const el = scrollerIn(view.container);
-    stubScroll(el, { scrollHeight: 1000, clientHeight: 100, top: 900 });
-    fireEvent.scroll(el);
-
-    // `waitFor`, not a bare assertion after `findByText`. The follow handler is
-    // a `useEffect`, i.e. a PASSIVE effect React flushes after paint — so the
-    // text being in the DOM does not mean the scroll has happened yet, and the
-    // snapshot form was a race that lost about one run in six under load
-    // (`expected 900 to be 1000`, on a green branch). It still fails if the
-    // follow is removed: `scrollTop` then stays at 900 until the wait expires.
-    await screen.findByText("second");
-    await waitFor(() => {
-      expect(el.scrollTop).toBe(1000);
-    });
-  });
-
-  test("but not while they have scrolled up to read something", async () => {
-    serve([
-      page({ lines: [line(0, "first")], cursor: 0 }),
-      page({ lines: [line(1, "second")], cursor: 1 }),
-    ]);
-    const view = render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
-    await screen.findByText("first");
-
-    const el = scrollerIn(view.container);
-    stubScroll(el, { scrollHeight: 1000, clientHeight: 100, top: 0 });
-    fireEvent.scroll(el);
-
-    await screen.findByText("second");
-    expect(el.scrollTop).toBe(0);
+    // `StickToBottom.Content` styles its `scrollRef` div inline and gives it no
+    // class, so those styles are the only handle on it — and asking from the
+    // LINE outwards is the assertion that matters: a scroller mounted somewhere
+    // the lines are not would follow an empty box.
+    const written = await screen.findByText("first");
+    const scroller = written.closest<HTMLElement>("[style*='scrollbar-gutter']");
+    expect(scroller, "the log line is not inside a stick-to-bottom scroller").not.toBeNull();
+    expect(scroller?.style.height).toBe("100%");
   });
 });
 

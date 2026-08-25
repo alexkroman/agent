@@ -17,6 +17,7 @@
 //   from an agent that went quiet.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { StickToBottom } from "use-stick-to-bottom";
 import { type AgentLogLine, type AgentLogsPage, api } from "./api.ts";
 import { errorText } from "./api-error.ts";
 
@@ -31,15 +32,6 @@ import { errorText } from "./api-error.ts";
  * carries workspace state, which is a different lifetime from a sandbox's.
  */
 export const LOGS_POLL_MS = 1000;
-
-/**
- * How close to the bottom still counts as "following".
- *
- * Without a tolerance, `scrollTop + clientHeight === scrollHeight` is false for
- * most of a smooth scroll and for every fractional device-pixel ratio, so a
- * pane that is visually at the bottom stops following.
- */
-const FOLLOW_SLACK_PX = 24;
 
 /** Lines the pane keeps. Past this the oldest go — the guest's ring is bounded too. */
 export const MAX_RENDERED_LINES = 5000;
@@ -150,16 +142,6 @@ export function LogsView(props: LogsViewProps) {
   const slug = target === "preview" ? previewSlug : deployedSlug;
   const { rows, running, error } = useLogTail(bearer, slug);
 
-  const scroller = useRef<HTMLDivElement | null>(null);
-  const following = useRef(true);
-
-  // Follow the bottom, but only while the reader is there: scrolling up to read
-  // something is exactly when a forced scroll is most annoying.
-  useEffect(() => {
-    const el = scroller.current;
-    if (el && following.current) el.scrollTop = el.scrollHeight;
-  }, [rows]);
-
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-cream">
       <header className="flex flex-none items-center gap-3 border-b border-line bg-panel px-4 py-2">
@@ -180,18 +162,23 @@ export function LogsView(props: LogsViewProps) {
         </div>
       )}
 
-      <div
-        ref={scroller}
-        onScroll={() => {
-          const el = scroller.current;
-          if (el) {
-            following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
-          }
-        }}
-        className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-[11px] leading-[1.6]"
-      >
-        <LogsBody slug={slug} target={target} rows={rows} running={running} />
-      </div>
+      {/*
+       * Follow the bottom, but only while the reader is there: scrolling up to
+       * read something is exactly when a forced scroll is most annoying. That
+       * is `use-stick-to-bottom`'s job — the same component the chat transcript
+       * mounts — rather than this pane's, and the difference is a ResizeObserver
+       * it owns: the hand-rolled version re-pinned only when a LINE arrived, so
+       * a line that wrapped, or a monospace font that finished loading, grew the
+       * content under a pane that thought it was already at the bottom.
+       *
+       * `instant` at both ends because this is a tail: a spring animation on a
+       * log that appends every second never settles.
+       */}
+      <StickToBottom className="min-h-0 flex-1" initial="instant" resize="instant">
+        <StickToBottom.Content className="px-4 py-3 font-mono text-[11px] leading-[1.6]">
+          <LogsBody slug={slug} target={target} rows={rows} running={running} />
+        </StickToBottom.Content>
+      </StickToBottom>
 
       <footer className="flex-none border-t border-line bg-panel px-4 py-1.5 text-[10px] text-subtle">
         Recent output only — an agent's log lives in its sandbox and goes when the sandbox does.

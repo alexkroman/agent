@@ -40,7 +40,8 @@
   "rule17_openCodedRecordGuard": {
     "packages/aai-evals/assertions.ts": 1,
     "packages/aai/sdk/standard-schema.ts": 1,
-    "scripts/_api-contracts.mjs": 1
+    "scripts/_api-contracts.mjs": 1,
+    "scripts/_test-assertions-parse.mjs": 1
   },
   "rule18_splitOnQuestionMark": {
     "packages/aai-cli/workflow-bundler.ts": 1
