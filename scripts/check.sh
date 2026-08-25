@@ -159,6 +159,13 @@ if [ "$MODE" = "--local" ]; then
   # turns "the signature moved" into "and it is a major, and here is the frozen
   # example proving epoch N still compiles".
   pnpm run check:api-contracts || exit 1
+  # And immediately after THAT, for the same reason one hop further out: this
+  # reads the contract tree to ask whether the guide that SHIPS to users names
+  # every capability the contracts version. check:agent-guide asserts that guide
+  # is CURRENT; nothing asserted it was COMPLETE, and eleven of aai's twenty-six
+  # capabilities were absent from it, `/step-errors` and both remaining
+  # top-level declaration verbs among them. Pure file read.
+  pnpm run check:authoring-guide || exit 1
   # Same dist/*.d.ts, a different reader. The API reports are signatures with
   # every doc comment stripped, which is right for reviewing a change and
   # useless for learning the API — so `docs/api/` is TypeDoc's own output in
@@ -255,6 +262,13 @@ else
   # turns "the signature moved" into "and it is a major, and here is the frozen
   # example proving epoch N still compiles".
   pnpm run check:api-contracts || exit 1
+  # And immediately after THAT, for the same reason one hop further out: this
+  # reads the contract tree to ask whether the guide that SHIPS to users names
+  # every capability the contracts version. check:agent-guide asserts that guide
+  # is CURRENT; nothing asserted it was COMPLETE, and eleven of aai's twenty-six
+  # capabilities were absent from it, `/step-errors` and both remaining
+  # top-level declaration verbs among them. Pure file read.
+  pnpm run check:authoring-guide || exit 1
   # Same dist/*.d.ts, a different reader. The API reports are signatures with
   # every doc comment stripped, which is right for reviewing a change and
   # useless for learning the API — so `docs/api/` is TypeDoc's own output in

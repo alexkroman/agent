@@ -127,7 +127,10 @@ PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
 
 `npm start` **builds first** (that is the `prestart` script) and then serves
 the result: `server.mjs` boots `.aai/worker.mjs`, the same artifact
-`aai publish` uploads. The build is what makes `tools/` work — a tool is
+`aai publish` uploads. It serves your own `client.tsx` build when there is one
+and falls back to `defaultClientDir()` (`@alexkroman1/aai-ui/client-dir`), the
+prebuilt default UI shipped inside the package — the only export of `aai-ui`
+that runs on Node rather than in the browser. The build is what makes `tools/` work — a tool is
 registered by existing, and the enumeration happens where the bundle is
 assembled, so a server that loaded `agent.ts` directly would run an agent with
 none of its tools. The same build produces your `client.tsx`, so a custom UI is
@@ -264,6 +267,19 @@ that is a DOCUMENT rather than a value:
 import { agent } from "@alexkroman1/aai";
 
 export default agent({ name: "My Agent" });
+```
+
+Declare neither and the agent runs on `DEFAULT_SYSTEM_PROMPT`, exported from
+`@alexkroman1/aai` so you can read what you are replacing — or compose against
+it, rather than restating the voice rules at the bottom of this guide:
+
+```ts
+import { DEFAULT_SYSTEM_PROMPT, agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "My Agent",
+  systemPrompt: `${DEFAULT_SYSTEM_PROMPT}\n\nYou only ever discuss pizza.`,
+});
 ```
 
 ```markdown
@@ -422,10 +438,10 @@ A step has no `ctx`, so the two things tool code takes for granted come from
 root barrel would drag the whole SDK into that bundle.
 
 ```ts no-check
-import { requireStepEnv, stepEnv, StepGenerateError, stepGenerate } from "@alexkroman1/aai/step";
-import { FatalError } from "workflow";
+import { stepEnv } from "@alexkroman1/aai/step";
+import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
 
-async function summarize(url: string, text: string) {
+async function summarize(text: string) {
   "use step";
 
   // The agent's env by name — the same values a tool reads from `ctx.env`.
@@ -433,16 +449,9 @@ async function summarize(url: string, text: string) {
   const style = stepEnv("DIGEST_STYLE") ?? "plain";
 
   // One model call, on the agent's own ASSEMBLYAI_API_KEY and default model.
-  return await stepGenerate(`${style} summary of:\n\n${text}`, {
+  return await stepGenerateClassified(`${style} summary of:\n\n${text}`, {
     system: "Reply with two sentences and nothing else.",
-  }).catch(stopOrRetry);
-}
-
-// The DevKit retries a step that throws, so decide which failures deserve it.
-// A rate limit does; a bad key does not.
-function stopOrRetry(err: unknown): never {
-  if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
-  throw err;
+  });
 }
 ```
 
@@ -452,7 +461,118 @@ before and after a deploy. List what you read in `requiredEnv` and a deploy
 checks it for you. And **`stepGenerate` is not `ctx.generate`**: it is one
 request to the AssemblyAI LLM Gateway, with no tools and no structured output,
 because bundling the AI SDK into a step artifact costs megabytes on every
-deploy. Ask it for JSON and parse the reply if you need a shape.
+deploy. Use `stepGenerateJsonClassified` with a Zod `schema` if you need a shape.
+
+### From a step, reach for the `Classified` call
+
+`@alexkroman1/aai/step-errors` publishes a wrapper for every `/step` call that
+can fail against a remote service, and **inside a `"use step"` body the wrapper
+is the one to use**:
+
+| Raw, on `@alexkroman1/aai/step` | Use this instead, on `@alexkroman1/aai/step-errors` |
+| --- | --- |
+| `stepGenerate` | `stepGenerateClassified` |
+| `stepGenerateJson` | `stepGenerateJsonClassified` |
+| `stepFetch` | `stepFetchOk` |
+| `stepTranscribeSync` | `stepTranscribeSyncClassified` |
+| `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*Classified` |
+| `sendToChannel` (`/channels`) | `sendToChannelClassified` |
+
+The whole of what a wrapper adds is `throwStepError`, and that is worth having
+because the DevKit's retry policy is decided by WHICH error a step throws. Raw,
+every failure looks the same to it: a bad API key is retried until the attempts
+run out, and a rate limit backs off for the DevKit's default one second while
+the delay the gateway itself named sits unread on the error. Classified, a
+terminal failure raises `FatalError` and stops, and a transient one raises
+`RetryableError` carrying the far side's own `Retry-After`. That matters most
+where this SDK encourages a fan-out, because N steps hit a rate limit together
+and a second later all N ask again.
+
+**Reach for the raw call when the failure is not simply a failure** — a `404`
+that means "already deleted", a `4xx` whose body decides which advice to print.
+Then classify it yourself: `throwStepError(err)`, `throwFatalStepError(err)` to
+stop outright, `toStepError(cause, message)` to build the error without throwing,
+or `throwFfmpegStepError(err)` for a media failure, whose default runs the other
+way (only a `timeout` or an `aborted` is worth another attempt).
+
+**Why the split exists, since the wrapper is what you usually want:** this is
+the one authoring module allowed to import the DevKit's `workflow` package, and
+`/step` is not written only for a step — `mapConcurrent` bounds a rate-limited
+call anywhere, `stepFetch` is an ordinary HTTP client, and your specs drive
+exported steps directly. Putting `workflow` in `/step`'s graph would put it in
+every one of those bundles. A step pays nothing for the extra import line.
+
+### Media, big files, and transcription from a step
+
+Three more subpaths a `workflows/*.ts` module can reach, all with the same
+bundling rule as `/step` — import them there, never through the root barrel:
+
+- **`@alexkroman1/aai/transcribe`** — `stepTranscribeSync(bytes)` for a short
+  recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
+  `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
+  the `TRANSCRIBE_*` limits. Use the `Classified` wrappers above: a provider
+  refusal — a container it will not read, a recording with no speech — arrives
+  with `retryable: false`, and unclassified a step re-uploads the same bytes
+  until its attempts run out.
+- **`@alexkroman1/aai/ffmpeg`** — `transcodeToWav(bytes, { sampleRate })`,
+  `runFfmpeg(args)`, `probeMedia(source)` for duration and stream info, and
+  `FfmpegError`/`isFfmpegError`. Under `aai dev` it needs ffmpeg on your PATH;
+  a `missing-binary` failure says so and carries the install line.
+- **`@alexkroman1/aai/step-files`** — for a recording too big to hold in memory.
+  `readUploadToFile(uploadId, path)` streams an upload to disk,
+  `writeUploadFromFile(path)` streams one back, and `withTempDir(work)` gives
+  both a directory that is cleaned up even when the step throws.
+
+```ts no-check
+import { probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
+import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
+import { readUploadToFile, withTempDir } from "@alexkroman1/aai/step-files";
+
+export async function measure(uploadId: string) {
+  "use step";
+
+  return await withTempDir(async (dir) => {
+    const path = `${dir}/input`;
+    // Read the upload ONCE. A five-step version reads it five times, and on a
+    // 700 MB recording that is the expensive part by an order of magnitude.
+    await readUploadToFile(uploadId, path);
+    const media = await probeMedia(path).catch(throwFfmpegStepError);
+    return { durationMs: media.durationMs };
+  });
+}
+```
+
+`call-audit` is the worked example for all three at once.
+
+### Posting somewhere — `@alexkroman1/aai/channels`
+
+A run that finishes while nobody is on the line needs somewhere to put the
+result. `slackChannel({ webhookUrl })` names a destination and
+`sendToChannelClassified(channel, message)` posts to it:
+
+```ts no-check
+import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";
+import { requireStepEnv } from "@alexkroman1/aai/step";
+import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
+
+export async function announce(headline: string, points: string[]) {
+  "use step";
+
+  const message: ChannelMessage = {
+    text: headline,
+    sections: points.map((point) => ({ text: point })),
+  };
+  return await sendToChannelClassified(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
+}
+```
+
+The webhook URL is a secret like any other — declare it in `requiredEnv` and set
+it with `aai secret put`. A channel's credential is its DESTINATION and is
+passed in, which is why no channel reads an env var of its own. `ChannelMessage`
+is rendered per platform, so the same message is legal on a channel kind added
+later; `isSlackWebhookUrl` / `isSlackWorkflowTriggerUrl` validate a pasted URL
+before a run depends on it, and `channelAdvice` turns a refusal into a sentence
+a person can act on. `podcast-digest` is the worked example.
 
 ### A step's HTTP: use `stepFetch`, not `fetch`
 
@@ -1092,6 +1212,67 @@ that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
 structured output (`generateObject`-style): the result's `object` carries
 the parsed, typed value. A plain JSON Schema object also works.
 
+The option bag is `GenerateOptions` and the answer is `GenerateResult`
+(`GenerateObjectResult<T>` with a `schema`), both exported from
+`@alexkroman1/aai` — annotate a helper that wraps the call rather than
+re-describing the shape. `GenerateFn` is the type of `ctx.generate` itself,
+which is what a spec passes to `createToolContext({ generate })`.
+
+### When the NEXT step is the hard part — `dialog()` and `procedure()`
+
+Two declarations for flows, and the difference is who is driving.
+
+**`dialog()` gates what the MODEL may do next.** A prompt asking the agent to
+collect an address before taking payment is a suggestion; a dialog is a rule.
+`dialog(key, spec)` takes `{ initial, states }`, each state carrying an
+`instruction` the agent is given while it is there and an `on` map of the events
+that leave it. It is a slot underneath, so the position is persisted with the
+rest of the session and survives a reconnect.
+
+```ts no-check
+import { dialog } from "@alexkroman1/aai";
+
+export const checkout = dialog("checkout", {
+  initial: "collecting",
+  states: {
+    collecting: {
+      instruction: "Take the order. Confirm it back before charging anything.",
+      on: { CONFIRMED: "paying" },
+    },
+    paying: {
+      instruction: "Take payment with charge_card. Do not add items now.",
+      on: { PAID: "done" },
+    },
+    done: { instruction: "Read back the order number and say goodbye." },
+  },
+});
+```
+
+A tool declared with `checkout.tool({...})` is REFUSED unless the dialog is in a
+state that allows it, and the refusal reaches the model as a `ToolFailure` it
+can recover from — the point being that the gate is enforced at EXECUTION
+rather than hoped for in a prompt. The states and events are inferred from the
+spec, so a misspelled `send` is a compile error. `dispatch-center` and
+`solo-rpg` are the worked examples.
+
+**`procedure()` runs a flow YOU drive, with no model in the loop.** Where a
+dialog constrains a conversation, a procedure is an algorithm with branches,
+retries and a bounded budget — a grading loop, a retrieval-and-check cycle —
+expressed as a statechart rather than as a `while` with four early returns:
+
+```ts no-check
+import { procedure } from "@alexkroman1/aai";
+
+const answer = procedure(ragMachine);
+const result = await answer.run({ question }, { signal: ctx.signal });
+```
+
+`run` resolves with the machine's output, or throws `ProcedureNotFinishedError`
+if it stops without reaching a final state — which is what makes "we ran out of
+attempts" a state you declare and handle rather than an error. Options are
+`ProcedureRunOptions`; the machine is an XState machine, and `xstate` is already
+an SDK dependency. `support-line` is the worked example.
+
 ### Subagents (`ctx.delegate`)
 
 `ctx.generate` is ONE prompt. When answering takes an unknown number of tool
@@ -1337,6 +1518,30 @@ code owns the URL.
 Reaching for the `fetch_json` builtin instead is a different design, not a
 shortcut for the same one: it hands URL choice to the model. You cannot
 call it from `execute` — see the builtin table above.
+
+## Small helpers — `@alexkroman1/aai/utils`
+
+Zero-dependency helpers a tool body, a step or a client may reach for, so the
+same three lines are not rewritten per template. Import from `/utils`, which is
+safe from a `workflows/*.ts` module and from a browser bundle:
+
+| Helper | For |
+| --- | --- |
+| `errorMessage(err)`, `errorDetail(err)` | Turning an unknown `catch` value into a sentence for the model or the log |
+| `responseErrorMessage(res, label)` | The same for a non-2xx `Response`, preferring a JSON `error` field over the bare status |
+| `safeJsonParse(text)` | A parse that answers `undefined` instead of throwing |
+| `formatBytes`, `formatDuration`, `countWords`, `plural` | Narration. Each returns ONE fixed shape, so a step's progress line and the page rendering the same run cannot disagree — they did, one template printing `1:04:09` from its workflow and `64:09` from its page |
+| `pushCapped(list, item, max)` | An append that keeps the last N, for a log a session accumulates |
+| `isRecord(x)`, `omitUndefined(obj)` | The object guard and the spread-free way to drop undefined fields |
+| `decodeHtmlEntities(text)` | Scraped text on its way to a model |
+| `createKeyedLock()` / `withLock(lock, key, work)` | Serializing async work per key |
+
+**`createKeyedLock` is the one an agent most needs and least expects to.** The
+LLM loop runs a step's tool calls CONCURRENTLY, so two tools mutating the same
+external resource interleave at every `await`. A session-state mutation is NOT
+that case — `slot.update`'s window is synchronous — so reach for the lock when
+the thing being mutated is outside the session. `withLock` takes an optional
+acquire deadline and throws `KeyedLockTimeoutError` when it runs out.
 
 ## Database API — `ctx.db`
 
@@ -1604,6 +1809,27 @@ Available from `@alexkroman1/aai-ui`:
 | `MessageList` | — | Messages with auto-scroll, tool calls, transcript |
 | `Controls` | — | Stop/Resume + New Conversation buttons |
 | `Button` | — | Styled button |
+| `UploadProgressBar` | `upload, onPause?, onResume?` | Bytes in flight, with pause/resume |
+
+**Forms are declared, not written.** `<Form onSubmit>` collects typed values off
+the DOM and hands them over once the browser's own validation passes; the field
+components — `TextField`, `TextAreaField`, `NumberField`, `SelectField`,
+`CheckboxField`, `FileField` and `SubmitButton` — are plain named inputs, and
+`Field`/`FieldShell` are what a custom control wraps itself in to match them.
+For a workflow app there is usually no field markup at all: `<WorkflowFields
+workflow="name" />` fetches that workflow's input schema and renders a control
+per field, so a page written against one workflow serves another.
+
+```tsx no-check
+import { Form, WorkflowFields } from "@alexkroman1/aai-ui";
+
+<Form onSubmit={(values) => submit(values)} error={error}>
+  <WorkflowFields workflow="digest" />
+</Form>;
+```
+
+`transcription-workflow` is the all-declared version; `link-digest` writes its
+form by hand, which is what the two are for.
 
 The usual shape — note `StartScreen` **wraps** the app rather than sitting
 beside it; writing `<StartScreen ... />` self-closing is a `TS2741:
@@ -1683,6 +1909,14 @@ Never hardcode secrets in agent code.
 - No hedging ("It seems that", "I believe")
 - Define personality, tone, and specialty
 - Include when and how to use each tool
+
+**Three helpers for the other direction — what the caller SAID.** Speech
+arrives as words, so `@alexkroman1/aai` publishes the conversions a tool
+otherwise re-derives: `spokenDigits("four one five")` gives `"415"` for an
+order number or a phone number, `spokenOrdinal("the third one")` gives `3`, and
+`resolveOne(candidates, spoken, opts)` picks the one item a phrase meant —
+answering a `ToolFailure` the model can act on when nothing matches or several
+do, which is the case a hand-written `.find()` gets wrong.
 
 Patterns by agent type:
 

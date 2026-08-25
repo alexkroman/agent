@@ -158,6 +158,12 @@ jobs:
           # it is the gate that forces a signature change to be classified —
           # retained with a frozen compiling example, or dropped with a reason.
           pnpm run check:api-contracts
+          # And straight after that: does the guide that SHIPS to users name
+          # every capability the contracts version? check:agent-guide (below)
+          # asserts that guide is CURRENT; this asserts it is COMPLETE. Reads
+          # the committed API-EXPORTS.json to decide scope, which is why it is
+          # here rather than with the pure-fs ratchets.
+          pnpm run check:authoring-guide
           # The committed markdown API reference (`docs/api/`). Same emitted
           # dist/*.d.ts as the reports above, read for the opposite half: the
           # reports are signatures with every doc comment stripped, this is

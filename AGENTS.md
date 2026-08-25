@@ -644,6 +644,11 @@ one commit of history. A file in the tree has no merge base and no such modes.
   `packages/aai/AGENT_GUIDE.md` is the current copy of
   `packages/aai-templates/scaffold/CLAUDE.md`; see "The authoring guide ships
   inside the SDK" below. Same silent-staleness shape as `check:guest-toolchain`.
+- **`pnpm check:authoring-guide`** (`scripts/check-authoring-guide.mjs`) — the
+  other half of that: `check:agent-guide` says the shipped guide is CURRENT,
+  this says it is COMPLETE. Every contracted authoring capability must be named
+  in the guide's CODE (never prose — half the names are ordinary English);
+  thirteen were absent. The script's own doc carries the rest.
 - **`pnpm check:scaffold`** (`scripts/sync-scaffold-versions.mjs --check`) —
   asserts `packages/aai-templates/scaffold/package.json` still matches the
   workspace. Third file in this committed-copy shape and the only one that
@@ -1075,9 +1080,9 @@ label that does not exist is an API error.
 ### Published type signatures are a committed report
 
 `pnpm api-report` writes `packages/*/etc/<subpath>.api.md` — the rolled-up
-public `.d.ts` for ONE REPORT PER PUBLISHED ENTRY POINT (29 today, across the
-four publishable packages; `ls packages/*/etc/*.api.md` is the current count,
-and this paragraph carried a stale `26` across two subpath additions) — plus
+public `.d.ts` for ONE REPORT PER PUBLISHED ENTRY POINT (across the four
+publishable packages; `ls packages/*/etc/*.api.md` is the count, which this
+paragraph has now carried stale twice, at `26` and at `29`) — plus
 **`API.md` at the repo root, those same reports concatenated**, and
 **`API-EXPORTS.json`, the same entry points' export NAMES**;
 `pnpm check:api-report` fails when any of them is stale.
@@ -1217,8 +1222,7 @@ Six properties are load-bearing:
   they pin the CURRENT shape and move with the API. On `aai` and `aai-ui` it is
   a SNIPPET an author reads; on `aai-runtime` a starter a host COPIES, because
   that is what its consumers do with it (see "The published surface is versioned
-  in epochs" in `packages/aai-runtime/CLAUDE.md`). Every epoch has one from its
-  first commit, so the value does not wait for a bump. The extension is `.tsx`
+  in epochs" in `packages/aai-runtime/CLAUDE.md`). The extension is `.tsx`
   wherever the owning package's tsconfig sets `jsx` (DERIVED, not declared) — a
   component library's authoring example is JSX, and one spelled in
   `createElement` calls would compile while demonstrating an API nobody writes.
@@ -1226,6 +1230,10 @@ Six properties are load-bearing:
   IS the finding. A **dropped** epoch's example is DELETED by `--bump --drop`:
   "dropped" means it no longer compiles, and a leftover file would turn a
   recorded decision into a red typecheck.
+
+  **`contracts/compatibility/` is EMPTY today** — every superseded epoch was
+  dropped pre-release ("no external consumers"), so until the first RETAINED
+  epoch this typecheck proves nothing and the value is the classification.
 - **The hash covers the rollup BODY, not the report file.** API Extractor's
   preamble is identical in every report and is the tool's, not ours; hashing it
   would make an api-extractor upgrade that reworded one line bump every epoch at
@@ -1239,25 +1247,21 @@ Six properties are load-bearing:
 - **A `--bump --drop` classifies the CURRENT epoch and nothing else.** A change
   can break OLDER supported epochs while the current one compiles, so run
   `pnpm typecheck` FIRST: the frozen examples it reddens are the epochs to drop,
-  and older ones are a hand edit to `contracts.json`. The worked case,
-  `stubUploads` breaking `aai:testing` at 5, 6, 17 and 19, is in
-  `packages/aai/CLAUDE.md`.
+  and older ones are a hand edit to `contracts.json`.
 - **A capability whose promise is a VALUE or a RECIPE is not covered by the
-  hash.** `aai:defaults` is the standing instance: the hash reads the rolled-up
-  declaration (`const DEFAULT_SYSTEM_PROMPT: string`) with doc comments
-  stripped, so the string's content and the documented recipe for composing
-  against it can both change under a checkmark — and did. `--bump aai:defaults`
-  refuses ("still matches epoch 4"), and manufacturing one records a
-  classification against a surface that did not move. That change is a
-  changeset-and-review matter, not a gated one; same guide, same section.
+  hash.** `aai:defaults` is the standing instance: the hash reads
+  `const DEFAULT_SYSTEM_PROMPT: string` with doc comments stripped, so the
+  string's content can change under a checkmark — and did. `--bump` refuses
+  ("still matches epoch N"). A changeset-and-review matter, not a gated one;
+  `packages/aai/CLAUDE.md` has the worked case.
 
 **A `--bump` is the moment to ask what should come OUT.** The mechanism works in
 that direction — an epoch transition can drop names wholesale — but a bump only
 ever asks about the names that MOVED. What accretes is everything else:
 `template-api-allowlist.json` records the exports no shipped example exercises,
 and its own gate says such an export "is either missing its example or shouldn't
-be public". Read that file at a bump, not only the diff. Every count is in it;
-none is repeated here, because the ones that were went stale.
+be public". Read that file at a bump, not only the diff — the counts are in it,
+and are deliberately not restated here.
 
 **Capabilities, not entry points, and the reason WAS the `@internal` problem.**
 `@alexkroman1/aai` used to export 174 symbols from its root, **71 of them tagged
