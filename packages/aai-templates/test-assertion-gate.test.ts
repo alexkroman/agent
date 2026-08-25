@@ -11,6 +11,13 @@
  * it exists to prevent — something green that checks nothing — so the parser
  * is exercised here against sources with known answers rather than trusted.
  *
+ * It runs `findTests` IMPORTED from `scripts/_test-assertions-parse.mjs`, not a
+ * copy and not a regex scraped out of the gate's source. `guard-invariants-gate.test.ts`
+ * records what the scraping version cost: when the rules it read moved into
+ * their own module it parsed ZERO of them, every per-rule assertion went
+ * vacuous, and only one floored count noticed. That module exists to be
+ * importable — no side effects — for exactly this reason.
+ *
  * This lives in aai-templates for the same reason `claude-md-limit.test.ts`
  * does: it is the package that owns repo-level documentation/meta checks, and
  * `?raw` imports reach sibling files without node types.
@@ -27,30 +34,55 @@ const script = sole(
   }),
 );
 
+/** The gate's real parser, imported rather than re-derived. See the module doc. */
+const findTests = sole(
+  import.meta.glob<
+    (
+      filename: string,
+      source: string,
+    ) => { tests: { line: number; title: string; asserts: boolean }[]; errors: string[] }
+  >("../../scripts/_test-assertions-parse.mjs", { import: "findTests", eager: true }),
+);
+
 /** Read a numeric constant out of the script rather than restating it here. */
 const constant = (name: string): number =>
   numericConstant(script ?? "", name, "check-test-assertions.mjs");
 
 /**
- * Re-derive the script's two regexes from its own source rather than
- * re-typing them, so this suite cannot pass against a copy that has drifted
- * from the file CI runs.
+ * Parse a fixture, THROWING rather than asserting — a fixture that does not
+ * parse is a bug in the fixture, and an `expect` out here would be an assertion
+ * every caller silently inherits (biome's `noMisplacedAssertion`, and this
+ * suite's own subject would count it as the caller's assertion).
  */
-function patternFrom(name: string): RegExp {
-  const line = new RegExp(`const ${name} = (/.*/)([a-z]*);`).exec(script ?? "");
-  if (!line?.[1]) throw new Error(`check-test-assertions.mjs no longer declares ${name}`);
-  return new RegExp(line[1].slice(1, -1), line[2] || undefined);
+function parse(source: string, filename = "fixture.ts") {
+  if (findTests === undefined) {
+    throw new Error("scripts/_test-assertions-parse.mjs is not loadable");
+  }
+  const { tests, errors } = findTests(filename, source);
+  if (errors.length > 0) throw new Error(`fixture did not parse: ${errors[0]}`);
+  return tests;
 }
 
+/** The titles of the tests a fixture holds that assert NOTHING. */
+const offenders = (source: string, filename?: string): string[] =>
+  parse(source, filename)
+    .filter((t) => !t.asserts)
+    .map((t) => t.title);
+
 describe("check-test-assertions parser", () => {
-  test("the script is present and declares both patterns", () => {
+  test("the script and its parser both load", () => {
     expect(script, "scripts/check-test-assertions.mjs not found").toBeTypeOf("string");
-    expect(patternFrom("ASSERTION")).toBeInstanceOf(RegExp);
-    expect(patternFrom("TEST_OPENER")).toBeInstanceOf(RegExp);
+    expect(findTests, "scripts/_test-assertions-parse.mjs exports no findTests").toBeTypeOf(
+      "function",
+    );
   });
 
-  test("ASSERTION accepts every assertion form the repo actually uses", () => {
-    const assertion = patternFrom("ASSERTION");
+  test("finds a test and reports its title and line", () => {
+    const tests = parse('\n\ntest("does a thing", () => {\n  expect(1).toBe(1);\n});\n');
+    expect(tests).toEqual([{ line: 3, title: "does a thing", asserts: true }]);
+  });
+
+  test("accepts every assertion form the repo actually uses", () => {
     for (const form of [
       "expect(x).toBe(1)",
       "expect.soft(x, label).toBe(1)",
@@ -59,52 +91,99 @@ describe("check-test-assertions parser", () => {
       "await expect(p).resolves.toBeUndefined()",
       "expectTypeOf<X>().toHaveProperty('y')",
       "assert(x)",
+      "assert.equal(a, b)",
     ]) {
-      expect(assertion.test(form), form).toBe(true);
+      expect(offenders(`test("t", async () => { ${form}; });`), form).toEqual([]);
     }
   });
 
-  test("ASSERTION does not fire on lookalikes", () => {
-    const assertion = patternFrom("ASSERTION");
+  test("does not accept lookalikes", () => {
     // `unexpected`/`expected` are ordinary identifiers in this repo's specs;
-    // matching them would make the gate green on a body that asserts nothing.
-    for (const form of ["const expected = 1;", "unexpectedCalls.push(x)", "// expect it to work"]) {
-      expect(assertion.test(form), form).toBe(false);
+    // counting them would make the gate green on a body that asserts nothing.
+    for (const form of ["const expected = 1;", "unexpectedCalls.push(x)", "const e = expect;"]) {
+      expect(offenders(`test("t", () => { ${form}; });`), form).toEqual(["t"]);
     }
   });
 
-  test("TEST_OPENER ignores RegExp.prototype.test", () => {
-    // The lookbehind that makes this true was added after `/re/.test(x)`
-    // produced five of the first run's eight reported offenders — every one
-    // of them a false positive that would have cost the next author trust in
-    // the gate.
-    const opener = patternFrom("TEST_OPENER");
-    opener.lastIndex = 0;
-    expect(opener.test("if (/\\.tsx?$/.test(name)) out.push(name);")).toBe(false);
-    opener.lastIndex = 0;
-    expect(opener.test("expect(matcher.test(raw)).toBe(true);")).toBe(false);
-  });
-
-  test("TEST_OPENER recognises the call forms the suites use", () => {
-    const opener = patternFrom("TEST_OPENER");
+  test("recognises every call shape the suites use, chains included", () => {
+    // `test.concurrent` is the one the regex parser this replaced could NOT
+    // see: its opener admitted exactly one `.word(…)` before the call, so a
+    // whole family went unscanned and eleven assertion-free `test.concurrent`
+    // bodies in packages/aai-cli/e2e.test.ts passed under a clean run.
     for (const form of [
-      'test("a thing", () => {})',
-      'it("a thing", () => {})',
-      'test.each([1, 2])("case %s", () => {})',
-      'it.skipIf(cond)("a thing", () => {})',
+      'test("t", () => {})',
+      'it("t", () => {})',
+      'test.only("t", () => {})',
+      'test.concurrent("t", async () => {})',
+      'test.each([1, 2])("t", () => {})',
+      'it.skipIf(cond)("t", () => {})',
+      'test.concurrent.for([1])("t", async () => {})',
+      'test.each`a`("t", () => {})',
     ]) {
-      opener.lastIndex = 0;
-      expect(opener.test(form), form).toBe(true);
+      expect(offenders(form), form).toEqual(["t"]);
     }
+  });
+
+  test("ignores RegExp.prototype.test", () => {
+    // Five of the first run's eight reported offenders were this — every one a
+    // false positive that would have cost the next author trust in the gate.
+    // The old parser needed a lookbehind; a chain walk gets it structurally,
+    // because neither of these roots at an identifier named `test`.
+    expect(parse("if (/\\.tsx?$/.test(name)) out.push(name);")).toEqual([]);
+    expect(parse("const ok = matcher.test(raw);")).toEqual([]);
+  });
+
+  test("ignores a test() named in a comment or a string", () => {
+    // Three files here carry a JSDoc paragraph about `test()`. Scanning raw
+    // text finds those, and finds `expect` inside a string that merely
+    // mentions it — the two jobs the hand-rolled comment/string masker did.
+    expect(parse('/** Every test("x", …) body must assert. */\nconst a = 1;')).toEqual([]);
+    expect(parse('// test("commented out", () => {});\nconst a = 1;')).toEqual([]);
+    expect(parse('const src = `test("in a template", () => {})`;')).toEqual([]);
+    // A substitution IS code, so a test inside one still counts. Spelled as a
+    // template literal with the placeholder escaped, because an ordinary string
+    // holding `${` is a biome finding and a suppression comment for it would be
+    // a ratcheted escape hatch. (Naming that comment syntax here would be one
+    // too: `check:hatches` counts the five suppression patterns on comment-only
+    // lines, deliberately — only the three CAST patterns skip prose.)
+    const inSubstitution = `const s = \`\${test("interpolated", () => {})}\`;`;
+    expect(offenders(inSubstitution)).toEqual(["interpolated"]);
+  });
+
+  test("counts a nested test once, against the outer one", () => {
+    const tests = parse(
+      'test("outer", () => {\n  register(() => test("inner", () => { expect(1).toBe(1); }));\n});',
+    );
+    expect(tests.map((t) => t.title)).toEqual(["outer"]);
+    // The inner assertion counts for the outer call, which is what the text
+    // scan this replaced did too — the seam is the whole call, not its body.
+    expect(tests[0]?.asserts).toBe(true);
+  });
+
+  test("parses TSX and modern TypeScript rather than skipping it", () => {
+    expect(
+      offenders(
+        'test("renders", () => {\n  const el = <div className="x" />;\n  render(el satisfies unknown);\n});',
+        "fixture.tsx",
+      ),
+    ).toEqual(["renders"]);
+  });
+
+  test("a file that will not parse is REPORTED, never silently empty", () => {
+    // Skipping it would understate every count the gate prints, which is the
+    // failure mode this whole suite exists for — so the parser hands the error
+    // back and the gate exits on it.
+    if (findTests === undefined) throw new Error("parser not loadable");
+    const { tests, errors } = findTests("broken.ts", 'test("t", () => { const = ; });');
+    expect(errors.length, "a syntax error produced no diagnostic").toBeGreaterThan(0);
+    expect(tests).toEqual([]);
+    expect(script, "the gate no longer fails on an unparsable file").toContain("failed to parse");
   });
 
   test("both corpus floors are declared and enforced", () => {
-    // The floors ARE the gate's only defence against going quiet, and until now
-    // no assertion mentioned either — so deleting both left this guard green
-    // while restoring exactly the failure mode it was written for. The module
-    // doc above says a broken parser "would print 'all 0 test(s) assert
-    // something ✓'"; `MIN_TEST_FILES` and `MIN_TESTS_SCANNED` are what makes
-    // that a red run instead.
+    // The floors ARE the gate's other defence against going quiet, and until
+    // recently no assertion mentioned either — so deleting both left this guard
+    // green while restoring exactly the failure mode it was written for.
     expect(constant("MIN_TEST_FILES"), "the test-FILE floor is gone").toBeGreaterThanOrEqual(200);
     expect(constant("MIN_TESTS_SCANNED"), "the test-COUNT floor is gone").toBeGreaterThanOrEqual(
       2000,

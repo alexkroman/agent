@@ -39,6 +39,7 @@ import {
 } from "./_e2e-test-utils.ts";
 import { startSupervisedDevServer } from "./_fault-mode.ts";
 import type { MockRegistry } from "./_mock-registry.ts";
+import { WORKER_ARTIFACT_REL } from "./build.ts";
 
 // Representative subset: minimal baseline, external tools + custom UI, and
 // durable workflows. This tier only builds these end-to-end. Config-level
@@ -108,6 +109,12 @@ describe("pack + build: template workflows", () => {
     }
     aai(aaiBin, ["test"], projectDir);
     aai(aaiBin, ["build", "--skip-tests"], projectDir);
+
+    // The claim in the name is that the template BUILDS, and `aai` only signals
+    // that by not throwing — so name the artifact instead. `WORKER_ARTIFACT_REL`
+    // is what the scaffold's `server.mjs` loads, which is the difference between
+    // a build that exited 0 and a project that runs.
+    expect(fs.existsSync(path.join(projectDir, WORKER_ARTIFACT_REL))).toBe(true);
   });
 });
 
@@ -324,7 +331,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("page renders with Start button", async () => {
     const page = await browser.newPage();
     await page.goto(`http://localhost:${port}`);
-    await page.getByRole("button", { name: "Start" }).waitFor();
+    await expect(page.getByRole("button", { name: "Start" }).waitFor()).resolves.toBeUndefined();
     await page.close();
   });
 
@@ -414,7 +421,9 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
 
     await replayFixture("greeting-session.json");
-    await page.getByText("Hello! How can I help you today?").waitFor();
+    await expect(
+      page.getByText("Hello! How can I help you today?").waitFor(),
+    ).resolves.toBeUndefined();
     await page.close();
   });
 
@@ -422,9 +431,13 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("simple-conversation.json");
 
-    await page.getByText("Hi there!").waitFor();
-    await page.getByText("Tell me a fun fact about space.").waitFor();
-    await page.getByText("A day on Venus is longer than its year.").waitFor();
+    await expect(page.getByText("Hi there!").waitFor()).resolves.toBeUndefined();
+    await expect(
+      page.getByText("Tell me a fun fact about space.").waitFor(),
+    ).resolves.toBeUndefined();
+    await expect(
+      page.getByText("A day on Venus is longer than its year.").waitFor(),
+    ).resolves.toBeUndefined();
 
     await page.close();
   });
@@ -433,9 +446,13 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("tool-call-flow.json");
 
-    await page.getByText("The weather in San Francisco is sunny at 72°F.").waitFor();
-    await page.getByText("get_weather").waitFor();
-    await page.getByText("What is the weather like in San Francisco?").waitFor();
+    await expect(
+      page.getByText("The weather in San Francisco is sunny at 72°F.").waitFor(),
+    ).resolves.toBeUndefined();
+    await expect(page.getByText("get_weather").waitFor()).resolves.toBeUndefined();
+    await expect(
+      page.getByText("What is the weather like in San Francisco?").waitFor(),
+    ).resolves.toBeUndefined();
 
     await page.close();
   });
@@ -444,8 +461,8 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("error-recovery.json");
 
-    await page.getByText("Speech recognition failed").waitFor();
-    await page.getByRole("button", { name: "Resume" }).waitFor();
+    await expect(page.getByText("Speech recognition failed").waitFor()).resolves.toBeUndefined();
+    await expect(page.getByRole("button", { name: "Resume" }).waitFor()).resolves.toBeUndefined();
 
     await page.close();
   });
@@ -454,9 +471,9 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("barge-in.json");
 
-    await page.getByText("No problem!").waitFor();
-    await page.getByText("What about").waitFor();
-    await page.getByText("Actually never mind").waitFor();
+    await expect(page.getByText("No problem!").waitFor()).resolves.toBeUndefined();
+    await expect(page.getByText("What about").waitFor()).resolves.toBeUndefined();
+    await expect(page.getByText("Actually never mind").waitFor()).resolves.toBeUndefined();
 
     await page.close();
   });
@@ -530,15 +547,19 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("new conversation clears messages", async () => {
     const { page, replayFixture, inject } = await setupEventInjector(browser, port);
     await replayFixture("simple-conversation.json");
-    await page.getByText("A day on Venus is longer than its year.").waitFor();
+    await expect(
+      page.getByText("A day on Venus is longer than its year.").waitFor(),
+    ).resolves.toBeUndefined();
 
     // Inject a reset event as if the server acknowledged the reset
     await inject({ type: "session.reset" });
 
     // Messages should be cleared — the assistant message should no longer be visible
-    await page
-      .getByText("A day on Venus is longer than its year.")
-      .waitFor({ state: "hidden", timeout: 30_000 });
+    await expect(
+      page
+        .getByText("A day on Venus is longer than its year.")
+        .waitFor({ state: "hidden", timeout: 30_000 }),
+    ).resolves.toBeUndefined();
 
     await page.close();
   });
@@ -547,13 +568,15 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
     await inject({ type: "user-transcript.committed", text: "What is the meaning of life?" });
-    await page.getByText("What is the meaning of life?").waitFor();
+    await expect(page.getByText("What is the meaning of life?").waitFor()).resolves.toBeUndefined();
 
     // State indicator should show "thinking"
-    await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
+    await expect(
+      page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 }),
+    ).resolves.toBeUndefined();
 
     await inject({ type: "agent-transcript.updated", text: "42." });
-    await page.getByText("42.").waitFor();
+    await expect(page.getByText("42.").waitFor()).resolves.toBeUndefined();
 
     await page.close();
   });
@@ -562,11 +585,15 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
     await inject({ type: "user-transcript.committed", text: "Hello" });
-    await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
+    await expect(
+      page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 }),
+    ).resolves.toBeUndefined();
 
     await inject({ type: "agent-transcript.updated", text: "Hi there!" });
     await inject({ type: "reply.completed" });
-    await page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 });
+    await expect(
+      page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 }),
+    ).resolves.toBeUndefined();
 
     await page.close();
   });
@@ -583,7 +610,9 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     });
 
     // Error banner should appear with the message
-    await page.getByText("Connection lost").waitFor({ timeout: 30_000 });
+    await expect(
+      page.getByText("Connection lost").waitFor({ timeout: 30_000 }),
+    ).resolves.toBeUndefined();
 
     await page.close();
   });

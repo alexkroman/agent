@@ -553,11 +553,25 @@ so every piece of per-project state resets on a switch with no effect to do it.
     before this pane read them; rendering nothing for them is indistinguishable
     from an agent that went quiet, which is the one thing a log must never be
     ambiguous about.
-  - **It follows the bottom only while the reader is there** (`FOLLOW_SLACK_PX`
-    — an exact `scrollTop + clientHeight === scrollHeight` is false through most
-    of a smooth scroll and at any fractional device-pixel ratio, so a pane
-    visually at the bottom would stop following). Scrolling up to read something
-    is exactly when a forced scroll is worst.
+  - **It follows the bottom only while the reader is there**, and that is
+    `use-stick-to-bottom`'s job — the same component the chat transcript mounts,
+    already a dependency of this package — rather than the pane's. Scrolling up
+    to read something is exactly when a forced scroll is worst, and the
+    hand-rolled version this replaced got the second half wrong: it re-pinned
+    only when a LINE arrived, so a line that wrapped, or a monospace font that
+    finished loading, grew the content under a pane that thought it was already
+    at the bottom. `instant` at both ends, because a spring animation on a tail
+    that appends every second never settles.
+
+    Its two behavioural specs went with it, deliberately. They were writable
+    only because the hand-rolled version read three numbers (`scrollHeight`,
+    `clientHeight`, `scrollTop`) a test could define by hand; the library is
+    driven by a ResizeObserver over real boxes, and jsdom computes no layout, so
+    an assertion here would pass or fail on the stub in `installResizeObserver`
+    rather than on the pane. What is still THIS pane's claim, and still
+    regresses silently, is that the lines are mounted inside that scroller at
+    all — a plain `<div className="overflow-auto">` renders identically and
+    follows nothing — so one wiring test asserts that, A/B'd against the div.
   - **The footer says the log is not durable**, once, because it is not: the
     ring lives in the sandbox and goes when the sandbox does (see "Why the
     buffer lives in the guest" in `packages/aai-guest/CLAUDE.md`). A pane that

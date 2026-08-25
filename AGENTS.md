@@ -417,11 +417,17 @@ one commit of history. A file in the tree has no merge base and no such modes.
   reason the corpus floor above exists: its whole success output is a count, so
   a glob or a parser that stopped recognising `test(` would print "all 0 test(s)
   assert something ✓" and pass, the same shape as the bug it exists to catch.
-  Two things it needs to stay trustworthy, both learned by getting them wrong:
-  it masks comments and string literals before scanning (a JSDoc paragraph
-  *about* `test()` is not a test, and three files here have one), and it
-  excludes `RegExp.prototype.test` via a lookbehind — `/re/.test(x)` produced
-  five of the first run's eight reported offenders.
+  **It runs on a real parse** — `oxc-parser`, via
+  `scripts/_test-assertions-parse.mjs`, whose module doc carries the argument
+  and the ~140 lines of hand-written lexer it replaced. Masking comments and
+  strings (a JSDoc paragraph *about* `test()` is not a test) and excluding
+  `RegExp.prototype.test` (five of the first run's eight offenders) are
+  properties of an AST rather than patterns to keep correct — and the parse sees
+  a family the regex could not: the old opener admitted one `.word(…)` before
+  the call, so `test.concurrent(…)` was invisible, hiding eleven bodies whose
+  claim was a bare `await` that HANGS rather than fails. A file that will not
+  PARSE fails the run; skipping it would understate every count the gate prints.
+
 - **`pnpm check:claude-md`** (`scripts/check-claude-md.mjs`) — caps every guide
   (this file, each package's `CLAUDE.md`, the scaffold's included) at
   **120,000 characters**, 20% under

@@ -83,6 +83,7 @@
     "konsistent": "1.0.0-beta.4",
     "lefthook": "^2.1.10",
     "markdownlint-cli2": "^0.23.2",
+    "oxc-parser": "^0.144.0",
     "publint": "^0.3.23",
     "react": "catalog:",
     "sherif": "1.13.0",
