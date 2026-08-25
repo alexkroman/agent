@@ -73,6 +73,33 @@ const NON_AUTHORING_SUBPATHS = {
   },
 };
 
+/**
+ * Authoring subpaths that no SHIPPED EXAMPLE is expected to exercise, and why.
+ *
+ * The second deny-list, read by `exampleFacingSubpaths` and through it by
+ * `packages/aai-templates/template-api-coverage.test.ts`. It exists because
+ * "authoring" covers two audiences that the contract system deliberately does
+ * not separate — an agent author writing `agent.ts` and `client.tsx`, and a
+ * host embedding the runtime — while the shipped examples only demonstrate the
+ * first. A ratchet whose failure message says "add or extend a template" has to
+ * be scoped to the surface a template can legitimately demonstrate, or the
+ * advice it gives is wrong.
+ *
+ * Same shape and same argument as {@link NON_AUTHORING_SUBPATHS}: DENY, so a
+ * new subpath defaults into needing a worked example, and a stale entry is a
+ * hard failure rather than a silent hole.
+ */
+const UNEXEMPLIFIED_SUBPATHS = {
+  "aai-runtime": {
+    ".":
+      "the host embedding surface — `createRuntime`/`createAgentServer` and the transports. " +
+      "Its consumer is a server, not an `agent.ts`, and its worked example is the scaffold's " +
+      "own `server.mjs` plus this package's compatibility fixture, which is written as a " +
+      "starter a host copies. `/eval` and `/eval/vitest` are NOT here: every template ships " +
+      "an `agent.eval.test.ts` written against them.",
+  },
+};
+
 export const rel = (path) => relative(ROOT, path);
 
 /**
@@ -250,6 +277,47 @@ export function authoringSubpaths(pkg) {
     typedEntryPoints(manifest)
       .filter(({ subpath }) => !Object.hasOwn(denied, subpath))
       .map(({ subpath, slug }) => [subpath === "." ? "." : subpath.replace(/^\./, ""), slug]),
+  );
+}
+
+/**
+ * The subpaths a SHIPPED EXAMPLE is expected to exercise, as
+ * `{ specifier: subpath }` keyed by what an author types in an import.
+ *
+ * {@link authoringSubpaths} minus {@link UNEXEMPLIFIED_SUBPATHS}, so this and
+ * the contracted surface cannot disagree about what the authoring API is —
+ * which they did, for as long as the coverage ratchet carried its own
+ * hand-written list of seven module specifiers. That list named `aai`'s root
+ * and its four provider subpaths and stopped there, so eight contracted
+ * authoring subpaths (`/step`, `/step-errors`, `/step-files`, `/testing`,
+ * `/testing/vitest`, `/tools`, `/channels`, `/workflow-api`) plus `aai-ui`'s
+ * `/client-dir` and both of `aai-runtime`'s eval subpaths were invisible to it.
+ * Nine of those eleven are imported by the templates today.
+ *
+ * A stale exemption is a FAILURE for the same reason it is in
+ * {@link authoringSubpaths}: an entry for a subpath that is no longer authoring
+ * surface would silently keep a live one out of the examples' scope.
+ */
+export function exampleFacingSubpaths(pkg) {
+  const authoring = authoringSubpaths(pkg);
+  const exempt = UNEXEMPLIFIED_SUBPATHS[pkg.key] ?? {};
+
+  const stale = Object.keys(exempt).filter((subpath) => !Object.hasOwn(authoring, subpath));
+  if (stale.length > 0) {
+    throw new Error(
+      `${pkg.name} does not publish ${stale.join(", ")} as authoring surface, but ` +
+        `UNEXEMPLIFIED_SUBPATHS in ${rel(join(ROOT, "scripts/_api-contracts-tree.mjs"))} still ` +
+        "exempts it from needing a worked example. Remove the entry.",
+    );
+  }
+
+  return Object.fromEntries(
+    Object.keys(authoring)
+      .filter((subpath) => !Object.hasOwn(exempt, subpath))
+      .map((subpath) => [
+        subpath === "." ? pkg.name : `${pkg.name}${subpath}`,
+        subpath === "." ? "." : `.${subpath}`,
+      ]),
   );
 }
 

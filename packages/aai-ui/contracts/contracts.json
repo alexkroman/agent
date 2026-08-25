@@ -30,9 +30,11 @@
     "dropped": {}
   },
   "session": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: TRANSCRIBING_PLACEHOLDER moved to @alexkroman1/aai-ui/internal. It is a tuning constant referenced by no public signature and named by no file outside this package, so it sat in a client.tsx author's autocomplete beside useSession while being a framework decision with no field to set."
+    }
   },
   "theme": {
     "current": 1,
@@ -40,8 +42,10 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Pre-release: DEFAULT_PROGRESS_POLL_MS, DEFAULT_WORKFLOW_POLL_MS and MAX_MISSING_READS moved to @alexkroman1/aai-ui/internal. All three are tuning numbers referenced by no public signature and named by no file outside this package; the hooks that own them take the interval as an OPTION, which is the authoring surface for the same choice and stays public."
+    }
   }
 }

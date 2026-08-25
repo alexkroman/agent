@@ -232,3 +232,37 @@ export const AT_LINE_START = "^ *";
  * `onReplyCompleted()` are both that, and neither declares a surface.
  */
 export const DECLARES = `(\\?)?(:|${ARGS} *(:|\\{))`;
+
+/**
+ * The `/step` callers that reach a remote service and have a `*Classified`
+ * sibling on `@alexkroman1/aai/step-errors` — rule 26's alternation.
+ *
+ * Named here rather than inline for this module's founding reason, and BUILT
+ * from an array for the same one: spelled out as a single literal, the
+ * alternation is long enough that biome's `noSecrets` entropy heuristic scores
+ * it as a credential. One name per element keeps every literal short.
+ *
+ * `stepFetch` is deliberately ABSENT. Its sibling is `stepFetchOk`, whose value
+ * is the non-2xx branch rather than the verdict, and a raw `stepFetch` whose
+ * caller reads the status itself is the ordinary correct spelling — see
+ * `recap-workflow`'s `discardTranscript`, where a 404 is success.
+ */
+export const CLASSIFIABLE_STEP_CALLS = [
+  "stepGenerate",
+  "stepGenerateJson",
+  "stepTranscribeSync",
+  "stepTranscribeUpload",
+  "stepTranscribeSubmit",
+  "stepTranscribePoll",
+  "sendToChannel",
+].join("|");
+
+/**
+ * Not preceded by an identifier character — POSIX ERE's stand-in for `\\b`,
+ * which git's matcher does not implement.
+ *
+ * What keeps rule 26 off the `*Classified` wrappers is the other end (their
+ * names are the banned name plus a suffix, so the `\\(` never follows); this end
+ * is what keeps it off `myStepGenerate(` and off a property access.
+ */
+export const NOT_IDENT_BEFORE = "(^|[^A-Za-z])";

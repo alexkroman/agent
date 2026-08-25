@@ -2605,7 +2605,7 @@ transcript. This is the flag a live-transcript row renders on.
 text: string;
 ```
 
-The words so far, or [TRANSCRIBING\_PLACEHOLDER](#transcribing_placeholder) while there are none.
+The words so far, or a one-character ellipsis (`…`) while there are none.
 Empty string when nobody is speaking.
 
 ## Type Aliases
@@ -5815,26 +5815,6 @@ Container props.
 
 ***
 
-### DEFAULT\_PROGRESS\_POLL\_MS
-
-```ts
-const DEFAULT_PROGRESS_POLL_MS: 1000 = 1000;
-```
-
-How often a live run's progress is re-read once a bounded read has ended.
-
-***
-
-### DEFAULT\_WORKFLOW\_POLL\_MS
-
-```ts
-const DEFAULT_WORKFLOW_POLL_MS: 2000 = 2000;
-```
-
-How often [useWorkflowRun](#useworkflowrun) re-reads a live run when it has to poll.
-
-***
-
 ### Markdown
 
 ```ts
@@ -5871,22 +5851,6 @@ function LiveReply() {
 
 ***
 
-### MAX\_MISSING\_READS
-
-```ts
-const MAX_MISSING_READS: 3 = 3;
-```
-
-Consecutive "no such run" reads [useWorkflowRun](#useworkflowrun) tolerates before giving
-up on the id.
-
-Small on purpose: a 404 is a stable answer, so the budget exists only to
-absorb a first read that races the run's creation — not to keep hoping.
-Unbounded, a stale id polls (and, on the platform, BROKERS) for as long as the
-tab is open.
-
-***
-
 ### MessageList
 
 ```ts
@@ -5916,20 +5880,6 @@ function Conversation() {
 **props**
 
 Container props.
-
-***
-
-### TRANSCRIBING\_PLACEHOLDER
-
-```ts
-const TRANSCRIBING_PLACEHOLDER: "…" = "\u2026";
-```
-
-Placeholder for "listening, no words yet" — the `""` case above.
-
-A one-character ellipsis rather than three dots, because it is read by a
-screen reader as an ellipsis and it does not reflow the row when the first
-real word replaces it.
 
 ***
 

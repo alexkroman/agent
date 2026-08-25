@@ -508,10 +508,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Twenty-two numbered rules, each printing WHY the invariant exists and what
-  to use instead, so a violation is self-correcting and a reviewer never
-  re-explains it. Every one used to live only as prose here, and prose is enforcement
-  exactly as long as somebody remembers it at review time.
+  Numbered rules, each printing WHY the invariant exists and what to use
+  instead, so a violation is self-correcting and a reviewer never re-explains
+  it.
 
   | # | Rule | Instead |
   | --- | --- | --- |
@@ -537,17 +536,20 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 21 | no `expect.poll` — a `test.concurrent` sibling clears the pointer it reads | `vi.waitFor()` |
   | 22 | no truthiness-guarded conditional spread — `...(x && { x })` | a judgement: see the rule's remedy |
   | 23 | no `async` function handed straight to `.on`/`addEventListener` | a sync listener + `void p.catch(report)` |
+  | 24 | no new field on `ToolContext` | that value's own module + capability root |
+  | 25 | no new field on the shared channel message shape | that kind's own options type |
+  | 26 | no raw step call in a shipped `workflows/` body | the `*Classified` sibling |
 
+  Hand-kept, and it HAS gone stale (it stopped at 23); `--rules` is derived.
   Rule IDs are **stable** — they appear in commit messages and in the baseline,
   so a deleted rule leaves its number retired rather than letting a later rule
   inherit it (6, retired with `ctx.state`; 10, with the `research/` directory it
-  checked; 15, reserved). Rules 1, 7, 9, 12, 13, 14, 20 and 21 are at zero and enforced
+  checked; 15, reserved). Several are at zero and enforced
   absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
-  was widened** — a wrapped `Promise.race([` can only be matched by reporting the
-  opening line, which cannot see whether a timer is among the elements, so a
-  timer-free wrapped race is a legitimate entry. Over-reporting there is the
-  cheap error: every finding in this family under-reports silently. The argument
-  is on `RACE_CONTINUES` in `guard-invariants-ere.mjs`.
+  was widened**: a wrapped `Promise.race([` is matched by its opening line,
+  which cannot see whether a timer is among the elements, so a timer-free
+  wrapped race is a legitimate entry. Over-reporting is the cheap error here —
+  see `RACE_CONTINUES` in `guard-invariants-ere.mjs`.
 
   **Rule 2's `undefined` scope is a BOUNDARY, and rule 22 is why.** Rule 2 tests
   presence, which `omitUndefined` *is*, so its matches rewrite without changing
@@ -607,16 +609,12 @@ one commit of history. A file in the tree has no merge base and no such modes.
   independently.
 
   **Four of these rules found real bugs on the day they were written**, which is
-  the argument for the whole gate. Rule 2 caught two `omitUndefined`
-  conversions the documented 44-site sweep had missed (`host/s2s.ts`,
-  `secret-handler.test.ts`). Rule 11 came out of a Windows CI leg that failed on
-  two shipped modules writing to a literal `/tmp` — a path that is
-  drive-relative on Windows — both of which run on a developer's own machine
-  under `aai dev`, so the bug was never guest-only. See "Windows is NOT tested,
-  and is currently broken".
-
-  Rule 23 found the fourth, in the SHIPPED `scaffold/server.mjs`, which
-  `biome.json` excluded from linting until this change.
+  the argument for the whole gate. Rule 2 caught two `omitUndefined` conversions
+  the documented 44-site sweep had missed. Rule 11 came out of a Windows CI leg
+  failing on two shipped modules writing to a literal `/tmp` — drive-relative on
+  Windows — both of which also run under `aai dev`, so the bug was never
+  guest-only. Rule 23 found the fourth, in the SHIPPED `scaffold/server.mjs`,
+  which `biome.json` excluded from linting until then.
 
   **Rule 20 (from vercel/eve's rule 29) closes a gate that reported success over
   a mistake**, in the release path. A changeset whose package key is a typo is
@@ -627,14 +625,14 @@ one commit of history. A file in the tree has no merge base and no such modes.
   the argument, including why it is its own module, is in
   `scripts/guard-invariants-changesets.mjs`.
 
-  Rule 19 found a **sixth** hand-rolled `sleep` no gate here could see:
+  Rule 19 found a **sixth** hand-rolled `sleep` no gate could see:
   `host/workflow-notify.ts` held a raw NUL byte, making the file BINARY to
-  `git grep` — silently exempt from all nineteen rules and from
-  `check:hatches`. Fixing the byte is what let the rule find the copy.
+  `git grep` — silently exempt from every rule and from `check:hatches`.
+  Fixing the byte is what let the rule find the copy.
 
   **Rule 16 is scoped to an explicit FILE LIST** (role is not derivable from a
-  path), so its gate spec asserts every path exists; it also found
-  `SELF_REFERENTIAL` too blunt to be per-FILE, so exemptions are per rule now.
+  path), so its gate spec asserts every path exists; it also made
+  `SELF_REFERENTIAL` per-rule rather than per-file.
 
   Two things any new rule must respect — a dead pattern prints the same
   checkmark as a rule upheld, and the rules module matches its own rules.
@@ -644,6 +642,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
   `packages/aai/AGENT_GUIDE.md` is the current copy of
   `packages/aai-templates/scaffold/CLAUDE.md`; see "The authoring guide ships
   inside the SDK" below. Same silent-staleness shape as `check:guest-toolchain`.
+- **`pnpm check:authoring-guide`** (`scripts/check-authoring-guide.mjs`) —
+  `check:agent-guide` says the shipped guide is CURRENT; this says it is
+  COMPLETE. Every contracted authoring capability must be named in the guide's
+  CODE, never prose. Thirteen were absent; its own doc has the rest.
 - **`pnpm check:scaffold`** (`scripts/sync-scaffold-versions.mjs --check`) —
   asserts `packages/aai-templates/scaffold/package.json` still matches the
   workspace. Third file in this committed-copy shape and the only one that
@@ -1075,9 +1077,9 @@ label that does not exist is an API error.
 ### Published type signatures are a committed report
 
 `pnpm api-report` writes `packages/*/etc/<subpath>.api.md` — the rolled-up
-public `.d.ts` for ONE REPORT PER PUBLISHED ENTRY POINT (29 today, across the
-four publishable packages; `ls packages/*/etc/*.api.md` is the current count,
-and this paragraph carried a stale `26` across two subpath additions) — plus
+public `.d.ts` for ONE REPORT PER PUBLISHED ENTRY POINT (across the four
+publishable packages; `ls packages/*/etc/*.api.md` is the count, which this
+paragraph has now carried stale twice, at `26` and at `29`) — plus
 **`API.md` at the repo root, those same reports concatenated**, and
 **`API-EXPORTS.json`, the same entry points' export NAMES**;
 `pnpm check:api-report` fails when any of them is stale.
@@ -1217,8 +1219,7 @@ Six properties are load-bearing:
   they pin the CURRENT shape and move with the API. On `aai` and `aai-ui` it is
   a SNIPPET an author reads; on `aai-runtime` a starter a host COPIES, because
   that is what its consumers do with it (see "The published surface is versioned
-  in epochs" in `packages/aai-runtime/CLAUDE.md`). Every epoch has one from its
-  first commit, so the value does not wait for a bump. The extension is `.tsx`
+  in epochs" in `packages/aai-runtime/CLAUDE.md`). The extension is `.tsx`
   wherever the owning package's tsconfig sets `jsx` (DERIVED, not declared) — a
   component library's authoring example is JSX, and one spelled in
   `createElement` calls would compile while demonstrating an API nobody writes.
@@ -1226,6 +1227,10 @@ Six properties are load-bearing:
   IS the finding. A **dropped** epoch's example is DELETED by `--bump --drop`:
   "dropped" means it no longer compiles, and a leftover file would turn a
   recorded decision into a red typecheck.
+
+  **`contracts/compatibility/` is EMPTY today** — every superseded epoch was
+  dropped pre-release, so until the first RETAINED epoch this proves nothing
+  and the value is the classification.
 - **The hash covers the rollup BODY, not the report file.** API Extractor's
   preamble is identical in every report and is the tool's, not ours; hashing it
   would make an api-extractor upgrade that reworded one line bump every epoch at
@@ -1239,29 +1244,21 @@ Six properties are load-bearing:
 - **A `--bump --drop` classifies the CURRENT epoch and nothing else.** A change
   can break OLDER supported epochs while the current one compiles, so run
   `pnpm typecheck` FIRST: the frozen examples it reddens are the epochs to drop,
-  and older ones are a hand edit to `contracts.json`. The worked case,
-  `stubUploads` breaking `aai:testing` at 5, 6, 17 and 19, is in
-  `packages/aai/CLAUDE.md`.
+  and older ones are a hand edit to `contracts.json`.
 - **A capability whose promise is a VALUE or a RECIPE is not covered by the
-  hash.** `aai:defaults` is the standing instance: the hash reads the rolled-up
-  declaration (`const DEFAULT_SYSTEM_PROMPT: string`) with doc comments
-  stripped, so the string's content and the documented recipe for composing
-  against it can both change under a checkmark — and did. `--bump aai:defaults`
-  refuses ("still matches epoch 4"), and manufacturing one records a
-  classification against a surface that did not move. That change is a
-  changeset-and-review matter, not a gated one; same guide, same section.
+  hash.** `aai:defaults` is the standing instance: the hash reads
+  `const DEFAULT_SYSTEM_PROMPT: string` with doc comments stripped, so the
+  string's content can change under a checkmark — and did. `--bump` refuses
+  ("still matches epoch N"). A changeset-and-review matter, not a gated one;
+  `packages/aai/CLAUDE.md` has the worked case.
 
-**A `--bump` is the moment to ask what should come OUT.** The mechanism does
-work in that direction — roughly one epoch transition in eight removes names
-(`utils` v12 dropped 35 at once, `workflow` v9 dropped 16), and about a quarter
-of all epochs were `--drop`ped; count them from `contracts/epochs/` and
-`contracts/compatibility/` rather than trusting a figure here. What a bump never
-asks about is the names that did NOT move: **57 `aai` root exports and 74
-`aai-ui` ones are exercised by no template**
-(`packages/aai-templates/template-api-allowlist.json`, whose gate says such an
-export "is either missing its example or shouldn't be public"). The delta gets
-classified and the rest accretes — read the allowlist at a bump, not only the
-diff.
+**A `--bump` is the moment to ask what should come OUT.** The mechanism works in
+that direction — an epoch transition can drop names wholesale — but a bump only
+ever asks about the names that MOVED. What accretes is everything else:
+`template-api-allowlist.json` records the exports no shipped example exercises,
+and its own gate says such an export "is either missing its example or shouldn't
+be public". Read that file at a bump, not only the diff — the counts are in it,
+and are deliberately not restated here.
 
 **Capabilities, not entry points, and the reason WAS the `@internal` problem.**
 `@alexkroman1/aai` used to export 174 symbols from its root, **71 of them tagged
@@ -1271,16 +1268,22 @@ autocomplete. Versioning the subpath as one unit would bump the authoring
 contract every time a playback constant moved. So the capabilities name the
 surface instead — `agent`, `tool`, `state`, `workflow`, `workflow-api`,
 `defaults`, `utils`, `testing`, `builtins`, and one per provider stage — and the
-gate asserts the naming is **exhaustive**: every `@public` export of the fourteen
-authoring subpaths this leaves `aai` with (`.`, `/utils`, `/step`,
-`/step-errors`, `/step-files`, `/testing`, `/testing/vitest`, `/workflow-api`,
-`/tools`, `/ffmpeg`, `/stt`, `/llm`, `/tts`, `/s2s`) belongs to exactly one
-capability, so a new public export
-fails until somebody decides which contract it joins — which is the same decision
-as "who is promised this". Ownership is per PACKAGE, deliberately: three names
-(`isTerminal`, `WorkflowSummary`, `WorkflowOutputOf`) are on both packages'
-surfaces, the same concept from the two sides of the wire. A name published on
+gate asserts the naming is **exhaustive**: every `@public` export of the
+authoring subpaths this leaves `aai` with belongs to exactly one capability, so
+a new public export fails until somebody decides which contract it joins — the
+same decision as "who is promised this". Ownership is per PACKAGE,
+deliberately: three names (`isTerminal`, `WorkflowSummary`, `WorkflowOutputOf`)
+are on both packages' surfaces, the same concept from the two sides of the
+wire. A name published on
 both `.` and a narrower subpath belongs to the narrower one.
+
+**That set is deliberately NOT enumerated here.** This paragraph used to list
+"the fourteen authoring subpaths" and was missing `/channels`, a contracted
+capability with four template importers — a hand-kept list of the surface,
+inside the section describing the mechanism that prevents one. It is
+`authoringSubpaths()` (`scripts/_api-contracts-tree.mjs`), and
+`exampleFacingSubpaths()` beside it, minus a second deny-list, is what the
+template coverage ratchet reads.
 
 **Counting them is what got them fixed, which is the argument for the whole
 gate.** The internal-tagged names are the explicit exemption, committed to
@@ -1600,19 +1603,16 @@ package.json scripts (not always obvious from test code alone):
 
 #### Windows is NOT tested, and is currently broken
 
-There is no Windows leg in CI. One was added, run once, and removed; it failed
-two of three legs on two unrelated causes, one fixed and one still open. The
-whole account — including why the middle tiers were never the right thing to
-duplicate onto Windows, and why not to re-add the matrix without a Windows
-machine to reproduce on — is in `packages/aai-cli/CLAUDE.md`, the package a
-Windows user actually runs.
+There is no Windows leg in CI; one was added, run once, and removed. The whole
+account — the two failure causes, one still open, and why not to re-add the
+matrix without a Windows machine to reproduce on — is in
+`packages/aai-cli/CLAUDE.md`, the package a Windows user actually runs.
 
 #### The e2e suite is pnpm-only in CI
 
 Why the npm and yarn legs were retired, and how to reproduce a user report under
 one anyway (`AAI_TEST_PM=npm pnpm test:e2e`), is in
-`packages/aai-cli/CLAUDE.md` — the package owning `e2e.test.ts` and
-`_e2e-test-utils.ts`. The repo-wide half is why that command works at all:
+`packages/aai-cli/CLAUDE.md`. The repo-wide half is why that command works:
 `AAI_TEST_PM` sits in the `check:e2e` task's **`env`**, because strict env mode
 strips an undeclared variable silently (see "strict env mode" above).
 

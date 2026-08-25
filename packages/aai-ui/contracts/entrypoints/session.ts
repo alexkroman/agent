@@ -23,7 +23,6 @@ export {
   type SessionError,
   type SessionErrorCode,
   type SessionSnapshot,
-  TRANSCRIBING_PLACEHOLDER,
   type UseConversationResult,
   type UseUserTranscriptResult,
   useConversation,

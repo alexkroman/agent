@@ -23,13 +23,13 @@
  * | module | holds |
  * | --- | --- |
  * | `guard-invariants-ere.mjs`          | the regex vocabulary |
- * | `guard-invariants-scopes.mjs`       | the five corpora, each of which a floor must count |
+ * | `guard-invariants-scopes.mjs`       | the six corpora, each of which a floor must count |
  * | `guard-invariants-rules-timing.mjs` | rules 3, 4, 19, 21 — how code waits |
  * | `guard-invariants-rules-shape.mjs`  | rules 2, 17, 18 — a value's shape, re-derived |
  * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16 — state someone else owns |
  *
  * Everything downstream imports from HERE and nothing changed for it:
- * `LINE_RULES` and the four scope constants are re-exported.
+ * `LINE_RULES` and the scope constants are re-exported.
  *
  * Two properties survive the split, both already paid for in this repo:
  *
@@ -57,6 +57,7 @@ export {
   SOURCE_PATHSPECS,
   TEMPLATE_PATHSPECS,
   TMP_RULE_PATHSPECS,
+  WORKFLOW_BODY_PATHSPECS,
 } from "./guard-invariants-scopes.mjs";
 
 /**

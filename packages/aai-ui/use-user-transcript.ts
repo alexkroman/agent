@@ -29,7 +29,12 @@ import { useSessionSelector } from "./context.ts";
  * screen reader as an ellipsis and it does not reflow the row when the first
  * real word replaces it.
  *
- * @public
+ * On `@alexkroman1/aai-ui/internal`, not the root: no public signature names
+ * it, and a `client.tsx` rendering its own transcript row compares against the
+ * character. `UseUserTranscriptResult.text` therefore spells the value out
+ * rather than linking here.
+ *
+ * @internal
  */
 export const TRANSCRIBING_PLACEHOLDER = "…";
 
@@ -41,7 +46,7 @@ export interface UseUserTranscriptResult {
    */
   speaking: boolean;
   /**
-   * The words so far, or {@link TRANSCRIBING_PLACEHOLDER} while there are none.
+   * The words so far, or a one-character ellipsis (`…`) while there are none.
    * Empty string when nobody is speaking.
    */
   text: string;

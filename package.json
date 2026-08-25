@@ -53,6 +53,7 @@
     "check:api-report": "node scripts/api-report.mjs --check",
     "api-contracts": "node scripts/api-contracts.mjs",
     "check:api-contracts": "node scripts/api-contracts.mjs",
+    "check:authoring-guide": "node scripts/check-authoring-guide.mjs",
     "check:publish-names": "node scripts/check-publish-names.mjs",
     "check:publish-protocols": "node scripts/check-publish-protocols.mjs",
     "check:template-types": "node scripts/check-template-types.mjs",

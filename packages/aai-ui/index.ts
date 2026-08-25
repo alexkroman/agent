@@ -108,11 +108,7 @@ export {
 } from "./use-download-url.ts";
 // The caller's in-progress turn, with `null` (silent) and `""` (speech
 // detected, no words yet) kept apart — see the module doc.
-export {
-  TRANSCRIBING_PLACEHOLDER,
-  type UseUserTranscriptResult,
-  useUserTranscript,
-} from "./use-user-transcript.ts";
+export { type UseUserTranscriptResult, useUserTranscript } from "./use-user-transcript.ts";
 export {
   type UploadStatus,
   type UseWorkflowSubmitOptions,
@@ -125,16 +121,10 @@ export {
 // `RunProgressReader` stays unexported, like `RunWatcher` next door: both are
 // one-method narrowings of the client for their own module's use, not API.
 export {
-  DEFAULT_PROGRESS_POLL_MS,
   type UseWorkflowProgressResult,
   useWorkflowProgress,
 } from "./use-workflow-progress.ts";
-export {
-  DEFAULT_WORKFLOW_POLL_MS,
-  MAX_MISSING_READS,
-  type UseWorkflowRunResult,
-  useWorkflowRun,
-} from "./use-workflow-run.ts";
+export { type UseWorkflowRunResult, useWorkflowRun } from "./use-workflow-run.ts";
 // The list beside the one — history a page can render instead of asking for a
 // run id, which is what a workflow app without it has to do.
 export {

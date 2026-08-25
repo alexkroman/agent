@@ -5,10 +5,9 @@
  *
  * Two gates need this — `check-template-types` (the shipped templates) and
  * `check-doc-examples` (every ```ts fence in published docs) — and they need
- * it for the same reason: the repo's tsconfig is stricter in some places and
- * LOOSER in others (evolving-array inference under `noImplicitAny: false`,
- * catch variables), so `pnpm typecheck` can be green while the code every
- * user actually gets does not compile.
+ * it for the same reason: the repo's tsconfig and the scaffold's differ in both
+ * directions (catch variables, `types`, `lib`, `jsx`), so `pnpm typecheck` can
+ * be green while the code every user actually gets does not compile.
  *
  * Both derive the config from `scaffold/tsconfig.json` at run time rather than
  * copying it — the whole failure mode being prevented is two configs

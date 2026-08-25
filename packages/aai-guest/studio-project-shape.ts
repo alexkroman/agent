@@ -78,16 +78,26 @@ async function readScaffoldFile(root: string | null, rel: string): Promise<strin
  * an edited agent should fail `test_agent`, where the coding agent can see and
  * fix it, not block the user from going live.
  *
- * `strict` minus `noImplicitAny` — the scaffold's setting, kept in step here.
- * Measured over the starter evals, TS7006 and its siblings (TS7053, TS7034)
- * were 57% of every diagnostic the coding agent had to repair, and not one
- * marked a real defect. They are all downstream of a receiver that is already
- * `any` by design (`ctx.state`, a tool result): `state.cart.reduce((sum, p) =>
- * …)` reports both lambda parameters, and typing them buys nothing, because
- * the body is `any`-checked either way. The rule asks for an annotation
- * without offering any checking in return — pure churn on a gate that blocks
- * publishing. Everything that catches a real mistake (TS2339, TS2345, TS2353
- * — wrong field, wrong argument, wrong option) is unaffected.
+ * `strict`, INCLUDING `noImplicitAny` — the scaffold's setting, kept in step
+ * here, and it used to be the other way round. The case for switching it off
+ * was measured over the starter evals: TS7006 and its siblings (TS7053,
+ * TS7034) were 57% of every diagnostic the coding agent had to repair, and not
+ * one marked a real defect. That measurement was honest and the conclusion did
+ * not survive, for two reasons.
+ *
+ * The churn it measured was downstream of a receiver that was `any` by design —
+ * and the receiver it named, `ctx.state`, NO LONGER EXISTS. A session's state
+ * is a `sessionSlot()` now, which is typed, so `state.cart.reduce((sum, p) =>
+ * …)` infers both lambda parameters instead of reporting them.
+ *
+ * And the flag was never only a diagnostic switch. Turning it off also disables
+ * evolving-array and evolving-let inference, so `const items = []` is `never[]`
+ * from the declaration and `let best = null` is `null` — forever, whatever is
+ * assigned later. That is the trap `studio-diagnostics.ts` was written to
+ * explain, and one starter spent sixteen type checks on it and never built.
+ * Verified both directions on a scratch project: with the flag off those two
+ * lines are two errors, with it on they are none. Turning it back on costs zero
+ * errors across all twenty-six shipped templates, measured the same way.
  *
  * `useUnknownInCatchVariables` goes for a narrower version of the same reason.
  * Every `catch (err)` in a generated agent ends in "turn this into a string

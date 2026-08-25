@@ -56,7 +56,12 @@ if (!existsSync(workerPath)) {
 // Windows, where a bare POSIX-looking path is not a valid module specifier.
 const { default: agent } = await import(pathToFileURL(workerPath).href);
 
-/** Parse a dotenv-syntax file into a record; `{}` when it does not exist. */
+/**
+ * Parse a dotenv-syntax file into a record; `{}` when it does not exist.
+ *
+ * @param {string} file - Path relative to the project root.
+ * @returns {Promise<Record<string, string | undefined>>}
+ */
 async function readEnvFile(file) {
   try {
     return parseEnv(await readFile(path.join(root, file), "utf-8"));
@@ -84,13 +89,15 @@ async function readEnvFile(file) {
  */
 async function resolveAgentEnv() {
   const declared = { ...(await readEnvFile(".env.example")), ...(await readEnvFile(".env")) };
+  /** @type {Record<string, string>} */
   const env = {};
   for (const [key, fileValue] of Object.entries(declared)) {
     const value = process.env[key] ?? fileValue;
     // An empty value is worse than a missing one: a provider would try to
     // authenticate with "" rather than report the credential as absent. The
-    // example file is full of them by design (`BRAVE_API_KEY=`).
-    if (value !== "") env[key] = value;
+    // example file is full of them by design (`BRAVE_API_KEY=`). A key the
+    // parser saw with no value at all is the same case.
+    if (value !== undefined && value !== "") env[key] = value;
   }
   return env;
 }

@@ -61,3 +61,17 @@ export { SessionProvider, ThemeProvider } from "./context.ts";
 // chrome opening its own microphone is the case it was published for, and one
 // that bypasses `client()` reaches it here along with the providers.
 export { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
+// The four tuning numbers the hooks are built around: the transcript
+// placeholder, the two poll intervals and the missing-read tolerance. Every one
+// is referenced by NO public signature — each appeared in the report as its own
+// `export const` and nothing else — and no file outside this package named one.
+// They are the same category as `aai`'s `PLAYBACK_CONCEAL_FLOOR` and
+// `MIC_SILENCE_PROBE_MS`, whose move to that package's `/internal` took its
+// internal-surface ratchet from 74 to 0: a framework decision with no field to
+// set, sitting in a `client.tsx` author's autocomplete beside `useWorkflowRun`.
+//
+// The hooks that own them take the interval as an OPTION, which is the
+// authoring surface for the same choice and is what stays public.
+export { TRANSCRIBING_PLACEHOLDER } from "./use-user-transcript.ts";
+export { DEFAULT_PROGRESS_POLL_MS } from "./use-workflow-progress.ts";
+export { DEFAULT_WORKFLOW_POLL_MS, MAX_MISSING_READS } from "./use-workflow-run.ts";

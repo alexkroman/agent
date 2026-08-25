@@ -47,8 +47,17 @@ type ClientTheme = {
     border?: string;
 };
 
+// @public
+export const DEFAULT_PROGRESS_POLL_MS = 1000;
+
+// @public
+export const DEFAULT_WORKFLOW_POLL_MS = 2000;
+
 // @internal
 export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
+
+// @public
+export const MAX_MISSING_READS = 3;
 
 // @public
 type SessionCore = {
@@ -126,6 +135,9 @@ type ToolDisplayConfig = Record<string, {
     icon?: string;
     label?: string;
 }>;
+
+// @internal
+export const TRANSCRIBING_PLACEHOLDER = "\u2026";
 
 // @internal
 export function UiUrlChip(input: {

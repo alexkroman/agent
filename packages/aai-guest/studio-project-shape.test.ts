@@ -85,9 +85,10 @@ describe("ensureProjectShape", () => {
     expect(parsed.compilerOptions.strict).toBe(true);
     expect(parsed.compilerOptions.types).toEqual(["node"]);
     expect(parsed.exclude).toContain("**/*.test.ts");
-    // Deliberate: implicit-any diagnostics are churn on an `any` receiver and
-    // catch nothing. See the WORKSPACE_TSCONFIG doc.
-    expect(parsed.compilerOptions.noImplicitAny).toBe(false);
+    // `noImplicitAny` is NOT turned off here or in the scaffold: switching it
+    // off also disables evolving-array/evolving-let inference, which is the
+    // more expensive failure. See the WORKSPACE_TSCONFIG doc.
+    expect(parsed.compilerOptions.noImplicitAny).toBeUndefined();
     expect(parsed.compilerOptions.useUnknownInCatchVariables).toBe(false);
   });
 });

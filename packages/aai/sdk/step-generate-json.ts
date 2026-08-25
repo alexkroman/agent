@@ -62,6 +62,13 @@ export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOp
  * The reply is unfenced, parsed, and checked against `schema`; the validated
  * value is what comes back, typed as the schema's output.
  *
+ * **From a `"use step"` body, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
+ * It is this call plus `throwStepError`, and the DevKit decides its retry policy
+ * from WHICH error a step throws: raw, a terminal failure burns every remaining
+ * attempt and a rate limit backs off for one second while the delay the far side
+ * named sits unread. Reach for the raw call where the failure is not simply a
+ * failure — a `404` that means "already deleted".
+ *
  * @param prompt - The user message. The SHAPE belongs in `system` — this says
  *   nothing about JSON on the caller's behalf, because the wording that gets a
  *   model to comply is part of the prompt a template is demonstrating.

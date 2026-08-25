@@ -132,6 +132,22 @@ export const TMP_RULE_PATHSPECS = [
 export const TEMPLATE_PATHSPECS = ["packages/aai-templates/templates"];
 
 /**
+ * Rule 26's scope: the shipped WORKFLOW BODIES — every `workflows/*.ts` in a
+ * template.
+ *
+ * A directory rather than a file list, and unlike rules 12 and 16 the role IS
+ * derivable from the path: `workflows/` is where the WDK builder looks for a
+ * `"use step"` body, so a module there is a step module by construction. That
+ * is also why the rule cannot simply scan every file naming `stepGenerate` —
+ * the SDK's own `sdk/step-errors.ts` calls all six of them, which is what the
+ * wrappers ARE.
+ *
+ * `*` crosses `/` in a pathspec, so this reaches `templates/x/workflows/y.ts`
+ * and would also reach a nested one. `git ls-files` it rather than reading it.
+ */
+export const WORKFLOW_BODY_PATHSPECS = ["packages/aai-templates/templates/*/workflows/*.ts"];
+
+/**
  * Rule 12's scope: the files that make up the GUEST'S HTTP SURFACE.
  *
  * **`packages/aai-guest` alone is not it, and that was the rule's live gap.**

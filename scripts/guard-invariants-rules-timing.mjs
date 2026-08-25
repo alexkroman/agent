@@ -27,14 +27,16 @@
 
 import {
   ASYNC_LISTENER,
+  CLASSIFIABLE_STEP_CALLS,
   IMMEDIATE_PROMISE,
+  NOT_IDENT_BEFORE,
   RACE_CONTINUES,
   RACE_TIMEOUT,
   SLEEP_PROMISE,
   TICK_PROMISE,
   TIMERS_PROMISES,
 } from "./guard-invariants-ere.mjs";
-import { SOURCE_PATHSPECS } from "./guard-invariants-scopes.mjs";
+import { SOURCE_PATHSPECS, WORKFLOW_BODY_PATHSPECS } from "./guard-invariants-scopes.mjs";
 
 /** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
 export const TIMING_RULES = [
@@ -289,5 +291,56 @@ export const TIMING_RULES = [
       "see; the other half is a documented limitation in AGENTS.md, because the\n" +
       "floating-call form is indistinguishable from an arrow expression body\n" +
       "that legitimately RETURNS the promise.",
+  },
+  {
+    id: 26,
+    key: "rule26_unclassifiedStepCall",
+    label: "raw step call in a shipped workflow body",
+    // A call position. The wrappers themselves are excluded by the trailing
+    // `\\(`: their names are the banned name plus `Classified`, so the paren
+    // never follows. See both fragments' docs.
+    re: `${NOT_IDENT_BEFORE}(${CLASSIFIABLE_STEP_CALLS})\\(`,
+    paths: WORKFLOW_BODY_PATHSPECS,
+    skipComments: true,
+    samples: {
+      // DERIVED from the alternation, one pair per banned name, so a name added
+      // to `CLASSIFIABLE_STEP_CALLS` is sampled in both directions without
+      // anyone remembering to. It also keeps every literal here short: spelled
+      // out, `  await stepTranscribeSyncClassified(bytes);` is long enough that
+      // biome's `noSecrets` entropy heuristic scores it as a credential, and
+      // the formatter folds any concatenation written to dodge that.
+      matches: CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await ${name}(x);`),
+      ignores: [
+        // The remedy: the same name plus the suffix, which the trailing `(`
+        // in the pattern is what excludes.
+        ...CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await ${name}Classified(x);`),
+        // Not a call: an import, a type position, a property.
+        'import { stepGenerate } from "@alexkroman1/aai/step";',
+        "  const opts: StepGenerateOptions = { system };",
+      ],
+    },
+    remedy:
+      'Inside a `"use step"` body, call the `*Classified` sibling from\n' +
+      "`@alexkroman1/aai/step-errors` — the same name plus that suffix, for\n" +
+      "each of the callers this rule names.\n" +
+      "\n" +
+      "The DevKit decides its retry policy from WHICH error a step throws, and a\n" +
+      "raw call throws the same thing for every failure. So a bad API key is\n" +
+      "retried until the attempts run out, and a rate limit backs off for the\n" +
+      "DevKit's default one second while the delay the gateway itself named sits\n" +
+      "unread on the error. That last one is worst exactly where this SDK\n" +
+      "encourages a fan-out: N steps hit the limit together, and a second later\n" +
+      "all N ask again. The wrapper is the call plus `throwStepError`, nothing\n" +
+      "else — a terminal failure raises `FatalError` and stops, a transient one\n" +
+      "raises `RetryableError` carrying the far side's own `Retry-After`.\n" +
+      "\n" +
+      "The raw call is RIGHT where the failure is not simply a failure — a `404`\n" +
+      'that means "already deleted", a `4xx` whose body decides which advice to\n' +
+      "print. Baseline the line and say which case it is in a comment beside it;\n" +
+      "`recap-workflow`'s `discardTranscript` is the worked example.\n" +
+      "\n" +
+      "Scoped to shipped `workflows/` bodies because those are what a user\n" +
+      "copies, and because the SDK's own `sdk/step-errors.ts` calls all six —\n" +
+      "being the wrappers.",
   },
 ];

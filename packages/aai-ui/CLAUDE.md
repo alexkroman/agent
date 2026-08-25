@@ -56,6 +56,29 @@ writing the first set anyway: `WorkflowApiOptions.token` cannot take an explicit
 `undefined` under `exactOptionalPropertyTypes`, and `api.get` is deliberately
 untyped (`useWorkflowRun<R>` is where a page names the shape).
 
+**Four tuning CONSTANTS followed the eight, and they are the case the tag never
+marked.** `TRANSCRIBING_PLACEHOLDER`, `DEFAULT_PROGRESS_POLL_MS`,
+`DEFAULT_WORKFLOW_POLL_MS` and `MAX_MISSING_READS` were `@public` on the root
+barrel. Each appeared in `etc/index.api.md` as its own `export const` and in no
+other line — no public signature names one — and no file outside this package
+named one either. They are the same category as `aai`'s
+`PLAYBACK_CONCEAL_FLOOR` and `MIC_SILENCE_PROBE_MS`: a framework decision with
+no field to set, in a `client.tsx` author's autocomplete. The hooks that own the
+two intervals take them as an OPTION, which is the authoring surface for the
+same choice and stays public. Moving them cost `aai-ui:session` and
+`aai-ui:workflow` an epoch each, both `--drop`ped.
+
+It also surfaced the coupling worth watching when a name goes internal:
+`UseUserTranscriptResult.text` documented itself with
+`{@link TRANSCRIBING_PLACEHOLDER}`, so the move broke `pnpm check:docs-md`
+(`treatWarningsAsErrors` makes an unresolvable link an error). The fix is the
+right one anyway — a public type's doc now spells the value out rather than
+linking a name a reader cannot import.
+
+`WebSocketConstructor` was the near miss and STAYED: it looks like the same
+category and `VoiceSessionOptions.WebSocket?` names it, so moving it would have
+made a public field's type unnameable. Read the report, not the name.
+
 **The `@internal` ratchet here stands at ZERO**, and `internal.ts` is what paid
 it off. It stood at eight — `SessionProvider`, `ThemeProvider`,
 `ToolConfigContext`, the three URL chips (`ApiUrlChip`, `UiUrlChip`,
