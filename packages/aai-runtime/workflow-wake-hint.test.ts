@@ -70,7 +70,13 @@ describe("createWakeHintPublisher", () => {
     const upsert = matching(db, /^insert into/)[0] ?? "";
     // A locked job belongs to a worker; the earliest ANOTHER worker could take
     // it is graphile-worker's job expiry past the lock.
-    expect(upsert).toContain(`j.locked_at + interval '${GRAPHILE_JOB_EXPIRY}'`);
+    // A locked job is claimable NOW, not at `locked_at + GRAPHILE_JOB_EXPIRY`:
+    // publishing the 4-hour answer deadlocks against `workflow-lock-sweep.ts`,
+    // which clears a dead worker's locks at GUEST STARTUP — so a boot is what
+    // makes such a job claimable, and "nothing for four hours" is an
+    // instruction not to boot. Reproduced end to end; see the module doc.
+    expect(upsert).not.toContain(GRAPHILE_JOB_EXPIRY);
+    expect(upsert).toContain("else j.locked_at");
     // ...and a permanently-failed job counts for nothing at all: its run_at is
     // forever in the past, so including it would boot a sandbox every sweep for
     // the life of the agent.

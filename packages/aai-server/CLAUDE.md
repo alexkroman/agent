@@ -941,8 +941,10 @@ rather than aai-guest's darwin `node_modules`. Boot WARNS when the image is
 missing, rather than letting the first session eat a 30s dial timeout:
 
 `pnpm build:guest-image --msb` builds the image and loads it into
-microsandbox's own store; `pnpm --filter aai-server test:scenario` runs the
-real-microVM tier. Three traps, all measured:
+microsandbox's own store — **and a harness edit is not live until it has run**
+("A harness edit needs the IMAGE rebuilt", `packages/aai-guest/CLAUDE.md`).
+`pnpm --filter aai-server test:scenario` runs the real-microVM tier. Four traps,
+all measured:
 
 - **`.network()` REPLACES the network config**, so a `.port()` called before it
   is discarded — silently. The harness logs `listening on 0.0.0.0:8080` inside
@@ -956,6 +958,9 @@ real-microVM tier. Three traps, all measured:
   asks the runtime a real question. That tier SKIPS without hardware
   virtualization — GitHub's standard runners do not reliably provide it — and
   `AAI_REQUIRE_MICROSANDBOX=1` makes the skip a failure where they do.
+- **A name is NOT released when the sandbox dies** — Modal's property, which
+  `sandbox-directory.ts` rests on and microsandbox does not share. A SIGKILLed
+  VM left its slug permanently unreachable; `createReclaimingName`'s doc has it.
 
 ## A teardown may not depend on the boot it is tearing down
 
@@ -1490,18 +1495,6 @@ request from, which behind Modal's TLS termination is never `c.req.url` — the
 handler composes it from `resolvePublicOrigin`, for the same reason everything
 else on this platform does (see "Never derive the public scheme from the
 request URL").
-
-#### The guest half: a phone call is an ordinary session
-
-`WS /phone` (`aai/host/telephony/`) runs a carrier's media stream as an ordinary
-session, and **nothing in the session stack knows about telephony** — the
-adapter is a socket-shaped SHIM speaking the client protocol on one side and the
-carrier's framing on the other. **It is documented with the process that serves
-it in production: see "A phone call is an ordinary session" in
-`packages/aai-guest/CLAUDE.md`** — pacing, the learned rates, the stateful
-resamplers, what a new `CarrierCodec` owes, and the two deliberate gaps. (It sat
-here until this guide reached its length cap; `packages/aai/CLAUDE.md`, which
-owns the code, is at its own.)
 
 ### Durable workflows — `/:slug/.well-known/workflow/v1/webhook/:token`
 

@@ -382,12 +382,6 @@ export async function mainAgent(port: number, host: string, token: string): Prom
 
   await loadBundle(state, { code: boot.code, env: boot.env });
 
-  // Gated on the bundle actually declaring workflows: migrating and subscribing
-  // a queue are both expensive and most agents have none. A failure is logged
-  // rather than thrown — the session surface is unaffected, and an agent whose
-  // workflows are broken should still answer the phone.
-  await startWorkflowWorldIfDeclared(state.workflows !== null, world);
-
   // The wake hint — how a run whose sandbox is gone gets a process again (see
   // `aai/host/workflow-wake-hint.ts` for the design, and
   // `aai-server/workflow-wake.ts` for the reader). Only for an agent that
@@ -475,4 +469,28 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   // See `harness.ts`'s twin line: the version is the copy BESIDE the harness,
   // which is the one this agent's own runtime came from.
   console.error(`agent-mode harness listening on ${host}:${port} (aai ${guestSdkVersion()})`);
+
+  // AFTER listen, and that ordering is the whole point. `flow` and `step` are
+  // `guest-internal` routes — the world's own graphile-worker dials them on THIS
+  // server's loopback — and `start()` re-enqueues every active run, so a world
+  // started earlier claims jobs the server cannot yet answer. Each such claim
+  // BURNS AN ATTEMPT: measured on a real guest, `Failed task 47
+  // (workflow_steps, 92.36ms, attempt 2 of 3) with error 'Unable to resolve base
+  // URL for workflow queue.'` — logged 8ms before `harness listening`. At
+  // `max_attempts` 3, three boots are enough to fail a step permanently, and a
+  // durable run on ephemeral sandboxes boots many times: the run then sits
+  // `running` forever with its job past its attempt cap and `is_available`
+  // false, which is the exact wedge `workflow-lock-sweep.ts` exists to prevent
+  // and cannot cure (it restores availability, never attempts).
+  //
+  // Nothing needs it earlier. `configureWorkflowWorld` above is what must
+  // precede `loadBundle` (it caches the world off the environment); STARTING the
+  // queue is a separate step, and the bundle is loaded before listen either way,
+  // so a 200 from /health still means "ready".
+  //
+  // Gated on the bundle actually declaring workflows: migrating and subscribing
+  // a queue are both expensive and most agents have none. A failure is logged
+  // rather than thrown — the session surface is unaffected, and an agent whose
+  // workflows are broken should still answer the phone.
+  await startWorkflowWorldIfDeclared(state.workflows !== null, world);
 }

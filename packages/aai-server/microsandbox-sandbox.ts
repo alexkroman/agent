@@ -54,17 +54,12 @@
 import { access } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
-import type { NetworkPolicyBuilder } from "microsandbox";
 import { DEFAULT_PORT } from "./constants.ts";
 import { guestImageRef, guestImageRegistry } from "./guest-image-source.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { guestTokenFor } from "./guest-token.ts";
 import { createLogger } from "./logger.ts";
-import {
-  GUEST_EGRESS_DEFAULT,
-  GUEST_INGRESS_DEFAULT,
-  guestEgressRules,
-} from "./microsandbox-network.ts";
+import { _contextInternals, defaultMicrosandboxContext } from "./microsandbox-context.ts";
 import { GUEST_PORT, harnessCode, sandboxBaseTag } from "./modal-context.ts";
 import {
   guestExecBaseEnv,
@@ -264,146 +259,7 @@ export async function microsandboxHarnessImageTag(harnessPath: string): Promise<
   return localHarnessImageTag(sandboxBaseTag(), await harnessCode(harnessPath));
 }
 
-// ── The real context ─────────────────────────────────────────────────────────
-
-/**
- * Adapt one `ExecHandle` to the `GuestProcLike` both spawners consume.
- *
- * The handle is a single async iterable of `{kind}`-tagged events; the host side
- * wants two byte streams plus an exit. The pump NEVER stops early — a guest
- * blocked on a full pipe wedges on its next write, which is the invariant
- * `warm-harness.ts` states for every backend.
- */
-function procFromExec(handle: {
-  [Symbol.asyncIterator](): AsyncIterator<
-    | { kind: "stdout" | "stderr"; data: Uint8Array }
-    | { kind: "exited"; code: number }
-    | { kind: "started"; pid: number }
-  >;
-  kill(): Promise<void>;
-}): MicrosandboxProcLike {
-  let out!: ReadableStreamDefaultController<Uint8Array>;
-  let err!: ReadableStreamDefaultController<Uint8Array>;
-  const stdout = new ReadableStream<Uint8Array>({
-    start: (controller) => {
-      out = controller;
-    },
-  });
-  const stderr = new ReadableStream<Uint8Array>({
-    start: (controller) => {
-      err = controller;
-    },
-  });
-
-  const exit = (async (): Promise<number> => {
-    let code = -1;
-    try {
-      for await (const event of handle) {
-        if (event.kind === "stdout") out.enqueue(event.data);
-        else if (event.kind === "stderr") err.enqueue(event.data);
-        else if (event.kind === "exited") code = event.code;
-      }
-    } catch {
-      // Peer death mid-stream is the exit paths' business, not this pump's.
-    }
-    out.close();
-    err.close();
-    return code;
-  })();
-
-  return {
-    stdout,
-    stderr,
-    wait: () => exit,
-    kill: () => {
-      void handle.kill().catch(() => undefined);
-    },
-  };
-}
-
-/**
- * Map {@link guestEgressRules} onto the SDK's policy builder.
- *
- * Typed against the real `NetworkPolicyBuilder` — the rules being plain data is
- * what lets this be the only place that touches the SDK's shape, with no
- * structural stand-in to bridge and therefore no cast.
- */
-function applyPolicy(
-  builder: NetworkPolicyBuilder,
-  hostPorts: readonly number[],
-): NetworkPolicyBuilder {
-  builder.defaultEgress(GUEST_EGRESS_DEFAULT).defaultIngress(GUEST_INGRESS_DEFAULT);
-  for (const rule of guestEgressRules(hostPorts)) {
-    builder.egress((r) => {
-      for (const protocol of rule.protocols) {
-        if (protocol === "tcp") r.tcp();
-        else r.udp();
-      }
-      if (rule.ports.length > 0) r.ports([...rule.ports]);
-      return r.allow((destination) => destination.group(rule.group));
-    });
-  }
-  return builder;
-}
-
-/**
- * The real microVM context.
- *
- * The SDK is a DYNAMIC import: `aai-server` is compiled into the studio entry
- * every deployment runs, and a static import of a native addon would put a
- * top-level require of it in that bundle. Backend selection cannot reach this
- * backend in production, so the specifier is never evaluated there — while
- * `import type` keeps the shapes above fully checked.
- */
-/**
- * The real microVM context — the default for both spawners.
- *
- * Exported rather than `_internals`-only because the agent spawner lives in its
- * own module now and must default to the SAME context; a second construction
- * there is how the two paths would drift on how a guest is built.
- */
-export function defaultMicrosandboxContext(): MicrosandboxSpawnContext {
-  return {
-    async createSandbox(params) {
-      const { Sandbox, NetworkPolicyBuilder } = await import("microsandbox");
-      let builder = Sandbox.builder(params.name)
-        .image(params.imageRef)
-        // The image is built locally or pulled once; never re-fetched per spawn.
-        .pullPolicy("if-missing")
-        .ephemeral(true)
-        .quietLogs()
-        .envs(params.env)
-        .labels(params.labels)
-        // The published port goes INSIDE `.network()`, and that is not a style
-        // choice: `.network()` replaces the accumulated network config, so a
-        // `.port()` called before it is DISCARDED. The failure is a silent
-        // no-forward — the harness logs `listening on 0.0.0.0:8080` inside the
-        // guest while every host dial gets ECONNREFUSED for the full 30s dial
-        // budget, which reads as a guest that failed to boot.
-        //
-        // Publishes on 127.0.0.1 by default, which is the loopback posture
-        // `subprocess` has to set by hand.
-        .network((network) =>
-          network
-            .port(params.hostPort, GUEST_PORT)
-            .policyFromBuilder(applyPolicy(new NetworkPolicyBuilder(), params.hostPorts)),
-        );
-      if (params.memoryLimitMiB !== undefined) builder = builder.memory(params.memoryLimitMiB);
-      if (params.cpus !== undefined) builder = builder.cpus(params.cpus);
-      const sandbox = await builder.create();
-
-      return {
-        exec: async (command) => {
-          const [cmd, ...args] = command;
-          if (cmd === undefined) throw new Error("empty guest command");
-          return procFromExec(await sandbox.execStream(cmd, args));
-        },
-        writeFile: (path, data) => sandbox.fs().write(path, data),
-        stop: () => sandbox.stop(),
-      };
-    },
-  };
-}
+export { defaultMicrosandboxContext } from "./microsandbox-context.ts";
 
 // ── Warm (control-channel) spawning ──────────────────────────────────────────
 
@@ -478,4 +334,4 @@ export async function spawnMicrosandboxWarm(
   }
 }
 
-export const _internals = { procFromExec, realContext: defaultMicrosandboxContext };
+export const _internals = { ..._contextInternals, realContext: defaultMicrosandboxContext };

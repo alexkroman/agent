@@ -105,6 +105,23 @@ describe("configureWorkflowWorld", () => {
     expect(e.WORKFLOW_POSTGRES_URL).toBe("postgres://x/y");
   });
 
+  test("tells the POSTGRES world our port too, or every dispatch auto-detects it", () => {
+    // The variable is named LOCAL and is read by world-postgres as well: it is
+    // the FIRST branch of that world's own `getExecutionBaseUrl()`, the origin
+    // its queue dispatches `flow` and `step` callbacks to. Unset, it falls
+    // through to `getWorkflowPort()` — health-probe port auto-detection — on
+    // EVERY dispatch.
+    //
+    // Measured before this line existed: ~45ms per dispatch, steady, against
+    // ~7ms of step work and ~1ms for graphile-worker's whole enqueue->handler
+    // path. Two dispatches per step->step hop made it ~90ms of a ~120ms hop, so
+    // a six-step run took ~600ms instead of ~70ms. Nothing errors — which is why
+    // it needs a test rather than a comment.
+    const e = env();
+    configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 41_234, env: e });
+    expect(e.WORKFLOW_LOCAL_BASE_URL).toBe("http://127.0.0.1:41234");
+  });
+
   test("picks the local world with no database", () => {
     const e = env();
     expect(configureWorkflowWorld({ databaseUrl: undefined, port: 3000, env: e })).toBe("local");
@@ -223,17 +240,73 @@ describe("startWorkflowWorldIfDeclared", () => {
     await expect(startWorkflowWorldIfDeclared(false, "postgres")).resolves.toBeUndefined();
   });
 
+  /**
+   * A postgres start that RELIABLY fails, pointed at a closed port.
+   *
+   * The database has to be named explicitly: this suite used to assert a failure
+   * on the premise that "there is no world configured in this process", and that
+   * premise is false — the start SUCCEEDS here, against whatever is on
+   * `localhost:5432`. The old assertion (`errors.length > 0`) passed anyway,
+   * satisfied by the world's OWN migration logging rather than by our catch, so
+   * the failure path it was named for had never run.
+   */
+  function pointAtAClosedPort(): void {
+    // Port 1 is never listening, so `connect` is refused immediately rather than
+    // spending a connect timeout in a 5s tier.
+    vi.stubEnv("WORKFLOW_POSTGRES_URL", "postgres://nobody@127.0.0.1:1/nothing");
+  }
+
   test("reports a failure instead of throwing it", async () => {
-    // There is no world configured in this process, so starting one fails —
-    // which is the case under test. A guest whose workflows cannot start must
-    // still boot and answer the phone.
+    // A guest whose workflows cannot start must still boot and answer the phone.
+    pointAtAClosedPort();
     const errors: unknown[] = [];
     // No `mockRestore()`: `restoreMocks` already restores every `vi.spyOn`
     // before each test, so the call was dead code.
     vi.spyOn(console, "error").mockImplementation((...args) => errors.push(args));
-    await expect(startWorkflowWorldIfDeclared(true, "postgres")).resolves.toBeUndefined();
+    // The waiter is INJECTED rather than virtualised: the retried operation does
+    // real I/O, so fake timers freeze the work the backoff is waiting on and the
+    // loop never advances (verified — both cases hung to the tier timeout).
+    await expect(
+      startWorkflowWorldIfDeclared(true, "postgres", async () => undefined),
+    ).resolves.toBeUndefined();
     // Swallowing it silently would leave an operator with no way to find out.
     expect(errors.length).toBeGreaterThan(0);
+  });
+
+  test("RETRIES a failed start, because its commonest failure is transient", async () => {
+    // A blue-green handover runs two guests against one app role's connection
+    // limit for a few seconds, so the replacement's start can be refused with
+    // `too many connections for role "app_…"`. One attempt made that PERMANENT:
+    // the catch logged and the replacement then served its whole life with no
+    // queue worker, answering `/client-config` and voice sessions normally while
+    // every durable run for the agent was stranded. Measured on a real redeploy
+    // mid-run — see `WORLD_START_BACKOFF_MS`.
+    pointAtAClosedPort();
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((first) => {
+      if (typeof first === "string") lines.push(first);
+    });
+    const waits: number[] = [];
+    await startWorkflowWorldIfDeclared(true, "postgres", async (attempt) => {
+      waits.push(attempt);
+    });
+    // Five waits then a give-up, so six attempts — the budget is BOUNDED: a
+    // genuinely broken world stops rather than spinning against a saturated role.
+    expect(waits).toEqual([0, 1, 2, 3, 4]);
+    expect(lines.filter((l) => l.includes("retrying")).length).toBe(5);
+    expect(lines.filter((l) => l.includes("failed to start")).length).toBe(1);
+  });
+
+  test("does not wait at all when the start succeeds", async () => {
+    // The retry must cost a healthy boot nothing: with real timers this resolves
+    // immediately, which it could not do if any backoff were awaited. `local`
+    // needs no migration and no queue subscription, so it is the shape that
+    // succeeds here.
+    const waits: number[] = [];
+    await startWorkflowWorldIfDeclared(true, "local", async (attempt) => {
+      waits.push(attempt);
+    });
+    expect(waits).toEqual([]);
   });
 });
 

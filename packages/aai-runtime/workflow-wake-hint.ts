@@ -42,13 +42,27 @@
  * `wake_at` is the earliest time this queue may have work a worker can take:
  *
  * - an unlocked job is claimable at its `run_at` (a `sleep()` writes that);
- * - a LOCKED job belongs to some worker — normally this guest, mid-step. If
- *   that worker's container dies mid-step the job stays locked, and
- *   graphile-worker only lets another worker rescue it after its 4-hour job
- *   expiry ({@link GRAPHILE_JOB_EXPIRY}). So a locked job's claimable time is
- *   `locked_at + 4h`, which is the honest worst case for a lost step. In
- *   practice a boot for any other reason repairs it much sooner, because the
- *   Postgres world's `start()` re-enqueues active runs;
+ * - a LOCKED job is claimable at its `locked_at`, i.e. **now**. That is not
+ *   graphile-worker's answer — it lets no OTHER worker rescue a locked job until
+ *   its 4-hour job expiry ({@link GRAPHILE_JOB_EXPIRY}) — and publishing that
+ *   4-hour answer is a DEADLOCK against our own recovery, measured end to end:
+ *   `workflow-lock-sweep.ts` clears a dead worker's locks and re-enqueues active
+ *   runs, and it runs at GUEST STARTUP, so a boot is precisely what makes such a
+ *   job claimable. Telling the platform "nothing for four hours" is telling it
+ *   not to do the one thing that would fix this. Reproduced: SIGKILL a guest
+ *   mid-step, hint goes to `locked_at + 4h`, and the run sits `running` with no
+ *   wake — while the very same kill a few seconds earlier (hint still on the
+ *   unlocked branch) recovered within one sweep.
+ *
+ *   So the two cases collapse: a locked job means "a process was needed here",
+ *   and on this platform the remedy for both a live one and a dead one is the
+ *   same broker call. If the worker is ALIVE its sandbox is alive — a workflow
+ *   callback counts as busy, so it is not idle-evicted — and `brokerSessionUrl`
+ *   serves that resident rather than spawning, i.e. the wake is a no-op bounded
+ *   by `WORKFLOW_WAKE_RETRY_MS` (10 min per slug). If it is DEAD, the boot runs
+ *   the sweep and the step is redelivered. This is the module's own "publishing
+ *   early is safe; publishing late strands a run" applied to the one case that
+ *   was still publishing late;
  * - a job past `max_attempts` is permanently failed and counts for NOTHING.
  *   Left in, its `run_at` is forever in the past, so the platform would boot a
  *   sandbox for it every sweep, for the life of the agent.
@@ -96,6 +110,13 @@ export const WORKFLOW_WAKE_TABLE = "aai_workflow_wake";
  */
 export const GRAPHILE_JOB_EXPIRY = "4 hours";
 
+/**
+ * Kept, though the hint no longer publishes it: it is the window a LOST step
+ * stays lost for if nothing boots a guest, which is what makes the wake sweep
+ * load-bearing rather than an optimization. See the locked-job case above for
+ * why publishing it as `wake_at` deadlocked the recovery it describes.
+ */
+
 /** Where the DevKit's graphile-worker queue lives (its default schema). */
 const QUEUE_TABLE = "graphile_worker.jobs";
 
@@ -136,7 +157,7 @@ const PUBLISH_SQL = `insert into ${WORKFLOW_WAKE_TABLE} (id, wake_at, updated_at
 select true,
        (select min(case
                      when j.locked_at is null then j.run_at
-                     else j.locked_at + interval '${GRAPHILE_JOB_EXPIRY}'
+                     else j.locked_at
                    end)
         from ${QUEUE_TABLE} j
         where j.attempts < j.max_attempts),

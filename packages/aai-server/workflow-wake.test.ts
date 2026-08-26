@@ -265,6 +265,29 @@ describe("createWorkflowWakeSweep", () => {
     expect(wake).toHaveBeenCalledTimes(1);
   });
 
+  test("a refused broker is REPORTED as failed, even though it counts as an attempt", async () => {
+    // The summary line is all an operator reads, and it used to say
+    // `woken: 1, skipped: 0` over a spawn that failed deterministically and
+    // would keep failing — after which the backoff suppressed the retry, so a
+    // permanently unreachable agent looked like a working sweep. Measured
+    // against a real dev server: a SIGKILLed microVM left its sandbox name
+    // claimed, every later spawn answered `sandbox already exists`, and this
+    // line reported success for ten minutes.
+    const { sweep } = sweepWith({
+      hints: { wedged: past },
+      wake: () => Promise.resolve({ ok: false, status: 503 }),
+      now: () => 1000,
+    });
+
+    const pass = await sweep.sweepOnce();
+    expect(pass).toMatchObject({ due: 1, woken: ["wedged"], skipped: 0, failed: 1 });
+  });
+
+  test("a served broker reports failed: 0", async () => {
+    const { sweep } = sweepWith({ hints: { healthy: past }, now: () => 1000 });
+    expect(await sweep.sweepOnce()).toMatchObject({ woken: ["healthy"], failed: 0 });
+  });
+
   test("backs off a woken slug, then wakes it again once the window passes", async () => {
     // The bound on a wake LOOP: a guest that boots and cannot run its world
     // never rewrites the hint, so its slug stays due forever.

@@ -39,6 +39,7 @@ import { join } from "node:path";
 import {
   APP_DB_WORLD_POOL_MAX,
   APP_DB_WORLD_WORKER_CONCURRENCY,
+  sleep,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { claimPoolPresenceAndSweep } from "./workflow-lock-sweep.ts";
@@ -133,6 +134,23 @@ export function configureWorkflowWorld(opts: {
   const supplied = env[TARGET_WORLD_ENV];
   if (supplied) return classifySuppliedWorld(supplied);
 
+  // BOTH worlds, and the name is the trap: `WORKFLOW_LOCAL_BASE_URL` reads like
+  // a local-world setting and is the first branch of world-postgres's own
+  // `getExecutionBaseUrl()` — the origin its queue dispatches `flow` and `step`
+  // callbacks to. Unset, that function falls through to `getWorkflowPort()`,
+  // which AUTO-DETECTS the port by health-probing, on EVERY dispatch.
+  //
+  // Measured: ~45ms per dispatch, rock-steady (41-52ms across a run), against
+  // ~7ms of actual step work and ~1ms for graphile-worker's whole
+  // enqueue->handler path. A step->step hop is two dispatches, so this was ~90ms
+  // of a ~120ms hop — roughly 40% of a durable workflow's entire latency, spent
+  // rediscovering a constant. A six-step run went 1.3-1.7s to ~0.4s.
+  //
+  // Loopback, not the bind host: this URL is only ever dialled by this process
+  // (the `flow`/`step` routes are `guest-internal` — see
+  // `aai-server/guest-routes.ts`). `??=` so an operator can still override.
+  env[LOCAL_BASE_URL_ENV] ??= `http://127.0.0.1:${opts.port}`;
+
   if (opts.databaseUrl) {
     // RESOLVED, never the bare name: the DevKit `require`s this value from its own
     // compiled artifact in `tmpdir()`, where nothing resolves — see
@@ -152,8 +170,6 @@ export function configureWorkflowWorld(opts: {
   }
 
   env[TARGET_WORLD_ENV] = "local";
-  // Loopback, not the bind host: this URL is only ever dialled by this process.
-  env[LOCAL_BASE_URL_ENV] ??= `http://127.0.0.1:${opts.port}`;
   env[LOCAL_DATA_DIR_ENV] ??= opts.dataDir ?? defaultLocalDataDir();
   return "local";
 }
@@ -202,6 +218,36 @@ function defaultLocalDataDir(): string {
 export function localWorkflowDataDir(env: NodeJS.ProcessEnv = process.env): string {
   return env[LOCAL_DATA_DIR_ENV] ?? defaultLocalDataDir();
 }
+
+/**
+ * Backoff between world-start attempts, and therefore the whole retry budget
+ * (~62s across five retries).
+ *
+ * **The start's commonest failure is TRANSIENT BY CONSTRUCTION, and one attempt
+ * made it permanent.** A blue-green handover boots the replacement while the old
+ * guest drains, so for a few seconds two guests share the app role's
+ * `APP_DB_CONNECTION_LIMIT` — a boundary `aai/sdk/app-db-budget.ts` states
+ * outright ("two guests both at peak can still be refused"). What it does not
+ * say, because it is this function's business, is what being refused COST:
+ * `migrateAndSubscribe` ran once, the catch below logged, and the replacement
+ * then served its entire life with NO QUEUE WORKER — while answering
+ * `/client-config` and voice sessions normally, so nothing looked wrong and
+ * every durable run for that agent was stranded until some other boot happened.
+ *
+ * Measured on a redeploy during a run: the replacement logged `too many
+ * connections for role "app_…"` 300ms after listening, the old guest exited 24s
+ * later, and a flow job that came due 15s after THAT sat unlocked, `attempts
+ * 0/3`, claimable, with a live guest that was not polling — for as long as the
+ * agent stayed up.
+ *
+ * So the budget is left alone and the LOSER retries instead. The window covers
+ * a draining predecessor's exit (24s in that trace) with room to spare, and the
+ * doubling keeps a genuinely broken world from hammering a saturated role.
+ * Exhausting it still logs and RETURNS rather than throwing, which is the
+ * original contract and the right one: an agent whose workflows are broken
+ * should still answer the phone.
+ */
+const WORLD_START_BACKOFF_MS = [2000, 4000, 8000, 16_000, 32_000] as const;
 
 /**
  * Prepare the configured world to run: migrate it, then subscribe to its queue.
@@ -388,12 +434,35 @@ async function migratePostgresWorld(): Promise<void> {
 export async function startWorkflowWorldIfDeclared(
   hasWorkflows: boolean,
   kind: WorldKind,
+  /**
+   * The wait between attempts. TEST-ONLY SEAM, and it has to be one: the
+   * operation being retried does real I/O (`setupDatabase` spawns, the driver
+   * connects), so `vi.useFakeTimers()` freezes the very work the retry is
+   * waiting on and the loop never advances — verified, both cases hung to the
+   * tier timeout. Same precedent as `heardNow` and `speechIdleTimeoutMs`.
+   */
+  waitMs: (attempt: number) => Promise<void> = (attempt) =>
+    sleep(WORLD_START_BACKOFF_MS[attempt] ?? 0),
 ): Promise<void> {
   if (!hasWorkflows) return;
   console.error(`harness starting ${kind} workflow world`);
-  try {
-    await migrateAndSubscribe(kind);
-  } catch (err: unknown) {
-    console.error(`Workflow world (${kind}) failed to start:`, errorMessage(err));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await migrateAndSubscribe(kind);
+      if (attempt > 0) {
+        console.error(`Workflow world (${kind}) started on attempt ${attempt + 1}`);
+      }
+      return;
+    } catch (err: unknown) {
+      const last = attempt >= WORLD_START_BACKOFF_MS.length;
+      console.error(
+        last
+          ? `Workflow world (${kind}) failed to start:`
+          : `Workflow world (${kind}) start attempt ${attempt + 1} failed, retrying:`,
+        errorMessage(err),
+      );
+      if (last) return;
+      await waitMs(attempt);
+    }
   }
 }

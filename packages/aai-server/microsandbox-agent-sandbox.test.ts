@@ -152,6 +152,41 @@ describe("spawnMicrosandboxAgentServer", () => {
     await handle.shutdown();
   });
 
+  it("rewrites the UPLOAD BROKER url but not the public base, and opens the platform's port", async () => {
+    // The two boot keys carry the SAME value under different names because
+    // their claims differ (see `agentBootEnv`), and under a microVM those
+    // claims point OPPOSITE ways: the guest DIALS the broker (`writeUpload`
+    // PUTs byte windows to `<broker>/uploads/<id>/<offset>`), while the public
+    // base is what a third party is handed by `publicWebhookUrl`. Unrewritten,
+    // the broker was the guest's own harness — every workflow upload failed,
+    // measured in a real guest as `TypeError: fetch failed`, and slowly: a
+    // guest dialing itself hangs out the 120s byte-op timeout.
+    vi.stubEnv("AAI_PUBLIC_ORIGIN", "http://127.0.0.1:8080");
+    const fake = makeCtx();
+    const handle = await spawnMicrosandboxAgentServer(
+      {
+        harnessPath: await makeHarnessFile(),
+        slug: "demo",
+        name: "agent-demo-v5",
+        worker: { kind: "inline", code: "// worker", sha256: "abc" },
+        agentEnv: { DATABASE_URL: "postgresql://app@127.0.0.1:54322/app" },
+      },
+      fake.ctx,
+      okFetch(),
+    );
+
+    const env = fake.created[0]?.env ?? {};
+    expect(env.AAI_UPLOAD_BROKER_URL).toBe(`http://${HOST_ALIAS}:8080/demo`);
+    // NOT rewritten: the alias resolves nowhere outside a microVM, so a webhook
+    // URL minted from it is unreachable for exactly the caller it is for.
+    expect(env.AAI_PUBLIC_BASE_URL).toBe("http://127.0.0.1:8080/demo");
+    // 8080 is the platform's own port, and it arrives via the rewrite rather
+    // than a maintained list — the studio spawner adds `platformHostPort()` by
+    // hand because a warm guest holds no DSN to derive one from.
+    expect(fake.created[0]?.hostPorts).toEqual([8080, 54_322]);
+    await handle.shutdown();
+  });
+
   it("writes the bundle before the exec, and only when it holds the bytes", async () => {
     const fake = makeCtx();
     const handle = await spawnMicrosandboxAgentServer(

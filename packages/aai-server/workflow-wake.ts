@@ -186,10 +186,27 @@ export type WorkflowWakeResult = {
   candidates: number;
   /** Of those, hints that were due. */
   due: number;
-  /** Slugs a sandbox was brokered for. */
+  /**
+   * Slugs an ATTEMPT was made for, which is not the same as slugs now running:
+   * a 503 counts (see {@link wakeOne}). {@link failed} is how many of these the
+   * broker refused.
+   */
   woken: string[];
   /** Due slugs left for a later tick: backoff, the per-tick cap, or a 404. */
   skipped: number;
+  /**
+   * Of {@link woken}, how many the broker did NOT serve.
+   *
+   * Reported because the summary line is the only thing an operator reads, and
+   * without this it said `woken: 1, skipped: 0` over a spawn that failed
+   * DETERMINISTICALLY and would keep failing — the backoff then suppressing the
+   * retry, so a permanently unreachable agent looked like a working sweep. (The
+   * case was a microVM name left claimed by a SIGKILLed guest; see
+   * `createReclaimingName` in microsandbox-sandbox.ts.) A non-zero count here is
+   * not itself an error — a booting sandbox is a 503 — but a count that stays
+   * non-zero tick after tick is the shape of one.
+   */
+  failed: number;
 };
 
 const EMPTY_PASS: WorkflowWakeResult = {
@@ -198,6 +215,7 @@ const EMPTY_PASS: WorkflowWakeResult = {
   due: 0,
   woken: [],
   skipped: 0,
+  failed: 0,
 };
 
 /**
@@ -274,18 +292,50 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
    * A 404 does NOT: the agent is gone, there is nothing to back off from, and its
    * schema goes with the orphan sweep.
    */
-  async function wakeOne(slug: string, at: number): Promise<boolean> {
+  async function wakeOne(slug: string, at: number): Promise<"served" | "failed" | "skip"> {
     const brokered = await wake(slug).catch((err: unknown) => {
       log.warn("wake failed", { slug, error: errorMessage(err) });
       return { ok: false, status: 503 } as BrokeredSession;
     });
     if (!brokered.ok && brokered.status === 404) {
       log.debug("Due workflow hint for an agent with no bundle; not waking", { slug });
-      return false;
+      return "skip";
     }
     lastWoken.set(slug, at);
     log.debug("Woke a sandbox for due workflow work", { slug, ok: brokered.ok });
-    return true;
+    return brokered.ok ? "served" : "failed";
+  }
+
+  /**
+   * Wake every due slug this tick will reach, and account for the rest.
+   *
+   * Extracted from `sweepOnce` so each has one job — that function reads, this
+   * one decides per slug — which also keeps `sweepOnce` under the complexity
+   * limit rather than growing a third counter into it.
+   */
+  async function wakeDue(
+    due: readonly string[],
+    at: number,
+  ): Promise<{ woken: string[]; skipped: number; failed: number }> {
+    const woken: string[] = [];
+    let skipped = 0;
+    let failed = 0;
+    for (const slug of due) {
+      if (woken.length >= maxPerTick || suppressed(slug, at)) {
+        skipped += 1;
+        continue;
+      }
+      // The cap counts ATTEMPTS, so a refused broker still consumes one: it
+      // spent the same work, and retrying it inside this tick is what the
+      // per-slug backoff exists to prevent.
+      const outcome = await wakeOne(slug, at);
+      if (outcome === "skip") skipped += 1;
+      else {
+        woken.push(slug);
+        if (outcome === "failed") failed += 1;
+      }
+    }
+    return { woken, skipped, failed };
   }
 
   async function sweepOnce(): Promise<WorkflowWakeResult> {
@@ -311,18 +361,7 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
 
     const at = now();
     pruneBackoff(at);
-    const woken: string[] = [];
-    let skipped = 0;
-
-    for (const slug of read.due) {
-      if (woken.length >= maxPerTick || suppressed(slug, at)) {
-        skipped += 1;
-      } else if (await wakeOne(slug, at)) {
-        woken.push(slug);
-      } else {
-        skipped += 1;
-      }
-    }
+    const { woken, skipped, failed } = await wakeDue(read.due, at);
 
     if (read.due.length > 0) {
       log.debug("Workflow wake sweep", {
@@ -330,9 +369,17 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
         due: read.due.length,
         woken: woken.length,
         skipped,
+        failed,
       });
     }
-    return { swept: true, candidates: read.candidates, due: read.due.length, woken, skipped };
+    return {
+      swept: true,
+      candidates: read.candidates,
+      due: read.due.length,
+      woken,
+      skipped,
+      failed,
+    };
   }
 
   // Serialized rather than overlapped, and unref'd — `_interval-sweep.ts` owns

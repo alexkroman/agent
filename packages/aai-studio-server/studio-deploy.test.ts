@@ -45,6 +45,9 @@ const PARAMS = {
   scope: SCOPE,
   project: "my-agent",
   serverUrl: "https://platform.example",
+  // Equal to `serverUrl` on every backend but the local microVM one; the case
+  // where they differ has its own test below.
+  browserUrl: "https://platform.example",
 };
 
 async function seedProject(deps: StudioDeployDeps, project: string, deployedSlug?: string) {
@@ -120,6 +123,51 @@ describe("deployStudioProject", () => {
     // No metadata stamped for a failed publish.
     const ws = await getWorkspace(deps.workspaces, SCOPE, "my-agent");
     expect(ws?.deployedSlug).toBeUndefined();
+  });
+
+  // The guest is handed an origin it can DIAL, which under the microVM backend
+  // is a name resolvable only inside a VM — and the CLI prints it into the one
+  // place a publish reports itself. Measured before the fix: `Deployed
+  // http://host.microsandbox.internal:8080/my-agent` in the Publish menu.
+  const GUEST_ORIGIN = "http://host.microsandbox.internal:8080";
+  const VM_PARAMS = { ...PARAMS, serverUrl: GUEST_ORIGIN };
+
+  test("translates the guest-dialable origin back to the browser's", async () => {
+    const deps = makeDeps({
+      deployWorkspace: fakeDeployWorkspace({
+        output: `Deployed ${GUEST_ORIGIN}/my-agent\nslug: my-agent`,
+      }),
+    });
+    await seedProject(deps, "my-agent");
+    const result = await deployStudioProject(deps, VM_PARAMS);
+    expect(result).toMatchObject({
+      ok: true,
+      output: "Deployed https://platform.example/my-agent\nslug: my-agent",
+    });
+  });
+
+  test("translates it in a FAILURE too — an error names the origin it could not reach", async () => {
+    const deps = makeDeps({
+      deployWorkspace: async () => ({
+        ok: false,
+        output: `deploy failed: could not reach ${GUEST_ORIGIN}/deploy`,
+      }),
+    });
+    await seedProject(deps, "my-agent");
+    const result = await deployStudioProject(deps, VM_PARAMS);
+    expect(result).toEqual({
+      ok: false,
+      error: "deploy failed: could not reach https://platform.example/deploy",
+    });
+  });
+
+  test("leaves output untouched when the two origins agree", async () => {
+    const deps = makeDeps();
+    await seedProject(deps, "my-agent");
+    const result = await deployStudioProject(deps, PARAMS);
+    expect(result).toMatchObject({
+      output: "Deployed https://platform.example/my-agent\nslug: my-agent",
+    });
   });
 
   test("does not revert files written during the deploy", async () => {

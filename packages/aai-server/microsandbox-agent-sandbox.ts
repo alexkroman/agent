@@ -90,8 +90,40 @@ export async function spawnMicrosandboxAgentServer(
         ? rewriteLoopbackForGuest({ url: opts.worker.url })
         : { env: {}, hostPorts: [] };
     const bundleUrl = worker.env.url;
+
+    const boot = agentBootEnv({
+      slug: opts.slug,
+      token,
+      port: GUEST_PORT,
+      bundle: bundleUrl === undefined ? { path: AGENT_BUNDLE_REMOTE_PATH } : { url: bundleUrl },
+      bundleSha256: opts.worker.sha256,
+      envPath: AGENT_ENV_REMOTE_PATH,
+    });
+
+    // And `AAI_UPLOAD_BROKER_URL` is the THIRD URL in this boot env the guest
+    // DIALS: `writeUpload` PUTs every byte window to
+    // `<broker>/uploads/<id>/<offset>`. Its twin `AAI_PUBLIC_BASE_URL` carries
+    // the SAME value and is deliberately NOT rewritten — that one is what a
+    // third party is handed (`ctx.workflows.publicWebhookUrl`), so the alias
+    // would be unreachable for precisely the caller it exists for. Same value,
+    // opposite requirement; `agentBootEnv` argues why one key cannot serve both.
+    //
+    // Unrewritten, this pointed at the guest's own harness, which serves no
+    // `/uploads` route — so EVERY workflow upload failed, and failed slowly: a
+    // guest dialing itself hangs out `BYTE_OP_TIMEOUT_MS` (120s) per byte op
+    // rather than refusing. The port comes along with the rewrite, which is
+    // what opens the platform's own port for an agent guest at all — the studio
+    // spawner adds `platformHostPort()` by hand because a warm guest holds no
+    // DSN to derive one from; here the derivation covers it.
+    const broker =
+      boot.AAI_UPLOAD_BROKER_URL === undefined
+        ? { env: {}, hostPorts: [] }
+        : rewriteLoopbackForGuest({ AAI_UPLOAD_BROKER_URL: boot.AAI_UPLOAD_BROKER_URL });
+
     // One port set for the policy, from every value that was rewritten.
-    const hostPorts = [...new Set([...envPorts, ...worker.hostPorts])].sort((a, b) => a - b);
+    const hostPorts = [...new Set([...envPorts, ...worker.hostPorts, ...broker.hostPorts])].sort(
+      (a, b) => a - b,
+    );
 
     const sandbox = await ctx.createSandbox({
       imageRef: microsandboxImageRef(await harnessCode(opts.harnessPath)),
@@ -100,14 +132,8 @@ export async function spawnMicrosandboxAgentServer(
       env: {
         ...guestExecBaseEnv(),
         ...guestBuildEnv(),
-        ...agentBootEnv({
-          slug: opts.slug,
-          token,
-          port: GUEST_PORT,
-          bundle: bundleUrl === undefined ? { path: AGENT_BUNDLE_REMOTE_PATH } : { url: bundleUrl },
-          bundleSha256: opts.worker.sha256,
-          envPath: AGENT_ENV_REMOTE_PATH,
-        }),
+        ...boot,
+        ...broker.env,
       },
       hostPorts,
       memoryLimitMiB: limits.memoryLimitMiB ?? DEFAULT_GUEST_MEMORY_MIB,

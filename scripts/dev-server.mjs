@@ -337,10 +337,27 @@ if (PRINT_ONLY) {
   // will the server see" is the only question worth answering here, and a
   // `.env`-supplied database would be invisible in a diff of the additions.
   const effective = { ...process.env, ...localDev, ...platform.env };
-  for (const name of ["AAI_LOCAL_DEV", ...Object.keys(PLATFORM_ENV), "SUPABASE_STORAGE_BUCKET"]) {
+  // `PLATFORM_POOLER_URL` is NOT in `PLATFORM_ENV` — it is derived from
+  // `config.toml` rather than read out of `supabase status` — so a fixed loop
+  // over that map's keys omitted the one variable that decides whether the admin
+  // pool MULTIPLEXES. It was being set correctly and reported nowhere, which is
+  // the same failure shape as a gate that checks nothing: the mode this script
+  // exists to answer questions in gave the wrong answer to "are we pooling?".
+  const names = [
+    "AAI_LOCAL_DEV",
+    ...Object.keys(PLATFORM_ENV),
+    "PLATFORM_POOLER_URL",
+    "APP_DB_POOLER_URL",
+    "SUPABASE_STORAGE_BUCKET",
+  ];
+  for (const name of names) {
     const value = effective[name];
     // A URL and a bucket name are safe to print; the two keys are not.
     if (value) console.log(`${name}=${name.endsWith("_KEY") ? "<set>" : value}`);
+    // An ABSENT pooler URL is the interesting state, and the only one with a
+    // consequence worth naming here: unset means DIRECT connections, which the
+    // connection budget does not account for (the server warns at boot too).
+    else if (name.endsWith("_POOLER_URL")) console.log(`${name}=<unset — DIRECT connections>`);
   }
   // NOT started here — it holds a connection and an endpoint that runs DDL, and
   // `--print` answers a question rather than running anything. Named instead,

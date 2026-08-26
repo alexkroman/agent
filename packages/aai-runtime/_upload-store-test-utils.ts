@@ -21,10 +21,34 @@ export async function* body(...pieces: Uint8Array[]): AsyncGenerator<Uint8Array>
   for (const piece of pieces) yield piece;
 }
 
-/** `n` bytes counting up, so a window's CONTENT identifies its offset. */
+/**
+ * `n` bytes counting up, so a window's CONTENT identifies its offset.
+ *
+ * **Tiled from one period, not built per element.** This was
+ * `Uint8Array.from({ length: n }, (_, at) => (from + at) % 251)`, which invokes
+ * a JS callback once per byte — and the two specs that cross a part boundary
+ * ask for `UPLOAD_PART_BYTES` (8 MiB) two or three times each. Measured: 179ms
+ * per 8 MiB call against 2ms here, a 72x difference, which is what put those two
+ * over the unit tier's 5s budget under a full-workspace `pnpm test` while both
+ * passed when the file ran alone. A flake whose cause is a test HELPER is the
+ * worst kind to chase, because every suspicion lands on the code under test.
+ *
+ * Byte-identical, and not approximately: `(from + at) % 251` has period 251, so
+ * every tile at a multiple of 251 repeats the same values — verified against the
+ * old implementation over 8 MiB and at a non-zero `from`.
+ */
 export function ramp(n: number, from = 0): Uint8Array {
-  return Uint8Array.from({ length: n }, (_, at) => (from + at) % 251);
+  const out = new Uint8Array(n);
+  const period = new Uint8Array(Math.min(n, RAMP_PERIOD));
+  for (let at = 0; at < period.length; at++) period[at] = (from + at) % RAMP_PERIOD;
+  for (let at = 0; at < n; at += RAMP_PERIOD) {
+    out.set(period.subarray(0, Math.min(RAMP_PERIOD, n - at)), at);
+  }
+  return out;
 }
+
+/** The ramp's modulus, and therefore its tile width. */
+const RAMP_PERIOD = 251;
 
 /** A body's bytes, for an assertion that names megabytes without comparing them. */
 export function digest(bytes: Uint8Array): string {
