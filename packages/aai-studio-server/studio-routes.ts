@@ -230,6 +230,10 @@ export function createStudioRoutes(options: StudioRouteOptions): {
 
   studio.post("/projects/:project/deploy", async (c) => {
     const { scope, project } = c.var;
+    // Optional, defensive: an older CLI sends no body at all, and Publish has
+    // no other body fields, so anything unparsable reads as "run the tsc gate".
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const skipTypecheck = (body as { skipTypecheck?: unknown }).skipTypecheck === true;
     const result = await deploy(
       {
         workspaces: c.env.workspaces,
@@ -250,6 +254,7 @@ export function createStudioRoutes(options: StudioRouteOptions): {
         // the second. See `requestBrowserOrigin`.
         serverUrl: requestPublicOrigin(c),
         browserUrl: requestBrowserOrigin(c),
+        skipTypecheck,
       },
     );
     if (!result.ok) return c.json({ error: result.error }, 400);

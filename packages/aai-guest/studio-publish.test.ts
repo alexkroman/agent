@@ -203,6 +203,30 @@ describe("deployWorkspaceDir", () => {
     expect(await readArgv()).toContain("--allow-preview-slug");
   });
 
+  test("skipTypecheck rides through as --skipTypecheck, and is absent by default", async () => {
+    const dir = await makeDir();
+    const off = await makeArgvRecordingCli();
+    await deployWorkspaceDir(dir, {
+      serverUrl: "https://x.test",
+      apiKey: "k",
+      cliEntry: off.cliEntry,
+    });
+    // Absent by default: the in-sandbox `aai deploy` runs its tsc gate, so a
+    // Publish that never asked to skip it still typechecks.
+    expect(await off.readArgv()).not.toContain("--skipTypecheck");
+
+    const on = await makeArgvRecordingCli();
+    await deployWorkspaceDir(dir, {
+      serverUrl: "https://x.test",
+      apiKey: "k",
+      skipTypecheck: true,
+      cliEntry: on.cliEntry,
+    });
+    // Present: this is what makes `aai publish --skipTypecheck` actually skip
+    // the gate instead of the in-sandbox deploy re-running it unconditionally.
+    expect(await on.readArgv()).toContain("--skipTypecheck");
+  });
+
   test("a CLI error result surfaces its message and hint", async () => {
     const dir = await makeDir();
     const cliEntry = await makeFakeCli({

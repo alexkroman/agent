@@ -150,6 +150,31 @@ describe("studio publish (workspace/deploy)", () => {
     }
   });
 
+  test("skipTypecheck rides the workspace/deploy frame; omitted by default", async () => {
+    const target = { serverUrl: "https://platform.example", apiKey: "caller-key" };
+
+    const off = fakeGuest();
+    const offBroker = await makeBroker([off]);
+    await offBroker.broker.deployWorkspace(SCOPE, PROJECT, { "agent.ts": "// v1" }, target);
+    const offFrame = off.requests.find((r) => r.method === "workspace/deploy");
+    // Undefined by default (JSON-RPC drops it on the wire), so the guest's
+    // `aai deploy` runs its tsc gate as before.
+    expect((offFrame?.params as { skipTypecheck?: unknown })?.skipTypecheck).toBeUndefined();
+    await offBroker.broker.dispose();
+
+    const on = fakeGuest();
+    const onBroker = await makeBroker([on]);
+    await onBroker.broker.deployWorkspace(
+      SCOPE,
+      PROJECT,
+      { "agent.ts": "// v1" },
+      { ...target, skipTypecheck: true },
+    );
+    const onFrame = on.requests.find((r) => r.method === "workspace/deploy");
+    expect(onFrame?.params).toMatchObject({ skipTypecheck: true });
+    await onBroker.broker.dispose();
+  });
+
   test("a failing afterDeploy never turns a shipped deploy into an error", async () => {
     // The CLI output is already on its way to the chat; reporting a transport
     // failure over a follow-up would be a lie about what happened.

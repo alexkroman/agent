@@ -119,6 +119,13 @@ const DeployParamsSchema = z.object({
    * reads as "production", the safe default).
    */
   allowPreviewSlug: z.boolean().optional(),
+  /**
+   * `--skipTypecheck`: deploy without the in-sandbox `tsc` gate. Additive and
+   * optional — an older host that never sends it typechecks as before (absent
+   * reads as "run the gate", the safe default). Mirrors `aai deploy`'s own
+   * flag, so a studio Publish and a laptop deploy honor it identically.
+   */
+  skipTypecheck: z.boolean().optional(),
 });
 
 /**
@@ -150,9 +157,9 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
     case "workspace/deploy": {
       const params = parseParams(req, DeployParamsSchema);
       if (params === null) break;
-      const { files, serverUrl, apiKey, slug, allowPreviewSlug } = params;
+      const { files, serverUrl, apiKey, slug, allowPreviewSlug, skipTypecheck } = params;
       const result = await withBuildDir(files, materializeWorkspace, (dir) =>
-        deployWorkspaceDir(dir, { serverUrl, apiKey, slug, allowPreviewSlug }),
+        deployWorkspaceDir(dir, { serverUrl, apiKey, slug, allowPreviewSlug, skipTypecheck }),
       );
       sendResponse(req.id, result);
       break;

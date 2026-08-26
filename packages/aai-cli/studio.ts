@@ -13,6 +13,7 @@
  * production.
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isRecord } from "@alexkroman1/aai/utils";
@@ -174,6 +175,22 @@ async function pushProject(opts: {
   if (Object.keys(files).length === 0) {
     throw new Error("Nothing to push — this directory has no project files.");
   }
+  // The worker entry imports `../agent.ts`, so a tree missing it cannot build.
+  // `collectSourceFiles` DROPS a file that is over the byte cap or not UTF-8
+  // and only WARNS — and `log.warn` is silenced in JSON mode — so an oversized
+  // agent.ts left `push` reporting success and the server, handed a tree with
+  // no entry, answered a confusing `No agent.ts found in the current directory`.
+  // Fail here with the real reason. Scoped to a file that EXISTS on disk but
+  // did not sync: a directory with genuinely no agent.ts is left to the
+  // server's own check (it may be a sync-only push the studio completes).
+  if (!files["agent.ts"] && existsSync(path.join(opts.cwd, "agent.ts"))) {
+    const reason = warnings.find((w) => w.startsWith("agent.ts "));
+    throw new CliError(
+      "entry_not_synced",
+      reason ?? "agent.ts exists locally but was not synced.",
+      "The entry file must sync to deploy — reduce its size or fix its encoding.",
+    );
+  }
 
   let project = config?.studioProject;
   let baseHash = config?.studioSourceHash;
@@ -305,7 +322,9 @@ export async function executePublish(opts: {
   // incident `checkedResponse` is named after; the other four response shapes
   // now go through the same helper.
   const result = checkedResponse(
-    await publishStudioProject(serverUrl, apiKey, project),
+    await publishStudioProject(serverUrl, apiKey, project, {
+      skipTypecheck: opts.skipTypecheck,
+    }),
     (value): value is { slug: string; output: string } =>
       isRecord(value) && typeof value.slug === "string" && typeof value.output === "string",
     `the publish route at ${serverUrl}`,
