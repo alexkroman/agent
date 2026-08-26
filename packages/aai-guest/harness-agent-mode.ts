@@ -44,6 +44,7 @@ import { emptyHarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts"
 import { bundleSourceOf, readVerifiedBundle } from "./harness-bundle-source.ts";
 import { guestLogBuffer, parseLogQuery } from "./harness-logs.ts";
 import { guestSdkVersion } from "./harness-sdk-version.ts";
+import { gateDirectWorkflowDial } from "./harness-workflow-gate.ts";
 import { AGENT_IDLE_EXIT_MS, AGENT_IDLE_POLL_MS, GUEST_CONTRACT_VERSION } from "./limits.ts";
 
 // ---- Boot artifacts ----------------------------------------------------------
@@ -263,6 +264,8 @@ export function createAgentRequestHandler(deps: {
       deps.activity?.begin(res);
       return true;
     }
+    // Refuse a direct tunnel dial of the workflow API — it skips the platform's rate limiters (see harness-workflow-gate.ts); falls through on success.
+    if (gateDirectWorkflowDial(req, res, url, deps.manage.token)) return true;
     return manage(req, res, url, method);
   };
 }

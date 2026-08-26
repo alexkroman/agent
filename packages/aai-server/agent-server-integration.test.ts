@@ -13,10 +13,12 @@ import pTimeout from "p-timeout";
 import { afterAll, describe, expect, test, vi } from "vitest";
 import { resolveHarnessPath } from "./constants.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
+import { guestTokenFor } from "./guest-token.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { spawnSubprocessAgentServer } from "./subprocess-sandbox.ts";
 import { captureLogs } from "./test-utils.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
+import { GUEST_PROXY_TOKEN_HEADER } from "./workflow-proxy-constants.ts";
 
 /**
  * How long the drain spec waits for the guest to notice and exit — many
@@ -99,6 +101,38 @@ describe("agent-server contract (real harness, no mocks)", () => {
     // Public surfaces stay public.
     const health = await fetch(guestHttpUrl(origin, GUEST_ROUTES.health));
     expect(health.status).toBe(200);
+  }, 60_000);
+
+  test("the workflow API refuses a DIRECT tunnel dial, but not the platform's", async () => {
+    // The finding this fixes: `/client-config` hands the sandbox tunnel URL to
+    // browsers, so anyone could dial `/workflows` straight on the tunnel and skip
+    // the platform's per-IP run limiters. The guest now requires the manage bearer
+    // in GUEST_PROXY_TOKEN_HEADER — which only the platform's proxy injects.
+    const handle = await spawnAgent();
+    const origin = handle.sessionUrl.replace("/websocket", "");
+    const workflowsUrl = guestHttpUrl(origin, GUEST_ROUTES.workflows);
+    // The subprocess backend derives AAI_GUEST_TOKEN the same way the platform
+    // does, from the sandbox name spawnAgent passed.
+    const proxyToken = guestTokenFor("agent-integration-v1");
+
+    // A direct dial (no proxy header) is refused before it reaches the runtime.
+    const direct = await fetch(workflowsUrl);
+    expect(direct.status).toBe(401);
+
+    // A forged token is refused too.
+    const forged = await fetch(workflowsUrl, {
+      headers: { [GUEST_PROXY_TOKEN_HEADER]: "not-the-token" },
+    });
+    expect(forged.status).toBe(401);
+
+    // With the real bearer the gate falls through to the runtime's own workflow
+    // API, which for this inert bundle (no workflows) answers 404 — i.e. NOT the
+    // gate's 401, proving a platform-proxied request is served.
+    const proxied = await fetch(workflowsUrl, {
+      headers: { [GUEST_PROXY_TOKEN_HEADER]: proxyToken },
+    });
+    expect(proxied.status).toBe(404);
+    expect(proxied.status).not.toBe(401);
   }, 60_000);
 
   test("drain flips the guest to draining and it self-exits when empty", async () => {
