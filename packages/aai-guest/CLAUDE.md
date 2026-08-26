@@ -1108,6 +1108,25 @@ itself has to get right, as opposed to when it runs:
   `builtin-tools.ts`. Protection is not opt-in per caller; only tests override
   the `fetch` option.
 
+## A harness edit needs the IMAGE rebuilt
+
+The microVM backend boots `aai-guest-harness:local`, and **the harness is BAKED
+into that image** — so `pnpm build:guest-image --msb` is what makes a harness
+edit live locally, not `ensure-guest-harness.mjs`. That script rebuilds
+`dist/harness.mjs`, which is what the SUBPROCESS backend and the test tiers
+read; a microVM never looks at it.
+
+The symptom is a guest that plainly ignores the change you just made, with a
+`dist/harness.mjs` NEWER than the source you edited and the bundle demonstrably
+containing your change. Measured while verifying a boot-ordering fix: the built
+bundle had the new order and three consecutive guests logged the old one. The
+mtime heuristic is not lying — it is answering about a file the VM does not use.
+
+Same trap `aai publish` has on Modal one layer down (the harness is in the
+snapshot image there too), and the same shape as the `dist/` staleness in
+`ensure-guest-harness.mjs`'s own note: an artifact whose freshness is real and
+whose CONSUMER is somewhere else.
+
 ## Building the harness for a test run
 
 **The aai-server test project auto-builds the guest harness**:

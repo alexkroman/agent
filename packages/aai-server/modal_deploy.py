@@ -51,6 +51,23 @@ Required Modal Secret named ``aai-server`` with (at least):
 - ``SUPABASE_SERVICE_ROLE_KEY`` — with ``SUPABASE_URL``, the Supabase
   Realtime change streams (sandbox invalidation, studio preview push) AND
   Storage reads/writes of deploy artifacts
+- ``PLATFORM_POOLER_URL`` — Supavisor's TRANSACTION-mode URL (port 6543) for
+  the admin pool. **Undocumented here for as long as it existed, and unset in
+  production**: boot warns that the pool is opening DIRECT connections, which
+  cost ``platformDbConnectionsPerReplica()``'s four more per replica than
+  ``MAX_PLATFORM_DB_CONNECTIONS`` accounts for — so at ``MAX_CONTAINERS`` the
+  fleet is 20 over its own budget. Measured on the live app: ``max_connections``
+  is 60 against a declared budget of 40, and two consecutive boots reported
+  "4 spare" then "0 spare". Unset is SAFE in the sense that nothing silently
+  misbehaves; what it costs is the headroom
+  ``platform-db-capacity.ts`` exists to protect
+- ``APP_DB_POOLER_URL`` — Supavisor's SESSION-mode URL for app databases.
+  Optional: with it unset, ``withPoolerHost`` leaves an app-database URL on
+  whatever host ``SUPABASE_DB_URL`` names, which in production is already the
+  pooler's. Do not point it at a TRANSACTION-mode pooler — ``appDbPoolerUrl``
+  refuses one, because the Workflow DevKit cannot run on transaction pooling at
+  all and the failure is silent (the queue looks fine and parked runs stop
+  resuming)
 - ``AAI_PUBLIC_ORIGIN`` — the origin browsers reach this deployment on
   (``https://<host>``, no trailing slash). Required for DURABLE WORKFLOW
   webhooks and nothing else: it is what ``ctx.workflows.publicWebhookUrl()``
