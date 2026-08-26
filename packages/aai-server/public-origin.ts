@@ -46,11 +46,24 @@
  */
 
 import { isLocalDev } from "./_boot.ts";
+import { HOST_ALIAS } from "./microsandbox-network.ts";
 
-/** Hosts that are genuinely reached over cleartext HTTP. */
+/** Strip the port. IPv6 hosts keep their brackets (`[::1]:8080`). */
+function hostnameOf(host: string): string {
+  return host.replace(/:\d+$/, "").toLowerCase();
+}
+
+/**
+ * Hosts that name THIS machine, and so identify the server rather than
+ * describing where a caller thinks it is.
+ *
+ * This is the set {@link rememberPublicOrigin} is willing to LEARN from, which
+ * is why it excludes {@link HOST_ALIAS} while {@link isCleartextHost} includes
+ * it: the alias is this machine as a guest sees it, not an origin anything
+ * outside a microVM can resolve.
+ */
 function isLoopback(host: string): boolean {
-  // Strip the port; IPv6 hosts keep their brackets (`[::1]:8080`).
-  const hostname = host.replace(/:\d+$/, "").toLowerCase();
+  const hostname = hostnameOf(host);
   return (
     hostname === "localhost" ||
     hostname === "0.0.0.0" ||
@@ -58,6 +71,35 @@ function isLoopback(host: string): boolean {
     hostname === "[::]" ||
     hostname.startsWith("127.")
   );
+}
+
+/**
+ * Hosts that are genuinely reached over cleartext HTTP.
+ *
+ * Loopback, plus the host alias a microVM guest reaches this dev server on.
+ * That alias is not loopback and would otherwise fall to the `https` branch
+ * below — so a guest's own request resolved to a TLS origin against a
+ * plaintext port, and every URL derived from it failed the handshake. It only
+ * exists under the `microsandbox` backend, which only local dev selects, and
+ * that server is always plaintext.
+ */
+function isCleartextHost(host: string): boolean {
+  return isLoopback(host) || hostnameOf(host) === HOST_ALIAS;
+}
+
+/**
+ * The `host` of an origin string, or `""` when it does not parse.
+ *
+ * `""` is not loopback, so an unparseable `AAI_PUBLIC_ORIGIN` is simply never
+ * OBSERVED — which costs nothing, that variable being read directly wherever
+ * the origin is resolved.
+ */
+function originHost(origin: string): string {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -75,7 +117,8 @@ export function resolvePublicOrigin(req: Request, env: NodeJS.ProcessEnv = proce
   const url = new URL(req.url);
   const host = firstForwarded(req.headers.get("x-forwarded-host")) || url.host;
   const proto =
-    firstForwarded(req.headers.get("x-forwarded-proto")) || (isLoopback(host) ? "http" : "https");
+    firstForwarded(req.headers.get("x-forwarded-proto")) ||
+    (isCleartextHost(host) ? "http" : "https");
   return `${proto}://${host}`;
 }
 
@@ -124,16 +167,40 @@ let observedOrigin: string | undefined;
  * for a durable URL. That is the failure this was designed for, it is loud, and
  * it is one env var to fix: `AAI_PUBLIC_ORIGIN`.
  *
- * Local dev keeps the observation because there is no tenant boundary to cross
- * there and no attacker to cross it — the same `isLocalDev` premise that lets
- * the isolation-free `subprocess` sandbox backend be selected at all, and it is
- * an explicit `AAI_LOCAL_DEV=1` rather than an inference, so nothing a
- * deployment forgets can reach this branch — and because requiring config for
- * `pnpm dev:aai-server` would be pure friction.
+ * Local dev keeps the observation because requiring config for
+ * `pnpm dev:aai-server` would be pure friction, and it is an explicit
+ * `AAI_LOCAL_DEV=1` rather than an inference, so nothing a deployment forgets
+ * can reach this branch.
+ *
+ * **But it only learns from a LOOPBACK host, and that is not defence in depth
+ * — it is the same bug, twice, in the environment that was excused from it.**
+ * This used to observe whatever any caller wrote, on the premise that local dev
+ * has "no tenant boundary to cross and no attacker to cross it". Both halves of
+ * that premise failed:
+ *
+ * - **A guest is a caller now.** The `microsandbox` backend's in-guest
+ *   `aai deploy` POSTs back to this platform with `Host:
+ *   host.microsandbox.internal:8080`, so tenant code poisoned this on every
+ *   Publish as a matter of course — and the resulting `AAI_PUBLIC_BASE_URL` is
+ *   a name that resolves ONLY inside a microVM, which is worse than useless
+ *   for the one thing it is for. Measured: a deploy reported
+ *   `Deployed http://host.microsandbox.internal:8080/<slug>` and the value
+ *   flip-flopped with whoever made the last request.
+ * - **The forged header still worked.** `curl -H 'Host: evil.example'
+ *   localhost:8080/health` redirected the developer's very next deploy to
+ *   `https://evil.example/deploy` — the production hole above, reachable by
+ *   anything that can reach the dev server's port.
+ *
+ * A loopback `Host` is the one form that IDENTIFIES this server rather than
+ * describing where a caller thinks it is, and it is exactly what
+ * `pnpm dev:aai-server` produces — so the friction argument survives intact.
+ * A local run that must publish some other origin (a tunnel, for webhook
+ * testing) sets `AAI_PUBLIC_ORIGIN`, which is what that variable is for and
+ * always wins.
  */
 export function rememberPublicOrigin(req: Request, env: NodeJS.ProcessEnv = process.env): string {
   const origin = resolvePublicOrigin(req, env);
-  if (isLocalDev(env)) observedOrigin = origin;
+  if (isLocalDev(env) && isLoopback(originHost(origin))) observedOrigin = origin;
   return origin;
 }
 

@@ -32,11 +32,12 @@ describe("applyPlatformMiddleware", () => {
     // run — an unstubbed environment is production (see `isLocalDev`).
     vi.stubEnv("AAI_LOCAL_DEV", "1");
     const app = appWithMiddleware();
-    // Cleartext with a public Host, which is what Modal forwards: the resolver
-    // is what turns that into https, and this asserts the middleware ran it.
-    await app.request(new Request("http://agent.example.modal.run/ok"));
+    // A LOOPBACK Host, which is what `pnpm dev:aai-server` serves and the only
+    // form an origin is learned from — see `rememberPublicOrigin`, which
+    // refuses the rest even here.
+    await app.request(new Request("http://localhost:8080/ok"));
     expect(agentPublicBaseUrl("digest-desk", { AAI_LOCAL_DEV: "1" })).toBe(
-      "https://agent.example.modal.run/digest-desk",
+      "http://localhost:8080/digest-desk",
     );
   });
 
@@ -61,10 +62,8 @@ describe("applyPlatformMiddleware", () => {
     // traffic so far was a probe or a stray path still knows its own origin.
     vi.stubEnv("AAI_LOCAL_DEV", "1");
     const app = appWithMiddleware();
-    await app.request(new Request("http://agent.example.modal.run/nope"));
-    expect(agentPublicBaseUrl("x", { AAI_LOCAL_DEV: "1" })).toBe(
-      "https://agent.example.modal.run/x",
-    );
+    await app.request(new Request("http://localhost:8080/nope"));
+    expect(agentPublicBaseUrl("x", { AAI_LOCAL_DEV: "1" })).toBe("http://localhost:8080/x");
   });
 
   test("still answers the request it recorded", async () => {

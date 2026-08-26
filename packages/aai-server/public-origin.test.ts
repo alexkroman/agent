@@ -15,6 +15,14 @@ function behindTls(path = "/deploy", headers: Record<string, string> = {}): Requ
 }
 
 /**
+ * A local run's own request: loopback Host, which is what
+ * `pnpm dev:aai-server` produces and the only shape an origin is LEARNED from.
+ */
+function onLoopback(path = "/deploy", headers: Record<string, string> = {}): Request {
+  return new Request(`http://localhost:8080${path}`, { headers });
+}
+
+/**
  * A DECLARED local run — the only env in which an observed origin is retained.
  *
  * Spelled out rather than `{}`, which is what these tests used to pass: the
@@ -37,6 +45,16 @@ describe("resolvePublicOrigin", () => {
     );
     expect(resolvePublicOrigin(new Request("http://127.0.0.1:3000/deploy"), {})).toBe(
       "http://127.0.0.1:3000",
+    );
+  });
+
+  test("the microVM host alias stays http — it is this dev server, in cleartext", () => {
+    // Not loopback, so it fell to the `https` branch: a guest resolving its own
+    // request produced `https://host.microsandbox.internal:8080`, and every URL
+    // derived from that failed the handshake against a plaintext port. Measured
+    // in a guest as `uploadBroker: "https://host.microsandbox.internal:8080/…"`.
+    expect(resolvePublicOrigin(new Request("http://host.microsandbox.internal:8080/x"), {})).toBe(
+      "http://host.microsandbox.internal:8080",
     );
   });
 
@@ -108,28 +126,69 @@ describe("agentPublicBaseUrl", () => {
   test("in LOCAL DEV, falls back to the origin a request was last served on", () => {
     // Three of the four spawn paths hold no request (blue-green handover, the
     // wake sweep, the peer route), so the value has to outlive the request that
-    // established it — which is only acceptable where there is no tenant
-    // boundary to cross.
-    rememberPublicOrigin(behindTls("/digest-desk/client-config"), LOCAL);
-    expect(agentPublicBaseUrl("digest-desk", LOCAL)).toBe(
-      "https://agent.example.modal.run/digest-desk",
-    );
+    // established it — which is only acceptable for a request whose Host names
+    // this server.
+    rememberPublicOrigin(onLoopback("/digest-desk/client-config"), LOCAL);
+    expect(agentPublicBaseUrl("digest-desk", LOCAL)).toBe("http://localhost:8080/digest-desk");
   });
 
   test("configuration wins over what was observed", () => {
     // A deployment reachable on more than one origin is why the operator lever
     // exists: whichever request happened to spawn the guest must not decide.
-    rememberPublicOrigin(behindTls(), LOCAL);
+    rememberPublicOrigin(onLoopback(), LOCAL);
     expect(agentPublicBaseUrl("x", { ...LOCAL, AAI_PUBLIC_ORIGIN: "https://aai.example" })).toBe(
       "https://aai.example/x",
     );
   });
 
   test("a blank AAI_PUBLIC_ORIGIN falls through rather than yielding '/slug'", () => {
-    rememberPublicOrigin(behindTls(), LOCAL);
+    rememberPublicOrigin(onLoopback(), LOCAL);
     expect(agentPublicBaseUrl("x", { ...LOCAL, AAI_PUBLIC_ORIGIN: "   " })).toBe(
-      "https://agent.example.modal.run/x",
+      "http://localhost:8080/x",
     );
+  });
+
+  describe("even in LOCAL DEV, only a host that NAMES this server is learned from", () => {
+    test("a forged Host cannot redirect the next spawn", () => {
+      // Reproduced against a real dev server before the fix: one
+      // `curl -H 'Host: evil.example' localhost:8080/health` and the very next
+      // Publish answered `deploy failed: could not reach
+      // https://evil.example/deploy`. Same injection as the production case
+      // below, in the environment that was excused from it.
+      // The forged Host is spelled as the request URL's own host, which is how
+      // the app sees it: Hono builds `req.url` from that header, and undici
+      // refuses to set `host` as a literal header on a `Request`.
+      rememberPublicOrigin(onLoopback(), LOCAL);
+      rememberPublicOrigin(new Request("http://evil.example/health"), LOCAL);
+      expect(agentPublicBaseUrl("victim", LOCAL)).toBe("http://localhost:8080/victim");
+    });
+
+    test("a GUEST's own request cannot either", () => {
+      // The microVM backend's in-guest `aai deploy` POSTs back with `Host:
+      // host.microsandbox.internal:8080` — tenant code, on every Publish. What
+      // it wrote was baked into the next spawn of ANY slug as
+      // `AAI_PUBLIC_BASE_URL`, i.e. the origin `publicWebhookUrl` mints third-
+      // party callbacks from, and that name resolves only inside a microVM.
+      rememberPublicOrigin(onLoopback(), LOCAL);
+      rememberPublicOrigin(new Request("http://host.microsandbox.internal:8080/deploy"), LOCAL);
+      expect(agentPublicBaseUrl("victim", LOCAL)).toBe("http://localhost:8080/victim");
+    });
+
+    test("an x-forwarded-host is refused the same way", () => {
+      // The resolved origin is what is checked, not the raw `Host` — otherwise
+      // the same injection walks in through the header a proxy would set.
+      rememberPublicOrigin(onLoopback(), LOCAL);
+      rememberPublicOrigin(onLoopback("/health", { "x-forwarded-host": "evil.example" }), LOCAL);
+      expect(agentPublicBaseUrl("victim", LOCAL)).toBe("http://localhost:8080/victim");
+    });
+
+    test("but it still RETURNS the resolved origin to the request that asked", () => {
+      // Refusing to LEARN is not refusing to answer: a use inside the request
+      // is self-directed, and a caller who lies gets its own lie back.
+      expect(rememberPublicOrigin(new Request("http://evil.example/x"), LOCAL)).toBe(
+        "https://evil.example",
+      );
+    });
   });
 
   describe("in production, no request teaches this replica an origin", () => {
