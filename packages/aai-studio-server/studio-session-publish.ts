@@ -55,6 +55,12 @@ export type WorkspaceDeployTarget = {
    * orphan-preview reaper deletes hourly.
    */
   allowPreviewSlug?: boolean | undefined;
+  /**
+   * `--skipTypecheck`: forwarded to the in-sandbox `aai deploy` so a Publish
+   * can skip the tsc gate the same way `aai deploy --skipTypecheck` does.
+   * Absent reads as "run the gate" — the safe default.
+   */
+  skipTypecheck?: boolean | undefined;
 };
 
 /**
@@ -123,6 +129,9 @@ async function requestDeploy(
       apiKey: target.apiKey,
       ...(target.slug ? { slug: target.slug } : {}),
       ...(target.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
+      // Plain key (not a guarded spread): JSON-RPC drops an undefined value on
+      // the wire, so an older guest still sees the field absent.
+      skipTypecheck: target.skipTypecheck,
     },
     WORKSPACE_DEPLOY_TIMEOUT_MS,
   );

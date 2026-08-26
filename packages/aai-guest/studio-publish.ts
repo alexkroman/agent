@@ -105,6 +105,13 @@ export async function deployWorkspaceDir(
      * auto-preview deployer — never by Publish. See the flag's note below.
      */
     allowPreviewSlug?: boolean | undefined;
+    /**
+     * `--skipTypecheck`: deploy without the `aai deploy` tsc gate. Mirrors the
+     * CLI flag of the same name — Publish shares this path, so honoring it here
+     * is what makes `aai publish --skipTypecheck` actually skip the gate rather
+     * than have the in-sandbox deploy re-run it unconditionally.
+     */
+    skipTypecheck?: boolean | undefined;
     /** Test seam: entry script spawned instead of the resolved CLI. */
     cliEntry?: string | undefined;
   },
@@ -175,6 +182,7 @@ export async function deployWorkspaceDir(
         opts.serverUrl,
         "--json",
         ...(opts.allowPreviewSlug ? ["--allow-preview-slug"] : []),
+        ...(opts.skipTypecheck ? ["--skipTypecheck"] : []),
       ],
       {
         cwd: dir,

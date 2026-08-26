@@ -36,6 +36,11 @@ export type StudioDeployParams = {
    * microVM one — see {@link translateGuestOrigin}.
    */
   browserUrl: string;
+  /**
+   * `--skipTypecheck`: forwarded to the in-sandbox `aai deploy`. Absent reads
+   * as "run the tsc gate" — the safe default an older CLI produces.
+   */
+  skipTypecheck?: boolean | undefined;
 };
 
 /**
@@ -76,6 +81,9 @@ export async function deployStudioProject(
     // Redeploys reuse the project's slug; first deploys claim the project
     // name itself (matching what a user would expect their URL to be).
     slug: workspace.deployedSlug ?? params.project,
+    // Forwarded to the in-sandbox `aai deploy`; undefined when the caller never
+    // asked, which reads as "run the tsc gate".
+    skipTypecheck: params.skipTypecheck,
   });
   const output = translateGuestOrigin(result.output, params);
   if (!result.ok) return { ok: false, error: output };

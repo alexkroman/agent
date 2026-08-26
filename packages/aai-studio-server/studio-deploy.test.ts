@@ -77,6 +77,21 @@ describe("deployStudioProject", () => {
     );
   });
 
+  test("forwards skipTypecheck to the sandbox, and omits it by default", async () => {
+    const off = vi.fn(fakeDeployWorkspace());
+    const offDeps = makeDeps({ deployWorkspace: off });
+    await seedProject(offDeps, "my-agent");
+    await deployStudioProject(offDeps, PARAMS);
+    // Undefined by default so the in-sandbox `aai deploy` runs its tsc gate.
+    expect(off.mock.calls[0]?.[3]?.skipTypecheck).toBeUndefined();
+
+    const on = vi.fn(fakeDeployWorkspace());
+    const onDeps = makeDeps({ deployWorkspace: on });
+    await seedProject(onDeps, "my-agent");
+    await deployStudioProject(onDeps, { ...PARAMS, skipTypecheck: true });
+    expect(on.mock.calls[0]?.[3]).toMatchObject({ skipTypecheck: true });
+  });
+
   test("passes the CLI output through for the chat", async () => {
     const deps = makeDeps();
     await seedProject(deps, "my-agent");

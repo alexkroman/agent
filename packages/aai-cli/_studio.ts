@@ -143,11 +143,16 @@ export function publishStudioProject(
   serverUrl: string,
   apiKey: string,
   project: string,
+  opts: { skipTypecheck?: boolean | undefined } = {},
 ): Promise<{ ok: true; slug: string; url: string; output: string }> {
   return apiRequest(`${studioProjectApiUrl(serverUrl, project)}/deploy`, {
     apiKey,
     action: "publish",
     method: "POST",
+    // `--skipTypecheck` rides the request body so the in-sandbox `aai deploy`
+    // skips its own tsc gate. `apiRequest` omits an undefined body, so the
+    // common publish stays a bodyless POST an older server ignores.
+    body: opts.skipTypecheck ? { skipTypecheck: true } : undefined,
     // A retried publish re-runs a whole in-sandbox build; surface the
     // failure instead.
     retry: 0,

@@ -341,6 +341,22 @@ describe("executePush", () => {
     });
   });
 
+  test("rejects when the entry file exists but was dropped, naming the real reason", async () => {
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "voice-agent");
+      await fs.mkdir(cwd);
+      // A second file keeps the tree non-empty so this hits the entry check
+      // rather than the "nothing to push" guard.
+      await fs.writeFile(path.join(cwd, "helper.ts"), "export const x = 1;");
+      // agent.ts over the byte cap is DROPPED by collectSourceFiles with only a
+      // warning (silenced in JSON mode). Push used to report ok while shipping
+      // a tree with no entry, and the server then answered a confusing
+      // "No agent.ts found in the current directory". Fail here, naming the cap.
+      await fs.writeFile(path.join(cwd, "agent.ts"), `export {};\n// ${"x".repeat(256_001)}`);
+      await expect(executePush({ cwd })).rejects.toThrow(/agent\.ts is \d+ bytes .*not synced/);
+    });
+  });
+
   test("an unlinked push refuses to overwrite a same-named studio project", async () => {
     await withTempDir(async (dir) => {
       const cwd = path.join(dir, "voice-agent");
@@ -441,6 +457,34 @@ describe("executePublish", () => {
       // Secrets merge into the agent env AT deploy time — order is the point.
       expect(order).toEqual(["push", "secrets", "deploy"]);
       expect((await readProjectConfig(cwd))?.slug).toBe("proj");
+    });
+  });
+
+  test("forwards --skipTypecheck to the deploy route so the in-sandbox build skips its gate", async () => {
+    await withTempDir(async (cwd) => {
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: {
+          serverUrl: "https://api.test",
+          studioProject: "proj",
+          studioSourceHash: "h1",
+          slug: "proj",
+        },
+      });
+      let deployBody: unknown;
+      routeApi({
+        "PUT /studio/projects/proj/source": { sourceHash: "h2", created: false },
+        "POST /studio/projects/proj/deploy": (opts: { body?: unknown }) => {
+          deployBody = opts.body;
+          return { ok: true, slug: "proj", url: "/proj/", output: "Deployed /proj/" };
+        },
+      });
+      // The client-side gate is skipped here too, but the guest re-runs `aai
+      // deploy` which typechecks unconditionally — so the flag has to ride the
+      // request body or `aai publish --skipTypecheck` is a silent no-op.
+      await executePublish({ cwd, skipTypecheck: true });
+      expect(deployBody).toEqual({ skipTypecheck: true });
     });
   });
 
