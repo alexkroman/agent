@@ -40,6 +40,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import {
+  ADMIN_POOL_MAX,
   APP_DB_CONNECTION_LIMIT,
   MAX_ACTIVE_APP_DATABASES,
   MAX_PLATFORM_DB_CONNECTIONS,
@@ -70,6 +71,54 @@ export type PlatformDbCapacity = {
 };
 
 /**
+ * The autoscaler's container ceiling — the MULTIPLIER on every per-replica pool.
+ *
+ * Decided in `modal_deploy.py` (`MAX_CONTAINERS`) and exported into the
+ * container's env from there, rather than restated here: it is a property of the
+ * deploy recipe, and a hand-kept second copy is the shape this file already
+ * warns about twice. `platform-db-budget.test.ts` reads the Python constant
+ * directly, so the two cannot drift.
+ *
+ * **1 when unset, and that is the honest default rather than a safe one.** A
+ * process with no autoscaler in front of it IS one replica — `aai dev`, a unit
+ * test, a self-hosted `npm start` — so the fleet claim equals the per-replica
+ * claim. A larger default would invent a fleet that does not exist and warn on
+ * every developer's laptop; the deployment that really has one says so.
+ */
+export function fleetMaxContainers(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.MAX_CONTAINERS?.trim());
+  return Number.isInteger(raw) && raw > 0 ? raw : 1;
+}
+
+/**
+ * Connections the ADMIN pool costs the instance that {@link
+ * MAX_PLATFORM_DB_CONNECTIONS} does not count — fleet-wide.
+ *
+ * That constant excludes the admin pool on ONE premise: that the pool reaches
+ * the instance through `PLATFORM_POOLER_URL` in transaction mode, which really
+ * does multiplex (see {@link platformDbConnectionsPerReplica}). With the
+ * variable unset the premise is false, every replica opens `ADMIN_POOL_MAX`
+ * DIRECT session-mode backends, and the budget understates the fleet by this
+ * many.
+ *
+ * It was understating it in production, and the arithmetic is the whole reason
+ * this function exists rather than a comment: `max_connections=60`, 20 held by
+ * Supabase's own workers, a 40 budget — and 5 x 4 = 20 more that nothing added
+ * up. The claim was 80 against 60. Boot said `capacity ok — 0 spare` on the line
+ * directly below the warning that named those four per replica, so both facts
+ * were printed and neither was compared, and the 53300 exhaustion they predict
+ * ("remaining connection slots are reserved") arrived with no warning at all.
+ *
+ * Presence, not `platformPoolerUrl()`: that validator THROWS on a malformed
+ * value, and a capacity READING must never be the thing that fails a boot. By
+ * the time this runs `service-config.ts` has already validated it, so an empty
+ * or absent variable is the only case left to distinguish.
+ */
+export function unpooledAdminConnections(env: NodeJS.ProcessEnv = process.env): number {
+  return env.PLATFORM_POOLER_URL?.trim() ? 0 : fleetMaxContainers(env) * ADMIN_POOL_MAX;
+}
+
+/**
  * The platform's total claim on the instance: its own direct pools plus the app
  * databases those pools cannot reach.
  *
@@ -96,17 +145,24 @@ export type PlatformDbCapacity = {
  * test asserts this function against the constant, so the two cannot drift back
  * apart.
  */
-export function platformDbBudget(): number {
+export function platformDbBudget(env: NodeJS.ProcessEnv = process.env): number {
   // Deliberately the constant itself, not a sum. `MAX_PLATFORM_DB_CONNECTIONS`
   // IS the total — `MAX_CONTAINERS x platformDbConnectionsPerReplica()` for the
   // direct pools PLUS `MAX_ACTIVE_APP_DATABASES x APP_DB_CONNECTION_LIMIT` for
   // the app databases — and `platform-db-budget.test.ts` is what holds it to
   // that. Re-deriving the sum here is what produced the double count.
-  return MAX_PLATFORM_DB_CONNECTIONS;
+  //
+  // The ONE term it cannot contain is the admin pool, because whether that pool
+  // costs the instance anything is a runtime question and not a constant: see
+  // `unpooledAdminConnections`, which is why this takes an env at all.
+  return MAX_PLATFORM_DB_CONNECTIONS + unpooledAdminConnections(env);
 }
 
 /** Read the instance's capacity and compare it against what we claim. */
-export async function readPlatformDbCapacity(sql: SqlExec): Promise<PlatformDbCapacity> {
+export async function readPlatformDbCapacity(
+  sql: SqlExec,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<PlatformDbCapacity> {
   const [limit, used] = await Promise.all([sql(MAX_CONNECTIONS_SQL), sql(IN_USE_SQL)]);
   // `show` names its column after the setting; read positionally so a Postgres
   // version that aliases it differently does not silently yield NaN.
@@ -118,7 +174,7 @@ export async function readPlatformDbCapacity(sql: SqlExec): Promise<PlatformDbCa
       `Unreadable capacity: max_connections=${String(raw)} in_use=${String(used[0]?.n)}`,
     );
   }
-  const budgeted = platformDbBudget();
+  const budgeted = platformDbBudget(env);
   return { maxConnections, inUse, budgeted, headroom: maxConnections - inUse - budgeted };
 }
 
@@ -129,18 +185,32 @@ export async function readPlatformDbCapacity(sql: SqlExec): Promise<PlatformDbCa
  * `bootstrapPlatformDb`, and for the same reason: boot must not wait on it, and
  * a failed reading is worth a line rather than a refusal to serve.
  */
-export function announcePlatformDbCapacity(sql: SqlExec): void {
-  readPlatformDbCapacity(sql)
+export function announcePlatformDbCapacity(
+  sql: SqlExec,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  readPlatformDbCapacity(sql, env)
     .then((c) => {
       // The split is quoted INSIDE the total rather than added to it, because
       // adding it is the bug this line used to print: "platform budget=60
       // (40 direct + 2 app databases x 10)" both overstated the claim by 20 and
       // read as though 60 were the sum of 40 and 20. See `platformDbBudget`.
       const appTotal = MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT;
+      // The unpooled admin pool is named SEPARATELY from the constant, because
+      // it is the only term that is not in it — quoting it inside the total the
+      // way the app databases are quoted would read as a breakdown of
+      // MAX_PLATFORM_DB_CONNECTIONS, which it is not. Omitted entirely when a
+      // transaction pooler makes it zero: a term that costs nothing does not
+      // belong in a line somebody reads at boot.
+      const unpooled = unpooledAdminConnections(env);
       const arithmetic =
         `max_connections=${c.maxConnections}, in use at boot=${c.inUse}, ` +
         `platform budget=${c.budgeted} (of which ${MAX_ACTIVE_APP_DATABASES} app ` +
-        `databases x ${APP_DB_CONNECTION_LIMIT} = ${appTotal})`;
+        `databases x ${APP_DB_CONNECTION_LIMIT} = ${appTotal}` +
+        (unpooled > 0
+          ? `, plus ${unpooled} for DIRECT admin pools — set PLATFORM_POOLER_URL`
+          : "") +
+        ")";
       if (c.headroom < 0) {
         log.warn(
           `budget OVERRUNS the instance by ${-c.headroom} connections: ` +

@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import {
   assertBucketPrivate,
@@ -8,7 +9,27 @@ import {
   createSupabaseBlobStorage,
   storageEndpoint,
 } from "./blob-storage.ts";
+import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
 import { captureLogs } from "./test-utils.ts";
+
+/**
+ * Every `code` down an error's `cause` chain.
+ *
+ * Reads the chain the way `error-handler.ts` does, rather than asserting on one
+ * `cause` hop: what must hold is that the driver's code is REACHABLE from the
+ * thrown error, and how many wrappers sit between them is storage-js's business.
+ */
+function causeCodes(err: unknown): string[] {
+  const codes: string[] = [];
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (isRecord(cur) && !seen.has(cur)) {
+    seen.add(cur);
+    if (typeof cur.code === "string") codes.push(cur.code);
+    cur = cur.cause;
+  }
+  return codes;
+}
 
 type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
 
@@ -32,7 +53,17 @@ function fakeFetch(handler: (call: Call) => Response): { fetch: typeof fetch; ca
       body: init?.body ?? null,
     };
     calls.push(call);
-    return Promise.resolve(handler(call));
+    // A handler that throws becomes a REJECTED promise, because that is what
+    // `fetch` does — it never throws synchronously. Resolving `handler(call)`
+    // directly let a sync throw escape past storage-js's own `.catch`, so a
+    // network failure arrived at the caller as a raw `TypeError` instead of the
+    // `StorageUnknownError` production really sees. A double that cannot
+    // reproduce a network failure is the one shape this file most needs.
+    try {
+      return Promise.resolve(handler(call));
+    } catch (err) {
+      return Promise.reject(err);
+    }
   }) as typeof fetch;
   return { fetch: fetchFn, calls };
 }
@@ -132,6 +163,50 @@ describe("createSupabaseBlobStorage", () => {
     await expect(store.setItem("blobs/abc", "code")).rejects.toThrow(
       /blob write failed for blobs\/abc/,
     );
+  });
+
+  /**
+   * The production shape: `POST /deploy` and two upload `PUT`s answered
+   * `500 Internal server error` on `blob write failed … fetch failed`, during a
+   * burst of thirty concurrent 8 MB uploads. A request that never got a
+   * response is the most retryable failure there is, and 500 is the one answer
+   * that tells a client not to bother — the studio client retries 5xx, so it
+   * cost the retry too.
+   */
+  test("a write that never reached Storage is UNAVAILABLE, not a server fault", async () => {
+    const { store } = storage(() => {
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+      });
+    });
+    const err = await store.setItem("blobs/abc", "code").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PlatformServiceUnavailableError);
+    // And the reason survives. storage-js hangs the real failure on
+    // `originalError`, which nothing walks — so before it was re-parented onto
+    // `cause` the log said `fetch failed` and stopped, which is undici's
+    // message for every network failure and names none of them.
+    expect(String((err as Error).message)).toContain("blob write failed for blobs/abc");
+    expect(JSON.stringify(causeCodes(err))).toContain("ECONNRESET");
+  });
+
+  test("a 429 is unavailable too — refusing now is not failing forever", async () => {
+    const { store } = storage(() => new Response("slow down", { status: 429 }));
+    await expect(store.setItem("blobs/abc", "code")).rejects.toBeInstanceOf(
+      PlatformServiceUnavailableError,
+    );
+  });
+
+  /**
+   * The other side of the split, and the one that keeps 503 meaningful: a 4xx
+   * will fail identically on retry, so telling the caller to retry it is worse
+   * than telling it the truth. A 400 is a malformed key or a policy refusal —
+   * ours to fix, not the network's.
+   */
+  test("a 4xx stays a plain failure, so nothing tells a caller to retry it", async () => {
+    const { store } = storage(() => new Response("bad request", { status: 400 }));
+    const err = await store.setItem("blobs/abc", "code").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(PlatformServiceUnavailableError);
   });
 
   test("signs a read URL for one object, scoped and expiring", async () => {

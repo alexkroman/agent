@@ -33,6 +33,11 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { StorageClient } from "@supabase/storage-js";
 import { createLogger } from "./logger.ts";
+import {
+  isStorageUnavailable,
+  PlatformServiceUnavailableError,
+  storageFailureCause,
+} from "./platform-service-errors.ts";
 
 const log = createLogger("storage.blob");
 
@@ -172,6 +177,9 @@ export async function assertBucketPrivate(opts: SupabaseBlobStorageOptions): Pro
   }
 }
 
+/** The `service` every unavailability from this module carries. */
+const STORAGE_SERVICE = "supabase-storage";
+
 /** Supabase Storage-backed blob storage (production). */
 export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): BlobStorage {
   const client = storageClient(opts);
@@ -189,7 +197,7 @@ export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): Blo
         // while anything else throws. storage-js reports both as `error`;
         // the HTTP status is what separates them.
         if (isNotFound(error)) return null;
-        throw new Error(`blob read failed for ${key}: ${errorMessage(error)}`, { cause: error });
+        throw blobFailure("read", key, error);
       }
       return await data.text();
     },
@@ -197,7 +205,7 @@ export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): Blo
     async setItem(key, value) {
       const { error } = await bucket.upload(key, value, UPLOAD_OPTIONS);
       if (error) {
-        throw new Error(`blob write failed for ${key}: ${errorMessage(error)}`, { cause: error });
+        throw blobFailure("write", key, error);
       }
     },
 
@@ -207,7 +215,7 @@ export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): Blo
       // says exists is a broken deploy either way.
       const { data, error } = await bucket.createSignedUrl(key, ttlSeconds);
       if (error || !data?.signedUrl) {
-        throw new Error(`blob signing failed for ${key}: ${errorMessage(error)}`, { cause: error });
+        throw blobFailure("signing", key, error);
       }
       return data.signedUrl;
     },
@@ -224,6 +232,32 @@ export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): Blo
 function isNotFound(error: unknown): boolean {
   const { statusCode, status } = error as { statusCode?: unknown; status?: unknown };
   return Number(statusCode ?? status) === 404;
+}
+
+/**
+ * One storage-js failure, typed by whether Storage was REACHABLE.
+ *
+ * The message is unchanged — three call sites already agreed on
+ * `blob <verb> failed for <key>` and it is what the specs read — so the two
+ * things this adds are both invisible at the call site:
+ *
+ * - **The class**, so `createErrorHandler` answers 503 for a dependency that
+ *   could not be reached. `POST /deploy` answered 500 on `fetch failed` during
+ *   a burst of concurrent uploads, which tells a client not to retry the one
+ *   failure that retrying fixes.
+ * - **The `cause`**, re-parented off `originalError`. Without it the log said
+ *   `fetch failed` and stopped, which is undici's message for every network
+ *   failure and names none of them.
+ *
+ * A 404 never arrives here — `getItem` resolves that to `null` above, because
+ * its callers cache a miss and retry a failure.
+ */
+function blobFailure(verb: string, key: string, error: unknown): Error {
+  const message = `blob ${verb} failed for ${key}: ${errorMessage(error)}`;
+  const cause = storageFailureCause(error);
+  return isStorageUnavailable(error)
+    ? new PlatformServiceUnavailableError(STORAGE_SERVICE, message, { cause })
+    : new Error(message, { cause });
 }
 
 /** In-memory blob storage for local dev and tests. */

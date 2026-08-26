@@ -258,6 +258,15 @@ image = build_image(
         "SANDBOX_CPU_LIMIT": str(SANDBOX_CPU_LIMIT),
         "SANDBOX_MEMORY_MB": str(SANDBOX_MEMORY_MB),
         "SANDBOX_MEMORY_LIMIT_MB": str(SANDBOX_MEMORY_LIMIT_MB),
+        # The autoscaler ceiling, readable by the process it bounds. It is the
+        # MULTIPLIER on every per-replica pool, so the boot-time capacity check
+        # cannot state the fleet's claim without it (platform-db-capacity.ts) —
+        # and it went unstated: boot printed "capacity ok — 0 spare" on an
+        # instance the claim overran by 20, the line above it naming the very
+        # connections the budget was not counting. Exported rather than copied
+        # into TypeScript so this stays the one place the number is decided;
+        # `platform-db-budget.test.ts` reads it from here too.
+        "MAX_CONTAINERS": str(MAX_CONTAINERS),
     },
 )
 

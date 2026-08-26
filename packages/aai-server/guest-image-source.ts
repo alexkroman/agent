@@ -31,12 +31,17 @@
  *
  * Both sources key on exactly the same string — `localHarnessImageTag`'s
  * `aai-guest-harness:<sha16 of (base image, harness code, toolchain)>` — and the
- * registry source only prepends a registry to it. That is what keeps per-deploy
- * pinning working across the switch: `agents.harness_image_tag` holds tags
- * recorded by earlier deploys, and `harnessImageTag`'s own doc warns that any
- * change to the hashed byte stream makes every existing pin resolve to nothing.
- * A registry PREFIX is not part of that stream, so a pin recorded under one
- * source resolves under the other.
+ * registry source only prepends a registry to it. `agents.harness_image_tag`
+ * holds tags recorded by earlier deploys, and `harnessImageTag`'s own doc warns
+ * that any change to the hashed byte stream makes every existing pin resolve to
+ * nothing; a registry PREFIX is not part of that stream.
+ *
+ * **That is not enough to make a pin portable, and this paragraph used to claim
+ * it was** ("a pin recorded under one source resolves under the other"). The
+ * same tag under both sources names the same TRIPLE and not the same published
+ * bytes — each source publishes to one place only — so the flip orphaned every
+ * pin that predated it. `resolvePinAcrossSources` is what actually delivers the
+ * portability, and it carries the production account.
  *
  * ## What a missing image looks like
  *
@@ -46,10 +51,21 @@
  * image am I pulling, and from where" has to be answerable from one line rather
  * than inferred from the shape of a later pull error. Same argument as
  * `describeSandboxBackend`'s reason string.
+ *
+ * The boot line is not sufficient on its own, because what Modal reports for a
+ * missing manifest is `Image build for im-<id> failed with the exception:` and
+ * then NOTHING — it sends no exception text for a `skopeo` pull failure, so the
+ * one string a reader gets names no tag, no reference and no remedy. Every pull
+ * reference is therefore logged where it is still known
+ * (`resolvePinAcrossSources`); the boot line says which source, that line says
+ * which image.
  */
 
 import type { App, Image, ModalClient } from "modal";
+import { createLogger } from "./logger.ts";
 import { createHarnessImageResolver, localHarnessImageTag } from "./modal-harness-image.ts";
+
+const log = createLogger("modal.guest-image");
 
 /**
  * The slice of `ModalClient` an image source actually touches.
@@ -157,6 +173,90 @@ function createHarnessTagger(baseTag: string): (code: string) => string {
 }
 
 /**
+ * Resolve a PINNED tag from whichever source actually holds its bytes.
+ *
+ * The module doc above used to conclude, from the tag being source-independent,
+ * that "a pin recorded under one source resolves under the other". The tag is;
+ * the IMAGE is not. A tag names a `(base image, harness code, toolchain)` triple
+ * — it says nothing about where the bytes for that triple were published, and
+ * each source publishes to one place only: the snapshot source to Modal
+ * (`image.publish(tag)`), this one's CI to the registry. So flipping the source
+ * orphaned every pin an earlier deploy had recorded, and `agents.harness_image_tag`
+ * is exactly the column that outlives a flip.
+ *
+ * It is not hypothetical. On the day after `GUEST_IMAGE_REGISTRY` was first set
+ * in production, five distinct pinned tags — every agent deployed before the
+ * flip — resolved to `ghcr.io/<owner>/aai-guest-harness:<sha16>`, which the
+ * registry has never held. All five were live Modal images. Verified from
+ * outside the process: `images.fromName` answered for all five and GHCR's
+ * `/v2/.../tags/list` held none of them.
+ *
+ * ## What the failure looked like, and why it had to be fixed HERE
+ *
+ * `fromRegistry` is LAZY — it hands back a handle without pulling — so nothing
+ * on the resolution path can fail, and `resolveSpawnImage`'s authored
+ * "pinned harness image <tag> is unresolvable — redeploy the agent, or set
+ * SANDBOX_IGNORE_IMAGE_PINS=1" is structurally unreachable on this source. The
+ * failure re-emerged two layers down at sandbox CREATE, as Modal's
+ * `Image build for im-<id> failed with the exception:` — with an EMPTY
+ * exception, because Modal sends none for a `skopeo` manifest miss. So the
+ * operator got 66 x `503 agent unavailable, retry shortly` and one log line
+ * that named neither the tag, the registry, nor the kill switch.
+ *
+ * ## Modal first, and the cost
+ *
+ * Ordered the way it is because only one order can be EAGER. A Modal miss is a
+ * definitive `NotFoundError` on one gRPC call; a registry miss is unobservable
+ * until the pull. So Modal answers the question "was this pin minted before the
+ * flip?" — nothing publishes there any more, so a tag Modal holds is a
+ * pre-flip pin by construction, and its snapshot is literally the image that
+ * agent was deployed against.
+ *
+ * Memoized per tag, so the extra round trip is once per distinct pin per
+ * process rather than once per spawn — and only on the PINNED path, which is
+ * already the slow one.
+ *
+ * **This has an end condition**: when no `agents` row holds a pre-flip pin, every
+ * lookup here is a wasted miss and this function should go with the snapshot
+ * source it exists to bridge (see the module doc on deleting that half).
+ */
+function resolvePinAcrossSources<TImage>(deps: {
+  client: GuestImageClient<TImage>;
+  registry: string;
+}): (tag: string) => Promise<TImage> {
+  const { client, registry } = deps;
+  const memo = new Map<string, Promise<TImage>>();
+  const resolve = async (tag: string): Promise<TImage> => {
+    try {
+      const image = await client.images.fromName(tag);
+      log.info("pinned guest image resolved from Modal, not the registry", { tag });
+      return image;
+    } catch {
+      // Not a pre-flip pin. Logged at INFO rather than swallowed because it is
+      // the only place the pull REFERENCE is knowable: a `manifest unknown`
+      // arrives later with no tag attached, and correlating the two by hand is
+      // what this line exists to save.
+      const ref = guestImageRef(registry, tag);
+      log.info("pulling pinned guest image from the registry", { tag, ref });
+      return client.images.fromRegistry(ref);
+    }
+  };
+  return (tag) => {
+    let pending = memo.get(tag);
+    if (pending === undefined) {
+      // A REJECTED lookup must not be cached: the registry gaining the tag (a
+      // late `Guest image` workflow run) has to be visible without a restart.
+      pending = resolve(tag).catch((err: unknown) => {
+        memo.delete(tag);
+        throw err;
+      });
+      memo.set(tag, pending);
+    }
+    return pending;
+  };
+}
+
+/**
  * The registry source. Narrow by construction — it needs a registry, a base tag
  * and the two image lookups, and nothing else, which is what makes it testable
  * without a Modal client.
@@ -176,8 +276,12 @@ export function registryImageSource<TImage>(deps: {
   return {
     kind: "registry",
     reason: `${GUEST_IMAGE_REGISTRY_ENV}=${registry}`,
+    // The CURRENT harness image is only ever the registry's: on this source
+    // nothing publishes to Modal, so a Modal lookup for it is a guaranteed miss
+    // and a wasted round trip on every cold spawn. The migration affordance
+    // below is scoped to PINS, which are the only tags that can predate the flip.
     current: (code) => pull(tagOf(code)),
-    byTag: pull,
+    byTag: resolvePinAcrossSources({ client, registry }),
     prepare: async () => {
       // Declared no-op — see GuestImageSource.prepare.
     },

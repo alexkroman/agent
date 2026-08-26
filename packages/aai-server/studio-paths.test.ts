@@ -7,6 +7,10 @@ describe("isStudioPath", () => {
   test.each([
     ["/", true],
     ["/favicon.ico", true],
+    // Asked for at the ROOT by every crawler, so it belongs to whatever owns
+    // the root. Without it the path fell through to `/:slug`, where
+    // `validateSlug` answered 400 — production served that to a crawler.
+    ["/robots.txt", true],
     ["/studio", true],
     ["/studio/", true],
     ["/studio/chat/my-project", true],

@@ -42,7 +42,7 @@ import {
   platformDbConnectionsPerReplica,
   SLUG_LOCK_POOL_MAX,
 } from "./constants.ts";
-import { platformDbBudget } from "./platform-db-capacity.ts";
+import { fleetMaxContainers, platformDbBudget } from "./platform-db-capacity.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const deployPy = readFileSync(path.join(REPO_ROOT, "packages/aai-server/modal_deploy.py"), "utf-8");
@@ -103,8 +103,56 @@ describe("platform database connection budget", () => {
     // `appTotal` larger than the bound this very test enforces, and so it was the
     // green suite sitting beside the warning at boot rather than the guard
     // against it.
-    expect(platformDbBudget()).toBe(MAX_PLATFORM_DB_CONNECTIONS);
-    expect(fleetDirect + appTotal).toBeLessThanOrEqual(platformDbBudget());
+    // Pooled: the admin pool multiplexes through Supavisor and costs the
+    // instance nothing, so the claim is exactly the constant.
+    const pooled = { PLATFORM_POOLER_URL: "postgresql://x@pool:6543/db" };
+    expect(platformDbBudget(pooled)).toBe(MAX_PLATFORM_DB_CONNECTIONS);
+    expect(fleetDirect + appTotal).toBeLessThanOrEqual(platformDbBudget(pooled));
+  });
+
+  /**
+   * The term `MAX_PLATFORM_DB_CONNECTIONS` excludes on a premise, and what
+   * happens when the premise is false.
+   *
+   * With no `PLATFORM_POOLER_URL` the admin pool opens `ADMIN_POOL_MAX` DIRECT
+   * session-mode backends per replica, which multiplex nothing. Production ran
+   * that way: budget 40, plus 5 x 4 = 20 nobody added, against
+   * `max_connections=60` with 20 already held by Supabase's own workers. Boot
+   * printed `capacity ok — 0 spare` one line under the warning that named those
+   * four per replica — both facts logged, neither compared — and the 53300
+   * exhaustion they predict arrived with no warning.
+   *
+   * Asserted as an INEQUALITY against the pooled arm rather than as a literal:
+   * the numbers are `MAX_CONTAINERS`'s and `ADMIN_POOL_MAX`'s to change, and what
+   * must never come back is the budget being INDIFFERENT to how the pool is
+   * routed.
+   */
+  test("a DIRECT admin pool is counted, because it multiplexes nothing", () => {
+    const maxContainers = pyInt("MAX_CONTAINERS");
+    const direct = platformDbBudget({ MAX_CONTAINERS: String(maxContainers) });
+
+    expect(
+      direct,
+      "with PLATFORM_POOLER_URL unset the admin pool is direct, so the fleet claim has to " +
+        `grow by MAX_CONTAINERS (${maxContainers}) x ADMIN_POOL_MAX (${ADMIN_POOL_MAX}). A ` +
+        "budget that ignores the routing is the one that printed `capacity ok` over a " +
+        "20-connection overrun.",
+    ).toBe(MAX_PLATFORM_DB_CONNECTIONS + maxContainers * ADMIN_POOL_MAX);
+    expect(direct).toBeGreaterThan(platformDbBudget({ PLATFORM_POOLER_URL: "x:6543" }));
+  });
+
+  test("one replica is the honest default when no autoscaler declares a ceiling", () => {
+    // `aai dev`, a unit test and a self-hosted `npm start` really are one
+    // replica. Inventing a fleet would warn on every laptop; the deployment
+    // that has one exports MAX_CONTAINERS from modal_deploy.py.
+    expect(fleetMaxContainers({})).toBe(1);
+    expect(fleetMaxContainers({ MAX_CONTAINERS: "5" })).toBe(5);
+    // A value that is not a positive integer is a malformed declaration, not a
+    // reason to guess high — and this is a capacity READING, which must never
+    // be the thing that fails a boot.
+    expect(fleetMaxContainers({ MAX_CONTAINERS: "" })).toBe(1);
+    expect(fleetMaxContainers({ MAX_CONTAINERS: "nope" })).toBe(1);
+    expect(fleetMaxContainers({ MAX_CONTAINERS: "0" })).toBe(1);
   });
 
   /**
@@ -237,6 +285,18 @@ describe("platform database connection budget", () => {
     // And the app's own handle is not the whole remainder: the budget has to fit
     // the world's pool, its streamer LISTEN and the presence lock beside it.
     expect(APP_DB_POOL_MAX).toBeLessThan(APP_DB_CONNECTION_LIMIT - APP_DB_WORLD_POOL_MAX);
+  });
+
+  /**
+   * The reader defaults to ONE replica when nothing declares a ceiling, which is
+   * right for a laptop and silently wrong for the fleet — a deploy that stopped
+   * exporting the constant would understate the claim by
+   * `(MAX_CONTAINERS - 1) x ADMIN_POOL_MAX` and could print `capacity ok` over
+   * the very overrun the export exists to surface. Nothing else in the repo
+   * reads this env var, so nothing else would notice.
+   */
+  test("modal_deploy.py EXPORTS MAX_CONTAINERS, or the reader silently sees one", () => {
+    expect(deployPy).toMatch(/"MAX_CONTAINERS":\s*str\(MAX_CONTAINERS\)/);
   });
 
   test("extra APP_DB_URLS clusters are counted, because each pools its own", () => {

@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { requireStudioUser, resolveBearer } from "./middleware.ts";
+import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
 import {
   createDevAuth,
@@ -240,6 +241,44 @@ describe("createSupabaseAuth", () => {
     expect(
       await fakeSupabase({ userBody: { email: "a@b.c" } }).auth.verifyAccessTokenFresh("tok"),
     ).toBeNull();
+  });
+
+  /**
+   * "Throws" was never the whole contract — WHAT it throws decides the status.
+   *
+   * `GET /studio/account` answered `500 Internal server error` six times in one
+   * production hour while GoTrue returned 500 for want of a database
+   * connection. So the one route that reports who you are told a signed-in user
+   * the platform was broken, beside sibling routes correctly answering 503 for
+   * the same root cause — and the studio client, which retries 5xx, spent its
+   * retries on a status that says not to.
+   */
+  test("a 5xx from the Auth server is UNAVAILABLE, so the surface answers 503", async () => {
+    const err = await fakeSupabase({ userStatus: 500 })
+      .auth.verifyAccessTokenFresh("tok")
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PlatformServiceUnavailableError);
+    expect((err as PlatformServiceUnavailableError).service).toBe("supabase-auth");
+  });
+
+  test("a 400 from the Auth server stays a server fault, because a retry cannot fix it", async () => {
+    // The line that keeps 503 meaningful: a 4xx will fail identically on
+    // retry. 401/403 are neither — they are "signed out", asserted above.
+    const err = await fakeSupabase({ userStatus: 400 })
+      .auth.verifyAccessTokenFresh("tok")
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(PlatformServiceUnavailableError);
+  });
+
+  test("an unreachable Auth server is UNAVAILABLE too, not merely a throw", async () => {
+    const key = await signingKey();
+    const { auth, url } = fakeSupabase({ jwks: key.jwks, jwksThrows: true });
+    const token = await signToken(key, { sub: user.id }, url);
+
+    await expect(auth.verifyAccessToken(token)).rejects.toBeInstanceOf(
+      PlatformServiceUnavailableError,
+    );
   });
 });
 
