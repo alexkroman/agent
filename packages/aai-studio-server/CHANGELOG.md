@@ -1,5 +1,15 @@
 # aai-studio-server
 
+## 0.10.8
+
+### Patch Changes
+
+- aai-server@3.6.13
+  - @alexkroman1/aai@8.2.1
+  - @alexkroman1/aai-runtime@8.2.1
+  - @alexkroman1/aai-ui@8.2.1
+  - aai-studio-client@0.6.9
+
 ## 0.10.7
 
 ### Patch Changes
