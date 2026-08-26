@@ -257,7 +257,7 @@ type SessionWebSocket = {
 export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
 
 // @internal
-export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
+export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind, waitMs?: (attempt: number) => Promise<void>): Promise<void>;
 
 // @public
 type StateSyncSession = {
