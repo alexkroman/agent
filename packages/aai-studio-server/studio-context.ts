@@ -75,3 +75,25 @@ export function requestPublicOrigin(
   // itself, which is what the retired local-container backend was retired over.
   return guestReachableUrl(resolvePublicOrigin(c.req.raw, env), env);
 }
+
+/**
+ * The origin a HUMAN reaches this platform on — {@link requestPublicOrigin}
+ * WITHOUT the guest rewrite.
+ *
+ * The two differ only under the `microsandbox` backend, and there the
+ * difference is the whole point: that rewrite yields
+ * `host.microsandbox.internal`, a name resolvable only inside a microVM. It is
+ * the right value to DIAL and an unusable one to SHOW, and the in-guest
+ * `aai deploy` prints the origin it was given — `Deployed
+ * http://host.microsandbox.internal:8080/<slug>`, straight into the Publish
+ * menu, which is the only report a publish makes.
+ *
+ * So a caller that hands `serverUrl` to a guest AND surfaces what the guest
+ * said needs both, and `deployStudioProject` maps one back to the other.
+ */
+export function requestBrowserOrigin(
+  c: Context<StudioHonoEnv>,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return resolvePublicOrigin(c.req.raw, env);
+}

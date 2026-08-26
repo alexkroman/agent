@@ -59,7 +59,12 @@ import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { registerAccountRoutes } from "./studio-account-routes.ts";
-import { projectNotFound, requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
+import {
+  projectNotFound,
+  requestBrowserOrigin,
+  requestPublicOrigin,
+  type StudioHonoEnv,
+} from "./studio-context.ts";
 import { registerDatabaseRoutes } from "./studio-database-routes.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { createAfterDeploy } from "./studio-deploy-hooks.ts";
@@ -236,7 +241,16 @@ export function createStudioRoutes(options: StudioRouteOptions): {
         deployWorkspace: (deployScope, deployProject, files, target) =>
           ensureBroker(c).deployWorkspace(deployScope, deployProject, files, target),
       },
-      { apiKey: c.var.apiKey, scope, project, serverUrl: requestPublicOrigin(c) },
+      {
+        apiKey: c.var.apiKey,
+        scope,
+        project,
+        // Two origins, because they answer different questions under the local
+        // microVM backend: the guest DIALS the first and the Publish menu SHOWS
+        // the second. See `requestBrowserOrigin`.
+        serverUrl: requestPublicOrigin(c),
+        browserUrl: requestBrowserOrigin(c),
+      },
     );
     if (!result.ok) return c.json({ error: result.error }, 400);
     return c.json(result);
