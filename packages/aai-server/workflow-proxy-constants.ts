@@ -18,6 +18,30 @@
 import { envMs } from "./constants.ts";
 
 /**
+ * The header the platform injects to PROVE a `/workflows/*` request came through
+ * it, carrying this sandbox's manage bearer (`guestTokenFor`, the same secret
+ * that gates `/ws` and `/manage/*`).
+ *
+ * `/workflows/*` is declared `via: "proxied"` in {@link GUEST_ROUTE_EXPOSURE} —
+ * the platform is the only intended caller, which is what lets its rate limiters
+ * bound the surface. But the sandbox tunnel is PUBLIC: `/client-config` hands the
+ * guest's `w.modal.host` URL to browsers for the voice session, so without a gate
+ * a caller who reads that config reaches the workflow API straight on the tunnel,
+ * bypassing every platform limiter. The guest requires this header and a direct
+ * dialer cannot forge it (it is an HMAC over the sandbox's fleet-wide name).
+ *
+ * A SEPARATE header from `Authorization` deliberately: `Authorization` still
+ * carries the caller's own `AAI_WORKFLOW_API_TOKEN`, which the guest's runtime
+ * checks downstream. The two gates are independent — "did this come through the
+ * platform" and "does the caller hold the app's workflow token".
+ *
+ * Duplicated as a literal in `aai-guest/harness-agent-mode.ts` (the verifier),
+ * the same platform↔guest contract as `AAI_GUEST_TOKEN` itself — a mismatch
+ * fails LOUD (every workflow request 401s), never open.
+ */
+export const GUEST_PROXY_TOKEN_HEADER = "x-aai-guest-token";
+
+/**
  * How long `/:slug/workflows/*` may go WITHOUT PROGRESS before giving up.
  *
  * An INACTIVITY deadline, not a total: two routes on the surface are

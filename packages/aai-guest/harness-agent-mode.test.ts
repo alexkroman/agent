@@ -16,6 +16,7 @@ import {
   MANAGE_STATUS_PATH,
   readAgentBoot,
 } from "./harness-agent-mode.ts";
+import { GUEST_PROXY_TOKEN_HEADER } from "./harness-workflow-gate.ts";
 import { BUNDLE_FETCH_TIMEOUT_MS, GUEST_CONTRACT_VERSION } from "./limits.ts";
 
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf-8").digest("hex");
@@ -214,10 +215,12 @@ function fakeRes(): FakeRes {
 function fakeReq(
   auth?: string,
   url?: string,
-  opts: { method?: string } = {},
+  opts: { method?: string; headers?: Record<string, string> } = {},
 ): http.IncomingMessage {
+  const headers: Record<string, string> = { ...opts.headers };
+  if (auth) headers.authorization = auth;
   return {
-    headers: auth ? { authorization: auth } : {},
+    headers,
     ...omitUndefined({ url, method: opts.method }),
     async *[Symbol.asyncIterator]() {
       // No chunks: a queue callback's payload is irrelevant to the routing.
@@ -385,6 +388,55 @@ describe("createAgentRequestHandler", () => {
     );
     expect(handler(fakeReq(), fakeRes().res, "/websocket", "GET")).toBe(false);
     expect(activity.inFlight()).toBe(0);
+  });
+
+  describe("workflow-API proxy gate", () => {
+    const handler = () => createAgentRequestHandler({ manage, workflows: () => surface });
+    const withProxyToken = (token: string, url: string, method = "POST") =>
+      fakeReq(undefined, url, { method, headers: { [GUEST_PROXY_TOKEN_HEADER]: token } });
+
+    test.each(["/workflows", "/workflows/runs", "/workflows/runs/abc/events"])(
+      "refuses a direct dial of %s with 401 (no proxy token)",
+      (url) => {
+        const out = fakeRes();
+        expect(handler()(fakeReq(undefined, url, { method: "POST" }), out.res, url, "POST")).toBe(
+          true,
+        );
+        expect(out.statusCode).toBe(401);
+      },
+    );
+
+    test("refuses a WRONG proxy token with 401", () => {
+      const out = fakeRes();
+      const url = "/workflows/runs";
+      expect(handler()(withProxyToken("not-the-token", url), out.res, url, "POST")).toBe(true);
+      expect(out.statusCode).toBe(401);
+    });
+
+    test("a valid proxy token falls through untouched, so the runtime API serves it", () => {
+      const out = fakeRes();
+      const url = "/workflows/runs";
+      // Not claimed (returns false) and the response is left alone — the runtime's
+      // own workflow API (which then applies the AAI_WORKFLOW_API_TOKEN gate) is
+      // what answers.
+      expect(handler()(withProxyToken("secret-token", url), out.res, url, "POST")).toBe(false);
+      expect(out.statusCode).toBeUndefined();
+    });
+
+    test("does not gate the loopback queue callbacks (different prefix)", () => {
+      const out = fakeRes();
+      // `/.well-known/workflow/v1/flow` is claimed by handleWorkflowRequest before
+      // the gate, and carries no proxy token — the gate must never touch it.
+      expect(
+        handler()(
+          fakeReq(undefined, WORKFLOW_FLOW_PATH, { method: "POST" }),
+          out.res,
+          WORKFLOW_FLOW_PATH,
+          "POST",
+        ),
+      ).toBe(true);
+      expect(out.statusCode).toBeUndefined();
+    });
   });
 });
 

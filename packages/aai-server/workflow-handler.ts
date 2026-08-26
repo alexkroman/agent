@@ -40,6 +40,7 @@ import {
   pickHeaders,
 } from "./guest-forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
+import { guestTokenFor } from "./guest-token.ts";
 import { registerLiveStream } from "./live-streams.ts";
 import {
   createRateLimiter,
@@ -48,8 +49,10 @@ import {
   WORKFLOW_START_IP_RATE_LIMIT,
 } from "./rate-limit.ts";
 import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrlOrThrow } from "./sandbox-broker.ts";
+import { agentSandboxName } from "./sandbox-directory.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import {
+  GUEST_PROXY_TOKEN_HEADER,
   WORKFLOW_PROXY_TIMEOUT_MS,
   WORKFLOW_PROXY_TRANSFER_TIMEOUT_MS,
 } from "./workflow-proxy-constants.ts";
@@ -102,13 +105,27 @@ export function createAgentWorkflowsHandler(
     const target = guestTarget(c.req.url, slug, await brokerGuestOrigin(slug, broker));
     const body = request.method === "GET" || request.method === "HEAD" ? null : request.body;
 
+    // Prove to the guest that this request came THROUGH the platform, so its
+    // workflow API can refuse a DIRECT dial of the public sandbox tunnel — the
+    // path that otherwise bypasses the rate limiters this route is wrapped in.
+    // The bearer is this sandbox's manage token, which a direct dialer cannot
+    // forge; see GUEST_PROXY_TOKEN_HEADER and the guest's gate in
+    // aai-guest/harness-agent-mode.ts. `getAgentVersion` is one indexed read and
+    // gives the version the running guest's token was derived from (as
+    // agent-logs.ts does for `/manage/*`); a null here is a delete/redeploy race,
+    // answered as the same retryable 503 as an unreachable guest.
+    const version = await c.env.store.getAgentVersion(slug);
+    if (version === null) throw unavailable();
+    const requestHeaders = pickHeaders(request.headers, GUEST_API_REQUEST_HEADERS);
+    requestHeaders.set(GUEST_PROXY_TOKEN_HEADER, guestTokenFor(agentSandboxName(slug, version)));
+
     let guestResponse: Response;
     try {
       guestResponse = await forwardToGuest({
         fetchFn,
         url: target,
         method: request.method,
-        headers: pickHeaders(request.headers, GUEST_API_REQUEST_HEADERS),
+        headers: requestHeaders,
         body,
         timeoutMs: WORKFLOW_PROXY_TIMEOUT_MS,
         // And once a body is MOVING the window is a different one, because what

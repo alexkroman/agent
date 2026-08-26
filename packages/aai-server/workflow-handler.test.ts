@@ -18,10 +18,13 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
+import { guestTokenFor } from "./guest-token.ts";
 import { endLiveStreams, resetLiveStreams } from "./live-streams.ts";
 import type { RateLimiter } from "./rate-limit.ts";
+import { agentSandboxName } from "./sandbox-directory.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { createTestOrchestrator, deployAgent, fakeSandbox, type TestFetch } from "./test-utils.ts";
+import { GUEST_PROXY_TOKEN_HEADER } from "./workflow-proxy-constants.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({ mockSpawnAgentServer: vi.fn() }));
 
@@ -206,6 +209,21 @@ describe("headers", () => {
     // guest's view of the caller must not become a description of the platform.
     expect(guest.calls[0]?.headers.get("cookie")).toBeNull();
     expect(guest.calls[0]?.headers.get("origin")).toBeNull();
+  });
+
+  test("injects the manage bearer so the guest can refuse a DIRECT tunnel dial", async () => {
+    const guest = recordingGuest();
+    const harness = await residentHarness(guest.fetchFn);
+    await get(harness.fetch, "/my-agent/workflows");
+    // The guest gates `/workflows/*` on this header (aai-guest/harness-agent-mode.ts):
+    // it proves the request came THROUGH the platform, so a direct dial of the
+    // public sandbox tunnel — which bypasses the rate limiters this route is
+    // wrapped in — is refused. Derived from the sandbox's fleet-wide name, so it
+    // matches the AAI_GUEST_TOKEN the running guest was spawned with.
+    const version = (await harness.store.getAgentVersion("my-agent")) ?? 1;
+    expect(guest.calls[0]?.headers.get(GUEST_PROXY_TOKEN_HEADER)).toBe(
+      guestTokenFor(agentSandboxName("my-agent", version)),
+    );
   });
 
   test("returns the guest's own status and content type", async () => {
