@@ -39,7 +39,12 @@ import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createStudioRoutes } from "./studio-routes.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
-import { handleStudioClientAsset, handleStudioFavicon, handleStudioPage } from "./studio-static.ts";
+import {
+  handleStudioClientAsset,
+  handleStudioFavicon,
+  handleStudioPage,
+  handleStudioRobots,
+} from "./studio-static.ts";
 
 export type StudioAppOpts = {
   /** Bundle store — deploys write it, published-slug lookups read it. */
@@ -118,6 +123,7 @@ export function createStudioApp(opts: StudioAppOpts): {
   // document nothing.
   app.get(`/studio/api/:slug{${SLUG_PATTERN_SOURCE}}`, handleStudioPage);
   app.get("/favicon.ico", handleStudioFavicon);
+  app.get("/robots.txt", handleStudioRobots);
   app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
   const studioRoutes = createStudioRoutes({
     ...omitUndefined({

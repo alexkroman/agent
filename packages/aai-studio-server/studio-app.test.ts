@@ -121,6 +121,23 @@ describe("createStudioApp", () => {
     expect(await res.text()).toBe(await (await fetch("/")).text());
   });
 
+  it("routes /robots.txt to a real policy, not to the slug validator", async () => {
+    // The bug: production answered `400 Bad Request` to a crawler, because the
+    // path fell through to the agent orchestrator's `/:slug` mount and
+    // `validateSlug` rejected the dot. A well-formed request for a standard
+    // file is not a bad request.
+    //
+    // Served from code rather than from `public/`, so — unlike the favicon
+    // below — the status does not depend on whether the client was built. A
+    // 404 here would make a crawler apply its own default instead.
+    const { fetch } = makeApp();
+    const res = await fetch("/robots.txt");
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/plain");
+    expect(await res.text()).toContain("Disallow: /");
+  });
+
   it("routes /favicon.ico to the favicon handler", async () => {
     // The not-built fallback page and non-browser clients request the icon at
     // the root, so it needs its own path. Whether the client is built decides

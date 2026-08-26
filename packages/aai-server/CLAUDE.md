@@ -543,30 +543,31 @@ The cross-replica coordination that lives in this same Postgres:
   whose ceiling is an outage rather than degradation.
 
   **The budget counts APP DATABASES now, and excluding them was an accounting
-  error rather than a routing decision.** The test excluded them because they
-  are POOLED — but the pooler is Supavisor in SESSION mode, mandatory for the
-  Workflow DevKit and multiplexing NOTHING, so one client connection is one real
-  backend. Routing them through it changes which limits apply, never how many
-  connections exist. So the bound was on the term that does not grow
-  (`MAX_CONTAINERS`, which an operator sets) while the term that scales with
-  TENANTS went uncounted, and the two always competed for the same
-  `max_connections`. `MAX_ACTIVE_APP_DATABASES` is that term, and its value is
-  the finding: at `MAX_CONTAINERS = 5` the platform's own pools take 20 of the
-  40, leaving room for **two** apps at their entitlement. Raising it needs a
-  larger instance or `APP_DB_URLS` sharding — no code change can buy it —
-  which is why the number is deliberately small enough to fail the test when
-  growth outruns the provisioning.
-
-  Measured, for calibration: the admin pool genuinely multiplexes (4 client
-  connections cost 2–3 backends, fleet-wide rather than per replica), the
-  slug-lock pool reaches exactly its 4 under concurrent distinct-slug mutations,
-  and one provisioned workflow app held 6 backends at rest against its 10 —
-  before the pools began returning idle connections (`aai/sdk/app-db-budget.ts`,
-  which is now where every term of that 10 is counted).
+  error rather than a routing decision** — the pooler in front of them is
+  Supavisor in SESSION mode, which multiplexes NOTHING, so the bound was on the
+  term an operator sets (`MAX_CONTAINERS`) while the term that scales with
+  TENANTS went uncounted. `MAX_ACTIVE_APP_DATABASES` is that term and its value
+  is the finding: **two**, raisable only by a bigger instance or `APP_DB_URLS`
+  sharding. `constants.ts` carries the arithmetic and the calibration numbers.
 
   **And boot CHECKS the claim** (`platform-db-capacity.ts`): `show
   max_connections` plus a `pg_stat_activity` count against `platformDbBudget()`,
-  warning with the arithmetic on an overrun. The constant's doc used to say
+  warning with the arithmetic on an overrun.
+
+  **The claim depends on how the ADMIN pool is ROUTED, and the check could not
+  see that.** The constant excludes that pool on a PREMISE — that
+  `PLATFORM_POOLER_URL` points it at a transaction pooler, which really does
+  multiplex — and `platformDbBudget()` was a pure constant, so it was
+  indifferent to whether the premise held. Production ran with the variable
+  unset, making the fleet claim `40 + MAX_CONTAINERS x ADMIN_POOL_MAX = 60`
+  against `max_connections=60` with 20 already held by Supabase's own workers —
+  and boot printed `capacity ok — 0 spare` one line UNDER the warning naming
+  those four per replica. Both numbers logged, nothing comparing them, and the
+  53300 exhaustion they predict arrived unwarned. The budget takes an env now;
+  `MAX_CONTAINERS` is exported into the container env by `modal_deploy.py`
+  rather than restated in TypeScript, and `platform-db-budget.test.ts` asserts
+  that export — without it the reader sees one replica and could print
+  `capacity ok` over the overrun again. The constant's doc used to say
   "nothing in the repo can check it", which was the reason it went unchecked
   rather than a property of the problem — this process holds a connection. Other
   load is **measured, not declared**, which the laziness above is what makes
@@ -598,14 +599,6 @@ The cross-replica coordination that lives in this same Postgres:
   `max_pools` defaulting to 50 per tenant) rather than by this formula. Unset,
   either pooler variable means DIRECT and the budget understates a replica, so
   boot announces it. `platform-connection-config.test.ts` pins all three rules.
-
-  **`SUPABASE_DB_URL` must be the direct, SESSION-mode connection string.** A
-  transaction-mode pooler (Supavisor's port 6543, `pgbouncer=true`) returns
-  the server connection between statements, so an advisory lock taken through
-  one is not held by whoever thinks it holds it — silent loss of mutual
-  exclusion. `assertSessionModeUrl` refuses such a URL at boot rather than
-  letting that be discovered later. Per-app databases are unaffected: they are
-  fronted by the pooler on purpose and take no advisory locks.
 
   **The binding is wrapped in `createMutationLock`, and must stay wrapped:
   taking the lock also drops this replica's cached view of the slug.**
@@ -749,6 +742,16 @@ Two rules from it that a reader of THIS package needs in front of them:
   which Node 26 features may be used where — a rule `tsc` cannot enforce.** See
   "The guest image's Node major, and the split floor it creates" in
   `packages/aai-guest/CLAUDE.md`.
+- **A pinned harness image resolves from EITHER source, and for one release it
+  did not.** `guest-image-source.ts` concluded from the TAG being
+  source-independent that "a pin recorded under one source resolves under the
+  other". The tag is; the IMAGE is not — each source publishes to one place only
+  — so setting `GUEST_IMAGE_REGISTRY` orphaned every `harness_image_tag` that
+  predated it, and every agent deployed before the flip answered
+  `503 agent unavailable`. Modal reports a `skopeo` manifest miss as
+  `Image build for im-<id> failed with the exception:` and then NOTHING, so the
+  log named no tag and no remedy. `resolvePinAcrossSources` (which carries the
+  account, and an END CONDITION) probes Modal first and logs the reference.
 - **The harness, the build toolchain, and the V8 compile cache are baked into
   a snapshot image**, not written per spawn — with the toolchain LOCKED by a
   committed lockfile so one `harness_image_tag` can only ever mean one tree.
@@ -1685,12 +1688,12 @@ streaming the body, with `brokerSessionUrl`'s taxonomy. Three decisions:
 
 ### No warm pool — every spawn boots from the snapshot image
 
-There is NO warm sandbox pool (`sandbox-pool.ts`, `SANDBOX_POOL_SIZE`, the
-`pool` role, and the `setTags` retag plumbing were all deleted). Production
-always ran with the pool disabled, so it was pure complexity: every spawn —
-agent, studio — now boots directly from the published
-content-addressed harness snapshot image, one code path per backend, and
-every sandbox knows its identity (role/slug tags) at creation. When Modal's
+There is NO warm sandbox pool (`sandbox-pool.ts` and its `SANDBOX_POOL_SIZE`,
+`pool` role and `setTags` plumbing are deleted — production always ran with it
+disabled, so it was pure complexity). Every spawn — agent, studio — boots
+directly from the published content-addressed harness snapshot image, one code
+path per backend, and every sandbox knows its identity (role/slug tags) at
+creation. When Modal's
 JS SDK exposes sandbox MEMORY snapshots (today it exposes only
 `snapshotFilesystem`; memory snapshots are Python-SDK experimental),
 restore-from-snapshot slots into this single spawn path — do NOT
@@ -1723,12 +1726,11 @@ whether some replica is already serving this deploy and routes to that
 guest's tunnel — sessions dial the guest directly, so a peer's URL serves a
 client exactly as well as a local one.
 
-This replaced `aai_platform.sandbox_registry`, a lease table the owning replica
-heartbeated every 10s. With it went the heartbeat timer and its per-tick ownership
-re-check, the pg_cron sweep for crashed replicas' rows, `replicaId` on the agent
-path, and the accepted **stale-lease window** — that design could hand out a dead
-peer URL for up to one lease after a crash. A name is released when the sandbox
-stops, so `fromName` cannot return something that is not running.
+This replaced `aai_platform.sandbox_registry`, a heartbeated lease table (git
+history has it), and the reason a NAME is stronger: it is released when the
+sandbox stops, so `fromName` cannot return something that is not running —
+where a lease could hand out a dead peer's URL for up to one lease after a
+crash.
 
 Three properties worth keeping:
 

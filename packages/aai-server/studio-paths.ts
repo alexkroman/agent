@@ -24,6 +24,13 @@ export function isStudioPath(pathname: string): boolean {
   return (
     pathname === "/" ||
     pathname === "/favicon.ico" ||
+    // `/robots.txt` belongs here for the reason `/favicon.ico` does — a crawler
+    // asks the ROOT for it, and this host's root is the studio. Absent, it fell
+    // through to the agent orchestrator, matched `/:slug`, and `validateSlug`
+    // answered `400 Bad Request`: production really served that to a crawler.
+    // A well-formed request for a standard file is not a bad request, and the
+    // status is the one thing a crawler acts on.
+    pathname === "/robots.txt" ||
     pathname === "/studio" ||
     pathname.startsWith("/studio/") ||
     pathname.startsWith("/studio-assets/")

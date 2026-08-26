@@ -261,7 +261,12 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   bootstrapPlatformDb(exec, env);
   // The budget in `MAX_PLATFORM_DB_CONNECTIONS` is a claim about provisioned
   // hardware; this is the one place holding a connection to check it against.
-  announcePlatformDbCapacity(exec);
+  //
+  // Takes THIS env rather than reading `process.env` itself, because the claim
+  // depends on one of its variables: `PLATFORM_POOLER_URL` decides whether the
+  // admin pool costs the instance anything, and the warning above is the term
+  // the budget was missing. Both facts were logged and neither was compared.
+  announcePlatformDbCapacity(exec, env);
   return {
     secrets: createVaultSecretStore(exec),
     agents: createPgAgentRows(exec),

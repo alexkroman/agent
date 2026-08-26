@@ -46,6 +46,13 @@ import { hash } from "node:crypto";
 import { GoTrueClient, isAuthRetryableFetchError } from "@supabase/auth-js";
 import { hasPlatformDb, isLocalDev } from "./_boot.ts";
 import { TtlCache } from "./_ttl-cache.ts";
+import { isUnavailableStatus, PlatformServiceUnavailableError } from "./platform-service-errors.ts";
+
+/**
+ * The `service` every unavailability from this module carries, so a log line
+ * says which dependency was down without the reader parsing the message.
+ */
+const AUTH_SERVICE = "supabase-auth";
 
 /** SecretStore name for one studio user's AssemblyAI API key. */
 export function userApiKeySecretName(userId: string): string {
@@ -206,7 +213,18 @@ export function createSupabaseAuth(opts: {
     if (!res.ok) {
       // Supabase being down is a 5xx to the caller, not a silent sign-out:
       // fail closed but distinguishably from "your session expired".
-      throw new Error(`Supabase auth verification failed (HTTP ${res.status})`);
+      //
+      // And 503 rather than 500 when the status says "not now", because it is
+      // GoTrue that is unavailable and not us. Production answered
+      // `500 Internal server error` on `/studio/account` while GoTrue returned
+      // 500 for want of a database connection — so the one route that reports
+      // who you are told a signed-in user the platform was broken, beside
+      // sibling routes correctly answering 503 for the same root cause. A 4xx
+      // stays a 500 deliberately: it will fail identically on retry.
+      const message = `Supabase auth verification failed (HTTP ${res.status})`;
+      throw isUnavailableStatus(res.status)
+        ? new PlatformServiceUnavailableError(AUTH_SERVICE, message)
+        : new Error(message);
     }
     const body = (await res.json().catch(() => null)) as {
       id?: unknown;
@@ -235,7 +253,13 @@ export function createSupabaseAuth(opts: {
         // not sign anyone out. Only the retryable-fetch class is the latter,
         // and it is the one case that must NOT be cached as a rejection.
         if (isAuthRetryableFetchError(error)) {
-          throw new Error(`Supabase auth verification failed: ${error.message}`, { cause: error });
+          // gotrue-js's own name for "the request never completed", so no
+          // guessing is needed — and the same answer as the 5xx above.
+          throw new PlatformServiceUnavailableError(
+            AUTH_SERVICE,
+            `Supabase auth verification failed: ${error.message}`,
+            { cause: error },
+          );
         }
         cache.set(cacheKey, null);
         return null;

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { createLogger } from "./logger.ts";
 import { PlatformDbUnavailableError } from "./platform-db-errors.ts";
 import { SlugLockTimeoutError } from "./platform-lock.ts";
+import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 
 const log = createLogger("http");
@@ -37,6 +38,18 @@ export const PLATFORM_DB_UNAVAILABLE_MESSAGE =
   "The platform is temporarily unable to reach its database, so this request could not be served. Try again shortly.";
 
 /**
+ * What a caller is told when a platform dependency reached over HTTP was
+ * unavailable — Supabase Auth or Supabase Storage.
+ *
+ * Deliberately does NOT name which one, on the same rule as the two messages
+ * above: the caller cannot act on the difference and an unauthenticated one
+ * should not learn our topology. The `service` field is what the log carries,
+ * because that difference IS actionable to an operator.
+ */
+export const PLATFORM_SERVICE_UNAVAILABLE_MESSAGE =
+  "The platform is temporarily unable to reach one of its services, so this request could not be served. Try again shortly.";
+
+/**
  * An error and every `cause` under it, as one line.
  *
  * The chain is where the diagnosis lives on this surface: an `HTTPException`'s own
@@ -58,6 +71,53 @@ function causeChain(err: unknown): string {
     cur = cur.cause;
   }
   return parts.join(" <- ");
+}
+
+/**
+ * The dependency-unavailable cases: log the diagnosis, return the sentence the
+ * caller gets, or `undefined` when this is not one of them.
+ *
+ * Three classes, one status, and grouping them is what keeps that true —
+ * a 503 is the whole point of each, so a fourth dependency arriving with a 500
+ * (which is what all three used to do) should not be possible to write. The
+ * SPLIT that matters is the log LEVEL, and it is a judgement per dependency
+ * rather than a default:
+ *
+ * - A sandbox at capacity is ORDINARY. `warn`.
+ * - A platform database or service this process cannot reach is not: it is a
+ *   misconfiguration or an outage, and every stateful request is failing
+ *   alongside this one. `error`.
+ *
+ * Answering 500 for any of them also cost the studio client its retry — it
+ * treats 5xx as transient, and "Internal server error" is what the user was
+ * left staring at once the retries ran out.
+ */
+function reportUnavailable(err: unknown, path: string): string | undefined {
+  // The backend's own message plus its cause chain (`Sandbox operation timed
+  // out`, `guest never came up`, …) keeps landing in the log while the caller
+  // gets a sentence it can act on.
+  if (err instanceof SandboxUnavailableError) {
+    log.warn(`sandbox unavailable on ${path}`, { detail: errorDetail(err) });
+    return SANDBOX_UNAVAILABLE_MESSAGE;
+  }
+  // The cause chain carries the driver's code and the host it could not reach,
+  // which is the whole diagnosis — production spent 20 minutes answering 500
+  // with `getaddrinfo ENOTFOUND db.<ref>.supabase.co` sitting in the detail.
+  if (err instanceof PlatformDbUnavailableError) {
+    log.error(`platform database unreachable on ${path}`, { cause: causeChain(err) });
+    return PLATFORM_DB_UNAVAILABLE_MESSAGE;
+  }
+  // Supabase Auth or Supabase Storage. The `service` is its own log field
+  // rather than part of the message, because it is what decides where an
+  // operator looks — "auth is down" and "storage is down" are different
+  // dashboards, and neither library's message says which it was.
+  if (err instanceof PlatformServiceUnavailableError) {
+    log.error(`platform service ${err.service} unavailable on ${path}`, {
+      cause: causeChain(err),
+    });
+    return PLATFORM_SERVICE_UNAVAILABLE_MESSAGE;
+  }
+  return undefined;
 }
 
 /**
@@ -99,32 +159,10 @@ export function createErrorHandler(): ErrorHandler {
     if (err instanceof SlugLockTimeoutError) {
       return c.json({ error: err.message }, 409);
     }
-    // A sandbox that would not start: infrastructure, not a server fault, and
-    // retryable. Logged at warn with the backend's own message + cause chain,
-    // so the diagnosis (`Sandbox operation timed out`, `guest never came up`,
-    // …) keeps landing in the log while the caller gets a sentence it can act
-    // on. Answering 500 here also cost the studio client its retry: it treats
-    // 5xx as transient, but "Internal server error" is what the user was left
-    // staring at once the retries ran out.
-    if (err instanceof SandboxUnavailableError) {
-      log.warn(`sandbox unavailable on ${c.req.path}`, { detail: errorDetail(err) });
-      return c.json({ error: SANDBOX_UNAVAILABLE_MESSAGE }, 503);
-    }
-    // The platform's own Postgres, unreachable: infrastructure, not a server
-    // fault, and retryable — so 503, which the studio client already treats as
-    // transient. Answering 500 cost it that retry and told the user "Internal
-    // server error" for 20 minutes while the real reason (a connection string
-    // naming a host with no A record) sat in the detail.
-    //
-    // `error` rather than `warn`, unlike a sandbox at capacity: a platform
-    // database this process cannot reach is never ordinary — it is a
-    // misconfiguration or an outage, and EVERY stateful request is failing
-    // alongside this one. The cause chain carries the driver's code and the
-    // host it could not reach, which is the whole diagnosis.
-    if (err instanceof PlatformDbUnavailableError) {
-      log.error(`platform database unreachable on ${c.req.path}`, { cause: causeChain(err) });
-      return c.json({ error: PLATFORM_DB_UNAVAILABLE_MESSAGE }, 503);
-    }
+    // A DEPENDENCY was unavailable — every one of them is a retryable 503, and
+    // they share one branch so a fourth cannot arrive with a different status.
+    const unavailable = reportUnavailable(err, c.req.path);
+    if (unavailable !== undefined) return c.json({ error: unavailable }, 503);
     log.error(`unhandled error on ${c.req.path}`, { detail: errorDetail(err) });
     return c.json({ error: "Internal server error" }, 500);
   };

@@ -178,6 +178,29 @@ export async function handleStudioFavicon(c: AppContext): Promise<Response> {
   });
 }
 
+/**
+ * `GET /robots.txt` — served from CODE, not from the client build.
+ *
+ * Every host under this deployment is an authenticated app plus a namespace of
+ * TENANT agent pages at `/:slug/`, and neither is content anybody should be
+ * indexing: the studio needs a session to show anything, and what an agent's
+ * page says is its author's business rather than ours to publish. So the policy
+ * is a blanket disallow, and it stays one line to relax if a public surface ever
+ * lands on this host.
+ *
+ * Not a `public/` asset, unlike `favicon.ico`, and the difference is what a
+ * MISSING file means. A 404 favicon is cosmetic; a 404 here makes a crawler
+ * apply its own default, so the policy would silently depend on whether the
+ * studio client happened to be built. It is also the shortest possible file,
+ * with nothing to gain from the build.
+ */
+export function handleStudioRobots(c: AppContext): Response {
+  return c.text("User-agent: *\nDisallow: /\n", 200, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "public, max-age=86400",
+  });
+}
+
 /** `GET /studio-assets/:path{.+}` — hashed Vite build assets. */
 export async function handleStudioClientAsset(c: AppContext): Promise<Response> {
   const rawPath = c.req.param("path") ?? "";

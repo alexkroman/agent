@@ -7,9 +7,11 @@ import { z } from "zod";
 import {
   createErrorHandler,
   PLATFORM_DB_UNAVAILABLE_MESSAGE,
+  PLATFORM_SERVICE_UNAVAILABLE_MESSAGE,
   SANDBOX_UNAVAILABLE_MESSAGE,
 } from "./error-handler.ts";
 import { PlatformDbUnavailableError } from "./platform-db-errors.ts";
+import { PlatformServiceUnavailableError } from "./platform-service-errors.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { captureLogs } from "./test-utils.ts";
 
@@ -51,6 +53,30 @@ function createApp() {
           code: "ENOTFOUND",
         }),
       }),
+    ),
+  );
+  // The two production shapes, one per dependency. Storage's cause is nested
+  // twice on purpose: undici's `fetch failed` says nothing on its own, and the
+  // code below it is the whole diagnosis.
+  app.get("/storage-unavailable", () =>
+    throwError(
+      new PlatformServiceUnavailableError(
+        "supabase-storage",
+        "blob write failed for blobs/deadbeef: fetch failed",
+        {
+          cause: Object.assign(new TypeError("fetch failed"), {
+            cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+          }),
+        },
+      ),
+    ),
+  );
+  app.get("/auth-unavailable", () =>
+    throwError(
+      new PlatformServiceUnavailableError(
+        "supabase-auth",
+        "Supabase auth verification failed (HTTP 500)",
+      ),
     ),
   );
   app.onError(createErrorHandler());
@@ -114,6 +140,30 @@ describe("createErrorHandler", () => {
     expect(logs.errors()).toEqual([]);
     // The backend's own diagnosis still reaches the log.
     expect(JSON.stringify(logs.all())).toContain("Sandbox operation timed out");
+  });
+
+  test("returns a retryable 503 when a platform HTTP service is unavailable", async () => {
+    // `POST /deploy` answered 500 on `blob write failed … fetch failed` during a
+    // burst of concurrent uploads — the one failure retrying fixes, answered
+    // with the one status that says do not retry.
+    const res = await createApp().request("/storage-unavailable");
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: string };
+    expect(body).toEqual({ error: PLATFORM_SERVICE_UNAVAILABLE_MESSAGE });
+    // Which dependency is the operator's business, not an unauthenticated
+    // caller's — so it is in the log and not on the wire.
+    expect(body.error).not.toContain("storage");
+    const logged = JSON.stringify(logs.all());
+    expect(logged).toContain("supabase-storage");
+    // The whole point of re-parenting `originalError`: without it the chain
+    // stops at undici's generic message and names no failure at all.
+    expect(logged).toContain("ECONNRESET");
+  });
+
+  test("names the service that was down, so two dependencies are not one line", async () => {
+    const res = await createApp().request("/auth-unavailable");
+    expect(res.status).toBe(503);
+    expect(JSON.stringify(logs.all())).toContain("supabase-auth");
   });
 
   test("returns a retryable 503 when the platform database is unreachable", async () => {

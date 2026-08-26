@@ -3,6 +3,11 @@
  * The image-source policy, and the one property that makes it safe to switch:
  * a tag recorded under one source resolves under the other.
  *
+ * That property was ASSERTED for one release and did not hold — the same tag
+ * under both sources names one triple and two different published artifacts —
+ * so the specs below now pin the resolution ORDER that delivers it, and the
+ * fake can miss.
+ *
  * Every fake here is built from `GuestImageClient`, the narrow structural type
  * the module takes — so nothing is laundered through `as unknown as
  * ModalClient`, which is what the sibling `modal-harness-image.test.ts` needs
@@ -20,6 +25,7 @@ import {
   registryImageSource,
 } from "./guest-image-source.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
+import { captureLogs } from "./test-utils.ts";
 
 const BASE_TAG = "node:26-slim";
 
@@ -30,14 +36,22 @@ const BASE_TAG = "node:26-slim";
  */
 type FakeImage = { readonly ref: string };
 
-/** A client that records every lookup. */
-function fakeClient(): {
+/**
+ * A client that records every lookup.
+ *
+ * `modalHolds` is what Modal's own image registry contains, and it defaults to
+ * NOTHING — the post-migration steady state, where every pin is a registry pin.
+ * A `fromName` that always resolved would make the pre-flip-pin path the one
+ * every spec exercised by accident.
+ */
+function fakeClient(modalHolds: readonly string[] = []): {
   client: GuestImageClient<FakeImage>;
   fromRegistry: string[];
   fromName: string[];
 } {
   const fromRegistry: string[] = [];
   const fromName: string[] = [];
+  const held = new Set(modalHolds);
   return {
     fromRegistry,
     fromName,
@@ -49,7 +63,11 @@ function fakeClient(): {
         },
         fromName: (tag) => {
           fromName.push(tag);
-          return Promise.resolve({ ref: tag });
+          // Modal's SDK throws NotFoundError for a name it does not hold; the
+          // MESSAGE is not what the code keys on, so a plain Error is faithful.
+          return held.has(tag)
+            ? Promise.resolve({ ref: tag })
+            : Promise.reject(new Error(`Image '${tag}' not found`));
         },
       },
     },
@@ -97,6 +115,8 @@ describe("guestImageRegistry", () => {
 });
 
 describe("registryImageSource", () => {
+  const logs = captureLogs();
+
   test("pulls the CURRENT harness at exactly the tag a deploy would record", () => {
     // The property that makes the switch safe: `agents.harness_image_tag` holds
     // tags computed by `localHarnessImageTag`, and the registry source must
@@ -112,15 +132,67 @@ describe("registryImageSource", () => {
     expect(fromRegistry).toEqual([`ghcr.io/owner/${localHarnessImageTag(BASE_TAG, code)}`]);
   });
 
-  test("resolves a PINNED tag by prefixing it, and never by rehashing", () => {
-    const { client, fromRegistry, fromName } = fakeClient();
+  test("resolves a PINNED tag by prefixing it, and never by rehashing", async () => {
+    const { client, fromRegistry } = fakeClient();
     const source = registryImageSource({ client, baseTag: BASE_TAG, registry: "ghcr.io/owner" });
 
-    void source.byTag("aai-guest-harness:0123456789abcdef");
+    await source.byTag("aai-guest-harness:0123456789abcdef");
 
     expect(fromRegistry).toEqual(["ghcr.io/owner/aai-guest-harness:0123456789abcdef"]);
-    // Modal's own image registry is not consulted on this path at all.
+    // The REFERENCE is logged where it is still known. Modal reports a missing
+    // manifest as `Image build for im-<id> failed with the exception:` and then
+    // nothing at all, so without this line a failed pull names no image.
+    expect(
+      logs
+        .all()
+        .map((l) => JSON.stringify(l.ctx))
+        .join("\n"),
+    ).toContain("ghcr.io/owner/aai-guest-harness:0123456789abcdef");
+  });
+
+  test("a pin Modal still holds resolves from MODAL, not the registry", async () => {
+    // The production bug this exists for: flipping GUEST_IMAGE_REGISTRY on
+    // orphaned every pin an earlier deploy had recorded, because a snapshot-era
+    // pin was published to Modal and to nowhere else. Five of them, one per
+    // agent deployed before the flip, spawned as `503 agent unavailable` behind
+    // a `manifest unknown` that named no tag.
+    const pin = "aai-guest-harness:72f3243f3eea1189";
+    const { client, fromRegistry, fromName } = fakeClient([pin]);
+    const source = registryImageSource({ client, baseTag: BASE_TAG, registry: "ghcr.io/owner" });
+
+    await expect(source.byTag(pin)).resolves.toEqual({ ref: pin });
+
+    expect(fromName).toEqual([pin]);
+    // Not merely "resolved" — resolved WITHOUT a registry pull, since the
+    // registry handle is lazy and would have failed at sandbox create instead.
+    expect(fromRegistry).toEqual([]);
+  });
+
+  test("the CURRENT harness never consults Modal — nothing publishes there", async () => {
+    // Ordering matters in one direction only: a Modal miss is one gRPC call,
+    // a registry miss is unobservable until the pull. So the pinned path may
+    // ask Modal first and the current path may not — it would be a guaranteed
+    // miss on every cold spawn.
+    const { client, fromName } = fakeClient();
+    const source = registryImageSource({ client, baseTag: BASE_TAG, registry: "ghcr.io/owner" });
+
+    await source.current("export const harness = 1;\n");
+
     expect(fromName).toEqual([]);
+  });
+
+  test("a pin is looked up once per process, however many spawns ask", async () => {
+    const pin = "aai-guest-harness:0123456789abcdef";
+    const { client, fromName, fromRegistry } = fakeClient();
+    const source = registryImageSource({ client, baseTag: BASE_TAG, registry: "ghcr.io/owner" });
+
+    await Promise.all([source.byTag(pin), source.byTag(pin)]);
+    await source.byTag(pin);
+
+    // The Modal probe is the cost this memo exists to bound; it buys the
+    // portability above without paying a round trip per spawn.
+    expect(fromName).toEqual([pin]);
+    expect(fromRegistry).toEqual([`ghcr.io/owner/${pin}`]);
   });
 
   test("computes the tag once per harness build", () => {
