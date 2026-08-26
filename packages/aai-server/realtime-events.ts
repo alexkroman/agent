@@ -50,18 +50,10 @@
  * realtime-js retries the join forever.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { RealtimeClient } from "@supabase/realtime-js";
-import { createLogger } from "./logger.ts";
-import {
-  type PlatformEvents,
-  type PlatformEventsHealth,
-  projectKey,
-  type Unwatch,
-} from "./platform-events.ts";
-
-const log = createLogger("platform.realtime");
+import { type PlatformEvents, projectKey, type Unwatch } from "./platform-events.ts";
+import { createSubscriptionMonitor } from "./realtime-subscription-monitor.ts";
 
 /** The schema every watched table lives in — see the module doc's grant note. */
 const PLATFORM_SCHEMA = "aai_platform";
@@ -116,107 +108,6 @@ function defaultClient(opts: RealtimePlatformEventsOptions): RealtimeClientLike 
   return new RealtimeClient(realtimeEndpoint(opts.url), {
     params: { apikey: opts.key },
   }) as unknown as RealtimeClientLike;
-}
-
-/**
- * How long a channel may go without acking a join before it counts as
- * STALLED rather than merely slow.
- *
- * Generous on purpose. A join crosses the socket and Realtime's own
- * authorization, and realtime-js reconnects with backoff, so a few seconds of
- * failure during a deploy or a network blip is ordinary. What this has to
- * separate is that from the failure mode below, which never recovers on its
- * own and never stops retrying.
- */
-const JOIN_BUDGET_MS = 30_000;
-
-/**
- * Per-channel join tracking — the thing that turns "changes silently stopped
- * being delivered" into something observable.
- *
- * A subscribe that can never succeed is this platform's most expensive quiet
- * failure (see {@link PlatformEventsHealth}), and its whole signature is an
- * infinite retry: realtime-js rejoins forever, so the ONLY difference between
- * a wedged channel and a healthy one used to be the rate of a warn line.
- * That is invisible in two directions at once — nobody watches for a warn, and
- * a warn per retry is indistinguishable from a warn per blip.
- *
- * So failures are counted per channel instead of narrated: an ordinary
- * failure still warns, a channel that has never joined and is past the budget
- * escalates ONCE to `log.error`, and {@link health} reports it for as long
- * as it lasts.
- */
-type ChannelState = { openedAt: number; joined: boolean; escalated: boolean };
-
-/** Never joined, and out of budget. */
-function isStalled(state: ChannelState, now: number): boolean {
-  return !state.joined && now - state.openedAt >= JOIN_BUDGET_MS;
-}
-
-/**
- * One failed join: ordinary until the budget lapses, then escalated ONCE.
- * Once, because the retry is infinite — a per-retry error would become the log
- * rather than a finding in it.
- */
-function reportFailure(
-  topic: string,
-  state: ChannelState,
-  status: string,
-  err: Error | undefined,
-): void {
-  const detail = err ? ` (${errorMessage(err)})` : "";
-  if (!isStalled(state, Date.now())) {
-    log.warn(`channel ${topic}: ${status}${detail}`);
-    return;
-  }
-  if (state.escalated) return;
-  state.escalated = true;
-  log.error(
-    `channel ${topic} has never joined after ${Math.round(JOIN_BUDGET_MS / 1000)}s ` +
-      `and is retrying indefinitely${detail}. Changes on this channel are NOT being ` +
-      "delivered: sandboxes will not be invalidated on redeploy and studio SSE will not " +
-      "push. Check SUPABASE_SERVICE_ROLE_KEY's authority and the aai_platform grants.",
-  );
-}
-
-function createSubscriptionMonitor() {
-  const channels = new Map<string, ChannelState>();
-
-  return {
-    /**
-     * Register `topic` and return its subscribe callback. Re-registering a
-     * topic (a channel released and re-claimed) restarts its budget, which is
-     * correct — it is a new join attempt, not a continuing one.
-     */
-    track(topic: string): (status: string, err?: Error) => void {
-      const state: ChannelState = { openedAt: Date.now(), joined: false, escalated: false };
-      channels.set(topic, state);
-      return (status, err) => {
-        if (status === "SUBSCRIBED") state.joined = true;
-        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          reportFailure(topic, state, status, err);
-        }
-      };
-    },
-
-    /** Forget a channel that has been unsubscribed. */
-    untrack(topic: string): void {
-      channels.delete(topic);
-    },
-
-    health(): PlatformEventsHealth {
-      const now = Date.now();
-      const stalled: string[] = [];
-      for (const [topic, state] of channels) {
-        if (isStalled(state, now)) stalled.push(topic);
-      }
-      return { channels: channels.size, stalled };
-    },
-
-    clear(): void {
-      channels.clear();
-    },
-  };
 }
 
 /**

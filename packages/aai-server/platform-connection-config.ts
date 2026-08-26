@@ -7,11 +7,15 @@
  * question — may this connection be POOLED, and how — and the answer is measured
  * rather than chosen. `supabase/config.toml`'s pooler stanza carries the run:
  *
- * - `SUPABASE_DB_URL` stays DIRECT, because the slug lock is a session-scoped
- *   `pg_advisory_lock` and a rival connection acquired the same lock through a
- *   transaction pooler. That is the silent loss of mutual exclusion
- *   `assertSessionModeUrl` exists to prevent, and it had never been reproduced
- *   before.
+ * - `SUPABASE_DB_URL` stays SESSION-mode, because the slug lock is a
+ *   session-scoped `pg_advisory_lock` and a rival connection acquired the same
+ *   lock through a transaction pooler. That is the silent loss of mutual
+ *   exclusion `assertSessionModeUrl` exists to prevent, and it had never been
+ *   reproduced before. Note "session-mode", not "direct": Supavisor's port-5432
+ *   endpoint pins a backend for the connection's lifetime and satisfies the lock
+ *   just as well, and on Supabase the DIRECT host resolves to IPv6 only unless
+ *   the project buys the IPv4 add-on — so "direct" is the value that took
+ *   production down (see {@link announceDirectDbHost}).
  * - The ADMIN pool may be TRANSACTION-pooled: the only lock on it is
  *   `pg_try_advisory_xact_lock` inside `begin … commit`, whose lifetime is
  *   exactly the transaction a pooler pins a backend for — verified correct
@@ -25,7 +29,69 @@
  * refusals that read backwards until you see what they prevent.
  */
 
+import { createLogger } from "./logger.ts";
 import { assertSessionModeUrl, isTransactionModePooler } from "./platform-lock.ts";
+
+const log = createLogger("platform.connections");
+
+/**
+ * Supabase's DIRECT endpoint for a project: `db.<ref>.supabase.co`.
+ *
+ * Two facts about this host, and the second is the expensive one. It is not a
+ * pooler and never can be — Supavisor answers on `*.pooler.supabase.com` — and
+ * on a project without the IPv4 add-on it has **no A record at all**, only
+ * AAAA. Every IPv4-only runtime (Modal's containers included) therefore fails
+ * `getaddrinfo ENOTFOUND` on it, at every query, forever.
+ */
+const SUPABASE_DIRECT_HOST = /^db\..+\.supabase\.co$/;
+
+/** The URL's hostname, or `undefined` when it does not parse as one. */
+function hostnameOf(url: string): string | undefined {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    // Not our business to validate connection strings in general — the driver
+    // rejects an unusable one with a better message than we can. Same policy as
+    // `assertSessionModeUrl`.
+    return undefined;
+  }
+}
+
+/**
+ * Refuse a POOLER URL that names Supabase's direct endpoint.
+ *
+ * This is a HOST check because the mode checks beside it cannot be one, and
+ * production paid for the difference: `isTransactionModePooler` asks about the
+ * port (`6543`) or an explicit `pgbouncer=true`, so the direct connection
+ * string with its port changed to 6543 is *mode-valid* and completely
+ * non-functional. Set as `PLATFORM_POOLER_URL`, it took the admin pool — and
+ * with it agents rows, Vault, workspaces, chats, pg_cron scheduling, the
+ * capacity read and the durable-workflow wake sweep — to a hostname with no A
+ * record, while `/health` kept answering 200 and the boot log's only clue was
+ * that the "no PLATFORM_POOLER_URL" warning had stopped printing.
+ *
+ * **It is deliberately NOT "the pooler host must differ from
+ * `SUPABASE_DB_URL`'s".** That rule reads right and refuses the correct
+ * configuration: production's two vars are the same Supavisor HOSTNAME on
+ * different ports (5432 session, 6543 transaction), and the local stack puts
+ * Supavisor and Postgres both on `127.0.0.1`. Hostname equality does not
+ * separate the working config from the broken one; "is this the direct
+ * endpoint" does.
+ *
+ * Scoped to Supabase-managed hostnames, so a self-hosted Supavisor, a proxy or
+ * a loopback forward is judged by nothing here.
+ */
+function assertNotDirectHost(raw: string, varName: string): void {
+  const hostname = hostnameOf(raw);
+  if (hostname === undefined || !SUPABASE_DIRECT_HOST.test(hostname)) return;
+  throw new Error(
+    `${varName} names Supabase's DIRECT endpoint (${hostname}), which is not a pooler. ` +
+      "Supavisor answers on <region>.pooler.supabase.com; the direct host also has no IPv4 " +
+      "address unless the project buys the add-on, so every connection through it fails " +
+      "`getaddrinfo ENOTFOUND`. Changing the direct string's PORT to a pooler port does not " +
+      "make it a pooler — it passes the mode check and reaches nothing.",
+  );
+}
 
 /**
  * Supavisor's TRANSACTION-mode URL for the platform ADMIN pool, or `undefined`.
@@ -46,6 +112,7 @@ import { assertSessionModeUrl, isTransactionModePooler } from "./platform-lock.t
 export function platformPoolerUrl(env: NodeJS.ProcessEnv): string | undefined {
   const raw = env.PLATFORM_POOLER_URL?.trim();
   if (!raw) return undefined;
+  assertNotDirectHost(raw, "PLATFORM_POOLER_URL");
   if (!isTransactionModePooler(new URL(raw))) {
     throw new Error(
       "PLATFORM_POOLER_URL must name a TRANSACTION-mode pooler (port 6543 / pgbouncer=true). " +
@@ -70,6 +137,36 @@ export function platformPoolerUrl(env: NodeJS.ProcessEnv): string | undefined {
 export function appDbPoolerUrl(env: NodeJS.ProcessEnv): string | undefined {
   const raw = env.APP_DB_POOLER_URL?.trim();
   if (!raw) return undefined;
+  assertNotDirectHost(raw, "APP_DB_POOLER_URL");
   assertSessionModeUrl(raw);
   return raw;
+}
+
+/**
+ * Announce a `SUPABASE_DB_URL` that names Supabase's direct endpoint.
+ *
+ * WARNED rather than refused, and the asymmetry with {@link assertNotDirectHost}
+ * is the whole point: a direct session-mode connection is a legitimate value
+ * here — it is what `assertSessionModeUrl`'s own error recommends, and it is
+ * correct on a project that bought the IPv4 add-on or on any IPv6-capable
+ * runtime. It is only *unreachable* on this platform's deployment, which no
+ * string can tell. So this names the trap and leaves the choice.
+ *
+ * A warning is a weak instrument and this file knows it. The strong version is
+ * a boot-time `select 1` that FAILS the boot rather than logging — deliberately
+ * not done here, because it turns a Supabase blip during a deploy into a
+ * deployment that will not start, which is a trade for an operator to make
+ * rather than a detail of a config reader.
+ */
+export function announceDirectDbHost(env: NodeJS.ProcessEnv): void {
+  const raw = env.SUPABASE_DB_URL?.trim();
+  const hostname = raw ? hostnameOf(raw) : undefined;
+  if (hostname === undefined || !SUPABASE_DIRECT_HOST.test(hostname)) return;
+  log.warn(
+    `SUPABASE_DB_URL points at Supabase's DIRECT host (${hostname}). That host has no IPv4 ` +
+      "address unless the project bought the add-on, and this platform's containers are " +
+      "IPv4-only — so if the next line is a capacity read that failed with ENOTFOUND, this is " +
+      "why. Supavisor's SESSION-mode URL (port 5432 on <region>.pooler.supabase.com) is " +
+      "reachable and keeps the connection affinity the slug lock needs.",
+  );
 }

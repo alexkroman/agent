@@ -7,6 +7,7 @@ import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { createLogger } from "./logger.ts";
+import { PlatformDbUnavailableError } from "./platform-db-errors.ts";
 import { SlugLockTimeoutError } from "./platform-lock.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 
@@ -21,6 +22,19 @@ const log = createLogger("http");
  */
 export const SANDBOX_UNAVAILABLE_MESSAGE =
   "Could not start a sandbox for this project — the platform is at capacity or the sandbox took too long to boot. This is usually temporary; try again.";
+
+/**
+ * What a caller is told when the platform's own database could not be reached.
+ *
+ * Same split as {@link SANDBOX_UNAVAILABLE_MESSAGE}: the driver's message
+ * (`getaddrinfo ENOTFOUND db.<ref>.supabase.co`) names our infrastructure and
+ * would leak a hostname to an unauthenticated caller, so it stays in the log
+ * and this stays on the wire. It says "temporarily" because that is what a 503
+ * promises, and because the alternative — a misconfigured connection string —
+ * is not something the caller can distinguish or act on differently.
+ */
+export const PLATFORM_DB_UNAVAILABLE_MESSAGE =
+  "The platform is temporarily unable to reach its database, so this request could not be served. Try again shortly.";
 
 /**
  * An error and every `cause` under it, as one line.
@@ -95,6 +109,21 @@ export function createErrorHandler(): ErrorHandler {
     if (err instanceof SandboxUnavailableError) {
       log.warn(`sandbox unavailable on ${c.req.path}`, { detail: errorDetail(err) });
       return c.json({ error: SANDBOX_UNAVAILABLE_MESSAGE }, 503);
+    }
+    // The platform's own Postgres, unreachable: infrastructure, not a server
+    // fault, and retryable — so 503, which the studio client already treats as
+    // transient. Answering 500 cost it that retry and told the user "Internal
+    // server error" for 20 minutes while the real reason (a connection string
+    // naming a host with no A record) sat in the detail.
+    //
+    // `error` rather than `warn`, unlike a sandbox at capacity: a platform
+    // database this process cannot reach is never ordinary — it is a
+    // misconfiguration or an outage, and EVERY stateful request is failing
+    // alongside this one. The cause chain carries the driver's code and the
+    // host it could not reach, which is the whole diagnosis.
+    if (err instanceof PlatformDbUnavailableError) {
+      log.error(`platform database unreachable on ${c.req.path}`, { cause: causeChain(err) });
+      return c.json({ error: PLATFORM_DB_UNAVAILABLE_MESSAGE }, 503);
     }
     log.error(`unhandled error on ${c.req.path}`, { detail: errorDetail(err) });
     return c.json({ error: "Internal server error" }, 500);

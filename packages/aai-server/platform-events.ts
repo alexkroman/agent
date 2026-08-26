@@ -109,9 +109,15 @@ export type PlatformEventsHealth = {
   /** Channels currently open — subscribed or still trying. */
   channels: number;
   /**
-   * Topics that have never acked a join and have been trying longer than the
-   * join budget. Non-empty means changes are NOT being delivered on those
-   * channels, however healthy everything else looks.
+   * Topics that are DOWN and have been for longer than the join budget —
+   * whether they never acked a join or joined and then dropped. Non-empty means
+   * changes are NOT being delivered on those channels, however healthy
+   * everything else looks.
+   *
+   * The second half of that used to be missing, and it is the worse case: a
+   * channel that joined once was treated as permanently healthy, so a socket
+   * that dropped and never came back was invisible here (see `ChannelState` in
+   * realtime-events.ts).
    */
   stalled: string[];
 };
