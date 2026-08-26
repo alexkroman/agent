@@ -24,8 +24,13 @@ import { createLogger } from "./logger.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
-import { appDbPoolerUrl, platformPoolerUrl } from "./platform-connection-config.ts";
+import {
+  announceDirectDbHost,
+  appDbPoolerUrl,
+  platformPoolerUrl,
+} from "./platform-connection-config.ts";
 import { announcePlatformDbCapacity } from "./platform-db-capacity.ts";
+import { platformDb } from "./platform-db-errors.ts";
 import {
   createMemoryPlatformEvents,
   type PlatformEvents,
@@ -222,6 +227,9 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // that says it may be pooled and the one lock that may not). Unset, it is
   // direct and the budget understates a replica — announced below rather than
   // left quietly wrong.
+  // Before the pools open, so the reason a capacity read is about to fail with
+  // ENOTFOUND is the line ABOVE it rather than something to work out afterwards.
+  announceDirectDbHost(env);
   const poolerUrl = platformPoolerUrl(env);
   if (poolerUrl === undefined) {
     log.warn(
@@ -231,7 +239,12 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
         "TRANSACTION-mode URL (port 6543).",
     );
   }
-  const admin = createPostgresDb({ url: poolerUrl ?? url, max: ADMIN_POOL_MAX });
+  // `platformDb` wraps the pool so a REACHABILITY failure arrives typed — the
+  // HTTP surface answers 503 rather than logging `unhandled error` and returning
+  // an opaque 500 (see platform-db-errors.ts for the production outage that
+  // shape produced). Applied at the pool because every platform read crosses
+  // it; a classification per route is a classification per route to forget.
+  const admin = platformDb(createPostgresDb({ url: poolerUrl ?? url, max: ADMIN_POOL_MAX }));
   const exec: SqlExec = (query, params) => admin.query(query, params);
   const extraTargets = extraAppDbTargets(env);
   // `create database` / `drop database` are Management API calls and nothing
@@ -303,7 +316,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // Vault reads, workspace writes, and the agents-row lookups the broker
     // makes, on a replica that was otherwise healthy. Separated, lock
     // acquires queue only against each other.
-    slugLock: createPgSlugLock(createPostgresDb({ url, max: SLUG_LOCK_POOL_MAX })),
+    slugLock: createPgSlugLock(platformDb(createPostgresDb({ url, max: SLUG_LOCK_POOL_MAX }))),
     sql: exec,
     // The admin POOL, not another one: the wake sweep reserves one connection
     // from it for the read phase of a tick, so the fleet-wide connection budget

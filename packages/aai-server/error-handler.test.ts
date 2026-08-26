@@ -4,7 +4,12 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createErrorHandler, SANDBOX_UNAVAILABLE_MESSAGE } from "./error-handler.ts";
+import {
+  createErrorHandler,
+  PLATFORM_DB_UNAVAILABLE_MESSAGE,
+  SANDBOX_UNAVAILABLE_MESSAGE,
+} from "./error-handler.ts";
+import { PlatformDbUnavailableError } from "./platform-db-errors.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { captureLogs } from "./test-utils.ts";
 
@@ -36,6 +41,15 @@ function createApp() {
     throwError(
       new SandboxUnavailableError("Modal sandbox spawn failed: Sandbox operation timed out", {
         cause: new Error("Sandbox operation timed out"),
+      }),
+    ),
+  );
+  app.get("/db-unavailable", () =>
+    throwError(
+      new PlatformDbUnavailableError("getaddrinfo ENOTFOUND db.ref.supabase.co", {
+        cause: Object.assign(new Error("getaddrinfo ENOTFOUND db.ref.supabase.co"), {
+          code: "ENOTFOUND",
+        }),
       }),
     ),
   );
@@ -100,6 +114,22 @@ describe("createErrorHandler", () => {
     expect(logs.errors()).toEqual([]);
     // The backend's own diagnosis still reaches the log.
     expect(JSON.stringify(logs.all())).toContain("Sandbox operation timed out");
+  });
+
+  test("returns a retryable 503 when the platform database is unreachable", async () => {
+    // This answered 500 with `unhandled error on /studio/account` for 20+ minutes
+    // of production while the reason — a connection string naming a host with no
+    // A record — sat in the detail. The studio client retries 5xx, so the 500
+    // also cost it the retry and left "Internal server error" on screen.
+    const res = await createApp().request("/db-unavailable");
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: string };
+    expect(body).toEqual({ error: PLATFORM_DB_UNAVAILABLE_MESSAGE });
+    // The hostname is ours, so it stays out of the body and in the log.
+    expect(body.error).not.toContain("supabase.co");
+    const logged = JSON.stringify(logs.all());
+    expect(logged).toContain("platform database unreachable on /db-unavailable");
+    expect(logged).toContain("ENOTFOUND db.ref.supabase.co");
   });
 
   test("returns generic 500 for unknown errors", async () => {

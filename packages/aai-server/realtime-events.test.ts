@@ -77,6 +77,11 @@ test("realtimeEndpoint maps the project URL to the Realtime WebSocket", () => {
 });
 
 describe("agents channel", () => {
+  // Silenced, not asserted: a drop after a successful join now WARNS (see
+  // "subscription health"), and several specs here ack a CHANNEL_ERROR to drive
+  // the reconnect path.
+  captureLogs();
+
   test("one shared channel; watchers get the slug from new or old rows", () => {
     const { client, channels } = fakeClient();
     const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
@@ -183,6 +188,11 @@ describe("agents channel", () => {
 });
 
 describe("workspace channels", () => {
+  // Silenced, not asserted: a drop after a successful join now WARNS (see
+  // "subscription health"), and several specs here ack a CHANNEL_ERROR to drive
+  // the reconnect path.
+  captureLogs();
+
   test("filters by project, checks scope handler-side", () => {
     const { client, channels } = fakeClient();
     const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
@@ -457,6 +467,77 @@ describe("subscription health", () => {
       // findable in a log, not to become the log.
       expect(logs.errors()).toEqual([expect.stringContaining("never joined")]);
       expect(logs.warns()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a channel that JOINED and then dropped is stalled too, and escalates", () => {
+    // The gap this closes. `joined` was a high-water mark, so one successful
+    // join made a channel permanently healthy: a socket that dropped hours later
+    // and never came back printed one indistinguishable warn per retry, was
+    // absent from `health().stalled`, and could never reach the escalation —
+    // which required `!joined`. It is the WORSE outage of the two, because
+    // changes were being delivered and then stopped.
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchAgents(vi.fn());
+    const channel = channels[0] as FakeChannel;
+    channel.ack("SUBSCRIBED");
+    expect(events.health().stalled).toEqual([]);
+
+    vi.useFakeTimers();
+    try {
+      // The drop itself is a warn naming the consequence, not a bare status.
+      channel.ack("CHANNEL_ERROR", new Error("transport failure"));
+      expect(logs.warns()).toEqual([expect.stringContaining("DROPPED")]);
+      expect(events.health().stalled).toEqual([]);
+
+      vi.advanceTimersByTime(60_000);
+      channel.ack("CHANNEL_ERROR", new Error("transport failure"));
+      channel.ack("CHANNEL_ERROR", new Error("transport failure"));
+
+      expect(events.health()).toEqual({ channels: 1, stalled: ["aai:agents"] });
+      // Escalated once, and it says CONNECTIVITY — a channel that joined before
+      // is not an authority problem, and naming the wrong remedy sends a reader
+      // to the grants when the socket is the fault.
+      expect(logs.errors()).toEqual([expect.stringContaining("DOWN for")]);
+      expect(logs.errors()[0]).toContain("connectivity rather than authority");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a REJOIN says how long the gap was, and clears the escalation", () => {
+    // Recovery was silent. The rejoin already repairs the data — every join
+    // fires the watchers — but nothing said a gap had happened, and a deploy
+    // inside one leaves a replica serving superseded code with nothing else to
+    // notice. A second outage escalates again rather than being swallowed by
+    // the first one's "once".
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchAgents(vi.fn());
+    const channel = channels[0] as FakeChannel;
+    channel.ack("SUBSCRIBED");
+
+    vi.useFakeTimers();
+    try {
+      channel.ack("CHANNEL_ERROR", new Error("transport failure"));
+      vi.advanceTimersByTime(45_000);
+      channel.ack("CHANNEL_ERROR", new Error("transport failure"));
+      expect(logs.errors()).toHaveLength(1);
+
+      vi.advanceTimersByTime(5000);
+      channel.ack("SUBSCRIBED");
+      expect(logs.warns()).toContainEqual(expect.stringContaining("REJOINED after 50s down"));
+      expect(events.health().stalled).toEqual([]);
+
+      // A SECOND outage is a second finding, not a repeat suppressed by the first.
+      channel.ack("CHANNEL_ERROR", new Error("transport failure"));
+      vi.advanceTimersByTime(60_000);
+      channel.ack("CHANNEL_ERROR", new Error("transport failure"));
+      expect(logs.errors()).toHaveLength(2);
+      expect(logs.errors()[1]).toContain("2 outage(s)");
     } finally {
       vi.useRealTimers();
     }

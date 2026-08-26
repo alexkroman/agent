@@ -126,16 +126,18 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus
   the boot-time `supabase_realtime` publication setup.
 
-  **A channel that never joins is COUNTED, not narrated.** realtime-js rejoins
-  forever, so a subscribe that can never succeed (a wrong-authority key, a
-  missing grant) differs from a healthy channel only in the rate of a
-  `console.warn` — which is how it twice reached production and merely stopped
-  invalidating sandboxes and pushing SSE. The monitor records the last join
-  per topic: an ordinary failure warns, a channel past `JOIN_BUDGET_MS` that
-  has never joined escalates ONCE to `console.error`, and
-  `PlatformEvents.health()` reports it in `/health`'s BODY — never as a 503,
-  since the causes are project-wide and every replica would leave rotation at
-  once, turning a feature outage into a total one.
+  **A channel that is DOWN is COUNTED, not narrated** — and "down" means
+  currently, not never-joined. realtime-js rejoins forever, so a channel that
+  cannot deliver differs from a healthy one only in the rate of a warn, which is
+  how it twice reached production and merely stopped invalidating sandboxes and
+  pushing SSE. `realtime-subscription-monitor.ts` tracks up/down per topic: a
+  drop after a successful join warns, a REJOIN reports the gap it covered, any
+  channel down past `JOIN_BUDGET_MS` escalates ONCE (naming authority or
+  connectivity by whether it ever joined), and `PlatformEvents.health()` reports
+  it in `/health`'s BODY — never as a 503, since the causes are project-wide and
+  every replica would leave rotation at once, turning a feature outage into a
+  total one. A high-water-mark `joined` flag made the drop-after-join case, the
+  worse one, structurally invisible.
 - `orphan-previews.ts` — the reap for studio previews nothing references: a
   leader-elected in-process pass (same shape as the wake sweep) that SELECTS aged
   `*-preview` agents no workspace points at and hands each to
