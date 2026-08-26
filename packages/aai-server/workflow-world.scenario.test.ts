@@ -371,9 +371,20 @@ describeWithPg("the Postgres workflow world, against a real database", () => {
     expect(env.WORKFLOW_TARGET_WORLD).toMatch(/[/\\]@workflow[/\\]world-postgres[/\\]/);
     expect(env.WORKFLOW_TARGET_WORLD?.startsWith("/")).toBe(true);
     expect(env.WORKFLOW_POSTGRES_URL).toBe(worldUrl);
-    // A local world's callback base URL has no meaning here and must not be
-    // invented: setting it would repoint the queue's own dispatch.
-    expect(env.WORKFLOW_LOCAL_BASE_URL).toBeUndefined();
+    // The callback base URL is set for the POSTGRES world too, and this
+    // assertion used to be its exact inverse — "has no meaning here and must not
+    // be invented: setting it would repoint the queue's own dispatch".
+    //
+    // That belief is contradicted seventy lines up by this same file, which
+    // stubs the variable and explains why: "the postgres world resolves its
+    // executor from `WORKFLOW_LOCAL_BASE_URL`, then `PORT`, then a port SCAN".
+    // It is not a local-world setting; it is the first branch of world-postgres's
+    // own `getExecutionBaseUrl()`. Leaving it unset in production sent every
+    // dispatch down that port SCAN — ~45ms of health-probing, twice per hop,
+    // roughly 40% of a durable run's latency spent rediscovering a constant.
+    // (The stub above is what hid it from this suite: it pinned the value the
+    // production path was failing to set.)
+    expect(env.WORKFLOW_LOCAL_BASE_URL).toBe("http://127.0.0.1:4711");
 
     // And the live one, which the world running above really loaded.
     expect(process.env.WORKFLOW_POSTGRES_URL).toBe(worldUrl);

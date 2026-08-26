@@ -279,27 +279,39 @@ describeWithStack("durable-run wake over a real Postgres", () => {
     expect(await sweep()).toEqual([]);
   });
 
-  test("a freshly locked job is dated from its lock expiry, not its run_at", async () => {
-    // It belongs to a worker. The earliest ANOTHER worker may claim it is
-    // graphile-worker's 4-hour job expiry past the lock.
+  test("a freshly locked job is dated from its LOCK, so a boot can rescue it", async () => {
+    // This used to be dated from the lock's 4-hour expiry — graphile-worker's own
+    // answer, since it lets no OTHER worker claim a locked job until then. But
+    // publishing that answer DEADLOCKS against our own recovery: the guest's
+    // startup lock sweep is what clears a dead worker's locks, so a boot is
+    // precisely what makes such a job claimable, and "nothing for four hours"
+    // told the platform not to boot. Measured: SIGKILL a guest mid-step and the
+    // run sat `running` with no wake, while the same kill seconds earlier — hint
+    // still on the unlocked branch — recovered within one sweep.
+    //
+    // A live worker's lock is not a problem either: its sandbox is alive, so the
+    // wake resolves to the resident and costs a broker call bounded by the
+    // per-slug backoff.
     const now = new Date();
     await addJob({ runAt: PAST, lockedAt: now.toISOString() });
     await publish();
 
     const hint = await storedHint();
-    expect(hint).not.toBeNull();
-    expect(new Date(hint as string).getTime() - now.getTime()).toBeCloseTo(4 * 3_600_000, -4);
-    expect(await sweep()).toEqual([]);
+    expect(hint).toBe(now.toISOString());
+    // Due, because a locked job is claimable as soon as a process exists.
+    expect(await sweep()).toEqual([SLUG]);
   });
 
-  test("a job whose lock has expired is due again", async () => {
-    // The lost-step case: the container died mid-step. Nobody could rescue the
-    // job before the expiry, and once it lapses the wake is what brings a worker
-    // back to rescue it.
-    const stale = new Date(Date.now() - 5 * 3_600_000).toISOString();
-    await addJob({ runAt: PAST, lockedAt: stale });
+  test("a job whose lock is long stale is due too", async () => {
+    // The lost-step case: the container died mid-step. Dated from the lock either
+    // way now, so this no longer distinguishes itself from the case above by
+    // DUENESS — it is kept because the hint must still be the lock's time rather
+    // than the far-past `run_at`, which is what the platform's own backoff reads.
+    const stale = new Date(Date.now() - 5 * 3_600_000);
+    await addJob({ runAt: PAST, lockedAt: stale.toISOString() });
     await publish();
 
+    expect(await storedHint()).toBe(stale.toISOString());
     expect(await sweep()).toEqual([SLUG]);
   });
 
