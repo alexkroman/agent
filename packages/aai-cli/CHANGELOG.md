@@ -1,5 +1,14 @@
 # @alexkroman1/aai-cli
 
+## 8.2.1
+
+### Patch Changes
+
+- b9d9098: aai publish: honor --skipTypecheck end-to-end (it was silently ignored — the in-sandbox deploy always type-checked), and fail with the real reason when the entry agent.ts is dropped for exceeding the file cap instead of a later "No agent.ts found".
+- @alexkroman1/aai@8.2.1
+  - @alexkroman1/aai-runtime@8.2.1
+  - @alexkroman1/aai-ui@8.2.1
+
 ## 8.2.0
 
 ### Patch Changes

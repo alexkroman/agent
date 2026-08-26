@@ -1,5 +1,11 @@
 # @alexkroman1/aai-ui
 
+## 8.2.1
+
+### Patch Changes
+
+- @alexkroman1/aai@8.2.1
+
 ## 8.2.0
 
 ### Patch Changes
