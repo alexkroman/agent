@@ -473,6 +473,18 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
     sqlText.match(/alter table\s+aai_platform\.\w+\s+(?:add|drop) column[\s\S]*?;/g) ?? [];
   for (const statement of columns) await sql(statement);
 
+  // INDEXES, and a unique one is a CONSTRAINT rather than an optimization —
+  // which is why they cannot be skipped here. `workflow_queue`'s idempotency key
+  // is enforced by a unique partial index, so a database built without it accepts
+  // a duplicate `on conflict do nothing` silently: the fixture then behaves
+  // DIFFERENTLY from production, which is the one thing this replay must not do.
+  // Found by running the queue suite against a bare Postgres, where the
+  // duplicate-collapse case was the only failure.
+  //
+  // Every one is `if not exists`, so this is as re-runnable as the creates.
+  const indexes = sqlText.match(/create\s+(?:unique\s+)?index if not exists[\s\S]*?;/g) ?? [];
+  for (const statement of indexes) await sql(statement);
+
   const [created] = await sql(
     "select to_regclass('aai_platform.studio_workspaces') is not null as present",
   );

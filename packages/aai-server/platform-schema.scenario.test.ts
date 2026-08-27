@@ -208,12 +208,20 @@ describeWithStack("the platform migration applies and the stores work against it
       `select table_name from information_schema.tables
        where table_schema = 'aai_platform' order by table_name`,
     );
+    // An EXACT set, which is the whole assertion: a store that lazily created
+    // its own table shows up as an extra entry. So a legitimately new table
+    // joins this list in the same commit as its migration — that is the cost of
+    // the check, and it is cheaper than the failure it catches.
     expect(tables.map((r) => String(r.table_name))).toEqual([
       "agents",
       "studio_chats",
       "studio_rate_limits",
       "studio_sessions",
       "studio_workspaces",
+      // The platform-owned durable-workflow QUEUE
+      // (`20260827000000_workflow_world.sql`). One table, not seven: the journal
+      // stays the DevKit's, in its own `workflow` schema — see that migration.
+      "workflow_queue",
     ]);
   });
 });
