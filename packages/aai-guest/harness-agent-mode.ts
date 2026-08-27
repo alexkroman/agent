@@ -491,9 +491,10 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   // queue is a separate step, and the bundle is loaded before listen either way,
   // so a 200 from /health still means "ready".
   //
-  // Gated on the bundle actually declaring workflows: migrating and subscribing
-  // a queue are both expensive and most agents have none. A failure is logged
-  // rather than thrown — the session surface is unaffected, and an agent whose
-  // workflows are broken should still answer the phone.
-  await startWorkflowWorldIfDeclared(state.workflows !== null, world);
+  // Gated on the bundle declaring workflows: both halves are expensive and most
+  // agents have none. An exhausted retry budget is logged for a VOICE agent and
+  // THROWN for a workflow app, which has no phone to answer (see `giveUp`).
+  await startWorkflowWorldIfDeclared(state.workflows !== null, world, {
+    page: state.agent?.page,
+  });
 }

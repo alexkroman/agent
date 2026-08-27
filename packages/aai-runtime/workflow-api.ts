@@ -93,7 +93,12 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import { decodePathSegment } from "./_path-decode.ts";
 import type { Logger } from "./runtime-config.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
-import { BodyTooLargeError, bearerMatches, claimUnder, sendJson } from "./workflow-api-http.ts";
+import {
+  bearerMatches,
+  claimUnder,
+  sendJson,
+  workflowApiErrorStatus,
+} from "./workflow-api-http.ts";
 import {
   cancelRun,
   findRuns,
@@ -478,8 +483,11 @@ export function createWorkflowApi(
     // broken". Mapped HERE rather than in the route that reads a body, so a
     // second body-reading route cannot forget it.
     onError: (err, res) => {
-      if (!(err instanceof BodyTooLargeError) || res.headersSent) return false;
-      sendJson(res, 413, { error: err.message });
+      if (res.headersSent) return false;
+      const mapped = workflowApiErrorStatus(err);
+      if (!mapped) return false;
+      if (mapped.retryAfter) res.setHeader("Retry-After", mapped.retryAfter);
+      sendJson(res, mapped.status, { error: mapped.error });
       return true;
     },
   });

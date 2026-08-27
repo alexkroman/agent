@@ -243,9 +243,22 @@ export function localWorkflowDataDir(env: NodeJS.ProcessEnv = process.env): stri
  * So the budget is left alone and the LOSER retries instead. The window covers
  * a draining predecessor's exit (24s in that trace) with room to spare, and the
  * doubling keeps a genuinely broken world from hammering a saturated role.
- * Exhausting it still logs and RETURNS rather than throwing, which is the
- * original contract and the right one: an agent whose workflows are broken
- * should still answer the phone.
+ *
+ * **Exhausting it logs and returns for a VOICE agent, and THROWS for a workflow
+ * app**, which is the same argument applied to both front doors rather than to
+ * one. "An agent whose workflows are broken should still answer the phone" is
+ * right when there is a phone: a voice session does not touch the world, so
+ * taking the whole agent down over it trades a partial outage for a total one.
+ * A `workflowApp` (`page: "static"`) has no session, no WebSocket and no
+ * pipeline — the workflow API is the entire product — so the same `return`
+ * leaves a guest that answers `/health` and `/client-config` with 200, is
+ * ROUTED TO by the broker, and 500s every `POST /workflows/runs` for the life of
+ * the sandbox, never retrying even once the pressure that caused it is gone.
+ *
+ * Measured on eight workflow guests booted at once against a 100-connection
+ * instance: five came up (two only on attempt 5) and **three gave up and stayed
+ * permanently broken** while reporting healthy, still 500ing after the instance
+ * drained. A throw fails the BOOT, so nothing latches a guest that can only 500.
  */
 const WORLD_START_BACKOFF_MS = [2000, 4000, 8000, 16_000, 32_000] as const;
 
@@ -434,16 +447,22 @@ async function migratePostgresWorld(): Promise<void> {
 export async function startWorkflowWorldIfDeclared(
   hasWorkflows: boolean,
   kind: WorldKind,
-  /**
-   * The wait between attempts. TEST-ONLY SEAM, and it has to be one: the
-   * operation being retried does real I/O (`setupDatabase` spawns, the driver
-   * connects), so `vi.useFakeTimers()` freezes the very work the retry is
-   * waiting on and the loop never advances — verified, both cases hung to the
-   * tier timeout. Same precedent as `heardNow` and `speechIdleTimeoutMs`.
-   */
-  waitMs: (attempt: number) => Promise<void> = (attempt) =>
-    sleep(WORLD_START_BACKOFF_MS[attempt] ?? 0),
+  opts: {
+    /** The agent's front door — what {@link giveUp} decides on. */
+    page?: string | undefined;
+    /**
+     * The wait between attempts. TEST-ONLY SEAM, and it has to be one: the
+     * operation being retried does real I/O (`setupDatabase` spawns, the driver
+     * connects), so `vi.useFakeTimers()` freezes the very work the retry is
+     * waiting on and the loop never advances — verified, both cases hung to the
+     * tier timeout. Same precedent as `heardNow` and `speechIdleTimeoutMs`.
+     */
+    waitMs?: ((attempt: number) => Promise<void>) | undefined;
+  } = {},
 ): Promise<void> {
+  // An OPTIONS BAG, not two positional parameters: one is a real caller's and
+  // one a test seam, so any ordering makes one pass `undefined`.
+  const waitMs = opts.waitMs ?? ((attempt: number) => sleep(WORLD_START_BACKOFF_MS[attempt] ?? 0));
   if (!hasWorkflows) return;
   console.error(`harness starting ${kind} workflow world`);
   for (let attempt = 0; ; attempt++) {
@@ -461,8 +480,20 @@ export async function startWorkflowWorldIfDeclared(
           : `Workflow world (${kind}) start attempt ${attempt + 1} failed, retrying:`,
         errorMessage(err),
       );
-      if (last) return;
+      if (last) return giveUp(kind, opts.page, err);
       await waitMs(attempt);
     }
   }
+}
+
+/**
+ * What an exhausted retry budget means, which depends on the FRONT DOOR. The
+ * loop owns the backoff; this owns the product decision.
+ */
+function giveUp(kind: WorldKind, page: string | undefined, err: unknown): void {
+  if (page !== "static") return;
+  throw new Error(
+    `Workflow world (${kind}) failed to start and this agent's front door is a ` +
+      `page, so it has nothing else to serve: ${errorMessage(err)}`,
+  );
 }

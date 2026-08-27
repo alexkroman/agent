@@ -251,3 +251,80 @@ export function claimUnder<Req, Res extends JsonResponse>(opts: {
     return true;
   };
 }
+
+/**
+ * Postgres SQLSTATE class 53 — "insufficient resources". A retryable CAPACITY
+ * condition, never a bad request and never a broken agent.
+ *
+ * The class rather than a code list, and that is the point: every 53xxx is the
+ * database saying it has run out of something (`53300 too_many_connections`,
+ * `53200 out_of_memory`, `53100 disk_full`, `53400
+ * configuration_limit_exceeded`). A caller's correct response to all four is
+ * identical — wait and retry — and enumerating them invites the next one to be
+ * missed.
+ */
+const RESOURCE_CLASS = "53";
+
+/**
+ * Is `err` the app database refusing work for want of capacity?
+ *
+ * Walks the `cause` chain, because the driver's error arrives wrapped: a
+ * `too many connections for role` reaches the workflow API through
+ * graphile-worker, drizzle and the DevKit's world, none of which re-throw the
+ * original. Same traversal as `isPlatformDbUnreachable` on the platform side,
+ * against a different condition — that one is "the database is unreachable",
+ * this one is "the database answered, and the answer was no room".
+ */
+export function isInsufficientResources(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (isRecord(cur) && !seen.has(cur)) {
+    seen.add(cur);
+    const code = cur.code;
+    // The length guard is what stops another vocabulary's `53…` passing as a
+    // SQLSTATE: those are exactly five characters.
+    if (typeof code === "string" && code.length === 5 && code.startsWith(RESOURCE_CLASS)) {
+      return true;
+    }
+    cur = cur.cause;
+  }
+  return false;
+}
+
+/**
+ * Map a thrown value to a workflow-API status, or `false` to let it be a 500.
+ *
+ * Here rather than inline in `createWorkflowApi`'s `onError` because it is a
+ * TABLE — two entries today and the shape invites more — and because both
+ * entries are about the same distinction: a caller has to tell "my request was
+ * wrong", "come back shortly" and "the agent is broken" apart, and only the last
+ * is worth paging anyone about.
+ */
+export function workflowApiErrorStatus(
+  err: unknown,
+): { status: number; error: string; retryAfter?: string } | false {
+  if (err instanceof BodyTooLargeError) {
+    // 413, not 400 or 500: the request was well-formed and too big.
+    return { status: 413, error: err.message };
+  }
+  if (isInsufficientResources(err)) {
+    // 503, not 500: the request was fine and the DATABASE has no room.
+    //
+    // Measured — eight workflow guests booted at once against a 100-connection
+    // instance saturated it, and every `POST /runs` that could not get a
+    // connection answered `Internal server error`. A client cannot back off on
+    // that, an operator cannot triage it, and a load balancer cannot shed on it.
+    // With a 503 the same load reported capacity on four of eight agents and all
+    // four succeeded within 60s of backing off.
+    //
+    // `Retry-After` is short on purpose: the condition clears as soon as one
+    // guest's pool returns an idle connection (`POOL_IDLE_TIMEOUT_SECONDS`), not
+    // on a human timescale.
+    return {
+      status: 503,
+      error: "the agent's database is at capacity, retry shortly",
+      retryAfter: "1",
+    };
+  }
+  return false;
+}
