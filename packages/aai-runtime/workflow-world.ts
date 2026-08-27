@@ -43,7 +43,7 @@ import {
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { claimPoolPresenceAndSweep } from "./workflow-lock-sweep.ts";
-import { subscribeToPlatformQueue } from "./workflow-platform-world.ts";
+import { installPlatformWorld, resolvePlatformQueue } from "./workflow-platform-world.ts";
 import { resolveWorldSpecifier } from "./workflow-resolve.ts";
 import type { WorldKind } from "./workflow-world-kind.ts";
 import { classifySuppliedWorld, migratePostgresWorld } from "./workflow-world-migrate.ts";
@@ -148,6 +148,21 @@ export function configureWorkflowWorld(opts: {
   // (the `flow`/`step` routes are `guest-internal` — see
   // `aai-server/guest-routes.ts`). `??=` so an operator can still override.
   env[LOCAL_BASE_URL_ENV] ??= `http://127.0.0.1:${opts.port}`;
+
+  // THE PLATFORM's world wins over a `DATABASE_URL`, and the order is the whole
+  // change: a deployed guest keeps its durable runs on the platform whether or not
+  // it happens to have a database of its own. The base world is `local`, because
+  // `createQueueHandler` is the one member the composition keeps — see
+  // `workflow-platform-world.ts`.
+  //
+  // No `WORKFLOW_POSTGRES_URL`, no pool size, no worker concurrency: this guest
+  // opens no database for workflows at all, so the three constants that used to
+  // size a tenant's connection footprint have nothing to size.
+  if (resolvePlatformQueue(env)) {
+    env[TARGET_WORLD_ENV] = "local";
+    env[LOCAL_DATA_DIR_ENV] ??= opts.dataDir ?? defaultLocalDataDir();
+    return "platform";
+  }
 
   if (opts.databaseUrl) {
     // RESOLVED, never the bare name: the DevKit `require`s this value from its own
@@ -267,15 +282,21 @@ const WORLD_START_BACKOFF_MS = [2000, 4000, 8000, 16_000, 32_000] as const;
  * declares no workflows, which is why the only caller is behind that gate.
  */
 async function migrateAndSubscribe(kind: WorldKind): Promise<void> {
+  if (kind === "platform") {
+    // Nothing to migrate and nothing to start: the schema is the platform's, the
+    // queue is the platform's, and this guest opens no connection for either. A
+    // false here means the environment went half-configured between `configure` and
+    // now, which `installPlatformWorld` reports.
+    await installPlatformWorld();
+    return;
+  }
   if (kind === "postgres") {
     // Idempotent by design (its own docs call it safe as a post-deploy step),
     // which is what lets it run on every boot instead of needing a provisioning
     // pass that nothing in this architecture has: an agent's first workflow may
     // be its first ever deploy.
     await migratePostgresWorld();
-    if (await subscribeToPlatformQueue()) return;
-    // ONLY reached without a platform queue — `aai dev`, host mode, a self-hosted
-    // server. graphile-worker is the queue there, so its orphaned locks are real.
+    // graphile-worker is the queue on this path, so its orphaned locks are real.
     // AFTER the migration (the tables have to exist) and BEFORE `start()` below
     // (the safety argument rests on this pool holding no locks yet). A predecessor
     // that was hard-killed left its in-flight steps locked by workers that are

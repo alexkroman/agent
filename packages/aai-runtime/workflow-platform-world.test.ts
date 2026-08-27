@@ -28,8 +28,12 @@ function baseWorld() {
     start: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
     createQueueHandler: vi.fn(),
+    // Storage and streamer members the composition REPLACES; present on the fake so
+    // the replacement can be asserted by identity.
     runs: { get: vi.fn() },
+    steps: { get: vi.fn() },
     events: { create: vi.fn() },
+    hooks: { get: vi.fn() },
   };
 }
 
@@ -103,23 +107,70 @@ describe("composePlatformWorld", () => {
   });
 
   /**
-   * Everything else is the DevKit's, and keeping it is the whole design.
+   * `createQueueHandler` is the ONE member kept, and keeping it is the design.
    *
-   * `createQueueHandler` especially: it is a pure request→handler adapter, it is
-   * what the guest's loaded route modules already bound, and reimplementing it
-   * would mean owning the queue↔executor contract on both sides.
+   * It is a pure request→handler adapter: it reads the three `x-vqs-*` headers,
+   * deserializes the body, and reports the run's answer. No database, no worker, no
+   * state — so there is nothing about it to relocate, and reimplementing it would
+   * mean owning the queue↔executor contract on both sides of one wire.
    */
-  test.each(["specVersion", "close", "createQueueHandler", "runs", "events"])(
-    "keeps the base world's %s untouched",
+  test.each(["specVersion", "createQueueHandler"])("keeps the base world's %s untouched", (key) => {
+    const base = baseWorld();
+    const world = composePlatformWorld(base, { base: BASE, token: TOKEN }) as Record<
+      string,
+      unknown
+    >;
+    expect(world[key]).toBe((base as Record<string, unknown>)[key]);
+  });
+
+  /**
+   * Everything else is REPLACED, which is what makes a durable run survive with no
+   * tenant database at all.
+   *
+   * Asserted by identity against the base rather than by behaviour: the point is
+   * that the base's backend is not reachable through the composed world, and a
+   * spread whose order was reversed would keep whichever one the base happened to
+   * have — silently, because both answer the same shape.
+   */
+  test.each(["runs", "steps", "events", "hooks", "queue", "close"])(
+    "replaces the base world's %s",
     (key) => {
       const base = baseWorld();
       const world = composePlatformWorld(base, { base: BASE, token: TOKEN }) as Record<
         string,
         unknown
       >;
-      expect(world[key]).toBe((base as Record<string, unknown>)[key]);
+      expect(world[key]).not.toBe((base as Record<string, unknown>)[key]);
+      expect(world[key]).toBeDefined();
     },
   );
+
+  test.each([
+    "runs",
+    "steps",
+    "events",
+    "hooks",
+    "writeToStream",
+    "closeStream",
+    "listStreamsByRunId",
+    "getStreamChunks",
+    "getStreamInfo",
+    "readFromStream",
+    "queue",
+  ])("provides %s, so the DevKit finds it by name", (key) => {
+    // The runtime reaches these by name inside a replay, so an absent one is a
+    // `TypeError` several layers away rather than a missing-method error here.
+    const world = composed() as Record<string, unknown>;
+    const value = world[key];
+    expect(typeof value === "function" || typeof value === "object").toBe(true);
+    expect(value).toBeDefined();
+  });
+
+  test("its close resolves rather than throwing, since there is nothing to release", async () => {
+    // No pool to end and no `LISTEN` to release: this guest opens neither.
+    const world = composed() as { close?: () => Promise<void> };
+    await expect(world.close?.()).resolves.toBeUndefined();
+  });
 
   test("leaves the base world object unmutated", async () => {
     // A composition that assigned onto the base would make the override visible to

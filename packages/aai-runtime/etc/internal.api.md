@@ -498,7 +498,7 @@ export type WorkflowSurface = {
 };
 
 // @internal
-export type WorldKind = "postgres" | "local";
+export type WorldKind = "platform" | "postgres" | "local";
 
 // @public
 type WsSessionOptions = {
