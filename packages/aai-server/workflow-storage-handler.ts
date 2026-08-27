@@ -40,6 +40,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
+import { decodeTypedJson, encodeTypedJson } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { constantTimeEquals } from "./_timing-safe.ts";
 import type { AppContext } from "./context.ts";
@@ -77,6 +78,15 @@ type Callable = (...args: unknown[]) => Promise<unknown>;
 
 /** `{ method, args }`, validated. */
 type StorageCall = { method: StorageMethod; args: unknown[] };
+
+/** The request body, or undefined when it is not JSON this route can read. */
+function decodeBody(text: string): unknown {
+  try {
+    return decodeTypedJson(text);
+  } catch {
+    return undefined;
+  }
+}
 
 function parseCall(raw: unknown): StorageCall {
   if (!isRecord(raw)) throw new HTTPException(400, { message: "body must be a JSON object" });
@@ -164,12 +174,23 @@ export function createWorkflowStorageHandler(
       // a retry will not make one.
       throw new HTTPException(501, { message: "platform run storage not configured" });
     }
-    const call = parseCall(await c.req.json().catch(() => undefined));
+    // DECODED with the binary reviver, not `c.req.json()`. A run's input and a
+    // step's arguments are `Uint8Array` at specVersion >= 2, and plain JSON turns
+    // one into an index map — so the world would be handed `{"0":7}` where it
+    // expects bytes, and nothing would error until devalue failed to read it. See
+    // `aai-runtime/workflow-typed-json.ts`, which is the codec BOTH sides use.
+    const call = parseCall(decodeBody(await c.req.text()));
 
     const reserved = await adminDb.reserve();
     const sql = (q: string, p?: unknown[]) => reserved.query(q, p);
     try {
-      return c.json({ result: await serve(call, { slug, sql, storage }) }, 200);
+      const result = await serve(call, { slug, sql, storage });
+      // ENCODED the same way, for the same reason in the other direction:
+      // `runs.get` returns input and output, and `c.json` would flatten both.
+      return new Response(encodeTypedJson({ result }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     } catch (err: unknown) {
       if (err instanceof HTTPException) throw err;
       log.warn("storage call failed", { slug, method: call.method, error: errorMessage(err) });

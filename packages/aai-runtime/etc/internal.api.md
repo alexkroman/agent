@@ -37,6 +37,15 @@ import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 export function agentServerEnv(env: Record<string, string>): Record<string, string>;
 
 // @internal
+export function binaryReplacer(this: unknown, key: string, value: unknown): unknown;
+
+// @internal
+export function binaryReviver(_key: string, value: unknown): unknown;
+
+// @internal
+export function callPlatformStorage(opts: PlatformStorageOptions, method: string, args: readonly unknown[]): Promise<unknown>;
+
+// @internal
 export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;
 
 // @public
@@ -69,6 +78,29 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName:
 }>;
 
 // @internal
+export function createPlatformStorage(opts: PlatformStorageOptions): {
+    runs: {
+        get: StorageFn;
+        list: StorageFn;
+    };
+    steps: {
+        get: StorageFn;
+        list: StorageFn;
+    };
+    events: {
+        create: StorageFn;
+        get: StorageFn;
+        list: StorageFn;
+        listByCorrelationId: StorageFn;
+    };
+    hooks: {
+        get: StorageFn;
+        getByToken: StorageFn;
+        list: StorageFn;
+    };
+};
+
+// @internal
 export function createPostgresStateBackend(opts: {
     db: Db;
 }): SessionStateBackend;
@@ -99,6 +131,12 @@ export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublish
 
 // @internal
 export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
+
+// @internal
+export function decodeTypedJson(text: string): unknown;
+
+// @internal
+export function encodeTypedJson(value: unknown): string;
 
 // @public
 type EnqueueBody = {
@@ -172,6 +210,13 @@ export function payloadRunId(message: unknown): string | undefined;
 
 // @public (undocumented)
 export type PlatformQueueOptions = {
+    base: string;
+    token: string;
+    fetch?: typeof globalThis.fetch | undefined;
+};
+
+// @public (undocumented)
+export type PlatformStorageOptions = {
     base: string;
     token: string;
     fetch?: typeof globalThis.fetch | undefined;
@@ -304,6 +349,9 @@ type StateSyncSession = {
     lastPush(): string | undefined;
     recordPush(json: string): void;
 };
+
+// @public
+type StorageFn = (...args: unknown[]) => Promise<unknown>;
 
 // @public
 type StoredSessionEvent = {
