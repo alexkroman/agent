@@ -21,17 +21,24 @@
  * {@link platformCronJobs} is the whole truth about what the platform runs.
  */
 
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
+import { SLUG_LOCK_NAMESPACE } from "./platform-lock.ts";
 import { SESSION_STATE_RETENTION } from "./platform-session-state.ts";
-import { PLATFORM_STORAGE_KEY_SECRET, type SqlExec } from "./secret-store.ts";
+import {
+  AGENT_ENV_SECRET_PREFIX,
+  PLATFORM_STORAGE_KEY_SECRET,
+  type SqlExec,
+} from "./secret-store.ts";
 
 /**
  * Refuse a constant that cannot be interpolated into these sweep bodies.
  *
  * Two ways an innocuous constant change would break the SQL silently: a `'`
  * would close the literal it sits in, and `%` / `_` / `\` are LIKE wildcards.
- * It guards ONE name now — the slug-suffix and Vault-prefix entries went with
- * the orphan-preview sweep, which is the reap in `orphan-previews.ts` and binds
- * its parameters instead of interpolating them.
+ * The last one is not hypothetical here: the orphan reap's predicate is a LIKE,
+ * so a `_` appearing in `PREVIEW_SLUG_SUFFIX` would silently widen it to match
+ * any character in that position — and the slugs it would then reap are other
+ * people's agents.
  */
 function assertSqlLiteralSafe(value: string, name: string): string {
   if (/['%_\\]/.test(value)) {
@@ -45,6 +52,11 @@ function assertSqlLiteralSafe(value: string, name: string): string {
 
 // The Vault NAME the blob-GC body looks its Storage key up by.
 assertSqlLiteralSafe(PLATFORM_STORAGE_KEY_SECRET, "PLATFORM_STORAGE_KEY_SECRET");
+// The suffix the orphan reap's LIKE pattern ends with, and the Vault prefix it
+// deletes by. Both are interpolated, because a cron command is a stored string
+// and has no bind parameters.
+assertSqlLiteralSafe(PREVIEW_SLUG_SUFFIX, "PREVIEW_SLUG_SUFFIX");
+assertSqlLiteralSafe(AGENT_ENV_SECRET_PREFIX, "AGENT_ENV_SECRET_PREFIX");
 
 export type CronJob = {
   /** Unique job name — `cron.schedule` upserts by it. */
@@ -107,6 +119,96 @@ const SWEEP_PREVIEW_ARCHIVE = guarded(
 const SWEEP_SESSION_STATE =
   `delete from aai_platform.session_slots where updated_at < now() - interval '${SESSION_STATE_RETENTION}'; ` +
   `delete from aai_platform.session_events where created_at < now() - interval '${SESSION_STATE_RETENTION}'`;
+
+/**
+ * How long a preview may sit unreferenced before it is reaped.
+ *
+ * An hour. A workspace row is written BEFORE its preview is deployed, so the
+ * window only has to cover a deploy still in flight — not a user's idle time.
+ */
+const ORPHAN_PREVIEW_AGE = "1 hour";
+
+/**
+ * Reaps per pass, and the bound is about LOCK HOLD TIME rather than throughput.
+ *
+ * A plpgsql body is ONE transaction, so every `pg_try_advisory_xact_lock` it
+ * takes is held until the body commits. Twenty is short; two thousand would mean
+ * a deploy of any reaped slug queueing behind the whole pass. A backlog is
+ * better worked down over several hours than in one pass that blocks deploys.
+ */
+const ORPHAN_PREVIEW_MAX_PER_TICK = 20;
+
+/**
+ * Studio previews nothing references any more.
+ *
+ * ## Why this is SQL again
+ *
+ * It was a cron body, moved into the server, and is back. The two reasons it
+ * left are both gone: deprovisioning a per-app database needed `DROP DATABASE`,
+ * which pg_cron cannot run inside its transaction (`25001`) and which needed a
+ * `dblink` bridge; and once that moved to the Supabase Management API, a SQL
+ * sweep was a second implementation of a step SQL could not perform. There are
+ * no per-app databases, so a reap is now a Vault row and an agents row — both
+ * plain SQL on this database — and `deleteAgentResources` is a slug lock around
+ * one store call.
+ *
+ * What that leaves is a genuine duplication of the delete PATH, and it is
+ * guarded rather than argued away: `pg-cron-delete-parity.test.ts` reads
+ * `bundle-store.ts`'s `deleteAgent` and fails if it grows a step this body does
+ * not have. Without that guard this is the "leaked, out loud" shape the sweep's
+ * own history warns about — a second deleter that silently stops matching.
+ *
+ * ## It takes the SAME lock a deploy takes
+ *
+ * `pg_try_advisory_xact_lock(SLUG_LOCK_NAMESPACE, hashtext(slug))`. The two
+ * advisory-lock forms share one lock space and differ only in when they release
+ * (verified on PG 17.6: a `try_xact` returns false while another connection
+ * holds the session-scoped `pg_advisory_lock` on the same pair), so this really
+ * does exclude against `withSlugLock` — it is not a parallel lock that merely
+ * looks like one. A slug whose lock is held is SKIPPED, not waited for: the next
+ * pass is an hour away and a reap has no deadline, while blocking would hold the
+ * transaction open behind someone else's deploy.
+ *
+ * ## The ROW goes LAST, deliberately
+ *
+ * The original SQL version deleted rows in the statement that returned them, so
+ * a body dying mid-loop left the remaining slugs' resources orphaned with
+ * nothing naming them. Here the agents row is the last delete for each slug, so
+ * a crash anywhere before it leaves the candidate visible to the next pass. A
+ * slug reaped twice is harmless — both deletes are by key.
+ *
+ * ## Cross-replica invalidation is unaffected
+ *
+ * A resident sandbox is dropped by `watchAgentInvalidation`, which rides the
+ * agents table's Realtime `postgres_changes` stream. That decodes the WAL, and a
+ * delete from pg_cron writes the WAL exactly as one from the app does — so the
+ * signal does not care which connection issued it. (This is the one property
+ * that would have made the move wrong, which is why it is stated rather than
+ * assumed.)
+ */
+const SWEEP_ORPHAN_PREVIEWS = `do $$
+declare
+  candidate text;
+  reaped int := 0;
+begin
+  for candidate in
+    select a.slug from aai_platform.agents a
+    where a.slug like '%${PREVIEW_SLUG_SUFFIX}'
+      and a.updated_at < now() - interval '${ORPHAN_PREVIEW_AGE}'
+      and not exists (
+        select 1 from aai_platform.studio_workspaces w where w.preview_slug = a.slug
+      )
+    order by a.updated_at
+    limit ${ORPHAN_PREVIEW_MAX_PER_TICK}
+  loop
+    if pg_try_advisory_xact_lock(${SLUG_LOCK_NAMESPACE}, hashtext(candidate)::int) then
+      delete from vault.secrets where name = '${AGENT_ENV_SECRET_PREFIX}' || candidate;
+      delete from aai_platform.agents where slug = candidate;
+      reaped := reaped + 1;
+    end if;
+  end loop;
+  raise notice 'aai-sweep-orphan-previews: reaped % preview(s)', reaped;
+end $$`;
 
 /**
  * Expired studio session registrations — the same hygiene as above for the
@@ -233,8 +335,7 @@ export type PlatformCronStorage = {
  * previous config.
  *
  * Minutes are spread deliberately: no two jobs share one, so the blob GC's
- * Storage fan-out never runs beside another sweep's scan. (:23 is free since the
- * orphan-preview reap moved into the server — `orphan-previews.ts`.)
+ * Storage fan-out never runs beside another sweep's scan.
  */
 export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): readonly CronJob[] {
   return [
@@ -246,6 +347,14 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
       command: SWEEP_PREVIEW_ARCHIVE,
     },
     { name: "aai-sweep-cron-history", schedule: "52 4 * * *", command: SWEEP_CRON_HISTORY },
+    // Back in pg_cron, where it started: with no per-app database to drop, a reap
+    // is a Vault row and an agents row. Its own doc has why the move is safe and
+    // what guards the duplicated delete path.
+    {
+      name: "aai-sweep-orphan-previews",
+      schedule: "13 * * * *",
+      command: SWEEP_ORPHAN_PREVIEWS,
+    },
     // Session state a dead guest left behind IS swept from here again, and it is
     // one statement rather than one job per app. It used to live in each app's own
     // database, so the job had to be scheduled INTO that database at provisioning
