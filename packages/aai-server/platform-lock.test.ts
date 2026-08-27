@@ -34,6 +34,10 @@ function fakeAdvisoryDb(opts: { timeoutOnContention?: boolean } = {}) {
   let live = 0;
 
   const db: AdminDb = {
+    // Nothing here listens, and the member is spelled out rather than cast: this
+    // fake is typed EXPLICITLY so a widened `AdminDb` surfaces at compile time,
+    // which is how this line came to exist.
+    listen: () => Promise.resolve(() => undefined),
     reserve() {
       reservations++;
       live++;
@@ -278,6 +282,7 @@ describe("createPgSlugLock", () => {
   test("a failed unlock warns and still returns the connection", async () => {
     const { db, held } = fakeAdvisoryDb();
     const failing: AdminDb = {
+      listen: db.listen,
       async reserve() {
         const reserved = await db.reserve();
         return {

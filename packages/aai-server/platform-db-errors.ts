@@ -184,6 +184,13 @@ export function platformDb(db: CloseableDb): CloseableDb {
     query: <T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> =>
       withPlatformDb(() => db.query<T>(sql, params)),
     reserve: () => withPlatformDb(() => db.reserve().then(wrapReserved)),
+    // NOT wrapped in `withPlatformDb`, and the asymmetry is the point: this
+    // classifies a QUERY's failure into a taxonomy the request paths map to a
+    // status, and a `LISTEN` has no request behind it. A subscription that cannot
+    // be established is the listener's own problem — its caller falls back to
+    // polling and says so — while translating it here would attach a 503 to a
+    // caller who is not waiting for one.
+    listen: (channel, onNotify) => db.listen(channel, onNotify),
     close: () => db.close(),
   };
 }

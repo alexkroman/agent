@@ -26,7 +26,11 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { ADMIN_POOL_MAX, MAX_PLATFORM_DB_CONNECTIONS, SLUG_LOCK_POOL_MAX } from "./constants.ts";
 import { fleetMaxContainers, platformDbBudget } from "./platform-db-capacity.ts";
-import { platformDbConnectionsPerReplica, platformWorldConnections } from "./platform-db-limits.ts";
+import {
+  platformDbConnectionsPerReplica,
+  platformWorldConnections,
+  QUEUE_NOTIFY_LISTEN,
+} from "./platform-db-limits.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const deployPy = readFileSync(path.join(REPO_ROOT, "packages/aai-server/modal_deploy.py"), "utf-8");
@@ -147,7 +151,12 @@ describe("platform database connection budget", () => {
     // could not coexist with is gone — so this asserts the sum rather than
     // recomputing it, and a change to either term is caught here.
     const perReplica = platformDbConnectionsPerReplica();
-    expect(perReplica).toBe(SLUG_LOCK_POOL_MAX + platformWorldConnections());
+    // Spelled out rather than called, so a term ADDED to the sum fails here and
+    // has to be accounted for out loud. `QUEUE_NOTIFY_LISTEN` is the queue sweep's
+    // dedicated `NOTIFY` connection: outside every pool, one per replica, and
+    // counted for the same reason the world's `LISTEN` client is — a connection
+    // outside a pool is still a backend on the instance.
+    expect(perReplica).toBe(SLUG_LOCK_POOL_MAX + platformWorldConnections() + QUEUE_NOTIFY_LISTEN);
     const fleetDirect = maxContainers * perReplica;
     expect(
       fleetDirect,

@@ -589,20 +589,16 @@ The cross-replica coordination that lives in this same Postgres:
   read: a control-plane outage at peak.
 
   **It is NOT measured continuously any more.** `platform-db-pressure.ts` was a
-  leader-elected five-minute reading of `pg_stat_activity` per role, warning
-  past a fraction of `max_connections` or on any role at its own `rolconnlimit`.
-  It is deleted, and what it was for is worth recording: its whole argument was
-  the tenant-scaled term above, and with that term gone the fleet claim is a
-  constant this file states and boot checks.
+leader-elected five-minute reading of `pg_stat_activity` per role. It is
+deleted: its whole argument was the tenant-scaled term above, and with that gone
+the fleet claim is a constant this file states and boot checks. Its per-role
+trigger had also become near-dead weight, aimed at app roles when `postgres` —
+what every platform pool connects as — carries no `rolconnlimit`.
 
-  What the deletion gives up, stated because it is real: Supabase's own Realtime
-  / PostgREST / Storage workers share this instance and scale with usage, and
-  boot measures `inUse` exactly ONCE — so their footprint growing after boot is
-  now unobserved, as is a leak in one of our own pools (the workflow world's
-  `LISTEN` client is that shape). The per-role trigger had also become near-dead
-  weight regardless: it was aimed at app roles, and `postgres` — what every
-  platform pool connects as — carries no `rolconnlimit`, so it would only ever
-  have fired for a cap someone set by hand.
+  What that gives up, stated because it is real: Supabase's own workers share
+  this instance and scale with usage, and boot measures `inUse` exactly ONCE, so
+  their footprint growing afterwards is unobserved — as is a leak in one of our
+  own pools.
 
   **Boot CHECKS the claim** (`platform-db-capacity.ts`): `max_connections` plus
   a `pg_stat_activity` count against `platformDbBudget()`. Its trap was that the
@@ -1643,6 +1639,16 @@ the platform read that column per app on a short-lived connection each.
 COLUMN, so "which messages are due, and whose" is one indexed query on a
 connection the platform already holds — no hint contract, no per-tenant reads,
 no width bound.
+
+**Delivery is NOTIFY-driven now, with the interval as the timer for PARKED
+work** — `workflow-queue-sweep.ts`'s module doc owns the argument, including why
+the interval cannot be removed (a notification is dropped rather than queued,
+and cannot express "due at T", which is how `sleep()` works), why one coalescing
+runner sits behind both triggers, and why the listening connection is COUNTED in
+the budget. Two findings worth knowing before touching it: a delayed enqueue
+must NOT notify, and an absence-of-notification spec needs a barrier channel — a
+`vi.waitFor` on an exact count passes against an unconditional notify, verified
+by A/B.
 
 **Five properties survive**, each the answer to a way "boot a sandbox on a
 schedule" goes wrong, and the queue sweep keeps all five:

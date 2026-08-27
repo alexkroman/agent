@@ -136,6 +136,7 @@ export type CarrierName = keyof typeof CARRIER_CODECS;
 // @public
 export type CloseableDb = Db & {
     reserve(): Promise<ReservedDb>;
+    listen(channel: string, onNotify: () => void): Promise<() => void>;
     close(): Promise<void>;
 };
 

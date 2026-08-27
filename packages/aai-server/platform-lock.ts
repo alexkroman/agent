@@ -174,15 +174,22 @@ const LOCK_NOT_AVAILABLE = "55P03";
 export const SLUG_LOCK_ACQUIRE_TIMEOUT_MS = 15_000;
 
 /**
- * The admin-pool slice the lock needs: one connection held for the critical
- * section.
+ * The admin-database slice the platform's own coordination needs: one connection
+ * held for a critical section, and a `NOTIFY` subscription.
  *
- * A `Pick` of the real type rather than a second spelling of it — a
- * hand-written copy drifts silently (a `release()` that became async would
- * type-check against the copy and break at runtime), and `Pick` is just as
- * injectable for tests.
+ * A `Pick` of the real type rather than a second spelling of it — a hand-written
+ * copy drifts silently (a `release()` that became async would type-check against
+ * the copy and break at runtime), and `Pick` is just as injectable for tests.
+ *
+ * **`listen` is here rather than on a narrower type of the queue sweep's own**,
+ * even though the slug lock does not use it. The alternative was an optional
+ * member, and optional would make "this composition cannot listen" a silent
+ * degradation to polling instead of a compile error — which is the wrong trade for
+ * a signal whose whole purpose is latency. Both members are things a
+ * platform-owned connection can always do; a composition that has this handle at
+ * all has both.
  */
-export type AdminDb = Pick<CloseableDb, "reserve">;
+export type AdminDb = Pick<CloseableDb, "reserve" | "listen">;
 
 export type PgSlugLockOptions = {
   acquireTimeoutMs?: number;

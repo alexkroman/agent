@@ -94,6 +94,11 @@ export function openAppDb(url: string): CloseableDb {
       return entry.db.query<T>(sql, params);
     },
     reserve: () => entry.db.reserve(),
+    // Delegated for completeness rather than because anything here uses it: a
+    // shared-pool lease is the wrong owner for a dedicated listening connection,
+    // so a caller wanting one on an author's database should say so explicitly.
+    // Left rather than thrown so the handle stays a `CloseableDb`.
+    listen: (channel, onNotify) => entry.db.listen(channel, onNotify),
     async close(): Promise<void> {
       // Idempotent, because every caller's own `close()` is: a double release
       // would drop the pool out from under a lease somebody else still holds.

@@ -14,7 +14,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { AdminDb } from "./platform-lock.ts";
 import { captureLogs, fakeAdminDbOver } from "./test-utils.ts";
 import type { QueuedMessage } from "./workflow-queue-store.ts";
-import { type Delivered, runQueuePass } from "./workflow-queue-sweep.ts";
+import { type Delivered, runQueuePass, startWorkflowQueueSweep } from "./workflow-queue-sweep.ts";
 
 const logs = captureLogs();
 
@@ -42,10 +42,16 @@ function fakeDb(claimed: QueuedMessage[]): {
   db: AdminDb;
   statements: string[];
   released: () => number;
+  /** Fire the NOTIFY the sweep subscribed with. */
+  notify: () => void;
+  /** How many subscriptions were torn down — a stop that leaks one is a leak. */
+  unlistened: () => number;
 } {
   const statements: string[] = [];
   let handed = false;
   let released = 0;
+  const notifiers: (() => void)[] = [];
+  let unlistened = 0;
   const inner = fakeAdminDbOver((sql) => {
     statements.push(sql);
     if (sql.includes("distinct on")) {
@@ -64,6 +70,15 @@ function fakeDb(claimed: QueuedMessage[]): {
     return [];
   });
   const db: AdminDb = {
+    // Captured rather than ignored: the notification path's specs drive the sweep
+    // by INVOKING this callback, which is what lets them assert "a NOTIFY runs a
+    // pass" without a Postgres.
+    listen: (_channel, onNotify) => {
+      notifiers.push(onNotify);
+      return Promise.resolve(() => {
+        unlistened += 1;
+      });
+    },
     reserve: async () => {
       const r = await inner.reserve();
       return {
@@ -75,8 +90,26 @@ function fakeDb(claimed: QueuedMessage[]): {
       };
     },
   };
-  return { db, statements, released: () => released };
+  return {
+    db,
+    statements,
+    released: () => released,
+    notify: () => {
+      for (const fire of notifiers) fire();
+    },
+    unlistened: () => unlistened,
+  };
 }
+
+/**
+ * Let the sweep's `listen()` promise settle.
+ *
+ * `startWorkflowQueueSweep` subscribes without awaiting — it returns a stop
+ * synchronously — so the callback is not captured until a microtask has run. One
+ * `flush()` would do it today; `vi.waitFor` is used at the assertion sites instead
+ * so nothing depends on how many ticks the chain happens to take.
+ */
+const flushListen = (): Promise<void> => Promise.resolve();
 
 describe("runQueuePass", () => {
   test("does nothing without a platform database", async () => {
@@ -290,5 +323,118 @@ describe("a run that parked itself", () => {
       },
     });
     expect(pass).toEqual({ claimed: 3, delivered: 1, rescheduled: 1, retried: 1, dropped: 0 });
+  });
+});
+
+/**
+ * The NOTIFY half — a latency optimization that must not become the record.
+ *
+ * `enqueue` announces on `WORKFLOW_QUEUE_CHANNEL` when a message is due now, and
+ * the sweep listens so a step-to-step hop stops paying the poll interval. Every
+ * spec here is about the boundary of that: what it speeds up, what it must not
+ * replace, and what happens when it is unavailable.
+ *
+ * The listener is driven by INVOKING the callback the fake captured, so none of
+ * this needs a Postgres — the wire is `postgres-db.ts`'s `listen`, and the fact
+ * that a real notification arrives is the scenario tier's business.
+ */
+describe("delivery on NOTIFY", () => {
+  /** A sweep whose interval is long enough that no tick can fire during a test. */
+  const startIdle = (db: AdminDb, deliver = vi.fn(completes)) => ({
+    stop: startWorkflowQueueSweep({ adminDb: db, deliver, intervalMs: 600_000 }),
+    deliver,
+  });
+
+  test("a notification runs a pass without waiting for the interval", async () => {
+    const { db, notify } = fakeDb([msg("m1")]);
+    const { stop, deliver } = startIdle(db);
+    await flushListen();
+    notify();
+    await vi.waitFor(() => expect(deliver).toHaveBeenCalledTimes(1));
+    stop();
+  });
+
+  /**
+   * A burst COALESCES, which is why one runner sits behind both triggers.
+   *
+   * Concurrent passes are not incorrect — `claimDue` re-checks its predicate under
+   * the row lock, so N passes take disjoint sets — they are wasted. Ten enqueues
+   * landing together must not start ten passes, and `createCoalescingRunner`
+   * collapses them to the one in flight plus one trailing.
+   */
+  test("a burst of notifications does not start a pass each", async () => {
+    const { db, statements, notify } = fakeDb([]);
+    const { stop } = startIdle(db);
+    await flushListen();
+    for (let i = 0; i < 10; i++) notify();
+    await vi.waitFor(() => expect(statements.length).toBeGreaterThan(0));
+    // At most two claims: the in-flight one and a single trailing run. Asserted as
+    // a ceiling rather than an exact count because which of the ten lands during
+    // the first pass is a scheduling detail — the property is that it is bounded,
+    // not that it is 2.
+    expect(statements.filter((s) => s.includes("distinct on")).length).toBeLessThanOrEqual(2);
+    stop();
+  });
+
+  test("stopping the sweep tears the subscription down", async () => {
+    // A listener left behind a stopped sweep holds a connection this replica has
+    // stopped accounting for, and keeps running passes during a drain.
+    const { db, unlistened } = fakeDb([]);
+    const { stop } = startIdle(db);
+    await flushListen();
+    stop();
+    expect(unlistened()).toBe(1);
+  });
+
+  /**
+   * A subscription that cannot be established DEGRADES, and says so.
+   *
+   * The interval alone still delivers every message, so this is slower rather than
+   * broken — and the log line has to say that, because "queue NOTIFY subscription
+   * failed" alone reads like durable workflows have stopped.
+   */
+  test("a failed subscription leaves the interval delivering, and warns", async () => {
+    const { db } = fakeDb([]);
+    const failing: AdminDb = {
+      reserve: db.reserve,
+      listen: () => Promise.reject(new Error("no connection")),
+    };
+    const stop = startWorkflowQueueSweep({
+      adminDb: failing,
+      deliver: vi.fn(completes),
+      intervalMs: 600_000,
+    });
+    await vi.waitFor(() => expect(logs.warns()).toHaveLength(1));
+    expect(logs.warns()[0]).toContain("poll");
+    expect(logs.warns()[0]).toContain("loses nothing");
+    expect(stop).not.toThrow();
+  });
+
+  /**
+   * A pass that THROWS is reported rather than becoming an unhandled rejection.
+   *
+   * Note what does NOT reach this: a failing DELIVERY is handled inside
+   * `runQueuePass`, which turns it into a backoff — so the hazard is a pass that
+   * cannot even claim, i.e. the connection itself. The interval's trigger is
+   * covered by `createIntervalSweep`; this path calls the runner directly and is
+   * the one that needed its own catch.
+   */
+  test("a pass that cannot claim is reported, not left as an unhandled rejection", async () => {
+    const { db, notify } = fakeDb([]);
+    const broken: AdminDb = {
+      listen: db.listen,
+      reserve: () => Promise.reject(new Error("connect ECONNREFUSED")),
+    };
+    const stop = startWorkflowQueueSweep({
+      adminDb: broken,
+      deliver: vi.fn(completes),
+      intervalMs: 600_000,
+    });
+    await flushListen();
+    notify();
+    await vi.waitFor(() =>
+      expect(logs.warns().some((w) => w.includes("notified queue pass failed"))).toBe(true),
+    );
+    expect(stop).not.toThrow();
   });
 });

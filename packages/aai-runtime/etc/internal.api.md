@@ -51,6 +51,7 @@ export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promis
 // @public
 type CloseableDb = Db & {
     reserve(): Promise<ReservedDb>;
+    listen(channel: string, onNotify: () => void): Promise<() => void>;
     close(): Promise<void>;
 };
 
