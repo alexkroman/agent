@@ -14,21 +14,15 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { assertServiceRoleKey, hasPlatformDb, isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
-import { type AppDatabases, createAppDatabases } from "./app-database.ts";
-import { appDbAdmin, extraAppDbTargets } from "./app-db-admin.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
-import { ADMIN_POOL_MAX, APP_DB_ADMIN_POOL_MAX, SLUG_LOCK_POOL_MAX } from "./constants.ts";
+import { ADMIN_POOL_MAX, SLUG_LOCK_POOL_MAX } from "./constants.ts";
 import { assertGuestTokenSecret } from "./guest-token.ts";
 import { createLogger } from "./logger.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
-import {
-  announceDirectDbHost,
-  appDbPoolerUrl,
-  platformPoolerUrl,
-} from "./platform-connection-config.ts";
+import { announceDirectDbHost, platformPoolerUrl } from "./platform-connection-config.ts";
 import { announcePlatformDbCapacity } from "./platform-db-capacity.ts";
 import {
   PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
@@ -166,16 +160,17 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
 }
 
 /**
- * Platform Postgres surface: Supabase Vault for secrets, studio workspaces,
- * per-app database provisioning, and the Realtime change streams — all over
+ * Platform Postgres surface: Supabase Vault for secrets, studio workspaces, the
+ * durable-workflow world, session state, and the Realtime change streams — all over
  * `SUPABASE_DB_URL` (service-role connection string) plus `SUPABASE_URL` /
  * `SUPABASE_SERVICE_ROLE_KEY` for the Realtime socket.
  *
  * **`SUPABASE_DB_URL` decides the whole tier, and there are exactly two.** Set,
  * every store here is Supabase's and the companions are REQUIRED; unset, every
  * store is memory and nothing survives a restart. See {@link hasPlatformDb} for
- * why the third state — memory stores beside real per-app databases — is gone
- * rather than merely discouraged.
+ * why a MIXTURE is gone rather than merely discouraged — the third state was
+ * memory stores beside real per-app databases, and the same failure is now
+ * reachable through the workflow world and session state.
  */
 export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   secrets: SecretStore;
@@ -185,7 +180,6 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   chats: ChatStore;
   /** Change notifications — see ServiceConfig.events. */
   events: PlatformEvents;
-  appDb?: AppDatabases;
   /** Cross-replica slug mutation lock; in-process without a platform db. */
   slugLock: SlugMutationLock;
   /** Platform admin SQL executor, with a platform db — see ServiceConfig.sql. */
@@ -197,8 +191,6 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
    * statement timeout (workflow-wake.ts).
    */
   adminDb?: AdminDb;
-  /** Extra `APP_DB_URLS` clusters — see OrchestratorOpts.extraAppDbClusters. */
-  extraAppDbClusters?: number;
 } {
   const url = env.SUPABASE_DB_URL;
   if (!url) {
@@ -257,11 +249,6 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     }),
   );
   const exec: SqlExec = (query, params) => admin.query(query, params);
-  const extraTargets = extraAppDbTargets(env);
-  // `create database` / `drop database` are Management API calls and nothing
-  // else, so this is also the answer to "does this deployment have per-app
-  // databases at all" — it THROWS outside local dev rather than degrade quietly.
-  const appDbChannel = appDbAdmin({ url, env, refOverride: env.SUPABASE_PROJECT_REF });
   // Change notifications ride Supabase Realtime — the Postgres rows are the
   // emitters (postgres_changes), so unlike the memory path the stores need no
   // write-side wrapping. Required rather than optional: a platform database with
@@ -286,44 +273,6 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     events: createRealtimePlatformEvents({
       url: realtime.SUPABASE_URL,
       key: realtime.SUPABASE_SERVICE_ROLE_KEY,
-    }),
-    // Absent only in local dev without Management API credentials — there is no
-    // SQL path to create a database on, so the storage routes 503 (appDbAdmin).
-    ...omitUndefined({
-      appDb:
-        appDbChannel &&
-        createAppDatabases({
-          admin: appDbChannel,
-          url,
-          sql: exec,
-          // Per-app DATABASES mean the admin pool above cannot reach a tenant's
-          // tables at all: a Postgres connection is bound to one database, so
-          // provisioning's in-database steps, the usage read and the wake-hint read
-          // each need a connection of their own. Short-lived and single, rather than
-          // a retained pool per app: these are per-app-lifecycle or per-tick
-          // operations, and N retained pools is exactly the arithmetic
-          // MAX_PLATFORM_DB_CONNECTIONS exists to bound.
-          open: (appUrl) => {
-            const db = createPostgresDb({ url: appUrl, max: APP_DB_ADMIN_POOL_MAX });
-            return { query: (query, params) => db.query(query, params), close: () => db.close() };
-          },
-          // Every app-database connection — the guest's `DATABASE_URL` and the
-          // platform's own reads alike — goes through Supavisor, which bounds it
-          // per tenant WITHOUT taking it out of the budget: session mode holds one
-          // backend per client connection, so `APP_DB_CONNECTION_ALLOWANCE` counts
-          // them (see `withPoolerHost`, whose doc used to claim otherwise).
-          // Session mode only: transaction mode breaks graphile-worker's prepared
-          // statements and world-postgres's LISTEN.
-          //
-          // This is the PRIMARY cluster's pooler. An extra `APP_DB_URLS` cluster
-          // declares its own alongside its admin URL, because its Supavisor host
-          // and tenant ref are its own — see `extraAppDbTargets`.
-          ...omitUndefined({ poolerUrl: appDbPoolerUrl(env) }),
-          // Cellular sharding: APP_DB_URLS lists additional Supabase clusters
-          // new apps may be placed on. Each app's cluster is recorded in its
-          // app-db:<slug> locator, so agent code never notices placement.
-          extraTargets,
-        }),
     }),
     // Cross-request coordination lives in Postgres too, so any replica (and
     // either service) can serve any request: per-slug mutation exclusion
@@ -352,12 +301,10 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       ),
     ),
     sql: exec,
-    // The admin POOL, not another one: the wake sweep reserves one connection
-    // from it for the read phase of a tick, so the fleet-wide connection budget
-    // (MAX_PLATFORM_DB_CONNECTIONS, currently exactly at its ceiling) is
-    // unchanged by this feature.
+    // The admin POOL, not another one. The platform's own sweeps reserve a
+    // connection from it per tick, so the fleet-wide budget
+    // (MAX_PLATFORM_DB_CONNECTIONS) is unchanged by any of them.
     adminDb: admin,
-    extraAppDbClusters: extraTargets.length,
   };
 }
 
@@ -378,18 +325,8 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   assertGuestTokenSecret(env, hasPlatformDb(env));
   const storage = buildStorage(env);
   const uploadBytes = buildUploadBytes(env);
-  const {
-    secrets,
-    agents,
-    workspaces,
-    chats,
-    events,
-    appDb,
-    slugLock,
-    sql,
-    adminDb,
-    extraAppDbClusters,
-  } = buildPlatformDb(env);
+  const { secrets, agents, workspaces, chats, events, slugLock, sql, adminDb } =
+    buildPlatformDb(env);
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure
@@ -434,10 +371,8 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     ...omitUndefined({ keyVerifier }),
     slugLock,
     replicaId,
-    ...omitUndefined({ appDb }),
     ...omitUndefined({ sql }),
     ...omitUndefined({ adminDb }),
-    ...omitUndefined({ extraAppDbClusters }),
     ...omitUndefined({ directory }),
   };
 }

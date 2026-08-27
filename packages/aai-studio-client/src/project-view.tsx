@@ -18,7 +18,6 @@ import { api, type ChatSession, type ProjectData, type StudioStatus } from "./ap
 import { errorText, isTransientError } from "./api-error.ts";
 import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
 import { ChatPanel } from "./chat.tsx";
-import { DatabasePane } from "./database.tsx";
 import { DocsPane } from "./docs.tsx";
 import { bufferFor, useFileDrafts } from "./file-drafts.ts";
 import { LogsView } from "./logs-view.tsx";
@@ -27,7 +26,7 @@ import { queryKeys } from "./query-keys.ts";
 import { SecretsPane } from "./secrets.tsx";
 import { SettingsPane } from "./settings.tsx";
 import { lazyRetry } from "./stale-build.ts";
-import { isTabVisible, PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
+import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
 import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
 import { WorkflowsPane } from "./workflows.tsx";
 
@@ -58,25 +57,6 @@ function openFile(selected: string | null, files: Record<string, string>): strin
   if (selected !== null && selected in files) return selected;
   if ("agent.ts" in files) return "agent.ts";
   return Object.keys(files)[0] ?? null;
-}
-
-/**
- * The pane actually shown: the user's pick while that pane is still OFFERED,
- * else Settings.
- *
- * The same rule as {@link openFile} one function up — a selection of something
- * that has stopped existing is not a selection, derived during render rather
- * than corrected by an effect. Only `database` and `workflows` can vanish under
- * a selection (see `isTabVisible`), and they vanish when someone turns the
- * database off, which is a thing that happens in ANOTHER tab: this one is
- * sitting on the pane while the project frame arrives saying the pane is gone.
- *
- * Settings rather than the default UI pane, because Settings is where the
- * switch that did this lives — the pane a user is looking for after those tabs
- * disappear is the one that can bring them back.
- */
-function shownTab(selected: StudioTab, databaseEnabled: boolean): StudioTab {
-  return isTabVisible(selected, { databaseEnabled }) ? selected : "settings";
 }
 
 /**
@@ -194,14 +174,13 @@ export function ProjectView(props: ProjectViewProps) {
 
   const files = workspace.data?.files ?? EMPTY_FILES;
   const deployedSlug = workspace.data?.deployedSlug;
-  // The Database and Workflows tabs' gate — one flag, because a durable run
-  // needs the same database (see `isTabVisible`). It rides on the project
-  // payload rather than the database-state route the Settings card reads, so
-  // the tabs appear the moment the switch is flipped: recording the intent
-  // stamps the workspace, which pushes a `project` frame down the stream above
-  // (see studio-sse.ts).
-  const databaseEnabled = workspace.data?.databaseEnabled === true;
-  const tab = shownTab(selectedTab, databaseEnabled);
+  // No gate: every pane is offered from the moment a project exists. There used
+  // to be one — `shownTab` fell back to Settings when a selected pane stopped
+  // being offered, because Database and Workflows could vanish under a selection
+  // when someone turned the database off in another tab. Nothing can vanish now,
+  // so the user's pick IS the pane; `top-bar.tsx` carries the argument and the
+  // shape to copy if a gate ever comes back.
+  const tab = selectedTab;
   // "Publish unlocks after your first build" — there must be an agent to ship.
   const hasBuild = "agent.ts" in files;
 
@@ -278,7 +257,6 @@ export function ProjectView(props: ProjectViewProps) {
         tab={tab}
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
-        databaseEnabled={databaseEnabled}
         chatBusy={chatBusy}
         publishOpen={publishOpen}
         accountOpen={props.accountOpen}
@@ -363,7 +341,6 @@ export function ProjectView(props: ProjectViewProps) {
         {tab === "workflows" && (
           <WorkflowsPane deployedSlug={deployedSlug} previewSlug={workspace.data?.previewSlug} />
         )}
-        {tab === "database" && <DatabasePane bearer={bearer} project={project} />}
         {tab === "code" && (
           <Suspense
             fallback={<div className="flex flex-1 items-center justify-center text-subtle" />}
@@ -391,7 +368,6 @@ export function ProjectView(props: ProjectViewProps) {
         {tab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
         {tab === "settings" && (
           <SettingsPane
-            bearer={bearer}
             project={project}
             onDeleteProject={() => deleteProject.mutate()}
             deleting={deleteProject.isPending}

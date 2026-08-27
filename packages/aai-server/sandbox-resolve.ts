@@ -14,7 +14,6 @@
  */
 
 import type { AgentRecord } from "./agent-store.ts";
-import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
@@ -29,33 +28,16 @@ import {
   withSlugLock,
 } from "./sandbox-slots.ts";
 import type { WorkerSource } from "./sandbox-vm.ts";
-import { appDbSecretName, type SecretStore } from "./secret-store.ts";
+import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 const log = createLogger("sandbox.resolve");
 
-type ResolveAppDbOpts = {
-  secrets?: SecretStore | undefined;
-  appDb?: AppDatabases | undefined;
-};
-
-/**
- * Read the app's stored `app-db:` credentials (when the platform can open
- * them). Resolves null when storage is not enabled or unconfigured.
- */
-function readAppDbMeta(slug: string, opts: ResolveAppDbOpts) {
-  return opts.secrets && opts.appDb
-    ? opts.secrets.get(appDbSecretName(slug)).then(parseAppDbMeta)
-    : Promise.resolve(null);
-}
-
 export type ResolveSandboxOpts = {
   slots: SlotCache;
   store: BundleStore;
-  /** Named secret storage — read for the app's `app-db:` credentials. */
+  /** Named secret storage — read for the agent's own env secrets. */
   secrets?: SecretStore;
-  /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
-  appDb?: AppDatabases;
   /**
    * How long a broker call waits on a booting sandbox before answering 503.
    * Defaults to {@link BROKER_READY_TIMEOUT_MS}; injectable for tests, which
@@ -94,7 +76,6 @@ export type ResolveSandboxOpts = {
 export type BundleParts = {
   worker: WorkerSource;
   env: Record<string, string>;
-  appDbMeta: AppDbMeta | null;
   /** Harness image the agent was deployed against (per-deploy pinning). */
   imageTag: string | null;
   /** Deploy version off the same row read — what the slot is stamped with. */
@@ -164,15 +145,12 @@ export function loadBundleParts(
   const agentP = store.getAgent(slug);
   const workerP = agentP.then((agent) => (agent ? loadWorkerSource(slug, agent, store) : null));
   const envP = store.getEnv(slug).then((e) => e ?? {});
-  // Storage ("app db") credentials, when the platform can open them.
-  const appDbMetaP = readAppDbMeta(slug, opts);
-  for (const p of [workerP, agentP, envP, appDbMetaP]) p.catch(() => undefined);
-  return Promise.all([workerP, agentP, envP, appDbMetaP]).then(([worker, agent, env, appDbMeta]) =>
+  for (const p of [workerP, agentP, envP]) p.catch(() => undefined);
+  return Promise.all([workerP, agentP, envP]).then(([worker, agent, env]) =>
     worker && agent
       ? {
           worker,
           env,
-          appDbMeta,
           imageTag: agent.harness_image_tag ?? null,
           version: agent.version,
         }
@@ -203,19 +181,17 @@ function buildSandboxFromParts(
   // stream's blue-green `handoverSlot`, whose boot easily outlasts the
   // shutdown grace window.
   if (opts.isDraining?.()) throw new DrainingError(slug);
-  // Storage: the app's OWN scoped Postgres credentials (role/search_path
-  // pinned at provisioning — see app-database.ts) ride into the guest as
-  // DATABASE_URL, and the bundle's runtime connects directly, exactly as
-  // `aai dev` does with a project .env. Platform admin credentials never
-  // enter the guest. Injected last so enabling storage deterministically
-  // selects the provisioned database.
-  const env =
-    parts.appDbMeta && opts.appDb
-      ? { ...parts.env, DATABASE_URL: opts.appDb.connectionUrl(parts.appDbMeta) }
-      : parts.env;
+  // The agent's env, as stored, with nothing overlaid.
+  //
+  // A provisioned `DATABASE_URL` used to be injected LAST here, so enabling
+  // storage deterministically selected the platform's database over anything the
+  // author had set. The platform provisions none now — durable runs, the run
+  // journal and session state are all its own, reached over HTTP — so a
+  // `DATABASE_URL` in this env is the AUTHOR's, from their own secrets, and
+  // overlaying it would be the platform overriding a value it did not supply.
   const sandbox: Sandbox = createSandbox({
     worker: parts.worker,
-    env,
+    env: parts.env,
     slug,
     // The deploy version is half the fleet-wide sandbox NAME, which is what
     // keeps one deploy to one sandbox platform-wide (sandbox-directory.ts) and

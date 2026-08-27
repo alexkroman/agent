@@ -110,7 +110,7 @@ export type PublisherDeps = {
    * paths — Publish and the auto preview deploy — go through this one
    * publisher, so a per-deploy consequence wired here cannot be implemented
    * for one and forgotten for the other. The studio uses it to give a newly
-   * claimed slug the database its project asked for (studio-database.ts).
+   * claimed slug the secrets its project holds (`studio-deploy-hooks.ts`).
    */
   afterDeploy?: AfterDeploy | undefined;
 };

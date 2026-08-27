@@ -22,7 +22,8 @@ export function requireEnv<const K extends string>(
  *
  * `SUPABASE_DB_URL` is the sentinel because it is the connection the platform
  * tier IS: Vault secrets, the agents table, studio workspaces and chats, the
- * per-app databases, and the Realtime change streams all ride it. Set means
+ * durable-workflow world, session state, and the Realtime change streams all ride
+ * it. Set means
  * everything is in Supabase, and the three settings that travel with it
  * (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`) are
  * REQUIRED rather than optional — a half-configured platform tier is refused at
@@ -35,7 +36,10 @@ export function requireEnv<const K extends string>(
  * setting this variable in local dev — and it is the state that cost a morning:
  * a published agent's slug 404s after a restart with its app schema still
  * sitting in Postgres, so nothing about the failure names the store that lost
- * it.
+ * it. Per-app databases are gone, but the two-tier rule is not a leftover of
+ * them: the workflow world and session state now ride this same connection, so a
+ * mixture would reproduce the identical failure with durable state instead of an
+ * app schema.
  *
  * Deliberately NOT the same question as {@link isLocalDev}. Which stores a
  * process uses and whether tenant code gets a real sandbox are independent

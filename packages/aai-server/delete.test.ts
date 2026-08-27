@@ -3,14 +3,7 @@ import { expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import {
-  authFetch,
-  createTestStore,
-  deployAgent,
-  fakeAppDatabases,
-  makeSlot,
-  type TestFetch,
-} from "./test-utils.ts";
+import { authFetch, createTestStore, deployAgent, makeSlot, type TestFetch } from "./test-utils.ts";
 
 async function setup() {
   // Store + event bus are a pair: the delete route only removes the row, and
@@ -90,38 +83,4 @@ test("delete succeeds even if sandbox shutdown fails", async () => {
   expect(resp.status).toBe(200);
   await settleEvents();
   expect(shutdown).toHaveBeenCalled();
-});
-
-test("a failed app-database deprovision fails the delete instead of stranding it", async () => {
-  // Warning-and-continuing deleted the `app-db:<slug>` secret and the agents
-  // row, leaving the tenant schema and login role alive with their only
-  // credential record gone and nothing naming the slug — `slugs()` no longer
-  // lists it and the orphan sweep matches `%-preview` only. So the "a later
-  // retry can finish the job" the old comment relied on did not exist.
-  vi.spyOn(console, "error").mockImplementation(() => undefined);
-  const memoryEvents = createMemoryPlatformEvents();
-  const store = createTestStore(undefined, memoryEvents);
-  const deprovision = vi.fn().mockRejectedValue(new Error("cluster unreachable"));
-  const appDb = fakeAppDatabases({ deprovision });
-  const { app } = createOrchestrator({
-    slots: createSlotCache(),
-    store,
-    events: memoryEvents.events,
-    appDb,
-  });
-  const fetch: TestFetch = async (input, init) => app.request(input, init);
-  await deployAgent(fetch);
-
-  const resp = await authFetch(fetch, "/my-agent", { method: "DELETE" });
-
-  expect(resp.status).toBe(503);
-  expect(deprovision).toHaveBeenCalled();
-  // Nothing was deleted, which is what makes retrying the delete a real retry.
-  await expect(store.getAgent("my-agent")).resolves.not.toBeNull();
-
-  // ...and the retry finishes the job once the cluster answers.
-  deprovision.mockResolvedValue(undefined);
-  const retry = await authFetch(fetch, "/my-agent", { method: "DELETE" });
-  expect(retry.status).toBe(200);
-  await expect(store.getAgent("my-agent")).resolves.toBeNull();
 });

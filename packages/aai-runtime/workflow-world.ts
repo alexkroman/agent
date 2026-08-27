@@ -69,7 +69,7 @@ const POSTGRES_CONCURRENCY_ENV = "WORKFLOW_POSTGRES_WORKER_CONCURRENCY";
  * `too many connections for role "app_…"`.
  *
  * It could not have surfaced earlier. Under the per-schema model the DevKit's
- * migration could not run at all (`app-database.ts` has the measurement), so
+ * migration could not run at all (`aai-server/CLAUDE.md` has the measurement), so
  * nothing but `ctx.db` ever used that role — making workflows work is what made
  * the tenant's connection footprint real.
  *

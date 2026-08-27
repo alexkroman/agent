@@ -39,26 +39,35 @@ import {
 } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import { SWEEP_APP_SESSION_STATE } from "./_session-state-sweep.ts";
-import { APP_DB_SCHEMA } from "./app-database.ts";
 
 /**
- * A real per-app DATABASE, named the way `appDbIdentifier` names one.
+ * A real DATABASE with the tables in `public`, which is the layout the surviving
+ * postgres backend actually meets.
  *
- * It was an app-shaped SCHEMA in the platform database with the connection's
- * `search_path` pinned to it, which is how the platform used to provision an app.
- * It no longer is (see `app-database.ts`): an app gets its own database and its
- * tables sit in `public`, with no pin. Keeping the schema shape here would test a
- * layout production does not have — and the sweep, whose statement now names
- * `public`, would find nothing and pass vacuously.
+ * Two shapes preceded it and both are gone: an app-shaped SCHEMA in the platform
+ * database with `search_path` pinned to it, then a per-app database of its own.
+ * The platform provisions neither now — this backend runs only against a
+ * `DATABASE_URL` the AUTHOR supplied — so what is left to test is a plain database
+ * with no pin, which is what this creates. The name keeps the old `app_<hex>` shape
+ * only so the fixture is recognisable in a stray `\l` listing.
  */
 const APP_DB = "app_0123456789abcdef";
-/** The app role's password. Fixed — a test double has no business being random. */
+/** The role's password. Fixed — a test double has no business being random. */
 const APP_PASSWORD = "scenario-app-role-pw";
 
 type Cart = { items: string[]; total: number; note: string | null };
 
 const cartSlot = sessionSlot("cart", (): Cart => ({ items: [], total: 0, note: null }));
+
+/**
+ * The schema the backend's DDL targets.
+ *
+ * It used to come from `app-database.ts` as `APP_DB_SCHEMA`, because these tables
+ * lived in each app's own provisioned database. There are no app databases now, and
+ * the POSTGRES backend survives only where a `DATABASE_URL` is the author's own — a
+ * self-hosted server, or `aai dev` — so the schema is this suite's to name.
+ */
+const APP_DB_SCHEMA = "public";
 
 describeWithPg("session state over a real Postgres", () => {
   /** The PLATFORM connection — what creates and drops the app's database. */
@@ -269,33 +278,6 @@ describeWithPg("session state over a real Postgres", () => {
       .toEqual(["s-keep"]);
   });
 
-  test("the platform's TTL sweep reclaims aged rows and leaves fresh ones", async () => {
-    // The sweep is plpgsql over `information_schema`, so this is the only tier
-    // that can run it at all — and the schema above is app-SHAPED precisely so it
-    // is in scope. Ageing is done by hand: the retention window is two days.
-    const store = storeFor();
-    for (const sid of ["s-old", "s-new"]) {
-      const ctx = createToolContext({ sessionId: sid, slots: store.viewFor(sid) });
-      cartSlot.update(ctx, (cart) => cart.items.push(sid));
-      await store.flush(sid);
-    }
-    await sql(
-      `update ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE} set updated_at = now() - interval '3 days'
-       where session_id = $1`,
-      ["s-old"],
-    );
-
-    // The shipped statement, verbatim, run where it really runs: inside the app's
-    // own database. pg_cron dispatches it there via `cron.schedule_in_database`.
-    await sql(SWEEP_APP_SESSION_STATE);
-
-    const rows = await sql<{ session_id: string }>(
-      `select session_id from ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE}
-       where session_id in ('s-old', 's-new')`,
-    );
-    expect(rows.map((r) => r.session_id)).toEqual(["s-new"]);
-  });
-
   test("a session's EVENT log survives a new process, at its own indices", async () => {
     // The driver is the only thing that can fail here — an index round-tripping
     // through `bigint` as a string, a `jsonb` column rejecting what the memory
@@ -330,33 +312,5 @@ describeWithPg("session state over a real Postgres", () => {
       ["s-retry"],
     );
     expect(rows[0]?.count).toBe(1);
-  });
-
-  test("the TTL sweep reclaims aged EVENT rows too", async () => {
-    // Both tables, one job: a session's durable footprint is its slot values AND
-    // its event log, and a sweep that reclaimed one would leave the other growing
-    // in a schema the author sees as their own database usage.
-    const stream = streamFor();
-    for (const sid of ["e-old", "e-new"]) {
-      stream.append(sid, { type: "speech.started" });
-      await stream.flush(sid);
-    }
-    // Aged by `created_at`, not `updated_at`: an event row is append-only and
-    // never rewritten, so that is the only time it has.
-    await sql(
-      `update ${APP_DB_SCHEMA}.${SESSION_EVENT_TABLE} set created_at = now() - interval '3 days'
-       where session_id = $1`,
-      ["e-old"],
-    );
-
-    // The shipped statement, verbatim, run where it really runs: inside the app's
-    // own database. pg_cron dispatches it there via `cron.schedule_in_database`.
-    await sql(SWEEP_APP_SESSION_STATE);
-
-    const rows = await sql<{ session_id: string }>(
-      `select distinct session_id from ${APP_DB_SCHEMA}.${SESSION_EVENT_TABLE}
-       where session_id in ('e-old', 'e-new')`,
-    );
-    expect(rows.map((r) => r.session_id)).toEqual(["e-new"]);
   });
 });

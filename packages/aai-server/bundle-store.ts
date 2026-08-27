@@ -31,7 +31,7 @@ import type { BlobStorage } from "./blob-storage.ts";
 import { envCount, MAX_ENV_SIZE } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import { EnvSchema } from "./schemas.ts";
-import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
+import { agentEnvSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 const log = createLogger("store.bundle");
@@ -439,11 +439,12 @@ export function createBundleStore(
       // another agent's identical file, so no referrer may delete them).
       await Promise.all([
         agents.delete(slug),
-        // Delete-only sweep of this agent's SecretStore entries. The
-        // app-db credentials go too; the caller (delete route) is
-        // responsible for deprovisioning the database itself first.
+        // Delete-only sweep of this agent's SecretStore entries. There is one
+        // entry per agent now — an `app-db:<slug>` credential went with per-app
+        // databases, and a legacy row is deliberately NOT swept here: deleting
+        // the only credential for a database that still exists strands the data,
+        // which is the "leaked, out loud" failure `orphan-previews.ts` names.
         secrets.delete(agentEnvSecretName(slug)),
-        secrets.delete(appDbSecretName(slug)),
       ]);
       invalidate(slug);
     },

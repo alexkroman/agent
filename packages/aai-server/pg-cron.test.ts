@@ -1,15 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
-import {
-  APP_CRON_JOB_PREFIX,
-  appSessionStateJobName,
-  appSweepSchedule,
-  SWEEP_APP_SESSION_STATE,
-} from "./_session-state-sweep.ts";
 import { CRON_JOB_PREFIX, platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
+import { SESSION_STATE_RETENTION } from "./platform-session-state.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
@@ -142,15 +136,6 @@ test("the cron-history sweep prunes pg_cron's own run log", () => {
  * with is advisory — tenant code holding the credential can simply turn it
  * off. This is the half that cannot be overridden from a tenant connection.
  */
-test("the runaway sweep reaches app roles and nothing else", () => {
-  const runaways = platformCronJobs().find((j) => j.name === "aai-sweep-app-db-runaways");
-  expect(runaways?.command).toContain("pg_terminate_backend");
-  // Scoped by role NAME. The platform's own connections are `postgres`, so
-  // the pattern is what keeps this from reaching them — note the escaped
-  // underscore, without which `app_` would match any three characters.
-  expect(runaways?.command).toContain(String.raw`usename like 'app\_%'`);
-  expect(runaways?.command).toContain("state = 'active'");
-});
 
 describe("blob GC", () => {
   const withStorage = () =>
@@ -210,65 +195,57 @@ describe("blob GC", () => {
   });
 });
 
-describe("the per-app session-state sweep", () => {
-  test("is NOT a platform job any more", () => {
-    // It used to iterate this database's catalog for every `app_<hex>` schema.
-    // Per-app DATABASES make that find nothing — the catalog is per-database — so
-    // the job moved into each app's own database (`cron.schedule_in_database`, at
-    // provisioning time). A leftover platform job would run daily and sweep
-    // nothing, which is the shape of dead sweep this file's diffing exists to
-    // stop.
-    expect(platformCronJobs().map((j) => j.name)).not.toContain("aai-sweep-session-state");
+/**
+ * Session state is swept by ONE platform job again, and the round trip is the
+ * interesting part.
+ *
+ * It began as a platform job iterating this database's catalog for every
+ * `app_<hex>` schema. Per-app DATABASES broke that — a catalog is per-database, so
+ * the job found nothing — and it moved into each app's own database at provisioning
+ * time, which bought a per-app job name, a stagger across the day, and an
+ * identifier-quoting rule, none of which anything now needs.
+ *
+ * Removing tenant databases put the tables back in `aai_platform`, so the sweep is
+ * one statement over two ordinary tables and the cause that drove it out cannot
+ * recur: there is no per-tenant schema to enumerate.
+ */
+describe("the session-state sweep", () => {
+  const sweep = () => platformCronJobs().find((j) => j.name === "aai-sweep-session-state");
+
+  test("is a platform job, so boot's diffing owns its lifetime", () => {
+    // Being in this list is what makes it survive replica churn AND what makes a
+    // renamed job get unscheduled rather than left firing. A per-app job was
+    // declared nowhere in it — see the module doc.
+    expect(sweep()).toBeDefined();
+    expect(sweep()?.name.startsWith(CRON_JOB_PREFIX)).toBe(true);
   });
 
-  test("reads both table names from the SDK, so a rename cannot be two edits", () => {
-    // The guest writes these tables and the sweep reads them; one spelling is what
-    // keeps them from disagreeing.
-    expect(SWEEP_APP_SESSION_STATE).toContain(SESSION_STATE_TABLE);
-    expect(SWEEP_APP_SESSION_STATE).toContain(SESSION_EVENT_TABLE);
+  test("reaches both tables, because a slot and an event expire together", () => {
+    // Slots without their events is a session that reconnects to state it cannot
+    // explain; events without slots is a log describing state that is gone.
+    expect(sweep()?.command).toContain("aai_platform.session_slots");
+    expect(sweep()?.command).toContain("aai_platform.session_events");
+  });
+
+  test("names no tenant identifier, so there is nothing to quote", () => {
+    // The `format(%I)` + `'^app_[a-f0-9]{16}$'` pair existed because one statement
+    // addressed every tenant's schema by name. Tenancy is a COLUMN now, so the
+    // isolation is structural and the sweep is deliberately tenant-blind — it
+    // expires by age across the fleet.
+    expect(sweep()?.command).not.toContain("format(");
+    expect(sweep()?.command).not.toContain("app_");
+  });
+
+  test("takes its window from the module that owns the tables", () => {
+    // Imported rather than written twice: a retention the sweep and the store
+    // disagree about deletes rows one of them believes are live.
+    expect(sweep()?.command).toContain(`interval '${SESSION_STATE_RETENTION}'`);
   });
 
   test("keeps a row far longer than the in-process grace window", () => {
     // A backstop for a guest that is GONE, not a second opinion about a live one:
     // deleting a row while a caller is still reconnecting is indistinguishable,
     // to them, from the loss durable state exists to remove.
-    expect(SWEEP_APP_SESSION_STATE).toContain("interval '2 days'");
-  });
-
-  test("needs no identifier quoting, because it names no tenant identifier", () => {
-    // The `format(%I)` + `'^app_[a-f0-9]{16}$'` pair existed because one statement
-    // addressed every tenant's schema by name. A job running INSIDE one app's
-    // database addresses `public`, so there is no identifier to interpolate and
-    // nothing to assert the shape of — the isolation is structural now.
-    expect(SWEEP_APP_SESSION_STATE).not.toContain("format(");
-    expect(SWEEP_APP_SESSION_STATE).not.toContain("app_");
-    expect(SWEEP_APP_SESSION_STATE).toContain("public.");
-  });
-
-  test("its job-name prefix cannot collide with the platform's diffed prefix", () => {
-    // THE trap. `schedulePlatformSweeps` unschedules every `aai-sweep-*` job that
-    // `platformCronJobs()` does not declare, and a per-app job is declared nowhere
-    // in that list — it belongs to a provision, not to a release. Sharing the
-    // prefix would mean every boot silently unschedules every app's sweep, after
-    // which session state accumulates forever with nothing reporting it.
-    expect(APP_CRON_JOB_PREFIX.startsWith(CRON_JOB_PREFIX)).toBe(false);
-    expect(CRON_JOB_PREFIX.startsWith(APP_CRON_JOB_PREFIX)).toBe(false);
-    const name = appSessionStateJobName("app_0123456789abcdef");
-    expect(name.startsWith(APP_CRON_JOB_PREFIX)).toBe(true);
-    expect(name.startsWith(CRON_JOB_PREFIX)).toBe(false);
-  });
-
-  test("staggers apps across the day rather than firing them together", () => {
-    // 50 apps sweeping in the same minute is 50 concurrent background connections
-    // on an instance whose whole budget is 60. Derived from the identifier, so an
-    // app's slot is stable and findable in `cron.job_run_details`.
-    const slots = new Set(
-      ["app_0123456789abcdef", "app_fedcba9876543210", "app_00112233445566aa"].map(
-        appSweepSchedule,
-      ),
-    );
-    expect(slots.size).toBe(3);
-    for (const slot of slots) expect(slot).toMatch(/^\d{1,2} \d{1,2} \* \* \*$/);
-    expect(appSweepSchedule("app_0123456789abcdef")).toBe(appSweepSchedule("app_0123456789abcdef"));
+    expect(SESSION_STATE_RETENTION).toBe("2 days");
   });
 });

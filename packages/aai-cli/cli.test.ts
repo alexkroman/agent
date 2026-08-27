@@ -38,7 +38,7 @@ function normalize(s: string): string {
 }
 
 describe("cli", () => {
-  test.each(["init", "dev", "test", "eval", "build", "deploy", "delete", "secret", "storage"])(
+  test.each(["init", "dev", "test", "eval", "build", "deploy", "delete", "secret"])(
     "main command declares the %s subcommand",
     (cmd) => {
       const subs = mainCommand.subCommands as Record<string, unknown>;
@@ -73,15 +73,12 @@ describe("cli", () => {
     expect(secretCmd?.subCommands?.list).toBeDefined();
   });
 
-  test("storage subcommand has nested subcommands", () => {
-    const subs = mainCommand.subCommands as Record<
-      string,
-      { subCommands?: Record<string, unknown> }
-    >;
-    const storageCmd = subs.storage;
-    expect(storageCmd?.subCommands?.status).toBeDefined();
-    expect(storageCmd?.subCommands?.enable).toBeDefined();
-    expect(storageCmd?.subCommands?.disable).toBeDefined();
+  test("declares no storage subcommand — the platform provisions no databases", () => {
+    // `aai storage enable` provisioned a per-app Postgres and handed the guest a
+    // `DATABASE_URL`. There is no such thing to switch on now: a database is a
+    // secret the author points at their own provider. Asserted as an ABSENCE
+    // because the removal is the user-visible part of that change.
+    expect((mainCommand.subCommands as Record<string, unknown>).storage).toBeUndefined();
   });
 });
 
@@ -116,20 +113,6 @@ describe("cli usage snapshots", () => {
 
   test.each(["put", "delete", "list"])("aai secret %s --help", async (name) => {
     const usage = await renderUsage(secretSub(name));
-    expect(normalize(usage)).toMatchSnapshot();
-  });
-
-  test("aai storage --help", async () => {
-    const usage = await renderUsage(sub("storage"));
-    expect(normalize(usage)).toMatchSnapshot();
-  });
-
-  const storageSub = (name: string) =>
-    (sub("storage") as { subCommands: Record<string, Parameters<typeof renderUsage>[0]> })
-      .subCommands[name] as Parameters<typeof renderUsage>[0];
-
-  test.each(["status", "enable", "disable"])("aai storage %s --help", async (name) => {
-    const usage = await renderUsage(storageSub(name));
     expect(normalize(usage)).toMatchSnapshot();
   });
 });

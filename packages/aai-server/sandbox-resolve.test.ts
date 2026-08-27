@@ -17,8 +17,7 @@ import { createMemorySandboxDirectory, SandboxNameTakenError } from "./sandbox-d
 import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
-import { createTestStore, fakeAppDatabases } from "./test-utils.ts";
+import { createTestStore } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => {
   const mockSpawnAgentServer = vi.fn().mockResolvedValue({
@@ -106,72 +105,42 @@ async function seedAgent(slug: string) {
   };
 }
 
-describe("storage (ctx.db) delivery", () => {
-  it("injects the app's own DATABASE_URL into the bundle/load env when storage is enabled", async () => {
-    const secrets = createMemorySecretStore();
-    await secrets.put(
-      appDbSecretName("stored-app"),
-      JSON.stringify({ role: "app_0123456789abcdef", password: "p".repeat(32) }),
-    );
-    const store = createTestStore(secrets);
+/**
+ * The env goes through AS STORED, with nothing overlaid.
+ *
+ * A provisioned `DATABASE_URL` used to be injected LAST here, so enabling storage
+ * deterministically selected the platform's database over anything the author had
+ * set — and the suite that stood here ("storage (ctx.db) delivery") asserted exactly
+ * that overlay, plus that the credential was session-mode 5432 rather than the
+ * transaction pooler the DevKit cannot use.
+ *
+ * The platform provisions no databases now, so a `DATABASE_URL` in this env is the
+ * AUTHOR's, from their own secrets, and overlaying it would be the platform
+ * overriding a value it did not supply.
+ */
+describe("the agent's env reaches the guest untouched", () => {
+  it("passes a stored DATABASE_URL through rather than replacing it", async () => {
+    const store = createTestStore();
     await store.putAgent({
       slug: "stored-app",
-      env: { OTHER: "x" },
+      env: { OTHER: "x", DATABASE_URL: "postgres://author-supplied/db" },
       worker: 'export default { name: "t" };',
       clientFiles: {},
       credential_hashes: ["hash"],
-    });
-    // The app's OWN database in the path, not the platform's — and session-mode
-    // 5432 rather than the transaction pooler, which the Workflow DevKit cannot
-    // use (prepared statements + LISTEN). See app-database.ts.
-    const appDb = fakeAppDatabases({
-      connectionUrl: vi.fn(
-        () => "postgres://app_0123456789abcdef:pw@db.example:5432/app_0123456789abcdef",
-      ),
     });
     mockSpawnAgentServer.mockClear();
 
     const sandbox = await resolveSandbox("stored-app", {
       slots: createSlotCache(),
       store,
-      secrets,
-      appDb,
     });
     expect(sandbox).not.toBeNull();
 
-    // The guest connects to its OWN scoped database directly — the app-db
-    // credential rides in the env, and no db handle stays host-side.
-    const vmOpts = mockSpawnAgentServer.mock.calls[0]?.[0] as {
-      env: Record<string, string>;
-    };
-    expect(vmOpts.env).toEqual({
-      OTHER: "x",
-      DATABASE_URL: "postgres://app_0123456789abcdef:pw@db.example:5432/app_0123456789abcdef",
-    });
-    await sandbox?.shutdown();
-  });
-
-  it("leaves the env untouched when storage is not enabled", async () => {
-    const deps = await seedAgent("no-storage");
-    mockSpawnAgentServer.mockClear();
-    const sandbox = await resolveSandbox("no-storage", deps);
-    const vmOpts = mockSpawnAgentServer.mock.calls[0]?.[0] as {
-      env: Record<string, string>;
-    };
-    expect(vmOpts.env).toEqual({});
-    await sandbox?.shutdown();
-    deps.unwatch();
+    const vmOpts = mockSpawnAgentServer.mock.calls[0]?.[0] as { env: Record<string, string> };
+    expect(vmOpts.env).toEqual({ OTHER: "x", DATABASE_URL: "postgres://author-supplied/db" });
   });
 });
 
-/**
- * Shutdown must not leave a sandbox behind. Flipping `draining` only makes
- * `/health` fail — the platform's proxy stops routing here when it notices —
- * so requests keep arriving for a window. Booting one then produces a guest
- * nothing holds: no slot references it, this process is about to exit, and it
- * bills until Modal's idle timeout. Rare at MIN_CONTAINERS=1 (only a
- * redeploy shuts a replica down); routine at 0.
- */
 describe("broker while draining", () => {
   beforeEach(() => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);

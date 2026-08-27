@@ -65,45 +65,35 @@ so every piece of per-project state resets on a switch with no effect to do it.
   Workflows, Database, Code, Secrets, Settings (`StudioTab` in `top-bar.tsx`
   is the one union; `project-view.tsx`'s `selectedTab` state is the only
   selection).
-  - **Database and Workflows are the panes a project can LACK, and ONE flag
-    decides both**, where everything else is offered from the moment a project
-    exists. Both are gated on `ProjectData.databaseEnabled` through
-    `isTabVisible` — a database is an opt-in taken in Settings, and before it is
-    taken the Database pane could only show an empty table list. A tab that
-    answers no question reads as a broken feature rather than an unused one, and
-    it drew "where is my data" from users who had never switched anything on.
-    - **Workflows rides on the same flag because a run is only DURABLE with a
-      database behind it.** `configureWorkflowWorld`
-      (`aai/host/workflow-world.ts`) picks the Postgres world off the app's
-      `DATABASE_URL`; with none, the guest gets the LOCAL world, whose queue is
-      in memory and whose data directory is per-process under `tmpdir()`. So the
-      pane's own subtitle — runs that "keep going after the call, the page, or
-      the request that began them" — is false for a databaseless project, and a
-      list of runs that die with the sandbox is a worse answer than no tab
-      because it looks like the feature working. `TabGates` therefore still
-      carries ONE entry: two panes, but the same fact about the project.
-    - **The gate rides on the PROJECT payload, not on the database-state
-      route the Settings card reads.** Recording the intent stamps the
-      workspace, which pushes a `project` frame down the SSE stream
-      (`withWorkspaceEvents` → `projectPayload`), so every open tab gains or
-      loses the pane on its own. The card additionally invalidates the project
-      query on a successful toggle, which is what makes the tab appear on the
-      CLICK rather than on the round trip — and covers a stream that happens
-      to be reconnecting.
-    - **`isTabVisible` is shared with `project-view.tsx` deliberately.** Two
-      callers need one answer: the switcher decides what to render, and the
-      view decides what a SELECTION of a now-hidden pane means. Those
-      disagreeing is a tab bar with no `aria-current` beside a blank pane.
-      `shownTab` falls back to **Settings**, not to the default UI pane,
-      because Settings is where the switch that hid it lives — same rule as
-      `openFile` beside it, derived during render rather than corrected by an
-      effect, since a selection of something that stopped existing is not a
-      selection.
+  - **No pane is gated any more, and the gate that was here is worth knowing.**
+    `isTabVisible` hid **Database** and **Workflows** behind one
+    `ProjectData.databaseEnabled` flag: a database was an opt-in taken in
+    Settings, and before it was taken the Database pane could only show an empty
+    table list — a tab that answers no question reads as a broken feature rather
+    than an unused one, and it drew "where is my data" from users who had never
+    switched anything on.
+    - **Workflows rode the same flag because a run was only DURABLE with a
+      database behind it.** `configureWorkflowWorld` picked the Postgres world
+      off the app's `DATABASE_URL`; with none the guest got the LOCAL world,
+      whose queue is in memory and whose data directory is per-process under
+      `tmpdir()`. A pane promising runs that "keep going after the call, the
+      page, or the request that began them" would have been listing runs that
+      die with the sandbox — worse than no tab, because it looks like the
+      feature working.
+    - **Both premises are gone**: there is no Database pane, and a durable run
+      no longer needs the project to have a database, because the workflow world
+      is the PLATFORM's and every agent reaches it over HTTP. So Workflows is
+      unconditional and the flag, the predicate and the prop threaded to reach
+      it are deleted rather than left always-true.
+    - **The shape to copy if a gate returns**: ONE exported predicate, because
+      the switcher (what to render) and `project-view.tsx` (what a selection of
+      a now-hidden pane means) must not disagree — that disagreement is a tab
+      bar with no `aria-current` beside a blank pane. Its fallback was
+      **Settings**, not the default UI pane, because Settings held the switch
+      that hid it; derived during render rather than corrected by an effect,
+      since a selection of something that stopped existing is not a selection.
     - The switcher's left borders index the VISIBLE list, or a missing pane
       leaves a seam where it used to be.
-    - **The Database card's copy is what makes either pane discoverable**, so
-      its off-state blurb names both (`database-card.tsx`): the switch is the
-      only place in the studio that says the Workflows pane exists.
   The first four are all about the agent that is RUNNING — talk to it, call
   it, watch what it is still doing, read what it stored — where Code, Secrets
   and Settings are about the workspace and the project. UI LEADS and API sits
@@ -212,64 +202,28 @@ so every piece of per-project state resets on a switch with no effect to do it.
   and the coding agent's preamble all said "Settings → Secrets", which is
   furniture that has moved twice now — the same failure as the Phone card's
   "Secrets **below**".
-- **The Database card switches `ctx.db` on per PROJECT, across both
-  environments** (`database-card.tsx` → `GET/POST/DELETE
-  /studio/projects/:project/database` → `aai-studio-server/
-  studio-database.ts`). **It is OFF by default**, so this card is the only
-  place the capability is discoverable — the pane it fronts does not exist
-  until the switch is flipped (see the switcher above) — which is why the
-  blurb names the Database pane rather than only describing `ctx.db`.
-  A test consequence worth knowing: the card's own blurb contains the word
-  "Database", so `getByText("Database")` in `settings.test.tsx` matches the
-  title AND the blurb — read card titles through `.eyebrow` instead.
-
-  The platform primitive is per SLUG (`aai storage enable <slug>`,
-  `/:slug/storage`) and a project is two deployed agents, so
-  a per-slug toggle here would have made that the user's bookkeeping — and
-  "enable the database" that only reached the preview would be a broken
-  promise either way. Each environment gets its OWN schema: the preview is
-  where half-finished tool code runs, and a shared one would let a preview
-  turn drop the production table.
-  - **Intent is stamped on the workspace (`databaseEnabled`); provisioning
-    follows the SLUG.** The switch is reachable before either agent exists
-    (the usual state — a project has a preview long before a publish), and
-    provisioning an unclaimed slug would create a schema no cleanup path can
-    see (the orphan-preview sweep and `deleteAgentResources` both key off an
-    agents row) and that another tenant could inherit by claiming the name
-    first. So the flag records the want, the switch provisions the slugs that
-    exist, and `reconcileProjectDatabase` provisions the rest as their deploys
-    claim them — hung off the ONE hook (`afterDeploy` on the session broker's
-    single publisher) that both Publish and the auto preview pass through.
-    The invariant: an app database exists only for a deployed, owned slug.
-  - **It reaches a RUNNING agent** — `DATABASE_URL` is read from the `app-db:`
-    secret when a sandbox is BUILT, so provisioning bumps that slug's agents
-    row and the change stream rebuilds the guest (`aai-server/
-    storage-handler.ts`, which carries the failure that made the bump
-    necessary). The switch ALSO force-redeploys the PREVIEW (clear
-    `previewHash`, schedule — the `wakeProjectPreview` pattern), because that
-    environment should be running the current files too; production still
-    waits for a Publish for its FILES, which the card says out loud.
-  - **An already-provisioned slug is never re-provisioned**: `provision`
-    rotates the role's password on every call, so re-running it would
-    invalidate the `DATABASE_URL` a live sandbox is holding.
-  - **Each row reports what its schema HOLDS** — tables, rows, bytes, read
-    live per environment (`appDatabaseUsage` → `storageUsage` → the state's
-    `usage`). "Ready" answers whether the switch took effect and is not the
-    question anyone has: the one worth answering is whether a tool is really
-    saving anything, which is invisible until you can see a row count move.
-    Hence the **Refresh counts** button — the numbers are as old as the
-    card's last fetch, which is stale exactly when it matters. Three
-    distinctions the copy holds: an enabled schema with no tables reads
-    "no tables yet" rather than "Ready"; a measurement that FAILED leaves
-    `usage` absent and falls back to "Ready", because reporting 0 rows for a
-    schema nobody could read is the precise lie this exists to catch; and the
-    counts are exact `count(*)`, never `reltuples` (the planner's estimate is
-    `-1` before the first ANALYZE and stale after every write, so it reads
-    zero for the row you just wrote).
-  - Ownership of each slug is checked against the agents row's credential
-    hashes (`verifySlugOwner`), exactly as the project-delete cascade does —
-    a workspace naming a foreign slug must not become a lever on, or an
-    oracle for, someone else's agent.
+- **There is no Database card, and the settings pane is where that shows.** It
+  switched `ctx.db` on per PROJECT across both environments, fronted a Database
+  pane, and reported each schema's table/row/byte counts. The platform
+  provisions no tenant database now — an author points a `DATABASE_URL` secret
+  at their own provider — so the card, its pane, its routes and the per-slug
+  `aai storage enable` primitive behind them are all gone, and a database is
+  configured on the **Secrets** pane like anything else.
+  - **The test consequence outlived the card**: its blurb contained the word
+    "Database", so `getByText("Database")` in `settings.test.tsx` matched the
+    title AND the blurb. The rule that came out of it stands for every card —
+    read card titles through `.eyebrow`.
+  - **Two arguments from it are worth keeping**, because the next project-level
+    switch meets both. Intent belongs on the WORKSPACE while the action follows
+    the SLUG: a switch is reachable before either agent exists (a project has a
+    preview long before a publish), so acting against an unclaimed slug would
+    create a resource no cleanup path can see — both the orphan-preview sweep
+    and `deleteAgentResources` key off an agents row — and that another tenant
+    could inherit by claiming the name. And a change only a sandbox BUILD reads
+    has to bump the slug's agents row, or the running guest keeps the
+    environment it was spawned with. `secretsDeployHook` is the surviving
+    instance of the first (`studio-deploy-hooks.ts`); `AgentRows.touch` is the
+    seam for the second, now with no caller.
 - **The Phone number card hands out the carrier webhook URLs**
   (`phone-card.tsx`, rendered on the **API** pane) — one per carrier, each
   with a copy button, pointing at
@@ -338,8 +292,8 @@ so every piece of per-project state resets on a switch with no effect to do it.
     rather than overlooked: someone opening Settings to ask what their workflows
     are doing is asking a question only the agent can answer, and a card that
     shows nothing until you press a button answers it less often than it costs.
-    The refresh is manual for the same reason it is on the Database card — a poll
-    would hold a container open for a pane nobody is watching.
+    The refresh is manual for the reason the Database card's was — a poll would
+    hold a container open for a pane nobody is watching.
   - **It falls back to the PREVIEW slug and says so**, because that is the usual
     state: a project has a preview long before a first publish, and the two
     agents keep separate runs (which is also why the query key is the SLUG, not
@@ -513,30 +467,18 @@ so every piece of per-project state resets on a switch with no effect to do it.
     first publish it points at the PREVIEW — replaced on every edit, swept with
     the project — and the card says so rather than handing out a URL that dies
     on the next turn.
-- **The Database pane is a read-only table viewer**
-  (`database.tsx` → `GET …/database/tables` and `…/database/rows`), offered
-  only once the project has opted into a database — see the switcher's gate
-  above. The
-  Settings card beside it answers "is the database on" and "how many rows",
-  which is the question one step before the one people have: a count moving
-  from 3 to 4 says a tool wrote SOMETHING, not whether it wrote the field you
-  meant. Finding that out used to mean asking the coding agent to write a tool
-  that reads the table back — a turn and an edit to the project.
-  - **The environment is an explicit choice, never a default.** Production and
-    preview are separate agents with separate schemas, so "my tool saved
-    nothing" versus "my tool saved it in the preview" is the confusion this
-    pane can most easily either cause or resolve: the picker is always
-    visible, the pane names the slug that answered, and the environment
-    travels to the server, which 400s a value it does not know rather than
-    picking one.
-  - **A table's rows are keyed by the table**, so switching cannot leave the
-    previous table's rows under a new heading while the next read is in
-    flight — the one wrong answer a data viewer can give.
-  - **NULL renders as a value.** A text column may legitimately hold the empty
-    string, and the two must not look identical.
-  - It is deliberately READ-ONLY: editing a tenant's rows from a console is a
-    different feature with a different blast radius (no undo, no migration, no
-    record of who did it), and nothing here needs it.
+- **There is no Database pane.** It was a read-only table viewer (`database.tsx`
+  → `GET …/database/tables` and `…/database/rows`) over the app's own
+  provisioned database, offered once the project opted in. The platform
+  provisions no tenant database, so the pane, its routes and the SQL behind them
+  are gone.
+  - **Its best idea is worth restating if a data viewer ever returns**: the
+    ENVIRONMENT was an explicit choice, never a default. Production and preview
+    are separate agents, so "my tool saved nothing" versus "my tool saved it in
+    the preview" is the confusion such a pane most easily either causes or
+    resolves — the picker was always visible, the pane named the slug that
+    answered, and the environment travelled to the server, which 400s a value it
+    does not know rather than picking one.
 - **The Logs pane TAILS the agent, and says which of two silences it is**
   (`logs-view.tsx` → `GET /:slug/logs`, the platform route — same posture as the
   Secrets card talking to `/:slug/secret`, and for the same reason: that route
@@ -893,8 +835,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
   the user's mouth for something a pane already reports beside the control that
   did it. Each surface now answers for itself — the PublishMenu renders
   `publish.data.output` and `publish.error`, each form on the Secrets pane
-  clears its own input only on a successful save, the Database card seeds the
-  new state from its own response.
+  clears its own input only on a successful save.
 
   What that gives up, stated because it is real: **the coding agent cannot see
   a secret, a database switch, or a failed deploy**, and the preamble tells it

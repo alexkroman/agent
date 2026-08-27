@@ -253,16 +253,22 @@ export const GUEST_ROUTE_EXPOSURE = {
   // being alive. Promoting this to `proxied` is one route registration plus the
   // methods declared here, if a caller turns up that needs it.
   sessionEvents: { via: "direct-dial" },
-  // Nothing outside the sandbox calls these two: the DevKit's queue lives in
-  // the guest (graphile-worker polling the app database from inside this
-  // container) and dials its own server on loopback, so there is no caller to
-  // route for. Not `proxied` — a platform route would be an unauthenticated
-  // way for anyone to replay another tenant's run or execute one of its steps,
-  // and these two are unauthenticated precisely BECAUSE loopback is the whole
-  // gate. Not `host-only` either: the platform never dials them, and saying it
-  // does would claim a bearer check that does not exist. Reconsider only if a
-  // run's queue ever moves out of the guest — then they need a platform route
-  // AND an authenticity check of their own, not one without the other.
+  // Nothing outside the sandbox calls these two, and that survived the queue
+  // MOVING. It used to be graphile-worker polling the app database from inside
+  // this container; the queue is the platform's own now and hands a message to
+  // `workflowQueue` below, whose handler dials these on loopback. Either way the
+  // caller is in-container, so there is nothing to route for. Not `proxied` — a
+  // platform route would be an unauthenticated way for anyone to replay another
+  // tenant's run or execute one of its steps, and these two are unauthenticated
+  // precisely BECAUSE loopback is the whole gate. Not `host-only` either: the
+  // platform dials `workflowQueue`, never these, and saying otherwise would claim
+  // a bearer check that does not exist.
+  //
+  // The old note here said to reconsider "if a run's queue ever moves out of the
+  // guest — then they need a platform route AND an authenticity check of their
+  // own, not one without the other". It moved, and the resolution was neither: ONE
+  // authenticated door (`workflowQueue`) in front of both, which is strictly
+  // narrower than two.
   //
   // "Loopback is the whole gate" was, for a long time, a claim about intent
   // rather than about code: nothing checked the peer, a deployed guest binds

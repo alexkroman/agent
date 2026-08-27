@@ -21,6 +21,7 @@
  * {@link platformCronJobs} is the whole truth about what the platform runs.
  */
 
+import { SESSION_STATE_RETENTION } from "./platform-session-state.ts";
 import { PLATFORM_STORAGE_KEY_SECRET, type SqlExec } from "./secret-store.ts";
 
 /**
@@ -90,6 +91,24 @@ const SWEEP_PREVIEW_ARCHIVE = guarded(
 );
 
 /**
+ * Session slots and events nobody has touched in the retention window.
+ *
+ * ONE statement for the whole fleet. The per-app version was scheduled into each
+ * app's own database at provisioning time, so its cost scaled with the number of
+ * tenants; this does not scale with anything.
+ *
+ * The window is IMPORTED from `platform-session-state.ts` rather than written here:
+ * a cron command is text, so a literal would be a second copy of the retention
+ * policy with nothing holding the two together. It is two days for the reason that
+ * module gives: the cost of keeping a row is a few KB, and the cost of
+ * dropping one early is a caller who reconnects to an agent that has forgotten
+ * them.
+ */
+const SWEEP_SESSION_STATE =
+  `delete from aai_platform.session_slots where updated_at < now() - interval '${SESSION_STATE_RETENTION}'; ` +
+  `delete from aai_platform.session_events where created_at < now() - interval '${SESSION_STATE_RETENTION}'`;
+
+/**
  * Expired studio session registrations — the same hygiene as above for the
  * studio broker's own registry (aai-studio-server/studio-session-registry.ts),
  * whose rows carry guest credentials and so should not linger past their
@@ -106,30 +125,6 @@ const SWEEP_STUDIO_SESSIONS = "delete from aai_platform.studio_sessions where ex
  */
 const SWEEP_CRON_HISTORY =
   "delete from cron.job_run_details where end_time < now() - interval '7 days'";
-
-/**
- * Terminate runaway tenant queries.
- *
- * Provisioning sets `statement_timeout = '10s'` on each app role, and that is
- * a courtesy rather than a control: `statement_timeout` is a `USERSET` GUC, so
- * tenant code holding the credential can `set statement_timeout = 0` on its
- * own connection and run unbounded SQL against the shared cluster. (The other
- * two settings do hold — `connection limit` is superuser-only to raise, and
- * `temp_file_limit` is `SUSET`, so a tenant may lower it and never raise it.)
- *
- * This is the enforceable half. The ceiling is deliberately far above the role
- * default: the 10s setting is what a well-behaved app should see, while this
- * exists only to stop a query that has escaped it, and killing a legitimate
- * slow migration would be the worse error. Matching on the role NAME is what
- * keeps it scoped — `app\_%` is the provisioned shape (`app_` + 16 hex), and
- * the platform's own connections authenticate as `postgres`, so no sweep of
- * this kind can reach them.
- */
-const SWEEP_APP_DB_RUNAWAYS = `select pg_terminate_backend(pid)
-from pg_stat_activity
-where usename like 'app\\_%'
-  and state = 'active'
-  and query_start < now() - interval '60 seconds'`;
 
 /**
  * Unreferenced deploy blobs.
@@ -251,17 +246,17 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
       command: SWEEP_PREVIEW_ARCHIVE,
     },
     { name: "aai-sweep-cron-history", schedule: "52 4 * * *", command: SWEEP_CRON_HISTORY },
+    // Session state a dead guest left behind IS swept from here again, and it is
+    // one statement rather than one job per app. It used to live in each app's own
+    // database, so the job had to be scheduled INTO that database at provisioning
+    // time and its cost scaled with the number of tenants; the rows are in
+    // `aai_platform.session_slots` / `session_events` now
+    // (`platform-session-state.ts`), which one statement reaches.
     {
-      name: "aai-sweep-app-db-runaways",
-      schedule: "*/5 * * * *",
-      command: SWEEP_APP_DB_RUNAWAYS,
+      name: "aai-sweep-session-state",
+      schedule: "23 * * * *",
+      command: SWEEP_SESSION_STATE,
     },
-    // Session state a dead guest left behind is NOT swept from here any more: it
-    // lives in each app's own database, so the job is scheduled INTO that database
-    // per app at provisioning time (`_session-state-sweep.ts`, and
-    // `scheduleAppSweeps` in app-database.ts). A statement here would iterate this
-    // database's catalog and find nothing — which is why it is deleted rather than
-    // left in place.
     ...(opts.storage
       ? [
           {

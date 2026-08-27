@@ -11,15 +11,13 @@
  *   routes.
  * - `POST /studio/projects/:project/deploy`   — the project's sandbox runs
  *   `aai deploy`; the CLI output rides back for the chat
- * - `GET/POST/DELETE /studio/projects/:project/database` — the project's
- *   `ctx.db` database, one switch across BOTH deployed agents (production and
- *   preview). See studio-database.ts: per-slug provisioning is the platform
- *   primitive (`aai storage enable`), and a project is two slugs.
- * - `GET /studio/projects/:project/database/{tables,rows}` — the read-only
- *   table viewer behind the studio's Database pane (studio-database-browse.ts).
- *   `?environment=` is required and validated rather than defaulted: which
- *   agent's rows a caller is reading is the difference between "my tool saved
- *   nothing" and "my tool saved it in the preview".
+ * The project-level `database` routes used to sit here: one switch across both of
+ * a project's deployed agents, and a read-only table viewer behind the studio's
+ * Database pane. Both are gone with the per-app databases they managed — durable
+ * runs, the run journal and session state are the platform's now, reached over
+ * HTTP — and so is the `?environment=` validation the viewer needed, which existed
+ * because reading the wrong agent's rows is the difference between "my tool saved
+ * nothing" and "my tool saved it in the preview".
  *
  * - `GET/PUT/DELETE /studio/projects/:project/secret` — the project's
  *   secrets, written to BOTH deployed agents. The per-slug `/:slug/secret`
@@ -65,7 +63,6 @@ import {
   requestPublicOrigin,
   type StudioHonoEnv,
 } from "./studio-context.ts";
-import { registerDatabaseRoutes } from "./studio-database-routes.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { createAfterDeploy } from "./studio-deploy-hooks.ts";
 import { registerEventRoutes } from "./studio-events-routes.ts";
@@ -261,12 +258,10 @@ export function createStudioRoutes(options: StudioRouteOptions): {
     return c.json(result);
   });
 
-  // The project's `ctx.db` database — ONE switch across both deployed agents
-  // (production and preview). See studio-database.ts for why intent is
-  // stamped on the workspace rather than provisioned for unclaimed slugs.
-  registerDatabaseRoutes(studio, ensureBroker);
-  // Secrets are a project switch too: the broker is here so a saved secret
-  // redeploys the preview that has to carry it (studio-secrets.ts).
+  // Secrets are a PROJECT switch across both deployed agents (production and
+  // preview), and the broker is here so a saved secret redeploys the preview
+  // that has to carry it (studio-secrets.ts). A `ctx.db` switch sat beside it
+  // until per-app databases went away.
   registerSecretRoutes(studio, ensureBroker);
 
   // Boot (or refresh) the project's coding-agent sandbox and return its

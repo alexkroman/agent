@@ -28,7 +28,6 @@
  * - `GET  /:slug/assets/:path`   — client static assets
  * - `DELETE /:slug/`             — owner: delete agent
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
- * - `GET/POST/DELETE /:slug/storage` — owner: per-app database storage
  * - `WS   /:slug/websocket`     — the long-living programmatic endpoint:
  *   upgrades are redirected (302) to the agent's live sandbox session URL
  *
@@ -47,7 +46,6 @@ import { createAgentLogsHandler } from "./agent-logs.ts";
 import { startAgentSweeps } from "./agent-sweeps.ts";
 import { registerAgentWorkflowRoutes } from "./agent-workflow-routes.ts";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
-import type { AppDatabases } from "./app-database.ts";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "./app-middleware.ts";
 import { createAgentClientConfigHandler } from "./client-config-handler.ts";
 import { clientIp } from "./client-ip.ts";
@@ -80,11 +78,6 @@ import {
 } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
-import {
-  handleStorageDisable,
-  handleStorageEnable,
-  handleStorageStatus,
-} from "./storage-handler.ts";
 import type { BundleStore } from "./store-types.ts";
 import type { StudioAuth } from "./supabase-auth.ts";
 import {
@@ -128,8 +121,6 @@ export type OrchestratorOpts = {
    */
   deployBodyConcurrency?: number;
   deployBodyWaitMs?: number;
-  /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
-  appDb?: AppDatabases;
   /**
    * Per-slug mutation lock (deploy/delete/secret/storage). Postgres lease in
    * production so replicas exclude each other; defaults to in-process.
@@ -158,12 +149,6 @@ export type OrchestratorOpts = {
    * DevKit's local world, whose queue lives in that process's own memory.
    */
   adminDb?: AdminDb;
-  /**
-   * How many EXTRA `APP_DB_URLS` placement clusters are configured. The wake
-   * sweep reads the primary cluster only and warns naming that gap, rather than
-   * silently never waking the apps placed elsewhere.
-   */
-  extraAppDbClusters?: number;
   /**
    * Allowed CORS origins.
    *
@@ -331,7 +316,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slots: opts.slots,
     store: opts.store,
     secrets,
-    ...omitUndefined({ appDb: opts.appDb }),
     ...omitUndefined({ directory: opts.directory }),
     // Same predicate `/health` reports on, so "the proxy has been told to
     // stop routing here" and "stop booting sandboxes" can never disagree.
@@ -347,8 +331,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     ...omitUndefined({ secrets: opts.secrets }),
     ...omitUndefined({ slugLock: opts.slugLock }),
     ...omitUndefined({ adminDb: opts.adminDb }),
-    ...omitUndefined({ appDb: opts.appDb }),
-    ...omitUndefined({ extraAppDbClusters: opts.extraAppDbClusters }),
     ...omitUndefined({ isDraining: opts.isDraining }),
   });
 
@@ -378,10 +360,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       ...omitUndefined({ directory: opts.directory }),
     }),
   );
-  // Per-app database storage — same auth posture as the secret routes.
-  agents.get("/storage", existingOwnerMw, handleStorageStatus);
-  agents.post("/storage", existingOwnerMw, handleStorageEnable);
-  agents.delete("/storage", existingOwnerMw, handleStorageDisable);
 
   agents.get("/health", handleAgentHealth);
   // Session broker: the live sandbox session URL (boots the sandbox on first
@@ -422,7 +400,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     secrets,
     ...omitUndefined({ auth: opts.auth }),
     ...omitUndefined({ keyVerifier: opts.keyVerifier }),
-    ...omitUndefined({ appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact. Wrapped so
     // taking the lock also drops this replica's cached view of the slug —

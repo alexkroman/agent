@@ -10,7 +10,6 @@
     "lint": "biome check .",
     "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
     "check:scenario": "pnpm run test:scenario",
-    "dev:management-api": "node --conditions=@dev/source dev-management-api.ts",
     "predeploy:modal": "node ../../scripts/ensure-guest-harness.mjs",
     "deploy:modal": "modal deploy modal_deploy.py"
   },
@@ -37,7 +36,6 @@
     "quick-lru": "^7.3.0",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "supabase-management-js": "^2.0.2",
     "tailwindcss": "catalog:",
     "ws": "catalog:",
     "zod": "catalog:"
@@ -57,8 +55,6 @@
     "node": ">=26"
   },
   "exports": {
-    "./app-database": "./app-database.ts",
-    "./app-db-browse": "./app-db-browse.ts",
     "./chat-store": "./chat-store.ts",
     "./secret-store": "./secret-store.ts",
     "./secret-handler": "./secret-handler.ts",
@@ -89,7 +85,6 @@
     "./delete": "./delete.ts",
     "./guest-routes": "./guest-routes.ts",
     "./orchestrator": "./orchestrator.ts",
-    "./storage-handler": "./storage-handler.ts",
     "./supabase-auth": "./supabase-auth.ts",
     "./platform-barrel": "./platform-barrel.ts",
     "./test-utils": "./test-utils.ts"

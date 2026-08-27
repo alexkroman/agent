@@ -27,7 +27,6 @@ import {
   loadSlots,
   nextEventIndex,
   readEvents,
-  sweepStaleSessions,
 } from "./platform-session-state.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { ensurePlatformTables } from "./test-utils.ts";
@@ -260,26 +259,5 @@ describeWithPg("platform session state", () => {
     await appendEvents(sql, A(), SESSION, [{ index: 7, event: "{}" }]);
     expect(await nextEventIndex(sql, A(), "other")).toBe(0);
     expect(await nextEventIndex(sql, B(), SESSION)).toBe(0);
-  });
-
-  test("the sweep leaves fresh rows alone and reports what it removed", async () => {
-    await commitSlots(sql, A(), SESSION, { x: '"1"' });
-    await appendEvents(sql, A(), SESSION, [{ index: 0, event: "{}" }]);
-    const pass = await sweepStaleSessions(sql);
-    expect(pass).toEqual({ slots: 0, events: 0 });
-    expect(await loadSlots(sql, A(), SESSION)).toEqual({ x: '"1"' });
-  });
-
-  test("the sweep removes rows past the retention window", async () => {
-    await commitSlots(sql, A(), SESSION, { x: '"1"' });
-    await appendEvents(sql, A(), SESSION, [{ index: 0, event: "{}" }]);
-    // Age them past two days. Done in SQL rather than with fake timers because the
-    // comparison is `now()` inside Postgres.
-    await sql("update aai_platform.session_slots set updated_at = now() - interval '3 days'");
-    await sql("update aai_platform.session_events set created_at = now() - interval '3 days'");
-    const pass = await sweepStaleSessions(sql);
-    expect(pass.slots).toBeGreaterThanOrEqual(1);
-    expect(pass.events).toBeGreaterThanOrEqual(1);
-    expect(await loadSlots(sql, A(), SESSION)).toEqual({});
   });
 });

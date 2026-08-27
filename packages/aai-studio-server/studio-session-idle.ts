@@ -83,7 +83,7 @@ export function createSessionReaper(deps: {
    * re-selects the same entry and starts a second sweep for it.
    *
    * Both halves of that matter. The platform admin connection carries no
-   * `statement_timeout` (only tenant app roles get one — app-database.ts), so
+   * `statement_timeout` — nothing on this connection sets one — so
    * a stalled registry read is unbounded: every 60s tick adds another read for
    * the same entry, piling onto the pool that is already the thing failing.
    * And once two sweeps are in flight, both reach `disposeEntry`, which means

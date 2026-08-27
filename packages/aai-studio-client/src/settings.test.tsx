@@ -1,55 +1,34 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
 // The Settings pane: a full page (not a dropdown) holding the project's own
-// configuration — the CLI round-trip, the Database switch, and Delete project.
+// configuration — the CLI round-trip and Delete project.
 // A change here writes nothing into the conversation — the transcript is the
 // user's. Every section works with no published slug, and they run in a fixed
-// order (Work locally, Database, Danger zone). Secrets used to sit between the
-// last two and are their own pane now (secrets.test.tsx).
+// order (Work locally, Danger zone). Secrets used to sit between them and are
+// their own pane now (secrets.test.tsx); the Database switch is gone with the
+// per-app databases it turned on.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
+import { renderWithClient, stubFetch } from "./_test-utils.ts";
 import { SettingsPane } from "./settings.tsx";
 
 /**
- * The pane also renders the Database card, which reads its own state on
- * mount. Spread into every route table here so a test that only cares about
- * this pane's own sections doesn't have to know about it (the card itself is
- * covered by database-card.test.tsx).
- */
-const DATABASE_STATE = {
-  "GET /studio/projects/demo/database": () =>
-    jsonResponse({ enabled: false, configured: true, environments: [] }),
-};
-
-/**
- * The card titles, in render order. Card titles are `.eyebrow` spans rather
- * than headings, and inside this pane every one of them is a section title.
+ * The card titles, in render order. Card titles are `.eyebrow` spans rather than
+ * headings, and inside this pane every one of them is a section title.
  *
- * Read through the class rather than by text, because the Database card's own
- * blurb NAMES the Database pane ("also adds the Database pane") — so a
- * `getByText("Database")` matches the title and the blurb both and throws on
- * the ambiguity. That is copy worth keeping: the switch is the only place the
- * pane is discoverable, since the tab does not exist until it is flipped.
+ * Read through the CLASS rather than by text. That was originally to disambiguate
+ * the Database card's title from its own blurb, which named the pane it unlocked;
+ * the card is gone, and reading by class is still right — a title is a position in
+ * this list, and matching text would pass on a blurb that happened to repeat it.
  */
 function cardTitles(): (string | null)[] {
   return [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
 }
 
-/** Wait for the Database card, whose state arrives on its own fetch. */
-function databaseCard(): Promise<void> {
-  return waitFor(() => expect(cardTitles()).toContain("Database"));
-}
-
 function renderPanel(onDeleteProject = vi.fn()) {
   renderWithClient(
-    <SettingsPane
-      bearer="sk-test"
-      project="demo"
-      onDeleteProject={onDeleteProject}
-      deleting={false}
-    />,
+    <SettingsPane project="demo" onDeleteProject={onDeleteProject} deleting={false} />,
   );
 }
 
@@ -58,43 +37,43 @@ afterEach(() => {
 });
 
 describe("SettingsPane", () => {
-  test("the sections run in the order a project needs them", async () => {
-    // Setting up first, destruction last: the CLI round-trip, the Database
-    // switch, and Delete project at the bottom.
+  test("the sections run in the order a project needs them", () => {
+    // Setting up first, destruction last: the CLI round-trip, then Delete project
+    // at the bottom.
     //
-    // Three subjects LEFT this pane and the list is what says so. The carrier
+    // FOUR subjects left this pane and the list is what says so. The carrier
     // webhook URLs and the workflow runs are both about a deployed agent — how
     // something calls it, and what it is still doing — which is the API and
     // Workflows panes' subject. Secrets left for a different reason: a
     // textarea of KEY=value lines was the whole UI for the configuration
-    // people come back to most. Everything remaining works from the moment a
+    // people come back to most. The Database switch left because there are no
+    // per-app databases to switch on: durable runs, the run journal and session
+    // state are all the platform's. Everything remaining works from the moment a
     // project exists, which is what makes "nothing here gates on a deploy"
     // literally true rather than nearly.
-    stubFetch({ ...DATABASE_STATE });
+    stubFetch({});
     renderPanel();
-    await databaseCard();
-    expect(cardTitles()).toEqual(["Work locally", "Database", "Danger zone"]);
+    expect(cardTitles()).toEqual(["Work locally", "Danger zone"]);
   });
 
-  test("no secrets here — the pane neither reads nor writes the secret route", async () => {
+  test("no secrets here — the pane neither reads nor writes the secret route", () => {
     // The whole subject moved to its own pane, so a request to that route from
     // this one would mean a copy came back.
-    const fetchMock = stubFetch({ ...DATABASE_STATE });
+    const fetchMock = stubFetch({});
     renderPanel();
-    await databaseCard();
     expect(screen.queryByText("Save secrets")).toBeNull();
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/secret"))).toBe(false);
   });
 
   test("the CLI section renders with no published slug — pulling needs no deploy", () => {
-    stubFetch({ ...DATABASE_STATE });
+    stubFetch({});
     renderPanel();
     expect(screen.getByText("aai pull demo")).toBeTruthy();
     expect(screen.getByText("Work locally")).toBeTruthy();
   });
 
   test("Delete project asks for confirmation before firing", () => {
-    stubFetch({ ...DATABASE_STATE });
+    stubFetch({});
     const onDeleteProject = vi.fn();
     vi.stubGlobal(
       "confirm",
@@ -112,7 +91,7 @@ describe("SettingsPane", () => {
   });
 
   test("Delete project is available even on published projects", async () => {
-    stubFetch({ ...DATABASE_STATE });
+    stubFetch({});
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Delete project")).toBeTruthy();

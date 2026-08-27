@@ -7,7 +7,6 @@
  * numbers are the only actionable part of the warning.
  */
 import { describe, expect, test, vi } from "vitest";
-import { APP_DB_CONNECTION_ALLOWANCE } from "./app-db-tier.ts";
 import { MAX_PLATFORM_DB_CONNECTIONS } from "./constants.ts";
 import {
   announcePlatformDbCapacity,
@@ -55,26 +54,22 @@ const logged = (read: () => readonly unknown[]): Promise<void> =>
     if (read().length === 0) throw new Error("nothing logged yet");
   });
 describe("platformDbBudget", () => {
-  test("claims the constant, so the app databases are counted exactly once", () => {
+  test("claims the constant rather than re-deriving a sum", () => {
     expect(platformDbBudget(POOLED)).toBe(MAX_PLATFORM_DB_CONNECTIONS);
   });
   /**
-   * The regression this pair pins, measured in production: the budget used to be
-   * `MAX_PLATFORM_DB_CONNECTIONS + APP_DB_CONNECTION_ALLOWANCE`
-   * — the app databases added to a constant that already contains them (see
-   * `platform-db-budget.test.ts`, which asserts `fleetDirect + appTotal` fits
-   * INSIDE it). That overstated the claim by exactly `appTotal`, put it at 60 on
-   * an instance whose `max_connections` is 60, and made the overrun warning fire
-   * on all 7 boots of one production day. A warning that cannot be cleared is
-   * indistinguishable from one that is never checked.
+   * There WAS a second spec here, pinning a production regression: the budget had
+   * been `MAX_PLATFORM_DB_CONNECTIONS + APP_DB_CONNECTION_ALLOWANCE` — the app
+   * databases added to a constant that already contained them — which overstated
+   * the claim by exactly the allowance, put it at 60 on an instance whose
+   * `max_connections` is 60, and made the overrun warning fire on all 7 boots of
+   * one production day.
+   *
+   * It cannot be double-counted any more because there is no allowance: every
+   * connection in the budget is the platform's own. The spec above is what remains
+   * of it — the budget IS the constant — and it is the assertion that would still
+   * catch a term being added back on top.
    */
-  test("does not double-count the app databases it already contains", () => {
-    const appTotal = APP_DB_CONNECTION_ALLOWANCE;
-    // Guards the guard: with no app-database term there is nothing to double,
-    // and the assertion below would hold over the old arithmetic too.
-    expect(appTotal).toBeGreaterThan(0);
-    expect(platformDbBudget(POOLED)).not.toBe(MAX_PLATFORM_DB_CONNECTIONS + appTotal);
-  });
   /**
    * The production reading itself, as a case: `max_connections=60` with the ~17
    * backends Supabase's own Realtime / PostgREST / Storage workers hold at idle

@@ -106,7 +106,6 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
       secrets: base.secrets,
       auth: base.auth,
       keyVerifier: base.keyVerifier,
-      appDb: base.appDb,
       slugLock: base.slugLock,
       studioRateLimiters: rateLimiters,
       studioSessionRegistry: sessionRegistry,

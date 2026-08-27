@@ -11,6 +11,7 @@ import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { claimSlug } from "./_studio-agents-test-utils.ts";
+import { secretsDeployHook } from "./studio-secret-routes.ts";
 import {
   deleteProjectSecret,
   deleteProjectSecrets,
@@ -251,5 +252,32 @@ describe("deleteProjectSecret", () => {
   test("deleting a name that was never set is a no-op, not an error", async () => {
     const state = await deleteProjectSecret(env, { ...params, key: "NEVER_SET" });
     expect(state?.vars).toEqual([]);
+  });
+});
+
+/**
+ * The request-bound wrapper, which is the only post-deploy hook left.
+ *
+ * `studio-database-routes.test.ts` used to reach this path incidentally, through
+ * the composed pair of hooks; it went with per-app databases and took the one
+ * statement covering the returned closure with it. Covered directly now, because
+ * the property is worth its own claim: the hook reads the request ENV up front and
+ * the function it returns touches no Context, which is what makes it safe to hand
+ * to a broker that outlives the request.
+ */
+describe("secretsDeployHook", () => {
+  test("gives a freshly claimed slug the secrets its project already holds", async () => {
+    await setProjectSecrets(env, { ...params, updates: { A: "1" } });
+    const late = `${PROJECT}-late`;
+    await deployAgent(late);
+    expect(await store.getEnv(late)).toEqual({});
+
+    // The bindings alone — no Context. That this type-checks IS the property.
+    const hook = secretsDeployHook({
+      env: { workspaces, store, secrets, slugLock: localSlugLock },
+    });
+    await hook(SCOPE, PROJECT, late);
+
+    expect(await store.getEnv(late)).toEqual({ A: "1" });
   });
 });

@@ -12,16 +12,12 @@ import { PublishMenu, TopBar } from "./top-bar.tsx";
 const noop = (): void => undefined;
 
 /** Every pane label, in the order the segmented control renders them. */
-const PANE_LABELS = ["UI", "API", "Workflows", "Database", "Code", "Logs", "Secrets", "Settings"];
+const PANE_LABELS = ["UI", "API", "Workflows", "Code", "Logs", "Secrets", "Settings"];
 
 const barProps = {
   project: "demo" as string | null,
   tab: "preview" as const,
   hasBuild: true,
-  // Workflows and Database are the gated tabs, and the default here is ON so
-  // the switcher assertions below cover the full set. The OFF behaviour is its
-  // own pair of tests.
-  databaseEnabled: true,
   onGoHome: noop,
   onSelectTab: noop,
   onLogOut: noop,
@@ -60,7 +56,6 @@ describe("TopBar", () => {
     ["UI", "preview"],
     ["API", "docs"],
     ["Workflows", "workflows"],
-    ["Database", "database"],
     ["Secrets", "secrets"],
   ])("the switcher moves to the %s pane", (label, id) => {
     const onSelectTab = vi.fn();
@@ -82,26 +77,23 @@ describe("TopBar", () => {
     expect(rendered).toEqual(PANE_LABELS);
   });
 
-  test("no database means no Database and no Workflows tab — both are opt-ins", () => {
-    // A project that never turned the database on has nothing to browse, and a
-    // tab onto an empty database reads as a broken feature rather than an
-    // unused one. Workflows goes with it: without a database a guest runs the
-    // LOCAL workflow world, whose queue is in memory and whose data directory
-    // is per-process, so a pane promising runs that outlive the request would
-    // be listing runs that die with the sandbox. Every other pane stays: they
-    // are all reachable from the moment a project exists.
-    render(<TopBar {...barProps} databaseEnabled={false} />);
+  /**
+   * Every pane, unconditionally — asserted because it used to be conditional.
+   *
+   * `databaseEnabled` hid **Database** and **Workflows**: a project with no
+   * database had nothing to browse, and Workflows rode along because without one a
+   * guest ran the LOCAL workflow world, whose queue is in memory and whose data
+   * directory is per-process, so the pane would have listed runs that die with the
+   * sandbox. There is no Database pane now, and a durable run no longer needs the
+   * project to have a database — the world is the platform's — so the gate is gone
+   * and this pins the absence.
+   */
+  test("offers every pane with no opt-in, and no Database tab at all", () => {
+    render(<TopBar {...barProps} />);
     expect(screen.queryByRole("button", { name: "Database" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Workflows" })).toBeNull();
-    for (const label of ["UI", "API", "Code", "Logs", "Secrets", "Settings"]) {
+    for (const label of ["UI", "API", "Workflows", "Code", "Logs", "Secrets", "Settings"]) {
       expect(screen.getByRole("button", { name: label })).toBeDefined();
     }
-  });
-
-  test("enabling the database is what puts both tabs in the switcher", () => {
-    render(<TopBar {...barProps} databaseEnabled={true} />);
-    expect(screen.getByRole("button", { name: "Database" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Workflows" })).toBeDefined();
   });
 
   test("the open pane is the current one", () => {

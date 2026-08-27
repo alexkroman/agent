@@ -6,32 +6,30 @@
  * on read through the `vault.decrypted_secrets` view) over the platform's
  * `SUPABASE_DB_URL` connection. Local dev and tests use an in-memory store.
  *
- * Naming convention (helpers below):
+ * Naming convention (helper below):
  * - `agent-env:<slug>` — an agent's env/secret record, JSON-serialized
- * - `app-db:<slug>`    — an app's provisioned database credentials, JSON
+ *
+ * There were TWO. `app-db:<slug>` held an app's provisioned database credentials
+ * and nothing writes one now — the platform provisions no databases, and a
+ * database an author brings is a value inside their own `agent-env` record like
+ * any other secret.
  */
 
 /**
- * The two per-slug secret-name prefixes.
+ * The per-slug secret-name prefix.
  *
- * Exported because they are also spelled in SQL: the orphan-preview sweep
- * (`pg-cron.ts`) deletes `'agent-env:' || slug` and `'app-db:' || slug` from
- * `vault.secrets` inside a plpgsql body, which no type-checker relates to the
- * helpers below. Interpolating from here is what keeps the sweep and the writer
- * the same string — a disagreement there deletes nothing, silently, while the
- * schema it was meant to clean up survives.
+ * Exported because it is also spelled in SQL: the orphan-preview sweep
+ * (`pg-cron.ts`) deletes `'agent-env:' || slug` from `vault.secrets` inside a
+ * plpgsql body, which no type-checker relates to the helper below. Interpolating
+ * from here is what keeps the sweep and the writer the same string — a
+ * disagreement there deletes nothing, silently, while what it was meant to clean
+ * up survives.
  */
 export const AGENT_ENV_SECRET_PREFIX = "agent-env:";
-export const APP_DB_SECRET_PREFIX = "app-db:";
 
 /** SecretStore name for one agent's env record. */
 export function agentEnvSecretName(slug: string): string {
   return `${AGENT_ENV_SECRET_PREFIX}${slug}`;
-}
-
-/** SecretStore name for one app's provisioned database credentials. */
-export function appDbSecretName(slug: string): string {
-  return `${APP_DB_SECRET_PREFIX}${slug}`;
 }
 
 /**
@@ -45,9 +43,9 @@ export function appDbSecretName(slug: string): string {
  * COMMAND sits in `cron.job` as plaintext, in every operator's listing.
  *
  * The blast radius is not widened by this. The same Vault already holds every
- * tenant's `agent-env:<slug>` (their AssemblyAI keys) and every
- * `app-db:<slug>`, so anything that can read this can already read strictly
- * more sensitive material. Storage has no narrower credential to use instead.
+ * tenant's `agent-env:<slug>` — their AssemblyAI keys, and whatever else their
+ * agent needs — so anything that can read this can already read strictly more
+ * sensitive material. Storage has no narrower credential to use instead.
  */
 export const PLATFORM_STORAGE_KEY_SECRET = "platform:storage-key";
 

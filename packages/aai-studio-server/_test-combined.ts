@@ -46,7 +46,6 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     secrets,
     ...omitUndefined({ auth: overrides.auth }),
     ...omitUndefined({ keyVerifier: overrides.keyVerifier }),
-    ...omitUndefined({ appDb: overrides.appDb }),
     ...omitUndefined({ slugLock: overrides.slugLock }),
     ...omitUndefined({ studioRateLimiters: overrides.studioRateLimiters }),
     ...omitUndefined({

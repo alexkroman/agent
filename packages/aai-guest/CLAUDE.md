@@ -1209,14 +1209,22 @@ Each agent provides its own `ASSEMBLYAI_API_KEY` via `.env` (local dev) or
 `agentEnv` (forwarded to guest) fields. The key is extracted from the agent's
 stored env at sandbox creation time and kept host-side only.
 
-- **App database**: per-app Postgres role/schema credentials are
-  platform-provisioned and held in Supabase Vault. When storage is enabled
-  they reach the guest as `DATABASE_URL` in the boot-delivered agent env —
-  the app's
-  OWN scoped role (search_path pinned, statement_timeout, connection
-  limit), never a platform admin credential; it reaches only data the
-  tenant's code could read anyway, and matches what `aai dev` puts in
-  `ctx.env` via the project `.env`.
+- **A database is the AUTHOR's, and the platform provisions none.** A
+  `DATABASE_URL` in the boot-delivered agent env is a secret the author set,
+  from their own provider, and it reaches the guest exactly the way every other
+  secret does — no overlay, no platform-composed value. That is the same thing
+  `aai dev` puts in `ctx.env` via the project `.env`, so dev and prod agree by
+  construction.
+
+  It used to be a per-app Postgres role/schema the platform provisioned and held
+  in Supabase Vault, injected LAST so enabling storage overrode anything the
+  author had set. The credential-separation argument now holds trivially rather
+  than by care: the platform has no tenant database credential to leak, because
+  it has no tenant database.
+
+  **Durable state did NOT go with it** — turn-level durability (session slots,
+  the session event log) and durable workflow runs are the PLATFORM's, reached
+  over HTTP with the sandbox's own bearer. See `packages/aai-server/CLAUDE.md`.
 - **Agent secrets**: stored in Supabase Vault (`agent-env:<slug>`), not
   encrypted blobs — the old master-key envelope encryption
   (`KV_SCOPE_SECRET`) is gone.
@@ -1252,8 +1260,12 @@ stored env at sandbox creation time and kept host-side only.
 
 **Cross-agent isolation:**
 
-- App databases are separate Postgres schemas with per-app login roles —
-  agents cannot access each other's data.
+- **No shared database to isolate.** This used to say per-app schemas with
+  per-app login roles kept agents out of each other's data. There are no per-app
+  databases now, so a database an agent reaches is one its own author configured
+  and no other tenant has a credential for. The platform's own is not reachable
+  from a guest at all — the durable-state routes are HTTP, per-sandbox bearer,
+  and every one is scoped by the caller's slug server-side.
 - Each sandbox communicates over its own authenticated WebSocket.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.

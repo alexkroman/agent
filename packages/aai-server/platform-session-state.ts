@@ -37,12 +37,12 @@
  *
  * Harmless, because every consumer parses; worth writing down, because the MEMORY
  * backend does preserve bytes, so the two differ on something a spec might
- * reasonably assert. The app-database backend has had this property all along, so
+ * reasonably assert. The POSTGRES backend has had this property all along, so
  * this is consistent with it rather than new.
  *
  * ## `countEvents` answers `max + 1`, NOT a count
  *
- * The trap the app-database backend's own doc spells out, and it survives the move
+ * The trap the postgres backend's own doc spells out, and it survives the move
  * unchanged. The log need not be dense: an event past the cap advances the position
  * without being stored, and a partly-failed flush leaves a hole. Under a count both
  * cases hand a resumed session an index it has already used, so its `tail` goes
@@ -107,7 +107,7 @@ export async function commitSlots(
 /**
  * Reclaim one session.
  *
- * BOTH tables, unlike the app-database backend — and the difference is a grant
+ * BOTH tables, unlike the postgres backend — and the difference is a grant
  * rather than a decision. There, `ctx.db` hands tool code arbitrary SQL on the same
  * role, so the event table is granted `select, insert` only and reclaiming it is
  * the sweep's job alone. Here the tenant has no credential on this database at all,
@@ -193,37 +193,14 @@ export async function nextEventIndex(
 /**
  * How long a row outlives the last write to it.
  *
+ * Read by `pg-cron.ts`, which is where the sweep lives: a scheduled DATABASE job
+ * survives replica churn, and this one needs nothing but SQL. An in-process pass
+ * was the first draft and is the wrong home — `orphan-previews.ts` moved the other
+ * way only because it reaps through the Management API.
+ *
  * Two days, the same window the per-app sweep used, and for the same reason: the
  * cost of keeping one is a few KB, and the cost of dropping one early is a caller
  * who reconnects to an agent that has forgotten them — which is the failure this
  * whole path exists to remove, arriving by a new route.
  */
 export const SESSION_STATE_RETENTION = "2 days";
-
-/**
- * Drop rows nobody has touched in {@link SESSION_STATE_RETENTION}.
- *
- * FLEET-WIDE in one pair of statements, which is the change the move buys: the
- * per-app version ran once per app database through `cron.schedule_in_database`,
- * so its cost scaled with the number of tenants. This one does not scale with
- * anything.
- *
- * Reports what it removed so an operator can see the table is bounded; a sweep
- * whose output is a checkmark says nothing about whether it is keeping up.
- */
-export async function sweepStaleSessions(sql: SqlExec): Promise<{
-  slots: number;
-  events: number;
-}> {
-  const slots = await sql(
-    `delete from aai_platform.session_slots
-      where updated_at < now() - interval '${SESSION_STATE_RETENTION}'
-      returning 1 as removed`,
-  );
-  const events = await sql(
-    `delete from aai_platform.session_events
-      where created_at < now() - interval '${SESSION_STATE_RETENTION}'
-      returning 1 as removed`,
-  );
-  return { slots: slots.length, events: events.length };
-}

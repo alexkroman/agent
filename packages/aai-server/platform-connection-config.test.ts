@@ -18,11 +18,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import {
-  announceDirectDbHost,
-  appDbPoolerUrl,
-  platformPoolerUrl,
-} from "./platform-connection-config.ts";
+import { announceDirectDbHost, platformPoolerUrl } from "./platform-connection-config.ts";
 import { captureLogs } from "./test-utils.ts";
 
 /** Supabase's direct endpoint, and Supavisor's — the pair every rule here sorts. */
@@ -90,40 +86,6 @@ describe("platformPoolerUrl", () => {
         PLATFORM_POOLER_URL: "postgresql://postgres.ref:pw@pooler.supabase.com:5432/postgres",
       }),
     ).toThrow(/TRANSACTION-mode/);
-  });
-});
-
-describe("appDbPoolerUrl", () => {
-  test("unset means direct", () => {
-    expect(appDbPoolerUrl({})).toBeUndefined();
-  });
-
-  test("accepts session mode, and REFUSES transaction mode", () => {
-    const session = "postgresql://postgres.ref:pw@pooler.supabase.com:5432/postgres";
-    expect(appDbPoolerUrl({ APP_DB_POOLER_URL: session })).toBe(session);
-    // The opposite refusal from `platformPoolerUrl`, and both are forced. An app
-    // database hosts the Workflow DevKit: graphile-worker uses NAMED prepared
-    // statements, `world-postgres` opens a `LISTEN` client with no polling
-    // fallback, and `workflow-lock-sweep.ts` takes a SESSION-scoped advisory lock.
-    // Transaction mode breaks all three, and silently.
-    expect(() =>
-      appDbPoolerUrl({
-        APP_DB_POOLER_URL: "postgresql://postgres.ref:pw@pooler.supabase.com:6543/postgres",
-      }),
-    ).toThrow();
-  });
-});
-
-describe("appDbPoolerUrl host rule", () => {
-  test("REFUSES the direct host here too — it is not a pooler in either mode", () => {
-    expect(() => appDbPoolerUrl({ APP_DB_POOLER_URL: `${DIRECT}:5432/postgres` })).toThrow(
-      /DIRECT endpoint/,
-    );
-  });
-
-  test("accepts Supavisor's session-mode endpoint", () => {
-    const session = `${POOLER}:5432/postgres`;
-    expect(appDbPoolerUrl({ APP_DB_POOLER_URL: session })).toBe(session);
   });
 });
 

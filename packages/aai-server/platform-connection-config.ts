@@ -30,7 +30,7 @@
  */
 
 import { createLogger } from "./logger.ts";
-import { assertSessionModeUrl, isTransactionModePooler } from "./platform-lock.ts";
+import { isTransactionModePooler } from "./platform-lock.ts";
 
 const log = createLogger("platform.connections");
 
@@ -96,8 +96,7 @@ function assertNotDirectHost(raw: string, varName: string): void {
 /**
  * Supavisor's TRANSACTION-mode URL for the platform ADMIN pool, or `undefined`.
  *
- * The opposite mode from {@link appDbPoolerUrl}, and both are forced. Transaction
- * mode is what actually multiplexes — a session-mode pool holds one server
+ * TRANSACTION mode, forced. It is what actually multiplexes — a session-mode pool holds one server
  * connection per client connection for its lifetime and would save nothing — and
  * the admin pool is the one that may use it, because the only lock on it is
  * `pg_try_advisory_xact_lock` inside `begin … commit`, whose lifetime is exactly
@@ -122,38 +121,6 @@ export function platformPoolerUrl(env: NodeJS.ProcessEnv): string | undefined {
     );
   }
   return raw;
-}
-
-/**
- * Supavisor's SESSION-mode host for app databases, or `undefined` for direct.
- *
- * Refuses a transaction-mode URL for the same reason `assertSessionModeUrl`
- * refuses one for the admin connection, but on different grounds: there it is
- * advisory locks, here it is that the Workflow DevKit cannot run on transaction
- * pooling at all (prepared statements + LISTEN — `withPoolerHost` carries the
- * detail). Refused rather than accepted, because the failure is silent: the queue
- * appears to work and every parked run stops resuming.
- */
-export function appDbPoolerUrl(env: NodeJS.ProcessEnv): string | undefined {
-  const raw = env.APP_DB_POOLER_URL?.trim();
-  if (!raw) return undefined;
-  assertAppDbPooler(raw, "APP_DB_POOLER_URL");
-  return raw;
-}
-
-/**
- * The two rules an app-database pooler URL must satisfy, wherever it comes from.
- *
- * Extracted because {@link appDbPoolerUrl} is no longer the only source: an
- * `APP_DB_URLS` entry may carry its OWN pooler (`<admin>|<pooler>`), since a
- * placement cluster is a separate Supabase project with its own Supavisor host
- * and its own tenant ref — see `extraAppDbTargets` in `app-db-admin.ts`. A
- * per-cluster pooler validated more loosely than the primary's would be the
- * silent half of exactly the failure both assertions exist to name.
- */
-export function assertAppDbPooler(raw: string, varName: string): void {
-  assertNotDirectHost(raw, varName);
-  assertSessionModeUrl(raw);
 }
 
 /**

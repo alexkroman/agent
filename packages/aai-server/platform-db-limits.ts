@@ -26,21 +26,18 @@
  * agent on it. At `MAX_CONTAINERS` of 3 that is a fixed fleet-wide cost, so the
  * break-even is two workflow agents and the improvement grows linearly after that.
  *
- * ## They are NOT in the per-replica sum yet, and that is the sequencing
+ * ## They ARE in the per-replica sum, and the allowance is what paid for it
  *
- * {@link platformDbConnectionsPerReplica} counts what is RUNNING, and nothing
- * constructs this world yet — an unwired pool costs no connections. What matters is
- * that it cannot simply be added later either: at `MAX_CONTAINERS` of 3, the fleet
- * is `3 x (4 + 5) = 27` direct, and the app-database allowance is 28, against a
- * budget of 40. Those two terms do not fit together, and they are not meant to —
- * the allowance exists to give every workflow agent its own six connections, which
- * is the cost this world removes.
+ * These terms could not be added while per-app databases existed: at
+ * `MAX_CONTAINERS` of 3 the fleet is `3 x (4 + 5) = 27` direct, and the
+ * app-database allowance was 28, against a budget of 40. The two do not fit, and
+ * they were never meant to — the allowance existed to give every workflow agent its
+ * own six connections, which is exactly the cost this world removes.
  *
- * So the world enters the sum in the SAME change that removes
- * `APP_DB_CONNECTION_ALLOWANCE`, and `platform-db-budget.test.ts` asserts the
- * arithmetic of that end state (`27 <= 40`) rather than leaving it to be
- * rediscovered. A branch that wires the world without dropping the allowance fails
- * the budget it was already failing — loudly, with the numbers.
+ * So the allowance went and the world took its place in the same change, which is
+ * what `platform-db-budget.test.ts` now asserts directly: `27 <= 40`, with nothing
+ * else claiming a share. That spec was written one increment before the world was
+ * wired, so the destination was checkable before it was reachable.
  */
 
 import { SLUG_LOCK_POOL_MAX } from "./constants.ts";
@@ -60,16 +57,16 @@ export const PLATFORM_WORLD_POOL_MAX = 4;
  * The streamer's dedicated `pg.Client`, which sits OUTSIDE the pool.
  *
  * Not a pool member: their streamer opens its own client to `LISTEN` on, exactly
- * as it did inside each guest (`aai/sdk/app-db-budget.ts` recorded the same term
- * there). One per replica now instead of one per workflow agent.
+ * as it did when the world ran inside each guest. One per replica now instead of
+ * one per workflow agent — which is the whole shape of what moving the world onto
+ * the platform's own database bought.
  */
 export const PLATFORM_WORLD_LISTEN = 1;
 
 /**
  * What one replica's world holds at its ceiling.
  *
- * A function rather than a constant so the sum cannot be spelled twice — the same
- * reason `guestAppDbConnections()` is one.
+ * A function rather than a constant so the sum cannot be spelled twice.
  */
 export function platformWorldConnections(): number {
   return PLATFORM_WORLD_POOL_MAX + PLATFORM_WORLD_LISTEN;
@@ -78,21 +75,17 @@ export function platformWorldConnections(): number {
 /**
  * DIRECT connections one replica may open against the PRIMARY cluster.
  *
- * **It used to take an `extraAppDbTargets` count, and charging them here was a
- * category error.** An extra `APP_DB_URLS` cluster is a separate Supabase
- * project (`app-db-admin.ts`: "a fleet is several Supabase projects, and the ref
- * is per cluster"), and `extraAppDbTargets` pools
- * {@link APP_DB_TARGET_POOL_MAX} against THAT project's URL — so those
- * connections land on that project's `max_connections` and never compete with
- * the primary's Vault reads, agents-row lookups or slug locks. This budget is
- * calibrated entirely against one instance (60 total, ~17 held by Supabase's own
- * workers), so counting another instance's backends into it made sharding look
- * unaffordable BY the very mechanism that relieves the ceiling: one extra
- * cluster took the fleet claim from 40 to 60 against a 40 budget, and
- * `workflow-wake.ts` recorded "the connection budget cannot currently afford
- * them" as the reason there were none in production. An extra cluster's own
- * claim is {@link appDbClusterConnectionsPerReplica}, checked against that
- * cluster.
+ * There is one cluster now, so the sum is one term plus the world's. It used to
+ * take a count of EXTRA placement clusters, and charging them here was a category
+ * error worth remembering if per-tenant placement is ever reintroduced: a separate
+ * cluster is a separate instance with its own `max_connections`, so its backends
+ * never competed with this one's Vault reads, agents-row lookups or slug locks.
+ * This budget is calibrated entirely against ONE instance (60 total, ~17 held by
+ * Supabase's own workers), and counting another instance's backends into it made
+ * sharding look unaffordable BY the very mechanism that relieves the ceiling — one
+ * extra cluster took the fleet claim from 40 to 60 against a 40 budget, and the
+ * wake sweep recorded "the connection budget cannot currently afford them" as the
+ * reason there were none in production.
  *
  * **The ADMIN pool is not in this sum, because it is POOLED**
  * (`PLATFORM_POOLER_URL`, transaction mode). What decides whether a pool may be
@@ -119,5 +112,5 @@ export function platformWorldConnections(): number {
  * budget quietly wrong.
  */
 export function platformDbConnectionsPerReplica(): number {
-  return SLUG_LOCK_POOL_MAX;
+  return SLUG_LOCK_POOL_MAX + platformWorldConnections();
 }

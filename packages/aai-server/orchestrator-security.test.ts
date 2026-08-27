@@ -17,34 +17,14 @@ import {
   deployAgent,
 } from "./test-utils.ts";
 
-// ── Cross-Agent Storage Isolation ──────────────────────────────────────
-
-describe("cross-agent storage isolation", () => {
-  test("agent A's key cannot access agent B's storage endpoint", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    await deployAgent(fetch, "agent-alpha", "key-alpha");
-    await deployAgent(fetch, "agent-beta", "key-beta");
-
-    // Agent alpha's key should be rejected on agent beta's storage endpoint.
-    // 404, not 403: a non-owner is told nothing about whether the slug exists
-    // (an owned slug and an unclaimed one answer identically) — see requireOwner.
-    const res = await authFetch(fetch, "/agent-beta/storage", {
-      method: "GET",
-      key: "key-alpha",
-    });
-    expect(res.status).toBe(404);
-
-    // Beta's own key is accepted
-    const own = await authFetch(fetch, "/agent-beta/storage", {
-      method: "GET",
-      key: "key-beta",
-    });
-    expect(own.status).toBe(200);
-  });
-});
-
 // ── Cross-Agent Auth Isolation ─────────────────────────────────────────
+//
+// A "cross-agent storage isolation" suite used to open this file, asserting that a
+// foreign key answers 404 on `GET /:slug/storage`. The route went with tenant
+// databases, and it is deliberately NOT retargeted at `/:slug/secret`: the spec
+// below already asserts that exact property on that exact route, three methods
+// deep. See the note further down about the two status-only copies that were
+// deleted for the same reason.
 
 describe("cross-agent auth isolation", () => {
   test("agent A's key cannot deploy to agent B's slug", async () => {

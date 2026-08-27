@@ -155,15 +155,7 @@ export function PublishMenu(props: PublishMenuProps) {
  * of the code rather than something to use, and "Playground" said what it was
  * for without naming what it is.
  */
-export type StudioTab =
-  | "preview"
-  | "docs"
-  | "workflows"
-  | "database"
-  | "code"
-  | "logs"
-  | "secrets"
-  | "settings";
+export type StudioTab = "preview" | "docs" | "workflows" | "code" | "logs" | "secrets" | "settings";
 
 // Logs sits directly after Code, which is where its use is: you write
 // something, you run it, you read what it printed.
@@ -171,7 +163,6 @@ const TABS: { id: StudioTab; label: string }[] = [
   { id: "preview", label: "UI" },
   { id: "docs", label: "API" },
   { id: "workflows", label: "Workflows" },
-  { id: "database", label: "Database" },
   { id: "code", label: "Code" },
   { id: "logs", label: "Logs" },
   { id: "secrets", label: "Secrets" },
@@ -179,59 +170,37 @@ const TABS: { id: StudioTab; label: string }[] = [
 ];
 
 /**
- * What a pane can be gated on. One entry today — it gates two panes, but on the
- * same fact — and it is the only gate in the switcher: everything else here is
- * reachable from the moment a project exists (Settings holds Delete project,
- * Secrets holds the key the first build needs), so a second gate is a claim
- * about the switcher's invariant and not a flag.
+ * Every pane is offered from the moment a project exists, and the gate that used
+ * to exist is worth recording.
+ *
+ * `isTabVisible(tab, gates)` hid **Database** and **Workflows** behind one
+ * `databaseEnabled` flag: a database was an opt-in taken in Settings, and until it
+ * was taken the Database pane could only ever show an empty table list. Workflows
+ * rode the same flag because a run was only DURABLE with a database behind it —
+ * `configureWorkflowWorld` picked the Postgres world off the app's `DATABASE_URL`,
+ * and without one a guest got the local world, whose queue is in memory and whose
+ * data directory is per-process under `tmpdir()`. A pane promising runs that "keep
+ * going after the call, the page, or the request that began them" would have been
+ * listing runs that die with the sandbox, which looks like the feature working.
+ *
+ * Both premises are gone. There is no Database pane — the platform provisions no
+ * tenant database — and a durable run no longer depends on the project having one,
+ * because the workflow world is the PLATFORM's and every agent reaches it over
+ * HTTP. So Workflows is unconditional, and with it the last gate: the predicate,
+ * its `TabGates` type and the `databaseEnabled` prop threaded to reach it are all
+ * deleted rather than left as an always-true function two files consult.
+ *
+ * If a pane ever needs gating again, the shape that worked is worth copying: ONE
+ * exported predicate, because the switcher (what to render) and `project-view.tsx`
+ * (what a selection of a now-hidden pane means) must not disagree — those
+ * disagreeing is a tab bar with no `aria-current` beside a blank pane.
  */
-export type TabGates = {
-  /** The project opted into a database — see `ProjectData.databaseEnabled`. */
-  databaseEnabled: boolean;
-};
-
-/**
- * Whether a pane is offered at all.
- *
- * **Database and Workflows are the panes a project can lack, and one opt-in
- * decides both.** A database is taken in Settings (studio-database.ts), and
- * until it is taken the Database pane could only ever show an empty table list
- * — a tab that answers no question reads as a broken feature rather than as an
- * unused one, and it invited the question "where is my data" from users who had
- * never turned anything on. So the switch reveals the pane rather than merely
- * un-erroring it.
- *
- * Workflows rides on the same flag because a run is only DURABLE when there is
- * a database behind it: `configureWorkflowWorld` picks the Postgres world off
- * the app's `DATABASE_URL`, and without one a guest gets the local world, whose
- * queue is in memory and whose data directory is per-process under `tmpdir()`
- * (see `aai/host/workflow-world.ts`). A pane whose subtitle promises runs that
- * "keep going after the call, the page, or the request that began them" would
- * then be listing runs that die with the sandbox — which is a worse answer than
- * no tab, because it looks like the feature working.
- *
- * Exported because TWO callers need one answer: the switcher, which decides
- * what to render, and `project-view.tsx`, which has to decide what a SELECTION
- * of a now-hidden pane means. Those disagreeing is a tab bar with no
- * `aria-current` beside a blank pane — so the predicate is shared rather than
- * spelled twice.
- */
-export function isTabVisible(tab: StudioTab, gates: TabGates): boolean {
-  return tab === "database" || tab === "workflows" ? gates.databaseEnabled : true;
-}
 
 type TopBarProps = {
   project: string | null;
   tab: StudioTab;
   deployedSlug?: string | undefined;
   hasBuild: boolean;
-  /**
-   * The project opted into a database, which is what puts the **Workflows** and
-   * **Database** tabs in the switcher at all (see {@link isTabVisible}).
-   * Required rather than defaulted: the default is "no tab", and a caller that
-   * forgets to thread it would silently hide two panes the project paid for.
-   */
-  databaseEnabled: boolean;
   /** A chat turn is streaming — Publish locks until it settles (see PublishMenuProps). */
   chatBusy?: boolean;
   /**
@@ -297,7 +266,7 @@ export function TopBar(props: TopBarProps) {
           {/* `i` indexes the VISIBLE list, so the left border still falls
               between neighbours when a pane is missing — indexing TABS would
               leave a seam where the gated tabs used to be. */}
-          {TABS.filter((entry) => isTabVisible(entry.id, props)).map((entry, i) => (
+          {TABS.map((entry, i) => (
             <button
               key={entry.id}
               type="button"

@@ -100,21 +100,28 @@ describe("readPlatformDbPressure", () => {
   });
 
   /**
-   * The role filter is a REGEX on the identifier grammar, not a `like 'app\_%'`
-   * — `_` is a LIKE wildcard, so the escaped form is one backslash away from
-   * matching `appXsomething` and the escape is invisible in review.
+   * Scoped to roles that HOLD something, and the direction of the join is what
+   * decides that.
+   *
+   * It used to filter `rolname ~ '^app_[0-9a-f]{16}$'` and drive FROM `pg_roles`,
+   * so a provisioned app role with no backend still produced a row. There are no
+   * app roles now — that filter would match nothing and report a plausible `0/0`,
+   * which is the silent zero this module exists to replace — so the scope is every
+   * role with a live backend, driven FROM `pg_stat_activity`.
    */
-  test("selects app roles by the anchored identifier grammar", async () => {
+  test("reads pressure per role, from the activity side, with no app-role filter", async () => {
     const seen: string[] = [];
     await readPlatformDbPressure(async <T>(sql: string): Promise<T[]> => {
       seen.push(sql);
       return (sql.startsWith("show") ? [{ m: "60" }] : [{ n: 1 }]) as T[];
     });
     const roleQuery = seen.find((s) => s.includes("pg_roles"));
-    expect(roleQuery).toContain("^app_[0-9a-f]{16}$");
+    // The dead grammar, asserted as an ABSENCE: matching nothing is the failure.
+    expect(roleQuery).not.toContain("^app_");
     expect(roleQuery).not.toContain("like");
-    // A LEFT JOIN, so a provisioned role with no backend still appears.
-    expect(roleQuery).toContain("left join");
+    // FROM the activity side, so only roles holding a backend appear.
+    expect(roleQuery).toMatch(/from\s+pg_stat_activity/);
+    expect(roleQuery).toContain("left join pg_roles");
   });
 });
 
@@ -160,29 +167,35 @@ describe("announcePlatformDbPressure", () => {
 
   /**
    * The two triggers are INDEPENDENT, and this is the one a fraction cannot
-   * express: an instance at 33% with one tenant at its ceiling is a tenant
-   * already being refused, and the response (its tier, or its bug) is nothing
-   * like the response to a full instance.
+   * express: an instance at 33% with one role at its ceiling is a caller already
+   * being refused, and the response is nothing like the response to a full
+   * instance.
+   *
+   * The role carrying a `rolconnlimit` at all is now the unusual case — every
+   * platform pool connects as `postgres`, which has none — so this trigger covers
+   * a cap somebody set deliberately.
    */
   test("warns for a role at its own limit even on a quiet instance", () => {
     announcePlatformDbPressure(
       pressure({
         inUse: 20,
-        roles: [{ role: "app_0123456789abcdef", inUse: 4, limit: 4 }],
+        roles: [{ role: "capped_role", inUse: 4, limit: 4 }],
       }),
     );
     const line = logs.warns()[0] ?? "";
-    expect(line).toContain("app_0123456789abcdef=4/4");
+    expect(line).toContain("capped_role=4/4");
     expect(line).toContain("too many connections for role");
-    // And it names the remedy, so the warning is self-correcting.
-    expect(line).toContain("--tier workflow");
+    // And it names the remedy, so the warning is self-correcting. It used to
+    // recommend `aai storage enable --tier workflow`, a command that no longer
+    // exists — the remedy for a capped role is the cap.
+    expect(line).toContain("connection limit");
   });
 
   test("names only the busiest few roles, never a kilobyte of them", () => {
     announcePlatformDbPressure(
       pressure({
         roles: Array.from({ length: 40 }, (_, i) => ({
-          role: `app_${String(i).padStart(16, "0")}`,
+          role: `role_${String(i).padStart(4, "0")}`,
           inUse: 1,
           limit: 10,
         })),
@@ -191,8 +204,8 @@ describe("announcePlatformDbPressure", () => {
     // Healthy, so this is the debug line — assert via `all()` since level
     // filtering is the point of the case above, not this one.
     const line = logs.all().at(-1)?.msg ?? "";
-    expect(line).toContain("40 of 40 app role(s) connected");
-    expect(line.match(/app_0/g) ?? []).toHaveLength(3);
+    expect(line).toContain("40 role(s) connected");
+    expect(line.match(/role_0/g) ?? []).toHaveLength(3);
   });
 });
 
