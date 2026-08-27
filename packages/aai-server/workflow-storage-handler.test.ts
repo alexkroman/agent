@@ -14,6 +14,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { createPlatformStorage } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import { guestTokenFor } from "./guest-token.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
@@ -517,5 +518,72 @@ describe("POST /:slug/workflow-storage", () => {
       await bearerFor(p.store, MINE),
     );
     expect(res.status).toBe(501);
+  });
+
+  /**
+   * THE WIRE, end to end: the guest's own client against this route.
+   *
+   * Every spec above builds a request by hand, which is exactly how the two sides
+   * come to disagree about the encoding. This one uses `createPlatformStorage` —
+   * the real client — so the codec, the method names and the reply shape are all
+   * checked against the thing that will actually call this.
+   *
+   * The binary is the point. A run's input is a `Uint8Array`, and plain JSON turns
+   * it into an index map with no error anywhere: the world would be handed
+   * `{"0":7}` where it expects bytes, and the first sign of it would be devalue
+   * failing inside a replay.
+   */
+  describe("against the guest's real client", () => {
+    test("carries binary to the world and back, unchanged", async () => {
+      const input = new Uint8Array([7, 0, 255]);
+      const world = fakeWorld({
+        "runs.get": { runId: "run_mine", output: Buffer.from([1, 2]) },
+        "events.create": { run: { id: "run_mine" }, event: { id: "e1" } },
+      });
+      const p = await platform(world);
+      const storage = createPlatformStorage({
+        base: `http://platform.test/${MINE}`,
+        token: await bearerFor(p.store, MINE),
+        fetch: async (i, init) => {
+          const req = new Request(i, init);
+          return p.fetch(new URL(req.url).pathname, {
+            method: req.method,
+            headers: req.headers,
+            body: await req.text(),
+          });
+        },
+      });
+
+      // Guest → platform → world. `fakeWorld` records the arguments it was handed,
+      // which is the half a hand-built request cannot check: what the WORLD saw.
+      await storage.events.create("run_mine", { type: "step_started", input });
+      const created = world.calls.find((c) => c.method === "events.create");
+      const seen = created?.args[1] as { input: unknown };
+      expect(seen.input).toBeInstanceOf(Uint8Array);
+      expect(seen.input).toEqual(input);
+
+      // World → platform → guest. The world answers a `Buffer` (which is what a
+      // `bytea` column reads back as), and the guest must receive bytes.
+      const run = (await storage.runs.get("run_mine")) as { output: unknown };
+      expect(run.output).toBeInstanceOf(Uint8Array);
+      expect(Buffer.from(run.output as Uint8Array)).toEqual(Buffer.from([1, 2]));
+    });
+
+    test("a run another agent owns rejects with the platform's 404", async () => {
+      const p = await platform();
+      const storage = createPlatformStorage({
+        base: `http://platform.test/${MINE}`,
+        token: await bearerFor(p.store, MINE),
+        fetch: async (i, init) => {
+          const req = new Request(i, init);
+          return p.fetch(new URL(req.url).pathname, {
+            method: req.method,
+            headers: req.headers,
+            body: await req.text(),
+          });
+        },
+      });
+      await expect(storage.runs.get("run_theirs")).rejects.toThrow(/HTTP 404/);
+    });
   });
 });

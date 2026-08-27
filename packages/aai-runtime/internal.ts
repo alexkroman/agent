@@ -143,6 +143,11 @@ export {
   type PlatformQueueOptions,
   payloadRunId,
 } from "./workflow-platform-queue.ts";
+export {
+  callPlatformStorage,
+  createPlatformStorage,
+  type PlatformStorageOptions,
+} from "./workflow-platform-storage.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
 export {
@@ -151,6 +156,12 @@ export {
   WORKFLOW_FLOW_PATH,
   type WorkflowSurface,
 } from "./workflow-serve.ts";
+export {
+  binaryReplacer,
+  binaryReviver,
+  decodeTypedJson,
+  encodeTypedJson,
+} from "./workflow-typed-json.ts";
 // Standing an upload store up. The store TYPE, the two blob implementations and
 // the part addressing are contracted, on the root barrel; this is what JOINS
 // them, which is a host's job.

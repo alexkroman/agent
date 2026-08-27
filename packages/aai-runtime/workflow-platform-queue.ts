@@ -40,6 +40,7 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
+import { encodeTypedJson } from "./workflow-typed-json.ts";
 
 /**
  * How long one enqueue may take.
@@ -191,33 +192,11 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (
       runId,
       // devalue's output is binary, and the platform's payload column is jsonb
       // because its claim reads `runId` out of it — so the bytes ride as base64.
-      // `serializeMessage` is the DevKit's own; this only re-encodes it.
-      data: Buffer.from(await serializeMessage(message)).toString("base64"),
+      // The inner encoding is the DevKit's own tagged-envelope JSON, which is what
+      // their `createQueueHandler` reads back (`workflow-typed-json.ts`).
+      data: Buffer.from(encodeTypedJson(message)).toString("base64"),
       ...queueOpts,
     });
     return { messageId };
   };
-}
-
-/**
- * The DevKit's own wire form for a queue payload.
- *
- * VERIFIED against both halves rather than assumed, because getting it wrong
- * fails inside somebody else's deserializer: `world-postgres`'s `transport`
- * serializes with `JSON.stringify` plus a tagged envelope for `Uint8Array`, and
- * the LOCAL world's `createQueueHandler` — which is the one the composition keeps,
- * and therefore the code that reads what this writes — deserializes with the same
- * `TypedJsonTransport`. The envelope is needed because a run's input really is a
- * `Uint8Array` on the resilient start path.
- *
- * Reproduced here rather than imported for the same reason as the type above:
- * `@workflow/world` is a transitive dependency this package does not declare.
- */
-async function serializeMessage(message: unknown): Promise<Uint8Array> {
-  const json = JSON.stringify(message, (_key, value: unknown) =>
-    value instanceof Uint8Array
-      ? { __type: "Uint8Array", data: Buffer.from(value).toString("base64") }
-      : value,
-  );
-  return new TextEncoder().encode(json);
 }
