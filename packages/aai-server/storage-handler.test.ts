@@ -127,9 +127,11 @@ test.each(["GET", "POST", "DELETE"])("storage %s rejects a non-owner key", async
 
   const res = await storageReq(fetch, method, "intruder-key");
 
-  expect(res.status).toBe(403);
-  // Refused BEFORE the handler ran — a 403 that had already provisioned would
-  // be a leak rather than a rejection.
+  // 404, not 403: a non-owner is told nothing about whether the slug exists
+  // (see requireOwner in middleware.ts).
+  expect(res.status).toBe(404);
+  // Refused BEFORE the handler ran — a rejection that had already provisioned
+  // would be a leak rather than a rejection.
   expect(appDb.provision).not.toHaveBeenCalled();
 });
 

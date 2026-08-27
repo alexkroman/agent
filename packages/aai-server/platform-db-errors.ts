@@ -45,6 +45,29 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import type { CloseableDb, ReservedDb } from "@alexkroman1/aai-runtime";
 
 /**
+ * Seconds the platform pools wait for a NEW connection before failing. Bounds
+ * the partition-during-connect case: postgres.js raises `CONNECT_TIMEOUT`,
+ * one of the {@link isPlatformDbUnreachable} codes below, so a caller sheds
+ * load as a 503 instead of waiting out the driver's 30s default. Lives here,
+ * beside the codes it maps to, because `constants.ts` is at its file-length cap.
+ */
+export const PLATFORM_DB_CONNECT_TIMEOUT_SECONDS = 10;
+
+/**
+ * Client-side deadline for a query on the ADMIN pool's POOLED path (the stores,
+ * the rate limiters — every short read a request makes). A silent partition (an
+ * established connection that stops answering — a failover, a lock storm, a
+ * frozen host) otherwise hangs the request forever: a server `statement_timeout`
+ * cannot help, because its own cancellation notice is blackholed with every
+ * other byte. Generous enough for the largest legitimate write (a ~30 MB deploy
+ * blob upsert) and far under an unbounded hang; on the timeout the query rejects
+ * with a `QUERY_TIMEOUT`-coded error (in {@link isPlatformDbUnreachable}) → 503.
+ * RESERVED connections (the workflow-wake sweep's advisory lock, which carries
+ * its own `statement_timeout`) are exempt — only the pooled path is wrapped.
+ */
+export const PLATFORM_DB_QUERY_TIMEOUT_MS = 30_000;
+
+/**
  * A platform-database operation that failed because the database could not be
  * REACHED — not because the statement was wrong.
  *
@@ -88,6 +111,11 @@ const UNREACHABLE_CODES: ReadonlySet<string> = new Set([
   "CONNECTION_CLOSED",
   "CONNECTION_ENDED",
   "CONNECTION_DESTROYED",
+  // A pooled query that blew its client-side deadline (createPostgresDb's
+  // `queryTimeoutMs`) — the only signal a SILENT partition produces, where the
+  // established connection stops answering and no driver-level error ever
+  // arrives. Treated as unreachable so the stall sheds load as a 503.
+  "QUERY_TIMEOUT",
   "53300",
   "57P03",
 ]);

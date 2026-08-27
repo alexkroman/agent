@@ -10,8 +10,32 @@
 
 import type { Db } from "@alexkroman1/aai";
 import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
+import pTimeout from "p-timeout";
 import postgres from "postgres";
 import { consoleLogger } from "./runtime-config.ts";
+
+/**
+ * A pooled query did not complete within {@link CreatePostgresDbOptions.queryTimeoutMs}.
+ *
+ * NOT exported: a platform caller maps this to a 503 by its stable `code`
+ * (`"QUERY_TIMEOUT"`, added to `aai-server`'s `UNREACHABLE_CODES`), not by
+ * `instanceof` — so it need not be public API, and keeping it off the barrel
+ * avoids an epoch/report churn for an error type nobody constructs.
+ *
+ * This is the CLIENT-side bound a server `statement_timeout` cannot provide:
+ * under a network partition the server's own cancellation notice is blackholed
+ * with every other byte, so only the caller can decide the query has stalled.
+ * Reserved connections are deliberately NOT wrapped — advisory-lock waits carry
+ * their own `lock_timeout` deadline (see `aai-server/platform-lock.ts`).
+ */
+class DbQueryTimeoutError extends Error {
+  readonly code = "QUERY_TIMEOUT";
+  constructor(milliseconds: number) {
+    super(`Database query did not complete within ${milliseconds}ms`);
+    this.name = "DbQueryTimeoutError";
+  }
+}
 
 /**
  * The default notice sink: quiet, but not swallowed.
@@ -93,6 +117,23 @@ export type CreatePostgresDbOptions = {
    * arrive.
    */
   onNotice?: (notice: unknown) => void;
+  /**
+   * Seconds to wait for a NEW connection to establish before failing. Unset
+   * leaves postgres.js's own default (30). postgres.js raises `CONNECT_TIMEOUT`,
+   * which a platform caller already maps to a 503 — so a partition that stalls
+   * connection SETUP sheds load instead of hanging.
+   */
+  connectTimeoutSeconds?: number;
+  /**
+   * Client-side deadline, in milliseconds, for a query on a POOLED connection.
+   * Unset leaves queries unbounded (the historic behaviour, correct for a
+   * tenant `ctx.db`). On a stall the query rejects with a `QUERY_TIMEOUT`-coded
+   * error — the only bound that survives a network partition, where a server
+   * `statement_timeout`'s cancellation notice is blackholed with everything
+   * else. RESERVED connections are exempt: their advisory-lock waits manage
+   * their own `lock_timeout` deadline.
+   */
+  queryTimeoutMs?: number;
 };
 
 /**
@@ -139,16 +180,30 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
     prepare: false,
     idle_timeout: opts.idleTimeoutSeconds ?? POOL_IDLE_TIMEOUT_SECONDS,
     onnotice: opts.onNotice ?? logNotice,
+    ...omitUndefined({ connect_timeout: opts.connectTimeoutSeconds }),
   });
 
-  /** The one query implementation, over the pool or a reserved connection. */
+  /**
+   * The one query implementation, over the pool or a reserved connection.
+   * `timeoutMs` bounds the POOLED path only — reserved callers pass none, so an
+   * advisory-lock wait is never cut short by it.
+   */
   const queryOn =
-    (on: Pick<postgres.Sql, "unsafe">) =>
+    (on: Pick<postgres.Sql, "unsafe">, timeoutMs?: number) =>
     async <T = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T[]> => {
       // The driver types parameters as its serializable union; `ctx.db` keeps
       // the caller-facing contract at `unknown[]` and lets the driver reject
       // non-serializable values at runtime.
-      const rows = await on.unsafe(query, (params ?? []) as postgres.ParameterOrJSON<never>[]);
+      const run = on.unsafe(query, (params ?? []) as postgres.ParameterOrJSON<never>[]);
+      const rows =
+        timeoutMs === undefined
+          ? await run
+          : await pTimeout(run, {
+              milliseconds: timeoutMs,
+              fallback: () => {
+                throw new DbQueryTimeoutError(timeoutMs);
+              },
+            });
       // Throw rather than truncate: a silently sliced result set is
       // indistinguishable from a complete one. One enforcement point keeps
       // `aai dev` and the platform's `db/query` RPC identical.
@@ -161,7 +216,7 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
     };
 
   return {
-    query: queryOn(sql),
+    query: queryOn(sql, opts.queryTimeoutMs),
     async reserve(): Promise<ReservedDb> {
       const reserved = await sql.reserve();
       return { query: queryOn(reserved), release: () => reserved.release() };

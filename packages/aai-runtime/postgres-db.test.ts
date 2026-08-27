@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai/internal";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createPostgresDb } from "./postgres-db.ts";
 
 // Shape-only tests: the `postgres` module is mocked so no connection is ever
@@ -9,7 +9,13 @@ import { createPostgresDb } from "./postgres-db.ts";
 // Db contract maps onto `unsafe`/`end`.
 const unsafeMock = vi.fn();
 const endMock = vi.fn(() => Promise.resolve());
-const postgresMock = vi.fn((..._args: unknown[]) => ({ unsafe: unsafeMock, end: endMock }));
+const releaseMock = vi.fn();
+const reserveMock = vi.fn(() => Promise.resolve({ unsafe: unsafeMock, release: releaseMock }));
+const postgresMock = vi.fn((..._args: unknown[]) => ({
+  unsafe: unsafeMock,
+  reserve: reserveMock,
+  end: endMock,
+}));
 
 /**
  * The options `createPostgresDb` built its client with.
@@ -23,6 +29,7 @@ function clientOptions(): {
   max?: number;
   prepare?: boolean;
   idle_timeout?: number;
+  connect_timeout?: number;
   onnotice?: (n: unknown) => void;
 } {
   const [, options] = postgresMock.mock.calls[0] ?? [];
@@ -30,6 +37,9 @@ function clientOptions(): {
 }
 
 vi.mock("postgres", () => ({ default: (...args: unknown[]) => postgresMock(...args) }));
+
+/** A query the driver never answers — the shape a silent partition produces. */
+const pending = (): Promise<never> => new Promise<never>(() => undefined);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -155,5 +165,76 @@ describe("createPostgresDb", () => {
     const db = createPostgresDb({ url: "postgres://db.example/app" });
     await db.close();
     expect(endMock).toHaveBeenCalledOnce();
+  });
+
+  test("passes connectTimeoutSeconds through as connect_timeout", () => {
+    createPostgresDb({ url: "postgres://db.example/app", connectTimeoutSeconds: 10 });
+    expect(clientOptions().connect_timeout).toBe(10);
+  });
+
+  test("omits connect_timeout when unset (keeps the driver default)", () => {
+    createPostgresDb({ url: "postgres://db.example/app" });
+    expect(clientOptions().connect_timeout).toBeUndefined();
+  });
+});
+
+describe("createPostgresDb query timeout", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("a POOLED query that stalls past queryTimeoutMs rejects with a QUERY_TIMEOUT code", async () => {
+    // The stall a network partition produces: an established connection that
+    // never answers. Only a client-side deadline can end it.
+    unsafeMock.mockReturnValueOnce(pending());
+    const db = createPostgresDb({ url: "postgres://db.example/app", queryTimeoutMs: 5000 });
+    const assertion = expect(db.query("select 1")).rejects.toMatchObject({
+      code: "QUERY_TIMEOUT",
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+  });
+
+  test("a fast POOLED query resolves normally under queryTimeoutMs", async () => {
+    unsafeMock.mockResolvedValueOnce([{ ok: 1 }]);
+    const db = createPostgresDb({ url: "postgres://db.example/app", queryTimeoutMs: 5000 });
+    await expect(db.query("select 1")).resolves.toEqual([{ ok: 1 }]);
+  });
+
+  test("a RESERVED query is NOT bounded by queryTimeoutMs (advisory-lock waits are exempt)", async () => {
+    unsafeMock.mockReturnValueOnce(pending());
+    const db = createPostgresDb({ url: "postgres://db.example/app", queryTimeoutMs: 5000 });
+    const reserved = await db.reserve();
+    let settled = false;
+    void reserved.query("select pg_advisory_lock(1, 2)").then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    // Advance well past the pooled deadline — a reserved query must still hang.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(settled).toBe(false);
+  });
+
+  test("a query is unbounded when queryTimeoutMs is unset", async () => {
+    unsafeMock.mockReturnValueOnce(pending());
+    const db = createPostgresDb({ url: "postgres://db.example/app" });
+    let settled = false;
+    void db.query("select 1").then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(settled).toBe(false);
   });
 });

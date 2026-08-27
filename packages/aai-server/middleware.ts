@@ -250,14 +250,15 @@ export async function requireOwner(
     keyVerifier: opts.keyVerifier,
   });
   const result = await verifySlugOwner(resolved.apiKey, { slug: opts.slug, store: opts.store });
-  if (result.status === "forbidden") {
-    throw new HTTPException(403, { message: "Forbidden" });
-  }
-  if (result.status === "unclaimed") {
-    // An `unclaimed` slug has no agent record — only the deploy path (which
-    // claims it) may proceed. Data routes (secret/storage) must reject it,
-    // otherwise any authenticated caller could pre-seed state for a slug they
-    // don't own and have the eventual owner silently inherit it.
+  // `forbidden` (the slug is claimed by someone else) and `unclaimed` (no agent
+  // record) both answer the SAME 404. A distinct 403 would tell any
+  // authenticated caller which slugs are claimed — an existence oracle over the
+  // whole namespace — and the data routes have nothing an owner-only 403 buys a
+  // legitimate caller: their own slug resolves `owned`. `unclaimed` must reject
+  // for its own reason too (only the deploy path may claim a slug; otherwise a
+  // caller could pre-seed state a later owner silently inherits), so the two
+  // collapse into one indistinguishable answer.
+  if (result.status !== "owned") {
     throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
   }
   return resolved;

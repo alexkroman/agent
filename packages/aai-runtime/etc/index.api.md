@@ -174,6 +174,8 @@ export type CreatePostgresDbOptions = {
     max?: number;
     idleTimeoutSeconds?: number;
     onNotice?: (notice: unknown) => void;
+    connectTimeoutSeconds?: number;
+    queryTimeoutMs?: number;
 };
 
 // @public

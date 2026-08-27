@@ -26,12 +26,14 @@ describe("cross-agent storage isolation", () => {
     await deployAgent(fetch, "agent-alpha", "key-alpha");
     await deployAgent(fetch, "agent-beta", "key-beta");
 
-    // Agent alpha's key should be rejected on agent beta's storage endpoint
+    // Agent alpha's key should be rejected on agent beta's storage endpoint.
+    // 404, not 403: a non-owner is told nothing about whether the slug exists
+    // (an owned slug and an unclaimed one answer identically) — see requireOwner.
     const res = await authFetch(fetch, "/agent-beta/storage", {
       method: "GET",
       key: "key-alpha",
     });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
 
     // Beta's own key is accepted
     const own = await authFetch(fetch, "/agent-beta/storage", {
@@ -63,7 +65,8 @@ describe("cross-agent auth isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     const res = await authFetch(fetch, "/agent-beta", { method: "DELETE", key: "key-alpha" });
-    expect(res.status).toBe(403);
+    // 404, not 403 — a non-owner cannot distinguish a claimed slug from a free one.
+    expect(res.status).toBe(404);
   });
 
   test("agent A's key cannot manage agent B's secrets", async () => {
@@ -72,12 +75,14 @@ describe("cross-agent auth isolation", () => {
     await deployAgent(fetch, "agent-alpha", "key-alpha");
     await deployAgent(fetch, "agent-beta", "key-beta");
 
+    // Every non-owner attempt answers 404 (not 403): the routes reveal nothing
+    // about whether agent-beta exists — see requireOwner in middleware.ts.
     // Try to list agent B's secrets with agent A's key
     const listRes = await authFetch(fetch, "/agent-beta/secret", {
       method: "GET",
       key: "key-alpha",
     });
-    expect(listRes.status).toBe(403);
+    expect(listRes.status).toBe(404);
 
     // Try to set a secret on agent B with agent A's key
     const setRes = await authFetch(fetch, "/agent-beta/secret", {
@@ -85,14 +90,14 @@ describe("cross-agent auth isolation", () => {
       key: "key-alpha",
       body: { MY_SECRET: "injected" },
     });
-    expect(setRes.status).toBe(403);
+    expect(setRes.status).toBe(404);
 
     // Try to delete a secret from agent B with agent A's key
     const delRes = await authFetch(fetch, "/agent-beta/secret/MY_SECRET", {
       method: "DELETE",
       key: "key-alpha",
     });
-    expect(delRes.status).toBe(403);
+    expect(delRes.status).toBe(404);
   });
 
   test("403 message does not reveal slug existence to unauthorized users", async () => {

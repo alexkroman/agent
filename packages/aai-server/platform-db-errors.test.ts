@@ -42,6 +42,9 @@ describe("isPlatformDbUnreachable", () => {
       "ETIMEDOUT",
       "CONNECT_TIMEOUT",
       "CONNECTION_CLOSED",
+      // The client-side stall bound — the only signal a SILENT partition
+      // produces (createPostgresDb's queryTimeoutMs), so it must shed as a 503.
+      "QUERY_TIMEOUT",
       "53300",
       "57P03",
     ]) {
