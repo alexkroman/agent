@@ -8130,6 +8130,16 @@ export function createPlatformStorage(opts: PlatformStorageOptions): {
 };
 
 // @internal
+export function createPlatformStreamer(opts: PlatformStorageOptions): {
+    writeToStream: StorageFn;
+    writeToStreamMulti: StorageFn;
+    closeStream: StorageFn;
+    listStreamsByRunId: StorageFn;
+    getStreamChunks: StorageFn;
+    getStreamInfo: StorageFn;
+};
+
+// @internal
 export function createPostgresStateBackend(opts: {
     db: Db;
 }): SessionStateBackend;

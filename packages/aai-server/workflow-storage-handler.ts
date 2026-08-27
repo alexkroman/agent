@@ -51,6 +51,7 @@ import { agentSandboxName } from "./sandbox-directory.ts";
 import { claimRun, ownsRun, runIdsFor } from "./workflow-run-owner.ts";
 import { decideScope, isStorageMethod, type StorageMethod } from "./workflow-storage-scope.ts";
 import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
+import { qualifyStreamName, unqualifyStreamName } from "./workflow-stream-namespace.ts";
 
 const log = createLogger("workflow.storage");
 
@@ -221,7 +222,12 @@ async function serve(call: StorageCall, ctx: ServeContext): Promise<unknown> {
     if (!(await ownsRun(ctx.sql, decision.requiredRunId, ctx.slug))) {
       throw new HTTPException(404, { message: "no such run" });
     }
-    return memberOf(ctx.storage, call.method)(...call.args);
+    // The two STREAM kinds also carry a required run id, and they have more to do
+    // once it checks out — the name has to be qualified, and a list of names
+    // unqualified. Everything else is a plain forward.
+    if (decision.scope.kind !== "stream" && decision.scope.kind !== "own-streams") {
+      return memberOf(ctx.storage, call.method)(...call.args);
+    }
   }
 
   switch (decision.scope.kind) {
@@ -231,6 +237,10 @@ async function serve(call: StorageCall, ctx: ServeContext): Promise<unknown> {
       return scopeFilterRuns(call, ctx);
     case "resolve-hook":
       return scopeResolveHook(call, ctx);
+    case "stream":
+      return scopeStream(call, ctx, decision.scope.nameIndex);
+    case "own-streams":
+      return scopeOwnStreams(call, ctx);
     default:
       return scopeCreate(call, ctx);
   }
@@ -315,6 +325,48 @@ async function scopeResolveHook(call: StorageCall, ctx: ServeContext): Promise<u
     throw new HTTPException(404, { message: "no such hook" });
   }
   return hook;
+}
+
+/**
+ * A streamer call, with the stream NAME qualified per tenant.
+ *
+ * The run id has already been checked by the caller. What this adds is the
+ * namespacing — see `workflow-stream-namespace.ts` for why it is a security fix
+ * and not tidiness: their `readFromStream` looks a stream up by name alone, so two
+ * agents sharing a name would share a stream.
+ */
+async function scopeStream(
+  call: StorageCall,
+  ctx: ServeContext,
+  nameIndex: number,
+): Promise<unknown> {
+  const name = call.args[nameIndex];
+  if (typeof name !== "string") {
+    // `decideScope` has already required it; this is the narrowing.
+    throw new HTTPException(400, { message: "stream name must be a string" });
+  }
+  const args = [...call.args];
+  args[nameIndex] = qualifyStreamName(ctx.slug, name);
+  return memberOf(ctx.storage, call.method)(...args);
+}
+
+/**
+ * `listStreamsByRunId`, with the namespace taken back off.
+ *
+ * A name that does not carry this agent's prefix is DROPPED rather than passed
+ * through. It should be unreachable — the run was already checked, and every
+ * stream of that run was written through the qualifier — so a name from elsewhere
+ * means an invariant broke, and handing back a value this code cannot attribute is
+ * the wrong way to find that out.
+ */
+async function scopeOwnStreams(call: StorageCall, ctx: ServeContext): Promise<unknown> {
+  const reply = await memberOf(ctx.storage, call.method)(...call.args);
+  if (!Array.isArray(reply)) return reply;
+  return reply.flatMap((entry) => {
+    if (typeof entry !== "string") return [];
+    const name = unqualifyStreamName(ctx.slug, entry);
+    return name === undefined ? [] : [name];
+  });
 }
 
 /**
