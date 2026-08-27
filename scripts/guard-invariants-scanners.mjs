@@ -22,7 +22,11 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import { git } from "./_ratchet.mjs";
-import { GUEST_SURFACE_PATHSPECS, TEMPLATE_PATHSPECS } from "./guard-invariants-scopes.mjs";
+import {
+  GUEST_SURFACE_PATHSPECS,
+  RUNTIME_ROUTE_SOURCES,
+  TEMPLATE_PATHSPECS,
+} from "./guard-invariants-scopes.mjs";
 
 /**
  * Read a repo-relative file listed by git, or `undefined` when it is not there.
@@ -181,6 +185,69 @@ function guestRouteLiterals() {
   return literals;
 }
 
+/**
+ * The paths the RUNTIME's route table names, resolved through the constants it
+ * references.
+ *
+ * Ten of `GUEST_ROUTES`' entries are no longer literals — they compose
+ * `SERVER_ROUTES` / `WORKFLOW_CALLBACK_ROUTES` from
+ * `packages/aai-runtime/server-routes.ts`, so the text read below finds seven
+ * strings where it used to find seventeen and would report the runtime's own
+ * declarations as undeclared. That is the reader being right about the text and
+ * wrong about the program.
+ *
+ * The division of labour this restores is the point of the table:
+ *
+ * - A literal that a TABLE ENTRY names is declared here, because
+ *   `guest-routes.test.ts` then asserts it really reaches `GUEST_ROUTES` — a
+ *   comparison of values, which is strictly stronger than this grep.
+ * - An INLINE literal is still undeclared, which is the gap this rule was
+ *   written for: `if (url === "/metrics")` added to `server.ts` is served by
+ *   every guest and joins no table.
+ *
+ * A constant that exists but no table entry references is therefore NOT
+ * declared — resolution runs through `path: NAME` in the table, never over the
+ * `export const` declarations alone, so adding a constant is not a way to opt a
+ * route out of both checks.
+ */
+function tableDeclaredRoutes() {
+  const tableUrl = new URL("../packages/aai-runtime/server-routes.ts", import.meta.url);
+  const table = readFileSync(tableUrl, "utf8");
+
+  // Every `path: <IDENT>` in the two tables, plus the paths this module declares
+  // itself (`HEALTH_PATH`, `SESSION_PATH`, `ROOT_PATH`, `CLIENT_CONFIG_ROUTE`).
+  const referenced = new Set(
+    [...table.matchAll(/\bpath:\s*([A-Z][A-Z0-9_]*)\s*,/g)].map((m) => m[1]),
+  );
+  if (referenced.size === 0) {
+    throw new Error(
+      "guard-invariants rule 12: packages/aai-runtime/server-routes.ts named no " +
+        "`path: CONSTANT` entries. The scan reads it as text, so a reshaped table " +
+        "silently stops declaring the runtime's routes — fix the pattern.",
+    );
+  }
+
+  // NAME -> "/path", over the modules the rule already scans. Only a QUOTED
+  // declaration counts: the one template-literal path here is
+  // `WORKFLOW_WEBHOOK_PREFIX`, which derives from the slash-less base and is not
+  // itself a route, and resolving templates would mean evaluating them.
+  const values = new Map();
+  for (const file of RUNTIME_ROUTE_SOURCES) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    for (const [, name, path] of source.matchAll(
+      /^export const ([A-Z][A-Z0-9_]*)(?::[^=]+)?\s*=\s*"(\/[^"]*)"/gm,
+    )) {
+      values.set(name, path);
+    }
+  }
+  const resolved = new Set();
+  for (const name of referenced) {
+    const path = values.get(name);
+    if (path !== undefined) resolved.add(path);
+  }
+  return resolved;
+}
+
 /** The paths `GUEST_ROUTES` declares, read as text — never imported. */
 function declaredGuestRoutes() {
   const source = readFileSync(
@@ -205,7 +272,8 @@ function declaredGuestRoutes() {
 }
 
 export function scanUndeclaredGuestRoutes() {
-  return findUndeclaredGuestRoutes(guestRouteLiterals(), declaredGuestRoutes());
+  const declared = new Set([...declaredGuestRoutes(), ...tableDeclaredRoutes()]);
+  return findUndeclaredGuestRoutes(guestRouteLiterals(), declared);
 }
 
 /**

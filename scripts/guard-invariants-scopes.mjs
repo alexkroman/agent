@@ -180,6 +180,26 @@ export const WORKFLOW_BODY_PATHSPECS = ["packages/aai-templates/templates/*/work
  * in every module that happens to hold a slash-leading string. The corpus floor
  * in the gate is what stops a rename emptying it silently.
  */
+/**
+ * The `aai-runtime` modules that DECLARE a route the guest serves.
+ *
+ * Named separately from the pathspecs below because rule 12 reads them twice
+ * and for opposite purposes: they are scanned for INLINE literals (which is the
+ * gap the rule exists for — a route added to `server.ts` is served by every
+ * guest), and they are read again to resolve the `export const` a table entry in
+ * `server-routes.ts` references. One list, so a module can never be scanned
+ * without also being resolvable, which would report its own declaration as a
+ * violation.
+ */
+export const RUNTIME_ROUTE_SOURCES = [
+  "packages/aai-runtime/server.ts",
+  "packages/aai-runtime/server-routes.ts",
+  "packages/aai-runtime/telephony/telephony-server.ts",
+  "packages/aai-runtime/session-events-api.ts",
+  "packages/aai-runtime/workflow-serve.ts",
+  "packages/aai-runtime/workflow-queue-dispatch.ts",
+];
+
 export const GUEST_SURFACE_PATHSPECS = [
   // TypeScript only. A route literal is code, never config, and the bare
   // `packages/aai-guest` this replaced matched every file in the package —
@@ -202,9 +222,6 @@ export const GUEST_SURFACE_PATHSPECS = [
   // `**/*.test.ts` does not match on its own.
   ":!packages/aai-guest/*.test.ts",
   ":!packages/aai-guest/**/*.test.ts",
-  "packages/aai-runtime/server.ts",
-  "packages/aai-runtime/telephony/telephony-server.ts",
-  "packages/aai-runtime/session-events-api.ts",
-  "packages/aai-runtime/workflow-serve.ts",
+  ...RUNTIME_ROUTE_SOURCES,
   "packages/aai/sdk/workflow-api-client.ts",
 ];

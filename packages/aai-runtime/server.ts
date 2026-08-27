@@ -21,16 +21,13 @@ import {
   requestPath,
   requestQuery,
 } from "@alexkroman1/aai/host-internal";
-import {
-  buildClientConfig,
-  CLIENT_CONFIG_METHODS,
-  CLIENT_CONFIG_PATH,
-} from "@alexkroman1/aai/protocol";
+import { buildClientConfig } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import escapeHtml from "escape-html";
 import { WebSocketServer } from "ws";
 import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import { consoleLogger } from "./runtime-config.ts";
+import { routeMatches, SERVER_ROUTES } from "./server-routes.ts";
 import { serveStatic } from "./server-static.ts";
 import { declineSocket } from "./session-decline.ts";
 import { createSessionEventsApi, SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
@@ -190,14 +187,14 @@ export function createServer(options: ServerOptions): AgentServer {
   ): Promise<void> {
     // Registered before static serving so a client asset can never shadow
     // the client-config endpoint.
-    if (CLIENT_CONFIG_METHODS.includes(method) && url === `/${CLIENT_CONFIG_PATH}`) {
+    if (routeMatches(SERVER_ROUTES.clientConfig, url, method)) {
       sendClientConfig(res);
       return;
     }
 
     if (clientDir && (await serveStatic(clientDir, req, res, logger))) return;
 
-    if (method === "GET" && url === "/") {
+    if (routeMatches(SERVER_ROUTES.root, url, method)) {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(defaultHtml);
       return;
@@ -215,7 +212,7 @@ export function createServer(options: ServerOptions): AgentServer {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "SAMEORIGIN");
 
-    if (method === "GET" && url === "/health") {
+    if (routeMatches(SERVER_ROUTES.health, url, method)) {
       sendJson(res, 200, { status: "ok", name });
       return;
     }
@@ -258,7 +255,7 @@ export function createServer(options: ServerOptions): AgentServer {
     if (handleTelephonyUpgrade({ req, socket, head, wss, runtime, logger, enabled: telephony })) {
       return;
     }
-    if (isStatic && url.startsWith("/websocket")) {
+    if (isStatic && routeMatches(SERVER_ROUTES.session, url)) {
       // Completed and then declined WITH A REASON, rather than destroyed. A
       // bare socket drop leaves the client reconnecting against a server that
       // will never answer, with nothing in the frame log explaining why — and
@@ -275,7 +272,7 @@ export function createServer(options: ServerOptions): AgentServer {
       });
       return;
     }
-    if (!url.startsWith("/websocket")) {
+    if (!routeMatches(SERVER_ROUTES.session, url)) {
       // No other upgrade consumer exists on this server: an unmatched upgrade
       // socket would otherwise dangle forever with no error handling.
       socket.destroy();
