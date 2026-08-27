@@ -222,6 +222,11 @@ describeWithStack("the platform migration applies and the stores work against it
       // (`20260827000000_workflow_world.sql`). One table, not seven: the journal
       // stays the DevKit's, in its own `workflow` schema — see that migration.
       "workflow_queue",
+      // Which agent owns a durable run
+      // (`20260827010000_workflow_run_owner.sql`). The DevKit's schema has no
+      // tenant column, so this is what scopes every storage read once that world
+      // runs on the platform's database rather than in each guest.
+      "workflow_run_owner",
     ]);
   });
 });

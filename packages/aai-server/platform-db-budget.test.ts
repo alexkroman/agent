@@ -47,10 +47,10 @@ import {
   APP_DB_TARGET_POOL_MAX,
   MAX_ACTIVE_APP_DATABASES,
   MAX_PLATFORM_DB_CONNECTIONS,
-  platformDbConnectionsPerReplica,
   SLUG_LOCK_POOL_MAX,
 } from "./constants.ts";
 import { fleetMaxContainers, platformDbBudget } from "./platform-db-capacity.ts";
+import { platformDbConnectionsPerReplica, platformWorldConnections } from "./platform-db-limits.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const deployPy = readFileSync(path.join(REPO_ROOT, "packages/aai-server/modal_deploy.py"), "utf-8");
@@ -456,6 +456,32 @@ describe("platform database connection budget", () => {
   test("the default tier is the one every existing app was provisioned at", () => {
     expect(DEFAULT_APP_DB_TIER).toBe("workflow");
     expect(appDbConnectionLimit(DEFAULT_APP_DB_TIER)).toBe(APP_DB_WORKFLOW_CONNECTION_LIMIT);
+  });
+
+  /**
+   * The END STATE of the platform-owned world, asserted before it is wired.
+   *
+   * The world's pool and its streamer's `LISTEN` client are direct connections and
+   * will join {@link platformDbConnectionsPerReplica} — but only in the change that
+   * removes `APP_DB_CONNECTION_ALLOWANCE`, because the two terms do not fit
+   * together and are not meant to: the allowance exists to give every workflow
+   * agent its own six connections, which is exactly the cost this world removes.
+   *
+   * This asserts that the destination is reachable. Without it, "the world will fit
+   * once tenant databases are gone" is a claim in a comment, and the branch that
+   * finds out otherwise is the one that has already deleted them.
+   */
+  test("the world fits a replica once the app-database allowance is gone", () => {
+    const maxContainers = pyInt("MAX_CONTAINERS");
+    const perReplica = SLUG_LOCK_POOL_MAX + platformWorldConnections();
+    const fleetDirect = maxContainers * perReplica;
+    expect(
+      fleetDirect,
+      `MAX_CONTAINERS (${maxContainers}) x ${perReplica} = ${fleetDirect} direct once the ` +
+        "world is wired. With no app-database allowance this has to fit " +
+        `${platformDbBudget()} on its own — if it does not, the world's pool is too ` +
+        "big or MAX_CONTAINERS is.",
+    ).toBeLessThanOrEqual(platformDbBudget());
   });
 
   test("only the SESSION-affine pool is counted as direct", () => {

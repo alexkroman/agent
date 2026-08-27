@@ -23,6 +23,7 @@
     "@supabase/auth-js": "^2.112.3",
     "@supabase/realtime-js": "^2.112.3",
     "@supabase/storage-js": "^2.112.3",
+    "@workflow/world-postgres": "4.3.3",
     "aai-guest": "workspace:*",
     "hono": "catalog:",
     "human-id": "^4.2.0",

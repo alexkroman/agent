@@ -565,6 +565,9 @@ importers:
       '@supabase/storage-js':
         specifier: ^2.112.3
         version: 2.112.3
+      '@workflow/world-postgres':
+        specifier: 4.3.3
+        version: 4.3.3(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(postgres@3.4.9)(typescript@7.0.2)
       aai-guest:
         specifier: workspace:*
         version: link:../aai-guest
