@@ -13,13 +13,17 @@
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { ensurePlatformTables } from "./test-utils.ts";
 import { ack, claimDue, enqueue, fail, QUEUE_MAX_ATTEMPTS } from "./workflow-queue-store.ts";
+import { runQueuePass } from "./workflow-queue-sweep.ts";
 
 describeWithPg("workflow queue store", () => {
   let close: () => Promise<void>;
   let sql: SqlExec;
+  /** The same database as `sql`, as the reserving handle a pass needs. */
+  let adminDb: () => AdminDb;
 
   /** Every tenant this suite creates, so `afterAll` can remove exactly those. */
   const SLUGS = ["wfq-t1", "wfq-t2", "wfq-gone"];
@@ -43,6 +47,7 @@ describeWithPg("workflow queue store", () => {
     // enumerate it, so reading at the top would throw on a machine with no PG.
     const db = createPostgresDb({ url: pgUrl(), max: 4 });
     sql = (q, p) => db.query(q, p);
+    adminDb = () => ({ reserve: () => db.reserve() });
     close = () => db.close();
 
     // The SCHEMA comes from the repo's own helper, never from this file.
@@ -219,6 +224,50 @@ describeWithPg("workflow queue store", () => {
     expect(await fail(sql, "m1", QUEUE_MAX_ATTEMPTS - 1)).toBe("dropped");
     const after = await sql("select count(*)::int as n from aai_platform.workflow_queue");
     expect(after[0]?.n).toBe(0);
+  });
+
+  /**
+   * The SWEEP over the real store, end to end: claim, deliver, settle.
+   *
+   * `workflow-queue-sweep.test.ts` drives the same pass with the store faked, so
+   * what this adds is that the two halves agree — the claim really hands back
+   * what the sweep expects, and its ack and its backoff really land on the rows.
+   * A pass is driven directly rather than through an interval; the interval is
+   * `createIntervalSweep`'s and has its own spec.
+   */
+  test("a pass delivers what it claims and removes it", async () => {
+    await enqueue(sql, msg("m1", "r1"));
+    await enqueue(sql, msg("m2", "r2"));
+    const seen: string[] = [];
+    const pass = await runQueuePass({
+      adminDb: adminDb(),
+      deliver: async (m) => {
+        seen.push(m.id);
+      },
+    });
+    expect(pass).toEqual({ claimed: 2, delivered: 2, retried: 0, dropped: 0 });
+    expect(seen.sort((a, b) => a.localeCompare(b))).toEqual(["m1", "m2"]);
+    const rows = await sql("select count(*)::int as n from aai_platform.workflow_queue");
+    expect(rows[0]?.n).toBe(0);
+  });
+
+  test("a pass that cannot deliver leaves the message due again later", async () => {
+    await enqueue(sql, msg("m1", "r1"));
+    const pass = await runQueuePass({
+      adminDb: adminDb(),
+      deliver: async () => {
+        throw new Error("guest unreachable");
+      },
+    });
+    expect(pass.retried).toBe(1);
+    // Still there, unclaimed, attempt raised, and NOT due yet — so the next tick
+    // does not immediately retry a guest that just refused.
+    const rows = await sql(
+      "select attempt, locked_at, available_at > now() as later from aai_platform.workflow_queue",
+    );
+    expect(rows[0]?.attempt).toBe(1);
+    expect(rows[0]?.locked_at).toBeNull();
+    expect(rows[0]?.later).toBe(true);
   });
 
   test("acking removes the message", async () => {
