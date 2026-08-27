@@ -243,9 +243,10 @@ describeWithPg("workflow queue store", () => {
       adminDb: adminDb(),
       deliver: async (m) => {
         seen.push(m.id);
+        return { type: "completed" };
       },
     });
-    expect(pass).toEqual({ claimed: 2, delivered: 2, retried: 0, dropped: 0 });
+    expect(pass).toEqual({ claimed: 2, delivered: 2, rescheduled: 0, retried: 0, dropped: 0 });
     expect(seen.sort((a, b) => a.localeCompare(b))).toEqual(["m1", "m2"]);
     const rows = await sql("select count(*)::int as n from aai_platform.workflow_queue");
     expect(rows[0]?.n).toBe(0);
@@ -268,6 +269,47 @@ describeWithPg("workflow queue store", () => {
     expect(rows[0]?.attempt).toBe(1);
     expect(rows[0]?.locked_at).toBeNull();
     expect(rows[0]?.later).toBe(true);
+  });
+
+  /**
+   * The third outcome over the REAL store: a run that parked itself.
+   *
+   * The faked-store spec asserts the sweep calls `reschedule`; this asserts what
+   * that does to the row — still there, unclaimed, due LATER, and with its
+   * attempt untouched. The attempt is the half a fake cannot really check, and
+   * it is the one that decides whether a workflow may sleep more than
+   * `QUEUE_MAX_ATTEMPTS` times.
+   */
+  test("a sleeping run comes back later without spending an attempt", async () => {
+    await enqueue(sql, msg("m1", "r1"));
+    const pass = await runQueuePass({
+      adminDb: adminDb(),
+      deliver: async () => ({ type: "reschedule", delaySeconds: 120 }),
+    });
+    expect(pass.rescheduled).toBe(1);
+    const rows = await sql(
+      `select attempt, locked_at, available_at > now() + interval '60 seconds' as much_later
+         from aai_platform.workflow_queue`,
+    );
+    expect(rows[0]?.attempt).toBe(0);
+    expect(rows[0]?.locked_at).toBeNull();
+    expect(rows[0]?.much_later).toBe(true);
+  });
+
+  test("a negative sleep is clamped rather than made due in the past", async () => {
+    // The number comes from tenant code by way of the DevKit, so it is not
+    // trusted to be sane: a negative interval would make the message due BEFORE
+    // it was written, which reads as an immediately-redelivered run.
+    await enqueue(sql, msg("m1", "r1"));
+    await runQueuePass({
+      adminDb: adminDb(),
+      deliver: async () => ({ type: "reschedule", delaySeconds: -3600 }),
+    });
+    const rows = await sql(
+      "select available_at <= now() as due, available_at > now() - interval '5 seconds' as recent from aai_platform.workflow_queue",
+    );
+    expect(rows[0]?.due).toBe(true);
+    expect(rows[0]?.recent).toBe(true);
   });
 
   test("acking removes the message", async () => {

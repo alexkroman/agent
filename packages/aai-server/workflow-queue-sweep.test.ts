@@ -14,11 +14,18 @@ import { describe, expect, test, vi } from "vitest";
 import type { AdminDb } from "./platform-lock.ts";
 import { captureLogs, fakeAdminDbOver } from "./test-utils.ts";
 import type { QueuedMessage } from "./workflow-queue-store.ts";
-import { runQueuePass } from "./workflow-queue-sweep.ts";
+import { type Delivered, runQueuePass } from "./workflow-queue-sweep.ts";
 
 const logs = captureLogs();
 
 /** A message as `claimDue` returns one. */
+/**
+ * The uninteresting delivery outcome, named so the specs about something ELSE
+ * do not restate it. A bare `async () => {}` no longer satisfies
+ * `DeliverMessage`, which is the point of making the outcome a union.
+ */
+const completes = async (): Promise<Delivered> => ({ type: "completed" });
+
 function msg(id: string, over: Partial<QueuedMessage> = {}): QueuedMessage {
   return { id, slug: "t1", queueName: `__wkf_workflow_${id}`, payload: {}, attempt: 0, ...over };
 }
@@ -73,10 +80,11 @@ function fakeDb(claimed: QueuedMessage[]): {
 
 describe("runQueuePass", () => {
   test("does nothing without a platform database", async () => {
-    const deliver = vi.fn();
+    const deliver = vi.fn(completes);
     expect(await runQueuePass({ deliver })).toEqual({
       claimed: 0,
       delivered: 0,
+      rescheduled: 0,
       retried: 0,
       dropped: 0,
     });
@@ -87,7 +95,7 @@ describe("runQueuePass", () => {
     // Same predicate `/health` reports on: a replica told to stop routing must
     // not take on work it may not finish before it exits.
     const { db, statements } = fakeDb([msg("m1")]);
-    const deliver = vi.fn();
+    const deliver = vi.fn(completes);
     const pass = await runQueuePass({ adminDb: db, deliver, isDraining: () => true });
     expect(pass.claimed).toBe(0);
     expect(statements).toEqual([]);
@@ -96,10 +104,11 @@ describe("runQueuePass", () => {
 
   test("an empty claim delivers nothing and reserves no second connection", async () => {
     const { db, released } = fakeDb([]);
-    const deliver = vi.fn();
+    const deliver = vi.fn(completes);
     expect(await runQueuePass({ adminDb: db, deliver })).toEqual({
       claimed: 0,
       delivered: 0,
+      rescheduled: 0,
       retried: 0,
       dropped: 0,
     });
@@ -114,9 +123,10 @@ describe("runQueuePass", () => {
       adminDb: db,
       deliver: async (m) => {
         seen.push(m.id);
+        return { type: "completed" };
       },
     });
-    expect(pass).toEqual({ claimed: 2, delivered: 2, retried: 0, dropped: 0 });
+    expect(pass).toEqual({ claimed: 2, delivered: 2, rescheduled: 0, retried: 0, dropped: 0 });
     expect(seen.sort((a, b) => a.localeCompare(b))).toEqual(["m1", "m2"]);
     expect(statements.filter((s) => s.startsWith("delete from"))).toHaveLength(2);
   });
@@ -135,10 +145,11 @@ describe("runQueuePass", () => {
       deliver: async (m) => {
         if (m.id === "bad") throw new Error("guest unreachable");
         delivered.push(m.id);
+        return { type: "completed" };
       },
     });
     expect(delivered.sort((a, b) => a.localeCompare(b))).toEqual(["good1", "good2"]);
-    expect(pass).toEqual({ claimed: 3, delivered: 2, retried: 1, dropped: 0 });
+    expect(pass).toEqual({ claimed: 3, delivered: 2, rescheduled: 0, retried: 1, dropped: 0 });
   });
 
   test("a failure becomes a backoff, not a delete", async () => {
@@ -166,13 +177,13 @@ describe("runQueuePass", () => {
         throw new Error("nope");
       },
     });
-    expect(pass).toEqual({ claimed: 1, delivered: 0, retried: 0, dropped: 1 });
+    expect(pass).toEqual({ claimed: 1, delivered: 0, rescheduled: 0, retried: 0, dropped: 1 });
     expect(logs.warns().join(" ")).toContain("abandoned 1 message(s)");
   });
 
   test("a healthy pass logs nothing an operator has to read", async () => {
     const { db } = fakeDb([msg("m1")]);
-    await runQueuePass({ adminDb: db, deliver: async () => undefined });
+    await runQueuePass({ adminDb: db, deliver: completes });
     expect(logs.warns()).toEqual([]);
     expect(logs.infos()).toEqual([]);
   });
@@ -190,6 +201,7 @@ describe("runQueuePass", () => {
       adminDb: db,
       deliver: async () => {
         releasedAtDelivery = released();
+        return { type: "completed" };
       },
     });
     // The claim's reservation is already back before the first delivery runs.
@@ -208,11 +220,75 @@ describe("runQueuePass", () => {
         peak = Math.max(peak, inFlight);
         await sleep(5);
         inFlight -= 1;
+        return { type: "completed" };
       },
     });
     expect(peak).toBeLessThanOrEqual(3);
     // And it really did overlap — a bound of three that ran serially would pass
     // the assertion above while proving nothing.
     expect(peak).toBeGreaterThan(1);
+  });
+});
+
+describe("a run that parked itself", () => {
+  /**
+   * `sleep()` is the third outcome, and getting it wrong is invisible.
+   *
+   * The DevKit's queue callback answers 200 with `{"timeoutSeconds": n}` when
+   * the run parked. Acking that message strands the run forever with nothing
+   * logged; failing it works for a few minutes and then abandons the run at the
+   * retry budget, which reads as a delivery fault rather than a sleep.
+   */
+  test("is rescheduled rather than acked", async () => {
+    const { db, statements } = fakeDb([msg("m1")]);
+    const pass = await runQueuePass({
+      adminDb: db,
+      deliver: async () => ({ type: "reschedule", delaySeconds: 90 }),
+    });
+    expect(pass).toEqual({ claimed: 1, delivered: 0, rescheduled: 1, retried: 0, dropped: 0 });
+    // NOT deleted: the message has to come back.
+    expect(statements.some((s) => s.startsWith("delete from"))).toBe(false);
+    expect(statements.some((s) => s.includes("set locked_at = null"))).toBe(true);
+  });
+
+  /**
+   * A sleeping run consumes NO retry budget. Charging it one would cap the
+   * number of times a workflow may sleep at `QUEUE_MAX_ATTEMPTS` — five — and
+   * the sixth `sleep()` would abandon the run.
+   */
+  test("does not spend an attempt, however many times it sleeps", async () => {
+    const { db, statements } = fakeDb([msg("m1", { attempt: 4 })]);
+    const pass = await runQueuePass({
+      adminDb: db,
+      deliver: async () => ({ type: "reschedule", delaySeconds: 5 }),
+    });
+    // attempt 4 of a 5-attempt budget: read as a failure this would be DROPPED.
+    expect(pass).toEqual({ claimed: 1, delivered: 0, rescheduled: 1, retried: 0, dropped: 0 });
+    expect(statements.some((s) => s.includes("set attempt ="))).toBe(false);
+    expect(logs.warns()).toEqual([]);
+  });
+
+  test("is not reported as an operational event", async () => {
+    const { db } = fakeDb([msg("m1")]);
+    await runQueuePass({
+      adminDb: db,
+      deliver: async () => ({ type: "reschedule", delaySeconds: 3600 }),
+    });
+    // An hour-long sleep is a healthy workflow, not something to page about.
+    expect(logs.warns()).toEqual([]);
+    expect(logs.infos()).toEqual([]);
+  });
+
+  test("a sleep beside a failure and a success settles each on its own terms", async () => {
+    const { db } = fakeDb([msg("sleeper"), msg("done"), msg("broken")]);
+    const pass = await runQueuePass({
+      adminDb: db,
+      deliver: async (m) => {
+        if (m.id === "broken") throw new Error("guest unreachable");
+        if (m.id === "sleeper") return { type: "reschedule", delaySeconds: 30 };
+        return { type: "completed" };
+      },
+    });
+    expect(pass).toEqual({ claimed: 3, delivered: 1, rescheduled: 1, retried: 1, dropped: 0 });
   });
 });

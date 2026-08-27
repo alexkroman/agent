@@ -8,10 +8,12 @@
  * `ERR_MODULE_NOT_FOUND` from `/tmp` with nothing pointing back at this file.
  */
 
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { networkInterfaces } from "node:os";
 import { requestPath } from "@alexkroman1/aai/host-internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
+import { WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
 import {
   createWorkflowSurface,
   handleWorkflowRequest,
@@ -205,10 +207,22 @@ async function serving(
   // Every interface, for the one spec that has to arrive from off-box. Loopback
   // otherwise, which is what the rest of these are about.
   host = "127.0.0.1",
+  // What a composition WITH a platform supplies. Absent is the default because
+  // absent is what `aai dev`, host mode and a self-hosted server all pass.
+  allowRemote?: (req: IncomingMessage) => boolean,
 ): Promise<{ url: string; port: number; close: () => Promise<void> }> {
   const server = createServer((req, res) => {
     const url = requestPath(req.url);
-    if (!handleWorkflowRequest(surface, req, res, url, req.method ?? "GET")) {
+    if (
+      !handleWorkflowRequest(
+        surface,
+        req,
+        res,
+        url,
+        req.method ?? "GET",
+        omitUndefined({ allowRemote }),
+      )
+    ) {
       res.writeHead(404);
       res.end("unclaimed");
     }
@@ -453,6 +467,105 @@ describe("the queue callbacks are guest-internal", () => {
       });
       expect(res.status).toBe(200);
       expect(surface.webhook).toHaveBeenCalledTimes(1);
+    } finally {
+      await s.close();
+    }
+  });
+});
+
+describe("the platform's delivery door", () => {
+  const BEARER = "sandbox-token";
+  const vouched = (req: IncomingMessage) => req.headers.authorization === `Bearer ${BEARER}`;
+
+  test("serves a vouched-for caller from OFF-BOX, which is the whole point", async () => {
+    const external = firstExternalIpv4();
+    if (!external) {
+      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
+    }
+    const surface = surfaceOf();
+    const s = await serving(surface, "0.0.0.0", vouched);
+    try {
+      const res = await fetch(`http://${external}:${s.port}${WORKFLOW_QUEUE_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": "__wkf_step_r1" },
+        body: "bytes",
+      });
+      expect(res.status).toBe(200);
+      expect(surface.step).toHaveBeenCalledTimes(1);
+    } finally {
+      await s.close();
+    }
+  });
+
+  test.each([
+    ["no bearer", undefined],
+    ["the wrong bearer", "Bearer nope"],
+  ])("answers 401 for %s, and runs nothing", async (_label, authorization) => {
+    const surface = surfaceOf();
+    const s = await serving(surface, "0.0.0.0", vouched);
+    try {
+      const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+        method: "POST",
+        headers: {
+          "x-vqs-queue-name": "__wkf_step_r1",
+          ...omitUndefined({ authorization }),
+        },
+        body: "bytes",
+      });
+      expect(res.status).toBe(401);
+      expect(surface.step).not.toHaveBeenCalled();
+    } finally {
+      await s.close();
+    }
+  });
+
+  /**
+   * FAILS CLOSED with no predicate, and LOOPBACK IS NOT ENOUGH.
+   *
+   * This is the door's difference from `flow`/`step`: those are guest-internal
+   * and loopback is their whole gate, while this one exists for a caller outside
+   * the container and is therefore refused unless the composition vouches for it.
+   * `aai dev`, host mode and a self-hosted server supply no predicate and have no
+   * queue outside the process, so a door that opened on loopback there would be
+   * an unauthenticated way to drive a run — reachable by any local process, and
+   * on a self-hosted server bound to `0.0.0.0`, by the network.
+   */
+  test("is refused when the composition vouches for nobody, even on loopback", async () => {
+    const surface = surfaceOf();
+    const s = await serving(surface);
+    try {
+      const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": "__wkf_step_r1" },
+        body: "bytes",
+      });
+      expect(res.status).toBe(401);
+      expect(surface.step).not.toHaveBeenCalled();
+    } finally {
+      await s.close();
+    }
+  });
+
+  test("vouching for a caller does NOT open the loopback-only callbacks", async () => {
+    // The door and the two callbacks are separate gates. A predicate that also
+    // admitted `flow`/`step` from off-box would reopen the hole the door exists
+    // to avoid reopening.
+    const external = firstExternalIpv4();
+    if (!external) {
+      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
+    }
+    const surface = surfaceOf();
+    const s = await serving(surface, "0.0.0.0", () => true);
+    try {
+      for (const path of [WORKFLOW_FLOW_PATH, WORKFLOW_STEP_PATH]) {
+        const res = await fetch(`http://${external}:${s.port}${path}`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${BEARER}` },
+        });
+        expect(res.status).toBe(403);
+      }
+      expect(surface.flow).not.toHaveBeenCalled();
+      expect(surface.step).not.toHaveBeenCalled();
     } finally {
       await s.close();
     }

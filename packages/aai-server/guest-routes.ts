@@ -76,6 +76,17 @@ export const GUEST_ROUTES = {
   /** One workflow step, called back by the same queue as `workflowFlow`. */
   workflowStep: "/.well-known/workflow/v1/step",
   /**
+   * The PLATFORM's delivery door for a queue message it owns.
+   *
+   * The two routes above are the DevKit's own queue callbacks and are refused
+   * from any peer that is not loopback. A queue the PLATFORM owns is outside the
+   * container, so it needs a way in — and this is one door rather than a widened
+   * gate on those two, because deciding which of the two a message is means
+   * parsing the DevKit's queue-name grammar, which belongs on the side that
+   * depends on the DevKit. See `aai-runtime/workflow-queue-dispatch.ts`.
+   */
+  workflowQueue: "/workflow-queue",
+  /**
    * Webhook delivery to a parked run — `createWebhook()`'s URL, minus its token.
    *
    * The only one of the three a THIRD PARTY calls: the URL is handed out of the
@@ -264,6 +275,15 @@ export const GUEST_ROUTE_EXPOSURE = {
   // outside the container, and it is the enforcement's own specification.
   workflowFlow: { via: "guest-internal" },
   workflowStep: { via: "guest-internal" },
+  // HOST-ONLY, which is the whole reason the two above can stay
+  // `guest-internal`: the platform dials THIS one over the sandbox tunnel with
+  // the per-sandbox manage bearer, and the guest dispatches to flow or step
+  // internally. Not `proxied` — no client has any business driving another
+  // tenant's run, which is the same sentence the two entries above carry. The
+  // guest refuses it when its composition supplies no way to vouch for a
+  // caller, so `aai dev`, host mode and a self-hosted server answer 401 rather
+  // than opening a door with no queue behind it.
+  workflowQueue: { via: "host-only" },
   // The one workflow route with a caller outside the container, and the reason
   // it must be brokered rather than direct-dialled: a `createWebhook()` URL is
   // handed to a THIRD PARTY (a payment provider, an approval mail) and has to

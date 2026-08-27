@@ -41,7 +41,7 @@
  * @module
  */
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -87,6 +87,60 @@ export type QueuedMessage = {
 };
 
 /** What {@link enqueue} is given. */
+/**
+ * What a queue row's `payload` holds — the queue's OWN envelope, not the
+ * DevKit's message.
+ *
+ * The distinction matters twice. The column is `jsonb`, because the claim reads
+ * `payload->>'runId'` out of it to serialize a run's messages against each other
+ * — an opaque `bytea` could not be queried that way, and per-run ordering is the
+ * one thing this queue has to get right. But what a run actually sends is BINARY:
+ * the DevKit serializes with devalue and its executor is handed those bytes
+ * verbatim. So the bytes ride in `data` as base64, and the platform never parses
+ * them — a queue that understood that payload would be a second implementation
+ * of somebody else's serialization format.
+ *
+ * Base64 rather than a `bytea` column beside the jsonb for the same reason
+ * `@workflow/world-postgres` does it ("graphile-worker is using JSON under the
+ * hood, so we need to base64 encode the body to ensure binary safety"): one
+ * value means one write, one read, and no way for the two halves of a message to
+ * disagree about which row they belong to.
+ *
+ * @internal
+ */
+export type QueueEnvelope = {
+  /** The run these messages are ordered within. See {@link claimDue}. */
+  runId: string;
+  /** The DevKit's opaque message body, base64. */
+  data: string;
+};
+
+/**
+ * Read an envelope off a row, or throw naming what was wrong with it.
+ *
+ * THROWS rather than returning undefined because every caller's only recourse is
+ * to fail the delivery, and a thrown error carries the diagnosis. It is also a
+ * PERMANENT failure — a malformed row will not become valid — so it burns the
+ * message's retry budget and is then abandoned with a warning. That is accepted
+ * rather than optimal: a distinct "drop this now" outcome would be machinery for
+ * a case that means the enqueue side wrote a row it should not have, and the
+ * warning names it either way.
+ */
+export function parseEnvelope(payload: unknown): QueueEnvelope {
+  if (!isRecord(payload)) throw new Error("queue payload is not an object");
+  const { runId, data } = payload;
+  if (typeof runId !== "string" || runId === "") {
+    throw new Error("queue payload has no runId");
+  }
+  if (typeof data !== "string") throw new Error("queue payload has no data");
+  return { runId, data };
+}
+
+/** The DevKit's message body, decoded from an envelope. */
+export function envelopeBody(envelope: QueueEnvelope): Buffer {
+  return Buffer.from(envelope.data, "base64");
+}
+
 export type EnqueueParams = {
   id: string;
   slug: string;
@@ -226,6 +280,39 @@ export async function claimDue(
 /** A message that was delivered. Removed, not marked — a delivered row is done. */
 export async function ack(sql: SqlExec, id: string): Promise<void> {
   await sql("delete from aai_platform.workflow_queue where id = $1", [id]);
+}
+
+/**
+ * A message the guest asked to be brought back LATER, rather than one that
+ * failed.
+ *
+ * This is how `sleep()` works, and it is the third outcome of a delivery — not
+ * the second. The DevKit's queue callback answers `200` with a
+ * `{"timeoutSeconds": n}` body when the run parked itself, and the queue is
+ * expected to re-present the same message after that long. Reading it as
+ * "completed" silently strands every run that sleeps; reading it as "failed"
+ * would work by accident for a few minutes and then abandon the run at the
+ * retry budget, which is worse — a wedge that looks like a delivery problem.
+ *
+ * So the ATTEMPT IS NOT TOUCHED. A sleeping run consumes no retry budget: a run
+ * that parks itself thirty times is healthy, and charging it thirty attempts
+ * would cap the number of times a workflow may sleep at five.
+ *
+ * `available_at` is computed by POSTGRES, deliberately — every other timestamp
+ * in this table is, so a replica with a skewed clock cannot schedule a message
+ * into another replica's past (or future). The delay is clamped at zero because
+ * the value comes from tenant code by way of the DevKit, and a negative
+ * interval would make the message due before it was written.
+ */
+export async function reschedule(sql: SqlExec, id: string, delaySeconds: number): Promise<void> {
+  const delayMs = Math.max(0, Math.round(delaySeconds * 1000));
+  await sql(
+    `update aai_platform.workflow_queue
+        set locked_at = null,
+            available_at = now() + ($2 || ' milliseconds')::interval
+      where id = $1`,
+    [id, String(delayMs)],
+  );
 }
 
 /**

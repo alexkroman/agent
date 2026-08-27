@@ -54,6 +54,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { decodePathSegment } from "./_path-decode.ts";
+import { dispatchQueueMessage, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
 import { resolveImportSpecifier } from "./workflow-resolve.ts";
 
 /** Distinct temp file per load — Node's module registry caches by URL. */
@@ -334,6 +335,19 @@ export function handleWorkflowRequest(
   res: ServerResponse,
   url: string,
   method: string,
+  opts: {
+    /**
+     * May this off-box caller reach the PLATFORM's delivery door
+     * (`WORKFLOW_QUEUE_PATH`)?
+     *
+     * Injected because the credential is the platform's and this package is also
+     * what a self-hoster runs. Absent means the door is refused — which is
+     * right for `aai dev`, host mode and a self-hosted server, none of which
+     * have a queue outside the process. It does NOT open `flow`/`step`: those
+     * stay loopback-only, and the whole point of the door is that they can.
+     */
+    allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
+  } = {},
 ): boolean {
   if (!surface) return false;
 
@@ -342,6 +356,15 @@ export function handleWorkflowRequest(
   if (isQueueCallbackPath(url) && !isLoopbackAddress(req.socket?.remoteAddress)) {
     res.writeHead(403, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "workflow queue callbacks are guest-internal" }));
+    return true;
+  }
+
+  // The platform's door, and it is HOST-ONLY: a caller the composition does not
+  // vouch for is refused even on loopback. Fails closed when no predicate was
+  // supplied, which is every composition that has no platform.
+  if (url === WORKFLOW_QUEUE_PATH && !opts.allowRemote?.(req)) {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "unauthorized" }));
     return true;
   }
 
@@ -366,6 +389,11 @@ function pickWorkflowHandler(
 ): FetchHandler | undefined {
   if (method === "POST" && url === WORKFLOW_FLOW_PATH) return surface.flow;
   if (method === "POST" && url === WORKFLOW_STEP_PATH) return surface.step;
+  // The platform's delivery door dispatches to one of the two above by queue
+  // name; its gate has already run in `handleWorkflowRequest`.
+  if (method === "POST" && url === WORKFLOW_QUEUE_PATH) {
+    return (request: Request) => dispatchQueueMessage(surface, request);
+  }
   const token = webhookToken(url);
   if (token !== undefined) return (request: Request) => surface.webhook(token, request);
 }
