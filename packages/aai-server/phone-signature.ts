@@ -40,7 +40,8 @@
  * media-stream URL already required them to do.
  */
 
-import { createHmac, createPublicKey, timingSafeEqual, verify } from "node:crypto";
+import { createHmac, createPublicKey, verify } from "node:crypto";
+import { constantTimeEquals as equals } from "./_timing-safe.ts";
 
 /** Secret names read from the agent's stored env, by carrier. */
 export const TWILIO_AUTH_TOKEN_SECRET = "TWILIO_AUTH_TOKEN";
@@ -58,17 +59,6 @@ export type WebhookVerdict =
   | { ok: true }
   /** A secret is configured and the request did not satisfy it. */
   | { ok: false; reason: string };
-
-/** Constant-time compare of two strings that may differ in length. */
-function equals(a: string, b: string): boolean {
-  const left = Buffer.from(a, "utf-8");
-  const right = Buffer.from(b, "utf-8");
-  // `timingSafeEqual` throws on a length mismatch, so the lengths are compared
-  // first. That leaks only the LENGTH of a signature the caller already chose,
-  // never anything about the expected one.
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
 
 /**
  * Twilio's scheme: HMAC-SHA1 over the request URL with every POST parameter,

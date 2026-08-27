@@ -8088,6 +8088,16 @@ export const consoleLogger: Logger;
 export { CONTAINED_ENV }
 
 // @internal
+export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName: string, message: unknown, queueOpts?: {
+    deploymentId?: string | undefined;
+    idempotencyKey?: string | undefined;
+    headers?: Record<string, string> | undefined;
+    delaySeconds?: number | undefined;
+}) => Promise<{
+    messageId: string | null;
+}>;
+
+// @internal
 export function createPostgresStateBackend(opts: {
     db: Db;
 }): SessionStateBackend;
@@ -8118,6 +8128,20 @@ export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublish
 
 // @internal
 export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
+
+// @public
+type EnqueueBody = {
+    queueName: string;
+    runId: string;
+    data: string;
+    deploymentId?: string | undefined;
+    idempotencyKey?: string | undefined;
+    headers?: Record<string, string> | undefined;
+    delaySeconds?: number | undefined;
+};
+
+// @internal
+export function enqueueToPlatform(opts: PlatformQueueOptions, body: EnqueueBody): Promise<string>;
 
 // @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
@@ -8171,6 +8195,16 @@ type Logger = Record<LogLevel, LogFn>;
 
 // @public
 type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @internal
+export function payloadRunId(message: unknown): string | undefined;
+
+// @public (undocumented)
+export type PlatformQueueOptions = {
+    base: string;
+    token: string;
+    fetch?: typeof globalThis.fetch | undefined;
+};
 
 // @internal
 export type PoolPresence = {
