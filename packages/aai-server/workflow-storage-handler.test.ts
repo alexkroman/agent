@@ -1,0 +1,521 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * `POST /:slug/workflow-storage` — enforcement, as opposed to the decision.
+ *
+ * `workflow-storage-scope.test.ts` asserts that every method HAS a scope and that a
+ * missing run id is refused. These assert what the scopes DO, and the ones worth
+ * reading are the four that are not "check a run id": a `runs.list` that must not
+ * forward, a correlation-id lookup that must filter, a hook lookup that must
+ * resolve-then-check, and a create that must claim.
+ *
+ * The world is FAKED here, deliberately. Every assertion is about what the platform
+ * asks it and what it does with the answer — and a fake is the only way to hand
+ * back another tenant's row on purpose, which is the case that matters most.
+ */
+
+import { omitUndefined } from "@alexkroman1/aai/utils";
+import { describe, expect, test } from "vitest";
+import { guestTokenFor } from "./guest-token.ts";
+import { agentSandboxName } from "./sandbox-directory.ts";
+import {
+  captureLogs,
+  createTestOrchestrator,
+  fakeAdminDbOver,
+  type TestFetch,
+} from "./test-utils.ts";
+import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
+
+const MINE = "mine-agent";
+const THEIRS = "theirs-agent";
+
+/** Ownership as this suite's fixture: run id → slug. */
+const OWNERS: Record<string, string> = { run_mine: MINE, run_theirs: THEIRS };
+
+/**
+ * A recording stand-in for the DevKit's world.
+ *
+ * Every member records its arguments and answers whatever the test wants — which
+ * is the point: a real world could never be made to return another tenant's hook.
+ */
+function fakeWorld(
+  answers: Record<string, unknown> = {},
+  /**
+   * Methods this world does NOT expose, for the spec about their shape moving.
+   *
+   * A parameter rather than deleting a member afterwards: the members are typed
+   * `unknown` on `PlatformWorldStorage` (see that module for why), so reassigning
+   * one needs a cast through `unknown` — a counted escape hatch, and one that would
+   * stop reporting the moment their shape really does move.
+   */
+  absent: readonly string[] = [],
+): PlatformWorldStorage & { calls: { method: string; args: unknown[] }[] } {
+  const calls: { method: string; args: unknown[] }[] = [];
+  const group = (name: string, methods: readonly string[]): Record<string, unknown> =>
+    Object.fromEntries(
+      methods
+        .filter((method) => !absent.includes(`${name}.${method}`))
+        .map((method) => [
+          method,
+          (...args: unknown[]) => {
+            calls.push({ method: `${name}.${method}`, args });
+            return Promise.resolve(answers[`${name}.${method}`] ?? { ok: true });
+          },
+        ]),
+    );
+  return {
+    calls,
+    runs: group("runs", ["get", "list"]),
+    steps: group("steps", ["get", "list"]),
+    events: group("events", ["create", "get", "list", "listByCorrelationId"]),
+    hooks: group("hooks", ["get", "getByToken", "list"]),
+    streamer: {},
+    close: () => Promise.resolve(),
+  };
+}
+
+/** `claimRun`'s insert: nothing inserted means the id is already owned. */
+function claimReply(params: unknown[] | undefined): Record<string, unknown>[] {
+  const runId = String(params?.[0] ?? "");
+  return OWNERS[runId] === undefined ? [{ slug: String(params?.[1] ?? "") }] : [];
+}
+
+/** `ownerOf`: which agent owns the run named in the params. */
+function ownerReply(params: unknown[] | undefined): Record<string, unknown>[] {
+  const owner = OWNERS[String(params?.[0] ?? "")];
+  return owner === undefined ? [] : [{ slug: owner }];
+}
+
+/** `runIdsFor`: the runs of the agent named in the params. */
+function runIdsReply(params: unknown[] | undefined): Record<string, unknown>[] {
+  const slug = String(params?.[0] ?? "");
+  return Object.entries(OWNERS)
+    .filter(([, owner]) => owner === slug)
+    .map(([run_id]) => ({ run_id }));
+}
+
+/**
+ * A platform whose ownership table is this suite's fixture.
+ *
+ * The responder reads the RUN ID out of the PARAMS, which is the whole reason it
+ * can express the case these specs are about: one request may check several runs
+ * (a correlation-id list does), and a fake keyed on the statement alone answers the
+ * same way for all of them — which is how three cross-tenant specs came to pass
+ * against a fixture that could not tell the two runs apart, and would have passed
+ * against no filter at all.
+ */
+async function platform(world = fakeWorld()) {
+  const adminDb = fakeAdminDbOver((sql, params) => {
+    if (sql.includes("insert into aai_platform.workflow_run_owner")) return claimReply(params);
+    if (sql.includes("select slug from aai_platform.workflow_run_owner")) return ownerReply(params);
+    if (sql.includes("select run_id from aai_platform.workflow_run_owner")) {
+      return runIdsReply(params);
+    }
+    return [];
+  });
+  const harness = await createTestOrchestrator({ adminDb, runStorage: world });
+  await deploy(harness.fetch, MINE);
+  await deploy(harness.fetch, THEIRS);
+  return { ...harness, world };
+}
+
+async function deploy(fetch: TestFetch, slug: string): Promise<void> {
+  const res = await fetch("/deploy", {
+    method: "POST",
+    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      slug,
+      env: { ASSEMBLYAI_API_KEY: "k" },
+      worker:
+        'export default { name: "a", systemPrompt: "p", greeting: "", maxSteps: 1, tools: {} };',
+      clientFiles: {},
+    }),
+  });
+  if (!res.ok) throw new Error(`deploy ${slug} answered ${res.status}: ${await res.text()}`);
+}
+
+async function bearerFor(
+  store: { getAgentVersion(slug: string): Promise<number | null> },
+  slug: string,
+): Promise<string> {
+  const version = (await store.getAgentVersion(slug)) ?? 1;
+  return guestTokenFor(agentSandboxName(slug, version));
+}
+
+function callStorage(
+  fetch: TestFetch,
+  slug: string,
+  body: unknown,
+  bearer?: string,
+): Promise<Response> {
+  const authorization = bearer === undefined ? undefined : `Bearer ${bearer}`;
+  return fetch(`/${slug}/workflow-storage`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...omitUndefined({ authorization }) },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  });
+}
+
+describe("POST /:slug/workflow-storage", () => {
+  const logs = captureLogs();
+
+  describe("authorization", () => {
+    test("accepts the bearer this agent's guest holds", async () => {
+      const p = await platform();
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "runs.get", args: ["run_mine"] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    test.each([
+      ["no bearer", undefined],
+      ["a guessed token", "0".repeat(64)],
+    ])("refuses %s", async (_label, bearer) => {
+      const p = await platform();
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "runs.get", args: ["run_mine"] },
+        bearer,
+      );
+      expect(res.status).toBe(401);
+      expect(p.world.calls).toEqual([]);
+    });
+
+    test("refuses another agent's guest holding a valid token of its own", async () => {
+      const p = await platform();
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "runs.get", args: ["run_mine"] },
+        await bearerFor(p.store, THEIRS),
+      );
+      expect(res.status).toBe(401);
+      expect(p.world.calls).toEqual([]);
+    });
+  });
+
+  describe("the run-keyed methods", () => {
+    test("forwards a call for a run this agent owns", async () => {
+      const p = await platform();
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "events.list", args: [{ runId: "run_mine" }] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(200);
+      expect(p.world.calls.map((c) => c.method)).toEqual(["events.list"]);
+    });
+
+    /**
+     * The core assertion of this route: a run another agent owns is a 404, and the
+     * world is never asked.
+     *
+     * 404 rather than 403 — "not yours" and "does not exist" have to be the same
+     * answer, or the reply confirms that a run id exists.
+     */
+    test("answers 404 for a run another agent owns, without asking the world", async () => {
+      const p = await platform();
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "runs.get", args: ["run_theirs"] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(404);
+      expect(p.world.calls).toEqual([]);
+    });
+
+    test("answers the SAME 404 for a run that does not exist", async () => {
+      const p = await platform();
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "runs.get", args: ["run_absent"] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "no such run" });
+    });
+
+    test("answers 400 when a required run id is missing, and asks nothing", async () => {
+      // `steps.get`'s first parameter is optional in their signature; undefined
+      // would look a step up by id alone.
+      const p = await platform();
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "steps.get", args: [null, "step_1"] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(400);
+      expect(p.world.calls).toEqual([]);
+    });
+  });
+
+  describe("runs.list, which is never forwarded", () => {
+    /**
+     * Their list query filters on `workflowName` and `status` with no run key, so
+     * forwarding it would return every agent's runs. This answers from the
+     * ownership table and `runs.get` instead.
+     */
+    test("reads this agent's own run ids rather than calling their list", async () => {
+      const world = fakeWorld({
+        "runs.get": { id: "run_mine", workflowName: "w", status: "running" },
+      });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "runs.list", args: [{}] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(200);
+      // The tell: their `runs.list` was NOT called.
+      expect(world.calls.map((c) => c.method)).not.toContain("runs.list");
+      expect(world.calls.map((c) => c.method)).toContain("runs.get");
+    });
+
+    test("answers their own paginated shape, so the client needs no special case", async () => {
+      const world = fakeWorld({ "runs.get": { id: "run_mine", status: "running" } });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "runs.list", args: [{}] },
+        await bearerFor(p.store, MINE),
+      );
+      const body = (await res.json()) as { result: { data: unknown[]; pagination: unknown } };
+      expect(Array.isArray(body.result.data)).toBe(true);
+      expect(body.result.pagination).toEqual({ hasMore: false });
+    });
+
+    test("applies the caller's status filter itself", async () => {
+      const world = fakeWorld({ "runs.get": { id: "run_mine", status: "completed" } });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "runs.list", args: [{ status: "running" }] },
+        await bearerFor(p.store, MINE),
+      );
+      const body = (await res.json()) as { result: { data: unknown[] } };
+      expect(body.result.data).toEqual([]);
+    });
+  });
+
+  describe("events.listByCorrelationId, which is filtered", () => {
+    /**
+     * A correlation id is chosen by the AUTHOR, so two agents may legitimately use
+     * the same one — it cannot be required to belong to this agent. So the results
+     * are filtered by the run each event belongs to.
+     */
+    test("drops events belonging to another agent's run", async () => {
+      const world = fakeWorld({
+        "events.listByCorrelationId": {
+          data: [
+            { runId: "run_mine", id: "e1" },
+            { runId: "run_theirs", id: "e2" },
+          ],
+          pagination: { hasMore: false },
+        },
+      });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "events.listByCorrelationId", args: [{ correlationId: "c1" }] },
+        await bearerFor(p.store, MINE),
+      );
+      const body = (await res.json()) as { result: { data: { id: string }[] } };
+      // One request, two runs, one of them another agent's — and only this
+      // agent's event comes back.
+      expect(body.result.data.map((e) => e.id)).toEqual(["e1"]);
+    });
+
+    test("drops an event with no readable run id", async () => {
+      // A value this code cannot attribute is one it must not return.
+      const world = fakeWorld({
+        "events.listByCorrelationId": { data: [{ payload: "orphan" }], pagination: {} },
+      });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "events.listByCorrelationId", args: [{ correlationId: "c1" }] },
+        await bearerFor(p.store, MINE),
+      );
+      const body = (await res.json()) as { result: { data: unknown[] } };
+      expect(body.result.data).toEqual([]);
+    });
+  });
+
+  describe("hooks, which are resolved then checked", () => {
+    test("returns a hook whose run this agent owns", async () => {
+      const world = fakeWorld({ "hooks.getByToken": { id: "h1", runId: "run_mine" } });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "hooks.getByToken", args: ["tok"] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    /**
+     * A token is not a way to learn about another agent's run.
+     *
+     * The world IS called here — it has to be, to learn which run the hook belongs
+     * to — so what matters is that the answer does not come back.
+     */
+    test("answers 404 for a hook on another agent's run, and does not return it", async () => {
+      const world = fakeWorld({ "hooks.get": { id: "h1", runId: "run_theirs" } });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "hooks.get", args: ["h1"] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(404);
+      expect(await res.text()).not.toContain("run_theirs");
+    });
+
+    test("answers 404 for a hook with no run id at all", async () => {
+      const world = fakeWorld({ "hooks.get": { id: "h1" } });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "hooks.get", args: ["h1"] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("events.create, the one mutation", () => {
+    test("claims a client-supplied run id BEFORE writing the event", async () => {
+      // Claiming afterwards would leave a window in which the run exists and is
+      // unowned, and a crash inside it leaves a run nobody can read.
+      const order: string[] = [];
+      const world = fakeWorld();
+      const adminDb = fakeAdminDbOver((sql) => {
+        if (sql.includes("insert into aai_platform.workflow_run_owner")) {
+          order.push("claim");
+          return [{ slug: MINE }];
+        }
+        return [];
+      });
+      const harness = await createTestOrchestrator({ adminDb, runStorage: world });
+      await deploy(harness.fetch, MINE);
+      const res = await callStorage(
+        harness.fetch,
+        MINE,
+        { method: "events.create", args: ["run_new", { type: "run_created" }] },
+        await bearerFor(harness.store, MINE),
+      );
+      expect(res.status).toBe(200);
+      order.push(...world.calls.map((c) => c.method));
+      expect(order).toEqual(["claim", "events.create"]);
+    });
+
+    test("claims a server-generated run id from the reply", async () => {
+      const world = fakeWorld({ "events.create": { run: { id: "run_gen" }, event: { id: "e1" } } });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "events.create", args: [null, { type: "run_created" }] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(200);
+      expect(world.calls.map((c) => c.method)).toEqual(["events.create"]);
+    });
+
+    test("refuses to answer when a run was created and cannot be attributed", async () => {
+      // Returning it would hand back a run no ownership row covers — unreadable
+      // afterwards and never reaped.
+      const world = fakeWorld({ "events.create": { event: { id: "e1" } } });
+      const p = await platform(world);
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "events.create", args: [null, { type: "run_created" }] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(502);
+      expect(logs.warns().join(" ")).toContain("no run id");
+    });
+
+    test("an event on an EXISTING run is checked like a read", async () => {
+      const p = await platform();
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "events.create", args: ["run_theirs", { type: "step_started" }] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(404);
+      expect(p.world.calls).toEqual([]);
+    });
+  });
+
+  describe("the request itself", () => {
+    test.each([
+      ["an unknown method", { method: "runs.destroy", args: [] }],
+      ["a missing method", { args: [] }],
+      ["args that are not an array", { method: "runs.get", args: "run_1" }],
+      ["a body that is not an object", '"a string"'],
+    ])("answers 400 for %s", async (_label, body) => {
+      const p = await platform();
+      const res = await callStorage(p.fetch, MINE, body, await bearerFor(p.store, MINE));
+      expect(res.status).toBe(400);
+      expect(p.world.calls).toEqual([]);
+    });
+
+    test("does not echo the caller's method name back", async () => {
+      // The reply is a tenant's to read, and reflecting input is how a route becomes
+      // a mirror for whatever a caller wants to see.
+      const p = await platform();
+      const res = await callStorage(
+        p.fetch,
+        MINE,
+        { method: "<script>alert(1)</script>", args: [] },
+        await bearerFor(p.store, MINE),
+      );
+      expect(await res.text()).not.toContain("script");
+    });
+  });
+
+  describe("when there is no run storage", () => {
+    test("answers 501, because a retry will not make one", async () => {
+      const harness = await createTestOrchestrator();
+      await deploy(harness.fetch, MINE);
+      const res = await callStorage(
+        harness.fetch,
+        MINE,
+        { method: "runs.get", args: ["run_mine"] },
+        await bearerFor(harness.store, MINE),
+      );
+      expect(res.status).toBe(501);
+    });
+  });
+
+  test("a method their world does not expose answers 501, not 500", async () => {
+    // Their shape moved: the member is gone.
+    const p = await platform(fakeWorld({}, ["hooks.list"]));
+    const res = await callStorage(
+      p.fetch,
+      MINE,
+      { method: "hooks.list", args: [{ runId: "run_mine" }] },
+      await bearerFor(p.store, MINE),
+    );
+    expect(res.status).toBe(501);
+  });
+});

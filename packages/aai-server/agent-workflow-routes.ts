@@ -27,6 +27,7 @@
  * enqueue.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { HonoEnv } from "./context.ts";
@@ -47,6 +48,12 @@ import {
 } from "./workflow-enqueue-handler.ts";
 import { createAgentWorkflowsHandler, createWorkflowRateLimitMw } from "./workflow-handler.ts";
 import {
+  createWorkflowStorageHandler,
+  MAX_STORAGE_BODY_BYTES,
+  WORKFLOW_STORAGE_ROUTE,
+} from "./workflow-storage-handler.ts";
+import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
+import {
   createWorkflowWebhookHandler,
   MAX_WEBHOOK_BODY_BYTES,
   WORKFLOW_WEBHOOK_ROUTE,
@@ -59,6 +66,11 @@ export type AgentWorkflowRouteOptions = {
   guestFetch?: typeof fetch | undefined;
   /** The platform's admin connection. Absent means there is no queue. */
   adminDb?: AdminDb | undefined;
+  /**
+   * The DevKit's world on the platform's database. Absent means this deployment
+   * serves no run storage, which the route answers 501 for.
+   */
+  runStorage?: PlatformWorldStorage | undefined;
   uploadBytes: UploadBytes;
   workflowRateLimiter?: RateLimiter | undefined;
   workflowStartRateLimiter?: RateLimiter | undefined;
@@ -105,6 +117,19 @@ export function registerAgentWorkflowRoutes(
     WORKFLOW_ENQUEUE_ROUTE,
     limit(MAX_ENQUEUE_BODY_BYTES),
     createWorkflowEnqueueHandler(opts.adminDb),
+  );
+
+  // The guest's run-storage calls, scoped to this agent and forwarded to the
+  // DevKit's world running on the platform's own database. Same bearer as the
+  // enqueue route beside it, and the same reason it is neither `existingOwnerMw`
+  // nor open: the caller is this agent's guest, and what it reaches is run state.
+  agents.post(
+    WORKFLOW_STORAGE_ROUTE,
+    limit(MAX_STORAGE_BODY_BYTES),
+    createWorkflowStorageHandler({
+      ...omitUndefined({ adminDb: opts.adminDb }),
+      ...omitUndefined({ storage: opts.runStorage }),
+    }),
   );
 
   // The durable-workflow API, brokered to the guest. Registered even though a
