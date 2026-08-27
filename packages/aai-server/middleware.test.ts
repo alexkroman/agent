@@ -119,19 +119,27 @@ describe("requireOwner unclaimed-slug paths", () => {
   });
 });
 
-describe("requireOwner on storage endpoint", () => {
-  test("returns 401 without auth on storage endpoint", async () => {
+/**
+ * `existingOwnerMw` through a real ROUTE, which is a different claim from the
+ * function-level specs above: those say `requireOwner` decides correctly, these say
+ * it is actually mounted and that its rejection becomes a status.
+ *
+ * The route used to be `GET /:slug/storage`, which is gone with tenant databases.
+ * `GET /:slug/secret` carries the same middleware and is likewise a read, so the
+ * wiring stays covered — the point was never the endpoint.
+ */
+describe("existingOwnerMw through a mounted route", () => {
+  test("returns 401 without auth", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
-    const res = await fetch("/my-agent/storage", { method: "GET" });
+    const res = await fetch("/my-agent/secret", { method: "GET" });
     expect(res.status).toBe(401);
   });
 
-  test("accepts valid owner API key on storage endpoint", async () => {
+  test("accepts a valid owner API key", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
-    const res = await authFetch(fetch, "/my-agent/storage", { method: "GET" });
+    const res = await authFetch(fetch, "/my-agent/secret", { method: "GET" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ enabled: false });
   });
 });

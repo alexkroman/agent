@@ -51,7 +51,7 @@ import { createOrphanPreviewSweep } from "./orphan-previews.ts";
 import { platformCronJobs } from "./pg-cron.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
-import { createTestStore, fakeAppDatabases, platformMigrationSql } from "./test-utils.ts";
+import { createTestStore, platformMigrationSql } from "./test-utils.ts";
 
 /** The reap's collaborators, none of which this spec exercises. */
 function fakeReapEnv() {
@@ -59,7 +59,6 @@ function fakeReapEnv() {
     store: createTestStore(),
     secrets: createMemorySecretStore(),
     slugLock: <T>(_slug: string, fn: () => Promise<T>) => fn(),
-    appDb: fakeAppDatabases(),
   };
 }
 
@@ -122,20 +121,26 @@ describeWithStack("the pg_cron sweep bodies", () => {
     // file exists to end. The blob GC is named because it is the one that is
     // CONDITIONAL on a storage config — with none, `platformCronJobs()` omits it
     // and every assertion below would quietly cover one sweep less.
-    // Lowered as jobs leave this list, deliberately and each time: a floor is only
-    // a floor while it matches the real count. 8 → 7 when the session-state sweep
-    // became one job per APP, scheduled into that app's own database because
-    // per-app databases put a tenant's tables outside this catalog entirely
-    // (`_session-state-sweep.ts`); 7 → 6 when the orphan-preview reap moved into
-    // the server, because its drop is a Management API call and SQL cannot make
-    // one (`orphan-previews.ts`).
+    // Moved as jobs enter and leave this list, deliberately and each time: a floor
+    // is only a floor while it matches the real count. 8 → 7 when the session-state
+    // sweep became one job per APP, scheduled into that app's own database because
+    // per-app databases put a tenant's tables outside this catalog entirely; 7 → 6
+    // when the orphan-preview reap moved into the server, because its drop is a
+    // Management API call and SQL cannot make one (`orphan-previews.ts`); and 6 → 6
+    // when the session-state sweep came BACK — there are no app databases, so those
+    // rows are in `aai_platform` again and one statement reaches the whole fleet,
+    // while the app-role runaway sweep left with the roles it terminated.
     expect(JOBS.length).toBeGreaterThanOrEqual(6);
     expect(JOBS.map((j) => j.name)).toContain("aai-sweep-blob-gc");
-    // And the two that left are really gone from here, rather than renamed: a
-    // platform job sweeping a catalog that no longer holds what it looks for runs
-    // on its schedule forever and reclaims nothing.
-    expect(JOBS.map((j) => j.name)).not.toContain("aai-sweep-session-state");
+    // Back here, and this is the assertion that says which side of the move we are
+    // on: it read `not.toContain` for as long as those rows lived in a catalog this
+    // database could not see.
+    expect(JOBS.map((j) => j.name)).toContain("aai-sweep-session-state");
+    // And these two are really gone rather than renamed: a platform job sweeping a
+    // catalog that no longer holds what it looks for runs on its schedule forever
+    // and reclaims nothing.
     expect(JOBS.map((j) => j.name)).not.toContain("aai-sweep-orphan-previews");
+    expect(JOBS.map((j) => j.name)).not.toContain("aai-sweep-app-db-runaways");
   });
 
   test.each(JOBS.filter((j) => !NEEDS_CRON_SCHEMA(j)).map((j) => [j.name, j.command] as const))(
@@ -207,6 +212,41 @@ describeWithStack("the pg_cron sweep bodies", () => {
       "select key from aai_platform.studio_rate_limits where name = 'cron-test'",
     );
     expect(rows.map((r) => String(r.key))).toEqual(["live"]);
+  });
+
+  test("the session-state sweep deletes stale slots and events, keeping fresh ones", async () => {
+    // The rows a dead guest left behind. Fleet-wide in ONE statement now: the
+    // per-app version was scheduled into each app's own database, so its cost
+    // scaled with the number of tenants.
+    await sql(
+      `insert into aai_platform.agents (slug, credential_hashes, worker_hash, client_files, version)
+       values ('pgc-sess', '{}'::jsonb, '', '{}'::jsonb, 1) on conflict do nothing`,
+    );
+    await sql(
+      `insert into aai_platform.session_slots (slug, session_id, slot, value, updated_at)
+       values ('pgc-sess', 'old', 'k', '"v"'::jsonb, now() - interval '3 days'),
+              ('pgc-sess', 'new', 'k', '"v"'::jsonb, now())`,
+    );
+    await sql(
+      `insert into aai_platform.session_events (slug, session_id, event_index, event, created_at)
+       values ('pgc-sess', 'old', 0, '{}'::jsonb, now() - interval '3 days'),
+              ('pgc-sess', 'new', 0, '{}'::jsonb, now())`,
+    );
+
+    const sweep = JOBS.find((j) => j.name === "aai-sweep-session-state");
+    expect(sweep).toBeDefined();
+    await sql(sweep?.command ?? "");
+
+    const slots = await sql(
+      "select session_id from aai_platform.session_slots where slug = 'pgc-sess'",
+    );
+    const events = await sql(
+      "select session_id from aai_platform.session_events where slug = 'pgc-sess'",
+    );
+    expect(slots.map((r) => r.session_id)).toEqual(["new"]);
+    expect(events.map((r) => r.session_id)).toEqual(["new"]);
+
+    await sql("delete from aai_platform.agents where slug = 'pgc-sess'");
   });
 
   test("the studio-session sweep deletes an expired lease", async () => {

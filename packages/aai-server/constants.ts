@@ -236,34 +236,6 @@ export const ADMIN_POOL_MAX = 4;
  */
 export const SLUG_LOCK_POOL_MAX = 4;
 
-/** Connections one extra `APP_DB_URLS` placement cluster pools per replica. */
-export const APP_DB_TARGET_POOL_MAX = 4;
-
-/**
- * Connections one SHORT-LIVED connection into a single app's own database opens.
- *
- * One, and the number is the whole point. Per-app databases mean the admin pool
- * cannot reach a tenant's tables — a Postgres connection is bound to one
- * database — so the platform opens a connection per app database for
- * provisioning's in-database steps and the usage read.
- * Retaining a pool per app would make the fleet's connection count a function of
- * the number of APPS, which is the one variable `MAX_PLATFORM_DB_CONNECTIONS`
- * cannot bound. These are opened, used, and closed.
- *
- * The concurrency bound therefore lives at the CALLER, and each caller has to
- * name its own: provisioning and the usage read are serialized per slug by the
- * mutation lock. That is why this does not appear in
- * `platformDbConnectionsPerReplica` — it is a transient, bounded by a policy above
- * it, not a resident pool.
- *
- * There used to be a third caller with a bound of its own, the wake sweep's
- * per-app hint read, and `platform-db-budget.test.ts` asserted THIS DOC cited its
- * constant by name (it had named the wrong one for a long time). Both are gone with
- * the sweep: the platform reads its own queue now, so no pass here opens a
- * connection per app.
- */
-export const APP_DB_ADMIN_POOL_MAX = 1;
-
 /**
  * The platform's own ceiling on DIRECT Postgres connections, fleet-wide.
  *
@@ -298,17 +270,26 @@ export const APP_DB_ADMIN_POOL_MAX = 1;
  * instance: Supabase's own Realtime / PostgREST / Storage workers (~17 in use at
  * idle), `supabase db push`, the dashboard, and Supavisor's server side.
  *
- * **Per-app databases ARE in this number; the admin pool is not.** So what this
- * bounds is `MAX_CONTAINERS x platformDbConnectionsPerReplica() +
- * APP_DB_CONNECTION_ALLOWANCE`, which is what
- * `platform-db-budget.test.ts` asserts and what `platformDbBudget()` returns
- * unchanged. This paragraph used to read the other way — "neither per-app
- * databases NOR the admin pool are in this number" — on the premise that
- * Supavisor pools them out of `max_connections` accounting. It does not: the
- * pooler is in SESSION mode, mandatory for the Workflow DevKit, and multiplexes
- * nothing (see {@link MAX_ACTIVE_APP_DATABASES}). The stale wording cost a bug —
- * `platformDbBudget()` read it, added the app databases a second time, claimed 60
- * on an instance with 60, and warned on every boot it ever ran.
+ * **Nothing per-tenant is in this number any more, and the admin pool never was.**
+ * So what this bounds is `MAX_CONTAINERS x platformDbConnectionsPerReplica()`,
+ * which is what `platform-db-budget.test.ts` asserts and what `platformDbBudget()`
+ * returns unchanged.
+ *
+ * It used to carry a second term, an allowance for per-app DATABASES, and the
+ * history is worth keeping because it is the argument for why removing them
+ * relieved this ceiling rather than merely simplifying it. That term was first
+ * excluded on the premise that Supavisor pooled those connections out of
+ * `max_connections` accounting. It does not — the pooler the Workflow DevKit
+ * requires is SESSION mode, which multiplexes nothing, so one client connection
+ * was one real backend. Counting it in was the correction; the stale wording had
+ * already cost a bug, `platformDbBudget()` adding the allowance to a constant that
+ * contained it, claiming 60 on an instance with 60 and warning on every boot it
+ * ever ran.
+ *
+ * With tenant databases gone the term is not merely uncounted but ABSENT: the
+ * platform opens connections for itself alone, so the fleet claim no longer scales
+ * with the number of tenants — the one variable this constant could never bound.
+ * What was 28 of the 40 spoken for by two apps is now headroom.
  *
  * The ADMIN pool stays out, and that one IS a routing decision — see
  * {@link platformDbConnectionsPerReplica}. It reaches the instance through
@@ -317,48 +298,6 @@ export const APP_DB_ADMIN_POOL_MAX = 1;
  * fleet, which is why boot announces the reading rather than trusting the constant.
  */
 export const MAX_PLATFORM_DB_CONNECTIONS = 40;
-
-/**
- * How many app databases the budget assumes are CONCURRENTLY ACTIVE.
- *
- * The one term {@link MAX_PLATFORM_DB_CONNECTIONS} left uncounted, and it was
- * uncounted on a premise that does not hold. `platform-db-budget.test.ts`
- * excluded per-app connections because they are POOLED — but the pooler they go
- * through is Supavisor in SESSION mode, which is mandatory for the Workflow
- * DevKit (see `withPoolerHost` in app-db-url.ts, whose own doc carried this same
- * refuted premise until it was corrected here) and which multiplexes NOTHING.
- * One client connection is one real backend. So routing them through Supavisor
- * moves them out of `max_connections` accounting without moving them out of
- * `max_connections`, and the budget was a bound on the term that does not grow
- * while ignoring the term that scales with tenants.
- *
- * Measured against a real provisioned app: one workflow guest held **6**
- * backends at rest before the pools began giving idle connections back and is
- * ENTITLED to {@link APP_DB_WORKFLOW_CONNECTION_LIMIT}, which is what this
- * budgets against — a ceiling has to assume the ceiling.
- *
- * **2 is honest arithmetic, not a target, and it is the finding.** With
- * `MAX_CONTAINERS = 3` the platform's own direct pools take 12 of the 40, which
- * leaves {@link APP_DB_CONNECTION_ALLOWANCE} (28) for two apps at the WORKFLOW
- * entitlement and SEVEN at the storage tier — which is where lowering
- * `MAX_CONTAINERS` from 5 landed, 28/10 still flooring to 2. Three things raise it, and only the first two are code:
- * provisioning an app at the STORAGE tier costs
- * {@link APP_DB_STORAGE_CONNECTION_LIMIT} instead, so the same allowance affords
- * five of those; `APP_DB_URLS` cellular sharding moves an app's connections onto
- * a cluster with its own `max_connections` entirely (see
- * {@link platformDbConnectionsPerReplica} for why an extra cluster costs this
- * budget nothing); and past that the instance is the constraint (the provisioned
- * `max_connections` is 60, against ~17 for Supabase's own workers).
- *
- * This term is deliberately the WORST case — every active app at the workflow
- * tier — because a budget that assumed the cheaper mix would be a promise the
- * next `aai storage enable` could invalidate.
- *
- * HAND-SET rather than derived from {@link APP_DB_CONNECTION_ALLOWANCE}: that
- * would make the two files mutually importing, and a derived number cannot be
- * disagreed with, so the budget test would have nothing left to check.
- */
-export const MAX_ACTIVE_APP_DATABASES = 2;
 
 /**
  * Concurrent live SSE streams one caller SCOPE may hold across this replica.

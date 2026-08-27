@@ -31,17 +31,6 @@ export type ProjectData = {
   previewStale?: boolean;
   /** CLI output of the last failed preview deploy. */
   previewError?: string;
-  /**
-   * The project has opted into a database (`ctx.db`) — what the **Database
-   * tab** is gated on. Off unless the user turned it on in Settings, so a
-   * project that never asked for one has no pane onto an empty database.
-   *
-   * The server resolves the default, so this is a plain boolean there; it is
-   * optional here for the same reason `unpublished` and `previewStale` are —
-   * the payload may be a workspace that has not loaded yet, and absent must
-   * read as "no tab" rather than as a tab that flickers away.
-   */
-  databaseEnabled?: boolean;
 };
 
 /**
@@ -58,78 +47,6 @@ export type AuthConfig =
   | { mode: "none" };
 
 export type Account = { email?: string; hasKey: boolean };
-
-/** One deployed agent's database state (see GET …/database). */
-/** What one environment's schema holds right now — see `appDatabaseUsage`. */
-export type DatabaseUsage = {
-  tables: number;
-  rows: number;
-  bytes: number;
-};
-
-/**
- * Which of a project's two deployed agents an answer is about.
- *
- * Named as its own type because the Database pane's reads take it as an
- * ARGUMENT (see `api.listTables`) rather than only receiving it in a payload —
- * an inline union at each of those call sites is how one of them ends up
- * accepting a string the server 400s.
- */
-export type DatabaseEnvironmentName = "production" | "preview";
-
-export type DatabaseEnvironment = {
-  environment: DatabaseEnvironmentName;
-  /** The deployed slug; absent until that environment has deployed. */
-  slug?: string;
-  enabled: boolean;
-  /**
-   * Absent when the database is off OR when the measurement failed — an
-   * unread schema and an empty one are different answers, and reporting the
-   * second for the first is exactly the lie this number exists to catch.
-   */
-  usage?: DatabaseUsage;
-};
-
-/**
- * The project's `ctx.db` database, across both deployed agents. `enabled` is
- * the project's setting — what the next deploy of either agent provisions —
- * while each environment row says whether it has a database RIGHT NOW.
- * `configured: false` means this server cannot provision at all.
- */
-export type DatabaseState = {
-  enabled: boolean;
-  configured: boolean;
-  environments: DatabaseEnvironment[];
-  /** An environment that could not be switched, when others succeeded. */
-  warning?: string;
-};
-
-/** One of an app's tables, with the exact number of rows in it. */
-export type TableSummary = { schema: string; name: string; rows: number };
-
-/** `GET …/database/tables` — the tables one environment holds. */
-export type TableListing = {
-  environment: DatabaseEnvironmentName;
-  /** Which deployed agent answered, so the pane can name it. */
-  slug: string;
-  tables: TableSummary[];
-};
-
-/**
- * `GET …/database/rows` — one page of one table.
- *
- * Cells arrive as strings the server has already rendered, with `null` kept
- * distinct: the values are whatever a tenant's columns hold (Buffers, Dates,
- * int8-as-string, parsed JSON), and a browser has no type map to format that
- * lot with. `null` survives because a column may legitimately hold the empty
- * string, and the pane has to be able to show the difference.
- */
-export type TablePage = {
-  columns: string[];
-  rows: (string | null)[][];
-  /** Rows in the whole table, so the pager can say where it is. */
-  total: number;
-};
 
 /** `GET /studio/status` — which LLM the studio's chat runs on. */
 export type StudioStatus = {

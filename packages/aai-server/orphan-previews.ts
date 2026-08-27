@@ -13,21 +13,23 @@
  * server-side timer on the grounds that detection and reclamation should live in
  * one place that survives a replica dying.
  *
- * That trade is not the same one any more. `create database` / `drop database`
- * now leave over HTTPS through the Supabase Management API and nowhere else
- * (`app-db-admin.ts`), deliberately, so that the exercised path and the deployed
- * path cannot differ. A sweep that dropped databases in SQL was the one
- * remaining second implementation of deprovisioning — and it was the weaker one:
+ * That trade stopped being the same one when deprovisioning moved to the
+ * Management API, and it is moot now: there are no per-app databases to drop at
+ * all, so a preview leaves behind a row and its Vault secret and nothing else. The
+ * three reasons the SQL sweep was the weaker implementation are kept because they
+ * are why this calls the delete route rather than reimplementing it:
  *
  * - **Primary cluster only.** pg_cron runs in the platform database, so an app
- *   placed on an `APP_DB_URLS` cluster had no local database to drop and the
+ *   placed on another placement cluster had no local database to drop and the
  *   statement silently no-op'd. It reclaimed nothing on any sharded fleet.
  * - **It leaked, out loud.** With no admin DSN resolvable it deleted the row and
  *   the secrets and raised a warning naming the database it was abandoning —
- *   tenant data with its only credential gone.
+ *   tenant data with its only credential gone. That failure is the reason a
+ *   legacy `app-db:<slug>` secret is not swept by anything either; see
+ *   `bundle-store.ts`.
  * - **It re-implemented the delete route.** Row, secrets, database, in SQL,
- *   beside `deleteAgentResources`, which does the same three things and takes the
- *   slug lock while doing them.
+ *   beside `deleteAgentResources`, which does the same things and takes the slug
+ *   lock while doing them.
  *
  * So this calls THAT — one delete path, the same one `DELETE /:slug` and the
  * studio's project delete use. The cost is the one the migration named: a reap
@@ -50,7 +52,6 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
-import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createIntervalSweep } from "./_interval-sweep.ts";
 import type { HonoEnv } from "./context.ts";
 import { deleteAgentResources } from "./delete.ts";
@@ -118,7 +119,7 @@ order by a.updated_at
 limit $2`;
 
 /** What `deleteAgentResources` needs, and nothing more. */
-type ReapEnv = Pick<HonoEnv["Bindings"], "appDb" | "secrets" | "slugLock" | "store">;
+type ReapEnv = Pick<HonoEnv["Bindings"], "secrets" | "slugLock" | "store">;
 
 export type OrphanPreviewSweep = {
   /** One pass. `swept: false` means another replica holds the leader lock. */
@@ -213,14 +214,13 @@ export function startOrphanPreviewSweep(opts: {
   intervalMs?: number;
   store: ReapEnv["store"];
   /**
-   * Both optional at the composition, and both REQUIRED to reap: the secrets
-   * hold the app database's locator and the lock is what stops a reap racing a
-   * deploy of the same slug. A composition missing either has no platform
-   * database, and therefore no `aai_platform.agents` to read candidates from.
+   * Both optional at the composition, and both REQUIRED to reap: the secrets are
+   * what a reap deletes, and the lock is what stops a reap racing a deploy of the
+   * same slug. A composition missing either has no platform database, and
+   * therefore no `aai_platform.agents` to read candidates from.
    */
   secrets?: ReapEnv["secrets"] | undefined;
   slugLock?: ReapEnv["slugLock"] | undefined;
-  appDb?: ReapEnv["appDb"] | undefined;
 }): () => void {
   const intervalMs = opts.intervalMs ?? ORPHAN_PREVIEW_INTERVAL_MS;
   const { adminDb, secrets, slugLock } = opts;
@@ -233,6 +233,6 @@ export function startOrphanPreviewSweep(opts: {
   log.info(`reaping unreferenced ${PREVIEW_SLUG_SUFFIX} agents every ${intervalMs}ms`);
   return createOrphanPreviewSweep({
     adminDb,
-    env: { store: opts.store, secrets, slugLock, ...omitUndefined({ appDb: opts.appDb }) },
+    env: { store: opts.store, secrets, slugLock },
   }).start(intervalMs);
 }

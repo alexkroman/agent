@@ -343,7 +343,6 @@
   ],
   "@alexkroman1/aai/internal": [
     "AGENT_CSP",
-    "APP_DB_BOOT_SPARE",
     "APP_DB_POOL_MAX",
     "APP_DB_PRESENCE_LOCK",
     "APP_DB_WORLD_LISTEN",
@@ -410,7 +409,6 @@
     "createOwnedMap",
     "decideClientEvent",
     "formatSchemaIssues",
-    "guestAppDbConnections",
     "isTextAssetPath",
     "linkConfirmationCode",
     "normalizeSpeechText",
@@ -419,7 +417,6 @@
     "requestPath",
     "requestQuery",
     "sleep",
-    "storageAppDbConnections",
     "toArgsRecord"
   ],
   "@alexkroman1/aai/llm": [

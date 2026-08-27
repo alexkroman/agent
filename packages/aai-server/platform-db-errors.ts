@@ -36,9 +36,10 @@
  * pools are the seam every one of them crosses, so wrapping the pool makes the
  * taxonomy a property of the connection instead of a rule per call site.
  *
- * Per-APP databases are deliberately NOT wrapped: an app database being down is
- * a claim about one tenant's agent rather than about the platform, and the
- * routes that touch it own that answer.
+ * A database an AUTHOR brings — `DATABASE_URL` in their own secrets — is
+ * deliberately NOT wrapped, and never was: it being down is a claim about one
+ * tenant's agent rather than about the platform, and it is reached from inside the
+ * guest, where none of this code runs.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";

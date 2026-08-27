@@ -17,10 +17,11 @@
  * version (`watchAgentInvalidation` in sandbox-resolve.ts — there is no
  * per-broker check or idle-sweep probe). This replaced the separate
  * `aai_platform.slug_epochs` counter. Deploy and delete are the mutations that
- * WRITE a row; {@link AgentRows.touch} bumps the version on its own, for the
- * one mutation that changes a guest's environment without changing its code
- * (provisioning the app database — see `storage-handler.ts`). A secret change
- * still takes effect on the next deploy, by design.
+ * WRITE a row; {@link AgentRows.touch} bumps the version on its own, for a
+ * mutation that changes a guest's environment without changing its code. It has
+ * NO caller today — the one it existed for was app-database provisioning — and its
+ * own doc says so. A secret change still takes effect on the next deploy, by
+ * design.
  *
  * Postgres (`aai_platform.agents`) in production, memory in dev/tests —
  * the same two-implementation pattern as the other platform stores.
@@ -64,26 +65,32 @@ export type AgentRows = {
    * at. False when there is no such row.
    *
    * The version is the cross-replica invalidation signal, so this is how a
-   * mutation that changes a guest's ENVIRONMENT rather than its code — today,
-   * provisioning or dropping the app database — gets the resident sandbox
-   * rebuilt. `DATABASE_URL` is composed when a sandbox is BUILT
-   * (`sandbox-resolve.ts`), so without a bump the running guest keeps the env
-   * it was spawned with and the change silently takes effect on some later
-   * deploy. Nothing else here may reach for it: a change to the deploy itself
+   * mutation that changes a guest's ENVIRONMENT rather than its code gets the
+   * resident sandbox rebuilt.
+   *
+   * **Nothing calls it right now.** Its caller was app-database provisioning,
+   * which composed a `DATABASE_URL` into the env at sandbox BUILD time
+   * (`sandbox-resolve.ts`) — so without a bump the running guest kept the env it
+   * was spawned with and the change silently took effect on some later deploy.
+   * The method is kept rather than deleted because it is the seam that failure
+   * mode needs, it is implemented by all three stores, and the conformance cases
+   * pin the contract; a future env-only mutation should use it rather than
+   * rediscovering the bug. Nothing else here may reach for it: a change to the deploy itself
    * goes through {@link put}, which bumps on its own.
    */
   touch(slug: string): Promise<boolean>;
   /**
    * Every deployed slug.
    *
-   * The one read here that is not per-slug, and it has exactly one caller: the
-   * durable-workflow wake sweep (`workflow-wake.ts`), which has to go the other
-   * way round — from a per-app database SCHEMA back to the agent it belongs to —
-   * and `appDbIdentifier` is a one-way hash. Deliberately unbounded and
-   * uncached: this is one short column read on a leader-elected sweep tick, and
-   * the ROW is what makes a wake legitimate (an agent deleted between ticks
-   * simply is not in the list, which is what keeps the sweep from resurrecting
-   * one).
+   * The one read here that is not per-slug. Its caller was the durable-workflow
+   * wake sweep, which had to go the other way round — from a per-app database
+   * SCHEMA back to the agent it belonged to, `appDbIdentifier` being a one-way
+   * hash. The platform reads its own queue now, so nothing needs that direction.
+   *
+   * Deliberately unbounded and uncached: one short column read on a leader-elected
+   * sweep tick, and the ROW is what makes a wake legitimate — an agent deleted
+   * between ticks simply is not in the list, which is what keeps a sweep from
+   * resurrecting one.
    */
   slugs(): Promise<string[]>;
 };

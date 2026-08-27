@@ -23,7 +23,6 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ApiKeyVerifier } from "aai-server/api-key-verify";
-import type { AppDatabases } from "aai-server/app-database";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
 import { createMemoryPlatformEvents, type PlatformEvents } from "aai-server/platform-events";
@@ -70,7 +69,6 @@ export type StudioAppOpts = {
    */
   keyVerifier?: ApiKeyVerifier;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
-  appDb?: AppDatabases;
   /** Cross-service slug mutation lock — MUST be the shared Postgres lock in production. */
   slugLock?: SlugMutationLock;
   studioRateLimiters?: StudioRateLimiters;
@@ -144,7 +142,7 @@ export function createStudioApp(opts: StudioAppOpts): {
     chats: opts.chats,
     events: opts.events ?? createMemoryPlatformEvents().events,
     secrets: opts.secrets ?? createMemorySecretStore(),
-    ...omitUndefined({ auth: opts.auth, keyVerifier: opts.keyVerifier, appDb: opts.appDb }),
+    ...omitUndefined({ auth: opts.auth, keyVerifier: opts.keyVerifier }),
     // Wrapped exactly as the agent service wraps it: holding the lock must
     // also drop this replica's cached view of the slug, or a mutation
     // read-modify-writes off a pre-lock snapshot (see createMutationLock).

@@ -11,24 +11,19 @@
  * mistake. It cannot catch the thing that actually takes the platform down:
  * live usage growing into the ceiling hours or weeks after boot.
  *
- * And nothing else was watching. `MAX_ACTIVE_APP_DATABASES` — the term that
- * scales with tenants — is consulted by a unit test's arithmetic and by one boot
- * log line, and **by no admission control anywhere**: nothing refuses to
- * provision the Nth app database, nothing refuses to boot the Nth guest, and no
- * pool sheds load as the instance fills. So the ceiling is crossed SILENTLY, and
- * what an operator sees first is one of the two failures it produces, neither of
- * which names the cause:
+ * And nothing else is watching. **No admission control exists anywhere**: nothing
+ * refuses to boot the Nth guest, and no pool sheds load as the instance fills. So
+ * the ceiling is crossed SILENTLY, and what an operator sees first is
+ * `remaining connection slots are reserved for roles with the SUPERUSER attribute`
+ * on a PLATFORM read — Vault, the agents row the broker needs, workspaces — which
+ * is a control-plane outage at peak.
  *
- * - `too many connections for role "app_…"` inside one tenant's guest, from
- *   whichever of its consumers asked last (in the wild: the wake hint on a guest
- *   that had booted beside a draining sibling), or
- * - `remaining connection slots are reserved for roles with the SUPERUSER
- *   attribute` on a PLATFORM read — Vault, the agents row the broker needs,
- *   workspaces — which is a control-plane outage at peak.
- *
- * Note the asymmetry: the first is one tenant's problem and the second is
- * everyone's, and which one arrives depends only on who asks last. That is why a
- * gauge is worth more here than a bigger number.
+ * The budget used to carry a per-tenant term, so the same ceiling could also be
+ * crossed by a tenant's own guest, and which failure arrived depended only on who
+ * asked last. That half is gone with tenant databases: every connection in the
+ * budget is now the platform's own, so there is one failure and it is everyone's.
+ * A gauge is still worth more than a bigger number — a bigger number is a claim
+ * about hardware, and this is a reading of it.
  *
  * ## Why this is a READING and not a limiter
  *
@@ -47,17 +42,17 @@
  * switch, and an operator who set it to stop booting sandboxes would silently
  * take the connection measurement down too. A measurement that disappears with
  * an unrelated feature flag is the "gate that checks nothing" shape this repo
- * keeps paying for. It also needs no `appDb`, so it runs on a composition that
- * has a platform database whether or not anything there uses workflows.
+ * keeps paying for. It needs nothing but the admin connection, so it runs on any
+ * composition that has a platform database at all.
  *
  * ## Per ROLE, because a total cannot be acted on
  *
- * A fleet total says the instance is full; a per-role breakdown says which app
- * to look at, and whether the pressure is one tenant at its ceiling or fifty
- * behaving normally. Those call for opposite responses — the first is a bug or
- * an abuser, the second is provisioning — and the entitlement each role carries
- * (`rolconnlimit`, which is now tiered: see `app-db-tier.ts`) is what
- * distinguishes them.
+ * A fleet total says the instance is full; a per-role breakdown says WHOSE slots
+ * they are — the platform's own pools, all of which connect as `postgres`, or
+ * Supabase's Realtime / PostgREST / Storage workers on the same instance. Those
+ * call for opposite responses: the first is a pool to look at, the second is
+ * provisioning. `ROLE_PRESSURE_SQL`'s doc carries what this dimension used to be
+ * and why it changed.
  *
  * @module
  */
@@ -83,8 +78,7 @@ import type { AdminDb } from "./platform-lock.ts";
  * the answer rather than against how fast the number moves. Connection pressure
  * builds over minutes to hours — a guest holds its pools for the life of a
  * session and self-exits five minutes after the last one — and the response to a
- * warning is provisioning or a tier change, neither of which is a
- * thirty-second decision. A tighter interval buys nothing and costs a reserved
+ * warning is provisioning, which is not a thirty-second decision. A tighter interval buys nothing and costs a reserved
  * admin connection plus three catalog queries every time.
  *
  * Override with `PLATFORM_DB_PRESSURE_INTERVAL_MS`; **0 disables the reading**,
@@ -105,9 +99,9 @@ export const PLATFORM_DB_PRESSURE_INTERVAL_MS = envMs(
  * an operator cannot clear teaches them to filter the channel, and this channel
  * carries the one that matters.
  *
- * Note the OTHER trigger is not a fraction at all — a single app role at its own
- * `connection limit` warns regardless of instance headroom, because that tenant
- * is already being refused.
+ * Note the OTHER trigger is not a fraction at all — a single role at its own
+ * `connection limit` warns regardless of instance headroom, because whoever holds
+ * that role is already being refused.
  */
 export const PLATFORM_DB_PRESSURE_WARN_FRACTION = 0.8;
 
@@ -138,33 +132,42 @@ const PRESSURE_LOCK_KEY = 1;
 const MAX_CONNECTIONS_SQL = "show max_connections";
 
 /**
- * Backends per app role, with the entitlement each one carries.
+ * Backends per ROLE, with the entitlement each one carries.
  *
- * A REGEX on the identifier grammar rather than a `like 'app\\_%'`: `_` is a
- * LIKE wildcard, so the escaped form is one backslash away from matching
- * `appXsomething` and the escape is invisible in review. `appDbIdentifier`
- * produces `app_` plus 16 hex chars and `assertIdentifier` enforces it, so the
- * anchored pattern is exact.
+ * **It used to be scoped to per-app roles** — `rolname ~ '^app_[0-9a-f]{16}$'`,
+ * anchored on the identifier grammar rather than a `like 'app\\_%'` because `_` is
+ * a LIKE wildcard and the escaped form is one backslash away from matching
+ * `appXsomething` invisibly. There are no per-app roles now, so that filter would
+ * make this the silent `0/0` the module doc says it exists to replace, and the
+ * scope is every role with a live backend instead.
  *
- * A LEFT JOIN from `pg_roles`, not from `pg_stat_activity`: a provisioned role
- * with zero live backends is a row worth having (it is what makes "how many apps
- * are actually active" answerable), and an inner join would drop exactly those.
- * Idle backends COUNT — an idle connection holds its slot.
+ * That is still the actionable split, just a different one: the platform's own
+ * connections are `postgres`, and Supabase's workers (Realtime, PostgREST,
+ * Storage, the dashboard) are their own roles. So the breakdown answers whether
+ * pressure is OURS — a pool to look at — or the instance's other tenants, which is
+ * provisioning. Those call for opposite responses, which is the reason a
+ * breakdown beats a total.
+ *
+ * FROM `pg_stat_activity`, not from `pg_roles`: the old direction was a LEFT JOIN
+ * the other way so a provisioned app role with zero backends still produced a row,
+ * which is what made "how many apps are active" answerable. Nothing asks that now,
+ * and starting from `pg_roles` would list ~30 system roles at zero. Idle backends
+ * COUNT — an idle connection holds its slot.
  */
-const APP_ROLE_PRESSURE_SQL = `select r.rolname as role,
-       r.rolconnlimit::int as limit,
+const ROLE_PRESSURE_SQL = `select a.usename as role,
+       coalesce(max(r.rolconnlimit), -1)::int as limit,
        count(a.pid)::int as in_use
-from pg_roles r
-left join pg_stat_activity a on a.usename = r.rolname
-where r.rolname ~ '^app_[0-9a-f]{16}$'
-group by r.rolname, r.rolconnlimit
-order by count(a.pid) desc, r.rolname`;
+from pg_stat_activity a
+left join pg_roles r on r.rolname = a.usename
+where a.usename is not null
+group by a.usename
+order by count(a.pid) desc, a.usename`;
 
 /** Total backends on the instance, whoever owns them. */
 const IN_USE_SQL = "select count(*)::int as n from pg_stat_activity where datname is not null";
 
-/** One app role's live usage against what it is entitled to. */
-export type AppRolePressure = {
+/** One role's live usage against what it is entitled to. */
+export type RolePressure = {
   role: string;
   /** Live backends, idle ones included. */
   inUse: number;
@@ -179,8 +182,8 @@ export type PlatformDbPressure = {
   inUse: number;
   /** What this fleet claims it may consume — `platformDbBudget()`. */
   budgeted: number;
-  /** Per app role, busiest first. Includes roles with no live backend. */
-  roles: AppRolePressure[];
+  /** Per role, busiest first. Only roles holding at least one backend. */
+  roles: RolePressure[];
 };
 
 /**
@@ -197,7 +200,7 @@ export async function readPlatformDbPressure(
   const [limitRows, usedRows, roleRows] = await Promise.all([
     query(MAX_CONNECTIONS_SQL),
     query<{ n: number }>(IN_USE_SQL),
-    query<{ role: string; limit: number; in_use: number }>(APP_ROLE_PRESSURE_SQL),
+    query<{ role: string; limit: number; in_use: number }>(ROLE_PRESSURE_SQL),
   ]);
   // `show` names its column after the setting, so read positionally — a Postgres
   // version that aliases it differently must not silently yield NaN.
@@ -234,10 +237,12 @@ function countOf(value: unknown): number | undefined {
 }
 
 /** Roles at or over their own entitlement — the ones already being refused. */
-export function rolesAtLimit(pressure: PlatformDbPressure): AppRolePressure[] {
+export function rolesAtLimit(pressure: PlatformDbPressure): RolePressure[] {
   // `-1` means Postgres imposes no limit on the role, so it can never be "at"
-  // one. Provisioning always sets a limit, so a `-1` here is an app whose role
-  // predates that or was altered by hand — worth not misreporting as saturated.
+  // one — and it is now the COMMON case rather than the anomaly: `postgres`, which
+  // is what every platform pool connects as, carries no `rolconnlimit`. So this
+  // trigger fires for a role somebody deliberately capped, and instance saturation
+  // is what catches the platform's own growth.
   return pressure.roles.filter((r) => r.limit > 0 && r.inUse >= r.limit);
 }
 
@@ -246,7 +251,7 @@ export function rolesAtLimit(pressure: PlatformDbPressure): AppRolePressure[] {
  *
  * Two independent triggers, because they call for different responses:
  * instance-level saturation is provisioning, and a single role at its ceiling is
- * that app's bug or its tier. A reading with neither is `debug` — a line every
+ * a cap somebody set. A reading with neither is `debug` — a line every
  * tick at `info` is how an operator learns to filter this channel out, and this
  * is the channel that would carry the one that matters.
  */
@@ -264,16 +269,16 @@ export function announcePlatformDbPressure(pressure: PlatformDbPressure): void {
   const summary =
     `max_connections=${pressure.maxConnections} in use=${pressure.inUse} ` +
     `(${Math.round(used * 100)}%) fleet claim=${pressure.budgeted}, ` +
-    `${active.length} of ${pressure.roles.length} app role(s) connected` +
+    `${active.length} role(s) connected` +
     (busiest ? `: ${busiest}` : "");
 
   if (atLimit.length > 0) {
     log.warn(
-      "app role(s) AT their connection limit — further connections are being REFUSED " +
+      "role(s) AT their connection limit — further connections are being REFUSED " +
         `(\`too many connections for role\`): ${atLimit
           .map((r) => `${r.role}=${r.inUse}/${r.limit}`)
-          .join(" ")}. Raise the app's tier (\`aai storage enable --tier workflow\`) ` +
-        `or find what is holding them. ${summary}`,
+          .join(" ")}. Raise the role's \`connection limit\` or find what is holding ` +
+        `them. ${summary}`,
     );
     return;
   }

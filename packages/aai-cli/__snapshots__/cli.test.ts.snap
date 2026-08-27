@@ -2,7 +2,7 @@
 
 exports[`cli usage snapshots > aai --help 1`] = `
 "Voice agent development kit (aai vX.X.X)
-USAGE aai init|dev|test|eval|build|list|pull|push|publish|delete|login|secret|logs|storage|workflow|templates
+USAGE aai init|dev|test|eval|build|list|pull|push|publish|delete|login|secret|logs|workflow|templates
 COMMANDS
        init    Scaffold a new agent project
         dev    Start a local development server
@@ -17,7 +17,6 @@ COMMANDS
       login    Link your signed-in browser account and save your API key
      secret    Manage agent secrets
        logs    Show what the deployed agent has printed
-    storage    Manage the agent's app database
    workflow    Inspect and steer durable workflow runs
   templates    List available project templates
 Use aai <command> --help for more information about a command."
@@ -112,48 +111,6 @@ exports[`cli usage snapshots > aai secret put --help 1`] = `
 USAGE put [OPTIONS] <NAME>
 ARGUMENTS
   NAME    Secret name (Required)
-OPTIONS
-  -s, --server=<server>    Platform server URL
-                 --json    Output JSON (auto-detected in non-TTY)"
-`;
-
-exports[`cli usage snapshots > aai storage --help 1`] = `
-"Manage the agent's app database (storage)
-USAGE storage status|enable|disable
-COMMANDS
-   status    Show whether storage is enabled
-   enable    Enable the agent's app database
-  disable    Disable storage and DROP the database schema with all its data
-Use storage <command> --help for more information about a command."
-`;
-
-exports[`cli usage snapshots > aai storage disable --help 1`] = `
-"Disable storage and DROP the database schema with all its data (disable)
-USAGE disable [OPTIONS] [DIR]
-ARGUMENTS
-  DIR    Project directory
-OPTIONS
-            -f, --force    Skip confirmation prompt
-  -s, --server=<server>    Platform server URL
-                 --json    Output JSON (auto-detected in non-TTY)"
-`;
-
-exports[`cli usage snapshots > aai storage enable --help 1`] = `
-"Enable the agent's app database (enable)
-USAGE enable [OPTIONS] [DIR]
-ARGUMENTS
-  DIR    Project directory
-OPTIONS
-          --tier=<tier>    Connection tier: \`workflow\` (default) or \`storage\` for an agent with no durable workflows
-  -s, --server=<server>    Platform server URL
-                 --json    Output JSON (auto-detected in non-TTY)"
-`;
-
-exports[`cli usage snapshots > aai storage status --help 1`] = `
-"Show whether storage is enabled (status)
-USAGE status [OPTIONS] [DIR]
-ARGUMENTS
-  DIR    Project directory
 OPTIONS
   -s, --server=<server>    Platform server URL
                  --json    Output JSON (auto-detected in non-TTY)"

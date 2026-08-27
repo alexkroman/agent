@@ -18,7 +18,7 @@
  * The schema and role name is `app_` + the first 16 hex chars of
  * `sha256(slug)` — DERIVED from the slug, so it cannot change when a sandbox is
  * replaced — and `DATABASE_URL` is recomposed at every sandbox construction from
- * the stored `app-db:<slug>` meta, which lives in Vault and outlives any
+ * the stored connection meta, which lives in Vault and outlives any
  * sandbox. `provisionAppDatabase` rotates the role password on every call and
  * has exactly one caller, the storage-enable route: **a deploy does not
  * re-provision**, so a redeploy neither rotates the credential nor touches the
@@ -132,7 +132,7 @@ const CREATE_EVENT_TABLE_SQL = (table: string) => `create table if not exists ${
  * The DDL an app's schema needs before a session can store anything.
  *
  * **The platform applies this at PROVISIONING time**
- * (`aai-server/app-db-session-tables.ts`), which is the one place an app schema is
+ * (a migration on whichever database owns them), which is the one place a schema is
  * created — the tables are part of what "this app has a database" means, exactly
  * as its role and grants are. It lives HERE because the shape is the SDK's; the
  * platform executes it rather than knowing it, so there is one source of truth
@@ -152,7 +152,7 @@ const CREATE_EVENT_TABLE_SQL = (table: string) => `create table if not exists ${
  * schema. The platform passes `public` and runs it on a connection into the app's
  * own DATABASE, where that is simply the default — there is no `search_path` pin
  * any more, because an app owning its own database needs none (see
- * `aai-server/app-database.ts`). The guest does not run this at all.
+ * whoever owns the database). The guest does not run this at all.
  *
  * @internal
  */
@@ -214,7 +214,7 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
     async discard(sessionId) {
       // SLOTS only. The event table is append-only to this role by grant — a
       // log a tool can delete is not a log (see `grantSessionTables` in
-      // `aai-server/app-db-session-tables.ts`) — so its rows are reclaimed by the
+      // by whoever owns the database — so its rows are reclaimed by the
       // platform's own retention sweep, which runs as the admin. The cost is
       // that a discarded session's events outlive its slots by up to the
       // retention window rather than going at the same moment; they are a few

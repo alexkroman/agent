@@ -21,7 +21,6 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { AppDatabases } from "./app-database.ts";
 import type { BundleStore } from "./bundle-store.ts";
 import { startOrphanPreviewSweep } from "./orphan-previews.ts";
 import { startPlatformDbPressureSweep } from "./platform-db-pressure.ts";
@@ -38,8 +37,6 @@ export type AgentSweepOptions = {
   secrets?: SecretStore | undefined;
   slugLock?: SlugMutationLock | undefined;
   adminDb?: AdminDb | undefined;
-  appDb?: AppDatabases | undefined;
-  extraAppDbClusters?: number | undefined;
   isDraining?: (() => boolean) | undefined;
 };
 
@@ -85,7 +82,6 @@ export function startAgentSweeps(opts: AgentSweepOptions): void {
     store: opts.store,
     ...omitUndefined({ secrets: opts.secrets }),
     ...omitUndefined({ slugLock: opts.slugLock }),
-    ...omitUndefined({ appDb: opts.appDb }),
     ...omitUndefined({ adminDb: opts.adminDb }),
   });
 }

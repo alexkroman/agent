@@ -5,7 +5,7 @@
 // that width, so it is laid out as a real page instead.
 //
 // The sections run in the order a project needs them: the CLI round-trip
-// (cli-commands.tsx), the Database switch (database-card.tsx), and the
+// (cli-commands.tsx) and the
 // delete-project button last. Two subjects have LEFT this pane for panes of
 // their own, and both left for the same reason — a card is the wrong size for
 // them. The carrier webhook URLs went to the API pane (docs.tsx): they
@@ -19,7 +19,6 @@
 // the transcript" in the package guide).
 
 import { CliCommands } from "./cli-commands.tsx";
-import { DatabaseCard } from "./database-card.tsx";
 import { PaneShell } from "./pane-shell.tsx";
 import { Card } from "./settings-card.tsx";
 
@@ -31,7 +30,6 @@ import { Card } from "./settings-card.tsx";
  * Secrets now is.
  */
 type SettingsPaneProps = {
-  bearer: string;
   /** The open project's name — the target of the Delete project button. */
   project: string;
   /** Delete the project (workspace + chat). The app navigates home after. */
@@ -39,7 +37,7 @@ type SettingsPaneProps = {
   deleting: boolean;
 };
 
-export function SettingsPane({ bearer, project, onDeleteProject, deleting }: SettingsPaneProps) {
+export function SettingsPane({ project, onDeleteProject, deleting }: SettingsPaneProps) {
   return (
     <PaneShell
       title="Settings"
@@ -66,7 +64,6 @@ export function SettingsPane({ bearer, project, onDeleteProject, deleting }: Set
       {/* Unconditional, like the cards above and below: a database is
             provisioned per environment as each one deploys, so it can be
             switched on before the project has ever been published. */}
-      <DatabaseCard bearer={bearer} project={project} />
 
       <Card
         title="Danger zone"

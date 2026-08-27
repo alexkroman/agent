@@ -42,8 +42,9 @@ export type BundleStore = {
    * when no such agent exists.
    *
    * For a mutation that changes what a guest's ENVIRONMENT is rather than what
-   * its code is — provisioning or dropping the app database, which is where
-   * `DATABASE_URL` comes from. See `AgentRows.touch`.
+   * its code is. No such mutation exists today — the one that did was app-database
+   * provisioning — so this has no production caller; see `AgentRows.touch` for why
+   * the seam is kept.
    */
   touchAgent(slug: string): Promise<boolean>;
   getWorkerCode(slug: string): Promise<string | null>;

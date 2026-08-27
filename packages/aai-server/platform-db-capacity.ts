@@ -4,8 +4,7 @@
  * {@link MAX_PLATFORM_DB_CONNECTIONS} promises.
  *
  * That constant is a CLAIM about provisioned hardware — `MAX_CONTAINERS` times
- * the per-replica pools, plus the app databases, against a number nobody in the
- * process had ever read. Its own doc used to say "nothing in the repo can check
+ * the per-replica pools, against a number nobody in the process had ever read. Its own doc used to say "nothing in the repo can check
  * it", and that turned out to be the reason it went unchecked rather than a
  * property of the problem: this module holds a working connection, so
  * `show max_connections` costs one round trip.
@@ -39,16 +38,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import {
-  APP_DB_CONNECTION_ALLOWANCE,
-  APP_DB_STORAGE_CONNECTION_LIMIT,
-  APP_DB_WORKFLOW_CONNECTION_LIMIT,
-} from "./app-db-tier.ts";
-import {
-  ADMIN_POOL_MAX,
-  MAX_ACTIVE_APP_DATABASES,
-  MAX_PLATFORM_DB_CONNECTIONS,
-} from "./constants.ts";
+import { ADMIN_POOL_MAX, MAX_PLATFORM_DB_CONNECTIONS } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -68,7 +58,7 @@ export type PlatformDbCapacity = {
   maxConnections: number;
   /** Backends in use at boot — a FLOOR on non-platform load (see module doc). */
   inUse: number;
-  /** What the platform's own budget claims, app databases included. */
+  /** What the platform's own budget claims. */
   budgeted: number;
   /** `maxConnections - inUse - budgeted`. Negative means the claim cannot hold. */
   headroom: number;
@@ -123,38 +113,29 @@ export function unpooledAdminConnections(env: NodeJS.ProcessEnv = process.env): 
 }
 
 /**
- * The platform's total claim on the instance: its own direct pools plus the app
- * databases those pools cannot reach.
+ * The platform's total claim on the instance.
  *
- * App databases are IN this sum, which is the correction. They were excluded as
- * "pooled", but the pooler is Supavisor in SESSION mode — mandatory for the
- * Workflow DevKit, and multiplexing nothing — so each is a real backend. See
- * {@link MAX_ACTIVE_APP_DATABASES}.
+ * Every connection in it is now the platform's OWN — its direct pools, plus the
+ * admin pool when nothing pools it. Tenant databases used to add a term here and
+ * the history is the reason this function exists rather than a constant being read
+ * directly: the allowance was double-counted, added to a constant that already
+ * contained it, and the claim came out 20 over — 60 against a provisioned
+ * `max_connections` of 60, which made the overrun warning fire on EVERY boot (7 of
+ * 7 in one production day) and therefore say nothing. A warning that cannot be
+ * cleared is not a warning, and this one guards a control-plane outage.
  *
- * **They are in it ONCE, which is the fix.** This used to return
- * `MAX_PLATFORM_DB_CONNECTIONS + APP_DB_CONNECTION_ALLOWANCE`
- * — adding the app databases to a constant that already contains them, since
- * `platform-db-budget.test.ts` asserts `fleetDirect + appTotal <=
- * MAX_PLATFORM_DB_CONNECTIONS` and `MAX_ACTIVE_APP_DATABASES`'s own doc reads 40
- * as "the platform's own direct pools take 20 of the 40, which leaves room for
- * two apps at their entitlement". So the claim came out 20 over: 60 against a
- * provisioned `max_connections` of 60, which made the overrun warning fire on
- * EVERY boot (7 of 7 in one production day) and therefore say nothing. A warning
- * that cannot be cleared is not a warning, and this one guards a control-plane
- * outage.
- *
- * The double count was invisible because both halves read correctly on their own
- * — the sum is only wrong in relation to what the constant already means. Which
- * is why the arithmetic now lives in ONE place and both readers come here: the
- * test asserts this function against the constant, so the two cannot drift back
- * apart.
+ * That double count was invisible because both halves read correctly on their own
+ * — the sum was only wrong in relation to what the constant already meant. So the
+ * arithmetic lives in ONE place and both readers come here; the test asserts this
+ * function against the constant, and they cannot drift apart. With the tenant term
+ * gone there is one fewer thing to double-count, but the seam is what kept the last
+ * one findable.
  */
 export function platformDbBudget(env: NodeJS.ProcessEnv = process.env): number {
   // Deliberately the constant itself, not a sum. `MAX_PLATFORM_DB_CONNECTIONS`
-  // IS the total — `MAX_CONTAINERS x platformDbConnectionsPerReplica()` for the
-  // direct pools PLUS `APP_DB_CONNECTION_ALLOWANCE` for
-  // the app databases — and `platform-db-budget.test.ts` is what holds it to
-  // that. Re-deriving the sum here is what produced the double count.
+  // IS the total — `MAX_CONTAINERS x platformDbConnectionsPerReplica()` — and
+  // `platform-db-budget.test.ts` is what holds it to that. Re-deriving the sum
+  // here is what produced the double count described above.
   //
   // The ONE term it cannot contain is the admin pool, because whether that pool
   // costs the instance anything is a runtime question and not a constant: see
@@ -195,35 +176,29 @@ export function announcePlatformDbCapacity(
 ): void {
   readPlatformDbCapacity(sql, env)
     .then((c) => {
-      // The split is quoted INSIDE the total rather than added to it, because
-      // adding it is the bug this line used to print: "platform budget=60
-      // (40 direct + 2 app databases x 10)" both overstated the claim by 20 and
-      // read as though 60 were the sum of 40 and 20. See `platformDbBudget`.
-      const appTotal = APP_DB_CONNECTION_ALLOWANCE;
-      // The unpooled admin pool is named SEPARATELY from the constant, because
-      // it is the only term that is not in it — quoting it inside the total the
-      // way the app databases are quoted would read as a breakdown of
-      // MAX_PLATFORM_DB_CONNECTIONS, which it is not. Omitted entirely when a
-      // transaction pooler makes it zero: a term that costs nothing does not
-      // belong in a line somebody reads at boot.
+      // The app-database allowance used to be quoted INSIDE this total — "of which
+      // 28 for app databases: 2 at the workflow tier's 10" — because ADDING it was
+      // a bug this line once printed, overstating the claim by 20. There are no app
+      // databases now: every connection in the budget is the platform's own, so the
+      // total needs no split and the arithmetic is one term plus the admin pool.
+      //
+      // The unpooled admin pool is still named SEPARATELY, because it is the one
+      // term the constant does not contain (see `unpooledAdminConnections`), and it
+      // is omitted entirely when a transaction pooler makes it zero: a term that
+      // costs nothing does not belong in a line somebody reads at boot.
       const unpooled = unpooledAdminConnections(env);
       const arithmetic =
         `max_connections=${c.maxConnections}, in use at boot=${c.inUse}, ` +
-        `platform budget=${c.budgeted} (of which ${appTotal} for app databases: ` +
-        `${MAX_ACTIVE_APP_DATABASES} at the workflow tier's ` +
-        `${APP_DB_WORKFLOW_CONNECTION_LIMIT}, or ` +
-        `${Math.floor(appTotal / APP_DB_STORAGE_CONNECTION_LIMIT)} at the storage tier's ` +
-        `${APP_DB_STORAGE_CONNECTION_LIMIT}` +
+        `platform budget=${c.budgeted}` +
         (unpooled > 0
-          ? `, plus ${unpooled} for DIRECT admin pools — set PLATFORM_POOLER_URL`
-          : "") +
-        ")";
+          ? ` (plus ${unpooled} for DIRECT admin pools — set PLATFORM_POOLER_URL)`
+          : "");
       if (c.headroom < 0) {
         log.warn(
           `budget OVERRUNS the instance by ${-c.headroom} connections: ` +
             `${arithmetic}. At peak this surfaces as every platform read failing at once ` +
             '("remaining connection slots are reserved"), not as degradation. Lower ' +
-            "MAX_CONTAINERS or MAX_ACTIVE_APP_DATABASES, or provision a larger instance.",
+            "MAX_CONTAINERS, or provision a larger instance.",
         );
         return;
       }

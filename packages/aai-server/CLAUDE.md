@@ -85,11 +85,13 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   long ago and forwards one request to the guest's own webhook endpoint. The
   DevKit route the platform serves — the tenant-facing `/:slug/workflows/*`
   API is `workflow-handler.ts`
-- `workflow-wake.ts` — the durable-run wake sweep (see "Waking a run whose
-  sandbox is gone" below): the one thing here that boots a sandbox on a
-  SCHEDULE rather than for a caller. Leader-elected per tick, reads a
-  guest-published wake hint out of each app's own database, and wakes through
-  `brokerSessionUrl` like every other caller
+- `workflow-queue-store.ts` / `workflow-queue-sweep.ts` /
+  `workflow-queue-deliver.ts` — the platform's OWN durable-run queue: enqueue,
+  claim-due, ack/fail/reschedule, and the leader-elected pass that DELIVERS a
+  due message to the guest owning the run. The one thing here that boots a
+  sandbox on a SCHEDULE rather than for a caller, and it brokers through
+  `brokerSessionUrl` like every other caller. It replaced `workflow-wake.ts` —
+  see "The platform owns the queue" below
 - `phone-handler.ts` / `phone-signature.ts` — `GET/POST /:slug/phone`: the
   carrier call-answering webhook (see "Telephony" below) and its webhook
   authenticity checks
@@ -143,10 +145,17 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `*-preview` agents no workspace points at and hands each to
   `deleteAgentResources`, so the reap and `DELETE /:slug` are one path.
 
-  It ran in pg_cron until per-app databases moved to the Management API; the
-  module doc carries what that bought (multi-cluster correctness, no leak path,
-  a crash that is retryable because the ROW goes last) and what it cost (a reap
-  needs a live replica, which the wake sweep already required).
+  It ran in pg_cron until per-app databases moved to the Management API, and
+  both reasons for that move are now obsolete: there is no `DROP DATABASE` to
+  run outside pg_cron's transaction, and `deleteAgentResources` is six lines.
+  **The one surviving reason is that the reap must not become a second
+  implementation of `DELETE /:slug`** — a SQL copy would re-derive the slug lock
+  and the secret-name interpolation, and `AGENT_ENV_SECRET_PREFIX`'s doc
+  explains that a disagreement there deletes nothing, silently. The rule this
+  settles: **pg_cron when the whole action is SQL on this database**
+  (session-state expiry, blob GC), **the server when it must be the same code as
+  a request path.** Replica-churn survival is not a differentiator — this sweep
+  already elects a leader.
 - `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
   archived queue jobs, unreferenced deploy blobs, runaway tenant queries,
   pg_cron's own run log), installed idempotently at boot.
@@ -318,21 +327,25 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   check.** See "A workflow upload's bytes are the PLATFORM's" below.
 - `deploy.ts` / `delete.ts` — deployment lifecycle.
 
-  **A delete whose app-database deprovision fails FAILS (503)**, rather than
-  warning and continuing — which deleted the `app-db:<slug>` secret and the
-  agents row, leaving the tenant schema and login role alive with their only
-  credential record gone and nothing naming the slug (`slugs()` no longer lists
-  it; the orphan-preview reap matches `%-preview` only). The comment claimed
-  "a later retry can finish the job"; there was none. Throwing makes it true:
-  nothing is deleted, and the drops are `if exists` so a retry is a no-op on
-  whatever the first attempt managed
+  **A delete is one row and the cascades hanging off it** —
+  `deleteAgentResources` is a slug lock around `store.deleteAgent(slug)`, which
+  drops the agents row and the `agent-env:<slug>` secret. Nothing external has
+  to answer for it to succeed.
+
+  It also deprovisioned the app database, and the rule from that is worth
+  keeping for the next external step: **a delete whose external step fails must
+  FAIL (503), not warn and continue.** Warning deleted the credential record and
+  the agents row while the tenant's schema and login role stayed alive, with
+  nothing naming the slug. The comment claimed "a later retry can finish the
+  job"; there was none.
 - `secret-handler.ts` — secret management
 - `secret-store.ts` — `SecretStore` interface: Supabase Vault
   (`createVaultSecretStore`, over the `SUPABASE_DB_URL` Postgres
   connection) in production, in-memory for local dev/tests. Holds agent
-  env (`agent-env:<slug>`), app-database credentials (`app-db:<slug>`), and
-  the platform's own Storage key for the blob GC sweep
-  (`PLATFORM_STORAGE_KEY_SECRET`).
+  env (`agent-env:<slug>`) and the platform's own Storage key for the blob GC
+  sweep (`PLATFORM_STORAGE_KEY_SECRET`). A third, `app-db:<slug>`, held a
+  provisioned database's credentials; nothing writes one now and a legacy row is
+  swept by nothing — see below.
 
   **`put` absorbs a lost create race.** Read-id-then-create-or-update has a
   window, and while every per-SLUG write is serialized by the advisory lock,
@@ -340,56 +353,60 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `POST /studio/cli-link/approve` can write the same name at once. A `23505`
   is retried as an update exactly once, which is sufficient by construction:
   after it the name exists. Read the SQLSTATE, never the message.
-- `app-database.ts` — per-app Postgres DATABASE/role provisioning in the
-  platform's Supabase instance (`provisionAppDatabase`,
-  `deprovisionAppDatabase`, `withAppDb`).
-  **A DATABASE per app, not a schema, and the Workflow DevKit is why.**
-  `@workflow/world-postgres` needs a `workflow` and a `graphile_worker` schema —
-  DATABASE-level names that cannot nest inside `app_<hex>` and whose creation
-  needs `CREATE ON DATABASE`, which a shared database cannot grant a tenant, so
-  the DevKit's migration failed `42501 permission denied for database postgres`
-  and every durable workflow silently had nowhere to live (PG 17.6; the module
-  doc has the A/B). It also closes a catalog leak — an app role could enumerate
-  every other tenant's schema and role out of `pg_namespace`/`pg_roles`.
 
-  Three properties the module doc argues: the database is owned by the ADMIN
-  role, **`revoke connect … from public` IS the tenant boundary**, and
-  `grant … on schema public` is required on PG15+. `search_path` pinning is gone.
+## The platform provisions no tenant database
 
-  **Every per-app operation follows the app's stored LOCATOR, never a recomputed
-  placement** — deprovision, `usage`, `withAppDb` and `reconcileTier` alike:
-  changing `APP_DB_URLS` re-shuffles placement, so the `url` in its
-  `app-db:<slug>` meta is the only record of where it lives, and it selects the
-  cluster's POOLER too. What recomputing costs is on
-  `AppDatabases.deprovision`.
+Eleven modules used to sit here — `app-database.ts`, `app-db-admin.ts` +
+`supabase-management.ts` (`create database` / `drop database` over the Supabase
+Management API), `storage-handler.ts` (`GET/POST/DELETE /:slug/storage`),
+`app-db-tier.ts`, `app-db-browse.ts`, `app-db-url.ts`, `app-db-usage.ts`,
+`app-db-identifier.ts`, `app-db-session-tables.ts` and `dev-management-api.ts`.
+All gone, with the `aai storage` CLI command, the studio's Database card and
+pane, and the `databaseEnabled` project flag.
 
-  **The per-tenant caps differ in strength, and only two are controls** — the
-  role's `statement_timeout` is `USERSET`, so tenant code can `set
-  statement_timeout = 0`; `aai-sweep-app-db-runaways` is the enforceable half
-  (`pg-cron.ts` has the GUC classes). Never treat the role setting as isolation.
-- `app-db-admin.ts` + `supabase-management.ts` — **`create database` / `drop
-  database` go through the Supabase MANAGEMENT API (`supabase-management-js`) and
-  nothing else does**, so `SUPABASE_ACCESS_TOKEN` plus a project ref
-  (`SUPABASE_PROJECT_REF`, else derived per cluster) is required alongside
-  `SUPABASE_DB_URL`. No SQL fallback: boot refuses without it, and local dev gets
-  a loopback STAND-IN (`dev-management-api.ts`, started by `dev-server.mjs`) so
-  the dev flow takes the production path instead of a second one. The rest stays
-  SQL on the admin connection, which must therefore BE the project's `postgres`
-  role. All three module docs carry the argument.
+**A tenant gets no database from the platform.** An author who wants one puts a
+`DATABASE_URL` in their own secrets and it reaches the guest like any other
+secret — `sandbox-resolve.ts` no longer overlays anything on top, which it did
+LAST, so enabling storage silently beat whatever the author had set.
 
-- `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
-  toggling the app's database, plus the reads over it: `storageUsage` (how
-  much is in it) and, over `app-db-browse.ts`, `storageTables` /
-  `storageTableRows` (WHAT is in it — the studio's Database pane).
+**What did NOT go is the durable state**, which is the point of the change. Both
+things the app database held are the platform's now, reached over HTTP with the
+sandbox's own bearer: durable workflow runs (the queue, storage and streamer as
+`aai_platform` tables; the guest's world is `workflow-platform-world.ts`) and
+turn-level durability (`aai_platform.session_slots` / `session_events`, behind
+the runtime's third `SessionStateBackend`).
 
-  **`enableStorage` no-ops on an already-enabled app, and that is the point.**
-  `provisionAppDatabase` mints a fresh password every call and the caller
-  persists it, so re-provisioning ROTATES the role's credentials under a
-  resident guest holding the `DATABASE_URL` baked in at spawn — and storage
-  changes move no sandboxes (below), so nothing rebuilds behind it.
-  `aai storage enable` run twice broke `ctx.db` mid-session, silently. The
-  check is INSIDE the slug lock, and having it here means neither caller can
-  forget it
+The measurable win is the connection budget: `MAX_PLATFORM_DB_CONNECTIONS`
+carried an allowance for per-app databases — 28 of 40, spoken for by TWO apps at
+the workflow entitlement — so the fleet claim scaled with tenant count, the one
+variable a constant cannot bound. It has one term now.
+
+Four arguments from those modules still apply somewhere:
+
+- **A DATABASE per app, not a schema, because of the Workflow DevKit.**
+  `@workflow/world-postgres` needs `workflow` and `graphile_worker` schemas —
+  DATABASE-level names that cannot nest inside `app_<hex>`, whose creation needs
+  `CREATE ON DATABASE`, which a shared database cannot grant a tenant. The
+  migration failed `42501 permission denied for database postgres` and every
+  durable workflow silently had nowhere to live (PG 17.6). This is why the
+  platform world runs those schemas on the PLATFORM's database.
+- **`revoke connect … from public` is what a Postgres tenant boundary IS** — not
+  `search_path` pinning, and not a role's `statement_timeout`.
+- **A per-tenant cap is only a control if it is not `USERSET`.** The role's
+  `statement_timeout` was, so tenant code could turn it off; the enforceable
+  half was a sweep terminating runaway backends. Never read a role setting as
+  isolation.
+- **Follow a stored LOCATOR, never a recomputed placement.** Every per-app
+  operation read the `url` out of the app's own meta: changing the placement
+  config re-shuffles where a recomputation lands, and the stored value is the
+  only record of where the thing is.
+
+**One operational note, not automated.** App databases and their `app-db:<slug>`
+Vault secrets may still exist on a deployed fleet, and nothing here drops
+either: dropping a database is an operator's call with a backup behind it, and
+deleting the SECRET while the database survives strands the data with its only
+credential gone — the failure `orphan-previews.ts` names.
+`20260827030000_drop_dblink_admin.sql` carries the same reasoning.
 
 ## Two questions, two sentinels
 
@@ -409,8 +426,12 @@ Three things the split fixed, all of them measured on a morning it cost:
 - **There is no third tier.** `buildPlatformDb` used to have a
   local-dev-with-a-database branch giving memory stores beside REAL per-app
   schemas. So `pnpm dev:aai-server` against the local stack lost every deployed
-  agent on restart while its app database sat in Postgres — a published slug 404s
-  and nothing about the failure names the store that dropped it. With a platform
+  agent on restart while its app database sat in Postgres — a published slug
+  404s and nothing about the failure names the store that dropped it. **The rule
+  outlives per-app databases rather than depending on them**: the workflow world
+  and session state ride this same connection, so a mixture reproduces the
+  identical failure with durable runs and conversation state in place of a
+  schema. With a platform
   database every store is Supabase's, and `SUPABASE_URL` /
   `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_STORAGE_BUCKET` are required rather
   than optional: half-configured is refused at boot, because a platform database
@@ -439,9 +460,9 @@ The platform server holds no cross-request durable or coordination state in
 process — any replica can serve any request, and a replica restart loses
 nothing but live control-channel connections (voice sessions don't pass
 through it at all). Everything durable lives in Supabase (bundles and
-client files in Storage, agent env + app-db credentials in Vault, studio
-workspaces/chats and per-app data in Postgres), and cross-replica
-coordination lives in the same Postgres over `SUPABASE_DB_URL`.
+client files in Storage, agent env in Vault, studio workspaces/chats plus the
+workflow world and session state in Postgres), and cross-replica coordination
+lives in the same Postgres over `SUPABASE_DB_URL`.
 
 **Being stateless does not mean everything has to flow THROUGH the replica.**
 Two of the largest byte paths deliberately don't: `ctx.db` connects from the
@@ -541,37 +562,32 @@ The cross-replica coordination that lives in this same Postgres:
   `MAX_CONTAINERS` × the per-replica pools consumes `max_connections` outright —
   whose ceiling is an outage rather than degradation.
 
-  **The budget counts APP DATABASES now, and excluding them was an accounting
-  error rather than a routing decision** — the pooler in front of them is
-  Supavisor in SESSION mode, which multiplexes NOTHING, so the bound was on the
-  term an operator sets (`MAX_CONTAINERS`) while the term that scales with
-  TENANTS went uncounted. `MAX_ACTIVE_APP_DATABASES` is that term: **two** at the
-  WORKFLOW tier, five at the STORAGE tier (seven of a workflow role's ten
-  connections are the DevKit world's, which an agent declaring no workflows never
-  starts). The tier is the owner's declaration (`aai storage enable --tier`) —
-  nothing here can derive it, see "The platform stores no agent config".
+  **The budget counts nothing per-tenant, and the history is why that matters.**
+  It carried an allowance for APP DATABASES, first excluded as "pooled" — an
+  accounting error rather than a routing decision, since the pooler was
+  Supavisor in SESSION mode, which multiplexes NOTHING. Counting them in was the
+  correction, and the number was **two** apps at the workflow entitlement out of
+  40: the bound was on the term an operator sets (`MAX_CONTAINERS`) while the
+  tenant-scaled term ate 28 of the budget. And it was worst-case accounting that
+  NOTHING ENFORCED — a `connection limit` is a refusal threshold, not a
+  reservation, and provisioning was unbounded. Removing tenant databases removed
+  the term, not merely its miscounting.
 
-  **Those are WORST-CASE accounting, not tenant capacity, and NOTHING ENFORCES
-  THEM.** A `connection limit` is a refusal threshold, not a reservation;
-  provisioning is unbounded; a guest self-exits after `AGENT_IDLE_EXIT_MS`
-  holding zero, and a live workflow guest at rest holds **three**, not ten. So:
-  hundreds provisioned, a handful live, two only at simultaneous peak. No
-  admission control consults this, so the ceiling is crossed SILENTLY — as
-  `too many connections for role` in a tenant's guest or `remaining connection
-  slots are reserved` on a platform read, whichever asks last.
+  **The ceiling is still crossed SILENTLY, because no admission control exists**
+  — nothing refuses to boot the Nth guest and no pool sheds load. What an
+  operator sees first is `remaining connection slots are reserved` on a platform
+  read: a control-plane outage at peak.
 
-  **So it is MEASURED now** (`platform-db-pressure.ts`, which carries the
-  argument): a leader-elected replica reads `pg_stat_activity` per app ROLE
-  against each role's own `rolconnlimit`, and warns on two independent
-  triggers: the instance past `PLATFORM_DB_PRESSURE_WARN_FRACTION`, or any one
-  role already at its ceiling. Per role because a total cannot be acted on. It
-  is a READING, not a limiter, and its own sweep rather than a rider on the wake
-  sweep whose kill switch would take the measurement with it. Admission control
-  is still open — it now has a gauge to be designed against.
-
-  An extra `APP_DB_URLS` cluster costs this budget NOTHING: its pool is on that
-  project's own instance, and charging it here made sharding look unaffordable by
-  miscounting the ceiling it relieves. `constants.ts` carries the arithmetic.
+  **So it is MEASURED** (`platform-db-pressure.ts`): a leader-elected replica
+  reads `pg_stat_activity` per ROLE against each role's own `rolconnlimit`,
+  warning on the instance past `PLATFORM_DB_PRESSURE_WARN_FRACTION` or any one
+  role at its ceiling. The per-role dimension was scoped to `app_<hex>` roles
+  and now covers every role with a live backend — still the actionable split,
+  since the platform's pools all connect as `postgres` and Supabase's own
+  workers are their own roles, so it says whether pressure is ours or the
+  instance's. A total cannot be acted on. It is a READING, not a limiter, and
+  its own sweep rather than a rider on one whose kill switch would take the
+  measurement with it.
 
   **Boot CHECKS the claim** (`platform-db-capacity.ts`): `max_connections` plus
   a `pg_stat_activity` count against `platformDbBudget()`. Its trap was that the
@@ -592,24 +608,24 @@ The cross-replica coordination that lives in this same Postgres:
   for exactly that lock's lifetime, which is what the wake sweep's and the
   pressure reading's leader elections rest on.
   `platformDbConnectionsPerReplica` carries it. So:
-  - `SUPABASE_DB_URL` — direct, session mode. The slug-lock pool, and the app-db
-    locator. `assertSessionModeUrl` still refuses a pooler here.
+  - `SUPABASE_DB_URL` — direct, session mode. The slug-lock pool AND the
+    workflow world, whose `LISTEN` client and named prepared statements need
+    session affinity as much as an advisory lock does. `assertSessionModeUrl`
+    refuses a pooler here.
   - `PLATFORM_POOLER_URL` — Supavisor TRANSACTION mode, for the admin pool.
     Refuses a session-mode URL, which multiplexes nothing while looking set.
-  - `APP_DB_POOLER_URL` — Supavisor SESSION mode, for the PRIMARY cluster's app
-    databases (an extra `APP_DB_URLS` cluster declares its own beside its admin
-    URL; one fleet-wide value is what broke sharding). Every app-database
-    connection goes through one, the guest's own `DATABASE_URL` included.
-    Refuses transaction mode, which breaks the DevKit three ways
-    (graphile-worker's named prepared statements, `world-postgres`'s `LISTEN`
-    with no polling fallback, and `workflow-lock-sweep.ts`'s session-scoped
-    advisory lock).
 
-  Session mode does not multiplex, so app databases still cost real connections
-  at peak, bounded by Supavisor's own pool sizing rather than by this formula.
-  Unset, either pooler variable means DIRECT and the budget understates a
-  replica, so boot announces it. `platform-connection-config.test.ts` pins all
-  three rules.
+  There was a THIRD, `APP_DB_POOLER_URL` (SESSION mode, for per-app databases),
+  and its rule migrated rather than vanished: it had to be session mode because
+  transaction pooling breaks the DevKit three ways — graphile-worker's named
+  prepared statements, `world-postgres`'s `LISTEN` with no polling fallback, and
+  `workflow-lock-sweep.ts`'s session-scoped advisory lock. The world runs on
+  `SUPABASE_DB_URL` now, so that lands on the first bullet and
+  `assertSessionModeUrl` enforces it.
+
+  Unset, `PLATFORM_POOLER_URL` means the admin pool is DIRECT and the budget
+  understates a replica, so boot announces it.
+  `platform-connection-config.test.ts` pins both rules.
 
   **The binding is wrapped in `createMutationLock`, and must stay wrapped:
   taking the lock also drops this replica's cached view of the slug.**
@@ -1179,11 +1195,18 @@ keeps `withHostCredentialFallback` out of `ctx.env` are in
 `packages/aai-guest/CLAUDE.md`, "Credential separation, and what reaches a
 guest".**
 
-**Cross-agent isolation:** app databases are separate Postgres DATABASES with
-per-app login roles and `CONNECT` revoked from `PUBLIC` (verified: a neighbour's
-database answers `42501 permission denied`), each sandbox communicates over its
-own authenticated WebSocket, sessions are per-sandbox, and there is no shared
-mutable state between sandboxes.
+**Cross-agent isolation:** there is no shared tenant database to isolate — a
+database an agent reaches is one its own author configured, and the platform's
+own is unreachable from a guest: the durable-state routes are HTTP, gated by the
+per-sandbox bearer, and each is scoped by the caller's slug SERVER-side
+(`workflow-run-owner.ts` for runs, the primary key for session state). Beyond
+that, each sandbox communicates over its own authenticated WebSocket, sessions
+are per-sandbox, and there is no shared mutable state between sandboxes.
+
+This used to rest on per-app DATABASES with per-app login roles and `CONNECT`
+revoked from `PUBLIC` (verified then: a neighbour's database answered `42501
+permission denied`) — worth knowing as the shape a Postgres tenant boundary has
+to take if one is needed again.
 
 **`run_code`**: executes only inside the guest sandbox — see "The
 `run_code` executor" in `packages/aai-guest/CLAUDE.md` for its authority
@@ -1588,87 +1611,55 @@ honest `Host` from a forged one — so production refuses to guess, while local
 dev keeps observing on the premise that also lets the isolation-free
 `subprocess` backend be selected there.
 
-### Waking a run whose sandbox is gone — `workflow-wake.ts`
+### The platform owns the queue — and what the wake sweep had to solve
 
-A webhook is a delivery, so the proxy above has a caller to react to. A
-`sleep()` has nobody: the queue is graphile-worker POLLING the app's database
-from inside the sandbox, and an agent guest self-exits after
-`AGENT_IDLE_EXIT_MS` with zero sessions, so a run asleep until tomorrow has no
-process polling for it and never resumes — with no error, no log, and
-`ctx.workflows.get(runId)` still reporting `running`. The sweep is the thing
-that notices the TIME.
+`workflow-wake.ts` is GONE, with `aai/host/workflow-wake-hint.ts` and
+`_workflow-wake-read.ts`. Read this for the constraints: several are properties
+of "a run outlives its sandbox" rather than of that design.
 
-**It detects due work and BOOTS the sandbox; it does not run the queue.** The
-alternative — the replica polling the queue on the tenant's behalf — was
-rejected on the boundary, not on cost: it would execute tenant step bodies in
-the process holding the service-role Postgres credential, Vault, and Modal's
-tokens. What the chosen shape costs is priced in the module doc, and the number
-to know before designing on top of it is **one sandbox per wake, billed for at
-least one idle window** — a workflow that sleeps 24 times pays 24 boots and
-24 × 5 minutes of guest lifetime. That is inherent to durable runs on ephemeral
-sandboxes; the lever is `AAI_GUEST_IDLE_EXIT_MS`, not the sweep.
+**The problem it solved.** A run's queue lived in the app's own database, and
+`graphile_worker` is per-DATABASE with no tenant column — so "which of these
+jobs is agent X's" was answerable only inside the process whose world it was.
+Each guest reduced its whole queue to ONE timestamp, the earliest a job could be
+claimed, and upserted it into an `aai_workflow_wake` table in its own database;
+the platform read that column per app on a short-lived connection each.
 
-**The platform cannot ask the queue, so the GUEST answers.** The DevKit's
-`graphile_worker` schema is per-DATABASE and its rows carry no tenant column, so
-"which of these jobs is agent X's" is answerable only inside the process whose
-world it is. Each workflow guest therefore reduces its whole queue to one
-timestamp — the earliest moment a job could be claimed — and upserts it into
-`aai_workflow_wake` in the app's own `ctx.db` database
-(`aai/host/workflow-wake-hint.ts` owns that contract, including why a locked job
-is dated from graphile-worker's 4-hour job expiry and why a job past
-`max_attempts` counts for nothing). The sweep reads that one column on the
-platform's admin connection. The hint is tenant-writable and is treated as a
-HINT: the only thing it can cause is a boot of the tenant's OWN agent, which
-`GET /:slug/client-config` can already cause, and forging a neighbour's is
-impossible by construction — the schema name is `appDbIdentifier(slug)` and the
-slug comes from the agents table.
+**Why it is gone.** The queue is the platform's now, with the owning slug as a
+COLUMN, so "which messages are due, and whose" is one indexed query on a
+connection the platform already holds — no hint contract, no per-tenant reads,
+no width bound.
 
-Four properties, each the answer to a way this could go wrong:
+**Five properties survive**, each the answer to a way "boot a sandbox on a
+schedule" goes wrong, and the queue sweep keeps all five:
 
-- **It cannot resurrect a deleted agent**: candidates come from the agents
-  TABLE, so a deleted one is not in the list (its schema outlives the row until
-  the orphan sweep, and is skipped for having no slug), and behind that
-  `brokerSessionUrl` answers 404 for a slug with no bundle.
+- **It cannot resurrect a deleted agent.** Candidates join the agents TABLE, so
+  a deleted one is not in the list, and `brokerSessionUrl` answers 404 for a
+  slug with no bundle.
 - **It cannot fight the blue-green handover**, because waking IS
   `brokerSessionUrl` — the one routing point, which serves a live resident
   as-is, joins a boot in flight, routes to a live PEER rather than duplicating,
   and refuses while draining. The sweep touches no slot itself.
-- **A wake LOOP is bounded twice** (`WORKFLOW_WAKE_RETRY_MS` per slug,
-  `WORKFLOW_WAKE_MAX_PER_TICK` per tick): a guest that boots and cannot run its
-  world never rewrites its hint, so without the backoff it is a sandbox per
-  interval, indefinitely.
+- **A wake LOOP must be bounded twice**, per slug and per tick. A guest that
+  boots and cannot make progress never clears its work, so without a backoff it
+  is a sandbox per interval, indefinitely.
 - **One replica sweeps per tick**, via a transaction-scoped advisory try-lock on
-  the reserved admin connection that also carries the pass's `set local
-  statement_timeout`. Efficiency, not correctness: `brokerSessionUrl` is
-  idempotent fleet-wide, which is why a lost lock is a silent skip.
-- **The per-app reads are one SHORT-LIVED connection each, at most
-  `WORKFLOW_WAKE_READ_CONCURRENCY` of them at a time.** A Postgres connection is
-  bound to one database, so the admin connection cannot read a tenant's hint
-  however it is qualified. The width is a CONSTANT — that is the property the
-  connection budget needs, since `MAX_PLATFORM_DB_CONNECTIONS` cannot bound a
-  number that scales with the app count — and it used to be a constant of one,
-  which bounded the pass DURATION at nothing (a serial pass over a few hundred
-  apps outruns the 60s interval, and an overrunning pass is skipped, so the sweep
-  rate halves on the only mechanism that wakes an undelivered run).
-  `_workflow-wake-read.ts`'s module doc carries that, why the per-tenant
-  SAVEPOINTs went with the shared transaction, why the candidate filter is now
-  the `app-db:` credential rather than a catalog query, and why the width is a
-  worker pool rather than a semaphore. Note `APP_DB_ADMIN_POOL_MAX`'s doc once
-  cited `WORKFLOW_WAKE_MAX_PER_TICK` as this bound; that caps how many sandboxes
-  a tick BOOTS, checked after every app has been read.
+  the reserved admin connection. Efficiency, not correctness: `brokerSessionUrl`
+  is idempotent fleet-wide, which is why a lost lock is a silent skip.
+- **The pass width must be a CONSTANT, not a function of the app count.** At a
+  width of ONE the pass DURATION was bounded by nothing: a serial pass over a
+  few hundred apps outruns a 60s interval, an overrunning pass is skipped, and
+  the sweep rate halves on the only mechanism that wakes an undelivered run. The
+  queue is one query now, so width bounds DELIVERIES — but that
+  `MAX_PLATFORM_DB_CONNECTIONS` cannot bound a tenant-scaled number is why the
+  queue is shaped this way at all.
 
-**One thing it does not cover, inherited.** A step lost with
-its container stays lost for graphile-worker's 4-hour job expiry, since no other
-worker may claim a locked job before then — any boot for another reason repairs
-it sooner, because the Postgres world re-enqueues active runs on `start()`.
+**One thing unchanged.** A step lost with its container stays lost for
+graphile-worker's 4-hour job expiry, since no other worker may claim a locked
+job before then; any boot for another reason repairs it sooner, because the
+world re-enqueues active runs on `start()`.
 
-Apps on an extra `APP_DB_URLS` cluster ARE swept — this said otherwise, and boot
-warned, which is why there were none. The pass follows each app's locator; the
-real bug was one fleet-wide `APP_DB_POOLER_URL`, and `AppDbTarget.poolerUrl` has
-it.
-
-**The guest half is a lifecycle change too**: in-flight workflow callbacks count
-as busy for both the idle window and a drain (`packages/aai-guest/CLAUDE.md`).
+**The guest half is a lifecycle rule**: in-flight workflow callbacks count as
+busy for both the idle window and a drain (`packages/aai-guest/CLAUDE.md`).
 Without that a wake buys at most one idle window of progress — the woken guest
 has no session, so it would exit mid-step.
 

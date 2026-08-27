@@ -25,17 +25,7 @@ The browser studio's server side (documented below):
   caller's), `studio-workspace-dir.ts` (materializes a workspace to a
   scratch dir — eval-suite only now), `studio-errors.ts`
   (`StudioBuildError`), `studio-deploy.ts` (guest build → validate config →
-  deploy), `studio-database.ts` + `studio-database-routes.ts` (the project
-  database switch across both environments, and the post-deploy hook that
-  provisions a newly claimed slug) — **a database is OFF until the
-  project asks for one** (`wantsDatabase` in `studio-workspace.ts` is the
-  one reader of that default, and `projectPayload` carries it so the client
-  can gate the Database TAB on it; the module doc has why the default
-  flipped), `studio-database-browse.ts` (the READ
-  behind the studio's Database pane — which agent, and may this caller read
-  it; the SQL is aai-server's `app-db-browse.ts`, and one 404 covers every
-  "nothing to read here" so the routes cannot become an ownership oracle),
-  `studio-workspace.ts` (project file store), `studio-prompt.ts`
+  deploy), `studio-workspace.ts` (project file store), `studio-prompt.ts`
   (system prompt from the scaffold CLAUDE.md, one per project kind),
   `studio-project-kind.ts` (voice agent vs static workflow app — the
   new-project switcher's choice), `studio-preamble-mode.ts` (the five preamble
@@ -75,8 +65,8 @@ voice agents without the CLI:
   `stampWorkspaceMeta` over `WorkspaceStore.patch`, a single
   `doc = (doc - remove) || set` statement. Stamps dominate a project's writes
   (every settled edit is followed by a preview deploy stamping
-  `previewSlug`/`previewHash`; Publish stamps the deploy pair; the database
-  switch stamps `databaseEnabled`) and none of them touches the file map, so
+  `previewSlug`/`previewHash`; Publish stamps the deploy pair) and none of
+  them touches the file map, so
   recording a 64-character hash was reading and rewriting every file in the
   project. It is also the STRONGER primitive for the job, not just the cheaper
   one: a versioned RMW could only avoid reverting a mid-deploy edit by
@@ -428,12 +418,12 @@ voice agents without the CLI:
 
   **Every "force the preview to redeploy" goes through `forcePreviewRedeploy`**
   (studio-preview.ts): clear `previewHash`, then schedule. It was written out
-  three times — the database switch, a secret mutation, and the wake — with two
-  different omissions between them, and one of those omissions WAS the bug
-  above: the wake's settled-failure retry scheduled without clearing, so the
-  state it exists to rescue was the one it could not. The remaining divergence
-  is deliberate and lives at the call sites: the database and secret switches
-  skip the whole thing when the project has no `previewSlug` yet.
+  three times — the database switch (since removed), a secret mutation, and
+  the wake — with two different omissions between them, and one of those
+  omissions WAS the bug above: the wake's settled-failure retry scheduled
+  without clearing, so the state it exists to rescue was the one it could not.
+  The remaining divergence is deliberate and lives at the call site: the secret
+  switch skips the whole thing when the project has no `previewSlug` yet.
   **The preview slug is `<project>-preview` SHORTENED BY DIGEST, not by
   truncation** (`previewSlugFor`, beside `projectSlugFor` in
   studio-project-slugs.ts — the two answer "what are this project's agents
@@ -456,7 +446,7 @@ voice agents without the CLI:
 
   **`userId` is therefore load-bearing for a browser session, and ONE builder
   supplies it** — `previewOrigin` in `studio-settled-edit.ts`, used by the
-  settled edits, the database switch, the project-open wake, AND the session
+  settled edits, the project-open wake, AND the session
   broker (whose `ensureSession` takes a `PreviewOrigin` object rather than a
   bare `serverUrl`, so the guest's own end-of-turn sync inherits it). Omitting
   it is silent: the job still enqueues and still deploys HERE, and only a
@@ -554,12 +544,12 @@ voice agents without the CLI:
   deploy again" was the shortest path to a working agent. It is also not
   production that needs the key first: the preview agent is auto-deployed by
   the first edit and is the one the user is about to talk to. So the shape is
-  the database switch's: a record of INTENT (`studio-project-env:<scope>:
+  the removed database switch's: a record of INTENT (`studio-project-env:<scope>:
   <project>` in the same Vault that holds every `agent-env:<slug>`, since
   these are values and the workspace doc is streamed wholesale to every open
   tab), written FIRST in both directions so a deploy racing the write cannot
   miss an update or undo a delete, and `reconcileProjectSecrets` applying it
-  to each slug as a deploy claims it — composed with the database's hook into
+  to each slug as a deploy claims it — the one surviving hook into
   the broker's one `afterDeploy` (`studio-deploy-hooks.ts`).
 
   **The project's EXISTENCE is resolved ahead of that write** — a different
@@ -576,8 +566,8 @@ voice agents without the CLI:
   Three properties. The record is a **FLOOR, never an override**: a name the
   slug already carries is left alone, or every deploy would silently
   reinstate the studio's value over one set with `aai secret put`. A mutation
-  **redeploys the preview** (clear `previewHash`, schedule — the
-  `setProjectDatabase` pattern), because a stored secret only reaches an
+  **redeploys the preview** (clear `previewHash`, schedule), because a stored
+  secret only reaches an
   agent's env when its sandbox is BUILT; production waits for a Publish. And
   the project DELETE cascade drops the record — a project name can be taken
   again, and a survivor would hand the next project a dead one's provider
@@ -1426,8 +1416,8 @@ down, like the file-length allowlist.
   agent's next deploy (or whenever its sandbox is next rebuilt). That trade
   deleted the whole secret-invalidation mechanism (the old
   `aai_platform.slug_epochs` table); the documented way to apply a secret is
-  still to redeploy. A database is different because a guest cannot re-read
-  one — see `aai-server/storage-handler.ts`.
+  still to redeploy. (A per-app DATABASE was the exception, because a guest
+  cannot re-read a connection string; there are none now.)
 
   **Supabase setup this depends on lives in `supabase/migrations`**, applied
   with `supabase db push` BEFORE the code that queries it: the `aai_platform`

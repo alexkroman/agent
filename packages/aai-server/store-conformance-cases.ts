@@ -287,7 +287,7 @@ export function agentRowsConformance(make: () => AgentRows): void {
   });
 
   test("touch bumps an existing row's version, leaves its deploy alone, and creates none", async () => {
-    // Provisioning the app database changes a guest's ENVIRONMENT without
+    // A mutation that changes a guest's ENVIRONMENT without
     // changing its code, and the version is the only invalidation signal — so
     // the bump has to land while the row's deploy stays exactly as it was.
     const rows = make();

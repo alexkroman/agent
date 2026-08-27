@@ -129,7 +129,6 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
             // No project, so the switcher renders nothing at all and this
             // decides nothing — false is the honest value rather than a
             // default worth having.
-            databaseEnabled={false}
             accountOpen={accountOpen}
             onGoHome={() => selectProject(null)}
             onSelectTab={() => undefined}

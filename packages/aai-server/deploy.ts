@@ -42,8 +42,7 @@ export type DeployParams = {
    * Permit a requested slug ending in {@link PREVIEW_SLUG_SUFFIX}. That suffix
    * is owned by the studio's auto-preview deploys, and the orphan-preview
    * pg_cron sweep (pg-cron.ts) reaps any `*-preview` agent no studio workspace
-   * references — dropping its app-database schema, its Vault secrets, and its
-   * agents row, hourly. A CLI caller that lands on the suffix by accident
+   * references — dropping its Vault secrets and its agents row, hourly. A CLI caller that lands on the suffix by accident
    * would therefore lose the agent (and any stored data) on a schedule no
    * redeploy can undo. So the suffix is rejected unless the caller opts in;
    * the studio's in-guest `aai deploy` sets this, nothing else should.
@@ -71,7 +70,7 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
   // The `-preview` suffix is effectively reserved for the studio's auto-preview
   // deploys (`previewSlugFor`): the orphan-preview sweep reaps any `*-preview`
   // agent no workspace references, so a CLI caller landing on it loses the
-  // agent — and its app-database data — on an unrecoverable hourly schedule
+  // agent on an unrecoverable hourly schedule
   // (see DeployParams.allowPreviewSlug). Only the studio's in-guest deploy,
   // which passes the opt-in, may claim it. Generated slugs never hit this —
   // the generator appends a random suffix — so only a *requested* slug is

@@ -56,14 +56,11 @@ export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
 // number, in two packages, which is exactly the shape that drifts. Pure
 // constants, so nothing host-only rides in behind them.
 export {
-  APP_DB_BOOT_SPARE,
   APP_DB_POOL_MAX,
   APP_DB_PRESENCE_LOCK,
   APP_DB_WORLD_LISTEN,
   APP_DB_WORLD_POOL_MAX,
   APP_DB_WORLD_WORKER_CONCURRENCY,
-  guestAppDbConnections,
-  storageAppDbConnections,
 } from "./sdk/app-db-budget.ts";
 // The `aai login` confirmation code and the slug shape: the two contracts BOTH
 // ends of a platform interaction must derive identically. They were on `/utils`,

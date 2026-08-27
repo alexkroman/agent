@@ -70,24 +70,6 @@ export type StudioWorkspace = {
    * turn to carry their failure output.
    */
   previewError?: string;
-  /**
-   * The project wants a database (`ctx.db`) — see studio-database.ts. Intent
-   * rather than state: it can be set before either agent is deployed, and each
-   * environment's schema is provisioned as its slug appears.
-   *
-   * **Absent means OFF.** A database is an opt-in, taken in Settings, and
-   * until it is taken the project has no Database pane at all — a schema and a
-   * login role per environment for every project that never asked is real
-   * infrastructure standing behind a capability most agents never call, and
-   * the pane it fronted was a tab into an empty database.
-   *
-   * Read it through {@link wantsDatabase}, never by hand — this field flipped
-   * direction once already (absent used to mean ON, and every reader tested
-   * `!== false`). Defaulting at READ time is what makes the flip hold for
-   * projects that already exist: there is nothing to backfill, and the ones
-   * that took the old opt-out carry an explicit `false` either way.
-   */
-  databaseEnabled?: boolean;
   updatedAt: number;
 };
 
@@ -119,17 +101,6 @@ export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
  */
 export function hasPreviewChanges(workspace: StudioWorkspace): boolean {
   return workspace.previewHash !== workspace.hash;
-}
-
-/**
- * True when the project has asked for a database (`ctx.db`) — the ONE place
- * {@link StudioWorkspace.databaseEnabled}'s default is resolved, so its three
- * readers cannot disagree about it. A function rather than a `=== true` per
- * reader because the default flipped once: a reader left on the old polarity
- * gives every project a schema and nothing notices. See studio-database.ts.
- */
-export function wantsDatabase(workspace: StudioWorkspace): boolean {
-  return workspace.databaseEnabled === true;
 }
 
 /**
@@ -417,13 +388,7 @@ async function applyMutation(
  * desynchronizing its hash. `undefined` REMOVES the field (the shape the call
  * sites already had — `delete next.previewHash`).
  */
-type StampField =
-  | "deployedSlug"
-  | "deployedHash"
-  | "previewSlug"
-  | "previewHash"
-  | "previewError"
-  | "databaseEnabled";
+type StampField = "deployedSlug" | "deployedHash" | "previewSlug" | "previewHash" | "previewError";
 
 // `?: T | undefined` rather than `Partial<Pick<…>>`: under
 // `exactOptionalPropertyTypes` those differ, and only this form lets a call

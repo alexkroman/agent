@@ -15,9 +15,11 @@
  * a conflict here means a concurrent writer on another replica —
  * `mutateWorkspace` absorbs those by re-reading and re-applying once.
  *
- * The table lives in the `aai_platform` schema, not `public`: per-app
- * tenant schemas (`app_<hex>`, see `app-database.ts`) share this database,
- * and platform-internal tables get their own namespace.
+ * The table lives in the `aai_platform` schema, not `public`. The original reason
+ * was that per-app tenant schemas (`app_<hex>`) shared this database and
+ * platform-internal tables wanted their own namespace; nothing tenant-owned is in
+ * here now, and the namespace stays because `public` is also where a
+ * self-hosted operator's own tables would land.
  */
 
 import { projectKey, splitProjectKey } from "./platform-events.ts";

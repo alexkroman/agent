@@ -5,7 +5,7 @@ import type { LeaderDb } from "./orphan-previews.ts";
 import { createOrphanPreviewSweep, startOrphanPreviewSweep } from "./orphan-previews.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
-import { captureLogs, createTestStore, fakeAppDatabases } from "./test-utils.ts";
+import { captureLogs, createTestStore } from "./test-utils.ts";
 
 /**
  * A fake {@link LeaderDb} whose reserved connection records every statement and
@@ -40,7 +40,6 @@ function fakeEnv() {
     store: createTestStore(),
     secrets: createMemorySecretStore(),
     slugLock: <T>(_slug: string, fn: () => Promise<T>) => fn(),
-    appDb: fakeAppDatabases(),
   };
 }
 

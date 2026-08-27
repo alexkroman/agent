@@ -1,18 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Specs for the `aai secret` / `aai storage` / `aai logs` command GROUP — its
- * wiring, not its executors (those are `secret.test.ts`, `storage.test.ts` and
+ * Specs for the `aai secret` / `aai logs` command GROUP — its
+ * wiring, not its executors (those are `secret.test.ts` and
  * `logs.test.ts`).
  *
  * Two things live at this layer and nowhere else: the verbs being reachable at
  * all, and each one reaching its executor with the arguments the flags mean —
- * including the optional `[dir]`, which every storage verb resolves against the
+ * including the optional `[dir]`, which every verb resolves against the
  * working directory rather than passing through.
  */
 
-import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { logs, secret, storage } from "./_resource-commands.ts";
+import { logs, secret } from "./_resource-commands.ts";
 
 const ok = { ok: true, data: {} };
 const executors = vi.hoisted(() => ({
@@ -23,15 +22,9 @@ const executors = vi.hoisted(() => ({
     readStdin: vi.fn().mockResolvedValue("s3cret"),
     NO_INPUT: ["no_input", "nothing on stdin"] as const,
   },
-  storage: {
-    executeStorageStatus: vi.fn().mockResolvedValue({ ok: true, data: {} }),
-    executeStorageEnable: vi.fn().mockResolvedValue({ ok: true, data: {} }),
-    executeStorageDisable: vi.fn().mockResolvedValue({ ok: true, data: {} }),
-  },
   logs: { executeLogs: vi.fn().mockResolvedValue({ ok: true, data: {} }) },
 }));
 vi.mock("./secret.ts", () => executors.secret);
-vi.mock("./storage.ts", () => executors.storage);
 vi.mock("./logs.ts", () => executors.logs);
 
 // Module-level `vi.fn()`s: `restoreMocks` registers only `vi.spyOn` mocks, so
@@ -40,7 +33,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   for (const fn of Object.values(executors.secret))
     if (vi.isMockFunction(fn)) fn.mockResolvedValue(ok);
-  for (const fn of Object.values(executors.storage)) fn.mockResolvedValue(ok);
   executors.logs.executeLogs.mockResolvedValue(ok);
   executors.secret.readStdin.mockResolvedValue("s3cret");
 });
@@ -92,48 +84,6 @@ describe("the secret command group", () => {
     expect(executors.secret.executeSecretList).toHaveBeenCalledWith(
       expect.any(String),
       "https://s",
-    );
-  });
-});
-
-describe("the storage command group", () => {
-  test.each(["status", "enable", "disable"])("declares the %s verb", (name) => {
-    expect(subsOf(storage)[name]).toBeDefined();
-  });
-
-  test("the optional [dir] is resolved against the working directory", async () => {
-    await subsOf(storage).status?.run({ args: { dir: "sub/project", json: false } });
-    const [resolved] = executors.storage.executeStorageStatus.mock.calls[0] as [string];
-    expect(path.isAbsolute(resolved)).toBe(true);
-    expect(resolved.endsWith(path.join("sub", "project"))).toBe(true);
-  });
-
-  test("no [dir] leaves the working directory alone", async () => {
-    await subsOf(storage).enable?.run({ args: { json: false } });
-    expect(executors.storage.executeStorageEnable).toHaveBeenCalledWith(
-      expect.any(String),
-      undefined,
-      // No `--tier`: the executor decides the default, and an unflagged run must
-      // send no body at all so its request stays byte-identical to a released
-      // CLI's (`executeStorageEnable`).
-      undefined,
-    );
-  });
-
-  test("--tier is forwarded, so an app can declare the cheaper entitlement", async () => {
-    await subsOf(storage).enable?.run({ args: { tier: "storage", json: false } });
-    expect(executors.storage.executeStorageEnable).toHaveBeenCalledWith(
-      expect.any(String),
-      undefined,
-      "storage",
-    );
-  });
-
-  test("disable forwards --force, since it DROPS the schema", async () => {
-    await subsOf(storage).disable?.run({ args: { force: true, json: false } });
-    expect(executors.storage.executeStorageDisable).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ force: true }),
     );
   });
 });

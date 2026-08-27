@@ -6,7 +6,6 @@ import type { UIMessage } from "ai";
 import { parse } from "dotenv";
 import { ApiError } from "./api-error.ts";
 import { type StreamDownReason, watchEventStream } from "./api-events.ts";
-import { tableReads } from "./api-tables.ts";
 import {
   ACCOUNT_ATTEMPT_TIMEOUT_MS,
   AGENT_LOGS_ATTEMPT_TIMEOUT_MS,
@@ -21,7 +20,6 @@ import type {
   AgentLogsPage,
   AuthConfig,
   ChatSession,
-  DatabaseState,
   ProjectData,
   ProjectKind,
   StudioStatus,
@@ -45,16 +43,9 @@ export type {
   AgentLogsPage,
   AuthConfig,
   ChatSession,
-  DatabaseEnvironment,
-  DatabaseEnvironmentName,
-  DatabaseState,
-  DatabaseUsage,
   ProjectData,
   ProjectKind,
   StudioStatus,
-  TableListing,
-  TablePage,
-  TableSummary,
 } from "./api-types.ts";
 
 /** Stands in for a body that would not parse — one sentinel, not one per call. */
@@ -135,8 +126,6 @@ function projectPath(project: string, suffix = ""): string {
 }
 
 export const api = {
-  ...tableReads(request),
-
   /**
    * A deployed agent's captured stdout/stderr, after `after`.
    *
@@ -369,31 +358,6 @@ export const api = {
       projectPath(project, "/deploy"),
       { method: "POST", body: "{}" },
     ),
-
-  /**
-   * The project's database (`ctx.db`) across both environments. A studio
-   * route rather than the platform's per-slug `/:slug/storage`: a project is
-   * two deployed agents, and the switch can be flipped before either exists
-   * (see aai-studio-server/studio-database.ts).
-   */
-  getDatabase: (key: string, project: string) =>
-    request<DatabaseState>(key, projectPath(project, "/database")),
-
-  /** Provision the database for both environments. */
-  enableDatabase: (key: string, project: string) =>
-    request<DatabaseState>(key, projectPath(project, "/database"), {
-      method: "POST",
-      body: "{}",
-    }),
-
-  // The Database pane's two reads live in `api-tables.ts` and are spread in
-  // below — same surface to a caller, and this file is at its length cap.
-
-  /** Drop both environments' databases — and all their data. */
-  disableDatabase: (key: string, project: string) =>
-    request<DatabaseState>(key, projectPath(project, "/database"), {
-      method: "DELETE",
-    }),
 
   // PROJECT secrets — written to both of the project's deployed agents
   // (production and preview) by the server. This panel used to PUT the

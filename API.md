@@ -2730,9 +2730,6 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-export const APP_DB_BOOT_SPARE = 1;
-
-// @public
 export const APP_DB_POOL_MAX = 3;
 
 // @public
@@ -2865,9 +2862,6 @@ type FindOptions = {
 
 // @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
-
-// @public
-export function guestAppDbConnections(): number;
 
 // @internal
 export const HEARD_AUDIO_LAG_MS = 150;
@@ -3033,9 +3027,6 @@ type StartOptions = {
 
 // @public
 export const STORAGE_DISABLED_MESSAGE = "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings \u2192 Database in the studio; under `aai dev`, set DATABASE_URL in the project .env.";
-
-// @public
-export function storageAppDbConnections(): number;
 
 // @public
 type StreamOptions = {

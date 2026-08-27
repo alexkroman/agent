@@ -44,8 +44,14 @@
  * held by the client that thinks it holds it. That is silent loss of mutual
  * exclusion, so {@link assertSessionModeUrl} refuses such a URL at
  * construction instead: the platform admin connection must be the direct
- * (session-mode) string. Per-app databases are unaffected — they are fronted
- * by the pooler on purpose and take no advisory locks.
+ * (session-mode) string.
+ *
+ * The rule reaches every DIRECT pool on this connection, which now includes the
+ * durable-workflow world: `world-postgres` opens a `LISTEN` client with no polling
+ * fallback and graphile-worker uses named prepared statements, both of which a
+ * transaction pooler breaks silently. The exemption this paragraph used to carry —
+ * per-app databases, fronted by the pooler on purpose and taking no advisory locks
+ * — is gone with them.
  *
  * The advisory lock still takes the in-process `withSlugLock` first: local
  * waiters queue on the mutex instead of each holding a reserved connection

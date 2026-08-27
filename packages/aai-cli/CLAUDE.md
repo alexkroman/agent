@@ -187,10 +187,10 @@ citty `defineCommand`s: meta plus subcommands, no body and so no policy.
 emitter branches on the RESULT rather than on which arm produced it.** For a
 long time only `runCommand`'s `catch` printed anything, so a body that RETURNED
 a failure fell straight through to the JSON check and `process.exit(1)`: in
-human mode, exit 1 with an empty terminal. Nine paths — `aai test` with no
-runner binary on PATH (message *and* hint discarded), all four `aai workflow`
-verbs against a booting sandbox (the agent's own sentence plus `HINT_BROKER`),
-`aai secret put` with an empty value, `aai storage disable` without `--force` —
+human mode, exit 1 with an empty terminal. Nine paths (one has since gone with
+the `storage` command) — `aai test` with no runner binary on PATH (message *and*
+hint discarded), all four `aai workflow` verbs against a booting sandbox (the
+agent's own sentence plus `HINT_BROKER`), `aai secret put` with an empty value —
 were silent, while the module's own doc comment asserted the opposite. Keep new
 emission keyed on `result.ok`, never on the code path.
 

@@ -215,20 +215,28 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     expect(await store.getEnv("test-agent")).toBeNull();
   });
 
-  test("deleteAgent removes the agent's secret entries (env + app-db)", async () => {
+  /**
+   * The env record goes; a LEGACY `app-db:<slug>` row deliberately does not.
+   *
+   * It used to delete both, when the platform provisioned a database per app and
+   * the delete route dropped that database first. Nothing writes such a row now —
+   * and a row that survives from before holds the ONLY credential for a database
+   * that may still exist, so deleting it strands the data with no way back in.
+   * That is the "leaked, out loud" failure `orphan-previews.ts` names, and it is
+   * why this asserts the survival rather than the sweep.
+   */
+  test("deleteAgent removes the env record and leaves a legacy app-db row alone", async () => {
     const { store, secrets } = makeStore();
 
     await store.putAgent({ ...BASE_BUNDLE, env: { K: "v" } });
-    await secrets.put(
-      "app-db:test-agent",
-      JSON.stringify({ schema: "s", role: "r", password: "p" }),
-    );
+    const legacy = JSON.stringify({ schema: "s", role: "r", password: "p" });
+    await secrets.put("app-db:test-agent", legacy);
     expect(await secrets.get("agent-env:test-agent")).toBe(JSON.stringify({ K: "v" }));
 
     await store.deleteAgent("test-agent");
 
     expect(await secrets.get("agent-env:test-agent")).toBeNull();
-    expect(await secrets.get("app-db:test-agent")).toBeNull();
+    expect(await secrets.get("app-db:test-agent")).toBe(legacy);
   });
 
   test("env round-trips through the secret store, never the agents row", async () => {

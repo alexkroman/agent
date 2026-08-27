@@ -4,8 +4,9 @@
  * of them exists.
  *
  * The per-slug routes (`/:slug/secret`, what `aai secret` drives) stay the
- * platform primitive; this is the project-level switch over them, exactly as
- * `studio-secrets`' sibling `studio-database.ts` is for `ctx.db`. The fan-out
+ * platform primitive; this is the project-level switch over them. It had a
+ * sibling, `studio-database.ts`, doing the same for `ctx.db`; that went with
+ * per-app databases, so this is the only one left. The fan-out
  * used to live in the browser (`settings.tsx` PUT the production slug, then
  * mirrored to the preview one), which made it a property of the STUDIO CLIENT
  * rather than of a project — so every other caller silently wrote to
@@ -58,7 +59,7 @@ export type ProjectSecretsEnv = SecretEnv & {
 
 /**
  * SecretStore name for a project's own secret record — the sibling of
- * `agent-env:<slug>` and `app-db:<slug>`, keyed by (scope, project) because
+ * `agent-env:<slug>`, keyed by (scope, project) because
  * that pair is what identifies a project and neither half is guessable from
  * outside the owning account (`scope` is a SHA-256).
  */

@@ -989,20 +989,27 @@ are silently dropped by `on conflict do nothing`. **Both backends must answer
 call, awaited, once per changed slot), the fail-open rule for shape drift on
 redeploy, and the size cap; `host/runtime-session-state.ts` for where a session
 hydrates and where it is reclaimed; `host/session-state-postgres.ts` for the table
-and what the app database guarantees. **Persistence is reliable across crashes and
-best-effort across redeploys.**
+and what a Postgres it is GIVEN guarantees. **Persistence is reliable across
+crashes and best-effort across redeploys.**
+
+**There is a THIRD backend, and on the platform it is the one that runs.**
+`session-state-platform.ts` (in `aai-runtime`) puts slots and the event log on
+the PLATFORM's database over HTTP — the app database this one was written for no
+longer exists. All three must agree; that is what makes memory a valid double.
 
 **The tables come WITH the database, and this backend creates none.**
-`sessionStateDdl` is the shape; the platform applies it when it provisions an
-app's database (`aai-server/app-database.ts`), because the tables are part of
-what "this app has a database" means, exactly as its role and grants are. The
-backend used to `create table if not exists` on its own read and write paths,
-behind two memos — and the argument for that (the shape belongs to the BUNDLE's
+`sessionStateDdl` is the shape, and whoever OWNS the database applies it — a
+migration on the platform's own, or the operator of a self-hosted deployment.
+The platform used to apply it while provisioning an app's database, the tables
+being part of what "this app has a database" meant.
+
+The backend used to `create table if not exists` on its own read and write
+paths, behind two memos — and that argument (the shape belongs to the BUNDLE's
 SDK version) does not survive inspection: `if not exists` is a no-op once the
 table exists, so a newer SDK expecting an added column was broken either way.
 What it cost was two round trips and a `42P07` NOTICE per guest boot, in the log
-an operator reads to diagnose a session. A missing table now surfaces as the
-honest error it is — this app's schema was never provisioned with one.
+an operator reads to diagnose a session. A missing table surfaces as the honest
+error it is.
 
 **`dialog()` is the other primitive built on a slot** — what an agent may do NEXT,
 gated at EXECUTION. `sdk/dialog.ts`'s module doc owns it. Three things about its
@@ -1121,31 +1128,36 @@ when a caller reads it aloud and which words name a status.
 
 ## Storage (`ctx.db`)
 
-There is no KV store anymore. Persistent state is the opt-in **app database**:
-enabling storage for an app (CLI `aai storage enable <slug>`; the studio's
-Settings pane → Database, which switches BOTH of a project's agents at once —
-see the Database-card note in `packages/aai-studio-client/CLAUDE.md`; or
-`DATABASE_URL` in the project `.env` under `aai dev`) gives its tools `ctx.db` —
-a SQL handle (`query<T>(sql, params?)`, `$1` placeholders) backed by the app's own
-DATABASE in the platform's Supabase instance. Accessing `ctx.db` without storage
-enabled throws with that enablement guidance. On the platform each app gets its
-own DATABASE + login role (its tables in `public`, no `search_path` pin needed,
-10s statement_timeout, `CONNECT` revoked from `PUBLIC`); credentials live in
-Supabase Vault. A schema per app could not host a durable workflow at all — the
-Workflow DevKit's `workflow` and `graphile_worker` are database-level names — so
-`aai-server/app-database.ts` is the argument.
+There is no KV store anymore, and **the platform provisions no database
+either.** Persistent state is a Postgres the AUTHOR brings: put a `DATABASE_URL`
+in the agent's secrets (`aai secret put`, the studio's Secrets pane, or the
+project `.env` under `aai dev`) and its tools get `ctx.db` — a SQL handle
+(`query<T>(sql, params?)`, `$1` placeholders) against that database. Accessing
+`ctx.db` without one throws saying so.
 
-**`ctx.db` connects DIRECTLY from the guest** — the app's own scoped Postgres
-credentials ride in as `DATABASE_URL` in the agent's boot env and the bundle's
-runtime opens its own connection, exactly as `aai dev` does with a project
-`.env`. The old host-proxied `db/query` RPC is gone: it kept a versioned RPC in
-the harness↔bundle contract to protect a credential that only reaches the
-tenant's own data anyway.
+It used to be an opt-in the PLATFORM fulfilled — `aai storage enable <slug>` or
+a studio Database card provisioned a DATABASE and login role per app and
+injected the credentials as `DATABASE_URL` LAST, silently overriding whatever
+the author had set. All gone; see "The platform provisions no tenant database"
+in `packages/aai-server/CLAUDE.md`.
+
+**Durable state did NOT go with it.** Durable workflow runs and turn-level
+durability (session slots, the event log) are the PLATFORM's, reached over HTTP,
+and no longer depend on the agent having a database at all. `ctx.db` is now only
+what its name says: SQL an author writes against a database they chose.
+
+**`ctx.db` connects DIRECTLY from the guest** — `DATABASE_URL` rides in with the
+rest of the agent env and the bundle's runtime opens its own connection, exactly
+as `aai dev` does with a project `.env`. The old host-proxied `db/query` RPC is
+gone: it kept a versioned RPC in the harness↔bundle contract to protect a
+credential that only reaches the tenant's own data anyway. This is now the ONLY
+shape — there is no platform-composed value to prefer over the author's.
 
 Session-scoped scratch belongs in a `sessionSlot` (or the `remember`/`recall`
-builtins, in-memory per-session) — durable through the same app database when
-one exists, so the two differ in SHAPE (a typed value per session vs. SQL an
-author writes) rather than in whether they survive. There is no
+builtins, in-memory per-session) — durable through the PLATFORM's session-state
+backend, which needs no database of the author's, so the two differ in SHAPE (a
+typed value per session vs. SQL an author writes) rather than in whether they
+survive. There is no
 Vector store anymore either — `ctx.vector`, the `vector:` agent field, the
 `@alexkroman1/aai/vector` subpath and the platform-owned `PINECONE_API_KEY` were
 all removed; if retrieval returns it follows `ctx.db`'s path.

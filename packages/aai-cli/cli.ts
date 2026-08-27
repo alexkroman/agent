@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { defineCommand, runMain, showUsage } from "citty";
 import { commandPath, defineExec, sharedArgs, unknownFlagsForArgv } from "./_cli-common.ts";
 import { fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
-import { logs, secret, storage } from "./_resource-commands.ts";
+import { logs, secret } from "./_resource-commands.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
 import { log } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, readPackageJson, resolveCwd } from "./_utils.ts";
@@ -243,7 +243,6 @@ export const mainCommand = defineCommand({
     login,
     secret,
     logs,
-    storage,
     workflow,
     templates,
   },
