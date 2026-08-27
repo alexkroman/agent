@@ -29,13 +29,21 @@ import {
   APP_DB_WORLD_POOL_MAX,
   APP_DB_WORLD_WORKER_CONCURRENCY,
   guestAppDbConnections,
+  storageAppDbConnections,
 } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { WORKFLOW_WAKE_READ_CONCURRENCY } from "./_workflow-wake-read.ts";
 import {
+  APP_DB_CONNECTION_ALLOWANCE,
+  APP_DB_STORAGE_CONNECTION_LIMIT,
+  APP_DB_WORKFLOW_CONNECTION_LIMIT,
+  appDbClusterConnectionsPerReplica,
+  appDbConnectionLimit,
+  DEFAULT_APP_DB_TIER,
+} from "./app-db-tier.ts";
+import {
   ADMIN_POOL_MAX,
   APP_DB_ADMIN_POOL_MAX,
-  APP_DB_CONNECTION_LIMIT,
   APP_DB_TARGET_POOL_MAX,
   MAX_ACTIVE_APP_DATABASES,
   MAX_PLATFORM_DB_CONNECTIONS,
@@ -84,12 +92,13 @@ describe("platform database connection budget", () => {
   test("the fleet's direct pools AND the app databases fit the budget together", () => {
     const maxContainers = pyInt("MAX_CONTAINERS");
     const fleetDirect = maxContainers * platformDbConnectionsPerReplica();
-    const appTotal = MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT;
+    const appTotal = APP_DB_CONNECTION_ALLOWANCE;
 
     expect(
       fleetDirect + appTotal,
       `MAX_CONTAINERS (${maxContainers}) x ${platformDbConnectionsPerReplica()} = ${fleetDirect} ` +
-        `direct, plus ${MAX_ACTIVE_APP_DATABASES} app databases x ${APP_DB_CONNECTION_LIMIT} = ` +
+        `direct, plus ${MAX_ACTIVE_APP_DATABASES} app databases x ` +
+        `${APP_DB_WORKFLOW_CONNECTION_LIMIT} = ` +
         `${appTotal}, is ${fleetDirect + appTotal} against a ${MAX_PLATFORM_DB_CONNECTIONS} ` +
         "budget. These two terms compete: lower MAX_CONTAINERS to buy app databases, or " +
         "provision a bigger instance / shard with APP_DB_URLS to buy both.",
@@ -248,7 +257,7 @@ describe("platform database connection budget", () => {
   /**
    * The OTHER half of the per-tenant number, and the half that was uncounted.
    *
-   * `APP_DB_CONNECTION_LIMIT` is a `connection limit` on a Postgres ROLE, so it
+   * A tier's limit is a `connection limit` on a Postgres ROLE, so it
    * is not a target the guest aims at — it is a refusal, and the guest's own
    * consumers are what add up to it. Those consumers live in the SDK
    * (`aai/sdk/app-db-budget.ts`), which is why this reaches across the package
@@ -266,10 +275,11 @@ describe("platform database connection budget", () => {
     expect(
       guestAppDbConnections() + APP_DB_BOOT_SPARE,
       `a workflow guest may hold ${guestAppDbConnections()} connections, plus ` +
-        `${APP_DB_BOOT_SPARE} spare, against a role limited to ${APP_DB_CONNECTION_LIMIT}. ` +
+        `${APP_DB_BOOT_SPARE} spare, against a workflow-tier role limited to ` +
+        `${APP_DB_WORKFLOW_CONNECTION_LIMIT}. ` +
         "Lower a term in aai/sdk/app-db-budget.ts, or raise the limit — which costs " +
         "MAX_ACTIVE_APP_DATABASES, per the test above.",
-    ).toBeLessThanOrEqual(APP_DB_CONNECTION_LIMIT);
+    ).toBeLessThanOrEqual(APP_DB_WORKFLOW_CONNECTION_LIMIT);
   });
 
   /**
@@ -284,7 +294,7 @@ describe("platform database connection budget", () => {
     expect(APP_DB_WORLD_WORKER_CONCURRENCY).toBe(APP_DB_WORLD_POOL_MAX - 1);
     // And the app's own handle is not the whole remainder: the budget has to fit
     // the world's pool, its streamer LISTEN and the presence lock beside it.
-    expect(APP_DB_POOL_MAX).toBeLessThan(APP_DB_CONNECTION_LIMIT - APP_DB_WORLD_POOL_MAX);
+    expect(APP_DB_POOL_MAX).toBeLessThan(APP_DB_WORKFLOW_CONNECTION_LIMIT - APP_DB_WORLD_POOL_MAX);
   });
 
   /**
@@ -299,15 +309,98 @@ describe("platform database connection budget", () => {
     expect(deployPy).toMatch(/"MAX_CONTAINERS":\s*str\(MAX_CONTAINERS\)/);
   });
 
-  test("extra APP_DB_URLS clusters are counted, because each pools its own", () => {
-    // The budget is per REPLICA x containers, so a second placement cluster
-    // adds MAX_CONTAINERS connections fleet-wide, not four. Adding one today
-    // would exceed the budget — which is the point of counting it here rather
-    // than discovering it when the cluster is added.
-    expect(platformDbConnectionsPerReplica(1)).toBe(SLUG_LOCK_POOL_MAX + APP_DB_TARGET_POOL_MAX);
-    expect(platformDbConnectionsPerReplica(2)).toBe(
-      platformDbConnectionsPerReplica(1) + APP_DB_TARGET_POOL_MAX,
+  /**
+   * An extra placement cluster costs the PRIMARY's budget nothing, and the
+   * arithmetic that said otherwise is why there were none.
+   *
+   * `platformDbConnectionsPerReplica` took an extra-cluster count and added
+   * `APP_DB_TARGET_POOL_MAX` per cluster into a budget calibrated entirely
+   * against one instance (60 `max_connections`, ~17 held by Supabase's own
+   * workers). But `extraAppDbTargets` pools those connections against the extra
+   * project's OWN url — a different instance — so they never compete with the
+   * primary's Vault reads or slug locks. One extra cluster took the fleet claim
+   * from 40 to 60 against a 40 budget, and `workflow-wake.ts` recorded the
+   * resulting overrun as the reason sharding was unaffordable: the one mechanism
+   * that relieves this ceiling, blocked by a miscount of it.
+   */
+  test("an extra APP_DB_URLS cluster costs the PRIMARY budget nothing", () => {
+    const maxContainers = pyInt("MAX_CONTAINERS");
+    // The signature no longer accepts a cluster count at all, which is the
+    // structural half of the fix: there is no way to spell the old sum.
+    expect(platformDbConnectionsPerReplica()).toBe(SLUG_LOCK_POOL_MAX);
+    expect(platformDbConnectionsPerReplica.length).toBe(0);
+
+    // And the whole budget still fits WITH a cluster configured, which is the
+    // property that was false before.
+    const fleetDirect = maxContainers * platformDbConnectionsPerReplica();
+    expect(fleetDirect + APP_DB_CONNECTION_ALLOWANCE).toBeLessThanOrEqual(
+      MAX_PLATFORM_DB_CONNECTIONS,
     );
+  });
+
+  /**
+   * The extra cluster's own claim, which is where those connections really land.
+   *
+   * Counted rather than dropped: an app-database cluster hosts no slug lock, no
+   * Vault and no agents rows, so its ceiling is this pool times `MAX_CONTAINERS`
+   * plus the entitlements of the apps placed on it. A cluster whose pool alone
+   * outgrew a plausible instance would be the same class of bug one instance
+   * over.
+   */
+  test("an extra cluster's own per-replica claim is its app-db pool", () => {
+    const maxContainers = pyInt("MAX_CONTAINERS");
+    expect(appDbClusterConnectionsPerReplica()).toBe(APP_DB_TARGET_POOL_MAX);
+    // No slug lock on a placement cluster — that is the primary's, fleet-wide.
+    expect(appDbClusterConnectionsPerReplica()).toBeLessThan(
+      platformDbConnectionsPerReplica() + APP_DB_TARGET_POOL_MAX,
+    );
+    expect(
+      maxContainers * appDbClusterConnectionsPerReplica(),
+      "a placement cluster's resident pools must leave room for the apps on it",
+    ).toBeLessThan(MAX_PLATFORM_DB_CONNECTIONS);
+  });
+
+  /**
+   * The two tiers, and the division that is the whole reason for having them.
+   *
+   * Each is asserted against the SDK's own sum for the guest it describes, since
+   * the terms live there (`aai/sdk/app-db-budget.ts`) and a copy in this repo has
+   * already gone stale once. The storage tier's sum is the interesting one: three
+   * of the workflow tier's four terms exist only for the DevKit's world, which a
+   * guest declaring no workflows never starts.
+   */
+  test("each tier's limit fits the guest it is for, and the allowance divides", () => {
+    expect(appDbConnectionLimit("workflow")).toBe(APP_DB_WORKFLOW_CONNECTION_LIMIT);
+    expect(appDbConnectionLimit("storage")).toBe(APP_DB_STORAGE_CONNECTION_LIMIT);
+    expect(
+      storageAppDbConnections() + APP_DB_BOOT_SPARE,
+      "a storage-only guest holds its ctx.db handle and nothing else; the spare covers " +
+        "the handover overlap exactly as it does at the workflow tier",
+    ).toBeLessThanOrEqual(APP_DB_STORAGE_CONNECTION_LIMIT);
+    // The tier is only worth having if it is genuinely cheaper.
+    expect(APP_DB_STORAGE_CONNECTION_LIMIT).toBeLessThan(APP_DB_WORKFLOW_CONNECTION_LIMIT);
+    // And what it buys is app databases on one instance: the same allowance
+    // affords MAX_ACTIVE_APP_DATABASES workflow apps or more storage-only ones.
+    expect(APP_DB_CONNECTION_ALLOWANCE / APP_DB_WORKFLOW_CONNECTION_LIMIT).toBe(
+      MAX_ACTIVE_APP_DATABASES,
+    );
+    expect(
+      Math.floor(APP_DB_CONNECTION_ALLOWANCE / APP_DB_STORAGE_CONNECTION_LIMIT),
+    ).toBeGreaterThan(MAX_ACTIVE_APP_DATABASES);
+  });
+
+  /**
+   * The default tier is the WIDE one, and that is a compatibility property
+   * rather than a preference.
+   *
+   * Every app provisioned before tiers existed carries the workflow limit, and a
+   * stored meta with no `tier` reads as this default — so the value the parser
+   * substitutes and the limit the role really has are the same number. Flipping
+   * this constant would silently misdescribe every one of those roles.
+   */
+  test("the default tier is the one every existing app was provisioned at", () => {
+    expect(DEFAULT_APP_DB_TIER).toBe("workflow");
+    expect(appDbConnectionLimit(DEFAULT_APP_DB_TIER)).toBe(APP_DB_WORKFLOW_CONNECTION_LIMIT);
   });
 
   test("only the SESSION-affine pool is counted as direct", () => {

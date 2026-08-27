@@ -353,14 +353,15 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   every other tenant's schema and role out of `pg_namespace`/`pg_roles`.
 
   Three properties the module doc argues: the database is owned by the ADMIN
-  role, **`revoke connect … from public` IS the tenant boundary** (Postgres grants
-  `CONNECT` to `PUBLIC`), and `grant … on schema public` is required because PG15+
-  makes it writable by nobody else. `search_path` pinning is gone.
+  role, **`revoke connect … from public` IS the tenant boundary**, and
+  `grant … on schema public` is required on PG15+. `search_path` pinning is gone.
 
-  **Deprovision follows the app's stored LOCATOR, never a recomputed placement**,
-  and so does `usage`: changing `APP_DB_URLS` re-shuffles every existing app, so
-  the `url` in its `app-db:<slug>` meta is the only record of where it lives.
-  What recomputing costs is on `AppDatabases.deprovision`.
+  **Every per-app operation follows the app's stored LOCATOR, never a recomputed
+  placement** — deprovision, `usage`, `withAppDb` and `reconcileTier` alike:
+  changing `APP_DB_URLS` re-shuffles placement, so the `url` in its
+  `app-db:<slug>` meta is the only record of where it lives, and it selects the
+  cluster's POOLER too. What recomputing costs is on
+  `AppDatabases.deprovision`.
 
   **The per-tenant caps differ in strength, and only two are controls.**
   `connection limit` is superuser-only to raise and `temp_file_limit` is `SUSET`
@@ -546,35 +547,40 @@ The cross-replica coordination that lives in this same Postgres:
   error rather than a routing decision** — the pooler in front of them is
   Supavisor in SESSION mode, which multiplexes NOTHING, so the bound was on the
   term an operator sets (`MAX_CONTAINERS`) while the term that scales with
-  TENANTS went uncounted. `MAX_ACTIVE_APP_DATABASES` is that term and its value
-  is the finding: **two**, raisable only by a bigger instance or `APP_DB_URLS`
-  sharding. `constants.ts` carries the arithmetic and the calibration numbers.
+  TENANTS went uncounted. `MAX_ACTIVE_APP_DATABASES` is that term: **two** at the
+  WORKFLOW tier, five at the STORAGE tier (seven of a workflow role's ten
+  connections are the DevKit world's, which an agent declaring no workflows never
+  starts). The tier is the owner's declaration (`aai storage enable --tier`) —
+  nothing here can derive it, see "The platform stores no agent config".
+
+  **Those are WORST-CASE accounting, not tenant capacity, and NOTHING ENFORCES
+  THEM.** A `connection limit` is a refusal threshold, not a reservation;
+  provisioning is unbounded; a guest self-exits after `AGENT_IDLE_EXIT_MS`
+  holding zero, and a live workflow guest at rest holds **three**, not ten. So:
+  hundreds provisioned, a handful live, two only at simultaneous peak. No
+  admission control consults this, so the ceiling is crossed SILENTLY — as
+  `too many connections for role` in a tenant's guest or `remaining connection
+  slots are reserved` on a platform read. Live per-role metering is the open gap
+  (`IN_USE_SQL` runs once, at boot).
+
+  An extra `APP_DB_URLS` cluster costs this budget NOTHING: its pool is on that
+  project's own instance, and charging it here made sharding look unaffordable by
+  miscounting the ceiling it relieves. `constants.ts` carries the arithmetic.
 
   **And boot CHECKS the claim** (`platform-db-capacity.ts`): `show
   max_connections` plus a `pg_stat_activity` count against `platformDbBudget()`,
   warning with the arithmetic on an overrun.
 
   **The claim depends on how the ADMIN pool is ROUTED, and the check could not
-  see that.** The constant excludes that pool on a PREMISE — that
-  `PLATFORM_POOLER_URL` points it at a transaction pooler, which really does
-  multiplex — and `platformDbBudget()` was a pure constant, so it was
-  indifferent to whether the premise held. Production ran with the variable
-  unset, making the fleet claim `40 + MAX_CONTAINERS x ADMIN_POOL_MAX = 60`
-  against `max_connections=60` with 20 already held by Supabase's own workers —
-  and boot printed `capacity ok — 0 spare` one line UNDER the warning naming
-  those four per replica. Both numbers logged, nothing comparing them, and the
-  53300 exhaustion they predict arrived unwarned. The budget takes an env now;
-  `MAX_CONTAINERS` is exported into the container env by `modal_deploy.py`
-  rather than restated in TypeScript, and `platform-db-budget.test.ts` asserts
-  that export — without it the reader sees one replica and could print
-  `capacity ok` over the overrun again. The constant's doc used to say
-  "nothing in the repo can check it", which was the reason it went unchecked
-  rather than a property of the problem — this process holds a connection. Other
-  load is **measured, not declared**, which the laziness above is what makes
-  sound (ONE direct backend at idle here, on pools sized 4 and 4); it is a FLOOR,
-  since a replica booting into a warm fleet counts its peers, so it errs toward
-  warning. It never blocks boot — refusing to start over a projection turns a
-  future degradation into a present outage.
+  see that** — it excludes that pool on the PREMISE that `PLATFORM_POOLER_URL`
+  names a transaction pooler, and production ran with the variable unset, so boot
+  printed `capacity ok — 0 spare` one line under the warning naming the very
+  connections it was not counting, and the 53300 exhaustion arrived unwarned. The
+  budget takes an env now and `modal_deploy.py` EXPORTS `MAX_CONTAINERS` (asserted
+  by `platform-db-budget.test.ts`; without it the reader sees one replica).
+  `MAX_PLATFORM_DB_CONNECTIONS`'s own doc carries the rest, including why the
+  reading is a FLOOR and why it never blocks boot — refusing to start over a
+  projection turns a future degradation into a present outage.
 
   **Only the SLUG-LOCK pool is in that number, and what decides membership is
   whether a connection needs SESSION affinity.** Measured against a real
@@ -1635,29 +1641,26 @@ Four properties, each the answer to a way this could go wrong:
   bound to one database, so the admin connection cannot read a tenant's hint
   however it is qualified. The width is a CONSTANT — that is the property the
   connection budget needs, since `MAX_PLATFORM_DB_CONNECTIONS` cannot bound a
-  number that scales with the app count — and it used to be a constant of one.
-  Serial bounded the connections and bounded the pass duration at nothing: at a
-  few hundred apps a pass runs tens of seconds against a 60s interval, with
-  `WORKFLOW_WAKE_READ_TIMEOUT_MS` applying PER APP, and the whole pass sits inside
-  the leader transaction holding a reserved connection and the advisory lock. An
-  overrunning pass is skipped rather than queued, so the sweep rate halves — on
-  the only mechanism that wakes a run nobody is delivering to. See
-  `APP_DB_ADMIN_POOL_MAX`'s doc, which used to cite `WORKFLOW_WAKE_MAX_PER_TICK`
-  as this bound; that constant caps how many sandboxes a tick BOOTS and is checked
-  after every app has already been read. The SAVEPOINT per tenant is gone with the
-  shared transaction and so is its reason: a read that throws takes down a
-  connection nothing else is using, so one broken tenant cannot deny every later
-  one its wake. The candidate filter changed too — the old catalog query is
-  per-database now, so the cheap filter is the `app-db:` credential itself, read
-  for the fleet in one query over the same Vault view the sweeps use.
+  number that scales with the app count — and it used to be a constant of one,
+  which bounded the pass DURATION at nothing (a serial pass over a few hundred
+  apps outruns the 60s interval, and an overrunning pass is skipped, so the sweep
+  rate halves on the only mechanism that wakes an undelivered run).
+  `_workflow-wake-read.ts`'s module doc carries that, why the per-tenant
+  SAVEPOINTs went with the shared transaction, why the candidate filter is now
+  the `app-db:` credential rather than a catalog query, and why the width is a
+  worker pool rather than a semaphore. Note `APP_DB_ADMIN_POOL_MAX`'s doc once
+  cited `WORKFLOW_WAKE_MAX_PER_TICK` as this bound; that caps how many sandboxes
+  a tick BOOTS, checked after every app has been read.
 
-**Two things it does not cover, both inherited.** Apps on an extra
-`APP_DB_URLS` cluster are not swept — those pool their own connections, which
-the fleet budget cannot afford (`platform-db-budget.test.ts` fails for one extra
-target), so there are none, and boot WARNS naming the gap. And a step lost with
+**One thing it does not cover, inherited.** A step lost with
 its container stays lost for graphile-worker's 4-hour job expiry, since no other
 worker may claim a locked job before then — any boot for another reason repairs
 it sooner, because the Postgres world re-enqueues active runs on `start()`.
+
+Apps on an extra `APP_DB_URLS` cluster ARE swept — this said otherwise, and boot
+warned, which is why there were none. The pass follows each app's locator; the
+real bug was one fleet-wide `APP_DB_POOLER_URL`, and `AppDbTarget.poolerUrl` has
+it.
 
 **The guest half is a lifecycle change too**: in-flight workflow callbacks count
 as busy for both the idle window and a drain (`packages/aai-guest/CLAUDE.md`).

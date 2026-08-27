@@ -70,7 +70,7 @@ const POSTGRES_CONCURRENCY_ENV = "WORKFLOW_POSTGRES_WORKER_CONCURRENCY";
  * nothing but `ctx.db` ever used that role — making workflows work is what made
  * the tenant's connection footprint real.
  *
- * `APP_DB_CONNECTION_LIMIT` on the platform side is sized against the budget
+ * the app role's WORKFLOW-tier limit on the platform side is sized against the budget
  * module's sum, so the two move together. **Concurrency is one BELOW the pool**,
  * which is a correction: it used to be kept AT the pool size on the argument that
  * "a worker that cannot get a connection is a step waiting on a pool timeout,
@@ -226,7 +226,7 @@ export function localWorkflowDataDir(env: NodeJS.ProcessEnv = process.env): stri
  * **The start's commonest failure is TRANSIENT BY CONSTRUCTION, and one attempt
  * made it permanent.** A blue-green handover boots the replacement while the old
  * guest drains, so for a few seconds two guests share the app role's
- * `APP_DB_CONNECTION_LIMIT` — a boundary `aai/sdk/app-db-budget.ts` states
+ * its role's workflow-tier limit — a boundary `aai/sdk/app-db-budget.ts` states
  * outright ("two guests both at peak can still be refused"). What it does not
  * say, because it is this function's business, is what being refused COST:
  * `migrateAndSubscribe` ran once, the catch below logged, and the replacement

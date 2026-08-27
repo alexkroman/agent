@@ -97,13 +97,22 @@ const storageEnable = defineExec({
   meta: { name: "enable", description: "Enable the agent's app database" },
   args: {
     dir: dirArg,
+    // The default is the WIDER tier, so an agent that adds workflows without
+    // re-running this still works. `--tier storage` is the opt-in, and it is
+    // safe to re-run: the server reconciles an existing database's limit
+    // without rotating its credential.
+    tier: {
+      type: "string",
+      description:
+        "Connection tier: `workflow` (default) or `storage` for an agent with no durable workflows",
+    },
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
   cwd: "any",
   async run({ args, cwd }) {
     const { executeStorageEnable } = await import("./storage.ts");
-    return executeStorageEnable(resolveDirArg(cwd, args.dir), args.server);
+    return executeStorageEnable(resolveDirArg(cwd, args.dir), args.server, args.tier);
   },
 });
 

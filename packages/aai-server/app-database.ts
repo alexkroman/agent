@@ -52,15 +52,21 @@
 
 import { hash, randomBytes } from "node:crypto";
 import { errorMessage, safeJsonParse } from "@alexkroman1/aai";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { scrubSecret } from "./_scrub-secret.ts";
 import { scheduleAppSweeps, unscheduleAppSweeps } from "./_session-state-sweep.ts";
 import type { DatabaseAdmin } from "./app-db-admin.ts";
 import { appDbIdentifier, assertIdentifier } from "./app-db-identifier.ts";
 import { APP_DB_SCHEMA, ensureSessionTables, grantSessionTables } from "./app-db-session-tables.ts";
+import {
+  type AppDbTier,
+  appDbConnectionLimit,
+  DEFAULT_APP_DB_TIER,
+  isAppDbTier,
+  reconcileAppDbConnectionLimit,
+} from "./app-db-tier.ts";
 import { appDbAdminUrl, appDbUrlFor, withDatabase } from "./app-db-url.ts";
 import { type AppDbUsage, appDatabaseUsage } from "./app-db-usage.ts";
-import { APP_DB_CONNECTION_LIMIT } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -81,6 +87,13 @@ export type AppDbMeta = {
    * Absent only in rows from before the locator existed → primary cluster.
    */
   url?: string;
+  /**
+   * What this app was provisioned FOR — the tier its `connection limit` came
+   * from. Absent in rows written before tiers existed, which read as
+   * {@link DEFAULT_APP_DB_TIER}: that is the limit they really carry, so the
+   * absence is accurate rather than a default standing in for unknown.
+   */
+  tier?: AppDbTier;
 };
 
 export { appDbIdentifier } from "./app-db-identifier.ts";
@@ -135,9 +148,12 @@ export async function provisionAppDatabase(
   open: AppDbOpener,
   /** The Management API channel `create database` goes out on. */
   admin: DatabaseAdmin,
+  /** What the app is provisioned FOR — decides its `connection limit`. */
+  tier: AppDbTier = DEFAULT_APP_DB_TIER,
 ): Promise<AppDbMeta> {
   const id = assertIdentifier(appDbIdentifier(slug));
   const password = randomBytes(16).toString("hex");
+  const connectionLimit = appDbConnectionLimit(tier);
 
   // Step 1 — the role, create-or-alter. One batch (no bind params: DDL cannot
   // take placeholders, the identifier is shape-asserted above and the password
@@ -152,9 +168,9 @@ export async function provisionAppDatabase(
     `do $$
 begin
   if exists (select 1 from pg_roles where rolname = '${id}') then
-    alter role "${id}" with login password '${password}' connection limit ${APP_DB_CONNECTION_LIMIT};
+    alter role "${id}" with login password '${password}' connection limit ${connectionLimit};
   else
-    create role "${id}" with login password '${password}' connection limit ${APP_DB_CONNECTION_LIMIT};
+    create role "${id}" with login password '${password}' connection limit ${connectionLimit};
   end if;
 end
 $$;
@@ -228,7 +244,7 @@ grant connect, temporary, create on database "${id}" to "${id}"`,
     log.warn("provisioned without its session-state sweep", { id, error: errorMessage(err) });
   });
 
-  return { role: id, password, url: targetUrl };
+  return { role: id, password, url: targetUrl, tier };
 }
 
 const DUPLICATE_DATABASE = "42P04";
@@ -279,7 +295,21 @@ export async function deprovisionAppDatabase(
  * bindings when `SUPABASE_DB_URL` is unconfigured (storage routes 503).
  */
 export type AppDatabases = {
-  provision(slug: string): Promise<AppDbMeta>;
+  /**
+   * Provision at `tier` (default {@link DEFAULT_APP_DB_TIER}). The tier decides
+   * the role's `connection limit` and is the OWNER's declaration — nothing here
+   * can derive it, see {@link AppDbTier}.
+   */
+  provision(slug: string, tier?: AppDbTier): Promise<AppDbMeta>;
+  /**
+   * Move an already-provisioned app onto `tier`'s connection limit, without
+   * rotating its credential. Answers whether anything changed, which is what
+   * decides whether the caller rebuilds the guest.
+   *
+   * Runs on the cluster the app's own `meta` locates — never a recomputed
+   * placement, the same rule `deprovision` states.
+   */
+  reconcileTier(slug: string, meta: AppDbMeta, tier: AppDbTier): Promise<{ changed: boolean }>;
   /**
    * Drop one app's database and role.
    *
@@ -327,11 +357,25 @@ export type AppDatabases = {
 };
 
 /**
- * One placement target: a cluster's admin URL, an executor over it, and the
- * Management API channel its `create database` / `drop database` go out on —
- * per cluster, because the project ref is (see `app-db-admin.ts`).
+ * One placement target: a cluster's admin URL, an executor over it, the
+ * Management API channel its `create database` / `drop database` go out on, and
+ * the Supavisor its app databases are addressed through — all per cluster,
+ * because the project ref is (see `app-db-admin.ts`).
+ *
+ * **`poolerUrl` is per TARGET and was per fleet, which broke sharding
+ * outright.** A cluster is a separate Supabase project, so its Supavisor host
+ * and its tenant ref are its own; addressing an app on an extra cluster through
+ * the primary's pooler sent the extra project's username suffix to a Supavisor
+ * that does not know that tenant, and every connection failed. `extraAppDbTargets`
+ * carries the argument and the `<admin>|<pooler>` syntax.
  */
-export type AppDbTarget = { url: string; sql: SqlExec; admin: DatabaseAdmin };
+export type AppDbTarget = {
+  url: string;
+  sql: SqlExec;
+  admin: DatabaseAdmin;
+  /** This cluster's SESSION-mode Supavisor, or `undefined` for direct. */
+  poolerUrl?: string | undefined;
+};
 
 /** Deterministic placement: hash the slug across the configured clusters. */
 export function pickAppDbTarget(targets: AppDbTarget[], slug: string): AppDbTarget {
@@ -345,9 +389,9 @@ export function createAppDatabases(opts: {
   /** Opens a short-lived connection to an arbitrary database on any cluster. */
   open: AppDbOpener;
   /**
-   * Supavisor's host, in SESSION mode — every app-database connection is routed
-   * through it. See {@link withPoolerHost} for why that is what keeps per-app
-   * databases out of `MAX_PLATFORM_DB_CONNECTIONS`, and why 6543 is not an option.
+   * The PRIMARY cluster's Supavisor host, in SESSION mode. An extra cluster
+   * declares its own on its `AppDbTarget` — see that type, and why one fleet-wide
+   * pooler made sharding fail. `withPoolerHost` carries why 6543 is not an option.
    */
   poolerUrl?: string | undefined;
   /** Additional placement clusters (cellular sharding); primary is always a target. */
@@ -356,13 +400,23 @@ export function createAppDatabases(opts: {
   admin: DatabaseAdmin;
 }): AppDatabases {
   const targets: AppDbTarget[] = [
-    { url: opts.url, sql: opts.sql, admin: opts.admin },
+    {
+      url: opts.url,
+      sql: opts.sql,
+      admin: opts.admin,
+      ...omitUndefined({ poolerUrl: opts.poolerUrl }),
+    },
     ...(opts.extraTargets ?? []),
   ];
   const targetFor = (url: string | undefined): AppDbTarget =>
     targets.find((t) => t.url === url) ?? (targets[0] as AppDbTarget);
+  // Both halves of an address come from the SAME target — its admin URL and its
+  // own pooler. Reading the pooler off `opts` while the URL came from the
+  // locator is what addressed a sharded app at the wrong Supavisor; see
+  // `AppDbTarget.poolerUrl`.
   const withAppDb = async <T>(meta: AppDbMeta, fn: (sql: SqlExec) => Promise<T>): Promise<T> => {
-    const db = opts.open(appDbAdminUrl(meta, targetFor(meta.url).url, opts.poolerUrl));
+    const target = targetFor(meta.url);
+    const db = opts.open(appDbAdminUrl(meta, target.url, target.poolerUrl));
     try {
       return await fn(db.query);
     } finally {
@@ -370,10 +424,12 @@ export function createAppDatabases(opts: {
     }
   };
   return {
-    provision: (slug) => {
+    provision: (slug, tier = DEFAULT_APP_DB_TIER) => {
       const target = pickAppDbTarget(targets, slug);
-      return provisionAppDatabase(target.sql, slug, target.url, opts.open, target.admin);
+      return provisionAppDatabase(target.sql, slug, target.url, opts.open, target.admin, tier);
     },
+    reconcileTier: (slug, meta, tier) =>
+      reconcileAppDbConnectionLimit(targetFor(meta.url).sql, slug, tier),
     // Deprovision on the cluster the app's own locator names — never on a
     // recomputed placement (see the doc on AppDatabases.deprovision).
     deprovision: async (slug, meta) => {
@@ -396,7 +452,10 @@ export function createAppDatabases(opts: {
       }
       if (failure !== undefined) throw failure;
     },
-    connectionUrl: (meta) => appDbUrlFor(meta, targetFor(meta.url).url, opts.poolerUrl),
+    connectionUrl: (meta) => {
+      const target = targetFor(meta.url);
+      return appDbUrlFor(meta, target.url, target.poolerUrl);
+    },
     usage: (_slug, meta) => withAppDb(meta, appDatabaseUsage),
     withAppDb,
   };
@@ -411,6 +470,10 @@ export function parseAppDbMeta(raw: string | null): AppDbMeta | null {
       role: value.role,
       password: value.password,
       ...(typeof value.url === "string" && { url: value.url }),
+      // Validated against the closed set rather than trusted as a string: a
+      // stored meta is data, and an unrecognised tier must read as absent (i.e.
+      // the default limit the role really has) and never be interpolated.
+      ...(isAppDbTier(value.tier) && { tier: value.tier }),
     };
   }
   return null;

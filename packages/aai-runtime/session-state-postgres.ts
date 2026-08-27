@@ -30,9 +30,11 @@
  *
  * ## The connection budget
  *
- * `APP_DB_CONNECTION_LIMIT` is 4 per app role and one guest serves many
+ * An app role's `connection limit` is 4 or 10 depending on its TIER
+ * (`appDbConnectionLimit`, `aai-server/constants.ts`) and one guest serves many
  * concurrent sessions, so this shares a pool with `ctx.db`, the workflow world
- * and the wake-hint publisher. It therefore takes the runtime's ALREADY-OPEN
+ * and the wake-hint publisher. Note the STORAGE tier's 4 is the whole role's
+ * entitlement, which is why this may not open a handle of its own. It therefore takes the runtime's ALREADY-OPEN
  * handle rather than opening its own — the wake hint opens a second one because
  * it runs on a timer with no session in hand, and this never does.
  *

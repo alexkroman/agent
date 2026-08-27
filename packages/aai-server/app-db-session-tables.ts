@@ -77,7 +77,7 @@ export async function ensureSessionTables(sql: SqlExec): Promise<void> {
  * What `select, insert` still permits is APPENDING a forged line, which no grant
  * short of a second role can prevent while one credential serves both the runtime
  * and tool code — and a second role costs a second pool against
- * `APP_DB_CONNECTION_LIMIT`, which is the platform's scarcest resource
+ * the app role's tiered `connection limit`, the platform's scarcest resource
  * (`MAX_ACTIVE_APP_DATABASES` is 2). Append-only is the property that was
  * available; it is the one an audit log is usually asked for.
  *

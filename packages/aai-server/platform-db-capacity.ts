@@ -40,8 +40,12 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import {
+  APP_DB_CONNECTION_ALLOWANCE,
+  APP_DB_STORAGE_CONNECTION_LIMIT,
+  APP_DB_WORKFLOW_CONNECTION_LIMIT,
+} from "./app-db-tier.ts";
+import {
   ADMIN_POOL_MAX,
-  APP_DB_CONNECTION_LIMIT,
   MAX_ACTIVE_APP_DATABASES,
   MAX_PLATFORM_DB_CONNECTIONS,
 } from "./constants.ts";
@@ -128,7 +132,7 @@ export function unpooledAdminConnections(env: NodeJS.ProcessEnv = process.env): 
  * {@link MAX_ACTIVE_APP_DATABASES}.
  *
  * **They are in it ONCE, which is the fix.** This used to return
- * `MAX_PLATFORM_DB_CONNECTIONS + MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT`
+ * `MAX_PLATFORM_DB_CONNECTIONS + APP_DB_CONNECTION_ALLOWANCE`
  * — adding the app databases to a constant that already contains them, since
  * `platform-db-budget.test.ts` asserts `fleetDirect + appTotal <=
  * MAX_PLATFORM_DB_CONNECTIONS` and `MAX_ACTIVE_APP_DATABASES`'s own doc reads 40
@@ -148,7 +152,7 @@ export function unpooledAdminConnections(env: NodeJS.ProcessEnv = process.env): 
 export function platformDbBudget(env: NodeJS.ProcessEnv = process.env): number {
   // Deliberately the constant itself, not a sum. `MAX_PLATFORM_DB_CONNECTIONS`
   // IS the total — `MAX_CONTAINERS x platformDbConnectionsPerReplica()` for the
-  // direct pools PLUS `MAX_ACTIVE_APP_DATABASES x APP_DB_CONNECTION_LIMIT` for
+  // direct pools PLUS `APP_DB_CONNECTION_ALLOWANCE` for
   // the app databases — and `platform-db-budget.test.ts` is what holds it to
   // that. Re-deriving the sum here is what produced the double count.
   //
@@ -195,7 +199,7 @@ export function announcePlatformDbCapacity(
       // adding it is the bug this line used to print: "platform budget=60
       // (40 direct + 2 app databases x 10)" both overstated the claim by 20 and
       // read as though 60 were the sum of 40 and 20. See `platformDbBudget`.
-      const appTotal = MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT;
+      const appTotal = APP_DB_CONNECTION_ALLOWANCE;
       // The unpooled admin pool is named SEPARATELY from the constant, because
       // it is the only term that is not in it — quoting it inside the total the
       // way the app databases are quoted would read as a breakdown of
@@ -205,8 +209,11 @@ export function announcePlatformDbCapacity(
       const unpooled = unpooledAdminConnections(env);
       const arithmetic =
         `max_connections=${c.maxConnections}, in use at boot=${c.inUse}, ` +
-        `platform budget=${c.budgeted} (of which ${MAX_ACTIVE_APP_DATABASES} app ` +
-        `databases x ${APP_DB_CONNECTION_LIMIT} = ${appTotal}` +
+        `platform budget=${c.budgeted} (of which ${appTotal} for app databases: ` +
+        `${MAX_ACTIVE_APP_DATABASES} at the workflow tier's ` +
+        `${APP_DB_WORKFLOW_CONNECTION_LIMIT}, or ` +
+        `${Math.floor(appTotal / APP_DB_STORAGE_CONNECTION_LIMIT)} at the storage tier's ` +
+        `${APP_DB_STORAGE_CONNECTION_LIMIT}` +
         (unpooled > 0
           ? `, plus ${unpooled} for DIRECT admin pools — set PLATFORM_POOLER_URL`
           : "") +

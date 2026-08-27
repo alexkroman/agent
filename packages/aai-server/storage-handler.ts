@@ -36,9 +36,11 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { HTTPException } from "hono/http-exception";
 import {
   type AppDatabases,
+  type AppDbMeta,
   type AppDbUsage,
   parseAppDbMeta,
   reconcileSessionGrants,
@@ -50,6 +52,7 @@ import {
   type ReadAppTableParams,
   readAppTable,
 } from "./app-db-browse.ts";
+import { type AppDbTier, DEFAULT_APP_DB_TIER } from "./app-db-tier.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
@@ -166,7 +169,11 @@ export function storageTableRows(
  * `storageStatus` first for the same reason; this is the guard the per-slug
  * route was missing, and having it here means neither caller can forget it.
  */
-export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled: true }> {
+export function enableStorage(
+  env: StorageEnv,
+  slug: string,
+  tier: AppDbTier = DEFAULT_APP_DB_TIER,
+): Promise<{ enabled: true }> {
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
   return env.slugLock(slug, async () => {
@@ -184,14 +191,60 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
       } catch (err) {
         log.warn("session-table grants not reconciled", { slug, error: errorMessage(err) });
       }
+      // And it is therefore where a TIER change lands. An app that adds
+      // workflows needs the wider entitlement and a re-provision cannot deliver
+      // it — that rotates the password out from under the resident guest, which
+      // is the failure the whole idempotent branch exists to prevent. `alter
+      // role … connection limit` touches neither password nor login, so it can
+      // ride here; `aai storage enable` on an app whose config changed is the
+      // documented way to apply one.
+      await reconcileStoredTier(env, appDb, slug, existing, tier);
       return { enabled: true as const };
     }
-    const meta = await appDb.provision(slug);
+    const meta = await appDb.provision(slug, tier);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
-    log.info("enabled", { slug, role: meta.role });
+    log.info("enabled", { slug, role: meta.role, tier });
     await rebuildGuest(env, slug, "enabled");
     return { enabled: true as const };
   });
+}
+
+/**
+ * Apply `tier` to an app already provisioned at another one, and record it.
+ *
+ * Two writes, in this order, and the order is what makes a partial failure
+ * benign: the ROLE first, then the stored meta. A limit raised whose meta was
+ * not updated is an app with more headroom than its record claims — invisible,
+ * and repaired by the next enable. The reverse would be a record promising an
+ * entitlement the role does not have, which is the `too many connections for
+ * role` failure arriving from whichever consumer asked last.
+ *
+ * Best-effort for the same reason its neighbour above is: the database exists
+ * and its credentials are stored, so failing the request here would report
+ * "could not enable the database" for a database that works. A guest is rebuilt
+ * only when something really changed, matching the module doc's rule.
+ */
+async function reconcileStoredTier(
+  env: StorageEnv,
+  appDb: AppDatabases,
+  slug: string,
+  meta: AppDbMeta,
+  tier: AppDbTier,
+): Promise<void> {
+  const stored = meta.tier ?? DEFAULT_APP_DB_TIER;
+  if (stored === tier) return;
+  try {
+    const { changed } = await appDb.reconcileTier(slug, meta, tier);
+    await env.secrets.put(appDbSecretName(slug), JSON.stringify({ ...meta, tier }));
+    log.info("tier reconciled", { slug, from: stored, to: tier, changed });
+    // The guest's own connection ceiling is a property of the ROLE, so nothing
+    // in the guest's env changed — but a guest that has been refused
+    // connections at the old limit needs a fresh start to stop having been, and
+    // one moving DOWN a tier should not keep pools it is no longer entitled to.
+    if (changed) await rebuildGuest(env, slug, `retiered to ${tier}`);
+  } catch (err) {
+    log.warn("connection tier not reconciled", { slug, error: errorMessage(err) });
+  }
 }
 
 /** Deprovision (drops the schema and its data) + delete credentials. */
@@ -251,8 +304,29 @@ export async function handleStorageStatus(c: AppContext): Promise<Response> {
 }
 
 export async function handleStorageEnable(c: AppContext): Promise<Response> {
-  const { enabled } = await enableStorage(c.env, c.var.slug);
+  const { enabled } = await enableStorage(c.env, c.var.slug, await requestedTier(c));
   return c.json({ ok: true, enabled });
+}
+
+/**
+ * The tier a `POST /:slug/storage` asks for, defaulting to
+ * {@link DEFAULT_APP_DB_TIER}.
+ *
+ * **A body is OPTIONAL and an unreadable one is not an error.** This route has
+ * taken no body since it existed, so every `aai storage enable` in the wild — and
+ * the studio, which calls the core function directly — sends none; a strict parse
+ * would turn a working command into a 400 on upgrade. An unrecognised `tier`
+ * likewise falls back rather than refusing: the value only ever selects from a
+ * closed set, and the default is what every app used to get.
+ *
+ * The caller is already owner-authenticated, so this is not a trust boundary
+ * being widened — see {@link AppDbTier} for why a tenant-supplied tier is safe
+ * (the widest tier is the status quo, so asking gains nothing).
+ */
+async function requestedTier(c: AppContext): Promise<AppDbTier> {
+  const body: unknown = await c.req.json().catch(() => undefined);
+  const tier = isRecord(body) ? body.tier : undefined;
+  return tier === "storage" || tier === "workflow" ? tier : DEFAULT_APP_DB_TIER;
 }
 
 export async function handleStorageDisable(c: AppContext): Promise<Response> {

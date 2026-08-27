@@ -184,4 +184,70 @@ describe("extraAppDbTargets", () => {
       /SUPABASE_ACCESS_TOKEN/,
     );
   });
+
+  /**
+   * The pooler is PER CLUSTER, and while it was per fleet sharding could not
+   * work at all.
+   *
+   * `withPoolerHost` moves an app URL's host onto the pooler's. With one
+   * `APP_DB_POOLER_URL` for the fleet, an app on an extra cluster was addressed
+   * at the PRIMARY's Supavisor while `withDatabase` had correctly copied the
+   * EXTRA project's tenant suffix onto its username — and Supavisor identifies
+   * the tenant from that suffix. So every connection for a sharded app failed,
+   * the guest's own `DATABASE_URL` included.
+   */
+  test("an entry carries its own pooler, and it is kept with that target", () => {
+    silenceBoot();
+    const pooler =
+      "postgres://postgres.wwwwwwwwwwwwwwwwwwww:pw@aws-0-us-east-1.pooler.supabase.com:5432/postgres";
+    const [target] = extraAppDbTargets({
+      SUPABASE_ACCESS_TOKEN: "sbp_t",
+      APP_DB_URLS: `${SUPABASE_URL}|${pooler}`,
+    });
+    expect(target?.url).toBe(SUPABASE_URL);
+    expect(target?.poolerUrl).toBe(pooler);
+    // The channel still comes from the ADMIN half, not the pooler half.
+    expect(target?.admin.ref).toBe(REF);
+  });
+
+  test("an entry with no pooler is direct to that cluster", () => {
+    silenceBoot();
+    const [target] = extraAppDbTargets({
+      SUPABASE_ACCESS_TOKEN: "sbp_t",
+      APP_DB_URLS: SUPABASE_URL,
+    });
+    expect(target?.poolerUrl).toBeUndefined();
+  });
+
+  test("a per-cluster pooler is held to the same two rules as the primary's", () => {
+    silenceBoot();
+    // Transaction mode: breaks graphile-worker's prepared statements and
+    // world-postgres's LISTEN, silently — the queue appears to work and every
+    // parked run stops resuming.
+    expect(() =>
+      extraAppDbTargets({
+        SUPABASE_ACCESS_TOKEN: "sbp_t",
+        APP_DB_URLS: `${SUPABASE_URL}|postgres://postgres.w:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres`,
+      }),
+    ).toThrow();
+    // And Supabase's DIRECT host is not a pooler, whatever port it is given.
+    expect(() =>
+      extraAppDbTargets({
+        SUPABASE_ACCESS_TOKEN: "sbp_t",
+        APP_DB_URLS: `${SUPABASE_URL}|${SUPABASE_URL}`,
+      }),
+    ).toThrow();
+  });
+
+  test("a malformed entry is REFUSED rather than half-read", () => {
+    silenceBoot();
+    // Two separators is a typo, and ignoring the tail is how it reaches
+    // production addressed at the wrong host.
+    expect(() =>
+      extraAppDbTargets({ SUPABASE_ACCESS_TOKEN: "sbp_t", APP_DB_URLS: `${SUPABASE_URL}|a|b` }),
+    ).toThrow(/separators/);
+    expect(() =>
+      extraAppDbTargets({ SUPABASE_ACCESS_TOKEN: "sbp_t", APP_DB_URLS: "|only-a-pooler" }),
+    ).toThrow(/no admin URL/);
+  });
 });

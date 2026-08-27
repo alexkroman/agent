@@ -595,6 +595,78 @@ describe("createAppDatabases", () => {
     expect(healthyAdmin.dropped).toEqual([appDbIdentifier("slug-a")]);
     expect(dropStatements(healthy.calls)).toHaveLength(1);
   });
+
+  /**
+   * An app is addressed through ITS OWN cluster's pooler, and while the pooler
+   * was fleet-wide, sharding could not work at all.
+   *
+   * `withPoolerHost` moves an app URL's host onto the pooler's, and `poolerUrl`
+   * came from one `APP_DB_POOLER_URL` for the whole fleet — so an app placed on
+   * an extra cluster was addressed at the PRIMARY's Supavisor. `withDatabase`
+   * had already copied the EXTRA project's tenant suffix onto the username
+   * (correctly, from that cluster's admin URL), and Supavisor identifies the
+   * tenant from that suffix, so the primary's pooler could only refuse it. That
+   * is every connection for a sharded app, the guest's own `DATABASE_URL`
+   * included — which made `APP_DB_URLS`, the one mechanism that relieves the
+   * connection ceiling, unusable in production, silently.
+   *
+   * Both directions are asserted because they fail independently: the tenant's
+   * URL (`connectionUrl`, handed to the guest) and the platform's way in
+   * (`withAppDb` — the wake sweep and the usage read).
+   */
+  test("an app on an extra cluster is addressed through THAT cluster's pooler", async () => {
+    const secondaryUrl =
+      "postgres://postgres.bbbbbbbbbbbbbbbbbbbb:pw@cluster-b.example:5432/postgres";
+    const secondaryPooler = "postgres://postgres:pw@pooler-b.example:5432/postgres";
+    const opener = captureOpener();
+    const appDb = createAppDatabases({
+      url: "postgres://postgres.aaaaaaaaaaaaaaaaaaaa:pw@primary.example:5432/postgres",
+      sql: captureSql().sql,
+      open: opener.open,
+      admin: fakeDatabaseAdmin("aaaaaaaaaaaaaaaaaaaa"),
+      poolerUrl: "postgres://postgres:pw@pooler-primary.example:5432/postgres",
+      extraTargets: [
+        {
+          url: secondaryUrl,
+          sql: captureSql().sql,
+          admin: fakeDatabaseAdmin("bbbbbbbbbbbbbbbbbbbb"),
+          poolerUrl: secondaryPooler,
+        },
+      ],
+    });
+    const meta = { role: appDbIdentifier("slug-a"), password: "0".repeat(32), url: secondaryUrl };
+
+    const url = new URL(appDb.connectionUrl(meta));
+    expect(url.hostname).toBe("pooler-b.example");
+    // The tenant suffix still comes from the app's OWN cluster, which is the
+    // half that was always right and the half that made the mismatch fatal.
+    expect(decodeURIComponent(url.username)).toBe(`${meta.role}.bbbbbbbbbbbbbbbbbbbb`);
+
+    await appDb.withAppDb(meta, async () => undefined);
+    expect(new URL(opener.urls[0] ?? "").hostname).toBe("pooler-b.example");
+  });
+
+  test("an app on the primary still uses the primary's pooler", async () => {
+    const opener = captureOpener();
+    const appDb = createAppDatabases({
+      url: "postgres://postgres.aaaaaaaaaaaaaaaaaaaa:pw@primary.example:5432/postgres",
+      sql: captureSql().sql,
+      open: opener.open,
+      admin: fakeDatabaseAdmin("aaaaaaaaaaaaaaaaaaaa"),
+      poolerUrl: "postgres://postgres:pw@pooler-primary.example:5432/postgres",
+      extraTargets: [
+        {
+          url: "postgres://postgres:pw@cluster-b.example:5432/postgres",
+          sql: captureSql().sql,
+          admin: fakeDatabaseAdmin("bbbbbbbbbbbbbbbbbbbb"),
+          poolerUrl: "postgres://postgres:pw@pooler-b.example:5432/postgres",
+        },
+      ],
+    });
+    // No locator: rows predating it live on the primary.
+    const meta = { role: appDbIdentifier("slug-a"), password: "0".repeat(32) };
+    expect(new URL(appDb.connectionUrl(meta)).hostname).toBe("pooler-primary.example");
+  });
 });
 
 describe("parseAppDbMeta", () => {

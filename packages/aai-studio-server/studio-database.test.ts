@@ -117,7 +117,10 @@ describe("setProjectDatabase", () => {
     // …and the first deploy of either agent picks it up.
     await claimSlug(h.store, "demo-preview", KEY);
     await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo-preview" });
-    expect(h.env.appDb.provision).toHaveBeenCalledWith("demo-preview");
+    // The studio provisions at the DEFAULT tier: a project is two deployed
+    // agents and nothing here reads either one's config, so the wide
+    // entitlement is the only safe answer (`DEFAULT_APP_DB_TIER`).
+    expect(h.env.appDb.provision).toHaveBeenCalledWith("demo-preview", "workflow");
     expect(await appDbSecret(h.secrets, "demo-preview")).not.toBeNull();
   });
 

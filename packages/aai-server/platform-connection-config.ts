@@ -137,9 +137,23 @@ export function platformPoolerUrl(env: NodeJS.ProcessEnv): string | undefined {
 export function appDbPoolerUrl(env: NodeJS.ProcessEnv): string | undefined {
   const raw = env.APP_DB_POOLER_URL?.trim();
   if (!raw) return undefined;
-  assertNotDirectHost(raw, "APP_DB_POOLER_URL");
-  assertSessionModeUrl(raw);
+  assertAppDbPooler(raw, "APP_DB_POOLER_URL");
   return raw;
+}
+
+/**
+ * The two rules an app-database pooler URL must satisfy, wherever it comes from.
+ *
+ * Extracted because {@link appDbPoolerUrl} is no longer the only source: an
+ * `APP_DB_URLS` entry may carry its OWN pooler (`<admin>|<pooler>`), since a
+ * placement cluster is a separate Supabase project with its own Supavisor host
+ * and its own tenant ref — see `extraAppDbTargets` in `app-db-admin.ts`. A
+ * per-cluster pooler validated more loosely than the primary's would be the
+ * silent half of exactly the failure both assertions exist to name.
+ */
+export function assertAppDbPooler(raw: string, varName: string): void {
+  assertNotDirectHost(raw, varName);
+  assertSessionModeUrl(raw);
 }
 
 /**

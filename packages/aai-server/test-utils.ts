@@ -2,6 +2,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Image } from "modal";
 import { afterEach, beforeEach, vi } from "vitest";
 import { emptyLogPage } from "./agent-logs.ts";
@@ -21,6 +22,7 @@ import {
   withChatEvents,
   withWorkspaceEvents,
 } from "./platform-events.ts";
+import type { AdminDb } from "./platform-lock.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore, type SecretStore, type SqlExec } from "./secret-store.ts";
@@ -95,13 +97,46 @@ export function fakeAppDatabases(overrides?: Partial<AppDatabases>): AppDatabase
     throw new Error(`fakeAppDatabases: ${name} was called but not stubbed`);
   };
   return {
-    provision: async (slug) => ({ role: appDbIdentifier(slug), password: "0".repeat(32) }),
+    provision: async (slug, tier) => ({
+      role: appDbIdentifier(slug),
+      password: "0".repeat(32),
+      ...omitUndefined({ tier }),
+    }),
     deprovision: async () => undefined,
+    // Inert but not LOUD, unlike its neighbours: every `enableStorage` on an
+    // already-provisioned app reconciles the tier, so a spec that stubs nothing
+    // here is exercising the ordinary path rather than an unexpected one. It
+    // reports no change, which is the answer that leaves the caller's behaviour
+    // undisturbed.
+    reconcileTier: async () => ({ changed: false }),
     connectionUrl: unstubbed("connectionUrl"),
     usage: unstubbed("usage"),
     withAppDb: unstubbed("withAppDb"),
     ...overrides,
   };
+}
+
+/**
+ * An {@link AdminDb} whose reserved connection answers `respond`.
+ *
+ * The ONE narrowing between a spec's `(sql: string) => rows` responder and
+ * `ReservedDb.query`, which is generic in its row type (`<T>(…) => Promise<T[]>`)
+ * and so cannot be satisfied by a function returning one concrete shape. Both
+ * wake-sweep suites had written `as never` at that boundary — the type-laundering
+ * idiom the escape-hatch ratchet counts, and which stops reporting the moment
+ * `ReservedDb` grows a member. A typed seam every call site goes through is what
+ * this repo asks for instead of a cast per spec.
+ *
+ * `release` is a spy so a caller can assert the reservation was given back — a
+ * leaked one permanently shrinks the real pool.
+ */
+export function fakeAdminDbOver(
+  respond: (sql: string) => Record<string, unknown>[] | Promise<Record<string, unknown>[]>,
+): AdminDb & { release: ReturnType<typeof vi.fn> } {
+  const release = vi.fn();
+  const query = async <T = Record<string, unknown>>(sql: string): Promise<T[]> =>
+    (await respond(sql)) as T[];
+  return { release, reserve: () => Promise.resolve({ release, query }) };
 }
 
 /**

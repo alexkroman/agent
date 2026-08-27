@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
 import { type ApiRequestOptions, checkedResponse } from "./_api-client.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";
@@ -15,7 +15,7 @@ import { log } from "./_ui.ts";
  */
 async function storageRequest(
   cwd: string,
-  init?: Pick<ApiRequestOptions, "method">,
+  init?: Pick<ApiRequestOptions, "method" | "body">,
   server?: string,
 ): Promise<{ enabled: boolean; slug: string }> {
   const { data, slug } = await slugRequest(cwd, "/storage", { ...init, action: "storage" }, server);
@@ -42,13 +42,43 @@ export async function executeStorageStatus(
   return ok({ slug, enabled });
 }
 
+/**
+ * The two connection tiers an app database may be provisioned at.
+ *
+ * Spelled here rather than imported from the server: `aai-cli` may not import
+ * `aai-server` (the dependency-flow rule in AGENTS.md), and this is a wire
+ * value. The server treats an unrecognised tier as the default, so the CLI
+ * REFUSES one instead — a typo that silently provisions the wrong entitlement is
+ * the failure a closed set exists to prevent, and here it is cheap to catch.
+ */
+const STORAGE_TIERS = ["storage", "workflow"] as const;
+
 export async function executeStorageEnable(
   cwd: string,
   server: string | undefined,
+  tier?: string | undefined,
 ): Promise<CommandResult<StorageStatusData>> {
-  const { enabled, slug } = await storageRequest(cwd, { method: "POST" }, server);
+  if (tier !== undefined && !STORAGE_TIERS.includes(tier as (typeof STORAGE_TIERS)[number])) {
+    return fail(
+      "invalid_tier",
+      `--tier must be one of: ${STORAGE_TIERS.join(", ")} (got "${tier}")`,
+    );
+  }
+  const { enabled, slug } = await storageRequest(
+    cwd,
+    // A body only when a tier was named, so the request an unflagged run sends
+    // is byte-identical to the one every released CLI sends.
+    { method: "POST", ...omitUndefined({ body: tier === undefined ? undefined : { tier } }) },
+    server,
+  );
   log.success(`Storage enabled for ${slug}`);
   log.info("Tool code can now use ctx.db.query(sql, params).");
+  if (tier === "storage") {
+    log.info(
+      "Provisioned at the storage tier: fewer database connections, and durable workflows " +
+        "will not start. Re-run with `--tier workflow` if the agent declares any.",
+    );
+  }
   return ok({ slug, enabled });
 }
 

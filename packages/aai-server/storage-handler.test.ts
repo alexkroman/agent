@@ -3,6 +3,7 @@
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { expect, test, vi } from "vitest";
 import type { AppDatabases, AppDbMeta } from "./app-database.ts";
+import type { AppDbTier } from "./app-db-tier.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 import {
   authFetch,
@@ -20,6 +21,10 @@ const META: AppDbMeta = {
   role: "app_0123456789abcdef",
   password: "f".repeat(32),
   url: "postgres://postgres:pw@cluster-b.example:5432/postgres",
+  // The tier a provision RECORDS, and the default one at that: it is what a
+  // later enable compares against to decide whether the role's connection limit
+  // has to be reconciled.
+  tier: "workflow",
 };
 
 function fakeAppDb(): AppDatabases & {
@@ -27,7 +32,13 @@ function fakeAppDb(): AppDatabases & {
   deprovision: ReturnType<typeof vi.fn>;
 } {
   return fakeAppDatabases({
-    provision: vi.fn(async () => META),
+    // ECHOES the tier, as `provisionAppDatabase` does — the returned meta is
+    // what the caller persists, so a fake that dropped it would make every
+    // assertion about a STORED tier vacuous.
+    provision: vi.fn(async (_slug: string, tier?: AppDbTier) => ({
+      ...META,
+      ...omitUndefined({ tier }),
+    })),
     deprovision: vi.fn(async () => undefined),
     usage: async () => ({ tables: 0, rows: 0, bytes: 0 }),
   }) as AppDatabases & {
@@ -46,6 +57,18 @@ async function deployWithStorage(opts: { appDb?: AppDatabases; secrets?: SecretS
 /** Owner-auth'd request to the storage route of the agent every spec deploys. */
 function storageReq(fetch: TestFetch, method: string, key = "key1"): Promise<Response> {
   return authFetch(fetch, "/my-agent/storage", { method, key });
+}
+
+/**
+ * `POST /:slug/storage` carrying an explicit tier.
+ *
+ * The body is handed to `authFetch` as an OBJECT — it stringifies and sets the
+ * JSON content type itself. Pre-stringifying it here double-encoded the body
+ * into a JSON *string*, which `isRecord` rejects, so the route fell back to the
+ * default tier and two of these specs passed while asserting nothing.
+ */
+function tierReq(fetch: TestFetch, tier: unknown): Promise<Response> {
+  return authFetch(fetch, "/my-agent/storage", { method: "POST", body: { tier } });
 }
 
 test("storage status rejects without auth", async () => {
@@ -74,7 +97,8 @@ test("storage enable provisions, stores credentials, and reports enabled", async
   const res = await storageReq(fetch, "POST");
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true, enabled: true });
-  expect(appDb.provision).toHaveBeenCalledWith("my-agent");
+  // The tier reaches `provision`, and an unflagged request means the default.
+  expect(appDb.provision).toHaveBeenCalledWith("my-agent", "workflow");
   expect(JSON.parse((await secrets.get("app-db:my-agent")) ?? "")).toEqual(META);
 
   const status = await storageReq(fetch, "GET");
@@ -205,4 +229,113 @@ test("agent delete deprovisions the app database and clears its credentials", as
   // The credential secret goes too (via handleDelete → store.deleteAgent for
   // the real store; the orchestrator's secret store is authoritative here).
   expect(await secrets.get("app-db:my-agent")).toBeNull();
+});
+
+test("an explicit tier reaches provision", async () => {
+  const appDb = fakeAppDb();
+  const { fetch, secrets } = await deployWithStorage({ appDb });
+
+  expect((await tierReq(fetch, "storage")).status).toBe(200);
+  expect(appDb.provision).toHaveBeenCalledWith("my-agent", "storage");
+  // And it is RECORDED, because the stored tier is what a later enable compares
+  // against to decide whether anything has to be reconciled.
+  expect(JSON.parse((await secrets.get("app-db:my-agent")) ?? "")).toMatchObject({
+    tier: "storage",
+  });
+});
+
+/**
+ * A body is optional and a bad one is not an error — this route took none until
+ * tiers existed, so every released `aai storage enable` and the studio (which
+ * calls the core function directly) send nothing at all. A strict parse would
+ * turn a working command into a 400 on upgrade, and an unrecognised tier can
+ * only ever mean the default, which is what every app already has.
+ */
+test.each([
+  ["no body at all", undefined],
+  ["an unrecognised tier", "enormous"],
+  ["a non-string tier", 7],
+])("%s provisions at the default tier", async (_label, tier) => {
+  const appDb = fakeAppDb();
+  const { fetch } = await deployWithStorage({ appDb });
+
+  const res = tier === undefined ? await storageReq(fetch, "POST") : await tierReq(fetch, tier);
+  expect(res.status).toBe(200);
+  expect(appDb.provision).toHaveBeenCalledWith("my-agent", "workflow");
+});
+
+/**
+ * The tier change an app that ADDS workflows needs, and the one mutation on a
+ * live app database that may not rotate its credential.
+ *
+ * A re-provision is what the idempotent branch exists to prevent (the test above
+ * this one is the reproduction), so raising a limit cannot ride on one. `alter
+ * role … connection limit` touches neither password nor login, so it rides here
+ * instead — and the stored meta is updated so a third enable is a no-op.
+ */
+test("a tier change on an enabled app reconciles the limit without re-provisioning", async () => {
+  const appDb = fakeAppDb();
+  const reconcileTier = vi.fn(async () => ({ changed: true }));
+  const withTier = fakeAppDatabases({
+    provision: appDb.provision,
+    deprovision: appDb.deprovision,
+    reconcileTier,
+    withAppDb: (_meta, fn) => fn(async () => []),
+  });
+  const { fetch, secrets } = await deployWithStorage({ appDb: withTier });
+
+  await tierReq(fetch, "storage");
+  const afterFirst = await secrets.get("app-db:my-agent");
+
+  const again = await tierReq(fetch, "workflow");
+  expect(again.status).toBe(200);
+  // Handed the meta as STORED — tier `storage`, the app's state before this
+  // call — because that meta's `url` is the locator deciding which cluster the
+  // `alter role` runs on.
+  expect(reconcileTier).toHaveBeenCalledWith("my-agent", { ...META, tier: "storage" }, "workflow");
+  // Provisioned once, so the password the resident guest holds is untouched.
+  expect(appDb.provision).toHaveBeenCalledTimes(1);
+  const stored = await secrets.get("app-db:my-agent");
+  expect(JSON.parse(stored ?? "")).toMatchObject({ tier: "workflow", password: META.password });
+  expect(stored).not.toBe(afterFirst);
+});
+
+test("re-enabling at the SAME tier reconciles nothing", async () => {
+  const reconcileTier = vi.fn(async () => ({ changed: true }));
+  const appDb = fakeAppDb();
+  const withTier = fakeAppDatabases({
+    provision: appDb.provision,
+    reconcileTier,
+    withAppDb: (_meta, fn) => fn(async () => []),
+  });
+  const { fetch } = await deployWithStorage({ appDb: withTier });
+
+  await tierReq(fetch, "storage");
+  await tierReq(fetch, "storage");
+  // An unconditional `alter role` would be harmless and a needless write on the
+  // hot idempotent path; what makes the guard load-bearing is `rebuildGuest`,
+  // which a no-op reconcile must not trigger.
+  expect(reconcileTier).not.toHaveBeenCalled();
+});
+
+/**
+ * A failed reconcile must not fail the request: the database exists and its
+ * credentials are stored, so reporting "could not enable" for a working database
+ * is the same misreport the session-grant heal beside it avoids.
+ */
+test("a reconcile failure is reported and the request still succeeds", async () => {
+  const appDb = fakeAppDb();
+  const withTier = fakeAppDatabases({
+    provision: appDb.provision,
+    reconcileTier: async () => {
+      throw new Error("cluster unreachable");
+    },
+    withAppDb: (_meta, fn) => fn(async () => []),
+  });
+  const { fetch } = await deployWithStorage({ appDb: withTier });
+
+  await tierReq(fetch, "storage");
+  const again = await tierReq(fetch, "workflow");
+  expect(again.status).toBe(200);
+  expect(await again.json()).toEqual({ ok: true, enabled: true });
 });

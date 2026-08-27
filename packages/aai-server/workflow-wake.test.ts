@@ -25,6 +25,7 @@ import {
   captureLogs,
   createTestOrchestrator,
   createTestStore,
+  fakeAdminDbOver,
   fakeAppDatabases,
 } from "./test-utils.ts";
 import { createWorkflowWakeSweep, startWorkflowWakeSweep } from "./workflow-wake.ts";
@@ -47,32 +48,28 @@ function fakeAdminDb(opts: {
 }): AdminDb & { statements: string[] } {
   const slugs = Object.keys(opts.hints ?? {});
   const statements: string[] = [];
-  return {
-    statements,
-    reserve: () =>
-      Promise.resolve({
-        release: vi.fn(),
-        query: (async (sql: string) => {
-          statements.push(sql);
-          if (sql.includes("pg_try_advisory_xact_lock")) {
-            return [{ locked: opts.locked ?? true }];
-          }
-          if (sql.includes("to_regclass('vault.secrets')")) {
-            return [{ present: opts.vault ?? true }];
-          }
-          if (sql.includes("vault.decrypted_secrets")) {
-            return slugs.map((slug) => ({
-              name: `${APP_DB_SECRET_PREFIX}${slug}`,
-              decrypted_secret: JSON.stringify({
-                role: appDbIdentifier(slug),
-                password: "0".repeat(32),
-              }),
-            }));
-          }
-          return [];
-        }) as never,
-      }),
-  };
+  return Object.assign(
+    fakeAdminDbOver((sql) => {
+      statements.push(sql);
+      if (sql.includes("pg_try_advisory_xact_lock")) {
+        return [{ locked: opts.locked ?? true }];
+      }
+      if (sql.includes("to_regclass('vault.secrets')")) {
+        return [{ present: opts.vault ?? true }];
+      }
+      if (sql.includes("vault.decrypted_secrets")) {
+        return slugs.map((slug) => ({
+          name: `${APP_DB_SECRET_PREFIX}${slug}`,
+          decrypted_secret: JSON.stringify({
+            role: appDbIdentifier(slug),
+            password: "0".repeat(32),
+          }),
+        }));
+      }
+      return [];
+    }),
+    { statements },
+  );
 }
 
 /**

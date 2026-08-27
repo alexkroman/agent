@@ -63,6 +63,7 @@ export {
   APP_DB_WORLD_POOL_MAX,
   APP_DB_WORLD_WORKER_CONCURRENCY,
   guestAppDbConnections,
+  storageAppDbConnections,
 } from "./sdk/app-db-budget.ts";
 // The `aai login` confirmation code and the slug shape: the two contracts BOTH
 // ends of a platform interaction must derive identically. They were on `/utils`,

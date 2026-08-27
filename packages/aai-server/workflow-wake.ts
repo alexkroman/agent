@@ -97,13 +97,29 @@
  *   idempotent fleet-wide — which is why a lost lock is a silent skip rather
  *   than an error.
  *
- * ## Known gaps, both inherited rather than introduced
+ * ## Placement clusters ARE swept, and the claim is tested
  *
- * - **Apps placed on an extra `APP_DB_URLS` cluster are not swept**, and boot
- *   says so out loud. Those clusters have their own pools, which the connection
- *   budget cannot currently afford (`platform-db-budget.test.ts` fails for one
- *   extra target), so there are none in production; supporting them means
- *   another target's executor here and is a few lines when a cluster exists.
+ * This section used to record the opposite as a known gap — "apps placed on an
+ * extra `APP_DB_URLS` cluster are not swept" — and boot warned about it. Neither
+ * was true, and nothing in the sweep ever had to change for it to be true: every
+ * step of the pass is either cluster-INDEPENDENT or follows the app's own
+ * locator. The candidate set comes from `vault.decrypted_secrets` and the agents
+ * table, both on the platform database, so a sharded app is enumerated like any
+ * other; and the per-app read goes through `AppDatabases.withAppDb`, which
+ * composes its URL from `meta.url` — the cluster the app was provisioned on —
+ * and that cluster's own pooler. `workflow-wake.scenario.test.ts` drives a
+ * second target end to end so the claim cannot rot back into a warning.
+ *
+ * What WAS broken, and is fixed, is a layer down: one fleet-wide
+ * `APP_DB_POOLER_URL` meant a sharded app's URL was rewritten onto the primary's
+ * Supavisor while carrying the extra project's tenant suffix, so every
+ * connection to it failed — the guest's own `DATABASE_URL` included. See
+ * `AppDbTarget.poolerUrl`. The budget's half of the story is in
+ * `platformDbConnectionsPerReplica`: an extra cluster's pool was charged to the
+ * primary instance, which is what made sharding look unaffordable.
+ *
+ * ## Known gap, inherited rather than introduced
+ *
  * - **A step lost with its container stays lost for graphile-worker's 4-hour job
  *   expiry** — the guest's hint says so (`GRAPHILE_JOB_EXPIRY`), because no
  *   other worker may claim a locked job before then. Any boot for another reason
@@ -466,13 +482,16 @@ export function startWorkflowWakeSweep(
     log.info("Workflow wake sweep not started: interval is 0");
     return () => undefined;
   }
-  if ((opts.extraAppDbClusters ?? 0) > 0) {
-    // Loud, because the gap is per-AGENT and invisible from the outside: an app
-    // placed on an extra cluster would look identical to one on the primary
-    // right up until a run failed to wake.
-    log.warn(
-      "APP_DB_URLS names extra clusters; durable runs for apps placed " +
-        "there are NOT woken (see workflow-wake.ts, Known gaps).",
+  const extraClusters = opts.extraAppDbClusters ?? 0;
+  if (extraClusters > 0) {
+    // Announced rather than warned. This was a WARNING saying runs on these
+    // clusters are never woken, which was never true — the pass follows each
+    // app's own locator (see the module doc). An operator reading a warning
+    // they cannot clear learns to skip the ones they can, and this file's
+    // warnings guard a parked run that resumes silently or not at all.
+    log.info(
+      `sweeping ${extraClusters + 1} placement cluster(s): an app is read on the ` +
+        "cluster its own locator names",
     );
   }
   const sweep = createWorkflowWakeSweep({ ...opts, adminDb, appDb });
