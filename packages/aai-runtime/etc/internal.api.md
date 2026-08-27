@@ -111,6 +111,9 @@ export function createPlatformStreamer(opts: PlatformStorageOptions): {
 };
 
 // @internal
+export function createPlatformStreamReader(opts: PlatformStorageOptions): (name: string, startIndex?: number) => Promise<ReadableStream<Uint8Array>>;
+
+// @internal
 export function createPostgresStateBackend(opts: {
     db: Db;
 }): SessionStateBackend;
