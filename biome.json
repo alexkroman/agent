@@ -300,7 +300,7 @@
       "includes": [
         "**/*.test.ts",
         "**/*.test.tsx",
-        "**/_test-utils.ts",
+        "**/_*test-utils.ts",
         "**/_jsdom-setup.ts",
         "**/vitest*.config.ts",
         "**/_*-fuzz-*.ts"

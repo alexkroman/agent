@@ -1008,6 +1008,7 @@
     "consoleLogger",
     "createPlatformQueueSend",
     "createPlatformStorage",
+    "createPlatformStreamer",
     "createPostgresStateBackend",
     "createSessionEventStream",
     "createSessionStateStore",

@@ -54,6 +54,20 @@ export const STORAGE_METHODS = [
   "hooks.get",
   "hooks.getByToken",
   "hooks.list",
+  // The STREAMER, whose members sit on the same world and reach the same database.
+  // One route and one scope table for both, which is the whole argument in this
+  // module's header: the dangerous mistake is a method nobody classified.
+  "streamer.writeToStream",
+  "streamer.writeToStreamMulti",
+  "streamer.closeStream",
+  // `noSecrets` is entropy-based with no allow-list, and this identifier is the one
+  // string in this table it flags. It cannot be renamed — it is the DevKit's method
+  // name — and it cannot be imported from the guest's copy, because this table is a
+  // security boundary that must not depend on the caller's package.
+  // biome-ignore lint/security/noSecrets: the DevKit's method name, not a secret.
+  "streamer.listStreamsByRunId",
+  "streamer.getStreamChunks",
+  "streamer.getStreamInfo",
 ] as const;
 
 export type StorageMethod = (typeof STORAGE_METHODS)[number];
@@ -73,6 +87,11 @@ export type StorageMethod = (typeof STORAGE_METHODS)[number];
  *   checked. The hook is only returned if that check passes.
  * - `create-run` — the mutation. It may CREATE the run it is scoped by, so
  *   ownership is established rather than verified; see the handler.
+ * - `stream` — a run id at argument N, AND a stream name at argument M that must be
+ *   NAMESPACED per tenant. See {@link STORAGE_SCOPES} for why the namespacing is a
+ *   security fix rather than tidiness.
+ * - `own-streams` — a run id at argument N, and the reply is a list of stream NAMES
+ *   whose namespace has to be stripped back off.
  */
 export type StorageScope =
   | { kind: "run-arg"; index: number }
@@ -80,7 +99,9 @@ export type StorageScope =
   | { kind: "own-runs" }
   | { kind: "filter-runs" }
   | { kind: "resolve-hook" }
-  | { kind: "create-run" };
+  | { kind: "create-run" }
+  | { kind: "stream"; runIndex: number; nameIndex: number }
+  | { kind: "own-streams"; runIndex: number };
 
 /**
  * The scope of every method, and a compile error for any that lacks one.
@@ -111,6 +132,32 @@ export const STORAGE_SCOPES: Record<StorageMethod, StorageScope> = {
   "hooks.getByToken": { kind: "resolve-hook" },
   // `runId` is optional in their params and absent means every hook. Required.
   "hooks.list": { kind: "run-param", index: 0, field: "runId" },
+
+  // ---- Streamer -------------------------------------------------------------
+  //
+  // Every one of these takes `(name, runId, …)`, so the run id is argument 1 and
+  // the STREAM NAME is argument 0 — and the name is the interesting half.
+  //
+  // Their `readFromStream` looks a stream up by NAME ALONE
+  // (`where(eq(streams.streamId, name))`, verified in `world-postgres`'s
+  // streamer), with no run filter, and their in-process fan-out keys on
+  // `strm:${name}` the same way. In one shared schema that means two agents using
+  // the same stream name read each other's chunks — a leak no scoping at this
+  // layer can close, because their query genuinely cannot tell the streams apart.
+  //
+  // So the platform NAMESPACES the name per tenant on the way in and strips it
+  // back off on the way out. Their global-by-name lookup then cannot reach another
+  // agent's stream, by construction rather than by a check. It is safe to do
+  // because the name is opaque to them — a `text` column and a JSON payload
+  // field, never a Postgres channel name (their NOTIFY topic is a constant), so
+  // there is no 63-byte limit to run into.
+  "streamer.writeToStream": { kind: "stream", runIndex: 1, nameIndex: 0 },
+  "streamer.writeToStreamMulti": { kind: "stream", runIndex: 1, nameIndex: 0 },
+  "streamer.closeStream": { kind: "stream", runIndex: 1, nameIndex: 0 },
+  "streamer.getStreamChunks": { kind: "stream", runIndex: 1, nameIndex: 0 },
+  "streamer.getStreamInfo": { kind: "stream", runIndex: 1, nameIndex: 0 },
+  // The one that RETURNS names, so the namespace comes back off.
+  "streamer.listStreamsByRunId": { kind: "own-streams", runIndex: 0 },
 };
 
 /** Is `value` one of the methods this platform serves? */
@@ -167,6 +214,26 @@ export function decideScope(method: StorageMethod, args: readonly unknown[]): Sc
       const runId = runIdIn(args, scope.index, scope.field);
       if (runId === undefined) {
         return { ok: false, reason: `${method} requires ${scope.field} in its params` };
+      }
+      return { ok: true, scope, requiredRunId: runId };
+    }
+    case "stream": {
+      const runId = runIdAt(args, scope.runIndex);
+      if (runId === undefined) {
+        return { ok: false, reason: `${method} requires a run id at argument ${scope.runIndex}` };
+      }
+      if (typeof args[scope.nameIndex] !== "string" || args[scope.nameIndex] === "") {
+        return {
+          ok: false,
+          reason: `${method} requires a stream name at argument ${scope.nameIndex}`,
+        };
+      }
+      return { ok: true, scope, requiredRunId: runId };
+    }
+    case "own-streams": {
+      const runId = runIdAt(args, scope.runIndex);
+      if (runId === undefined) {
+        return { ok: false, reason: `${method} requires a run id at argument ${scope.runIndex}` };
       }
       return { ok: true, scope, requiredRunId: runId };
     }

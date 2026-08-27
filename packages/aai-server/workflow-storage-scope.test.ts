@@ -20,13 +20,35 @@ import {
 } from "./workflow-storage-scope.ts";
 
 describe("the method set", () => {
-  // Eleven, matching the DevKit's `Storage` interface. A count is asserted rather
-  // than left implicit because the dangerous change is an ADDITION that nobody
-  // scoped — and while the Record type catches that at compile time, this catches
-  // a method being dropped from the union to make a type error go away.
-  test("is the eleven methods of their Storage interface", () => {
-    expect(STORAGE_METHODS).toHaveLength(11);
-    expect(new Set(STORAGE_METHODS).size).toBe(11);
+  /**
+   * Seventeen: the DevKit's eleven `Storage` methods plus six of its `Streamer`.
+   *
+   * A count is asserted rather than left implicit because the dangerous change is
+   * an ADDITION that nobody scoped — and while the `Record` type catches that at
+   * compile time, this catches a method being dropped from the union to make a
+   * type error go away.
+   *
+   * Six of seven `Streamer` members, not all: `readFromStream` returns a LIVE
+   * `ReadableStream` and is a long-lived streaming response rather than one
+   * request and one reply, so it needs its own route. `streamFlushIntervalMs` is a
+   * number on their interface, not a method.
+   */
+  test("is their eleven Storage methods plus six Streamer members", () => {
+    expect(STORAGE_METHODS.filter((m) => !m.startsWith("streamer."))).toHaveLength(11);
+    expect(STORAGE_METHODS.filter((m) => m.startsWith("streamer."))).toHaveLength(6);
+    expect(new Set(STORAGE_METHODS).size).toBe(17);
+  });
+
+  test("no streamer method is scoped without namespacing its stream name", () => {
+    // The reason the namespacing exists: their `readFromStream` looks a stream up by
+    // name alone, so two agents sharing a name would share a stream. Every streamer
+    // method that TAKES a name must therefore qualify it, and the only exception is
+    // the one that takes a run id instead and returns names.
+    for (const method of STORAGE_METHODS.filter((m) => m.startsWith("streamer."))) {
+      expect(["stream", "own-streams"], `${method} is not stream-scoped`).toContain(
+        STORAGE_SCOPES[method].kind,
+      );
+    }
   });
 
   test("every method has a scope", () => {

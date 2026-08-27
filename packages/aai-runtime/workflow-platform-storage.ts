@@ -127,11 +127,7 @@ export function createPlatformStorage(opts: PlatformStorageOptions): {
   events: { create: StorageFn; get: StorageFn; list: StorageFn; listByCorrelationId: StorageFn };
   hooks: { get: StorageFn; getByToken: StorageFn; list: StorageFn };
 } {
-  const call =
-    (method: string): StorageFn =>
-    (...args: unknown[]) =>
-      callPlatformStorage(opts, method, args);
-
+  const call = calling(opts);
   // Spelled out rather than generated from a list of names, because this IS the
   // surface: the DevKit's runtime reaches these by name inside a replay, so a
   // missing one is a `TypeError` several layers from here, and a `Record<string,
@@ -151,4 +147,49 @@ export function createPlatformStorage(opts: PlatformStorageOptions): {
       list: call("hooks.list"),
     },
   };
+}
+
+/**
+ * The DevKit's `Streamer`, over the same route — minus `readFromStream`.
+ *
+ * `readFromStream` is deliberately absent. It returns a LIVE
+ * `ReadableStream<Uint8Array>` that waits for chunks as they arrive, which is a
+ * long-lived streaming response rather than one request and one reply — a different
+ * HTTP shape, and its own increment. A composition that needs it takes it from
+ * elsewhere; one that spreads only this gets a world whose live reads are absent
+ * rather than broken, which is the honest failure.
+ *
+ * `streamFlushIntervalMs` is a NUMBER on their interface, not a method: it says how
+ * long to buffer chunks before flushing. Their own doc says the 10 ms default "is
+ * appropriate for HTTP-based backends where each flush is a network round-trip",
+ * which is exactly what this is — so it is left at their default by not being set.
+ *
+ * @internal
+ */
+export function createPlatformStreamer(opts: PlatformStorageOptions): {
+  writeToStream: StorageFn;
+  writeToStreamMulti: StorageFn;
+  closeStream: StorageFn;
+  listStreamsByRunId: StorageFn;
+  getStreamChunks: StorageFn;
+  getStreamInfo: StorageFn;
+} {
+  const call = calling(opts);
+  return {
+    writeToStream: call("streamer.writeToStream"),
+    writeToStreamMulti: call("streamer.writeToStreamMulti"),
+    closeStream: call("streamer.closeStream"),
+    // Entropy-based rule, no allow-list, and the identifier is theirs to name.
+    // biome-ignore lint/security/noSecrets: the DevKit's method name, not a secret.
+    listStreamsByRunId: call("streamer.listStreamsByRunId"),
+    getStreamChunks: call("streamer.getStreamChunks"),
+    getStreamInfo: call("streamer.getStreamInfo"),
+  };
+}
+
+/** One method name to a function that calls it. */
+function calling(opts: PlatformStorageOptions): (method: string) => StorageFn {
+  return (method: string) =>
+    (...args: unknown[]) =>
+      callPlatformStorage(opts, method, args);
 }

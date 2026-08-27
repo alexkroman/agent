@@ -146,6 +146,7 @@ export {
 export {
   callPlatformStorage,
   createPlatformStorage,
+  createPlatformStreamer,
   type PlatformStorageOptions,
 } from "./workflow-platform-storage.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
