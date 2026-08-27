@@ -113,6 +113,19 @@ describe("the storage command group", () => {
     expect(executors.storage.executeStorageEnable).toHaveBeenCalledWith(
       expect.any(String),
       undefined,
+      // No `--tier`: the executor decides the default, and an unflagged run must
+      // send no body at all so its request stays byte-identical to a released
+      // CLI's (`executeStorageEnable`).
+      undefined,
+    );
+  });
+
+  test("--tier is forwarded, so an app can declare the cheaper entitlement", async () => {
+    await subsOf(storage).enable?.run({ args: { tier: "storage", json: false } });
+    expect(executors.storage.executeStorageEnable).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      "storage",
     );
   });
 

@@ -4,14 +4,21 @@
  * the whole table, in one place, because the ceiling is enforced by the DATABASE
  * and a term nobody counted is an outage.
  *
- * An app database is provisioned with `connection limit`
- * `APP_DB_CONNECTION_LIMIT` (`aai-server/constants.ts`, currently 10). That is
+ * An app database is provisioned with a `connection limit` chosen by its TIER
+ * (`appDbConnectionLimit` in `aai-server/constants.ts`: 4 for storage-only, 10
+ * for an app that runs durable workflows). That is
  * not a pool timeout or a soft target: Postgres REFUSES the connection past it,
  * with `too many connections for role "app_<hash>"`, and every consumer in the
- * guest competes for the same number. So the sum below has to be a fact rather
- * than an estimate — `aai-server/platform-db-budget.test.ts` asserts it against
- * the limit, and the limit's own doc points HERE rather than restating the
- * terms, for the reason the section below gives.
+ * guest competes for the same number. So the sums below have to be facts rather
+ * than estimates — `aai-server/platform-db-budget.test.ts` asserts each against
+ * the tier it belongs to, and the limits' own docs point HERE rather than
+ * restating the terms, for the reason the section below gives.
+ *
+ * **Two sums, because the world is CONDITIONAL.** {@link guestAppDbConnections}
+ * is the workflow ceiling and {@link storageAppDbConnections} the one a guest
+ * that declares no workflows can reach; which tier an app is provisioned at is
+ * the owner's declaration, since the platform stores no agent config (see
+ * "The platform stores no agent config" in `aai-server/CLAUDE.md`).
  *
  * ## The terms
  *
@@ -121,8 +128,34 @@ export const APP_DB_BOOT_SPARE = 1;
  *
  * A function rather than a constant so the sum cannot be spelled twice;
  * `aai-server/platform-db-budget.test.ts` compares it, plus
- * {@link APP_DB_BOOT_SPARE}, against `APP_DB_CONNECTION_LIMIT`.
+ * {@link APP_DB_BOOT_SPARE}, against the WORKFLOW tier of
+ * `appDbConnectionLimit` (`aai-server/constants.ts`).
  */
 export function guestAppDbConnections(): number {
   return APP_DB_WORLD_POOL_MAX + APP_DB_WORLD_LISTEN + APP_DB_POOL_MAX + APP_DB_PRESENCE_LOCK;
+}
+
+/**
+ * What one guest that runs NO durable workflows may hold at its ceiling.
+ *
+ * Three of the four terms above exist only for the Workflow DevKit, and a guest
+ * that declares no workflows never starts the world that opens them:
+ * `startWorkflowWorldIfDeclared(state.workflows !== null, …)` in
+ * `aai-guest/harness-agent-mode.ts` returns immediately, so the world pool, the
+ * streamer's `LISTEN` client and the queue-lock sweep's presence connection are
+ * all unallocated. What is left is {@link APP_DB_POOL_MAX} — the one handle
+ * `ctx.db`, the session-state backend and workflow uploads are leased off.
+ *
+ * **This is the term that makes an entitlement worth differentiating.** A voice
+ * agent using `ctx.db` for a cart was provisioned at the workflow tier's ceiling
+ * and could only ever hold this many, so the difference was budget the platform
+ * had promised and no guest could spend — and the budget's scarcest term is
+ * exactly `MAX_ACTIVE_APP_DATABASES`, which that promise divides.
+ *
+ * A function for the same reason its sibling is one, even at one term: the
+ * server compares both against the limits it provisions, and a constant
+ * re-exported under a second name is the shape that drifts.
+ */
+export function storageAppDbConnections(): number {
+  return APP_DB_POOL_MAX;
 }

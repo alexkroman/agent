@@ -150,7 +150,10 @@ describe("project database routes", () => {
     // A slug claimed by a LATER deploy — the case the hook exists for.
     await claimSlug(store, "proj-published", "key1");
     await afterDeploy?.(studioScope("key1"), "proj", "proj-published");
-    expect(appDb.provision).toHaveBeenCalledWith("proj-published");
+    // The studio provisions at the DEFAULT tier: a project is two deployed
+    // agents and nothing here reads either one's config, so the wide
+    // entitlement is the only safe answer (`DEFAULT_APP_DB_TIER`).
+    expect(appDb.provision).toHaveBeenCalledWith("proj-published", "workflow");
     expect(
       await getWorkspace(workspaces, studioScope("key1"), "proj").then((w) => w?.databaseEnabled),
     ).toBe(true);

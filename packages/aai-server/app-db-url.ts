@@ -44,13 +44,21 @@ export function withDatabase(
 /**
  * Move a URL's host/port onto the POOLER's, keeping everything else.
  *
- * **Every app-database connection is POOLED, and the direct-connection budget
- * depends on it.** `MAX_PLATFORM_DB_CONNECTIONS` counts DIRECT session-mode
- * connections, which consume the instance's `max_connections` outright with
- * nothing multiplexing them — and per-app databases would otherwise add a
- * connection per app to that count, which is the one variable a fleet-wide
- * ceiling cannot bound. Routing them through Supavisor takes them out of that
- * budget and puts them under the pooler's own limits instead.
+ * **Every app-database connection is POOLED, and what that buys is the pooler's
+ * limits — NOT an exemption from the budget.** Session mode holds one server
+ * connection per client connection, so an app's connections are real backends on
+ * the instance and `APP_DB_CONNECTION_ALLOWANCE` is what counts them. This
+ * paragraph used to claim the routing "takes them out of that budget", which is
+ * the premise `MAX_PLATFORM_DB_CONNECTIONS` was corrected for: believing it once
+ * made `platformDbBudget()` add the app databases twice and warn on every boot.
+ * What the pooler really gives is a per-tenant bound (a pool per
+ * `user+db+mode` triple, `max_pools` per tenant) in front of a shared instance.
+ *
+ * **The pooler is per CLUSTER.** `poolerUrl` arrives from the target the app's
+ * own locator names, never from one fleet-wide value — a placement cluster is a
+ * separate Supabase project with its own Supavisor and its own tenant ref, and
+ * addressing an app at the wrong one fails every connection. See
+ * `AppDbTarget.poolerUrl`.
  *
  * **Session mode (5432), NEVER transaction mode (6543).** Transaction mode breaks
  * the Workflow DevKit two independent ways: graphile-worker uses NAMED prepared
@@ -91,9 +99,10 @@ export function appDbUrlFor(meta: AppDbMeta, fallbackAdminUrl: string, poolerUrl
 /**
  * The ADMIN connection URL for one app's database — the platform's own way in.
  *
- * Pooled for the same reason the tenant's is: these are what the wake sweep and
- * the usage read open, and they are exactly the per-app connections the direct
- * budget cannot account for.
+ * Pooled for the same reason the tenant's is, and through the SAME cluster's
+ * pooler: these are what the wake sweep and the usage read open, and a sweep
+ * that reached an app on an extra cluster through the primary's Supavisor would
+ * report every such app as unreadable.
  */
 export function appDbAdminUrl(
   meta: AppDbMeta,

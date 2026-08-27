@@ -144,6 +144,7 @@ USAGE enable [OPTIONS] [DIR]
 ARGUMENTS
   DIR    Project directory
 OPTIONS
+          --tier=<tier>    Connection tier: \`workflow\` (default) or \`storage\` for an agent with no durable workflows
   -s, --server=<server>    Platform server URL
                  --json    Output JSON (auto-detected in non-TTY)"
 `;

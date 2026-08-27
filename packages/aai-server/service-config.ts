@@ -308,10 +308,16 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
             return { query: (query, params) => db.query(query, params), close: () => db.close() };
           },
           // Every app-database connection — the guest's `DATABASE_URL` and the
-          // platform's own reads alike — goes through Supavisor, which is what keeps
-          // a per-app connection out of the DIRECT budget (see `withPoolerHost`).
+          // platform's own reads alike — goes through Supavisor, which bounds it
+          // per tenant WITHOUT taking it out of the budget: session mode holds one
+          // backend per client connection, so `APP_DB_CONNECTION_ALLOWANCE` counts
+          // them (see `withPoolerHost`, whose doc used to claim otherwise).
           // Session mode only: transaction mode breaks graphile-worker's prepared
           // statements and world-postgres's LISTEN.
+          //
+          // This is the PRIMARY cluster's pooler. An extra `APP_DB_URLS` cluster
+          // declares its own alongside its admin URL, because its Supavisor host
+          // and tenant ref are its own — see `extraAppDbTargets`.
           ...omitUndefined({ poolerUrl: appDbPoolerUrl(env) }),
           // Cellular sharding: APP_DB_URLS lists additional Supabase clusters
           // new apps may be placed on. Each app's cluster is recorded in its

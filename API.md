@@ -3035,6 +3035,9 @@ type StartOptions = {
 export const STORAGE_DISABLED_MESSAGE = "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings \u2192 Database in the studio; under `aai dev`, set DATABASE_URL in the project .env.";
 
 // @public
+export function storageAppDbConnections(): number;
+
+// @public
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;

@@ -419,6 +419,7 @@
     "requestPath",
     "requestQuery",
     "sleep",
+    "storageAppDbConnections",
     "toArgsRecord"
   ],
   "@alexkroman1/aai/llm": [
