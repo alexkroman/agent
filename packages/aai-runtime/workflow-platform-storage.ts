@@ -187,6 +187,56 @@ export function createPlatformStreamer(opts: PlatformStorageOptions): {
   };
 }
 
+/**
+ * `readFromStream`, which is a streaming response rather than an RPC call.
+ *
+ * Their signature returns a `ReadableStream<Uint8Array>` that yields chunks as they
+ * arrive, so the HTTP body IS the stream: `res.body` is already exactly that type,
+ * and handing it over directly is both the simplest implementation and the only one
+ * that stays live — buffering it into an array would defeat the point.
+ *
+ * ## The response is BOUNDED, and a reconnect is the contract
+ *
+ * The platform ends a read after its own cap (a stream whose run died never sees an
+ * EOF, and a connection held forever is the alternative). So a stream that closes
+ * without the run having finished is not an error: the caller reads what arrived and
+ * asks again with `startIndex`, which is what that parameter is for.
+ *
+ * This does NOT reconnect on its own. The DevKit's consumers treat the stream
+ * ending as the stream ending, and a client that silently resumed would turn a
+ * finished stream and a truncated one into the same thing.
+ *
+ * @internal
+ */
+export function createPlatformStreamReader(
+  opts: PlatformStorageOptions,
+): (name: string, startIndex?: number) => Promise<ReadableStream<Uint8Array>> {
+  return async (name: string, startIndex?: number) => {
+    const fetchFn = opts.fetch ?? globalThis.fetch;
+    const url = new URL(`${opts.base.replace(/\/+$/, "")}/workflow-stream`);
+    url.searchParams.set("name", name);
+    // A NEGATIVE index is legal and load-bearing: their doc says it starts that many
+    // chunks before the current end, which is how a reconnecting reader asks for
+    // "the last few".
+    if (startIndex !== undefined) url.searchParams.set("startIndex", String(startIndex));
+
+    // NOT wrapped in a timeout, unlike every other call here. This response is meant
+    // to stay open — a deadline would cut a healthy live read at its own interval,
+    // and the platform already bounds it.
+    const res = await fetchFn(url, { headers: { authorization: `Bearer ${opts.token}` } });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`stream read answered HTTP ${res.status}: ${detail.slice(0, 500)}`);
+    }
+    if (!res.body) {
+      // A 200 with no body is a platform that changed its contract. An empty stream
+      // would look like a stream that had already finished.
+      throw new Error("stream read answered 200 with no body");
+    }
+    return res.body;
+  };
+}
+
 /** One method name to a function that calls it. */
 function calling(opts: PlatformStorageOptions): (method: string) => StorageFn {
   return (method: string) =>

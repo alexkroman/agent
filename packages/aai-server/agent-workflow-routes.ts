@@ -53,6 +53,7 @@ import {
   WORKFLOW_STORAGE_ROUTE,
 } from "./workflow-storage-handler.ts";
 import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
+import { createWorkflowStreamHandler, WORKFLOW_STREAM_ROUTE } from "./workflow-stream-handler.ts";
 import {
   createWorkflowWebhookHandler,
   MAX_WEBHOOK_BODY_BYTES,
@@ -130,6 +131,15 @@ export function registerAgentWorkflowRoutes(
       ...omitUndefined({ adminDb: opts.adminDb }),
       ...omitUndefined({ storage: opts.runStorage }),
     }),
+  );
+
+  // The seventh Streamer member: a LIVE read, which is a streaming response rather
+  // than one request and one reply, so it cannot share the RPC route above. Its
+  // tenant boundary is the qualified stream NAME rather than a run check — that
+  // method has no run id — see `workflow-stream-handler.ts`.
+  agents.get(
+    WORKFLOW_STREAM_ROUTE,
+    createWorkflowStreamHandler(omitUndefined({ storage: opts.runStorage })),
   );
 
   // The durable-workflow API, brokered to the guest. Registered even though a
