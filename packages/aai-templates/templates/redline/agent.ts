@@ -25,8 +25,9 @@
  *   `ToolContext`, so it reads that key with `requireStepEnv` (inside
  *   `stepGenerate`); `requiredEnv` below is what makes a deploy check for it
  *   rather than letting the first run find out.
- * - **Storage** (`aai storage enable`, or `DATABASE_URL` under `aai dev`) — runs
- *   live there.
+ * - **Nothing for durability.** A deployed app's runs live on the platform. A
+ *   `DATABASE_URL` (yours, if you set one) only moves the correlation-key index
+ *   out of memory.
  */
 
 import { workflow, workflowApp } from "@alexkroman1/aai";

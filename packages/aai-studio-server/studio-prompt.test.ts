@@ -182,19 +182,26 @@ describe("studioSystemPrompt", () => {
   });
 
   test("the workflow prompt does not gate the build on a database", () => {
-    // A databaseless agent takes the DevKit's LOCAL world
-    // (`aai/host/workflow-world.ts`), so a workflow app runs on a studio
-    // project as created — and a database is opt-in since #1178. The prompt
-    // told the agent the opposite ("It NEEDS the database … until they do,
-    // starting a run fails"), which turned every workflow project's first
-    // turn into an instruction to go flip a switch it did not need.
+    // The prompt has been wrong in BOTH directions here, which is why it is
+    // pinned. It first said a workflow app "NEEDS the database … until they do,
+    // starting a run fails", turning every project's first turn into an
+    // instruction to flip a switch it did not need. It then said runs are not
+    // durable without one — true of the DevKit's local world, and false once the
+    // platform started keeping every deployed app's runs on its own database.
+    //
+    // So the assertions are: no switch is mentioned (there is none to flip), and
+    // the ONE real limitation is still named.
     const prompt = studioSystemPrompt("workflow").replace(/\s+/g, " ");
-    expect(prompt).toContain("It runs with the database OFF");
+    expect(prompt).toContain("Runs are DURABLE with no setup");
     expect(prompt).not.toContain("It NEEDS the database");
-    // Still named, for the two things that really do need it: durability, and
-    // an upload's record.
-    expect(prompt).toContain("Settings → Database");
-    expect(prompt).toContain("A file upload is the one exception");
+    // The dead switch, asserted as an ABSENCE: recommending it sends the user to
+    // a pane that no longer exists.
+    expect(prompt).not.toContain("Settings → Database");
+    expect(prompt).not.toContain("aai storage enable");
+    // Uploads ARE still limited by the author having a database, and the prompt
+    // has to say so — a run outliving its own uploaded bytes is the confusing
+    // half of the current state.
+    expect(prompt).toContain("A file UPLOAD is the exception");
   });
 
   test("the two prompts share everything that is not mode-specific", () => {

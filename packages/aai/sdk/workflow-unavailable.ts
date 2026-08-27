@@ -17,18 +17,31 @@
 import type { WorkflowClient } from "./workflow.ts";
 
 /**
- * What `ctx.workflows` rejects with when there is no workflow backend behind it.
+ * What `ctx.workflows` rejects with when the app declares no workflows.
  *
- * Covers both reasons at once because a tool author cannot tell them apart from
- * inside a tool, and the remedy is the same read of the docs: the app declares no
- * `workflows`, or it declares some and has nowhere to keep runs.
+ * ONE cause, and it used to claim two. The second half said to "make sure storage
+ * is enabled (`aai storage enable`, or Settings → Database in the studio) so runs
+ * have somewhere to live", and it was wrong on both counts:
+ *
+ * - **Storage was never a reason.** `buildWorkflowClient` returns `undefined`
+ *   only for an empty `workflows` — a missing database changes which KEY STORE is
+ *   used, not whether the client exists, and that module's doc says so outright
+ *   ("A missing database is therefore NOT a reason to withhold the client"). So
+ *   the advice sent an author to configure something that would not have fixed it.
+ * - **The command is gone**, with per-app databases. Runs live on the platform's
+ *   own database now, reached over HTTP, so a deployed app never lacks somewhere
+ *   to keep them.
+ *
+ * Naming one cause is the whole improvement: a message listing two makes the
+ * reader check both, and the one they cannot rule out is the one that was never
+ * true.
  *
  * @internal
  */
 export const WORKFLOWS_UNAVAILABLE_MESSAGE =
-  "Workflows are not available for this app. Declare them with `agent({ workflows })`, " +
-  "and make sure storage is enabled (`aai storage enable`, or Settings → Database in " +
-  "the studio) so runs have somewhere to live.";
+  "Workflows are not available for this app: it declares none. Add them with " +
+  "`agent({ workflows })`, with each body in a module under `workflows/` whose " +
+  'first statement is `"use workflow";`.';
 
 /**
  * The error a declaration gets when its `run` carries no `workflowId`.

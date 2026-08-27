@@ -14,6 +14,7 @@ import {
   DEFAULT_BUILTIN_TOOLS,
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
+  STORAGE_DISABLED_MESSAGE,
 } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, anthropicLlm } from "@alexkroman1/aai/llm";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
@@ -404,7 +405,7 @@ describe("executeToolCall", () => {
     );
   });
 
-  test("throws storage-not-enabled when db is not provided and tool accesses it", async () => {
+  test("throws the no-database guidance when db is not provided and a tool uses it", async () => {
     const tool: ToolDef = {
       description: "Access the database",
       execute: async (_args, ctx) => {
@@ -415,7 +416,7 @@ describe("executeToolCall", () => {
     const logger = makeLogger();
     const result = await executeToolCall("dbTool", {}, { tool, env: {}, logger });
     expect(result).toContain("error");
-    expect(result).toContain("Storage is not enabled for this app");
+    expect(result).toContain(STORAGE_DISABLED_MESSAGE);
   });
 
   test("a sessionless call gets its own detached slot store", async () => {

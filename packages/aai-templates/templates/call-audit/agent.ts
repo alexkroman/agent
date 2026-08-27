@@ -57,9 +57,10 @@
  *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. `requiredEnv` below is what
  *   makes a deploy check for it rather than letting the first run find out. One key
  *   covers transcription, the model and the voice alike.
- * - **Storage** (`aai storage enable`, Settings → Database in the studio, or
- *   `DATABASE_URL` under `aai dev`). REQUIRED, unlike most workflow apps: an
- *   upload's record is a row, and this desk both reads an upload and writes two.
+ * - **A `DATABASE_URL`** — a secret when deployed, `.env` under `aai dev`, and a
+ *   Postgres you bring since the platform provisions none. REQUIRED, unlike most
+ *   workflow apps: an upload's record is a row, and this desk both reads an
+ *   upload and writes two.
  * - **ffmpeg** — every deployed guest's image installs it (and `ffprobe` with it).
  *   Under `aai dev` it is whatever is on `PATH`, or what `AAI_FFMPEG_PATH` /
  *   `AAI_FFPROBE_PATH` name. That is the one place dev/prod parity is partial, so

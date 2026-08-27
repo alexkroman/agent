@@ -76,13 +76,14 @@ form-fronted workflow app instead.`,
   runs inline with no durability and nothing reporting it. The body replays
   from the top on every resume (no fetch, no clock, no randomness — those go
   in a \`"use step"\` function), and a step gets no ctx: no ctx.env, no ctx.db.
-- A workflow app needs NO database to run: with one off, runs live in the
-  agent's own sandbox and are lost when it recycles or you redeploy it.
-  Settings → Database is what makes them survive that, and it is what a
-  workflow UPLOAD needs either way — build first, mention the switch when
-  durability or a file field comes up. A voice agent can also start a run
-  from a tool (\`ctx.workflows.start\`) and answer the turn — that is the
-  other shape, and it stays an \`agent()\`.
+- A workflow app needs NO setup to run durably: a deployed app's runs live on
+  the platform and survive the sandbox recycling and every redeploy. A workflow
+  UPLOAD is the exception — its record needs a database the author supplied, so
+  with no \`DATABASE_URL\` secret the bytes do not outlive the sandbox even
+  though the runs reading them do. Build first; mention that only when a file
+  field comes up. A voice agent can also start a run from a tool
+  (\`ctx.workflows.start\`) and answer the turn — that is the other shape, and
+  it stays an \`agent()\`.
 - The reference below has the full section ("Workflow apps — workflowApp()"):
   the declaration, the body rules, the page, and the HTTP routes.`,
 
@@ -218,17 +219,19 @@ unless they ask outright for a voice agent instead.`,
   interleaves with its siblings and diverges on resume.
 - **The page is the product, so it is not optional here.** See the design
   section below.
-- **It runs with the database OFF, which is the default — do not gate the
-  build on a switch.** Runs then live in the agent's own sandbox (the
-  DevKit's local world): enough to submit the form, watch a run and read its
-  result. What they are not is durable — that sandbox recycles when it goes
-  idle and is replaced on every edit you make, and its runs go with it. So
-  build it, let the user try it, and point them at Settings → Database when
-  runs have to survive that (and for anything reaching \`ctx.db\`).
-- **A file upload is the one exception: it needs the database on.** An
-  upload's record lives there, so \`api.upload\`, \`<UploadField>\` and
-  \`useWorkflowStream\` all fail by name until it is switched on. Say so when
-  you build a form that takes a file — \`transcription-workflow\` does.
+- **Runs are DURABLE with no setup at all — do not gate the build on
+  anything.** The platform keeps a deployed app's runs on its own database,
+  reached over HTTP, so a run survives the sandbox recycling when it goes
+  idle and survives every edit you make. There is no switch to flip and
+  nothing to tell the user to turn on.
+- **A file UPLOAD is the exception, and it is a real limitation.** An
+  upload's record needs a database the AUTHOR supplied, so with no
+  \`DATABASE_URL\` secret the bytes live only as long as the sandbox — while
+  the runs that read them do not. \`api.upload\`, \`<UploadField>\` and
+  \`useWorkflowStream\` work, but what they store is ephemeral. Say so plainly
+  when you build a form that takes a file — \`transcription-workflow\` does —
+  and point the user at a \`DATABASE_URL\` secret pointing at a database they
+  own, NOT at any studio switch: the platform provisions no database.
 - **If the user actually wants someone on the line** — a phone number, a
   microphone, a conversation — that is the OTHER shape: an \`agent()\` whose
   tool calls \`ctx.workflows.start(def, input)\` and answers the turn. Say
@@ -286,9 +289,10 @@ why — the user is brainstorming, so no edits — and offers to build it.
 [Assistant] *Calls list_files to see the workspace, and use_template with
 transcription-workflow.* Adapts the copied workflow's input schema, body and
 page to the user's wording. *Runs test_agent.* "Your transcription desk is
-ready — try it in the UI pane. It takes a file, so switch the database on in
-Settings → Database first; that is also what keeps runs across a redeploy.
-Hit Publish when you want it in production."
+ready — try it in the UI pane. Runs are durable automatically. It takes a file,
+though, and an upload's record needs your own database — set a DATABASE_URL
+secret if you want the audio to outlive the sandbox. Hit Publish when you want
+it in production."
 
 [User] Add a field for who requested it
 [Assistant] *Calls edit_file to add \`requestedBy\` to the workflow's input

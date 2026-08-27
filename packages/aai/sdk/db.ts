@@ -29,12 +29,19 @@ export type Db = {
 export const MAX_DB_RESULT_ROWS = 1000;
 
 /**
- * Error thrown when tool code touches `ctx.db` while storage is not
- * enabled. Enable storage with `aai storage enable` (production) or by
- * setting `DATABASE_URL` in the project `.env` (`aai dev`). The guest
- * harness keeps an import-free duplicate of this string, pinned by an
+ * Error thrown when tool code touches `ctx.db` with no database configured.
+ *
+ * It used to say "Storage is not enabled" and to recommend `aai storage enable`
+ * or the studio's Settings → Database. Both are gone with per-app databases: the
+ * platform provisions no database, so there is nothing to ENABLE — a database is
+ * a `DATABASE_URL` the author points at their own provider, like any other
+ * secret. A message naming a command that does not exist is worse than a vague
+ * one, because it reads as authoritative.
+ *
+ * The guest harness keeps an import-free duplicate of this string, pinned by an
  * equality test — dev and prod must read identically.
  */
-export const STORAGE_DISABLED_MESSAGE = `Storage is not enabled for this app. \
-Enable it with \`aai storage enable\` (CLI) or Settings → Database in the studio; \
-under \`aai dev\`, set DATABASE_URL in the project .env.`;
+export const STORAGE_DISABLED_MESSAGE = `No database is configured for this app. \
+\`ctx.db\` is a database YOU bring — the platform provisions none — so set a \
+DATABASE_URL secret pointing at your own Postgres, or DATABASE_URL in the project \
+.env under \`aai dev\`.`;

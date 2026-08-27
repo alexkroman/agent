@@ -194,7 +194,7 @@ describe("executeTool (one-shot trial)", () => {
     );
   });
 
-  test("ctx.db throws storage guidance when storage is disabled", async () => {
+  test("ctx.db throws database guidance when none is configured", async () => {
     const agent = makeAgent({
       tools: {
         usesDb: {
@@ -208,7 +208,11 @@ describe("executeTool (one-shot trial)", () => {
       { name: "usesDb", args: {}, sessionId: "s1", state: {} },
       TRIAL_OPTS,
     );
-    expect(res.error).toContain("Storage is not enabled");
+    // Asserted against the exported constant, not a substring of it: the guest
+    // keeps an import-free DUPLICATE of this message (`limits.ts`) precisely so
+    // dev and prod read identically, and a hand-copied fragment here would be a
+    // third spelling to drift. `limits.test.ts` pins the two against each other.
+    expect(res.error).toContain("No database is configured");
   });
 
   test("ctx.env carries the loaded env into tool code", async () => {
