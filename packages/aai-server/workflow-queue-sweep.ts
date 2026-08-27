@@ -17,6 +17,22 @@
  * without a guest, a sandbox or a broker, and it means the eventual HTTP half has
  * one seam rather than being threaded through the policy.
  *
+ * ## A NOTIFY removes the latency; the INTERVAL is what makes delivery eventual
+ *
+ * `enqueue` announces on `WORKFLOW_QUEUE_CHANNEL` when a message is due now, and a
+ * replica listens. That is the same thing graphile-worker does with `jobs:insert`,
+ * and it exists because the interval below is the latency floor of every
+ * step-to-step hop — a workflow enqueuing its next step waited out a whole tick
+ * before the step ran.
+ *
+ * The interval is NOT removed, and the reason is not caution. A notification is
+ * dropped rather than queued when nothing is listening, so anything committed
+ * while a listener reconnects is never announced; and it cannot express "due at
+ * T", so a PARKED message — which is how `sleep()` is implemented — has no
+ * arrival to announce. The interval therefore remains the mechanism that makes
+ * delivery eventual, and the listener is a latency optimization on the common
+ * path. Anything that treats the notification as the record of work is wrong.
+ *
  * ## NO LEADER LOCK, unlike the wake sweep
  *
  * `workflow-wake.ts` elects one replica per tick because its work is idempotent
@@ -31,12 +47,20 @@
  * @module
  */
 
+import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { createIntervalSweep } from "./_interval-sweep.ts";
 import { mapConcurrent } from "./_pool.ts";
 import { envCount, envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
-import { ack, claimDue, fail, type QueuedMessage, reschedule } from "./workflow-queue-store.ts";
+import {
+  ack,
+  claimDue,
+  fail,
+  type QueuedMessage,
+  reschedule,
+  WORKFLOW_QUEUE_CHANNEL,
+} from "./workflow-queue-store.ts";
 
 const log = createLogger("workflow.queue.sweep");
 
@@ -232,7 +256,8 @@ export function startWorkflowQueueSweep(
   opts: QueueSweepOptions & { intervalMs?: number | undefined },
 ): () => void {
   const intervalMs = opts.intervalMs ?? WORKFLOW_QUEUE_INTERVAL_MS;
-  if (!opts.adminDb) {
+  const adminDb = opts.adminDb;
+  if (!adminDb) {
     // Not a warning: a composition with no platform database has no queue to
     // deliver, which is the ordinary shape of a unit test.
     log.debug("queue sweep not started: no platform database");
@@ -244,7 +269,63 @@ export function startWorkflowQueueSweep(
     log.info("queue sweep NOT started: interval is 0, so no durable run will advance");
     return () => undefined;
   }
-  const sweep = createIntervalSweep(() => runQueuePass(opts));
-  log.info(`delivering queued workflow messages every ${intervalMs}ms`);
-  return sweep.start(intervalMs);
+
+  // ONE runner behind both triggers, and it must be one: a notification arriving
+  // mid-pass would otherwise start a second concurrent pass on the same replica.
+  // That is safe for correctness — `claimDue` re-checks its predicate under the row
+  // lock, so two passes take disjoint sets — but it is pointless work, and a burst
+  // of N enqueues would start N passes. `createCoalescingRunner` collapses them
+  // into at most one in flight plus one trailing, and the trailing run re-reads the
+  // queue when it runs rather than carrying anything from the trigger. The
+  // notification carries no payload for the same reason.
+  const runner = createCoalescingRunner(() => runQueuePass(opts));
+
+  const sweep = createIntervalSweep(() => runner.trigger());
+  const stopInterval = sweep.start(intervalMs);
+
+  // The interval STAYS, and this is the part worth reading twice. A notification
+  // is not durable: Postgres drops it when nothing is listening, and a listener
+  // re-establishing its connection misses everything committed in between. It also
+  // cannot express "due at T" — a parked message (which is how `sleep()` works) has
+  // a future `available_at` and nothing announces its arrival. So the interval is
+  // the mechanism that makes delivery eventual, and the listener only removes the
+  // LATENCY of waiting for it on the common path: a step that enqueues its
+  // successor no longer pays the poll interval for the hop.
+  let stopListening: (() => void) | undefined;
+  let stopped = false;
+  void adminDb
+    .listen(WORKFLOW_QUEUE_CHANNEL, () => {
+      void runner.trigger().catch((error: unknown) => {
+        // The interval's own pass reports through `runQueuePass`; a trigger from
+        // this path has no other caller, so a rejection here would be unhandled.
+        log.warn("notified queue pass failed", { error: String(error) });
+      });
+    })
+    .then((unlisten) => {
+      // `stop()` may have run while the subscription was still being established —
+      // tear it down immediately rather than leaving a listener behind a stopped
+      // sweep.
+      if (stopped) {
+        unlisten();
+        return;
+      }
+      stopListening = unlisten;
+      log.info(`listening on ${WORKFLOW_QUEUE_CHANNEL} for due work`);
+    })
+    .catch((error: unknown) => {
+      // Degraded, not failed, and it says which: the interval alone still delivers
+      // every message, just at up to `intervalMs` of extra latency per hop.
+      log.warn(
+        `queue NOTIFY subscription failed — delivery falls back to the ${intervalMs}ms ` +
+          "poll alone, which is slower per step but loses nothing",
+        { error: String(error) },
+      );
+    });
+
+  log.info(`delivering queued workflow messages on notify, and every ${intervalMs}ms`);
+  return () => {
+    stopped = true;
+    stopListening?.();
+    stopInterval();
+  };
 }

@@ -162,6 +162,25 @@ export type CloseableDb = Db & {
    * `finally` — a leaked reservation permanently shrinks the pool.
    */
   reserve(): Promise<ReservedDb>;
+  /**
+   * Subscribe to a Postgres `NOTIFY` channel. Resolves once the `LISTEN` is
+   * established; the returned function unsubscribes.
+   *
+   * @internal
+   *
+   * A DEDICATED connection, outside the pool — postgres.js opens one per
+   * listening handle and re-issues the `LISTEN` after a reconnect, which is the
+   * half a hand-rolled version gets wrong. It therefore costs one connection per
+   * replica and belongs in `platformDbConnectionsPerReplica`.
+   *
+   * **A notification is a HINT and must never be the only signal.** It is not
+   * durable: anything committed while the listener was reconnecting is never
+   * announced, and Postgres drops the payload rather than queueing it. So a
+   * caller has to have a periodic pass that reaches the same work, and this only
+   * removes the LATENCY of waiting for it. That is why the payload is not passed
+   * through — a payload invites trusting the notification as the record.
+   */
+  listen(channel: string, onNotify: () => void): Promise<() => void>;
   /** Drain and close the connection pool. The handle must not be used after. */
   close(): Promise<void>;
 };
@@ -220,6 +239,20 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
     async reserve(): Promise<ReservedDb> {
       const reserved = await sql.reserve();
       return { query: queryOn(reserved), release: () => reserved.release() };
+    },
+    async listen(channel: string, onNotify: () => void): Promise<() => void> {
+      // The payload is DISCARDED rather than forwarded — see the type's doc. A
+      // notification says "look again", and a caller that read state out of it
+      // would be trusting a signal Postgres is allowed to drop.
+      const subscription = await sql.listen(channel, () => onNotify());
+      return () => {
+        // `unlisten` is async and nothing here can wait: this is called from a
+        // synchronous shutdown path, and the connection is closed by `close()`
+        // moments later regardless. Reported rather than swallowed silently.
+        void subscription.unlisten().catch((error: unknown) => {
+          logNotice({ message: `unlisten(${channel}) failed: ${String(error)}` });
+        });
+      };
     },
     async close(): Promise<void> {
       await sql.end();

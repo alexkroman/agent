@@ -105,7 +105,15 @@ export function fakeAdminDbOver(
     sql: string,
     params?: unknown[],
   ): Promise<T[]> => (await respond(sql, params)) as T[];
-  return { release, reserve: () => Promise.resolve({ release, query }) };
+  return {
+    release,
+    reserve: () => Promise.resolve({ release, query }),
+    // No-op, and callers that care about NOTIFY should say so: the queue sweep's
+    // spec drives its listener by INVOKING the callback it captured, which needs
+    // no Postgres. A fake that silently never notifies would make "the sweep
+    // reacts to a notification" untestable rather than failing.
+    listen: () => Promise.resolve(() => undefined),
+  };
 }
 
 /**

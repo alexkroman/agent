@@ -1,7 +1,7 @@
 {
   "db": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [2, 3],
     "dropped": {
       "1": "additive: CreatePostgresDbOptions gains optional connectTimeoutSeconds and queryTimeoutMs (network-partition query bound); backward-compatible, and aai-runtime has no external consumer to keep an epoch-1 template for"
     }

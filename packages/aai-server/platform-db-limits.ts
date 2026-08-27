@@ -64,6 +64,22 @@ export const PLATFORM_WORLD_POOL_MAX = 4;
 export const PLATFORM_WORLD_LISTEN = 1;
 
 /**
+ * The queue sweep's `NOTIFY` listener, which also sits OUTSIDE every pool.
+ *
+ * One per replica. postgres.js opens a dedicated connection per listening handle
+ * and re-issues the `LISTEN` after a reconnect — that reconnect behaviour is the
+ * reason to use its `listen()` rather than hand-rolling one on a reserved
+ * connection, and a dedicated connection is what a `LISTEN` fundamentally needs
+ * (the subscription is session state, so a pooled query cannot hold it).
+ *
+ * Counted here rather than treated as free, because that is exactly the mistake
+ * the per-app database allowance made: a connection outside a pool is still a
+ * backend on the instance. One per replica is a constant, which is the property
+ * this budget needs — see {@link platformDbConnectionsPerReplica}.
+ */
+export const QUEUE_NOTIFY_LISTEN = 1;
+
+/**
  * What one replica's world holds at its ceiling.
  *
  * A function rather than a constant so the sum cannot be spelled twice.
@@ -112,5 +128,5 @@ export function platformWorldConnections(): number {
  * budget quietly wrong.
  */
 export function platformDbConnectionsPerReplica(): number {
-  return SLUG_LOCK_POOL_MAX + platformWorldConnections();
+  return SLUG_LOCK_POOL_MAX + platformWorldConnections() + QUEUE_NOTIFY_LISTEN;
 }

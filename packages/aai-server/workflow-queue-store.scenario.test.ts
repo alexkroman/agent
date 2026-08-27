@@ -14,7 +14,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { createPlatformQueueSend } from "@alexkroman1/aai-runtime/internal";
 import { Hono } from "hono";
-import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import type { HonoEnv } from "./context.ts";
 import { guestTokenFor } from "./guest-token.ts";
@@ -32,6 +32,7 @@ import {
   fail,
   parseEnvelope,
   QUEUE_MAX_ATTEMPTS,
+  WORKFLOW_QUEUE_CHANNEL,
 } from "./workflow-queue-store.ts";
 import { runQueuePass } from "./workflow-queue-sweep.ts";
 
@@ -69,7 +70,7 @@ describeWithPg("workflow queue store", () => {
     // enumerate it, so reading at the top would throw on a machine with no PG.
     const db = createPostgresDb({ url: pgUrl(), max: 4 });
     sql = (q, p) => db.query(q, p);
-    adminDb = () => ({ reserve: () => db.reserve() });
+    adminDb = () => ({ reserve: () => db.reserve(), listen: (c, f) => db.listen(c, f) });
     close = () => db.close();
 
     // The SCHEMA comes from the repo's own helper, never from this file.
@@ -461,6 +462,90 @@ describeWithPg("workflow queue store", () => {
     await ack(sql, "m1");
     const rows = await sql("select count(*)::int as n from aai_platform.workflow_queue");
     expect(rows[0]?.n).toBe(0);
+  });
+
+  /**
+   * The NOTIFY half, against a real Postgres — the only place it can be tested.
+   *
+   * `enqueue` announces so a listening replica delivers without waiting out the
+   * poll interval, which is the latency floor of every step-to-step hop. Whether a
+   * notification actually crosses the wire is a property of Postgres and
+   * postgres.js's `listen`, so a fake proves nothing here.
+   */
+  test("enqueuing a DUE message notifies a listener", async () => {
+    const fired: number[] = [];
+    const listener = createPostgresDb({ url: pgUrl(), max: 1 });
+    try {
+      const unlisten = await listener.listen(WORKFLOW_QUEUE_CHANNEL, () => {
+        fired.push(1);
+      });
+      try {
+        await enqueue(sql, msg("m1", "r1"));
+        // The notification is delivered on COMMIT and travels asynchronously, so
+        // this polls rather than assuming it has landed by the time `enqueue`
+        // resolves.
+        await vi.waitFor(() => expect(fired.length).toBeGreaterThan(0));
+      } finally {
+        unlisten();
+      }
+    } finally {
+      await listener.close();
+    }
+  });
+
+  /**
+   * A DELAYED message does NOT notify, and the absence is the assertion.
+   *
+   * A notification says "look now" and there is nothing to find until
+   * `available_at` passes — so announcing a `sleep()` would wake every replica to
+   * run a query that returns nothing. A parked message is what the periodic pass
+   * exists for, and it is the one thing a notification cannot express.
+   *
+   * ## Why the BARRIER, and not a `waitFor` on a count
+   *
+   * The obvious version — enqueue the delayed one, enqueue a due one as a positive
+   * control, then `vi.waitFor(() => expect(count).toBe(1))` — PASSES when the code
+   * is wrong, verified by making the notify unconditional. `waitFor` polls until
+   * the assertion holds, and with both messages notifying it holds transiently
+   * after the first arrives and before the second does.
+   *
+   * So the absence needs a fence rather than a timeout. Postgres delivers
+   * notifications to one connection in COMMIT order, so a sentinel committed after
+   * the delayed enqueue arrives after anything that enqueue would have sent: once
+   * the barrier fires, "no queue notification yet" is a settled fact rather than a
+   * race. A `sleep()` would be the alternative and would be both slower and
+   * weaker.
+   */
+  test("enqueuing a DELAYED message does not notify", async () => {
+    const BARRIER = "aai_test_queue_barrier";
+    let queueNotifications = 0;
+    let barrierFired = false;
+    const listener = createPostgresDb({ url: pgUrl(), max: 2 });
+    try {
+      const stopQueue = await listener.listen(WORKFLOW_QUEUE_CHANNEL, () => {
+        queueNotifications += 1;
+      });
+      const stopBarrier = await listener.listen(BARRIER, () => {
+        barrierFired = true;
+      });
+      try {
+        await enqueue(sql, { ...msg("m1", "r1"), delaySeconds: 30 });
+        // Same connection as the enqueue, so ordering is guaranteed against it.
+        await sql("select pg_notify($1, '')", [BARRIER]);
+        await vi.waitFor(() => expect(barrierFired).toBe(true));
+        expect(queueNotifications).toBe(0);
+
+        // POSITIVE CONTROL, after the fact: without it this spec would pass on a
+        // listener that never works at all, which is the vacuous-absence shape.
+        await enqueue(sql, msg("m2", "r1"));
+        await vi.waitFor(() => expect(queueNotifications).toBe(1));
+      } finally {
+        stopQueue();
+        stopBarrier();
+      }
+    } finally {
+      await listener.close();
+    }
   });
 
   test("deleting the agent takes its queued messages with it", async () => {

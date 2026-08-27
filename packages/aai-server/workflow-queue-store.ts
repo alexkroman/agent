@@ -165,6 +165,53 @@ export type EnqueueParams = {
  * message that may already be claimed, which is how a duplicate becomes a
  * double delivery.
  */
+/**
+ * Tell a listening replica to look, when the message is due NOW.
+ *
+ * Skipped for a delayed message, which is the whole reason this is a condition
+ * rather than an unconditional notify: a `NOTIFY` says "look now" and there is
+ * nothing to find until `available_at` passes, so announcing a 30-second sleep
+ * would wake every replica to run a query that returns nothing. A parked message
+ * is what the periodic pass is FOR — see {@link WORKFLOW_QUEUE_CHANNEL} — and it
+ * is the one thing a notification cannot express.
+ *
+ * Failures are swallowed, deliberately: the row is committed and the periodic pass
+ * will find it, so a failed announcement costs latency and nothing else. Letting
+ * it reject would turn a successful enqueue into a caller-visible error.
+ */
+async function announce(sql: SqlExec, delaySeconds: number): Promise<void> {
+  if (delaySeconds > 0) return;
+  try {
+    await sql("select pg_notify($1, '')", [WORKFLOW_QUEUE_CHANNEL]);
+  } catch (error) {
+    log.debug("queue notify failed; the periodic pass will pick this up", {
+      error: String(error),
+    });
+  }
+}
+
+/**
+ * The `NOTIFY` channel an enqueue announces on, and the sweep listens to.
+ *
+ * Exported because two modules must not spell it differently — a mismatch is
+ * silent, and its only symptom is every step-to-step hop paying the poll interval
+ * again, which reads as "durable workflows are just slow".
+ *
+ * ## What a notification is, and is not
+ *
+ * It is a HINT that work may be due, carrying no payload. It is NOT the record
+ * that work exists — that is the row this function inserts. A notification is
+ * dropped rather than queued when nothing is listening, and a listener
+ * re-establishing its connection misses everything committed in between, so the
+ * periodic pass is not a fallback for a broken deployment but a permanent part of
+ * the design.
+ *
+ * The payload is deliberately empty. A payload would tempt a reader into
+ * delivering FROM it, and a message delivered from a signal Postgres may drop is
+ * a message that silently never runs.
+ */
+export const WORKFLOW_QUEUE_CHANNEL = "aai_workflow_queue";
+
 export async function enqueue(sql: SqlExec, params: EnqueueParams): Promise<{ id: string }> {
   const delaySeconds = Math.max(0, params.delaySeconds ?? 0);
   const rows = await sql(
@@ -186,7 +233,10 @@ export async function enqueue(sql: SqlExec, params: EnqueueParams): Promise<{ id
     ],
   );
   const inserted = rows[0]?.id;
-  if (typeof inserted === "string") return { id: inserted };
+  if (typeof inserted === "string") {
+    await announce(sql, delaySeconds);
+    return { id: inserted };
+  }
 
   // Conflicted. With a key, the existing row IS this message; without one the
   // only unique column is the id, so a conflict means this exact id is already

@@ -27,6 +27,7 @@ function failingDb(err: unknown): CloseableDb {
   return {
     query: () => Promise.reject(err),
     reserve: () => Promise.reject(err),
+    listen: async () => () => undefined,
     close: () => Promise.resolve(),
   };
 }
@@ -125,6 +126,7 @@ describe("platformDb", () => {
     const db = platformDb({
       query: () => Promise.resolve([]),
       reserve: () => Promise.resolve(reserved),
+      listen: async () => () => undefined,
       close: () => Promise.resolve(),
     });
     const held = await db.reserve();
@@ -138,6 +140,7 @@ describe("platformDb", () => {
     const db = platformDb({
       query: <T>() => Promise.resolve([{ n: 1 }] as T[]),
       reserve: () => Promise.reject(new Error("unused")),
+      listen: async () => () => undefined,
       close,
     });
     await expect(db.query("select 1")).resolves.toEqual([{ n: 1 }]);
@@ -152,6 +155,7 @@ describe("platformDb", () => {
     const db = platformDb({
       query: () => Promise.resolve([]),
       reserve: () => Promise.reject(new Error("unused")),
+      listen: async () => () => undefined,
       close: () => Promise.reject(boom),
     });
     await expect(db.close()).rejects.toBe(boom);

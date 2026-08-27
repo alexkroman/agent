@@ -64,6 +64,11 @@ function fakeDb(opts: { presenceHeld?: boolean; lockedBy?: string[] } = {}) {
   const db: CloseableDb = {
     query,
     reserve: async () => reserved,
+    // Nothing here listens; present because the type is satisfied EXPLICITLY
+    // rather than through a cast — see the note above, and note that widening
+    // `CloseableDb` with this member is exactly the change that would have gone
+    // undetected under one.
+    listen: async () => () => undefined,
     close: async () => {
       closed();
     },
@@ -191,6 +196,7 @@ describe("claimPoolPresenceAndSweep", () => {
       reserve: async () => {
         throw new Error("connect ECONNREFUSED");
       },
+      listen: fake.db.listen,
       close: fake.db.close,
     };
 
