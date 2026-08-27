@@ -215,12 +215,20 @@ function fakeRes(): FakeRes {
 function fakeReq(
   auth?: string,
   url?: string,
-  opts: { method?: string; headers?: Record<string, string> } = {},
+  opts: { method?: string; headers?: Record<string, string>; remoteAddress?: string } = {},
 ): http.IncomingMessage {
   const headers: Record<string, string> = { ...opts.headers };
   if (auth) headers.authorization = auth;
   return {
     headers,
+    // A LOOPBACK peer by default, which is what every real caller of this
+    // handler is: the manage surface is dialled by the platform over the
+    // sandbox tunnel, and the queue callbacks by the guest's own worker on
+    // loopback — and `handleWorkflowRequest` refuses `flow`/`step` from
+    // anywhere else (see `aai-runtime/workflow-serve.ts`). Omitting the socket
+    // entirely made this fake fail that gate closed, which is the gate working:
+    // a peer it cannot identify is not one it may call internal.
+    socket: { remoteAddress: opts.remoteAddress ?? "127.0.0.1" } as http.IncomingMessage["socket"],
     ...omitUndefined({ url, method: opts.method }),
     async *[Symbol.asyncIterator]() {
       // No chunks: a queue callback's payload is irrelevant to the routing.
@@ -426,7 +434,7 @@ describe("createAgentRequestHandler", () => {
     test("does not gate the loopback queue callbacks (different prefix)", () => {
       const out = fakeRes();
       // `/.well-known/workflow/v1/flow` is claimed by handleWorkflowRequest before
-      // the gate, and carries no proxy token — the gate must never touch it.
+      // the gate, and carries no proxy token — this gate must never touch it.
       expect(
         handler()(
           fakeReq(undefined, WORKFLOW_FLOW_PATH, { method: "POST" }),
@@ -436,6 +444,24 @@ describe("createAgentRequestHandler", () => {
         ),
       ).toBe(true);
       expect(out.statusCode).toBeUndefined();
+    });
+
+    // The proxy-token gate does not cover the callbacks and must not — but they
+    // are not therefore OPEN on this hook. `handleWorkflowRequest` claims them
+    // first and refuses an off-box peer, and asserting that here is what says
+    // the deployed guest's own request hook inherits it: this handler is what a
+    // request off the public Modal tunnel actually meets.
+    test("refuses a queue callback dialled off-box, before the proxy gate", () => {
+      const out = fakeRes();
+      expect(
+        handler()(
+          fakeReq(undefined, WORKFLOW_FLOW_PATH, { method: "POST", remoteAddress: "10.0.0.4" }),
+          out.res,
+          WORKFLOW_FLOW_PATH,
+          "POST",
+        ),
+      ).toBe(true);
+      expect(out.statusCode).toBe(403);
     });
   });
 });

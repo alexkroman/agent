@@ -9,14 +9,17 @@
  */
 
 import { createServer } from "node:http";
+import { networkInterfaces } from "node:os";
 import { requestPath } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import {
   createWorkflowSurface,
   handleWorkflowRequest,
+  isLoopbackAddress,
   loadWorkflowModule,
   rewriteWorkflowImports,
   WORKFLOW_FLOW_PATH,
+  WORKFLOW_STEP_PATH,
   WORKFLOW_WEBHOOK_PREFIX,
   type WorkflowSurface,
   webhookToken,
@@ -199,7 +202,10 @@ describe("webhookToken", () => {
  */
 async function serving(
   surface: WorkflowSurface | null | undefined,
-): Promise<{ url: string; close: () => Promise<void> }> {
+  // Every interface, for the one spec that has to arrive from off-box. Loopback
+  // otherwise, which is what the rest of these are about.
+  host = "127.0.0.1",
+): Promise<{ url: string; port: number; close: () => Promise<void> }> {
   const server = createServer((req, res) => {
     const url = requestPath(req.url);
     if (!handleWorkflowRequest(surface, req, res, url, req.method ?? "GET")) {
@@ -207,13 +213,32 @@ async function serving(
       res.end("unclaimed");
     }
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, host, resolve));
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : 0;
   return {
     url: `http://127.0.0.1:${port}`,
+    port,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
+}
+
+/**
+ * This host's first non-loopback IPv4 address, or undefined when it has none.
+ *
+ * The gate's whole claim is about a peer that is NOT loopback, and the only way
+ * to produce one without a second machine is to dial this host by an address
+ * that is not `127.0.0.0/8` — which needs a real interface. A container with
+ * only `lo` legitimately has none, so the spec that needs this ANNOUNCES its
+ * skip rather than passing vacuously.
+ */
+function firstExternalIpv4(): string | undefined {
+  for (const addrs of Object.values(networkInterfaces())) {
+    for (const addr of addrs ?? []) {
+      if (addr.family === "IPv4" && !addr.internal) return addr.address;
+    }
+  }
+  return undefined;
 }
 
 function surfaceOf(over: Partial<WorkflowSurface> = {}): WorkflowSurface {
@@ -333,5 +358,103 @@ describe("handleWorkflowRequest", () => {
     expect(res.status).toBe(500);
     expect(errors.length).toBeGreaterThan(0);
     await s.close();
+  });
+});
+
+describe("isLoopbackAddress", () => {
+  // The whole 127/8 block, not just `127.0.0.1`: `localhost` resolves to
+  // `127.0.0.2` and up on some hosts, and refusing those would refuse the
+  // guest's OWN queue — a wedge with no error anyone would connect to a gate.
+  test.each(["127.0.0.1", "127.0.0.2", "127.255.255.254", "::1", "::ffff:127.0.0.1"])(
+    "accepts the loopback peer %s",
+    (addr) => {
+      expect(isLoopbackAddress(addr)).toBe(true);
+    },
+  );
+
+  test.each([
+    "10.0.0.4",
+    "192.168.1.9",
+    "172.17.0.2",
+    "::ffff:10.0.0.4",
+    "2001:db8::1",
+    // Not 127/8 despite the prefix — a substring test would take both.
+    "127.0.0.1.example.com",
+    "1127.0.0.1",
+  ])("refuses the off-box peer %s", (addr) => {
+    expect(isLoopbackAddress(addr)).toBe(false);
+  });
+
+  // FAIL CLOSED. A socket with no peer address is one whose position cannot be
+  // established, and the one answer this must never give is "internal, because
+  // I could not tell".
+  test.each([undefined, ""])("refuses a peer it cannot identify (%s)", (addr) => {
+    expect(isLoopbackAddress(addr)).toBe(false);
+  });
+});
+
+describe("the queue callbacks are guest-internal", () => {
+  // Both were reachable UNAUTHENTICATED on every deployed agent's public Modal
+  // tunnel, which `GET /:slug/client-config` hands to any browser that asks:
+  // `step` executes one of the tenant's registered step functions with the
+  // caller's own arguments. See the block comment on `handleWorkflowRequest`.
+  test.each([
+    ["flow", WORKFLOW_FLOW_PATH],
+    ["step", WORKFLOW_STEP_PATH],
+  ])("refuses %s from an off-box peer, and does not invoke the handler", async (_l, path) => {
+    const external = firstExternalIpv4();
+    if (!external) {
+      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
+    }
+    const surface = surfaceOf();
+    // Bound to every interface, exactly as a deployed guest is.
+    const s = await serving(surface, "0.0.0.0");
+    try {
+      const res = await fetch(`http://${external}:${s.port}${path}`, { method: "POST" });
+      expect(res.status).toBe(403);
+      // The gate CLAIMED the request — a 404 here would mean it merely fell
+      // through, and the next handler to match the path would serve it.
+      expect(await res.json()).toEqual({ error: "workflow queue callbacks are guest-internal" });
+      expect(surface.flow).not.toHaveBeenCalled();
+      expect(surface.step).not.toHaveBeenCalled();
+    } finally {
+      await s.close();
+    }
+  });
+
+  test.each([
+    ["flow", WORKFLOW_FLOW_PATH],
+    ["step", WORKFLOW_STEP_PATH],
+  ])("still serves %s to the guest's own queue on loopback", async (_l, path) => {
+    const surface = surfaceOf();
+    // Same `0.0.0.0` bind as above, so the only difference is the peer.
+    const s = await serving(surface, "0.0.0.0");
+    try {
+      const res = await fetch(`${s.url}${path}`, { method: "POST" });
+      expect(res.status).toBe(200);
+    } finally {
+      await s.close();
+    }
+  });
+
+  // The webhook URL is handed OUT of the system — to a payment provider, an
+  // approval mail — so the platform proxies it and the DevKit's path token is
+  // its authorization. Gating it on network position would break every one.
+  test("does not gate the webhook route, which is public by design", async () => {
+    const external = firstExternalIpv4();
+    if (!external) {
+      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
+    }
+    const surface = surfaceOf();
+    const s = await serving(surface, "0.0.0.0");
+    try {
+      const res = await fetch(`http://${external}:${s.port}${WORKFLOW_WEBHOOK_PREFIX}tok`, {
+        method: "POST",
+      });
+      expect(res.status).toBe(200);
+      expect(surface.webhook).toHaveBeenCalledTimes(1);
+    } finally {
+      await s.close();
+    }
   });
 });
