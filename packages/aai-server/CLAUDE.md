@@ -140,37 +140,47 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   every replica would leave rotation at once, turning a feature outage into a
   total one. A high-water-mark `joined` flag made the drop-after-join case, the
   worse one, structurally invisible.
-- `orphan-previews.ts` — the reap for studio previews nothing references: a
-  leader-elected in-process pass (same shape as the wake sweep) that SELECTS aged
-  `*-preview` agents no workspace points at and hands each to
-  `deleteAgentResources`, so the reap and `DELETE /:slug` are one path.
+- The reap for studio previews nothing references is a pg_cron job again —
+  `aai-sweep-orphan-previews` in `pg-cron.ts`, which owns the argument. It was a
+  cron body, moved into the server when per-app database deprovisioning went to
+  the Management API, and moved back: with no database to drop there is no step
+  SQL cannot perform, and a reap is a Vault row and an agents row.
 
-  It ran in pg_cron until per-app databases moved to the Management API, and
-  both reasons for that move are now obsolete: there is no `DROP DATABASE` to
-  run outside pg_cron's transaction, and `deleteAgentResources` is six lines.
-  **The one surviving reason is that the reap must not become a second
-  implementation of `DELETE /:slug`** — a SQL copy would re-derive the slug lock
-  and the secret-name interpolation, and `AGENT_ENV_SECRET_PREFIX`'s doc
-  explains that a disagreement there deletes nothing, silently. The rule this
-  settles: **pg_cron when the whole action is SQL on this database**
-  (session-state expiry, blob GC), **the server when it must be the same code as
-  a request path.** Replica-churn survival is not a differentiator — this sweep
-  already elects a leader.
 - `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
   archived queue jobs, unreferenced deploy blobs, runaway tenant queries,
   pg_cron's own run log), installed idempotently at boot.
 
-  **The orphan-preview reap is NOT one of them any more — see
-  `orphan-previews.ts`.** It deprovisioned in SQL, which meant `drop database`
-  through `dblink` (pg_cron wraps every body in a transaction, `25001`), and that
-  was the last second implementation of deprovisioning once create/drop moved to
-  the Management API. It was also the weaker one: primary-cluster only, so it
-  reclaimed nothing on a sharded fleet, and with no resolvable DSN it deleted the
-  row and LEAKED the database with a warning. It is now a leader-elected
-  in-process pass calling `deleteAgentResources` — the one delete path — and
-  `platformDbDsn`, `PLATFORM_DB_DSN_SECRET` and `AAI_DBLINK_HOST` went with it.
-  The `aai_admin` dblink extension stays installed (unused, and no `USAGE`
-  granted) so a rollback needs no migration.
+  **The orphan-preview reap IS one of them, again**, and its own doc in that
+  module carries why the round trip is safe. The short version: it left because
+  deprovisioning a per-app database needed `DROP DATABASE`, which pg_cron cannot
+  run inside its transaction (`25001`) and which needed a `dblink` bridge, and
+  because once create/drop moved to the Management API a SQL sweep was a second
+  implementation of a step SQL could not perform. Neither holds now.
+
+  Three properties make the move safe rather than merely possible, and each is
+  asserted in `pg-cron.scenario.test.ts` against a real database:
+
+  - **It takes the SAME lock a deploy takes.** `pg_try_advisory_xact_lock` and
+    `withSlugLock`'s session-scoped `pg_advisory_lock` share one lock space and
+    differ only in when they release — verified on PG 17.6 from a second
+    connection, and A/B'd by bypassing the guard. A parallel lock that merely
+    looked like the deploy's would exclude nothing.
+  - **Cross-replica invalidation is unaffected**, because
+    `watchAgentInvalidation` rides the agents table's Realtime stream, which
+    decodes the WAL — and a delete from pg_cron writes the WAL exactly as one
+    from the app does.
+  - **The duplicated delete path is GUARDED, not argued away.**
+    `pg-cron-delete-parity.test.ts` reads `bundle-store.ts`'s `deleteAgent` and
+    fails if it grows a step the SQL body does not have. Without it this is the
+    "leaked, out loud" shape the sweep's own history warns about: a second
+    deleter that silently stops matching.
+
+  `platformDbDsn`, `PLATFORM_DB_DSN_SECRET` and `AAI_DBLINK_HOST` went with the
+  earlier move and have not come back — the body runs on the platform database's
+  own connection. The `dblink` extension and the `aai_admin` schema are DROPPED
+  by `20260827030000_drop_dblink_admin.sql`: nothing uses them, and an unused
+  capability that can open a connection to any reachable Postgres is not
+  neutral.
 
   **Per-app maintenance is `cron.schedule_in_database` instead** — pg_cron 1.6.4,
   usable by Supabase's non-superuser `postgres`, and it really fires into a
@@ -578,16 +588,21 @@ The cross-replica coordination that lives in this same Postgres:
   operator sees first is `remaining connection slots are reserved` on a platform
   read: a control-plane outage at peak.
 
-  **So it is MEASURED** (`platform-db-pressure.ts`): a leader-elected replica
-  reads `pg_stat_activity` per ROLE against each role's own `rolconnlimit`,
-  warning on the instance past `PLATFORM_DB_PRESSURE_WARN_FRACTION` or any one
-  role at its ceiling. The per-role dimension was scoped to `app_<hex>` roles
-  and now covers every role with a live backend — still the actionable split,
-  since the platform's pools all connect as `postgres` and Supabase's own
-  workers are their own roles, so it says whether pressure is ours or the
-  instance's. A total cannot be acted on. It is a READING, not a limiter, and
-  its own sweep rather than a rider on one whose kill switch would take the
-  measurement with it.
+  **It is NOT measured continuously any more.** `platform-db-pressure.ts` was a
+  leader-elected five-minute reading of `pg_stat_activity` per role, warning
+  past a fraction of `max_connections` or on any role at its own `rolconnlimit`.
+  It is deleted, and what it was for is worth recording: its whole argument was
+  the tenant-scaled term above, and with that term gone the fleet claim is a
+  constant this file states and boot checks.
+
+  What the deletion gives up, stated because it is real: Supabase's own Realtime
+  / PostgREST / Storage workers share this instance and scale with usage, and
+  boot measures `inUse` exactly ONCE — so their footprint growing after boot is
+  now unobserved, as is a leak in one of our own pools (the workflow world's
+  `LISTEN` client is that shape). The per-role trigger had also become near-dead
+  weight regardless: it was aimed at app roles, and `postgres` — what every
+  platform pool connects as — carries no `rolconnlimit`, so it would only ever
+  have fired for a cap someone set by hand.
 
   **Boot CHECKS the claim** (`platform-db-capacity.ts`): `max_connections` plus
   a `pg_stat_activity` count against `platformDbBudget()`. Its trap was that the

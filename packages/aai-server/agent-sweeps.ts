@@ -22,8 +22,6 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { BundleStore } from "./bundle-store.ts";
-import { startOrphanPreviewSweep } from "./orphan-previews.ts";
-import { startPlatformDbPressureSweep } from "./platform-db-pressure.ts";
 import type { AdminDb, SlugMutationLock } from "./platform-lock.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import type { SecretStore } from "./secret-store.ts";
@@ -68,20 +66,8 @@ export function startAgentSweeps(opts: AgentSweepOptions): void {
     ...omitUndefined({ isDraining: opts.isDraining }),
   });
 
-  // Where the instance's connection slots have actually gone
-  // (platform-db-pressure.ts) — its own sweep rather than a rider on the one
-  // above; that module's doc says why.
-  startPlatformDbPressureSweep({ ...omitUndefined({ adminDb: opts.adminDb }) });
-
-  // Studio previews nothing references any more (orphan-previews.ts). The same
-  // shape as the wake sweep — a leader-elected in-process pass — and it reaps
-  // through `deleteAgentResources`, the one delete path this surface owns. It
-  // ran in pg_cron until per-app databases moved to the Management API; that
-  // module's doc has the argument.
-  startOrphanPreviewSweep({
-    store: opts.store,
-    ...omitUndefined({ secrets: opts.secrets }),
-    ...omitUndefined({ slugLock: opts.slugLock }),
-    ...omitUndefined({ adminDb: opts.adminDb }),
-  });
+  // Studio previews nothing references any more are reaped by pg_cron
+  // (`aai-sweep-orphan-previews`), not from here. With no per-app database to
+  // drop, a reap is a Vault row and an agents row — see that job's doc in
+  // `pg-cron.ts` for why the move back is safe and what guards it.
 }

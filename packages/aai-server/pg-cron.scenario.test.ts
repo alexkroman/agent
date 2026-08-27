@@ -29,9 +29,11 @@
  * state, so "it deleted the expired one" is a real assertion rather than a count
  * that drifts with whatever else is in there.
  *
- * The orphan-preview reap is here too, though it is no longer a cron body: its
- * candidate read is the same `preview_slug` anti-join those bodies had, and it is
- * the one that had actually gone wrong (see the spec).
+ * The orphan-preview reap is a cron body again, and it is the one that had
+ * actually gone wrong — its guard reads the generated `preview_slug` column, and
+ * on double-encoded rows that read NULL out of a jsonb STRING, so the guard
+ * matched nothing and the sweep deleted LIVE previews on the hour. It is executed
+ * here end to end rather than stubbed.
  *
  * `supabase_vault` is created here explicitly, because NO migration creates it
  * (Supabase pre-installs it) and the blob GC returns early without it —
@@ -47,20 +49,10 @@ import type { CloseableDb } from "@alexkroman1/aai-runtime";
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
-import { createOrphanPreviewSweep } from "./orphan-previews.ts";
 import { platformCronJobs } from "./pg-cron.ts";
+import { SLUG_LOCK_NAMESPACE } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { createMemorySecretStore } from "./secret-store.ts";
-import { createTestStore, platformMigrationSql } from "./test-utils.ts";
-
-/** The reap's collaborators, none of which this spec exercises. */
-function fakeReapEnv() {
-  return {
-    store: createTestStore(),
-    secrets: createMemorySecretStore(),
-    slugLock: <T>(_slug: string, fn: () => Promise<T>) => fn(),
-  };
-}
+import { platformMigrationSql } from "./test-utils.ts";
 
 /** Every sweep, including the blob GC — which needs a storage config to exist. */
 const JOBS = platformCronJobs({ storage: { url: "https://probe.test", bucket: "blobs" } });
@@ -83,6 +75,8 @@ describeWithStack("the pg_cron sweep bodies", () => {
   let db: CloseableDb;
   let sql: SqlExec;
   let dbName: string;
+  /** The throwaway database's own URL — a second connection needs it. */
+  let dbUrl: string;
 
   beforeAll(async () => {
     // `pgUrl()` inside the hook: vitest executes a `describe.skip` callback to
@@ -99,7 +93,8 @@ describeWithStack("the pg_cron sweep bodies", () => {
     }
     const url = new URL(adminUrl);
     url.pathname = `/${dbName}`;
-    db = createPostgresDb({ url: url.toString(), max: 2 });
+    dbUrl = url.toString();
+    db = createPostgresDb({ url: dbUrl, max: 2 });
     sql = (query, params) => db.query(query, params);
     // Vault first: the blob GC's own guard returns early without it.
     await sql("create extension if not exists supabase_vault");
@@ -125,21 +120,24 @@ describeWithStack("the pg_cron sweep bodies", () => {
     // is only a floor while it matches the real count. 8 → 7 when the session-state
     // sweep became one job per APP, scheduled into that app's own database because
     // per-app databases put a tenant's tables outside this catalog entirely; 7 → 6
-    // when the orphan-preview reap moved into the server, because its drop is a
-    // Management API call and SQL cannot make one (`orphan-previews.ts`); and 6 → 6
-    // when the session-state sweep came BACK — there are no app databases, so those
-    // rows are in `aai_platform` again and one statement reaches the whole fleet,
-    // while the app-role runaway sweep left with the roles it terminated.
-    expect(JOBS.length).toBeGreaterThanOrEqual(6);
+    // when the orphan-preview reap moved into the server, because its drop was a
+    // Management API call and SQL cannot make one; 6 → 6 when the session-state
+    // sweep came BACK, since there are no app databases and one statement reaches
+    // the whole fleet while the app-role runaway sweep left with the roles it
+    // terminated; and 6 → 7 when the orphan reap came back for the same reason —
+    // with no database to drop, a reap is a Vault row and an agents row.
+    expect(JOBS.length).toBeGreaterThanOrEqual(7);
     expect(JOBS.map((j) => j.name)).toContain("aai-sweep-blob-gc");
     // Back here, and this is the assertion that says which side of the move we are
     // on: it read `not.toContain` for as long as those rows lived in a catalog this
     // database could not see.
     expect(JOBS.map((j) => j.name)).toContain("aai-sweep-session-state");
-    // And these two are really gone rather than renamed: a platform job sweeping a
+    // Back here too, and for the same reason the session-state sweep is: the step
+    // that could not be SQL does not exist any more.
+    expect(JOBS.map((j) => j.name)).toContain("aai-sweep-orphan-previews");
+    // This one is really gone rather than renamed: a platform job sweeping a
     // catalog that no longer holds what it looks for runs on its schedule forever
     // and reclaims nothing.
-    expect(JOBS.map((j) => j.name)).not.toContain("aai-sweep-orphan-previews");
     expect(JOBS.map((j) => j.name)).not.toContain("aai-sweep-app-db-runaways");
   });
 
@@ -155,49 +153,96 @@ describeWithStack("the pg_cron sweep bodies", () => {
     },
   );
 
-  test("the orphan-preview reap picks the UNCLAIMED preview and spares a claimed one", async () => {
-    // The behavioural half, and the one that has actually gone wrong: the guard is
-    // `not exists (select 1 from studio_workspaces w where w.preview_slug = a.slug)`,
-    // and `preview_slug` is generated from `doc->>'previewSlug'`. On rows written
-    // double-encoded that read NULL out of a jsonb *string*, so the guard matched
-    // nothing and the sweep deleted LIVE previews on the hour.
-    //
-    // The reap is no longer a cron body (`orphan-previews.ts`) — this executes its
-    // CANDIDATE READ against a real database, which is the half that predicate
-    // lives in. The reap itself is stubbed: what it does with a slug is
-    // `deleteAgentResources`, covered end to end in
-    // `management-provision.scenario.test.ts`.
+  /**
+   * The reap, executed — not its candidate read.
+   *
+   * The predicate is `not exists (select 1 from studio_workspaces w where
+   * w.preview_slug = a.slug)`, and `preview_slug` is generated from
+   * `doc->>'previewSlug'`. On rows written double-encoded that read NULL out of a
+   * jsonb *string*, so the guard matched nothing and the sweep deleted LIVE
+   * previews on the hour. That is why the workspace below is inserted through the
+   * same document shape the studio writes: the generated column has to see it.
+   */
+  test("the orphan reap deletes the unclaimed preview, its secret, and nothing else", async () => {
     const stale = "orphan-x1-preview";
     const claimed = "orphan-x2-preview";
-    for (const slug of [stale, claimed]) {
+    const young = "orphan-x3-preview";
+    for (const [slug, age] of [
+      [stale, "2 hours"],
+      [claimed, "2 hours"],
+      // Inside the age window: a workspace row is written BEFORE its preview
+      // deploys, so a reap that ignored age would race a deploy in flight.
+      [young, "1 minute"],
+    ] as const) {
       await sql(
         `insert into aai_platform.agents
            (slug, credential_hashes, worker_hash, client_files, version, updated_at)
-         values ($1, $2::text::jsonb, 'w', $3::text::jsonb, 1, now() - interval '2 hours')`,
+         values ($1, $2::text::jsonb, 'w', $3::text::jsonb, 1, now() - interval '${age}')`,
         [slug, "[]", "{}"],
       );
+      await sql("select vault.create_secret($1, $2)", ["{}", `agent-env:${slug}`]);
     }
-    // One workspace CLAIMS the second preview, through the same document shape the
-    // studio writes — so the generated column is what has to see it.
     await sql(
       `insert into aai_platform.studio_workspaces (scope, project, doc)
        values ('cron-scope', 'x2', $1::text::jsonb)`,
       [JSON.stringify({ files: {}, previewSlug: claimed })],
     );
 
-    const reaped: string[] = [];
-    const sweep = createOrphanPreviewSweep({
-      adminDb: db,
-      env: fakeReapEnv(),
-      reap: async (slug) => {
-        reaped.push(slug);
-      },
-    });
-    expect(await sweep.sweepOnce()).toMatchObject({ swept: true });
-    expect(reaped).toEqual([stale]);
-    // And nothing was deleted by the read itself — the row is the reap's last act.
+    await sql(JOBS.find((j) => j.name === "aai-sweep-orphan-previews")?.command ?? "");
+
     const rows = await sql("select slug from aai_platform.agents where slug like 'orphan-%'");
-    expect(rows.map((r) => String(r.slug)).sort()).toEqual([stale, claimed].sort());
+    expect(rows.map((r) => String(r.slug)).sort()).toEqual([claimed, young].sort());
+    // The Vault row goes too, and only the reaped one's — a survivor's credential
+    // deleted here is an agent that exists and cannot boot.
+    const secrets = await sql(
+      "select name from vault.secrets where name like 'agent-env:orphan-%'",
+    );
+    expect(secrets.map((r) => String(r.name)).sort()).toEqual(
+      [`agent-env:${claimed}`, `agent-env:${young}`].sort(),
+    );
+  });
+
+  /**
+   * A slug someone is deploying is SKIPPED, not waited for.
+   *
+   * The body takes `pg_try_advisory_xact_lock(SLUG_LOCK_NAMESPACE, hashtext(slug))`
+   * and `withSlugLock` takes the SESSION-scoped `pg_advisory_lock` on the same
+   * pair. The two forms share one lock space and differ only in when they release,
+   * which is the whole reason this move is safe — a parallel lock that merely
+   * looked like the deploy's would exclude nothing.
+   *
+   * Asserted from a SECOND connection, because a lock held by the connection
+   * running the sweep would be re-acquired by it rather than contended.
+   */
+  test("a slug whose deploy lock is held is skipped, and reaped on the next pass", async () => {
+    const busy = "orphan-locked-preview";
+    await sql(
+      `insert into aai_platform.agents
+         (slug, credential_hashes, worker_hash, client_files, version, updated_at)
+       values ($1, $2::text::jsonb, 'w', $3::text::jsonb, 1, now() - interval '2 hours')`,
+      [busy, "[]", "{}"],
+    );
+    const body = JOBS.find((j) => j.name === "aai-sweep-orphan-previews")?.command ?? "";
+    const rival = createPostgresDb({ url: dbUrl, max: 1 });
+    try {
+      await rival.query("select pg_advisory_lock($1::int, hashtext($2)::int)", [
+        SLUG_LOCK_NAMESPACE,
+        busy,
+      ]);
+      await sql(body);
+      const held = await sql("select slug from aai_platform.agents where slug = $1", [busy]);
+      expect(held).toHaveLength(1);
+      await rival.query("select pg_advisory_unlock($1::int, hashtext($2)::int)", [
+        SLUG_LOCK_NAMESPACE,
+        busy,
+      ]);
+    } finally {
+      await rival.close();
+    }
+    // Released, so the next pass takes it — which is what makes a skip a deferral
+    // rather than a leak.
+    await sql(body);
+    expect(await sql("select slug from aai_platform.agents where slug = $1", [busy])).toEqual([]);
   });
 
   test("the rate-limit sweep deletes expired windows and keeps live ones", async () => {
