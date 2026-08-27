@@ -10,13 +10,29 @@
  * that a stale claim comes back — is only observable against a server.
  */
 
+import { isRecord } from "@alexkroman1/aai/utils";
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
+import { createPlatformQueueSend } from "@alexkroman1/aai-runtime/internal";
+import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import type { HonoEnv } from "./context.ts";
+import { guestTokenFor } from "./guest-token.ts";
+import { slugMw } from "./middleware.ts";
 import type { AdminDb } from "./platform-lock.ts";
+import { agentSandboxName } from "./sandbox-directory.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { ensurePlatformTables } from "./test-utils.ts";
-import { ack, claimDue, enqueue, fail, QUEUE_MAX_ATTEMPTS } from "./workflow-queue-store.ts";
+import { createTestStore, ensurePlatformTables, type TestFetch } from "./test-utils.ts";
+import { createWorkflowEnqueueHandler } from "./workflow-enqueue-handler.ts";
+import {
+  ack,
+  claimDue,
+  enqueue,
+  envelopeBody,
+  fail,
+  parseEnvelope,
+  QUEUE_MAX_ATTEMPTS,
+} from "./workflow-queue-store.ts";
 import { runQueuePass } from "./workflow-queue-sweep.ts";
 
 describeWithPg("workflow queue store", () => {
@@ -24,6 +40,12 @@ describeWithPg("workflow queue store", () => {
   let sql: SqlExec;
   /** The same database as `sql`, as the reserving handle a pass needs. */
   let adminDb: () => AdminDb;
+  /**
+   * A real platform over that same database, so the loop test can go through the
+   * HTTP route rather than calling `enqueue` directly. The agents live in
+   * Postgres; only the BUNDLE store is in memory, which this suite never reads.
+   */
+  let platformFetch: TestFetch;
 
   /** Every tenant this suite creates, so `afterAll` can remove exactly those. */
   const SLUGS = ["wfq-t1", "wfq-t2", "wfq-gone"];
@@ -65,6 +87,38 @@ describeWithPg("workflow queue store", () => {
     // scenario test may own its ROWS; it may not own the schema.
     await ensurePlatformTables(sql);
     for (const slug of SLUGS) await seedAgent(slug);
+
+    // JUST the enqueue route over that same database — deliberately NOT
+    // `createTestOrchestrator`.
+    //
+    // A full orchestrator starts this surface's background sweeps and keeps no
+    // handle to stop them (`agent-sweeps.ts`), so with a real `adminDb` this suite
+    // left a 1-SECOND queue sweep running against the shared scenario database
+    // after it finished. That is exactly what it did on the first run: every test
+    // here passed and `workflow-world.scenario.test.ts` failed beside it, which is
+    // the most expensive shape of test failure available — a suite breaking a
+    // sibling.
+    //
+    // The route needs a store for its `getAgentVersion` check and a slug from the
+    // path, and nothing else, so that is all this mounts.
+    const store = createTestStore();
+    await store.putAgent({
+      slug: SLUGS[0] as string,
+      env: {},
+      worker:
+        'export default { name: "a", systemPrompt: "p", greeting: "", maxSteps: 1, tools: {} };',
+      clientFiles: {},
+      credential_hashes: [],
+    });
+    const app = new Hono<HonoEnv>();
+    app.use("*", async (c, next) => {
+      c.env = { store } as HonoEnv["Bindings"];
+      await next();
+    });
+    app.post("/:slug/workflow-enqueue", slugMw, createWorkflowEnqueueHandler(adminDb()));
+    // `app.request` is sync-or-async depending on the route; `TestFetch` is the
+    // async half, which is what every caller here awaits anyway.
+    platformFetch = async (input, init) => app.request(input, init);
   });
 
   afterAll(async () => {
@@ -310,6 +364,96 @@ describeWithPg("workflow queue store", () => {
     );
     expect(rows[0]?.due).toBe(true);
     expect(rows[0]?.recent).toBe(true);
+  });
+
+  /**
+   * THE WHOLE LOOP, over a real database: the guest's own enqueue client, the
+   * platform's HTTP route, the real store, the claim, and the delivery.
+   *
+   * Every other spec in this series covers one hop with the next one faked. This is
+   * the only place the four agree — and the two that most need checking against
+   * each other are the ENVELOPE and the RUN ID, because the guest writes them and
+   * the claim's `distinct on (slug, payload->>'runId')` reads them out of jsonb.
+   * That is exactly where a double-encoded payload silently collapsed this queue's
+   * per-run ordering once already, and a fake cannot see it: a fake holds JS
+   * values.
+   */
+  test("a message the guest enqueues is claimed and delivered, envelope intact", async () => {
+    const bearer = guestTokenFor(agentSandboxName(SLUGS[0] as string, 1));
+    // The guest's real client, pointed at the platform's real route through the
+    // orchestrator's own fetch. `AAI_GUEST_TOKEN_SECRET` is unset here, so
+    // `guestTokenFor` draws a per-process key — which both sides read, so they
+    // agree.
+    const send = createPlatformQueueSend({
+      base: `http://platform.test/${SLUGS[0]}`,
+      token: bearer,
+      fetch: async (input, init) => {
+        const req = new Request(input, init);
+        return platformFetch(new URL(req.url).pathname, {
+          method: req.method,
+          headers: req.headers,
+          body: await req.text(),
+        });
+      },
+    });
+
+    const input = new Uint8Array([7, 0, 255]);
+    const sent = await send("__wkf_workflow_r-loop", { runId: "r-loop", runInput: { input } });
+    expect(sent.messageId).toMatch(/^wfq_/);
+
+    // Claimed and delivered by the real sweep.
+    const delivered: { queueName: string; body: Buffer }[] = [];
+    const pass = await runQueuePass({
+      adminDb: adminDb(),
+      deliver: async (m) => {
+        delivered.push({ queueName: m.queueName, body: envelopeBody(parseEnvelope(m.payload)) });
+        return { type: "completed" };
+      },
+    });
+    expect(pass).toEqual({ claimed: 1, delivered: 1, rescheduled: 0, retried: 0, dropped: 0 });
+    expect(delivered[0]?.queueName).toBe("__wkf_workflow_r-loop");
+
+    // The bytes survived jsonb, base64, an HTTP hop and a claim — and the
+    // `Uint8Array` came back as one rather than as an index map.
+    const revived = JSON.parse(delivered[0]?.body.toString() ?? "{}", (_k, v: unknown) =>
+      isRecord(v) && v.__type === "Uint8Array" && typeof v.data === "string"
+        ? new Uint8Array(Buffer.from(v.data, "base64"))
+        : v,
+    ) as { runId: string; runInput: { input: Uint8Array } };
+    expect(revived.runId).toBe("r-loop");
+    expect(revived.runInput.input).toEqual(input);
+
+    // And it is gone, because the delivery was acked.
+    const rows = await sql("select count(*)::int as n from aai_platform.workflow_queue");
+    expect(rows[0]?.n).toBe(0);
+  });
+
+  /**
+   * The per-run ordering the envelope exists to make possible, end to end.
+   *
+   * Three messages for one run, enqueued through the real route, must yield ONE
+   * claim — and a double-encoded payload makes `payload->>'runId'` null for every
+   * row, which collapses `distinct on` and hands back all three.
+   */
+  test("three messages for one run are claimed one at a time", async () => {
+    const bearer = guestTokenFor(agentSandboxName(SLUGS[0] as string, 1));
+    const send = createPlatformQueueSend({
+      base: `http://platform.test/${SLUGS[0]}`,
+      token: bearer,
+      fetch: async (input, init) => {
+        const req = new Request(input, init);
+        return platformFetch(new URL(req.url).pathname, {
+          method: req.method,
+          headers: req.headers,
+          body: await req.text(),
+        });
+      },
+    });
+    for (const n of [1, 2, 3]) {
+      await send("__wkf_step_r-one", { workflowRunId: "r-one", stepId: `s${n}` });
+    }
+    const claimed = await claimDue((q, p) => sql(q, p), 10);
+    expect(claimed).toHaveLength(1);
   });
 
   test("acking removes the message", async () => {
