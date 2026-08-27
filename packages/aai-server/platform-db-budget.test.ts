@@ -97,9 +97,10 @@ describe("platform database connection budget", () => {
     expect(
       fleetDirect + appTotal,
       `MAX_CONTAINERS (${maxContainers}) x ${platformDbConnectionsPerReplica()} = ${fleetDirect} ` +
-        `direct, plus ${MAX_ACTIVE_APP_DATABASES} app databases x ` +
-        `${APP_DB_WORKFLOW_CONNECTION_LIMIT} = ` +
-        `${appTotal}, is ${fleetDirect + appTotal} against a ${MAX_PLATFORM_DB_CONNECTIONS} ` +
+        `direct, plus an app-database allowance of ${appTotal} ` +
+        `(${MAX_ACTIVE_APP_DATABASES} at the workflow tier's ` +
+        `${APP_DB_WORKFLOW_CONNECTION_LIMIT}), is ${fleetDirect + appTotal} ` +
+        `against a ${MAX_PLATFORM_DB_CONNECTIONS} ` +
         "budget. These two terms compete: lower MAX_CONTAINERS to buy app databases, or " +
         "provision a bigger instance / shard with APP_DB_URLS to buy both.",
     ).toBeLessThanOrEqual(MAX_PLATFORM_DB_CONNECTIONS);
@@ -310,6 +311,57 @@ describe("platform database connection budget", () => {
   });
 
   /**
+   * The two hand-set halves of the budget must agree, and this is what makes
+   * lowering `MAX_CONTAINERS` a real trade instead of free money.
+   *
+   * `MAX_CONTAINERS` (deploy recipe) and `APP_DB_CONNECTION_ALLOWANCE`
+   * (`app-db-tier.ts`) are both set by hand, and their sum is the whole claim.
+   * Neither is derived from the other on purpose: a derived allowance would make
+   * the assertion above a tautology — the budget compared against a number
+   * defined as the budget minus something — so there would be nothing left to
+   * check. Two hand-set numbers with this test between them is what makes raising
+   * `MAX_CONTAINERS` back to 5 without giving the allowance back a RED SUITE
+   * (5 x 4 + 28 = 48 > 40) rather than a silent overrun.
+   *
+   * It went 5 -> 3 on a measurement: one replica's broker held 23,000 rps at p99
+   * 22ms with 256 concurrent and zero errors, flat from 32 concurrent up, so five
+   * replicas was availability sizing and never throughput sizing. The 8
+   * connections it freed moved onto the allowance — off a term that does not grow
+   * with tenants and onto the one that does.
+   */
+  test("the fleet's own claim and the app allowance are ONE budget, split by hand", () => {
+    const maxContainers = pyInt("MAX_CONTAINERS");
+    const fleetDirect = maxContainers * platformDbConnectionsPerReplica();
+
+    // The split is exact: every connection the budget permits is accounted to
+    // one side or the other. Slack here would be capacity nobody can spend.
+    expect(
+      fleetDirect + APP_DB_CONNECTION_ALLOWANCE,
+      `MAX_CONTAINERS (${maxContainers}) x ${platformDbConnectionsPerReplica()} = ` +
+        `${fleetDirect} for the fleet's own pools, plus ${APP_DB_CONNECTION_ALLOWANCE} ` +
+        "for app databases. Lowering MAX_CONTAINERS frees connections for the term that " +
+        "scales with TENANTS; raising it has to take them back from the allowance.",
+    ).toBe(MAX_PLATFORM_DB_CONNECTIONS);
+
+    // And the app COUNT is that allowance divided by the widest tier. Hand-set
+    // (deriving it would make `app-db-tier.ts` and `constants.ts` mutually
+    // importing), so it is asserted rather than trusted.
+    expect(MAX_ACTIVE_APP_DATABASES).toBe(
+      Math.floor(APP_DB_CONNECTION_ALLOWANCE / APP_DB_WORKFLOW_CONNECTION_LIMIT),
+    );
+  });
+
+  /**
+   * What lowering `MAX_CONTAINERS` bought, pinned so the claim in its comment
+   * cannot rot: the WORKFLOW-tier count did not move, and the storage-tier one
+   * did. 28 still floors to 2 against a limit of 10.
+   */
+  test("the freed budget bought storage-tier apps, not workflow-tier ones", () => {
+    expect(Math.floor(APP_DB_CONNECTION_ALLOWANCE / APP_DB_WORKFLOW_CONNECTION_LIMIT)).toBe(2);
+    expect(Math.floor(APP_DB_CONNECTION_ALLOWANCE / APP_DB_STORAGE_CONNECTION_LIMIT)).toBe(7);
+  });
+
+  /**
    * An extra placement cluster costs the PRIMARY's budget nothing, and the
    * arithmetic that said otherwise is why there were none.
    *
@@ -381,7 +433,10 @@ describe("platform database connection budget", () => {
     expect(APP_DB_STORAGE_CONNECTION_LIMIT).toBeLessThan(APP_DB_WORKFLOW_CONNECTION_LIMIT);
     // And what it buys is app databases on one instance: the same allowance
     // affords MAX_ACTIVE_APP_DATABASES workflow apps or more storage-only ones.
-    expect(APP_DB_CONNECTION_ALLOWANCE / APP_DB_WORKFLOW_CONNECTION_LIMIT).toBe(
+    // FLOORED, because the allowance no longer divides evenly: it is
+    // `MAX_PLATFORM_DB_CONNECTIONS` minus the fleet's own claim (28 against a
+    // limit of 10), and a partial app is not an app.
+    expect(Math.floor(APP_DB_CONNECTION_ALLOWANCE / APP_DB_WORKFLOW_CONNECTION_LIMIT)).toBe(
       MAX_ACTIVE_APP_DATABASES,
     );
     expect(

@@ -119,16 +119,25 @@ export function appDbConnectionLimit(tier: AppDbTier): number {
  * PRIMARY cluster, once the platform's own direct pools are paid for.
  *
  * Stated rather than left implicit because it is what the two tiers divide, and
- * the division is the whole point of having tiers: 20 buys two workflow apps or
- * five storage-only ones. `platform-db-budget.test.ts` asserts it against the
+ * the division is the whole point of having tiers: 28 buys two workflow apps or
+ * SEVEN storage-only ones. `platform-db-budget.test.ts` asserts it against the
  * same arithmetic the boot check prints, so this cannot drift from either.
  *
- * `MAX_CONTAINERS` is the deploy recipe's to set and is read from the environment
- * at boot, so the constant assumes the deployed value — the test is what holds
- * the two together.
+ * **HAND-SET, and the arithmetic is `MAX_PLATFORM_DB_CONNECTIONS` (40) minus the
+ * fleet's own claim (`MAX_CONTAINERS` 3 x `SLUG_LOCK_POOL_MAX` 4 = 12).** Derived
+ * instead, the budget test's central assertion would be a tautology — it would
+ * compare the budget against a number defined as the budget minus something. Two
+ * hand-set numbers with a test between them is what makes raising `MAX_CONTAINERS`
+ * back to 5 a RED SUITE (20 + 28 = 48 > 40) rather than a silent overrun, which
+ * is exactly the coupling `modal_deploy.py`'s own comment asks for.
+ *
+ * It was 20, against `MAX_CONTAINERS = 5`. Lowering that to 3 was measured — one
+ * replica's broker holds 23k rps at p99 22ms — and the 8 connections it gave back
+ * are here, moved off a term that does not grow with tenants and onto the one
+ * that does. The total claim did not change, so this bought tenants and NOT
+ * margin: 40 plus Supabase's own ~17 workers is still 57 of this instance's 60.
  */
-export const APP_DB_CONNECTION_ALLOWANCE =
-  MAX_ACTIVE_APP_DATABASES * APP_DB_WORKFLOW_CONNECTION_LIMIT;
+export const APP_DB_CONNECTION_ALLOWANCE = 28;
 
 /**
  * DIRECT connections one replica may open against ONE extra placement cluster,

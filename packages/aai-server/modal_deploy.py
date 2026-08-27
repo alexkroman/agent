@@ -169,21 +169,39 @@ MIN_CONTAINERS = 1  # always-warm floor: session brokering is latency-sensitive
 # Cost guard AND the multiplier on the platform's direct-connection budget:
 # MAX_CONTAINERS x platformDbConnectionsPerReplica() must fit
 # MAX_PLATFORM_DB_CONNECTIONS, which `platform-db-budget.test.ts` asserts.
-# 5 x 4 = 20. Raise deliberately, not by incident, and check the instance's real
+# 3 x 4 = 12. Raise deliberately, not by incident, and check the instance's real
 # `max_connections` first — the failure at the ceiling is every platform read
 # failing at once, not degradation (see that constant).
 #
-# It was 10, and lowering it RAISES capacity, which is only a paradox if the
-# two limits are conflated. A replica is cheap in the scarce resource and
-# expensive in nothing: it costs 4 direct connections and serves thousands of
-# streams, so the fleet's serving capacity is set by the per-container input
-# caps below, never by this number. The 20 connections given back are the only
-# headroom per-app databases have — they are session-mode pooled, i.e. one real
-# backend each, and they are what actually scales with tenants (see
+# It was 10, then 5, and lowering it RAISES capacity — a paradox only if the two
+# limits are conflated. A replica is cheap in the scarce resource and expensive
+# in nothing: it costs 4 direct connections and serves hundreds of concurrent
+# inputs, so the fleet's serving capacity is set by the per-container input caps
+# below, never by this number. The connections given back are the only headroom
+# per-app databases have — they are session-mode pooled, i.e. one real backend
+# each, and they are what actually scales with TENANTS (see
 # MAX_ACTIVE_APP_DATABASES). This does NOT bound how many AGENTS run: guest
 # sandboxes are Modal Sandboxes under a different Modal app
 # (DEFAULT_MODAL_APP_NAME in modal-context.ts), not containers of this function.
-MAX_CONTAINERS = 5
+#
+# 5 -> 3 MEASURED, which is what took it off "plausible". One replica's broker
+# held **23,000 rps at p99 22ms with 256 concurrent and zero errors**, flat from
+# 32 concurrent upward — it saturates one event loop and stays there. So five
+# replicas was availability sizing, never throughput sizing, and two of them were
+# costing 8 of the 40 connections that per-app databases divide.
+#
+# The claim is UNCHANGED at 40; the 8 move from a term that does not grow to one
+# that does (APP_DB_CONNECTION_ALLOWANCE, 20 -> 28), so this buys tenants and not
+# margin. Margin needs a bigger instance: the budget plus Supabase's own ~17
+# workers is 57 of the 60 this `t3a.micro` has, before and after.
+#
+# What it COSTS is fleet-wide concurrent inputs: MAX_CONTAINERS x MAX_INPUTS goes
+# 2000 -> 1200. Those are short HTTP requests plus the studio's SSE streams (one
+# per open tab), one replica held 2000 streams in testing with request p50
+# unchanged, and MIN_CONTAINERS keeps the steady state at one container anyway —
+# so 1200 is far above real use. Raise this back before that stops being true,
+# and give the allowance back when you do.
+MAX_CONTAINERS = 3
 BUFFER_CONTAINERS = 0  # no pre-warmed spare; bursts wait on container cold start
 # Measured, not guessed — one replica, 2,000 concurrent SSE streams held open:
 # zero refusals, ~100 KB of RSS each (292 MB total), CPU ~0%, and a fresh

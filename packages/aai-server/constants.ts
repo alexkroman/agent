@@ -406,9 +406,10 @@ export const MAX_PLATFORM_DB_CONNECTIONS = 40;
  * budgets against — a ceiling has to assume the ceiling.
  *
  * **2 is honest arithmetic, not a target, and it is the finding.** With
- * `MAX_CONTAINERS = 5` the platform's own direct pools take 20 of the 40, which
- * leaves {@link APP_DB_CONNECTION_ALLOWANCE} for two apps at the WORKFLOW
- * entitlement. Three things raise it, and only the first two are code:
+ * `MAX_CONTAINERS = 3` the platform's own direct pools take 12 of the 40, which
+ * leaves {@link APP_DB_CONNECTION_ALLOWANCE} (28) for two apps at the WORKFLOW
+ * entitlement and SEVEN at the storage tier — which is where lowering
+ * `MAX_CONTAINERS` from 5 landed, 28/10 still flooring to 2. Three things raise it, and only the first two are code:
  * provisioning an app at the STORAGE tier costs
  * {@link APP_DB_STORAGE_CONNECTION_LIMIT} instead, so the same allowance affords
  * five of those; `APP_DB_URLS` cellular sharding moves an app's connections onto
@@ -420,6 +421,10 @@ export const MAX_PLATFORM_DB_CONNECTIONS = 40;
  * This term is deliberately the WORST case — every active app at the workflow
  * tier — because a budget that assumed the cheaper mix would be a promise the
  * next `aai storage enable` could invalidate.
+ *
+ * HAND-SET rather than derived from {@link APP_DB_CONNECTION_ALLOWANCE}: that
+ * would make the two files mutually importing, and a derived number cannot be
+ * disagreed with, so the budget test would have nothing left to check.
  */
 export const MAX_ACTIVE_APP_DATABASES = 2;
 
