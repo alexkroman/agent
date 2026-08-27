@@ -62,16 +62,6 @@
  * @module internal
  */
 
-// The two sizes an upload is measured in, plus the id grammar. Exported for the
-// PLATFORM, which owns the byte route a deployed guest brokers through: its window
-// cap and its key derivation have to be stated in the same units the SDK cuts in,
-// and a second copy of either number is a silent disagreement about where an object
-// begins. Not on an authoring subpath — an agent author never picks these.
-//
-// `publishStepEnv` is the publisher half of the step env — the READER (`stepEnv`)
-// is authoring API on `@alexkroman1/aai/utils`, and lives in `sdk/` because the
-// step bundle bundles it. Only a host calls this: the guest at bundle load,
-// `aai dev` on every rebuild.
 export {
   CONTAINED_ENV,
   publishStepEnv,
@@ -137,6 +127,22 @@ export {
   PRESENCE_LOCK_CLASS,
   PRESENCE_LOCK_OBJECT,
 } from "./workflow-lock-sweep.ts";
+// The two sizes an upload is measured in, plus the id grammar. Exported for the
+// PLATFORM, which owns the byte route a deployed guest brokers through: its window
+// cap and its key derivation have to be stated in the same units the SDK cuts in,
+// and a second copy of either number is a silent disagreement about where an object
+// begins. Not on an authoring subpath — an agent author never picks these.
+//
+// `publishStepEnv` is the publisher half of the step env — the READER (`stepEnv`)
+// is authoring API on `@alexkroman1/aai/utils`, and lives in `sdk/` because the
+// step bundle bundles it. Only a host calls this: the guest at bundle load,
+// `aai dev` on every rebuild.
+export {
+  createPlatformQueueSend,
+  enqueueToPlatform,
+  type PlatformQueueOptions,
+  payloadRunId,
+} from "./workflow-platform-queue.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
 export {

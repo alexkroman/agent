@@ -45,6 +45,7 @@ import { z } from "zod";
 import { createSemaphore } from "./_semaphore.ts";
 import { createAgentLogsHandler } from "./agent-logs.ts";
 import { startAgentSweeps } from "./agent-sweeps.ts";
+import { registerAgentWorkflowRoutes } from "./agent-workflow-routes.ts";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import type { AppDatabases } from "./app-database.ts";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "./app-middleware.ts";
@@ -54,7 +55,6 @@ import { DEPLOY_BODY_CONCURRENCY, DEPLOY_BODY_WAIT_MS, resolveHarnessPath } from
 import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeployNew } from "./deploy.ts";
-import { GUEST_ROUTE_EXPOSURE, GUEST_ROUTES } from "./guest-routes.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
@@ -94,17 +94,6 @@ import {
   handleClientAsset,
 } from "./transport-websocket.ts";
 import { createMemoryUploadBytes, type UploadBytes } from "./upload-bytes.ts";
-import {
-  createUploadBytesHandler,
-  UPLOAD_BYTES_METHODS,
-  UPLOAD_BYTES_ROUTE,
-} from "./upload-handler.ts";
-import { createAgentWorkflowsHandler, createWorkflowRateLimitMw } from "./workflow-handler.ts";
-import {
-  createWorkflowWebhookHandler,
-  MAX_WEBHOOK_BODY_BYTES,
-  WORKFLOW_WEBHOOK_ROUTE,
-} from "./workflow-webhook-handler.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
@@ -401,51 +390,18 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // to configure, and a GET-configured number should work rather than 405.
   const handlePhone = createPhoneHandler({ store: opts.store });
   agents.on(["GET", "POST"], PHONE_ROUTE, (c) => handlePhone(c, brokerOpts));
-  // Durable-run webhook delivery. Same auth posture again — the DevKit's token
-  // is the only authorization on this endpoint, at the guest and here.
-  // The methods come STRAIGHT off the exposure declaration rather than being
-  // restated: the guest answers any verb the third party chose, and a platform
-  // route serving a subset of them is the exact bug guest-routes.ts exists to
-  // catch (a `DELETE` that worked in dev and 404'd deployed).
-  const handleWorkflowWebhook = createWorkflowWebhookHandler(opts.guestFetch);
-  agents.on(
-    [...GUEST_ROUTE_EXPOSURE.workflowWebhook.methods],
-    WORKFLOW_WEBHOOK_ROUTE,
-    bodyLimit({
-      maxSize: MAX_WEBHOOK_BODY_BYTES,
-      onError: (c) => c.json({ error: "Request body too large" }, 413),
-    }),
-    (c) => handleWorkflowWebhook(c, brokerOpts),
-  );
-  // The durable-workflow API, brokered to the guest. Registered even though a
-  // programmatic caller could reach the guest directly, because a WORKFLOW APP's
-  // page cannot: this platform serves it at `GET /:slug/`, so its
-  // `createWorkflowApi()` builds every URL under `/:slug/` and lands here. Same
-  // auth posture as the routes above — none by default; the guest's own
-  // `AAI_WORKFLOW_API_TOKEN` gate is what closes it, and the bearer is
-  // forwarded. See workflow-handler.ts.
-  const handleWorkflows = createAgentWorkflowsHandler(opts.guestFetch);
-  agents.on(
-    // The methods come STRAIGHT off the exposure declaration, for the same
-    // reason the webhook route above does it: the guest answers GET, POST and
-    // DELETE, and a platform serving a subset is the exact bug guest-routes.ts
-    // exists to catch — `api.cancel(runId)` is a DELETE.
-    [...GUEST_ROUTE_EXPOSURE.workflows.methods],
-    // The guest's own constant, so the two sides of the proxy cannot name
-    // different paths.
-    [GUEST_ROUTES.workflows, `${GUEST_ROUTES.workflows}/:path{.+}`],
-    createWorkflowRateLimitMw({
-      surface: opts.workflowRateLimiter,
-      start: opts.workflowStartRateLimiter,
-    }),
-    (c) => handleWorkflows(c, brokerOpts),
-  );
-  // One window of a workflow upload's bytes. NOT brokered and not a guest route: the
-  // guest holds no bucket credential, so both the browser's parts and the guest's own
-  // reads come here. `upload-handler.ts` carries the argument, the key derivation and
-  // why reads redirect while writes do not.
-  const handleUploadBytes = createUploadBytesHandler(opts.uploadBytes ?? createMemoryUploadBytes());
-  agents.on([...UPLOAD_BYTES_METHODS], UPLOAD_BYTES_ROUTE, handleUploadBytes);
+  // Every `/:slug/*` route the durable-workflow feature needs
+  // (agent-workflow-routes.ts). Grouped because their correctness is a claim
+  // about the DevKit's contract rather than this platform's, and three of the
+  // four derive their method list from `GUEST_ROUTE_EXPOSURE`.
+  registerAgentWorkflowRoutes(agents, {
+    broker: brokerOpts,
+    uploadBytes: opts.uploadBytes ?? createMemoryUploadBytes(),
+    ...omitUndefined({ guestFetch: opts.guestFetch }),
+    ...omitUndefined({ adminDb: opts.adminDb }),
+    ...omitUndefined({ workflowRateLimiter: opts.workflowRateLimiter }),
+    ...omitUndefined({ workflowStartRateLimiter: opts.workflowStartRateLimiter }),
+  });
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")
