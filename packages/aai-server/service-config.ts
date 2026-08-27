@@ -30,7 +30,11 @@ import {
   platformPoolerUrl,
 } from "./platform-connection-config.ts";
 import { announcePlatformDbCapacity } from "./platform-db-capacity.ts";
-import { platformDb } from "./platform-db-errors.ts";
+import {
+  PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
+  PLATFORM_DB_QUERY_TIMEOUT_MS,
+  platformDb,
+} from "./platform-db-errors.ts";
 import {
   createMemoryPlatformEvents,
   type PlatformEvents,
@@ -244,7 +248,14 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // an opaque 500 (see platform-db-errors.ts for the production outage that
   // shape produced). Applied at the pool because every platform read crosses
   // it; a classification per route is a classification per route to forget.
-  const admin = platformDb(createPostgresDb({ url: poolerUrl ?? url, max: ADMIN_POOL_MAX }));
+  const admin = platformDb(
+    createPostgresDb({
+      url: poolerUrl ?? url,
+      max: ADMIN_POOL_MAX,
+      connectTimeoutSeconds: PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
+      queryTimeoutMs: PLATFORM_DB_QUERY_TIMEOUT_MS,
+    }),
+  );
   const exec: SqlExec = (query, params) => admin.query(query, params);
   const extraTargets = extraAppDbTargets(env);
   // `create database` / `drop database` are Management API calls and nothing
@@ -321,7 +332,19 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // Vault reads, workspace writes, and the agents-row lookups the broker
     // makes, on a replica that was otherwise healthy. Separated, lock
     // acquires queue only against each other.
-    slugLock: createPgSlugLock(platformDb(createPostgresDb({ url, max: SLUG_LOCK_POOL_MAX }))),
+    // The slug-lock pool takes the connect bound but NOT the query bound: its
+    // whole job is holding an advisory lock on a RESERVED connection for a
+    // deploy's duration, and the pooled query timeout is scoped to the pool
+    // path anyway — a lock wait carries its own `lock_timeout` deadline.
+    slugLock: createPgSlugLock(
+      platformDb(
+        createPostgresDb({
+          url,
+          max: SLUG_LOCK_POOL_MAX,
+          connectTimeoutSeconds: PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
+        }),
+      ),
+    ),
     sql: exec,
     // The admin POOL, not another one: the wake sweep reserves one connection
     // from it for the read phase of a tick, so the fleet-wide connection budget

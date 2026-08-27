@@ -68,6 +68,26 @@ export { decliningRuntime } from "./session-decline.ts";
 const IDLE_SWEEP_MS = 25;
 
 /**
+ * Slowloris bound: how long a client may take to send its COMPLETE request
+ * headers before the socket is reaped. A deployed agent's `/session` URL and
+ * every `/:slug/*` route it serves are public, so a client that opens a
+ * connection and dribbles headers must not hold a slot open — Node's default is
+ * 60s, and a real voice/HTTP client sends its headers in one segment, so 20s is
+ * generous. The request BODY phase is deliberately left on Node's default
+ * `requestTimeout` (300s): a workflow upload (`PUT /workflows/uploads/*`) is a
+ * legitimately long-bodied request, and the slowloris vector is the headers
+ * phase this bounds, not the body.
+ */
+const SERVER_HEADERS_TIMEOUT_MS = 20_000;
+
+/**
+ * How long an idle keep-alive socket is kept between requests. Set explicitly
+ * rather than left to Node's 5s default so the reap is a stated policy on a
+ * public surface, not an implementation detail.
+ */
+const SERVER_KEEPALIVE_TIMEOUT_MS = 10_000;
+
+/**
  * Create an HTTP + WebSocket server for an agent — the self-hosting entry
  * point, and the same server `aai dev` runs.
  *
@@ -211,6 +231,11 @@ export function createServer(options: ServerOptions): AgentServer {
       answerHandlerFailure(res, logger, "Request handler failed", errorMessage(err));
     });
   });
+
+  // Public-surface hardening (see the constants above): bound the headers phase
+  // so a slowloris client is reaped, and state the idle keep-alive policy.
+  httpServer.headersTimeout = SERVER_HEADERS_TIMEOUT_MS;
+  httpServer.keepAliveTimeout = SERVER_KEEPALIVE_TIMEOUT_MS;
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
