@@ -16,8 +16,12 @@
  * values — that is the thing a slot reads and writes — in front of an async
  * {@link SessionStateBackend}:
  *
+ * - **Platform** when the guest was spawned by one, reached over HTTP with the
+ *   per-sandbox bearer. What a DEPLOYED agent gets, and it needs no database of its
+ *   own — see `session-state-platform.ts`.
  * - **Postgres** when the app has a database (`DATABASE_URL`), one row per
- *   `(sessionId, slot)` in the app's own database.
+ *   `(sessionId, slot)` in the app's own database. A self-hosted server, or
+ *   `aai dev` against a project with one.
  * - **Memory** otherwise, which is what `aai dev` against a project with no
  *   `DATABASE_URL` gets, and what a deployed agent nobody enabled storage for
  *   gets. This REPLACES the runtime's old `stateMap` rather than sitting beside
@@ -100,8 +104,15 @@ export type StoredSessionEvent = {
  * @public
  */
 export type SessionStateBackend = {
-  /** For the "Session mode resolved" log line — an operator's only clue which tier an agent is in. */
-  readonly name: "memory" | "postgres";
+  /**
+   * For the "Session mode resolved" log line — an operator's only clue which tier
+   * an agent is in.
+   *
+   * `platform` is the third: session state on the PLATFORM's database, reached over
+   * HTTP, which is what a deployed guest gets once no agent has a database of its
+   * own (`session-state-platform.ts`).
+   */
+  readonly name: "memory" | "postgres" | "platform";
   /** Whether a value written here survives this process. */
   readonly durable: boolean;
   /** Every stored slot for `sessionId`, keyed by slot. */

@@ -35,6 +35,11 @@ import { GUEST_ROUTE_EXPOSURE, GUEST_ROUTES } from "./guest-routes.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import type { RateLimiter } from "./rate-limit.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import {
+  createSessionStateHandler,
+  MAX_SESSION_STATE_BODY_BYTES,
+  SESSION_STATE_ROUTE,
+} from "./session-state-handler.ts";
 import type { UploadBytes } from "./upload-bytes.ts";
 import {
   createUploadBytesHandler,
@@ -140,6 +145,16 @@ export function registerAgentWorkflowRoutes(
   agents.get(
     WORKFLOW_STREAM_ROUTE,
     createWorkflowStreamHandler(omitUndefined({ storage: opts.runStorage })),
+  );
+
+  // The guest's session slots and event log — turn-level durability with no tenant
+  // database. Same bearer as the routes above, and its scoping is simpler than run
+  // storage's because this schema is the platform's own: the slug is part of every
+  // statement rather than something a per-method table has to decide.
+  agents.post(
+    SESSION_STATE_ROUTE,
+    limit(MAX_SESSION_STATE_BODY_BYTES),
+    createSessionStateHandler(omitUndefined({ adminDb: opts.adminDb })),
   );
 
   // The durable-workflow API, brokered to the guest. Registered even though a

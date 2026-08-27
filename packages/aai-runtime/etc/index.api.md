@@ -518,7 +518,7 @@ export type SessionStartOptions = {
 
 // @public
 export type SessionStateBackend = {
-    readonly name: "memory" | "postgres";
+    readonly name: "memory" | "postgres" | "platform";
     readonly durable: boolean;
     load(sessionId: string): Promise<Map<string, string>>;
     commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;

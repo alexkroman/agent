@@ -15,10 +15,15 @@ import type { SessionCore } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
 import type { ResumeFindings } from "./session-resume-found.ts";
+import {
+  createPlatformStateBackend,
+  type PlatformSessionStateOptions,
+} from "./session-state-platform.ts";
 import { createPostgresStateBackend } from "./session-state-postgres.ts";
 import {
   createMemoryStateBackend,
   createSessionStateStore,
+  type SessionStateBackend,
   type SessionStateStore,
 } from "./session-state-store.ts";
 import { createStateSweeps, type StateSweeps } from "./session-state-sweeps.ts";
@@ -49,18 +54,49 @@ export type RuntimeSessionState = {
 };
 
 /**
- * Build the runtime's session-state store: Postgres when the app has a database,
- * memory otherwise.
+ * The tiers, in order.
+ *
+ * A function rather than a nested ternary so each branch can carry its own reason —
+ * which is what a reader of "Session mode resolved" needs when they are asking why
+ * an agent is in the tier it is in.
+ */
+function selectBackend(opts: {
+  db: Db | undefined;
+  logger: Logger;
+  platform?: PlatformSessionStateOptions | undefined;
+}): SessionStateBackend {
+  // FIRST, and it wins over a `DATABASE_URL` for the same reason the platform WORLD
+  // does: a deployed agent's durability should not depend on whether it happens to
+  // have provisioned a database.
+  if (opts.platform) return createPlatformStateBackend(opts.platform);
+  // A self-hosted server, or `aai dev` against a project with a database.
+  if (opts.db) return createPostgresStateBackend({ db: opts.db });
+  // `aai dev` with no database. A restart forgets the turn, which is the honest
+  // trade and what `durable: false` in the resolved line reports.
+  return createMemoryStateBackend();
+}
+
+/**
+ * Build the runtime's session-state store.
+ *
+ * THREE tiers, in this order, and the order is the decision:
+ *
+ * 1. **Platform** when this guest was spawned by one — session state on the
+ *    platform's own database, over HTTP. It wins over a `DATABASE_URL` for the same
+ *    reason the platform WORLD does: a deployed agent's durability should not depend
+ *    on whether it happens to have provisioned a database.
+ * 2. **Postgres** against `ctx.db` — a self-hosted server, or `aai dev` with one.
+ * 3. **Memory**, where a restart forgets the turn. `aai dev` with no database.
  *
  * @internal
  */
 export function createRuntimeSessionState(opts: {
   db: Db | undefined;
   logger: Logger;
+  /** The platform's session-state endpoint, when this guest has one. */
+  platform?: PlatformSessionStateOptions | undefined;
 }): RuntimeSessionState {
-  const backend = opts.db
-    ? createPostgresStateBackend({ db: opts.db })
-    : createMemoryStateBackend();
+  const backend = selectBackend(opts);
   const store = createSessionStateStore({ backend, logger: opts.logger });
   return {
     store,
