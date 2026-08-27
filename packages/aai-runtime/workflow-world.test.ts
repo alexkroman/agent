@@ -267,7 +267,7 @@ describe("startWorkflowWorldIfDeclared", () => {
     // real I/O, so fake timers freeze the work the backoff is waiting on and the
     // loop never advances (verified — both cases hung to the tier timeout).
     await expect(
-      startWorkflowWorldIfDeclared(true, "postgres", async () => undefined),
+      startWorkflowWorldIfDeclared(true, "postgres", { waitMs: async () => undefined }),
     ).resolves.toBeUndefined();
     // Swallowing it silently would leave an operator with no way to find out.
     expect(errors.length).toBeGreaterThan(0);
@@ -287,8 +287,10 @@ describe("startWorkflowWorldIfDeclared", () => {
       if (typeof first === "string") lines.push(first);
     });
     const waits: number[] = [];
-    await startWorkflowWorldIfDeclared(true, "postgres", async (attempt) => {
-      waits.push(attempt);
+    await startWorkflowWorldIfDeclared(true, "postgres", {
+      waitMs: async (attempt) => {
+        waits.push(attempt);
+      },
     });
     // Five waits then a give-up, so six attempts — the budget is BOUNDED: a
     // genuinely broken world stops rather than spinning against a saturated role.
@@ -297,14 +299,54 @@ describe("startWorkflowWorldIfDeclared", () => {
     expect(lines.filter((l) => l.includes("failed to start")).length).toBe(1);
   });
 
+  /**
+   * The same exhausted budget, the opposite answer — because a `workflowApp`
+   * has no session surface to keep serving.
+   *
+   * Reproduced on eight workflow guests booted at once against a
+   * 100-connection instance: five came up and three gave up, then answered
+   * `/health` and `/client-config` with 200 while 500ing every
+   * `POST /workflows/runs` for the life of the sandbox — and still 500ing after
+   * the instance had drained, because nothing retries once the budget is spent.
+   * A throw fails the SPAWN instead, so the slot never latches the broken guest
+   * and the next broker call builds a fresh one.
+   */
+  test("THROWS for a workflow app, which has no phone to answer", async () => {
+    pointAtAClosedPort();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(
+      startWorkflowWorldIfDeclared(true, "postgres", {
+        page: "static",
+        waitMs: async () => undefined,
+      }),
+    ).rejects.toThrow(/front door is a page/);
+  });
+
+  test("a VOICE agent with a page declared still only logs", async () => {
+    // The divergence is keyed on `"static"` and nothing else: an explicit
+    // `page: "voice"` is the default front door, and taking a whole voice agent
+    // down over its workflows is the total-outage-for-a-partial-one trade the
+    // original contract refuses.
+    pointAtAClosedPort();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(
+      startWorkflowWorldIfDeclared(true, "postgres", {
+        page: "voice",
+        waitMs: async () => undefined,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   test("does not wait at all when the start succeeds", async () => {
     // The retry must cost a healthy boot nothing: with real timers this resolves
     // immediately, which it could not do if any backoff were awaited. `local`
     // needs no migration and no queue subscription, so it is the shape that
     // succeeds here.
     const waits: number[] = [];
-    await startWorkflowWorldIfDeclared(true, "local", async (attempt) => {
-      waits.push(attempt);
+    await startWorkflowWorldIfDeclared(true, "local", {
+      waitMs: async (attempt) => {
+        waits.push(attempt);
+      },
     });
     expect(waits).toEqual([]);
   });

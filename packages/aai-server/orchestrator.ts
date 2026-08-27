@@ -59,6 +59,7 @@ import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import { startOrphanPreviewSweep } from "./orphan-previews.ts";
 import { createPhoneHandler, PHONE_ROUTE } from "./phone-handler.ts";
+import { startPlatformDbPressureSweep } from "./platform-db-pressure.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import {
   type AdminDb,
@@ -357,6 +358,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     ...omitUndefined({ isDraining: opts.isDraining }),
     ...omitUndefined({ extraAppDbClusters: opts.extraAppDbClusters }),
   });
+
+  // Where the instance's connection slots have actually gone
+  // (platform-db-pressure.ts) — its own sweep rather than a rider on the one
+  // above; that module's doc says why.
+  startPlatformDbPressureSweep({ ...omitUndefined({ adminDb: opts.adminDb }) });
 
   // Studio previews nothing references any more (orphan-previews.ts). Wired
   // beside the wake sweep because it is the same shape — a leader-elected

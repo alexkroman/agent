@@ -363,12 +363,10 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   cluster's POOLER too. What recomputing costs is on
   `AppDatabases.deprovision`.
 
-  **The per-tenant caps differ in strength, and only two are controls.**
-  `connection limit` is superuser-only to raise and `temp_file_limit` is `SUSET`
-  (lowerable, never raisable), but `statement_timeout` is `USERSET` — tenant code
-  holding the credential can `set statement_timeout = 0`. The enforceable half is
-  `aai-sweep-app-db-runaways`, which terminates `app\_%` backends active past a
-  much higher ceiling. Never treat the role setting as isolation.
+  **The per-tenant caps differ in strength, and only two are controls** — the
+  role's `statement_timeout` is `USERSET`, so tenant code can `set
+  statement_timeout = 0`; `aai-sweep-app-db-runaways` is the enforceable half
+  (`pg-cron.ts` has the GUC classes). Never treat the role setting as isolation.
 - `app-db-admin.ts` + `supabase-management.ts` — **`create database` / `drop
   database` go through the Supabase MANAGEMENT API (`supabase-management-js`) and
   nothing else does**, so `SUPABASE_ACCESS_TOKEN` plus a project ref
@@ -560,51 +558,58 @@ The cross-replica coordination that lives in this same Postgres:
   hundreds provisioned, a handful live, two only at simultaneous peak. No
   admission control consults this, so the ceiling is crossed SILENTLY — as
   `too many connections for role` in a tenant's guest or `remaining connection
-  slots are reserved` on a platform read. Live per-role metering is the open gap
-  (`IN_USE_SQL` runs once, at boot).
+  slots are reserved` on a platform read, whichever asks last.
+
+  **So it is MEASURED now** (`platform-db-pressure.ts`, which carries the
+  argument): a leader-elected replica reads `pg_stat_activity` per app ROLE
+  against each role's own `rolconnlimit`, and warns on two independent
+  triggers: the instance past `PLATFORM_DB_PRESSURE_WARN_FRACTION`, or any one
+  role already at its ceiling. Per role because a total cannot be acted on. It
+  is a READING, not a limiter, and its own sweep rather than a rider on the wake
+  sweep whose kill switch would take the measurement with it. Admission control
+  is still open — it now has a gauge to be designed against.
 
   An extra `APP_DB_URLS` cluster costs this budget NOTHING: its pool is on that
   project's own instance, and charging it here made sharding look unaffordable by
   miscounting the ceiling it relieves. `constants.ts` carries the arithmetic.
 
-  **And boot CHECKS the claim** (`platform-db-capacity.ts`): `show
-  max_connections` plus a `pg_stat_activity` count against `platformDbBudget()`,
-  warning with the arithmetic on an overrun.
-
-  **The claim depends on how the ADMIN pool is ROUTED, and the check could not
-  see that** — it excludes that pool on the PREMISE that `PLATFORM_POOLER_URL`
-  names a transaction pooler, and production ran with the variable unset, so boot
-  printed `capacity ok — 0 spare` one line under the warning naming the very
-  connections it was not counting, and the 53300 exhaustion arrived unwarned. The
-  budget takes an env now and `modal_deploy.py` EXPORTS `MAX_CONTAINERS` (asserted
-  by `platform-db-budget.test.ts`; without it the reader sees one replica).
-  `MAX_PLATFORM_DB_CONNECTIONS`'s own doc carries the rest, including why the
-  reading is a FLOOR and why it never blocks boot — refusing to start over a
-  projection turns a future degradation into a present outage.
+  **Boot CHECKS the claim** (`platform-db-capacity.ts`): `max_connections` plus
+  a `pg_stat_activity` count against `platformDbBudget()`. Its trap was that the
+  claim depends on how the ADMIN pool is ROUTED and the check could not see it.
+  Production ran with `PLATFORM_POOLER_URL` unset, so boot printed
+  `capacity ok — 0 spare` one line under the warning naming the connections it
+  was not counting, and the 53300 exhaustion arrived unwarned. The budget takes
+  an env now and `modal_deploy.py` EXPORTS `MAX_CONTAINERS` (asserted by
+  `platform-db-budget.test.ts`).
+  `MAX_PLATFORM_DB_CONNECTIONS`'s doc has the rest, including why the reading is
+  a FLOOR and why it never blocks boot.
 
   **Only the SLUG-LOCK pool is in that number, and what decides membership is
   whether a connection needs SESSION affinity.** Measured against a real
-  Supavisor in transaction mode: `pg_advisory_lock` (the slug lock, held for a
-  whole deploy) LOSES exclusion — a rival connection acquired the same lock while
-  it was held, which is the bug `assertSessionModeUrl` exists to prevent and had
-  never been reproduced before. `pg_try_advisory_xact_lock` (the wake sweep's
-  leader election, inside `begin … commit`) is correct throughout, because a
-  transaction pooler pins one backend for exactly that lock's lifetime. So:
+  Supavisor in transaction mode, `pg_advisory_lock` (the slug lock, held for a
+  whole deploy) LOSES exclusion, while `pg_try_advisory_xact_lock` inside
+  `begin … commit` is correct throughout — a transaction pooler pins one backend
+  for exactly that lock's lifetime, which is what the wake sweep's and the
+  pressure reading's leader elections rest on.
+  `platformDbConnectionsPerReplica` carries it. So:
   - `SUPABASE_DB_URL` — direct, session mode. The slug-lock pool, and the app-db
     locator. `assertSessionModeUrl` still refuses a pooler here.
   - `PLATFORM_POOLER_URL` — Supavisor TRANSACTION mode, for the admin pool.
     Refuses a session-mode URL, which multiplexes nothing while looking set.
-  - `APP_DB_POOLER_URL` — Supavisor SESSION mode. Every app-database connection,
-    the guest's own `DATABASE_URL` included. Refuses transaction mode, which
-    breaks the DevKit three ways (graphile-worker's named prepared statements,
-    `world-postgres`'s `LISTEN` with no polling fallback, and
-    `workflow-lock-sweep.ts`'s session-scoped advisory lock).
+  - `APP_DB_POOLER_URL` — Supavisor SESSION mode, for the PRIMARY cluster's app
+    databases (an extra `APP_DB_URLS` cluster declares its own beside its admin
+    URL; one fleet-wide value is what broke sharding). Every app-database
+    connection goes through one, the guest's own `DATABASE_URL` included.
+    Refuses transaction mode, which breaks the DevKit three ways
+    (graphile-worker's named prepared statements, `world-postgres`'s `LISTEN`
+    with no polling fallback, and `workflow-lock-sweep.ts`'s session-scoped
+    advisory lock).
 
   Session mode does not multiplex, so app databases still cost real connections
-  at peak — bounded by Supavisor's pool sizing (a pool per `user+db+mode` triple,
-  `max_pools` defaulting to 50 per tenant) rather than by this formula. Unset,
-  either pooler variable means DIRECT and the budget understates a replica, so
-  boot announces it. `platform-connection-config.test.ts` pins all three rules.
+  at peak, bounded by Supavisor's own pool sizing rather than by this formula.
+  Unset, either pooler variable means DIRECT and the budget understates a
+  replica, so boot announces it. `platform-connection-config.test.ts` pins all
+  three rules.
 
   **The binding is wrapped in `createMutationLock`, and must stay wrapped:
   taking the lock also drops this replica's cached view of the slug.**
