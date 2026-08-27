@@ -129,13 +129,26 @@ export function fakeAppDatabases(overrides?: Partial<AppDatabases>): AppDatabase
  *
  * `release` is a spy so a caller can assert the reservation was given back — a
  * leaked one permanently shrinks the real pool.
+ *
+ * **The responder sees the PARAMS as well as the SQL**, and it did not at first.
+ * A responder keyed on the statement alone cannot answer differently for two rows
+ * of the same table — so a suite asserting that one tenant's run is readable and
+ * another's is not got the same answer for both, and its cross-tenant specs passed
+ * against code that had no filter at all. Params are the only thing distinguishing
+ * those two calls, so a seam that hides them cannot express the case it is most
+ * often reached for.
  */
 export function fakeAdminDbOver(
-  respond: (sql: string) => Record<string, unknown>[] | Promise<Record<string, unknown>[]>,
+  respond: (
+    sql: string,
+    params?: unknown[],
+  ) => Record<string, unknown>[] | Promise<Record<string, unknown>[]>,
 ): AdminDb & { release: ReturnType<typeof vi.fn> } {
   const release = vi.fn();
-  const query = async <T = Record<string, unknown>>(sql: string): Promise<T[]> =>
-    (await respond(sql)) as T[];
+  const query = async <T = Record<string, unknown>>(
+    sql: string,
+    params?: unknown[],
+  ): Promise<T[]> => (await respond(sql, params)) as T[];
   return { release, reserve: () => Promise.resolve({ release, query }) };
 }
 
