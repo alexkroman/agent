@@ -41,8 +41,13 @@ export const GUEST_PROXY_TOKEN_HEADER = "x-aai-guest-token";
  * Is `url` the workflow RUN API (`/workflows`, `/workflows/runs`, …)?
  *
  * The `/.well-known/workflow/v1/*` queue callbacks are a different prefix and
- * loopback-gated — `handleWorkflowRequest` claims those before this runs — so
- * they are deliberately NOT matched here.
+ * carry their own gate — `handleWorkflowRequest` claims those before this runs,
+ * and refuses `flow`/`step` from any peer that is not loopback — so they are
+ * deliberately NOT matched here.
+ *
+ * This comment used to assert they were "loopback-gated" while nothing checked,
+ * and they were reachable unauthenticated on the public tunnel. See the block
+ * comment on `handleWorkflowRequest` in `aai-runtime/workflow-serve.ts`.
  */
 function isWorkflowApiPath(url: string): boolean {
   return url === WORKFLOW_API_PREFIX || url.startsWith(`${WORKFLOW_API_PREFIX}/`);

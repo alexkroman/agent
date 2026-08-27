@@ -157,6 +157,41 @@ export const WORKFLOW_STEP_PATH = "/.well-known/workflow/v1/step";
 export const WORKFLOW_WEBHOOK_PREFIX = "/.well-known/workflow/v1/webhook/";
 
 /**
+ * Is this one of the two QUEUE CALLBACKS — the routes only the guest's own
+ * queue may call?
+ *
+ * The webhook route deliberately is not one: its URL is handed to a third party
+ * and has to work from the public internet, which is why the platform proxies
+ * it and the DevKit's token in the path is its whole authorization.
+ */
+function isQueueCallbackPath(url: string): boolean {
+  return url === WORKFLOW_FLOW_PATH || url === WORKFLOW_STEP_PATH;
+}
+
+/**
+ * Is `address` a loopback peer — i.e. did this request originate INSIDE this
+ * container?
+ *
+ * `undefined` is false, and that direction is deliberate: a socket with no peer
+ * address is a socket whose position cannot be established, and the one thing
+ * this predicate must never do is answer "internal" because it could not tell.
+ *
+ * Three spellings, all of which a real server produces: `127.0.0.0/8` (the
+ * whole block, not just `127.0.0.1` — `localhost` resolves elsewhere in it on
+ * some hosts), `::1`, and the IPv4-MAPPED form a dual-stack listener reports
+ * for an IPv4 loopback dial. Missing the third would refuse the guest's own
+ * queue on any host that binds `::`.
+ *
+ * @internal
+ */
+export function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  const bare = address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address;
+  if (bare === "::1") return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(bare);
+}
+
+/**
  * The token from a webhook path, or undefined when the path is not one.
  *
  * A webhook URL is handed OUT of the system — it goes to a payment provider, an
@@ -251,6 +286,43 @@ export async function createWorkflowSurface(
  * the session server is on Hono (`c.req.raw` is already a `Request`) these
  * handlers mount directly and this function goes away.
  *
+ * ## `flow` and `step` are refused from off-box, and they were NOT
+ *
+ * Both are unauthenticated by design — aai-server's `GUEST_ROUTE_EXPOSURE`
+ * declares them `guest-internal` and says so outright: "these two are
+ * unauthenticated precisely BECAUSE loopback is the whole gate", and
+ * `aai-guest/harness-workflow-gate.ts` said they were "loopback-gated". Nothing
+ * checked. A deployed agent guest binds `0.0.0.0` (Modal publishes the port as a
+ * public HTTPS tunnel) and the PUBLIC `GET /:slug/client-config` hands that
+ * tunnel origin to every browser that asks — so on any deployed agent with
+ * workflows, `POST <tunnel>/.well-known/workflow/v1/step` executed one of that
+ * tenant's registered step functions, with the caller's arguments, for anyone on
+ * the internet: their tools, their `ctx.db`, their provider spend. `flow` beside
+ * it starts and replays runs. The exposure table's own reasoning was sound; the
+ * gate it assumed did not exist, which is the failure mode of a security
+ * property held as a comment.
+ *
+ * A SECRET would be the stronger gate and is not reachable: the caller is the
+ * DevKit's own queue, which builds this URL from `WORKFLOW_LOCAL_BASE_URL` and
+ * offers no header hook — and undici refuses to construct a `Request` from a URL
+ * carrying credentials ("Request cannot be constructed from a URL that includes
+ * credentials"), so smuggling one through the base URL breaks the queue outright
+ * rather than authenticating it. Network position is what is left, and it is
+ * sound for the reason `harness.ts` binds every interface in the first place:
+ * tunnel traffic arrives from OUTSIDE the sandbox's network namespace, so it is
+ * never a loopback peer. In-container callers are inside the security boundary
+ * already — the Modal container is that boundary.
+ *
+ * It is here, in the module that SERVES the routes, rather than in the deployed
+ * guest's request hook beside `gateDirectWorkflowDial`: `aai dev`, host mode,
+ * studio mode and a self-hosted `createAgentServer` all reach these two through
+ * this function, and a self-hoster who binds `0.0.0.0` has exactly the same hole.
+ *
+ * The one thing this closes off is a queue running somewhere other than in this
+ * process, and that is correct rather than incidental: such a queue needs its own
+ * authenticated door — an authenticity check AND a route — not a hole where one
+ * should be.
+ *
  * @internal
  */
 export function handleWorkflowRequest(
@@ -264,6 +336,14 @@ export function handleWorkflowRequest(
   method: string,
 ): boolean {
   if (!surface) return false;
+
+  // The two queue callbacks are GUEST-INTERNAL, and this is what makes that
+  // true rather than merely intended. See the block comment above.
+  if (isQueueCallbackPath(url) && !isLoopbackAddress(req.socket?.remoteAddress)) {
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "workflow queue callbacks are guest-internal" }));
+    return true;
+  }
 
   const handler = pickWorkflowHandler(surface, url, method);
   if (!handler) return false;

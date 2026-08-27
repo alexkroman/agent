@@ -252,6 +252,16 @@ export const GUEST_ROUTE_EXPOSURE = {
   // does would claim a bearer check that does not exist. Reconsider only if a
   // run's queue ever moves out of the guest — then they need a platform route
   // AND an authenticity check of their own, not one without the other.
+  //
+  // "Loopback is the whole gate" was, for a long time, a claim about intent
+  // rather than about code: nothing checked the peer, a deployed guest binds
+  // every interface, and the PUBLIC `/:slug/client-config` hands the tunnel
+  // origin to any browser — so anyone could execute a tenant's step. The gate
+  // exists now, in the module that serves the routes (`handleWorkflowRequest`
+  // in `aai-runtime/workflow-serve.ts`, which covers `aai dev` and a
+  // self-hosted server too). This entry is what says it must: an exposure of
+  // `guest-internal` is an assertion that the route is unreachable from
+  // outside the container, and it is the enforcement's own specification.
   workflowFlow: { via: "guest-internal" },
   workflowStep: { via: "guest-internal" },
   // The one workflow route with a caller outside the container, and the reason
