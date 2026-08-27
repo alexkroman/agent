@@ -134,25 +134,28 @@ export type WorkflowActivity = {
 };
 
 /**
- * Track in-flight workflow callbacks, notifying `onSettled` as each finishes.
+ * Track in-flight workflow callbacks, so the idle controller can see them.
  *
- * `onSettled` is where the wake hint is republished: a callback finishing is
- * exactly the moment the queue's next-claimable time changed, so it is both the
- * cheapest and the most accurate trigger available.
+ * A guest measures "nobody needs me" by its session count, which is the whole truth
+ * for a voice agent and half of it for one with durable workflows: a run the
+ * platform woke this sandbox to advance has NO session, so without this the sandbox
+ * self-exits five minutes into an hour-long run.
  *
- * @internal
+ * It used to notify an `onSettled` callback as each finished, which is where the
+ * wake HINT was republished — a per-app timestamp the platform read to know when to
+ * boot a guest. The platform reads its own queue now (`aai_platform.workflow_queue`
+ * has a `slug` and an `available_at`, which the DevKit's schema did not), so there
+ * is nothing to notify and the parameter is gone rather than left as a hook with no
+ * caller.
  */
-export function createWorkflowActivity(onSettled?: () => void): WorkflowActivity {
+export function createWorkflowActivity(): WorkflowActivity {
   let inFlight = 0;
   return {
     inFlight: () => inFlight,
     begin(res) {
       inFlight += 1;
-      // `once`, and on `close` rather than `finish`: a response that never
-      // finishes (an aborted connection mid-step) must still release the count.
       res.once("close", () => {
         inFlight -= 1;
-        onSettled?.();
       });
     },
   };

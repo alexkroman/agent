@@ -32,7 +32,6 @@ import {
   storageAppDbConnections,
 } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
-import { WORKFLOW_WAKE_READ_CONCURRENCY } from "./_workflow-wake-read.ts";
 import {
   APP_DB_CONNECTION_ALLOWANCE,
   APP_DB_STORAGE_CONNECTION_LIMIT,
@@ -215,46 +214,6 @@ describe("platform database connection budget", () => {
    * budget and the width in the sweep are one decision, and the failure mode is
    * that they stop referring to each other.
    */
-  test("the wake sweep's app-db read width is a declared bound, and the budget cites it", () => {
-    // Fleet-wide rather than per-replica: the read phase runs under a
-    // transaction-scoped advisory lock, so one replica sweeps per tick.
-    expect(WORKFLOW_WAKE_READ_CONCURRENCY).toBeGreaterThanOrEqual(1);
-    // Bounded against the nearest COUNTED term rather than against the budget
-    // total, which `platformDbBudget()` returns as the whole
-    // `MAX_PLATFORM_DB_CONNECTIONS` (that is the point of it — see its doc). A
-    // whole placement cluster's per-replica pool is the right comparison: these
-    // transients are the same kind of connection, and one leader's pass must not
-    // cost more of the instance than a cluster's resident pool does.
-    expect(
-      WORKFLOW_WAKE_READ_CONCURRENCY,
-      "a leader's wake pass must not out-consume a placement cluster's own pool",
-    ).toBeLessThanOrEqual(APP_DB_TARGET_POOL_MAX);
-
-    // The citation, read out of the doc block that PRECEDES the exclusion —
-    // anywhere-in-the-file would pass on the constant's own definition below it.
-    const constants = readFileSync(
-      path.join(REPO_ROOT, "packages/aai-server/constants.ts"),
-      "utf-8",
-    );
-    const declaredAt = constants.indexOf("export const APP_DB_ADMIN_POOL_MAX");
-    expect(declaredAt).toBeGreaterThan(0);
-    const doc = constants.slice(0, declaredAt);
-    expect(doc.lastIndexOf("/**")).toBeGreaterThan(0);
-    expect(doc.slice(doc.lastIndexOf("/**"))).toContain("WORKFLOW_WAKE_READ_CONCURRENCY");
-
-    // And the width is enforced by a bounded RUNNER that reads the constant,
-    // rather than by the loop happening to be serial — the distinction this whole
-    // test exists for. (A worker pool and not a semaphore: with every candidate
-    // asking for a slot at once, a bounded acquire measures its deadline from t=0
-    // and silently drops the tail of a large fleet. `readHints`'s own doc has it.)
-    const read = readFileSync(
-      path.join(REPO_ROOT, "packages/aai-server/_workflow-wake-read.ts"),
-      "utf-8",
-    );
-    expect(read).toContain("readConcurrency");
-    expect(read).toContain("readHints");
-  });
-
   /**
    * The OTHER half of the per-tenant number, and the half that was uncounted.
    *

@@ -2,8 +2,9 @@
 /**
  * Every process-lifetime background pass the AGENT surface owns, started once.
  *
- * Four of them, and they were inline in `orchestrator.ts` until the fourth
- * arrived and pushed that file past its length cap — which is the cheap reason.
+ * Three of them. They were inline in `orchestrator.ts` until the fourth arrived and
+ * pushed that file past its length cap — which was the cheap reason for the split;
+ * the fourth is gone now (see below) and the seam is worth keeping anyway.
  * The real one is that they are one KIND of thing and nothing else in that file
  * is: a route registration answers a request and returns, while each of these
  * lives for the process, runs on a timer, and takes its dependencies from the
@@ -29,7 +30,6 @@ import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import type { SecretStore } from "./secret-store.ts";
 import { createQueueDeliverer } from "./workflow-queue-deliver.ts";
 import { startWorkflowQueueSweep } from "./workflow-queue-sweep.ts";
-import { startWorkflowWakeSweep } from "./workflow-wake.ts";
 
 export type AgentSweepOptions = {
   store: BundleStore;
@@ -50,17 +50,13 @@ export type AgentSweepOptions = {
  * @internal
  */
 export function startAgentSweeps(opts: AgentSweepOptions): void {
-  // Durable runs whose sandbox is long gone (workflow-wake.ts).
-  startWorkflowWakeSweep({
-    store: opts.store,
-    broker: opts.broker,
-    // BOTH, and the sweep is inert without either — omitting one type-checks;
-    // see the `startWorkflowWakeSweep` branch for what that cost.
-    ...omitUndefined({ adminDb: opts.adminDb }),
-    ...omitUndefined({ appDb: opts.appDb }),
-    ...omitUndefined({ isDraining: opts.isDraining }),
-    ...omitUndefined({ extraAppDbClusters: opts.extraAppDbClusters }),
-  });
+  // The WAKE sweep used to run here, reading a per-app `wake_at` hint to learn when
+  // to boot a guest for a run whose sandbox was gone. It is retired: the delivery
+  // sweep below IS the wake — it claims due messages and brokers a sandbox to
+  // deliver them — and it does it from a table with a `slug` and an `available_at`,
+  // which is the query the DevKit's own schema could not answer and the whole reason
+  // the hint existed. What went with it: a per-app connection per tick, a
+  // leader election, a per-slug backoff, and a table in every tenant's schema.
 
   // Platform-owned queue delivery (workflow-queue-sweep.ts). Started even though
   // nothing enqueues yet, and that is deliberate: the harness is baked into the

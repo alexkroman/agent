@@ -203,14 +203,17 @@ describe("createWorkflowActivity", () => {
     expect(activity.inFlight()).toBe(0);
   });
 
-  test("notifies on each settle, which is when the queue's next wake changed", () => {
-    const onSettled = vi.fn();
-    const activity = createWorkflowActivity(onSettled);
+  test("counts a callback as busy for as long as it is in flight", () => {
+    // The one consumer left. The `onSettled` notifier this file used to carry
+    // existed to republish the wake HINT — a per-app timestamp the platform read to
+    // know when to boot a guest — and the platform reads its own queue now, so the
+    // parameter is gone rather than left as a hook with no caller.
+    const activity = createWorkflowActivity();
     const one = fakeRes();
     activity.begin(one.res);
-    expect(onSettled).not.toHaveBeenCalled();
+    expect(activity.inFlight()).toBe(1);
     one.close();
-    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(activity.inFlight()).toBe(0);
   });
 });
 
