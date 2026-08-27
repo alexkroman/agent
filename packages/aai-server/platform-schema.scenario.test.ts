@@ -214,6 +214,13 @@ describeWithStack("the platform migration applies and the stores work against it
     // the check, and it is cheaper than the failure it catches.
     expect(tables.map((r) => String(r.table_name))).toEqual([
       "agents",
+      // Turn-level durability on the platform
+      // (`20260827020000_platform_session_state.sql`): a tool's `ctx.slots` and the
+      // session event log, which lived in the app's own database until no agent had
+      // one. Tenancy is in the primary key rather than a mapping table, because
+      // unlike the DevKit's schema this one is the platform's own.
+      "session_events",
+      "session_slots",
       "studio_chats",
       "studio_rate_limits",
       "studio_sessions",

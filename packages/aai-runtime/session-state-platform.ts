@@ -1,0 +1,175 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The third {@link SessionStateBackend}: session slots and the event log over HTTP.
+ *
+ * A tool's `ctx.slots` and the session event log are committed at the END of every
+ * tool call, awaited, so a crash preserves the turn. Both lived in the app's own
+ * database — and removing that database with nothing in its place would silently
+ * downgrade every agent to memory, where a guest restart mid-conversation loses the
+ * turn with `durable: false` in a log line as the only trace.
+ *
+ * ## A third implementation, not a new design
+ *
+ * The seam already had two (memory, postgres) and the memory one is only a valid
+ * test double for the other because all of them agree. Two agreements are
+ * load-bearing and are the reason this file is not a thin wrapper:
+ *
+ * - **`countEvents` answers `max + 1`, never a count.** The log need not be dense —
+ *   an event past the cap advances the position without being stored, and a
+ *   partly-failed flush leaves a hole. Under a count a resumed session is handed an
+ *   index it has already used, its `tail` goes BACKWARDS, and the re-appended
+ *   events are dropped by the platform's `on conflict do nothing`. The platform
+ *   computes it; this must not "helpfully" derive it from a length.
+ * - **Appending a stored index is a no-op**, because a retried flush after a
+ *   partial failure must not be the thing that breaks a call.
+ *
+ * ## `durable` is TRUE, and it has to be earned
+ *
+ * The flag drives the "Session mode resolved" line an operator reads, and a backend
+ * that claimed durability it does not have is worse than one that admits memory.
+ * It is true here because a value committed through this backend is a row in the
+ * platform's database, which outlives every sandbox.
+ *
+ * ## What a failure does, per method
+ *
+ * The store above this has different tolerances and they are not this module's to
+ * invent: `hydrate` REJECTS (the caller turns it into a failed session start,
+ * because resuming onto state that did not load would silently drop it), while
+ * `flush` never rejects and logs instead. So every method here propagates, and the
+ * caller keeps its own policy.
+ */
+
+import { isRecord } from "@alexkroman1/aai/utils";
+import pTimeout from "p-timeout";
+import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
+
+/**
+ * How long one call may take.
+ *
+ * A single indexed read or one upsert on the platform's database. Short, because a
+ * TOOL CALL is blocked on the commit: the runtime flushes in the same `finally`
+ * that pushes `syncState`, awaited, so a hung socket here is a hung turn.
+ */
+const SESSION_STATE_TIMEOUT_MS = 10_000;
+
+export type PlatformSessionStateOptions = {
+  /** The agent's public base URL, slug included — `AAI_PUBLIC_BASE_URL`. */
+  base: string;
+  /** This sandbox's bearer — `AAI_GUEST_TOKEN`. */
+  token: string;
+  /** Test seam — production uses the global. */
+  fetch?: typeof globalThis.fetch | undefined;
+};
+
+/** One call to the platform's session-state route. */
+async function call(
+  opts: PlatformSessionStateOptions,
+  method: string,
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const fetchFn = opts.fetch ?? globalThis.fetch;
+  const url = `${opts.base.replace(/\/+$/, "")}/session-state`;
+  const res = await pTimeout(
+    fetchFn(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${opts.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ method, ...body }),
+    }),
+    { milliseconds: SESSION_STATE_TIMEOUT_MS, message: `session-state ${method} timed out` },
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`session-state ${method} answered HTTP ${res.status}: ${text.slice(0, 500)}`);
+  }
+  const parsed: unknown = JSON.parse(text);
+  if (!(isRecord(parsed) && "result" in parsed)) {
+    throw new Error(`session-state ${method} answered 200 without a result`);
+  }
+  return parsed.result;
+}
+
+/** A `{slot: value}` map off the wire, ignoring anything that is not a string. */
+function toSlotMap(value: unknown): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!isRecord(value)) return out;
+  for (const [slot, stored] of Object.entries(value)) {
+    if (typeof stored === "string") out.set(slot, stored);
+  }
+  return out;
+}
+
+/** Stored events off the wire, dropping anything malformed rather than guessing. */
+function toEvents(value: unknown): StoredSessionEvent[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    // `json`, which is the field name on `StoredSessionEvent` — the serialized
+    // `SessionEvent` with its envelope. The wire calls it `event`, matching the
+    // platform's column; the two are translated here rather than one being renamed,
+    // because the column name is the platform's and the field name is the runtime's.
+    if (!isRecord(entry) || typeof entry.event !== "string") return [];
+    const index = Number(entry.index);
+    return Number.isInteger(index) ? [{ index, json: entry.event }] : [];
+  });
+}
+
+/**
+ * The platform-backed session state store.
+ *
+ * @internal
+ */
+export function createPlatformStateBackend(opts: PlatformSessionStateOptions): SessionStateBackend {
+  return {
+    name: "platform",
+    // Earned: a committed value is a row in the platform's database, which outlives
+    // every sandbox. See the module doc on why this flag must not be optimistic.
+    durable: true,
+
+    async load(sessionId) {
+      return toSlotMap(await call(opts, "load", { sessionId }));
+    },
+
+    async commit(sessionId, values) {
+      // The store above calls this with only the slots that CHANGED, so the map is
+      // small even when the session's state is not.
+      await call(opts, "commit", { sessionId, values: Object.fromEntries(values) });
+    },
+
+    async discard(sessionId) {
+      await call(opts, "discard", { sessionId });
+    },
+
+    async appendEvents(sessionId, events) {
+      if (events.length === 0) return;
+      await call(opts, "appendEvents", {
+        sessionId,
+        // The indices travel as they are. They were assigned above this backend, so
+        // renumbering them here would hand a client a position it was never told.
+        events: events.map((e) => ({ index: e.index, event: e.json })),
+      });
+    },
+
+    async readEvents(sessionId, startIndex, limit) {
+      return toEvents(await call(opts, "readEvents", { sessionId, startIndex, limit }));
+    },
+
+    async countEvents(sessionId) {
+      const next = await call(opts, "countEvents", { sessionId });
+      // `typeof`, not `Number(next)`. `Number(null)` is 0 and `Number("")` is 0, so
+      // coercing first turns two unreadable answers into the ONE value that must
+      // never be guessed — a resumed session restarting its log at 0 overwrites its
+      // own history. The same coercion trap as `parkedFor`'s in
+      // `aai-server/workflow-queue-deliver.ts`, and it was live here until a spec
+      // asked about `null` specifically.
+      if (typeof next !== "number" || !Number.isInteger(next) || next < 0) {
+        // NOT defaulted to 0. A resumed session that restarts its log at 0
+        // overwrites its own history — see the module doc — so an answer this code
+        // cannot read has to fail the hydrate rather than guess a position.
+        throw new Error(`session-state countEvents answered ${String(next)}`);
+      }
+      return next;
+    },
+  };
+}

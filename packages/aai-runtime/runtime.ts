@@ -36,6 +36,7 @@ import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-typ
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
 import { createResumeFindings, resolveSkipGreeting } from "./session-resume-found.ts";
+import { resolvePlatformQueue } from "./workflow-platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow-runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
@@ -142,7 +143,15 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Per-session slot state, over Postgres when the app has a database and memory
   // otherwise, plus its grace-window sweeps — see `runtime-session-state.ts`.
   // It REPLACES the `Map` this used to be.
-  const sessionState = createRuntimeSessionState({ db: resolvedDb, logger });
+  // The platform's session-state endpoint, when this guest was spawned by one. Read
+  // from the same pair the platform world uses, so a deployment cannot end up with
+  // durable runs and memory-only turns — or the reverse.
+  const platformState = resolvePlatformQueue(providerEnv);
+  const sessionState = createRuntimeSessionState({
+    db: resolvedDb,
+    logger,
+    ...omitUndefined({ platform: platformState }),
+  });
 
   logger.info("Session mode resolved", {
     slug,
