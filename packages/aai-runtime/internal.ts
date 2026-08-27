@@ -80,6 +80,18 @@ export { consoleLogger } from "./runtime-config.ts";
 // the identical statement about a deployed agent and had its own copy of the line,
 // so a gate variable added later would have had to be remembered in two places.
 export { agentServerEnv } from "./server-env.ts";
+// The two route TABLES — every path this package serves, split by which surface
+// mounts it. `aai-server`'s `GUEST_ROUTES` composes them with the harness's own
+// routes instead of re-typing the strings, which is what it did while
+// `WORKFLOW_FLOW_PATH` below was already exported for exactly that purpose. See
+// `server-routes.ts` for why there are two tables and not one.
+export {
+  routeMatches,
+  SERVER_ROUTES,
+  type ServerRoute,
+  type ServerRouteMatch,
+  WORKFLOW_CALLBACK_ROUTES,
+} from "./server-routes.ts";
 // The containment rule under the static-asset server, shared because it is
 // SSRF-adjacent and worth one definition rather than one per caller.
 export { isPathInside } from "./server-static.ts";

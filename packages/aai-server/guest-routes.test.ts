@@ -24,7 +24,11 @@
  */
 
 import { CLIENT_CONFIG_METHODS } from "@alexkroman1/aai/protocol";
-import { WORKFLOW_API_METHODS } from "@alexkroman1/aai-runtime/internal";
+import {
+  SERVER_ROUTES,
+  WORKFLOW_API_METHODS,
+  WORKFLOW_CALLBACK_ROUTES,
+} from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import {
   GUEST_ROUTE_EXPOSURE,
@@ -215,6 +219,61 @@ describe("proxied methods match what the guest answers", () => {
           "the guest directly. Update the methods in guest-routes.ts (and the platform route in " +
           "orchestrator.ts, which the sibling suite then checks).",
       ).toEqual([...expected.methods].sort(byCodeUnit));
+    }
+  });
+});
+
+/**
+ * Every route the RUNTIME serves is in the table, and therefore has an exposure.
+ *
+ * `GUEST_ROUTES` now composes the ten runtime-served paths from
+ * `SERVER_ROUTES` and `WORKFLOW_CALLBACK_ROUTES` rather than re-typing them, so
+ * a renamed path is a compile error. What a shared constant cannot catch is a
+ * route ADDED to one of those tables and never composed in here — the
+ * declaration would simply not mention it, `GUEST_ROUTE_EXPOSURE`'s `satisfies`
+ * would be satisfied, and the platform would have no route for a surface the
+ * guest answers. That is verbatim the first of the two incidents
+ * `GUEST_ROUTE_EXPOSURE`'s own doc records, and it is the half `guard-invariants`
+ * rule 12 covers by GREPPING the guest's source. For these ten it need not
+ * guess: the tables are importable, so the same property is a real assertion.
+ */
+describe("the platform accounts for every runtime-served route", () => {
+  /**
+   * Runtime routes the platform deliberately does not treat as guest surface.
+   *
+   * A DENY-list with a reason each, so a new runtime route defaults into being
+   * accounted for — the same shape as `NON_AUTHORING_SUBPATHS` and
+   * `KNOWN_BINARY`, and for the same reason: an allow-list would let the next
+   * one through in silence, which is the failure this suite exists to catch.
+   */
+  const NOT_GUEST_SURFACE: Record<string, string> = {
+    root:
+      "`GET /:slug/` is the PLATFORM's own agent page (`handleAgentPage` serves " +
+      "aai-ui's built client and the agents row's `client_files` map), not a forward " +
+      "of the guest's default HTML shell — which nothing outside the sandbox reaches. " +
+      "Same category as `health`, which `GUEST_ROUTE_EXPOSURE` already calls out.",
+  };
+
+  const runtimeRoutes = [
+    ...Object.entries(SERVER_ROUTES),
+    ...Object.entries(WORKFLOW_CALLBACK_ROUTES),
+  ].filter(([key]) => !(key in NOT_GUEST_SURFACE));
+
+  test("the tables are populated", () => {
+    // The floor: an empty import would make the assertion below pass over
+    // nothing, which is the shape of failure this whole file exists to catch.
+    expect(runtimeRoutes.length).toBeGreaterThanOrEqual(10);
+  });
+
+  test("each one appears in GUEST_ROUTES", () => {
+    const declared = new Set<string>(Object.values(GUEST_ROUTES));
+    for (const [key, route] of runtimeRoutes) {
+      expect(
+        declared.has(route.path),
+        `aai-runtime serves ${route.path} (${key}) and GUEST_ROUTES does not list it — ` +
+          "the platform will have no route for it, and a deployed caller gets a 404 " +
+          "while `aai dev` works. Add it to GUEST_ROUTES and declare its exposure.",
+      ).toBe(true);
     }
   });
 });

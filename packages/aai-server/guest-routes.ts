@@ -12,20 +12,38 @@
  *
  * Backends now report the guest's ORIGIN and everything derives routes from
  * these constants.
+ *
+ * **Two thirds of the table is IMPORTED, not transcribed.** Of the routes below,
+ * ten are served by `@alexkroman1/aai-runtime` — six by `createServer` and four
+ * by `handleWorkflowRequest`, which the harness mounts through the `request`
+ * hook — and this package already depends on that one. They arrive as
+ * `SERVER_ROUTES` and `WORKFLOW_CALLBACK_ROUTES`, so a rename there is a
+ * compile error here rather than a 404 a client reads as a dead sandbox. The
+ * boundary this respects is "aai-server must never import GUEST source"; the
+ * runtime is not guest source, and `guest-routes.test.ts` has imported
+ * `WORKFLOW_API_METHODS` across the same line all along.
+ *
+ * What stays hand-written is the seven routes the HARNESS itself serves — the
+ * control channel, the three studio surfaces and the three `/manage` ones —
+ * which really are guest source and really cannot be imported. That is also the
+ * whole remaining job of `guard-invariants` rule 12: its scan can now be read as
+ * covering the routes nothing else can see.
  */
+
+import { SERVER_ROUTES, WORKFLOW_CALLBACK_ROUTES } from "@alexkroman1/aai-runtime/internal";
 
 /** Paths the guest harness serves. Mirrors aai-guest's own dispatch. */
 export const GUEST_ROUTES = {
   /** Host↔guest JSON-RPC control channel (bearer-gated; studio mode only). */
   control: "/ws",
   /** PUBLIC client voice sessions, connected directly by browsers. */
-  session: "/websocket",
+  session: SERVER_ROUTES.session.path,
   /**
    * PUBLIC carrier media streams (Twilio, Telnyx), connected directly by the
    * carrier. Same posture as `session` above: the TwiML at
    * `POST /:slug/phone` hands the carrier this URL and the carrier dials it.
    */
-  phone: "/phone",
+  phone: SERVER_ROUTES.phone.path,
   /** PUBLIC studio coding-agent chat (SSE), bearer-gated by the caller's key. */
   studioChat: "/studio/chat",
   /**
@@ -48,9 +66,9 @@ export const GUEST_ROUTES = {
    */
   studioSessionInit: "/studio/session-init",
   /** PUBLIC readiness probe (the SDK server's own /health). */
-  health: "/health",
+  health: SERVER_ROUTES.health.path,
   /** PUBLIC pre-connection client config (the SDK server's own route). */
-  clientConfig: "/client-config",
+  clientConfig: SERVER_ROUTES.clientConfig.path,
   /**
    * PUBLIC durable-workflow API (the SDK server's own route) — closed only when
    * the agent's env sets `AAI_WORKFLOW_API_TOKEN`.
@@ -65,16 +83,16 @@ export const GUEST_ROUTES = {
    * `workflow-handler.ts` is that route; this constant names the path for both
    * sides of it.
    */
-  workflows: "/workflows",
+  workflows: SERVER_ROUTES.workflows.path,
   /**
    * Workflow-run replay, called back by the Workflow DevKit's queue.
    *
    * The caller is the guest's OWN worker (graphile-worker, polling the app
    * database from inside this sandbox), not the platform and not a browser.
    */
-  workflowFlow: "/.well-known/workflow/v1/flow",
+  workflowFlow: WORKFLOW_CALLBACK_ROUTES.flow.path,
   /** One workflow step, called back by the same queue as `workflowFlow`. */
-  workflowStep: "/.well-known/workflow/v1/step",
+  workflowStep: WORKFLOW_CALLBACK_ROUTES.step.path,
   /**
    * The PLATFORM's delivery door for a queue message it owns.
    *
@@ -85,7 +103,7 @@ export const GUEST_ROUTES = {
    * parsing the DevKit's queue-name grammar, which belongs on the side that
    * depends on the DevKit. See `aai-runtime/workflow-queue-dispatch.ts`.
    */
-  workflowQueue: "/workflow-queue",
+  workflowQueue: WORKFLOW_CALLBACK_ROUTES.queue.path,
   /**
    * Webhook delivery to a parked run — `createWebhook()`'s URL, minus its token.
    *
@@ -93,7 +111,7 @@ export const GUEST_ROUTES = {
    * system (a payment provider, an approval mail), so it has to keep working
    * from the public internet.
    */
-  workflowWebhook: "/.well-known/workflow/v1/webhook",
+  workflowWebhook: WORKFLOW_CALLBACK_ROUTES.webhook.path,
   /**
    * PUBLIC read of one session's retained event stream (the SDK server's own
    * route) — bearer-gated, and OFF unless the agent's env sets
@@ -105,7 +123,7 @@ export const GUEST_ROUTES = {
    * product reads this one — a reconnecting browser is restored server-side —
    * and its content is the conversation itself.
    */
-  sessionEvents: "/session-events",
+  sessionEvents: SERVER_ROUTES.sessionEvents.path,
   /** Agent-mode management surface (bearer-gated): session count + drain. */
   manageStatus: "/manage/status",
   manageDrain: "/manage/drain",

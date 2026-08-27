@@ -155,7 +155,19 @@ export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
 /** @internal */
 export const WORKFLOW_STEP_PATH = "/.well-known/workflow/v1/step";
 /** @internal */
-export const WORKFLOW_WEBHOOK_PREFIX = "/.well-known/workflow/v1/webhook/";
+/**
+ * The webhook ROUTE, and the prefix `webhookToken` slices a token off after it.
+ *
+ * Two names because the platform must register the slash-less path plus a token
+ * segment while the parser needs the trailing slash — derived from one another
+ * so the two cannot drift, which they did while `aai-server` spelled the
+ * slash-less form as its own literal. See `server-routes.ts`.
+ *
+ * @internal
+ */
+export const WORKFLOW_WEBHOOK_PATH = "/.well-known/workflow/v1/webhook";
+/** @internal */
+export const WORKFLOW_WEBHOOK_PREFIX = `${WORKFLOW_WEBHOOK_PATH}/` as const;
 
 /**
  * Is this one of the two QUEUE CALLBACKS — the routes only the guest's own

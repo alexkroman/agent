@@ -255,7 +255,69 @@ type ReservedDb = Db & {
 
 export { resolveAllBuiltins }
 
+// @internal
+export function routeMatches(route: ServerRoute, url: string, method?: string): boolean;
+
 export { safeFetch }
+
+// @internal
+export const SERVER_ROUTES: {
+    readonly health: {
+        readonly transport: "http";
+        readonly path: "/health";
+        readonly match: "exact";
+        readonly methods: readonly ["GET"];
+    };
+    readonly clientConfig: {
+        readonly transport: "http";
+        readonly path: "/client-config";
+        readonly match: "exact";
+        readonly methods: readonly string[];
+    };
+    readonly root: {
+        readonly transport: "http";
+        readonly path: "/";
+        readonly match: "exact";
+        readonly methods: readonly ["GET"];
+    };
+    readonly workflows: {
+        readonly transport: "http";
+        readonly path: "/workflows";
+        readonly match: "prefix";
+        readonly methods: readonly string[];
+    };
+    readonly sessionEvents: {
+        readonly transport: "http";
+        readonly path: "/session-events";
+        readonly match: "prefix";
+        readonly methods: readonly ["GET"];
+    };
+    readonly session: {
+        readonly transport: "ws";
+        readonly path: "/websocket";
+        readonly match: "prefix";
+    };
+    readonly phone: {
+        readonly transport: "ws";
+        readonly path: "/phone";
+        readonly match: "prefix";
+    };
+};
+
+// @internal
+export type ServerRoute = {
+    readonly transport: "http";
+    readonly path: string;
+    readonly match: ServerRouteMatch;
+    readonly methods: readonly string[] | "any";
+} | {
+    readonly transport: "ws";
+    readonly path: string;
+    readonly match: ServerRouteMatch;
+};
+
+// @internal
+export type ServerRouteMatch = "exact" | "prefix";
 
 // @internal
 export const SESSION_EVENT_TABLE = "aai_session_events";
@@ -466,6 +528,34 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
 // @internal
 export const WORKFLOW_API_METHODS: readonly string[];
+
+// @internal
+export const WORKFLOW_CALLBACK_ROUTES: {
+    readonly flow: {
+        readonly transport: "http";
+        readonly path: "/.well-known/workflow/v1/flow";
+        readonly match: "exact";
+        readonly methods: readonly ["POST"];
+    };
+    readonly step: {
+        readonly transport: "http";
+        readonly path: "/.well-known/workflow/v1/step";
+        readonly match: "exact";
+        readonly methods: readonly ["POST"];
+    };
+    readonly queue: {
+        readonly transport: "http";
+        readonly path: "/workflow-queue";
+        readonly match: "exact";
+        readonly methods: readonly ["POST"];
+    };
+    readonly webhook: {
+        readonly transport: "http";
+        readonly path: "/.well-known/workflow/v1/webhook";
+        readonly match: "prefix";
+        readonly methods: "any";
+    };
+};
 
 // @internal
 export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
