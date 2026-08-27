@@ -119,7 +119,9 @@ type ExecuteToolCallOptions = {
 type FetchHandler = (req: Request) => Promise<Response>;
 
 // @internal
-export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string): boolean;
+export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
+    allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
+}): boolean;
 
 // @internal
 type HostGenerateFn = (options: GenerateOptions, callOpts?: {

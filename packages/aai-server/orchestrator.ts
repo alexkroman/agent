@@ -44,6 +44,7 @@ import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import { createSemaphore } from "./_semaphore.ts";
 import { createAgentLogsHandler } from "./agent-logs.ts";
+import { startAgentSweeps } from "./agent-sweeps.ts";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import type { AppDatabases } from "./app-database.ts";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "./app-middleware.ts";
@@ -57,9 +58,7 @@ import { GUEST_ROUTE_EXPOSURE, GUEST_ROUTES } from "./guest-routes.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
-import { startOrphanPreviewSweep } from "./orphan-previews.ts";
 import { createPhoneHandler, PHONE_ROUTE } from "./phone-handler.ts";
-import { startPlatformDbPressureSweep } from "./platform-db-pressure.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import {
   type AdminDb,
@@ -101,7 +100,6 @@ import {
   UPLOAD_BYTES_ROUTE,
 } from "./upload-handler.ts";
 import { createAgentWorkflowsHandler, createWorkflowRateLimitMw } from "./workflow-handler.ts";
-import { startWorkflowWakeSweep } from "./workflow-wake.ts";
 import {
   createWorkflowWebhookHandler,
   MAX_WEBHOOK_BODY_BYTES,
@@ -344,37 +342,18 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     ...omitUndefined({ isDraining: opts.isDraining }),
   };
 
-  // Durable runs whose sandbox is long gone (workflow-wake.ts). Wired here for
-  // the same reason `watchAgentInvalidation` is: it lives for the process and
-  // belongs to the AGENT surface, so no entry has to remember it. A composition
-  // with no platform database starts nothing.
-  startWorkflowWakeSweep({
+  // Every process-lifetime background pass this surface owns (agent-sweeps.ts).
+  // Wired here for the same reason `watchAgentInvalidation` is: an entry point
+  // that has to remember to start one is an entry point that will not.
+  startAgentSweeps({
     store: opts.store,
     broker: brokerOpts,
-    // BOTH, and the sweep is inert without either — omitting one type-checks;
-    // see the `startWorkflowWakeSweep` branch for what that cost.
+    ...omitUndefined({ secrets: opts.secrets }),
+    ...omitUndefined({ slugLock: opts.slugLock }),
     ...omitUndefined({ adminDb: opts.adminDb }),
     ...omitUndefined({ appDb: opts.appDb }),
-    ...omitUndefined({ isDraining: opts.isDraining }),
     ...omitUndefined({ extraAppDbClusters: opts.extraAppDbClusters }),
-  });
-
-  // Where the instance's connection slots have actually gone
-  // (platform-db-pressure.ts) — its own sweep rather than a rider on the one
-  // above; that module's doc says why.
-  startPlatformDbPressureSweep({ ...omitUndefined({ adminDb: opts.adminDb }) });
-
-  // Studio previews nothing references any more (orphan-previews.ts). Wired
-  // beside the wake sweep because it is the same shape — a leader-elected
-  // in-process pass — and because it reaps through `deleteAgentResources`, the
-  // one delete path this surface already owns. It ran in pg_cron until per-app
-  // databases moved to the Management API; that module's doc has the argument.
-  startOrphanPreviewSweep({
-    store: opts.store,
-    secrets: opts.secrets,
-    slugLock: opts.slugLock,
-    ...omitUndefined({ appDb: opts.appDb }),
-    ...omitUndefined({ adminDb: opts.adminDb }),
+    ...omitUndefined({ isDraining: opts.isDraining }),
   });
 
   const agents = new Hono<HonoEnv>();
