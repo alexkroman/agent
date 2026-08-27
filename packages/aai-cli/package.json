@@ -67,7 +67,7 @@
     "tsdown": "catalog:",
     "verdaccio": "^6.9.2",
     "vitest": "catalog:",
-    "workflow": "4.8.2"
+    "workflow": "4.8.4"
   },
   "peerDependencies": {
     "vitest": "^4.1.10"

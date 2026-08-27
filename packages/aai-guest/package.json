@@ -23,7 +23,7 @@
     "@alexkroman1/aai-ui": "workspace:*",
     "@tailwindcss/vite": "catalog:",
     "@vitejs/plugin-react": "catalog:",
-    "@workflow/world-postgres": "4.3.3",
+    "@workflow/world-postgres": "4.3.4",
     "ai": "catalog:",
     "diff": "^9.0.0",
     "p-timeout": "catalog:",
@@ -33,7 +33,7 @@
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "workflow": "4.8.2",
+    "workflow": "4.8.4",
     "ws": "catalog:",
     "xstate": "catalog:",
     "zod": "catalog:"
