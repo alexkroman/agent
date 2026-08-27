@@ -31,8 +31,6 @@ import { createServer } from "@alexkroman1/aai-runtime";
 import {
   agentServerEnv,
   configureWorkflowWorld,
-  consoleLogger,
-  createWakeHintPublisher,
   startWorkflowWorldIfDeclared,
 } from "@alexkroman1/aai-runtime/internal";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
@@ -192,13 +190,11 @@ export function createIdleController(opts: {
 export async function mainAgent(port: number, host: string, token: string): Promise<void> {
   const state = emptyHarnessState();
 
-  // The publisher needs the agent's DATABASE_URL, which arrives with the boot
-  // artifacts below — while the idle controller has to arm BEFORE them, so a
-  // guest whose bundle never loads still has a clock. Hence the indirection:
-  // the activity tracker exists from the start and its settle callback finds a
-  // publisher once there is one.
-  let publishWakeHint: () => void = () => undefined;
-  const activity = createWorkflowActivity(() => publishWakeHint());
+  // Armed BEFORE the boot artifacts load, so a guest whose bundle never loads still
+  // has a clock. Its only consumer now is the idle controller: a workflow callback
+  // in flight counts as busy, which is what stops a sandbox self-exiting five
+  // minutes into an hour-long run.
+  const activity = createWorkflowActivity();
 
   const rawIdle = Number(process.env.AAI_GUEST_IDLE_EXIT_MS ?? AGENT_IDLE_EXIT_MS);
   const idle = createIdleController({
@@ -217,22 +213,6 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   const world = configureWorkflowWorld({ databaseUrl: boot.env.DATABASE_URL, port });
 
   await loadBundle(state, { code: boot.code, env: boot.env });
-
-  // The wake hint — how a run whose sandbox is gone gets a process again (see
-  // `aai/host/workflow-wake-hint.ts` for the design, and
-  // `aai-server/workflow-wake.ts` for the reader). Only for an agent that
-  // declares workflows AND has a database: the local world's queue is in memory,
-  // so there is nothing for the platform to wake it for. Published once here so a
-  // hint a previously killed guest never got to write is repaired by any boot,
-  // then after every queue callback.
-  if (state.workflows !== null && boot.env.DATABASE_URL) {
-    const wake = createWakeHintPublisher({
-      databaseUrl: boot.env.DATABASE_URL,
-      logger: consoleLogger,
-    });
-    publishWakeHint = () => void wake.publish();
-    publishWakeHint();
-  }
 
   // A draining guest is detached from the broker, but a client holding its
   // old sessionUrl can still dial the tunnel directly — refuse with a "try

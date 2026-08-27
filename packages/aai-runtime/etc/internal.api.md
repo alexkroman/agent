@@ -140,9 +140,6 @@ export function createUploadStore(opts: {
 }): UploadStore;
 
 // @internal
-export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublisher;
-
-// @internal
 export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
 
 // @internal
@@ -431,20 +428,6 @@ type UploadStore = UploadReader & {
     recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
 };
 
-// @internal
-export type WakeHintOptions = {
-    databaseUrl?: string | undefined;
-    db?: Db | undefined;
-    logger?: Logger | undefined;
-    intervalMs?: number | undefined;
-};
-
-// @internal
-export type WakeHintPublisher = {
-    publish(): Promise<void>;
-    close(): Promise<void>;
-};
-
 // @public
 type WdkAdapter = {
     start(workflowId: string, args: unknown[]): Promise<string>;
@@ -486,9 +469,6 @@ export const WORKFLOW_API_METHODS: readonly string[];
 
 // @internal
 export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
-
-// @internal
-export const WORKFLOW_WAKE_TABLE = "aai_workflow_wake";
 
 // @internal
 export type WorkflowSurface = {

@@ -42,10 +42,10 @@
  * name reachable from no subpath cannot be autocompleted, reported, or come to
  * be depended on. They were removed, and the rule stands for the next one — a
  * clause added here in anticipation of a consumer is a surface with no reader.
- * Three exceptions are structural, not aspirational: `WakeHintOptions`,
- * `WakeHintPublisher` and `WorldKind` are unimported but named by the signature
- * of something on this page, so a consumer satisfying one has to be able to
- * spell it.
+ * One exception is structural, not aspirational: `WorldKind` is unimported but
+ * named by the signature of something on this page, so a consumer satisfying it has
+ * to be able to spell it. (There were three; the two the wake hint contributed went
+ * with it.)
  *
  * **A name here that wants to be public does not get re-exported from
  * `runtime-barrel.ts`.** Its `@internal` tag comes OFF at the declaration site
@@ -168,16 +168,6 @@ export {
 // the part addressing are contracted, on the root barrel; this is what JOINS
 // them, which is a host's job.
 export { createUploadStore } from "./workflow-uploads.ts";
-// The wake hint. Exported for BOTH ends: the guest builds the publisher, and
-// the platform's wake sweep reads the table this names (see workflow-wake-hint.ts
-// — one spelling, so a rename cannot be two edits that disagree). The options bag
-// and the handle come with it because the publisher's own signature names them.
-export {
-  createWakeHintPublisher,
-  type WakeHintOptions,
-  type WakeHintPublisher,
-  WORKFLOW_WAKE_TABLE,
-} from "./workflow-wake-hint.ts";
 export { wdkAdapter } from "./workflow-wdk.ts";
 // Choosing the world a workflow lives in, and starting it when the agent
 // declares one. `WorldKind` is what the first hands the second.
