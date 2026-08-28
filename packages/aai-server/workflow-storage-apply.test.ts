@@ -21,6 +21,7 @@ import {
   deploy,
   fakeWorld,
   MINE,
+  ownershipResponder,
   platform,
   THEIRS,
 } from "./_workflow-storage-test-utils.ts";
@@ -505,6 +506,74 @@ describe("storage scopes", () => {
       );
       expect(res.status).toBe(404);
       expect(p.world.calls).toEqual([]);
+    });
+  });
+
+  /**
+   * The EGRESS check — the one assertion that does not care which scope ran.
+   *
+   * Every inbound mechanism answers "was this call classified and checked". None
+   * of them answers "is what I am about to send back actually theirs" — so a
+   * filter that stops filtering, a resolve-then-check that stops checking, or a
+   * wrong `index` in `STORAGE_SCOPES` is caught here and nowhere else.
+   *
+   * It would NOT have caught the `scopeCreate` bug, and the module doc says so:
+   * that one wrongly established ownership on the way in, so the reply was
+   * genuinely the caller's by the time it came back. `claimNewRun` covers that
+   * half. These are complements.
+   */
+  describe("nothing foreign leaves, whatever the scope did", () => {
+    /** A well-formed run id, since the grammar signal is half the check. */
+    const FOREIGN_RUN = "wrun_01JQZX9WM4T7YBVK3H2NRDFCPE";
+
+    async function leaking(answer: unknown) {
+      // This agent owns `run_mine` and nothing else — so the inbound check on
+      // `run_mine` passes and the reply is still not ours.
+      const world = fakeWorld({ "runs.get": answer });
+      const adminDb = fakeAdminDbOver(ownershipResponder({ run_mine: MINE }));
+      const harness = await createTestOrchestrator({ adminDb, runStorage: world });
+      await deploy(harness.fetch, MINE);
+      return callStorage(
+        harness.fetch,
+        MINE,
+        { method: "runs.get", args: ["run_mine"] },
+        await bearerFor(harness.store, MINE),
+      );
+    }
+
+    test("catches a foreign run id under a runId key", async () => {
+      // The KEY signal: survives the id format changing.
+      const res = await leaking({ runId: FOREIGN_RUN, output: "someone else's" });
+      expect(res.status).toBe(502);
+      expect(await res.text()).not.toContain("someone else's");
+      expect(logs.errors().join(" ")).toContain("does not own");
+    });
+
+    test("catches a foreign run id by its GRAMMAR, under any key", async () => {
+      // The other signal: survives the KEY changing. A run entity's own primary
+      // key is a bare `id` — the DevKit spreads its row — and a step, event and
+      // hook all have an `id` too, so the id itself has to be recognisable.
+      const res = await leaking({ id: FOREIGN_RUN, status: "completed" });
+      expect(res.status).toBe(502);
+    });
+
+    test("finds one nested inside an arbitrary reply", async () => {
+      const res = await leaking({ page: { items: [{ meta: { runId: FOREIGN_RUN } }] } });
+      expect(res.status).toBe(502);
+    });
+
+    test("lets this agent's OWN run through", async () => {
+      // The check must not be a blanket refusal — a reply naming the run the
+      // caller legitimately asked for is the ordinary case.
+      const res = await leaking({ runId: "run_mine", id: "run_mine", output: "ours" });
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("ours");
+    });
+
+    test("ignores a reply that names no run at all", async () => {
+      // No ids means no query — the common path must not pay for this.
+      const res = await leaking({ ok: true, chunks: [1, 2, 3] });
+      expect(res.status).toBe(200);
     });
   });
 });
