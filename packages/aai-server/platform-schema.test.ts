@@ -18,11 +18,44 @@ import { describe, expect, test } from "vitest";
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const migrationsDir = path.join(repoRoot, "supabase/migrations");
 
-function migrationSql(): string {
+function migrationFiles(): string[] {
   const files = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql"));
   if (files.length === 0) throw new Error(`no migrations found in ${migrationsDir}`);
-  return files.map((name) => readFileSync(path.join(migrationsDir, name), "utf-8")).join("\n");
+  return files;
 }
+
+function migrationSql(): string {
+  return migrationFiles()
+    .map((name) => readFileSync(path.join(migrationsDir, name), "utf-8"))
+    .join("\n");
+}
+
+/**
+ * A migration's VERSION is its leading timestamp, and two files may not share one.
+ *
+ * `supabase_migrations.schema_migrations` is keyed on that number alone — the
+ * filename's descriptive tail is not part of the key — so two migrations stamped
+ * the same minute abort the whole `supabase start` with
+ * `duplicate key value violates unique constraint "schema_migrations_pkey"` and no
+ * indication of which pair collided.
+ *
+ * It is a MERGE hazard rather than an authoring one: each branch picks a
+ * plausible next timestamp against the main it can see, both apply cleanly in
+ * isolation, and the collision exists only in the merge. So it cannot be caught
+ * by running the stack on either branch, which is exactly why it belongs in a
+ * test — this fired for real when `20260828000000_platform_uploads.sql` and
+ * `20260828000000_workflow_schema_rls.sql` landed within an hour of each other,
+ * green on both branches and red on main.
+ */
+test("no two migrations share a version", () => {
+  const byVersion = new Map<string, string[]>();
+  for (const name of migrationFiles()) {
+    const version = name.split("_")[0] ?? name;
+    byVersion.set(version, [...(byVersion.get(version) ?? []), name]);
+  }
+  const collisions = [...byVersion.entries()].filter(([, names]) => names.length > 1);
+  expect(collisions.map(([version, names]) => `${version}: ${names.join(", ")}`)).toEqual([]);
+});
 
 /** Drop `//` and block comments, so prose about retired tables is not a query. */
 function stripComments(source: string): string {
@@ -187,6 +220,37 @@ describe("platform schema migrations", () => {
           .soft(sql, `aai_platform.${table} has no RLS`)
           .toContain(`alter table aai_platform.${table} enable row level security`);
       }
+    });
+
+    /**
+     * The rule covers `aai_platform` because that is the schema this repo
+     * DECLARES — and for a while that was the whole of the check, which is how the
+     * DevKit's `workflow` schema came to hold every tenant's run journal on this
+     * database with RLS off.
+     *
+     * It is created out-of-band by `@workflow/world-postgres`'s own drizzle
+     * migrations, which issue no `enable row level security` anywhere, so no
+     * `create table` statement for it exists in this repo for `declaredTables` to
+     * find. The pattern above is therefore structurally incapable of seeing it,
+     * and so are the other two guards (`realtime-rls.scenario.test.ts` matches
+     * `aai_platform` literally; Supabase's own splinter rules key on `public`).
+     *
+     * `20260828010000_workflow_schema_rls.sql` closes it with a `do` block over
+     * `pg_tables`, and this asserts the block is still there and still
+     * SELF-EXTENDING. A fixed table list is what must not come back: it would go
+     * stale the first time that dependency adds a table, which is this same bug
+     * one version later.
+     */
+    test("the DevKit's own schema is covered too, by a self-extending block", () => {
+      const sql = stripSqlComments(migrationSql());
+      expect(sql).toContain("to_regnamespace('workflow')");
+      // Enumerated at apply time rather than listed.
+      expect(sql).toMatch(/select tablename from pg_tables where schemaname = 'workflow'/);
+      expect(sql).toMatch(/alter table workflow\.%I enable row level security/);
+      // ENABLE, never FORCE — the platform connects as the owner of these tables.
+      expect(sql).not.toMatch(/alter table workflow\.[^\n]*force row level security/);
+      // A hardcoded list is the regression to refuse.
+      expect(sql).not.toMatch(/alter table workflow\.workflow_runs enable row level security/);
     });
 
     test("nothing is granted to anon, authenticated, or public", () => {

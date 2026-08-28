@@ -32,6 +32,22 @@ import type { SqlExec } from "./secret-store.ts";
 const log = createLogger("workflow.owner");
 
 /**
+ * A claim this table refuses.
+ *
+ * TYPED, because the HTTP layer has to answer 404 for it and a bare `Error`
+ * reaches the shared handler as a 500 — which both leaks that the run exists and
+ * breaks the never-403 rule this module's doc argues. Two causes, deliberately
+ * indistinguishable to the caller: the run belongs to another agent, or it
+ * belongs to nobody but already exists.
+ */
+export class RunClaimRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RunClaimRefusedError";
+  }
+}
+
+/**
  * Record that `slug` owns `runId`.
  *
  * Idempotent, because the DevKit may replay a `run_created` event: a durable run
@@ -61,7 +77,57 @@ export async function claimRun(sql: SqlExec, runId: string, slug: string): Promi
   // is the only one that may ever read it, and answering "fine" here would make
   // that untrue for the rest of the run's life.
   log.warn("refused to reassign a run", { runId, from: existing ?? "(none)", to: slug });
-  throw new Error(`run ${runId} is already owned by another agent`);
+  throw new RunClaimRefusedError(`run ${runId} is already owned by another agent`);
+}
+
+/**
+ * Claim a run id the CALLER chose, for a run that does not exist yet.
+ *
+ * The pre-create half of {@link claimRun}, and it exists because ownership rows
+ * and the DevKit's journal have different lifetimes. `workflow_run_owner.slug`
+ * cascades on agent delete while the `workflow.*` rows deliberately survive (see
+ * `20260827010000_workflow_run_owner.sql`), so a deleted agent leaves runs that
+ * EXIST and are owned by NOBODY. `claimRun` treats an absent ownership row as
+ * free and would hand those to whoever names the id — which turns the migration's
+ * "unreachable, not visible to anyone" into "readable by the next caller who asks",
+ * unlocking the previous tenant's step arguments, step results, event journal and
+ * hook tokens.
+ *
+ * So a caller-supplied id may be claimed only when there is no run behind it. The
+ * `not exists` and the insert are ONE statement, so a run created between a check
+ * and an insert cannot slip through the gap.
+ *
+ * A REPLAY still works: the DevKit may re-send `run_created` when a run is retried
+ * at its first step, and there the run does exist — the insert is suppressed and
+ * the owner lookup below finds this same slug, which returns cleanly.
+ *
+ * Note this reads `workflow.workflow_runs` (primary key `id`), the DevKit's own
+ * table. That is a deliberate reach across into their schema: it is the only
+ * record of whether a run exists, and this platform is the one that put their
+ * schema and its ownership table in the same database.
+ */
+export async function claimNewRun(sql: SqlExec, runId: string, slug: string): Promise<void> {
+  const rows = await sql(
+    `insert into aai_platform.workflow_run_owner (run_id, slug)
+     select $1, $2
+     where not exists (select 1 from workflow.workflow_runs where id = $1)
+     on conflict (run_id) do nothing
+     returning slug`,
+    [runId, slug],
+  );
+  if (rows.length > 0) return;
+
+  const existing = await ownerOf(sql, runId);
+  if (existing === slug) return;
+  if (existing !== undefined) {
+    log.warn("refused to reassign a run", { runId, from: existing, to: slug });
+    throw new RunClaimRefusedError(`run ${runId} is already owned by another agent`);
+  }
+  // No owner and nothing inserted: the run already exists and its ownership row
+  // is gone. An ORPHAN — see the module note above — and the one case this
+  // function exists for.
+  log.warn("refused to adopt an orphaned run", { runId, to: slug });
+  throw new RunClaimRefusedError(`run ${runId} already exists and cannot be claimed`);
 }
 
 /** The slug that owns `runId`, or undefined when nothing does. */

@@ -122,9 +122,11 @@ export const STORAGE_SCOPES: Record<StorageMethod, StorageScope> = {
   "events.create": { kind: "create-run" },
   "events.get": { kind: "run-arg", index: 0 },
   "events.list": { kind: "run-param", index: 0, field: "runId" },
-  // A correlation id is a USER-CHOSEN key (`createHook({ correlationId })`), so
-  // two agents can legitimately pick the same one. It cannot be required to belong
-  // to this agent, so the RESULTS are filtered instead.
+  // A correlation id is the DevKit's own generated ULID (`step_<ulid>`,
+  // `hook_<ulid>`, `wait_<ulid>`), not a user-chosen key — `HookOptions` carries a
+  // `token`, never a `correlationId`. It is still a SHARED namespace with no
+  // tenant column, and this surface has no run id to scope it by, so it cannot be
+  // required to belong to this agent and the RESULTS are filtered instead.
   "events.listByCorrelationId": { kind: "filter-runs" },
   // A hook id and a token identify a hook, not a run. Both are resolved first and
   // the hook's own `runId` is what gets checked.
