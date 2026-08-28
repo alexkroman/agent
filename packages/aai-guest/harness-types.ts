@@ -13,10 +13,10 @@ export type Message = {
   content: string;
 };
 
-// Minimal Db-shaped adapter passed to tool contexts (mirrors the SDK's `Db`)
-export type DbAdapter = {
-  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
-};
+// A `DbAdapter` — a minimal `Db`-shaped handle mirroring the SDK's — stood here,
+// on both `ToolContext` and the bundle contract below. It is gone with `ctx.db`:
+// the platform hands tool code no database, and nothing ever passed one through
+// this contract anyway (it was declared and unused).
 
 export type ToolContext = {
   env: Readonly<Record<string, string>>;
@@ -27,8 +27,6 @@ export type ToolContext = {
    * runtime, not here.
    */
   state: Record<string, unknown>;
-  /** App database. Accessing it with storage disabled throws guidance. */
-  db: DbAdapter;
   /**
    * ctx.generate. Only the trial runner builds a `ToolContext`, and trials
    * don't run generation, so the harness supplies a rejecting stub — a real
@@ -97,7 +95,7 @@ export type GuestRuntime = {
 /**
  * The bundle's `__aaiCreateRuntime` export. The harness↔bundle contract,
  * kept deliberately tiny so it can stay stable across SDK versions:
- * `{ env, db?, runCode?, publicUrl? }` in, `{ startSession, shutdown }` out.
+ * `{ env, runCode?, publicUrl? }` in, `{ startSession, shutdown }` out.
  *
  * Everything here is a CAPABILITY OR A FACT THE HARNESS ALONE HOLDS — that is
  * the membership rule, and what keeps the tininess a principle rather than a
@@ -114,7 +112,6 @@ export type GuestRuntime = {
  */
 export type CreateGuestRuntime = (opts: {
   env: Record<string, string>;
-  db?: DbAdapter;
   runCode?: (code: string) => Promise<string | { error: string }>;
   publicUrl?: string;
 }) => GuestRuntime;

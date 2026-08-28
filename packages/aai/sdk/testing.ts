@@ -41,7 +41,6 @@ import { publishStepReporter } from "./step-report.ts";
 export {
   createStubWorkflows,
   createToolContext,
-  createUnusedDb,
   type SentEvent,
   type TestToolContext,
   type ToolContextOverrides,

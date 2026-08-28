@@ -7,7 +7,6 @@
  */
 
 import type {
-  Db,
   DelegateFn,
   DelegateOptions,
   DelegateResult,
@@ -29,7 +28,7 @@ import {
   serializeToolFailure,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
 } from "@alexkroman1/aai/host-internal";
-import { STORAGE_DISABLED_MESSAGE, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
+import { TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import pTimeout from "p-timeout";
@@ -78,7 +77,6 @@ type ExecuteToolCallOptions = {
    */
   slots?: SlotStore | undefined;
   sessionId?: string | undefined;
-  db?: Db | undefined;
   messages?: readonly Message[] | undefined;
   /** Host LLM generation (ctx.generate); absent contexts throw on use. */
   generate?: HostGenerateFn | undefined;
@@ -122,8 +120,7 @@ type ExecuteToolCallOptions = {
 // context's signal is the per-call controller `executeToolCall` always builds,
 // which is what makes `ToolContext.signal` non-optional.
 function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
-  const { env, slots, db, messages, sessionId, send, signal, generate, subagents, workflows } =
-    opts;
+  const { env, slots, messages, sessionId, send, signal, generate, subagents, workflows } = opts;
   return {
     env,
     // A caller with no session gets its own detached store rather than a shared
@@ -132,12 +129,6 @@ function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }
     slots: slots ?? createDetachedSlotStore(),
     signal,
     workflows: workflows ?? rejectingWorkflows(WORKFLOWS_UNAVAILABLE_MESSAGE),
-    get db(): Db {
-      if (!db) {
-        throw new Error(STORAGE_DISABLED_MESSAGE);
-      }
-      return db;
-    },
     // Asserted rather than inferred, and this is the one place it happens.
     // `GenerateFn` is OVERLOADED: a Standard Schema call promises a required
     // `object`, which `createGenerateFn` does deliver (it runs `generateText`

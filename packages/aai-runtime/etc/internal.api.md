@@ -6,7 +6,7 @@
 
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
-import type { Db } from '@alexkroman1/aai';
+import type { Db } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
 import type { DelegateResult } from '@alexkroman1/aai';
 import type { GenerateOptions } from '@alexkroman1/aai';
@@ -177,7 +177,6 @@ type ExecuteToolCallOptions = {
     env: Readonly<Record<string, string>>;
     slots?: SlotStore | undefined;
     sessionId?: string | undefined;
-    db?: Db | undefined;
     messages?: readonly Message[] | undefined;
     generate?: HostGenerateFn | undefined;
     subagents?: SubagentRunner | undefined;

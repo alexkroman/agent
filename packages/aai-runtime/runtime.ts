@@ -12,7 +12,6 @@ import {
   createOwnedMap,
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
-import { STORAGE_DISABLED_MESSAGE } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
@@ -277,11 +276,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     const hooks = hookDepsFor({
       handlers: agent.events,
       env,
-      db: resolvedDb,
       // The same view a tool call's `ctx.slots` is, so a hook and a tool that
       // touch one slot are touching one value rather than two caches of it.
       slots: sessionState.store.viewFor(sessionOpts.id),
-      storageDisabledMessage: STORAGE_DISABLED_MESSAGE,
     });
     // Fire-and-forget: `commitSessionState` never rejects, and the emit path is
     // synchronous — a hook's write must not put a backend round trip in front of

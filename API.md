@@ -756,11 +756,6 @@ export function createEpoch(): Epoch;
 // @internal
 export function createOwnedMap<K, V>(): OwnedMap<K, V>;
 
-// @public
-type Db = {
-    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
-};
-
 // @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
@@ -1531,7 +1526,6 @@ export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 type ToolContext = {
     env: Readonly<Record<string, string>>;
     slots: SlotStore;
-    db: Db;
     generate: GenerateFn;
     delegate: DelegateFn;
     messages: readonly Message[];
@@ -1881,11 +1875,6 @@ export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "
 export function createKeyedLock(): KeyedLock;
 
 // @public
-export type Db = {
-    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
-};
-
-// @public
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer E)[] ? readonly DeepReadonly<E>[] : T extends object ? {
     readonly [K in keyof T]: DeepReadonly<T[K]>;
 } : T;
@@ -2226,7 +2215,6 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 export type SessionEventContext = {
     sessionId: string;
     env: Readonly<Record<string, string>>;
-    db: Db;
     slots: SlotStore;
 };
 
@@ -2592,7 +2580,6 @@ export type ToolChoice = "auto" | "required" | "none" | {
 export type ToolContext = {
     env: Readonly<Record<string, string>>;
     slots: SlotStore;
-    db: Db;
     generate: GenerateFn;
     delegate: DelegateFn;
     messages: readonly Message[];
@@ -2802,6 +2789,11 @@ export function createEpoch(): Epoch;
 
 // @internal
 export function createOwnedMap<K, V>(): OwnedMap<K, V>;
+
+// @internal
+export type Db = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+};
 
 // @internal
 export function decideClientEvent(event: string, data: unknown): ClientEventDecision;
@@ -3024,9 +3016,6 @@ type StartOptions = {
     key?: string;
     notify?: boolean | string;
 };
-
-// @public
-export const STORAGE_DISABLED_MESSAGE = "No database is configured for this app. `ctx.db` is a database YOU bring \u2014 the platform provisions none \u2014 so set a DATABASE_URL secret pointing at your own Postgres, or DATABASE_URL in the project .env under `aai dev`.";
 
 // @public
 type StreamOptions = {
@@ -3379,11 +3368,6 @@ export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number 
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
-type Db = {
-    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
-};
-
-// @public
 type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @public
@@ -3511,7 +3495,6 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 type SessionEventContext = {
     sessionId: string;
     env: Readonly<Record<string, string>>;
-    db: Db;
     slots: SlotStore;
 };
 
@@ -3784,7 +3767,6 @@ type ToolChoice = "auto" | "required" | "none" | {
 type ToolContext = {
     env: Readonly<Record<string, string>>;
     slots: SlotStore;
-    db: Db;
     generate: GenerateFn;
     delegate: DelegateFn;
     messages: readonly Message[];
@@ -4988,14 +4970,6 @@ export function createStubWorkflows(overrides?: Partial<WorkflowClient>): Workfl
 export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 
 // @public
-export function createUnusedDb(): Db;
-
-// @public
-type Db = {
-    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
-};
-
-// @public
 type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @public
@@ -5152,7 +5126,6 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 type SessionEventContext = {
     sessionId: string;
     env: Readonly<Record<string, string>>;
-    db: Db;
     slots: SlotStore;
 };
 
@@ -5649,7 +5622,6 @@ type ToolChoice = "auto" | "required" | "none" | {
 type ToolContext = {
     env: Readonly<Record<string, string>>;
     slots: SlotStore;
-    db: Db;
     generate: GenerateFn;
     delegate: DelegateFn;
     messages: readonly Message[];
@@ -7228,7 +7200,7 @@ type StubStep = {
 import type { AgentDef } from '@alexkroman1/aai';
 import { AgentEnv } from '@alexkroman1/aai/host-internal';
 import type { ClientSink } from '@alexkroman1/aai/protocol';
-import type { Db } from '@alexkroman1/aai';
+import type { Db } from '@alexkroman1/aai/internal';
 import { Duplex } from 'node:stream';
 import { ExecuteTool } from '@alexkroman1/aai/host-internal';
 import { ExecuteToolOptions } from '@alexkroman1/aai/host-internal';
@@ -8027,7 +7999,7 @@ export type WorkflowKeyStore = {
 ```ts
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
-import type { Db } from '@alexkroman1/aai';
+import type { Db } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
 import type { DelegateResult } from '@alexkroman1/aai';
 import type { GenerateOptions } from '@alexkroman1/aai';
@@ -8198,7 +8170,6 @@ type ExecuteToolCallOptions = {
     env: Readonly<Record<string, string>>;
     slots?: SlotStore | undefined;
     sessionId?: string | undefined;
-    db?: Db | undefined;
     messages?: readonly Message[] | undefined;
     generate?: HostGenerateFn | undefined;
     subagents?: SubagentRunner | undefined;

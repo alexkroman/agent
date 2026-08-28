@@ -59,7 +59,6 @@
 // By NAME: that module also declares `MAX_DB_RESULT_ROWS` and
 // `STORAGE_DISABLED_MESSAGE`, two framework budgets on `@alexkroman1/aai/internal`
 // — a tool body reads `ctx.db`, never the cap the driver enforces around it.
-export type { Db } from "./sdk/db.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
 /**

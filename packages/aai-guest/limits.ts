@@ -103,16 +103,6 @@ export const AGENT_IDLE_EXIT_MS = 5 * 60_000;
 export const AGENT_IDLE_POLL_MS = 5000;
 
 /**
- * Error for a `ctx.db` access while storage is disabled. Mirrors the SDK's
- * `STORAGE_DISABLED_MESSAGE` — same asserted-not-imported arrangement, so
- * `aai dev` and the platform read identically.
- */
-export const STORAGE_DISABLED_MESSAGE =
-  "No database is configured for this app. `ctx.db` is a database YOU bring — the " +
-  "platform provisions none — so set a DATABASE_URL secret pointing at your own " +
-  "Postgres, or DATABASE_URL in the project .env under `aai dev`.";
-
-/**
  * Studio workspace caps. Unlike the constants above — asserted rather than
  * imported so this module stays dependency-free — these are RE-EXPORTED from
  * the SDK, which the harness bundles anyway: they are the same caps the CLI's

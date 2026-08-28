@@ -1,0 +1,17 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "dialog",
+  "epoch": 4,
+  "sha256": "a78a96812b9a30a5b71e9d203dcbaf871d643b41d870b893f6dff1e60cce865f",
+  "exports": [
+    "Dialog",
+    "DialogEvent",
+    "DialogOptions",
+    "DialogPosition",
+    "DialogSpec",
+    "DialogStateSpec",
+    "DialogToolDef",
+    "DialogToolResult",
+    "dialog"
+  ]
+}

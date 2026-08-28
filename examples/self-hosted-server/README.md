@@ -58,11 +58,13 @@ export default tool({
   description: "Look up an order by its number.",
   inputSchema: z.object({ orderNumber: z.string() }),
   execute: async ({ orderNumber }, ctx) => {
-    const rows = await ctx.db.query<{ status: string }>(
-      "select status from orders where number = $1",
-      [orderNumber],
-    );
-    return rows[0] ?? { error: "No such order." };
+    // Your own client and your own credential. There is no `ctx.db`: the
+    // platform provisions no database and hands tool code none, so a tool that
+    // wants SQL brings a driver (`pg`, `postgres`, a provider SDK) and reads its
+    // URL out of `ctx.env`.
+    const res = await fetch(`${ctx.env.ORDERS_API}/orders/${orderNumber}`);
+    if (!res.ok) return { error: "No such order." };
+    return (await res.json()) as { status: string };
   },
 });
 ```

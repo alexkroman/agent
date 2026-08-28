@@ -12,7 +12,7 @@
  * production and as nothing at all here.
  */
 
-import type { Db } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import {
   createPostgresStateBackend,

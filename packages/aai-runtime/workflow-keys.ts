@@ -34,7 +34,7 @@
  * pass to hang a DDL step off.
  */
 
-import type { Db } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import { ensureOnce } from "./_ensure-once.ts";
 import { getOrCreate } from "./_get-or-create.ts";
 

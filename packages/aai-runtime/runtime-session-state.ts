@@ -9,7 +9,7 @@
  * two backends and the reason there are two live in `session-state-store.ts`.
  */
 
-import type { Db } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";

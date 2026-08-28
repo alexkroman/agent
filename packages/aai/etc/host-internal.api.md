@@ -473,11 +473,6 @@ export function createEpoch(): Epoch;
 // @internal
 export function createOwnedMap<K, V>(): OwnedMap<K, V>;
 
-// @public
-type Db = {
-    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
-};
-
 // @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
@@ -1248,7 +1243,6 @@ export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 type ToolContext = {
     env: Readonly<Record<string, string>>;
     slots: SlotStore;
-    db: Db;
     generate: GenerateFn;
     delegate: DelegateFn;
     messages: readonly Message[];

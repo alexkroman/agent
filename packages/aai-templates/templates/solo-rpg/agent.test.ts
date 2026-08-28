@@ -1,4 +1,4 @@
-import type { Db, ToolContext, ToolDef, ToolInputSchema } from "@alexkroman1/aai";
+import type { ToolContext, ToolDef, ToolInputSchema } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import { createToolContext, ok } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
@@ -18,44 +18,17 @@ import {
 import actionRoll from "./tools/action_roll.ts";
 import burnMomentum from "./tools/burn_momentum.ts";
 import checkState from "./tools/check_state.ts";
-import loadGame from "./tools/load_game.ts";
 import oracle from "./tools/oracle.ts";
-import saveGame from "./tools/save_game.ts";
 import setupCharacter from "./tools/setup_character.ts";
 import updateState from "./tools/update_state.ts";
 
 // ── Test doubles ─────────────────────────────────────────────────────────────
 
-/**
- * Map-backed fake of the app database, implementing exactly the three SQL
- * statements the shared save-slot helpers emit (create table / select /
- * upsert). Values are stored parsed, the way a postgres driver returns jsonb.
- */
-function makeDb(): { db: Db; rows: Map<string, unknown> } {
-  const rows = new Map<string, unknown>();
-  const db: Db = {
-    async query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
-      if (sql.startsWith("create table if not exists app_state")) return [];
-      if (sql.startsWith("select value from app_state")) {
-        const key = params[0] as string;
-        return rows.has(key) ? ([{ value: structuredClone(rows.get(key)) }] as T[]) : [];
-      }
-      if (sql.startsWith("insert into app_state")) {
-        const [key, json] = params as [string, string];
-        rows.set(key, JSON.parse(json)); // $2::jsonb — parsed like postgres would
-        return [];
-      }
-      throw new Error(`unexpected SQL in test: ${sql}`);
-    },
-  };
-  return { db, rows };
-}
-
 /** `send` is a spy rather than the recorder `createToolContext` installs,
  *  because this suite asserts call counts on it. Each call gets its own slot
  *  store, which is what makes two contexts two games. */
-function makeCtx(db: Db = makeDb().db): ToolContext {
-  return createToolContext({ db, send: vi.fn() });
+function makeCtx(): ToolContext {
+  return createToolContext({ send: vi.fn() });
 }
 
 const SETUP_ARGS = {
@@ -588,65 +561,13 @@ describe("update_state", () => {
     expect(
       params.parse({ addClockSegments: 6, updateNpcBond: 4, timeOfDay: "night" }),
     ).toBeTruthy();
-
-    const slotParams = saveGame.inputSchema!;
-    expect(() => slotParams.parse({ slot: "../../etc" })).toThrow();
-    expect(() => slotParams.parse({ slot: "a".repeat(40) })).toThrow();
-    expect(slotParams.parse({ slot: "chapter-2" })).toBeTruthy();
   });
 });
 
-// ── save_game / load_game: cross-session persistence via ctx.db ──────────────
-
-describe("save_game / load_game", () => {
-  test("a save made in one session loads in a later session", async () => {
-    const { db, rows } = makeDb();
-
-    // Session A plays and saves.
-    const sessionA = makeCtx(db);
-    const played = playingState();
-    played.playerName = "Kael";
-    played.sceneCount = 7;
-    seedPlaying(sessionA, played);
-    const saved = ok<{ saved: boolean; slot: string }>(
-      await saveGame.execute({ slot: "chapter-2" }, sessionA),
-    );
-    expect(saved.saved).toBe(true);
-    expect(saved.slot).toBe("chapter-2");
-    expect(rows.get("save:chapter-2")).toMatchObject({ playerName: "Kael", sceneCount: 7 });
-
-    // Session B (a fresh game slot, the same app db) resumes it.
-    const sessionB = makeCtx(db);
-    // `load_game` is a plain `tool()`, so its result is the union its body
-    // writes rather than a position envelope — the guard is what picks the
-    // arm, where the old `as Record<string, unknown>` picked neither.
-    const loaded = await loadGame.execute({ slot: "chapter-2" }, sessionB);
-    if (isToolFailure(loaded)) throw new Error(`load refused: ${loaded.error}`);
-    expect(loaded.loaded).toBe(true);
-    expect(loaded.playerName).toBe("Kael");
-    expect(loaded.sceneCount).toBe(7);
-    expect(gameSlot.get(sessionB).playerName).toBe("Kael");
-  });
-
-  test("loading a missing slot reports an error instead of resetting the game", async () => {
-    const ctx = makeCtx();
-    const result = await loadGame.execute({ slot: "nope" }, ctx);
-    expect(isToolFailure(result) && result.error).toMatch(/No save found/);
-  });
-
-  test("saving twice to one slot upserts — the newer save wins", async () => {
-    const { db, rows } = makeDb();
-    const ctx = makeCtx(db);
-    seedPlaying(ctx);
-    await saveGame.execute({}, ctx); // autosave
-    gameSlot.update(ctx, (game) => {
-      game.sceneCount = 9;
-    });
-    await saveGame.execute({}, ctx);
-    expect(rows.size).toBe(1);
-    expect(rows.get("save:autosave")).toMatchObject({ sceneCount: 9 });
-  });
-});
+// A `save_game / load_game` suite stood here, driving cross-session persistence
+// through a map-backed fake of `ctx.db`. Both tools are gone: `ctx.db` is gone,
+// and a shipped template cannot reach a database (see `shared.ts`). This
+// adventure is single-session now.
 
 // ── the story flow ───────────────────────────────────────────────────────────
 
@@ -655,10 +576,11 @@ describe("the story flow", () => {
     const ctx = makeCtx();
     expect(storyFlow.position(ctx).state).toBe("awaitingSetup");
 
-    // All three of these used to RUN before a character existed: `action_roll`
-    // rolled 2d6 against the stats of nobody and applied consequences to a game
-    // that was not there, and `save_game` wrote an empty campaign to a slot
-    // `load_game` would later restore over a real one.
+    // All of these used to RUN before a character existed: `action_roll` rolled
+    // 2d6 against the stats of nobody and applied consequences to a game that was
+    // not there. (`save_game` was in this list too, writing an empty campaign to a
+    // slot `load_game` would later restore over a real one — both are gone with
+    // `ctx.db`.)
     for (const call of [
       actionRoll.execute(
         { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "swing" },
@@ -666,7 +588,6 @@ describe("the story flow", () => {
       ),
       updateState.execute({ location: "Nowhere" }, ctx),
       callNoArgs(burnMomentum, ctx),
-      saveGame.execute({}, ctx),
     ]) {
       const refusal = await call;
       expect(isToolFailure(refusal)).toBe(true);
@@ -740,37 +661,9 @@ describe("the story flow", () => {
     expect(restarted.state).toBe("playing.awaitingRoll");
   });
 
-  test("a loaded game resumes in play rather than awaiting setup", async () => {
-    const { db } = makeDb();
-    const sessionA = makeCtx(db);
-    seedPlaying(sessionA);
-    ok(await saveGame.execute({ slot: "resume" }, sessionA));
-
-    const sessionB = makeCtx(db);
-    expect(storyFlow.position(sessionB).state).toBe("awaitingSetup");
-    const loaded = await loadGame.execute({ slot: "resume" }, sessionB);
-    if (isToolFailure(loaded)) throw new Error(`load refused: ${loaded.error}`);
-    expect(loaded.state).toBe("playing.awaitingRoll");
-
-    // And the play tools are available in the resumed session.
-    ok(await updateState.execute({ location: "Back at the Docks" }, sessionB));
-  });
-
-  test("a save whose game was over resumes as over", async () => {
-    const { db } = makeDb();
-    const sessionA = makeCtx(db);
-    const dead = playingState();
-    dead.health = 0;
-    dead.spirit = 0;
-    dead.gameOver = true;
-    dead.crisisMode = true;
-    seedPlaying(sessionA, dead);
-    ok(await saveGame.execute({ slot: "ended" }, sessionA));
-
-    const sessionB = makeCtx(db);
-    const loaded = await loadGame.execute({ slot: "ended" }, sessionB);
-    if (isToolFailure(loaded)) throw new Error(`load refused: ${loaded.error}`);
-    expect(loaded.state).toBe("gameOver");
-    expect(storyFlow.position(sessionB).done).toBe(true);
-  });
+  // Two resume tests stood here — a saved game reopening in play, and one saved
+  // after the ending reopening as over. Both drove `save_game`/`load_game`, which
+  // are gone with `ctx.db`. What they proved about the FLOW (a resumed position is
+  // restored rather than recomputed) has no path left to exercise it: a session
+  // is the whole life of a game now.
 });

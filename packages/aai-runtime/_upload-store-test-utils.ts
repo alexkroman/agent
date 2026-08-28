@@ -11,7 +11,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { Db } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadBlobs, UploadPart } from "./_upload-blobs.ts";
 import { createMemoryUploadBlobs, createUploadStore, UPLOADS_TABLE } from "./workflow-uploads.ts";

@@ -6,8 +6,9 @@
  * `createRuntime` implementation. All imports here are type-only.
  */
 
-import type { AgentDef, Db } from "@alexkroman1/aai";
+import type { AgentDef } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
+import type { Db } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink, ReadyConfig } from "@alexkroman1/aai/protocol";

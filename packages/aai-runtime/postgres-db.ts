@@ -8,7 +8,7 @@
  * PgBouncer), which the platform fronts every app schema with.
  */
 
-import type { Db } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";

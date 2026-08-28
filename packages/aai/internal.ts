@@ -150,7 +150,7 @@ export {
 } from "./sdk/constants.ts";
 // The two budgets around `ctx.db`. A tool body reads the handle; the row cap
 // and the not-enabled message are what the driver and the guest mirror enforce.
-export { MAX_DB_RESULT_ROWS, STORAGE_DISABLED_MESSAGE } from "./sdk/db.ts";
+export { type Db, MAX_DB_RESULT_ROWS } from "./sdk/db.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
 // The two halves of one physical delay — how long between the server handing a

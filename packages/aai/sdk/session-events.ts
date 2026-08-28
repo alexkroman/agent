@@ -18,7 +18,6 @@
  * @module
  */
 
-import type { Db } from "./db.ts";
 import type { SessionEvent } from "./protocol-events.ts";
 import type { SlotStore } from "./session-state.ts";
 
@@ -45,8 +44,10 @@ import type { SlotStore } from "./session-state.ts";
  * model sees a slot's value through a tool result, and this runs beside that
  * path rather than in front of it.
  *
- * `db` is here because the first thing an audit hook wants is somewhere to write,
- * and the agent already has one.
+ * `db` used to be here, because the first thing an audit hook wants is somewhere
+ * to write and the agent already had one. It is gone with `ctx.db`: the platform
+ * provides no database, so a hook that wants to persist brings its own client and
+ * credential — the same change tool code saw, and for the same reason.
  *
  * @public
  */
@@ -58,11 +59,6 @@ export type SessionEventContext = {
    * `aai secret` in production).
    */
   env: Readonly<Record<string, string>>;
-  /**
-   * The app database, when storage is enabled. Accessing it without throws with
-   * the enablement guidance, exactly as `ctx.db` does in a tool.
-   */
-  db: Db;
   /**
    * This session's slot storage — **reach for {@link sessionSlot}, not this**,
    * exactly as in a tool. It is on the context because a slot declared in one
@@ -85,7 +81,7 @@ export type SessionEventContext = {
  * handler anyone writes: TypeScript's rule that a value-returning function is
  * assignable where `void` is expected applies to `void` ALONE, not to a union
  * containing it — so `(e) => seen.push(e)` (returning `number`) and
- * `(e) => void db.query(…)` are errors, on an observe-only API where the return
+ * `(e) => void persist(…)` are errors, on an observe-only API where the return
  * value is by definition ignored. `unknown` accepts every shape, and the emitter
  * checks for a promise at run time to decide whether to attach a rejection
  * handler.

@@ -5,7 +5,7 @@
 // test is the other half — what the file is allowed to depend on at all.
 
 import { readFile } from "node:fs/promises";
-import { STORAGE_DISABLED_MESSAGE, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
+import { TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import * as limits from "./limits.ts";
 
@@ -14,10 +14,13 @@ describe("guest limits mirror the SDK constants", () => {
     expect(limits.TOOL_TIMEOUT_MS).toBe(TOOL_EXECUTION_TIMEOUT_MS);
   });
 
-  test("storage-disabled message", () => {
-    // Dev (SDK tool-executor) and prod (guest harness) must throw the exact
-    // same guidance when tool code touches ctx.db with storage off.
-    expect(limits.STORAGE_DISABLED_MESSAGE).toBe(STORAGE_DISABLED_MESSAGE);
+  test("no storage-disabled message, because there is no ctx.db", () => {
+    // This pinned the guest's import-free DUPLICATE of the SDK's message against
+    // the original, so dev and prod threw identically when tool code touched
+    // `ctx.db` with storage off. Both are gone with the field: the platform hands
+    // tool code no database. Asserted as an absence so a copy cannot come back
+    // without its counterpart.
+    expect("STORAGE_DISABLED_MESSAGE" in limits).toBe(false);
   });
 
   // The workspace caps are no longer mirrored — limits.ts re-exports the

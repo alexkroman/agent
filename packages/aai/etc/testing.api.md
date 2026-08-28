@@ -55,14 +55,6 @@ export function createStubWorkflows(overrides?: Partial<WorkflowClient>): Workfl
 export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 
 // @public
-export function createUnusedDb(): Db;
-
-// @public
-type Db = {
-    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
-};
-
-// @public
 type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @public
@@ -219,7 +211,6 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 type SessionEventContext = {
     sessionId: string;
     env: Readonly<Record<string, string>>;
-    db: Db;
     slots: SlotStore;
 };
 
@@ -716,7 +707,6 @@ type ToolChoice = "auto" | "required" | "none" | {
 type ToolContext = {
     env: Readonly<Record<string, string>>;
     slots: SlotStore;
-    db: Db;
     generate: GenerateFn;
     delegate: DelegateFn;
     messages: readonly Message[];

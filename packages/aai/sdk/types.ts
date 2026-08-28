@@ -305,10 +305,12 @@ export interface AgentDef extends PipelineVoiceTuning {
    *   name: "Audited",
    *   events: {
    *     "tool.called": (e, ctx) => {
-   *       void ctx.db.query("insert into audit (id, tool) values ($1, $2)", [
-   *         e.meta.id,
-   *         e.toolName,
-   *       ]);
+   *       // A hook gets `ctx.env` and `ctx.slots`, never a database — persist
+   *       // through a client of your own if you need to.
+   *       void fetch(`${ctx.env.AUDIT_URL}`, {
+   *         method: "POST",
+   *         body: JSON.stringify({ id: e.meta.id, tool: e.toolName }),
+   *       });
    *     },
    *     "*": (e) => console.log(e.meta.at, e.type),
    *   },

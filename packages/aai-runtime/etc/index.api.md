@@ -7,7 +7,7 @@
 import type { AgentDef } from '@alexkroman1/aai';
 import { AgentEnv } from '@alexkroman1/aai/host-internal';
 import type { ClientSink } from '@alexkroman1/aai/protocol';
-import type { Db } from '@alexkroman1/aai';
+import type { Db } from '@alexkroman1/aai/internal';
 import { Duplex } from 'node:stream';
 import { ExecuteTool } from '@alexkroman1/aai/host-internal';
 import { ExecuteToolOptions } from '@alexkroman1/aai/host-internal';

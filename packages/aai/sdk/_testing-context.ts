@@ -13,7 +13,6 @@
  */
 
 import { clientEventDropMessage, decideClientEvent } from "./client-event.ts";
-import type { Db } from "./db.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
 import type { ToolContext } from "./types.ts";
@@ -73,22 +72,6 @@ export type TestToolContext = ToolContext & {
 export type ToolContextOverrides = { [K in keyof ToolContext]?: ToolContext[K] | undefined };
 
 /**
- * A `Db` whose every query rejects, naming the field — the default for a test
- * context, so a tool that unexpectedly reaches for storage fails with that
- * sentence instead of a `TypeError` on `undefined`.
- *
- * @public
- */
-export function createUnusedDb(): Db {
-  return {
-    query: () =>
-      Promise.reject(
-        new Error("ctx.db was not stubbed for this test — pass `db` to createToolContext"),
-      ),
-  };
-}
-
-/**
  * A `ctx.workflows` for testing a tool that starts or reads durable runs: every
  * method rejects by default, and `overrides` replaces the ones the test drives.
  *
@@ -99,9 +82,9 @@ export function createUnusedDb(): Db {
  * `undefined`. Two shipped templates had exactly that, and adding `wakeUp` and
  * `stream` to the client is what surfaced it: the casts still compiled.
  *
- * Rejecting rather than no-op defaults for the same reason {@link createUnusedDb}
- * rejects — a tool that reaches for a method the test did not stub should say so,
- * not silently receive `undefined`. `listing` is the exception and returns `[]`,
+ * Rejecting rather than no-op defaults, for the reason `createUnusedDb` rejected
+ * before it went away with `ctx.db` — a tool that reaches for a method the test
+ * did not stub should say so, not silently receive `undefined`. `listing` is the exception and returns `[]`,
  * because it is synchronous and an empty list is a truthful answer.
  *
  * ```ts
@@ -198,14 +181,13 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
     // the first deployment that has a database. Each call is a distinct
     // session, so two contexts never share slot values.
     slots: createDetachedSlotStore(),
-    // Inert like `db` and `generate`: a tool that starts a workflow is testing
+    // Inert like `generate`: a tool that starts a workflow is testing
     // that it starts one, so the default names itself in the rejection and a
     // spec asserting the call passes its own stub.
     workflows: rejectingWorkflows(
       "ctx.workflows was not provided to createToolContext(). Pass `workflows` to " +
         "assert what your tool starts.",
     ),
-    db: createUnusedDb(),
     generate: () =>
       Promise.reject(
         new Error(
