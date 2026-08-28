@@ -28,7 +28,7 @@
 
 import "@alexkroman1/aai-ui/styles.css";
 import { plural } from "@alexkroman1/aai/utils";
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowInputOf, WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   Form,
   type FormValues,
@@ -62,10 +62,15 @@ const WORKFLOW = "redline";
  * thing that otherwise gets half-done in three places. Blank lines go, so a
  * trailing newline is not a requirement to cover "".
  */
-export function toInput(values: FormValues): FormValues {
+export function toInput(values: FormValues): WorkflowInputOf<typeof redline> {
   const raw = typeof values.mustCover === "string" ? values.mustCover : "";
+  // The scalars ride through as the form collected them — strings from the DOM,
+  // which the WORKFLOW's schema coerces and validates server-side. Only
+  // `mustCover` is reshaped here, because no control renders a `string[]`.
+  // The assertion is on the scalars alone and is what `submitForm` exists to
+  // avoid needing anywhere a page is not doing this reshaping deliberately.
   return {
-    ...values,
+    ...(values as Omit<WorkflowInputOf<typeof redline>, "mustCover">),
     mustCover: raw
       .split("\n")
       .map((line) => line.trim())
@@ -74,7 +79,7 @@ export function toInput(values: FormValues): FormValues {
 }
 
 function RedlineDesk() {
-  const { submit, run, pending, error, reset } = useWorkflowSubmit<Redline>(WORKFLOW);
+  const { submit, run, pending, error, reset } = useWorkflowSubmit<typeof redline>(WORKFLOW);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-8">

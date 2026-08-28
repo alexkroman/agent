@@ -80,7 +80,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import type { UploadParallel } from "@alexkroman1/aai/workflow-api";
+import type { AnyWorkflowDef, UploadParallel } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useRef, useState } from "react";
 import { useRunControls } from "./_run-controls.ts";
 import { useUploadPause } from "./_upload-pause.ts";
@@ -91,6 +91,7 @@ import {
   type UploadGate,
 } from "./_upload-session.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
+import type { SubmitInputOf, SubmitOutputOf } from "./_workflow-def-types.ts";
 import { fileFields, filesOf } from "./_workflow-files.ts";
 import type {
   UploadStatus,
@@ -135,7 +136,7 @@ export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
  *   are in. That is what lets a page render `<WorkflowProgress>` beside the
  *   upload bar rather than after it.
  */
-export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
+export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;
 
 /**
  * Start a workflow run and stream a file into it while it works.
@@ -162,10 +163,10 @@ export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
  *
  * @public
  */
-export function useWorkflowStream<R = unknown>(
+export function useWorkflowStream<D extends AnyWorkflowDef = AnyWorkflowDef>(
   workflow: string,
   opts: UseWorkflowStreamOptions = {},
-): WorkflowStreamSubmission<R> {
+): WorkflowStreamSubmission<SubmitOutputOf<D>, SubmitInputOf<D>> {
   const { api, key, intervalMs, parallel } = opts;
   const [runId, setRunId] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
@@ -177,7 +178,7 @@ export function useWorkflowStream<R = unknown>(
 
   const getClient = useWorkflowApiRef(api);
 
-  const tracked = useWorkflowRun<R>(runId, omitUndefined({ api, intervalMs }));
+  const tracked = useWorkflowRun<SubmitOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
   // Same two controls as `useWorkflowSubmit` — this hook returns an ALIAS of
   // that hook's type, so a field missing here is a lie in the shared type.
   const { wake, cancel } = useRunControls(runId, getClient);
@@ -252,6 +253,7 @@ export function useWorkflowStream<R = unknown>(
 
   return {
     submit,
+    submitForm: submit,
     reset,
     wake,
     cancel,

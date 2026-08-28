@@ -42,10 +42,11 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Pre-release: DEFAULT_PROGRESS_POLL_MS, DEFAULT_WORKFLOW_POLL_MS and MAX_MISSING_READS moved to @alexkroman1/aai-ui/internal. All three are tuning numbers referenced by no public signature and named by no file outside this package; the hooks that own them take the interval as an OPTION, which is the authoring surface for the same choice and stays public."
+      "1": "Pre-release: DEFAULT_PROGRESS_POLL_MS, DEFAULT_WORKFLOW_POLL_MS and MAX_MISSING_READS moved to @alexkroman1/aai-ui/internal. All three are tuning numbers referenced by no public signature and named by no file outside this package; the hooks that own them take the interval as an OPTION, which is the authoring surface for the same choice and stays public.",
+      "2": "The workflow hooks' type parameter is the workflow DEFINITION, not its output type. Epoch 2's `useWorkflowSubmit<Digest>(\"digest\")` no longer compiles: the parameter is constrained to `AnyWorkflowDef`, deliberately, so passing an output type is a compile error rather than a silent loss of typing. What it buys is the other half of the contract — `submit(input)` was `unknown`, so `submit({ ur1: 42 })` compiled and arrived as a 400 in the browser while the same statement already derived the OUTPUT from the def. Migration is one token per call site: `<Digest>` becomes `<typeof digest>`, and the `WorkflowOutputOf` alias above it is deleted."
     }
   }
 }

@@ -37,7 +37,6 @@ import "@alexkroman1/aai-ui/styles.css";
 // nothing — and it is what stops this file restating a shape
 // `workflows/summarize.ts` already declares.
 import { formatDuration } from "@alexkroman1/aai/utils";
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   createWorkflowApi,
   Form,
@@ -50,9 +49,6 @@ import {
   WorkflowProgress,
 } from "@alexkroman1/aai-ui";
 import type { spokenSummary } from "./agent.ts";
-
-/** What a completed run reports, derived from the workflow rather than restated. */
-type Summary = WorkflowOutputOf<typeof spokenSummary>;
 
 /**
  * The workflow's name, as a page starts a run by one.
@@ -88,8 +84,9 @@ function captionsUrl(text: string, durationMs: number): string {
 export function App() {
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`.
-  const { submit, run, pending, upload, pauseUpload, resumeUpload, error } =
-    useWorkflowSubmit<Summary>(WORKFLOW, { api });
+  const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = useWorkflowSubmit<
+    typeof spokenSummary
+  >(WORKFLOW, { api });
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the
@@ -105,7 +102,7 @@ export function App() {
         </p>
       </header>
 
-      <Form onSubmit={submit} error={error} className="flex flex-col gap-4">
+      <Form onSubmit={submitForm} error={error} className="flex flex-col gap-4">
         {/* Every control, from the workflow's own input schema. See the module doc. */}
         <WorkflowFields workflow={WORKFLOW} />
         <SubmitButton pending={pending} pendingLabel="Working…">

@@ -4,6 +4,7 @@
 
 ```ts
 
+import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ButtonHTMLAttributes } from 'react';
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
 import { ComponentType } from 'react';
@@ -23,6 +24,7 @@ import type { TextareaHTMLAttributes } from 'react';
 import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
@@ -332,6 +334,12 @@ export function SubmitButton(input: {
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element;
 
 // @public
+type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? unknown : WorkflowInputOf<D>;
+
+// @public
+type SubmitOutputOf<D> = [WorkflowOutputOf<D>] extends [never] ? unknown : WorkflowOutputOf<D>;
+
+// @public
 export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
 
 // @public
@@ -521,13 +529,13 @@ export type UseWorkflowsResult = {
 };
 
 // @public
-export function useWorkflowStream<R = unknown>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<R>;
+export function useWorkflowStream<D extends AnyWorkflowDef = AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
 
 // @public
-export function useWorkflowSubmit<R = unknown>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<R>;
+export function useWorkflowSubmit<D extends AnyWorkflowDef = AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowSubmitOptions = {
@@ -585,11 +593,12 @@ export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
 export { WorkflowRunStatus }
 
 // @public
-export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
+export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;
 
 // @public
-export type WorkflowSubmission<R = unknown> = {
-    submit: (input: unknown) => Promise<void>;
+export type WorkflowSubmission<R = unknown, I = unknown> = {
+    submit: (input: I) => Promise<void>;
+    submitForm: (values: FormValues) => Promise<void>;
     reset: () => void;
     wake: () => Promise<number>;
     cancel: () => Promise<boolean>;

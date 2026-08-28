@@ -42,12 +42,8 @@ import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
 // digest.ts` already declares.
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import { useState } from "react";
 import type { digest } from "./agent.ts";
-
-/** What a completed run reports, derived from the workflow rather than restated. */
-type Digest = WorkflowOutputOf<typeof digest>;
 
 export function App() {
   const [url, setUrl] = useState("");
@@ -56,7 +52,7 @@ export function App() {
   // rejected input, which is better copy than anything this page could write, and
   // `wake` is bound to whatever run the hook is following — the whole reason this
   // page no longer holds a `createWorkflowApi()` of its own.
-  const { submit, run, pending, error, wake } = useWorkflowSubmit<Digest>("digest");
+  const { submit, run, pending, error, wake } = useWorkflowSubmit<typeof digest>("digest");
 
   // `submit()` resolves as soon as the run exists — deliberately not when it
   // finishes. That is the whole mechanism: the digest sleeps for a while, and
