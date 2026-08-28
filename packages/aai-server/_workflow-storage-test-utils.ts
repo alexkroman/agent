@@ -45,8 +45,17 @@ export function fakeWorld(
         .map((method) => [
           method,
           (...args: unknown[]) => {
-            calls.push({ method: `${name}.${method}`, args });
-            return Promise.resolve(answers[`${name}.${method}`] ?? { ok: true });
+            const key = `${name}.${method}`;
+            calls.push({ method: key, args });
+            // `in`, never `??`, so a declared answer of `undefined` means VOID.
+            // With the coalescing version this fake could not express a void
+            // method at all — every unspecified one answered a truthy `{ ok: true }`
+            // — and `streamer.writeToStream` really does return void. That is why
+            // 17 specs over this handler, including four through the guest's real
+            // client, all passed while every `report()` line in production failed
+            // with `answered 200 without a result`: the fake had no way to produce
+            // the reply that broke it.
+            return Promise.resolve(key in answers ? answers[key] : { ok: true });
           },
         ]),
     );

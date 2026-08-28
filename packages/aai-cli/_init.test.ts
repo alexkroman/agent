@@ -129,6 +129,55 @@ describe("patchPackageJsonForWorkspace", () => {
     });
   });
 
+  test("pins a dep the project SHARES with a linked workspace package", async () => {
+    // Linking is what makes two copies possible: the SDK's types come out of the
+    // workspace's `node_modules` while the project installs its own. Two copies
+    // of xstate are two incompatible sets of types, and `aai init --template
+    // support-line` really did fail its typecheck gate and refuse the deploy —
+    // workspace 5.32.5 against the project's freshly-resolved 5.32.6.
+    await withTempDir(async (dir) => {
+      const target = path.join(dir, "agent");
+      await fs.mkdir(target, { recursive: true });
+      await fs.writeFile(
+        path.join(target, "package.json"),
+        JSON.stringify({ dependencies: { "@alexkroman1/aai": "^8.0.0", xstate: "^5.32.5" } }),
+      );
+      await fs.writeFile(path.join(target, "pnpm-workspace.yaml"), "packages: []\n");
+
+      await patchPackageJsonForWorkspace(target);
+
+      const workspaceFile = await fs.readFile(path.join(target, "pnpm-workspace.yaml"), "utf-8");
+      expect(workspaceFile).toContain("overrides:");
+      // QUOTED: a scoped name starts with `@`, which YAML reserves — unquoted, the
+      // whole install dies on "bad indentation of a mapping entry".
+      expect(workspaceFile).toMatch(/"xstate": "\d+\.\d+\.\d+"/);
+      // The block is APPENDED: the scaffold's own copy carries the
+      // `minimumReleaseAgeExclude` argument, and a YAML round trip drops it.
+      expect(workspaceFile).toContain("packages: []");
+    });
+  });
+
+  test("pins nothing when the project links no workspace package", async () => {
+    // Outside the monorepo there is one copy of everything, which is the whole
+    // reason this is dev-mode only — a published install needs no overrides and
+    // must not be handed any.
+    await withTempDir(async (dir) => {
+      const target = path.join(dir, "agent");
+      await fs.mkdir(target, { recursive: true });
+      await fs.writeFile(
+        path.join(target, "package.json"),
+        JSON.stringify({ dependencies: { xstate: "^5.32.5" } }),
+      );
+      await fs.writeFile(path.join(target, "pnpm-workspace.yaml"), "packages: []\n");
+
+      await patchPackageJsonForWorkspace(target);
+
+      expect(await fs.readFile(path.join(target, "pnpm-workspace.yaml"), "utf-8")).not.toContain(
+        "overrides:",
+      );
+    });
+  });
+
   test("preserves non-workspace dependencies", async () => {
     await withTempDir(async (dir) => {
       const target = path.join(dir, "agent");

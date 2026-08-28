@@ -59,7 +59,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -71,6 +72,16 @@ const DOCKERFILE = path.join(SERVER_DIR, "guest-image.Dockerfile");
 
 /** Default local tag. A registry build passes `--tag` explicitly. */
 const DEFAULT_TAG = "aai-guest-harness:local";
+
+/**
+ * The stamp filename, spelled here and read by `aai-server/service-boot.ts`.
+ *
+ * Two spellings of one filename is the ordinary hazard, and the alternative is
+ * worse: this script is plain `.mjs` run by node with no bundler, so importing a
+ * constant out of a TypeScript module would need a loader. `guest-image-stamp.test.ts`
+ * holds the two together instead.
+ */
+const GUEST_IMAGE_STAMP = ".guest-image-stamp.json";
 
 function read(file) {
   try {
@@ -343,6 +354,36 @@ function main(argv) {
 }
 
 /**
+ * Record WHICH harness the image in microsandbox's store was built from.
+ *
+ * The local tag is mutable (`aai-guest-harness:local`), so the image and the
+ * harness beside it drift silently — and the boot check could only ever see the
+ * image MISSING, never the image being two days old. That is not hypothetical:
+ * a stale one served pre-change code for an hour of manual testing, printing a
+ * diagnostic that had been reworded in the meantime and reporting an SDK version
+ * one release back, with nothing anywhere saying the image was the reason.
+ *
+ * The stamp is the harness's own digest and nothing else, deliberately. It is
+ * what changes on essentially every rebuild, both sides can compute it with
+ * `node:crypto` alone, and folding in the build args would mean the server
+ * re-deriving them from three TypeScript files at boot. A toolchain change with
+ * an unchanged harness is therefore NOT caught here — the content-addressed
+ * registry tag is what covers that path (`localHarnessImageTag`).
+ *
+ * Written beside the harness in `dist/`, which is build output and gitignored.
+ * `service-boot.ts` is the reader.
+ */
+function writeImageStamp(tag) {
+  const harness = path.join(GUEST_DIR, "dist", "harness.mjs");
+  if (!existsSync(harness)) return;
+  const digest = createHash("sha256").update(readFileSync(harness)).digest("hex");
+  writeFileSync(
+    path.join(GUEST_DIR, "dist", GUEST_IMAGE_STAMP),
+    `${JSON.stringify({ tag, harnessSha256: digest, builtAt: new Date().toISOString() }, null, 2)}\n`,
+  );
+}
+
+/**
  * Copy a locally-built image into microsandbox's own image store.
  *
  * microsandbox does not read Docker's store — it keeps its own, and a sandbox
@@ -370,6 +411,7 @@ function loadIntoMicrosandbox(tag) {
     }
     const load = spawnSync(msb, ["load", "-i", archive, "-t", tag], { stdio: "inherit" });
     if (load.error) throw load.error;
+    if (load.status === 0) writeImageStamp(tag);
     return load.status ?? 1;
   } finally {
     rmSync(archive, { force: true });

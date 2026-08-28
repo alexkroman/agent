@@ -13,7 +13,7 @@
  * back another tenant's row on purpose, which is the case that matters most.
  */
 
-import { createPlatformStorage } from "@alexkroman1/aai-runtime/internal";
+import { createPlatformStorage, createPlatformStreamer } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import {
   callStorage,
@@ -242,6 +242,60 @@ describe("POST /:slug/workflow-storage", () => {
         },
       });
       await expect(storage.runs.get("run_theirs")).rejects.toThrow(/HTTP 404/);
+    });
+
+    test("a VOID method resolves, rather than reading its own success as an error", async () => {
+      // `streamer.writeToStream` returns nothing, and `JSON.stringify` drops an
+      // undefined value — so the reply was `{}` and the client threw
+      // `answered 200 without a result` on a call the platform had completed.
+      // Every `report()` line took that path: the run finished, its narration was
+      // lost, and `<WorkflowProgress>` stayed empty. `ok` is what makes "void"
+      // representable; see the client's note for why a presence check could not.
+      const world = fakeWorld({ "streamer.writeToStream": undefined });
+      const p = await platform(world);
+      const streamer = createPlatformStreamer({
+        base: `http://platform.test/${MINE}`,
+        token: await bearerFor(p.store, MINE),
+        fetch: async (i, init) => {
+          const req = new Request(i, init);
+          return p.fetch(new URL(req.url).pathname, {
+            method: req.method,
+            headers: req.headers,
+            body: await req.text(),
+          });
+        },
+      });
+      await expect(
+        streamer.writeToStream("stream_1", "run_mine", new Uint8Array([1])),
+      ).resolves.toBeUndefined();
+      expect(world.calls.map((c) => c.method)).toContain("streamer.writeToStream");
+    });
+
+    test("a Date survives the round trip, so `+date` is still a number", async () => {
+      // The other half of the same outage. Their schema reads `started_at` in
+      // drizzle's `mode: 'date'`, so the world answers a real `Date`; with no
+      // envelope for it the guest got an ISO string, the DevKit computed
+      // `+run.startedAt` as NaN, and the step payload carried
+      // `workflowStartedAt: null` — which the guest's own step handler rejects,
+      // so every durable run stalled at `step_created`.
+      const startedAt = new Date("2026-08-28T03:39:33.132Z");
+      const world = fakeWorld({ "runs.get": { runId: "run_mine", startedAt } });
+      const p = await platform(world);
+      const storage = createPlatformStorage({
+        base: `http://platform.test/${MINE}`,
+        token: await bearerFor(p.store, MINE),
+        fetch: async (i, init) => {
+          const req = new Request(i, init);
+          return p.fetch(new URL(req.url).pathname, {
+            method: req.method,
+            headers: req.headers,
+            body: await req.text(),
+          });
+        },
+      });
+      const run = (await storage.runs.get("run_mine")) as { startedAt: unknown };
+      expect(run.startedAt).toBeInstanceOf(Date);
+      expect((run.startedAt as Date).getTime()).toBe(startedAt.getTime());
     });
   });
 });

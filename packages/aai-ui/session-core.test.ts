@@ -99,6 +99,32 @@ describe("createSessionCore", () => {
     expect(core.getSnapshot().running).toBe(false);
   });
 
+  it("a refusal close REPORTS the server's own reason", () => {
+    // The guest closes 1011 with a sentence that already says what to do — a
+    // missing provider credential names the variable to set. This handler used
+    // to drop `event.reason` entirely, so the one thing a misconfigured
+    // deployment needed to be told surfaced as a plain disconnect.
+    core.connect();
+    lastSocket?.simulateOpen();
+    lastSocket?.simulateClose(1011, "Anthropic LLM: missing API key. Set ANTHROPIC_API_KEY.");
+
+    expect(core.getSnapshot().state).toBe("error");
+    expect(core.getSnapshot().error?.message).toBe(
+      "Anthropic LLM: missing API key. Set ANTHROPIC_API_KEY.",
+    );
+  });
+
+  it("a NORMAL close with a reason is still just a disconnect", () => {
+    // 1000 is the caller hanging up or the server retiring a finished session;
+    // showing text there would turn an ordinary ending into an error banner.
+    core.connect();
+    lastSocket?.simulateOpen();
+    lastSocket?.simulateClose(1000, "bye");
+
+    expect(core.getSnapshot().state).toBe("disconnected");
+    expect(core.getSnapshot().error).toBe(null);
+  });
+
   it("start sets started and running then connects", () => {
     core.start();
     const snap = core.getSnapshot();

@@ -35,7 +35,7 @@ import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-typ
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
 import { createResumeFindings, resolveSkipGreeting } from "./session-resume-found.ts";
-import { resolvePlatformQueue } from "./workflow-platform-world.ts";
+import { platformGuestOptions } from "./workflow-platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow-runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
@@ -145,7 +145,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // The platform's session-state endpoint, when this guest was spawned by one. Read
   // from the same pair the platform world uses, so a deployment cannot end up with
   // durable runs and memory-only turns — or the reverse.
-  const platformState = resolvePlatformQueue(providerEnv);
+  //
+  // `platformGuestOptions`, never `resolvePlatformQueue(providerEnv)`: that is the
+  // AGENT's environment and the platform puts these two keys in the PROCESS's, so
+  // the line above described an invariant it was breaking. Every deployed agent
+  // ran on the memory backend. Its own doc has the measurement.
+  const platformState = platformGuestOptions();
   const sessionState = createRuntimeSessionState({
     db: resolvedDb,
     logger,

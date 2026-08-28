@@ -11,12 +11,30 @@
  * errors: a run simply starts with garbage where its input should be, and the
  * failure surfaces inside devalue's deserializer several layers from the cause.
  *
+ * A `Date` is the SECOND type with that shape of failure, and it is the one that
+ * stopped every durable run on the platform dead. Their schema declares
+ * `timestamp('started_at')`, which drizzle reads in `mode: 'date'`, so
+ * `runs.get` answers real `Date`s — `createdAt`, `startedAt`, `completedAt`,
+ * `expiresAt`, and the same fields on a step, a hook and a wait. `JSON.stringify`
+ * hands back an ISO STRING and, with no reviver for it, the guest's runtime then
+ * computes `workflowStartedAt = +workflowRun.startedAt` — `NaN`, which
+ * `JSON.stringify` writes into the enqueued step payload as `null`. The guest's
+ * own step handler rejects it:
+ *
+ *     guest answered HTTP 500: [{ "expected": "number", "code": "invalid_type",
+ *       "path": ["workflowStartedAt"], "message": "expected number, received null" }]
+ *
+ * The platform's sweep then burns its five attempts and abandons the message, so
+ * a run reaches `step_created` and stops there FOREVER, with the run row still
+ * `running` and nothing in the journal naming a date. Reproduced end to end
+ * against a local stack with the `link-digest` template.
+ *
  * So anything carrying Storage values over HTTP has to encode them, and BOTH
  * directions matter. The platform's route receives args (a `run_created` carries a
  * run's input) and returns entities (`runs.get` returns input and output), so a
  * codec on one side only corrupts the other.
  *
- * ## The format is THEIRS, not ours
+ * ## The binary format is THEIRS, and the Date envelope is OURS
  *
  * `{ __type: "Uint8Array", data: "<base64>" }` is what `@workflow/world-local`'s
  * `TypedJsonTransport` writes and reads, and what `@workflow/world-postgres`'s
@@ -28,6 +46,25 @@
  * It is reproduced rather than imported because `@workflow/world-local` is a
  * transitive dependency this package does not declare, and the shape is one
  * envelope.
+ *
+ * `{ __type: "Date", iso }` has no such counterpart — they have no date envelope
+ * at all — so this one is invented, and **that is why there are TWO pairs here
+ * rather than one.** A codec is safe to extend only where BOTH ends are ours:
+ *
+ * - **The storage RPC** ({@link encodeStorageJson} / {@link decodeStorageJson})
+ *   is ours on both sides — `workflow-platform-storage.ts` and
+ *   `aai-server/workflow-storage-handler.ts` — so it carries the Date envelope.
+ * - **The queue payload** ({@link encodeTypedJson}) is ours on the way OUT and
+ *   THEIRS on the way in: `workflow-platform-queue.ts` encodes the message and
+ *   the DevKit's own `createQueueHandler` reads it back. So it stays strictly
+ *   their format, and a `Date` on it goes as the ISO string `toJSON` produces —
+ *   which their schemas coerce, and which is the only thing they can read.
+ *
+ * Collapsing the two costs a second stalled run, one layer past the first: with
+ * the Date envelope on the queue path their parse answers
+ * `requestedAt: expected date, received Invalid Date` — `new Date(anObject)` —
+ * and the sweep abandons the message exactly as before. Measured, in the course
+ * of fixing the `workflowStartedAt` half.
  *
  * ## It is a REPLACER and a REVIVER, not a deep clone
  *
@@ -45,6 +82,25 @@ type BinaryEnvelope = { __type: "Uint8Array"; data: string };
 /** Is `value` one of those envelopes? */
 function isBinaryEnvelope(value: unknown): value is BinaryEnvelope {
   return isRecord(value) && value.__type === "Uint8Array" && typeof value.data === "string";
+}
+
+/**
+ * What a `Date` becomes on the wire.
+ *
+ * `iso` is nullable so an INVALID date round-trips as itself. `toISOString()`
+ * throws on one, and a codec that throws while encoding a reply turns a bad
+ * timestamp in one row into a 500 for the whole call — where the DevKit's own
+ * behaviour for a date it cannot read is to carry the `NaN` onward.
+ */
+type DateEnvelope = { __type: "Date"; iso: string | null };
+
+/** Is `value` one of those envelopes? */
+function isDateEnvelope(value: unknown): value is DateEnvelope {
+  return (
+    isRecord(value) &&
+    value.__type === "Date" &&
+    (typeof value.iso === "string" || value.iso === null)
+  );
 }
 
 /**
@@ -78,6 +134,10 @@ function holderValue(holder: unknown, key: string, value: unknown): unknown {
 /**
  * `JSON.stringify` replacer: every `Uint8Array` becomes a tagged envelope.
  *
+ * This is the DevKit-COMPATIBLE half — the one whose output their own reviver
+ * reads — so it encodes nothing they do not encode. {@link storageReplacer} is
+ * the one that also carries dates. See the module doc for which path is which.
+ *
  * **It reads `this[key]`, not `value`, and that is not a style choice.**
  * `JSON.stringify` calls a value's own `toJSON()` BEFORE handing it to the
  * replacer — and `Buffer` has one, returning `{ type: "Buffer", data: [...] }`. So
@@ -107,7 +167,7 @@ export function binaryReplacer(this: unknown, key: string, value: unknown): unkn
 }
 
 /**
- * `JSON.parse` reviver: every tagged envelope becomes a `Uint8Array`.
+ * `JSON.parse` reviver: every tagged binary envelope becomes a `Uint8Array`.
  *
  * @internal
  */
@@ -262,7 +322,35 @@ function viewsInRecord(value: Record<string, unknown>, depth: number): unknown {
 }
 
 /**
- * Encode a value for the wire.
+ * `JSON.stringify` replacer for the STORAGE RPC: binary, plus dates.
+ *
+ * A `Date` reaches a replacer already rewritten, exactly as a `Buffer` does and
+ * for the same `toJSON` reason — which is why this reads `raw` and why a check
+ * on `value` could not be written at all: by then it is an ISO string,
+ * indistinguishable from a tenant's own.
+ *
+ * @internal
+ */
+export function storageReplacer(this: unknown, key: string, value: unknown): unknown {
+  const raw = holderValue(this, key, value);
+  if (raw instanceof Date) {
+    const time = raw.getTime();
+    return { __type: "Date", iso: Number.isNaN(time) ? null : raw.toISOString() };
+  }
+  return binaryReplacer.call(this, key, value);
+}
+
+/**
+ * `JSON.parse` reviver for the STORAGE RPC: binary, plus dates.
+ *
+ * @internal
+ */
+export function storageReviver(key: string, value: unknown): unknown {
+  return isDateEnvelope(value) ? new Date(value.iso ?? Number.NaN) : binaryReviver(key, value);
+}
+
+/**
+ * Encode a value for the QUEUE, in the DevKit's own format.
  *
  * The pre-pass is {@link withPlainViews} — see its doc for what `Buffer`'s own
  * `toJSON` costs, and why the walk is cheaper than the thing it prevents.
@@ -274,7 +362,30 @@ export function encodeTypedJson(value: unknown): string {
 }
 
 /**
- * Decode a value off the wire.
+ * Encode a value for the storage RPC.
+ *
+ * @internal
+ */
+export function encodeStorageJson(value: unknown): string {
+  // The same {@link withPlainViews} pre-pass, and this is the wire it was measured
+  // on: the Postgres world hands back a `Buffer` for every `bytea` column, so a
+  // storage reply is where the `toJSON` cost lands.
+  return JSON.stringify(withPlainViews(value), storageReplacer);
+}
+
+/**
+ * Decode a value off the storage RPC.
+ *
+ * Throws on malformed JSON, for the reason {@link decodeTypedJson} gives.
+ *
+ * @internal
+ */
+export function decodeStorageJson(text: string): unknown {
+  return JSON.parse(text, storageReviver);
+}
+
+/**
+ * Decode a value off the wire, in the DevKit's own format.
  *
  * Throws on malformed JSON, which is correct for both callers: the guest fails the
  * step that was reading, and the platform answers 400. Neither should guess.

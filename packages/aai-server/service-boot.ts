@@ -14,7 +14,11 @@
  * @module
  */
 
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { isLocalDev } from "./_boot.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { guestImageRegistry } from "./guest-image-source.ts";
@@ -112,6 +116,62 @@ async function warnOnMissingGuestImage(): Promise<void> {
         "or set SANDBOX_BACKEND=subprocess to run guests without isolation.",
       { error: errorMessage(err) },
     );
+    return;
+  }
+  warnOnStaleGuestImage();
+}
+
+/** The stamp `scripts/build-guest-image.mjs` writes beside the harness. */
+const GUEST_IMAGE_STAMP = ".guest-image-stamp.json";
+
+/**
+ * Warn when the local guest image was built from a DIFFERENT harness than the
+ * one on disk.
+ *
+ * The check above can only ever see the image MISSING, because
+ * `aai-guest-harness:local` is a mutable tag — so an image and the harness
+ * beside it drift with nothing saying so, and every guest silently runs whatever
+ * code was current when the image was last built. That cost an hour of manual
+ * testing against a two-day-old image: the guest printed a diagnostic that had
+ * been reworded since, reported an SDK version one release back, and behaved
+ * like the branch under test had never landed. Nothing about the failure named
+ * the image.
+ *
+ * It compares the harness's own digest against the stamp the build wrote, so it
+ * is exact rather than an mtime heuristic — `ensure-guest-harness.mjs` records
+ * what mtime costs under a turbo cache hit. An ABSENT stamp is reported the same
+ * way, because an image built before this existed is exactly the case worth
+ * warning about; a rebuild writes one.
+ *
+ * A warning, never a throw, matching every other check here: this backend is
+ * local-dev only, and the remedy is one command.
+ */
+function warnOnStaleGuestImage(): void {
+  const remedy =
+    "rebuild it with `pnpm build:guest-image --msb`, or set " +
+    "SANDBOX_BACKEND=subprocess to run the harness on disk directly.";
+  try {
+    const harnessPath = resolveHarnessPath();
+    const stampPath = join(dirname(harnessPath), GUEST_IMAGE_STAMP);
+    if (!existsSync(stampPath)) {
+      sandboxLog.warn(`WARNING: the local guest image records no harness — ${remedy}`, {
+        stamp: stampPath,
+      });
+      return;
+    }
+    const stamp: unknown = JSON.parse(readFileSync(stampPath, "utf-8"));
+    const built = isRecord(stamp) ? stamp.harnessSha256 : undefined;
+    const current = createHash("sha256").update(readFileSync(harnessPath)).digest("hex");
+    if (built === current) return;
+    sandboxLog.warn(
+      "WARNING: the local guest image is STALE — it was built from a different " +
+        `harness than ${harnessPath}, so every guest will run that older code. ${remedy}`,
+      { built, current },
+    );
+  } catch (err) {
+    // A diagnostic may not fail a boot, and it may not be silent either: an
+    // unreadable harness or a corrupt stamp is itself worth one line.
+    sandboxLog.warn("guest image staleness check skipped", { error: errorMessage(err) });
   }
 }
 

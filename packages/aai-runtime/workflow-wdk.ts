@@ -33,6 +33,32 @@ import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-
  * `omitUndefined` is not the tool here — a `failed` record with no error still
  * has to lose the property rather than carry `undefined`.
  */
+/**
+ * Is this — or anything it WRAPS — the DevKit's "no such run"?
+ *
+ * `WorkflowRunNotFoundError.is` reads one error's `name`, and the DevKit does not
+ * always hand its own error straight back: `wakeUp` re-throws as
+ * `new Error(\`Failed to wake up run \${runId}: …\`, { cause: err })`
+ * (`@workflow/core`'s `runtime/runs.js`). So the bare predicate answered false for
+ * the one case it exists to catch, and a wake on a run that is gone — the
+ * ORDINARY answer, since the question is "is it still waiting" — became a 500 on
+ * the public API rather than `{ woken: 0 }`.
+ *
+ * Walking the chain rather than special-casing `wakeUp`, because the wrapping is
+ * theirs to change and the next method to acquire one would fail the same way.
+ * Bounded, so a cause cycle cannot hang the handler that is reporting an error.
+ *
+ * @internal Exported for its own spec — the wrapping is a third party's and the
+ * predicate is the only thing standing between it and a 500.
+ */
+export function isRunNotFound(err: unknown): boolean {
+  for (let at: unknown = err, depth = 0; at !== undefined && depth < 8; depth++) {
+    if (WorkflowRunNotFoundError.is(at)) return true;
+    at = at instanceof Error ? at.cause : undefined;
+  }
+  return false;
+}
+
 function toRunRecord(record: {
   runId: string;
   workflowName: string;
@@ -78,7 +104,7 @@ export function wdkAdapter(): WdkAdapter {
         // serialization fault — must propagate: answering `undefined` for it
         // would report "no such run" for a run that exists, and a caller polling
         // one would conclude it had been swept.
-        if (WorkflowRunNotFoundError.is(err)) return;
+        if (isRunNotFound(err)) return;
         throw err;
       }
     },
@@ -104,7 +130,7 @@ export function wdkAdapter(): WdkAdapter {
         // as one: `WorkflowClient.cancel` resolves false for "it was already
         // over", which is the same answer whether the run completed a second ago
         // or was never there.
-        if (WorkflowRunNotFoundError.is(err)) return false;
+        if (isRunNotFound(err)) return false;
         throw err;
       }
     },
@@ -134,7 +160,7 @@ export function wdkAdapter(): WdkAdapter {
         const { stoppedCount } = await getRun(runId).wakeUp(omitUndefined({ correlationIds }));
         return stoppedCount;
       } catch (err: unknown) {
-        if (WorkflowRunNotFoundError.is(err)) return 0;
+        if (isRunNotFound(err)) return 0;
         throw err;
       }
     },

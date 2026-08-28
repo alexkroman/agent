@@ -4,8 +4,8 @@
  * Run the platform server for local development, with the local Supabase stack
  * resolved into its environment.
  *
- * `pnpm dev:aai-server` goes through here. Two things it supplies, and both used
- * to be the developer's to remember:
+ * `pnpm dev:aai-server` goes through here. Three things it supplies, and every
+ * one of them used to be the developer's to remember:
  *
  * - **`AAI_LOCAL_DEV=1`**, the explicit declaration that this is a local run.
  *   That is what permits the isolation-free `subprocess` sandbox backend and
@@ -20,6 +20,8 @@
  *   of it — so a session cannot resume onto an agent that no longer exists and
  *   `/use-my-agent/` answers 404 for the rest of the day. That is the bug this
  *   script exists to stop being a thing anyone has to know about.
+ * - **`AAI_PUBLIC_ORIGIN`**, the newest member of that platform tier and the one
+ *   whose absence stopped this command booting at all. See {@link publicOrigin}.
  *
  * ## Three layers, and the outer ones always win
  *
@@ -164,6 +166,39 @@ function storageBucket() {
 }
 
 /**
+ * This server's own public origin — the third thing a PLATFORM tier refuses to
+ * boot without, and the one this script did not supply.
+ *
+ * `AAI_PUBLIC_ORIGIN` joined `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in
+ * `PLATFORM_TIER_ENV` when it stopped being optional: it is the only source of
+ * `agentPublicBaseUrl` → `AAI_PUBLIC_BASE_URL`, which is half of what
+ * `resolvePlatformQueue` needs to install the platform workflow world. Refusing
+ * boot over it is right, and it left `pnpm dev:aai-server` DEAD against a local
+ * stack — `Fatal: Missing required environment variables: AAI_PUBLIC_ORIGIN`
+ * before the listener — because the script whose whole job is supplying the
+ * platform env was never taught the new member.
+ *
+ * DERIVED rather than a literal, for the reason {@link storageBucket} is: the
+ * port is `aai-server`'s to name, and a second copy of `8080` here would be a
+ * setting that silently disagrees the day that one moves. `PORT` still wins,
+ * since it is what the server itself reads.
+ *
+ * Loopback deliberately. `public-origin.ts` treats a loopback origin as the
+ * local case, and an origin learned any other way is the caller's to write —
+ * which is exactly the reason the variable is mandatory rather than sniffed.
+ */
+function publicOrigin() {
+  const file = path.join(REPO_ROOT, "packages/aai-server/constants.ts");
+  const source = existsSync(file) ? readFileSync(file, "utf-8") : "";
+  const declared = /^export const DEFAULT_PORT = (\d+);/m.exec(source)?.[1];
+  const port = process.env.PORT ?? declared;
+  // No port and no declaration is a broken checkout rather than a missing
+  // setting, so nothing is invented: the server's own boot error is a better
+  // diagnostic than a guessed origin that half-works.
+  return port ? { AAI_PUBLIC_ORIGIN: `http://localhost:${port}` } : {};
+}
+
+/**
  * What this run should add to `process.env`, plus one line saying why.
  *
  * The environment winning is checked per VARIABLE rather than for the set: a
@@ -228,11 +263,16 @@ if (platform.note) {
 // follow from a variable somebody forgot to set.
 const localDev = { AAI_LOCAL_DEV: process.env.AAI_LOCAL_DEV ?? "1" };
 
+// Layered under the shell and `.env` like every resolved value above, so a
+// developer pointing a dev server at a tunnel writes one line and this gets out
+// of the way.
+const origin = process.env.AAI_PUBLIC_ORIGIN ? {} : publicOrigin();
+
 if (PRINT_ONLY) {
   // The EFFECTIVE values, not this script's additions: with three layers, "what
   // will the server see" is the only question worth answering here, and a
   // `.env`-supplied database would be invisible in a diff of the additions.
-  const effective = { ...process.env, ...localDev, ...platform.env };
+  const effective = { ...process.env, ...localDev, ...origin, ...platform.env };
   // `PLATFORM_POOLER_URL` is NOT in `PLATFORM_ENV` — it is derived from
   // `config.toml` rather than read out of `supabase status` — so a fixed loop
   // over that map's keys omitted the one variable that decides whether the admin
@@ -241,6 +281,7 @@ if (PRINT_ONLY) {
   // exists to answer questions in gave the wrong answer to "are we pooling?".
   const names = [
     "AAI_LOCAL_DEV",
+    "AAI_PUBLIC_ORIGIN",
     ...Object.keys(PLATFORM_ENV),
     "PLATFORM_POOLER_URL",
     "APP_DB_POOLER_URL",
@@ -276,7 +317,7 @@ if (command.length === 0) {
 // stays alive until the child has drained rather than dying with it. See
 // `_run-child.mjs` for what each of those costs when it is missing.
 runChild(command, {
-  env: { ...localDev, ...platform.env },
+  env: { ...localDev, ...origin, ...platform.env },
   label: "dev-server",
   interruptExitCode: 0,
 });

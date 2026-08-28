@@ -16,6 +16,7 @@
 import { createEpoch, WS_OPEN } from "@alexkroman1/aai/internal";
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import { initAudioCapture, loadAudioModules } from "./session-core-audio-setup.ts";
+import { closeFailure } from "./session-core-close.ts";
 import { createDialer } from "./session-core-dial.ts";
 import { createHandshakeGuard, HANDSHAKE_ERROR } from "./session-core-handshake.ts";
 import {
@@ -333,7 +334,7 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
 
     socket.addEventListener(
       "close",
-      () => {
+      (event) => {
         if (sig.aborted) {
           return;
         }
@@ -369,12 +370,22 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
         // anywhere else retires a lingering non-fatal banner; which of those
         // happens is the `error` state's own `CLOSED` handler, not this
         // caller's to work out. See `session-core-state.ts`.
-        const closed = socketErrored
-          ? agentState.apply({
-              type: "FAILED",
-              error: { code: "connection", message: "WebSocket connection error" },
-            })
-          : agentState.apply({ type: "CLOSED" });
+        // The server's own SENTENCE, when it wrote one. A refusal closes with a
+        // reason that already says what to do — "Anthropic LLM: missing API key.
+        // Set ANTHROPIC_API_KEY in the agent env." — and this handler used to
+        // discard it, so the one thing a misconfigured deployment needed to be
+        // told arrived as "WebSocket connection error" or as nothing at all.
+        // Measured against a deployed agent with no provider key: code 1011,
+        // that exact reason, and a page showing a generic disconnect.
+        //
+        // A NORMAL close carries no reason worth showing (1000 is the caller
+        // hanging up, 1005 is no status at all), so the two ordinary endings are
+        // untouched; anything else with text is the peer explaining itself.
+        const failure = closeFailure(event, socketErrored);
+        const closed =
+          failure === null
+            ? agentState.apply({ type: "CLOSED" })
+            : agentState.apply({ type: "FAILED", error: { code: "connection", message: failure } });
         updateState({ ...closed, running: false, recording: false });
       },
       { signal: sig },

@@ -180,12 +180,13 @@ export {
   WORKFLOW_FLOW_PATH,
   type WorkflowSurface,
 } from "./workflow-serve.ts";
-export {
-  binaryReplacer,
-  binaryReviver,
-  decodeTypedJson,
-  encodeTypedJson,
-} from "./workflow-typed-json.ts";
+// The STORAGE half of the codec only, which is the half `aai-server`'s storage
+// handler is the other end of. The queue half (`encodeTypedJson`) has one
+// intra-package caller and the two raw replacer/reviver pairs have none, so by
+// this subpath's own rule — a name is here because something IMPORTS it — they
+// stay off it. Which side of the codec a path is on is load-bearing rather than
+// incidental: see `workflow-typed-json.ts`.
+export { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 // Standing an upload store up. The store TYPE, the two blob implementations and
 // the part addressing are contracted, on the root barrel; this is what JOINS
 // them, which is a host's job.
