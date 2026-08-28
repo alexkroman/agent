@@ -26,6 +26,7 @@ import {
   type WorkflowSurface,
   webhookToken,
 } from "./workflow-serve.ts";
+import { createWebhookHandler } from "./workflow-webhook.ts";
 
 describe("rewriteWorkflowImports", () => {
   test("rewrites a bare DevKit import to an absolute file URL", () => {
@@ -153,6 +154,48 @@ describe("createWorkflowSurface", () => {
     await expect(
       createWorkflowSurface("export const NOPE = 1;", "export const POST = () => 1;"),
     ).rejects.toThrow(/flow bundle exported no POST/);
+  });
+});
+
+describe("createWebhookHandler", () => {
+  const req = () => new Request("http://agent.example/hook", { method: "POST" });
+
+  test("a token nothing is listening on answers 404, not 500", async () => {
+    // The caller here is a THIRD PARTY on the public internet — a payment
+    // provider, an approval mail — and a 5xx tells it to retry. Reaching
+    // `serveFetch`'s catch (whose 500 is right for the queue's own callbacks)
+    // meant an expired callback was retried forever. Observed under `aai dev`:
+    // `POST /.well-known/workflow/v1/webhook/nosuchtoken` answered
+    // `500 {"error":"workflow route failed"}`.
+    const handler = createWebhookHandler(
+      () => Promise.reject(new Error("Hook not found")),
+      () => true,
+    );
+    const res = await handler("gone", req());
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "No workflow hook for this token" });
+  });
+
+  test("any OTHER failure still throws, so the queue's retry survives", async () => {
+    // Only the one expected class is an answer. A lost world is a real fault and
+    // must still reach the 500 that gets it another attempt.
+    const boom = new Error("world unreachable");
+    const handler = createWebhookHandler(
+      () => Promise.reject(boom),
+      () => false,
+    );
+    await expect(handler("live", req())).rejects.toBe(boom);
+  });
+
+  test("a delivered webhook is passed through untouched", async () => {
+    const ok = new Response("delivered", { status: 202 });
+    const handler = createWebhookHandler(
+      () => Promise.resolve(ok),
+      () => true,
+    );
+    const res = await handler("live", req());
+    expect(res).toBe(ok);
+    expect(res.status).toBe(202);
   });
 });
 
