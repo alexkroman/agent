@@ -36,7 +36,7 @@ IT:
 
 | Subpath | Reach for it when |
 | --- | --- |
-| `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `withDiscoveredTools`, `runTool` |
+| `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
 | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
 | `@alexkroman1/aai/step`, `/step-errors` | writing a `"use step"` body inside a workflow |
 | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |
@@ -556,6 +556,53 @@ export default tool({
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
 OF WORK inside a single tool call, never stored. A [workflow](#workflow) runs
 DURABLY, outliving the session.
+
+***
+
+### requireEnv()
+
+```ts
+function requireEnv(ctx: {
+  env: Readonly<Partial<Record<string, string>>>;
+}, name: string): string;
+```
+
+Read a variable off [ToolContext.env](#env-1), failing by NAME when it is not set.
+
+The `ToolContext` twin of `requireStepEnv`, and there for the same reason: a
+missing credential is not transient, so it should say which key and how to
+set it rather than surface as a `TypeError` on the first property access —
+which `tool-executor.ts` serializes and hands to the MODEL, so what a caller
+hears is the agent apologising for something no log line explains.
+
+```ts no-check
+export default tool({
+  description: "Look up a note",
+  inputSchema: z.object({ id: z.string() }),
+  async execute({ id }, ctx) {
+    const key = requireEnv(ctx, "NOTES_API_KEY");
+    return await fetch(`https://notes.example.com/${id}`, {
+      headers: { authorization: `Bearer ${key}` },
+    }).then((r) => r.json());
+  },
+});
+```
+
+#### Parameters
+
+##### ctx
+
+###### env
+
+`Readonly`\<`Partial`\<`Record`\<`string`, `string`\>\>\>
+
+##### name
+
+`string`
+
+#### Returns
+
+`string`
 
 ***
 
@@ -1685,6 +1732,26 @@ System prompt driving the LLM.
 prompt. It is assembled from parts, so it is the one default here whose
 VALUE cannot usefully be inlined; read the constant.
 
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+Sampling temperature for the agent's OWN model calls — the conversational
+loop, in pipeline and text modes.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values, and until this
+existed neither could say so: `ctx.generate` and `subagent()` both took a
+temperature while the main loop — the one that does almost all the talking
+— took no sampling parameter at all.
+
+S2S REJECTS it rather than ignoring it (`assertSamplingScope`): there the
+model runs inside the provider's service and this runtime never sees the
+request.
+
 ##### text?
 
 ```ts
@@ -1715,7 +1782,7 @@ import { agent } from "@alexkroman1/aai";
 export default agent({
   name: "Docs Assistant",
   text: true,
-  system: "Answer questions about the docs.",
+  systemPrompt: "Answer questions about the docs.",
 });
 ```
 
@@ -1941,7 +2008,7 @@ Per-call options for [DelegateFn](#delegatefn).
 optional context?: string;
 ```
 
-Extra context appended after the subagent's own `instructions` for this
+Extra context appended after the subagent's own `systemPrompt` for this
 call — the caller's name, what has already been ruled out, the format the
 answer should take. Absent by default, because a subagent that needs the
 conversation to make sense is one whose task was underspecified.
@@ -1992,7 +2059,7 @@ How many steps the run took, including the final answering step.
 text: string;
 ```
 
-The subagent's final message — see [SubagentDef.instructions](#instructions).
+The subagent's final message — see [SubagentDef.systemPrompt](#systemprompt-1).
 
 ##### toolCalls
 
@@ -3550,7 +3617,7 @@ The slot key whose value this projects.
 A subagent definition — what [subagent](#subagent) returns and
 [DelegateFn](#delegatefn) runs.
 
-Every field except `name` and `instructions` is optional, and the defaults
+Every field except `name` and `systemPrompt` is optional, and the defaults
 are the parent agent's: the same LLM descriptor, no tools, and
 the framework default (`DEFAULT_MAX_STEPS`) steps.
 
@@ -3565,20 +3632,6 @@ optional builtinTools?: readonly BuiltinTool[];
 Builtins this subagent may call, resolved exactly as `agent({
 builtinTools })` resolves them. Independent of the parent's: a parent that
 enables none can still delegate to a subagent that searches the web.
-
-##### instructions
-
-```ts
-instructions: string;
-```
-
-The subagent's system prompt.
-
-**Tell it to summarize.** The parent gets [DelegateResult.text](#text-1),
-which is the subagent's FINAL message — so a subagent that ends its run by
-saying "Done." has thrown away everything it learned, and no amount of
-step budget recovers it. This is the single most common way a subagent
-disappoints, and the remedy is one sentence in the instructions.
 
 ##### llm?
 
@@ -3626,6 +3679,20 @@ What this subagent is called. It reaches the model only as the id on the
 subagent's own requests; its reader is a log line and a failure message
 ("subagent \"researcher\" ran out of steps"), which is why it is required
 and why an anonymous subagent is not expressible.
+
+##### systemPrompt
+
+```ts
+systemPrompt: string;
+```
+
+The subagent's system prompt.
+
+**Tell it to summarize.** The parent gets [DelegateResult.text](#text-1),
+which is the subagent's FINAL message — so a subagent that ends its run by
+saying "Done." has thrown away everything it learned, and no amount of
+step budget recovers it. This is the single most common way a subagent
+disappoints, and the remedy is one sentence in the systemPrompt.
 
 ##### temperature?
 
@@ -3682,7 +3749,7 @@ type AgentParams =
   | PipelineAgentParams
   | S2sAgentParams
   | TextAgentParams
-  | StaticAgentParams;
+  | StaticAgentParamsCore;
 ```
 
 The author-facing parameter shape of [agent](#agent): every [AgentDef](#agentdef)
@@ -4513,7 +4580,7 @@ Compile-time stage tag; never present at runtime.
 
 ```ts
 type SessionEventContext = {
-  env: Readonly<Record<string, string>>;
+  env: Readonly<Partial<Record<string, string>>>;
   sessionId: string;
   slots: SlotStore;
 };
@@ -4551,7 +4618,7 @@ credential — the same change tool code saw, and for the same reason.
 ##### env
 
 ```ts
-env: Readonly<Record<string, string>>;
+env: Readonly<Partial<Record<string, string>>>;
 ```
 
 Environment variables available to this agent (from `.env` under `aai dev`,
@@ -4680,7 +4747,6 @@ type SharedAgentParams = Omit<AgentDef,
   | PipelineOnlyField
   | ProviderField
   | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
-  system?: string;
   tools?: InlineToolsMisuse;
 };
 ```
@@ -4690,14 +4756,6 @@ the providers and the pipeline-only tuning knobs, plus the authoring
 conveniences.
 
 #### Type Declaration
-
-##### system?
-
-```ts
-optional system?: string;
-```
-
-Alias of `systemPrompt` (the Vercel AI SDK's field name).
 
 ##### tools?
 
@@ -4837,10 +4895,7 @@ virtual one is neither, because the things a virtual slot exists to hold
 ### StaticAgentParams
 
 ```ts
-type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
-  page: "static";
-  workflows: NonNullable<AgentDef["workflows"]>;
-} & { [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K> };
+type StaticAgentParams = Omit<StaticAgentParamsCore, WorkflowAppOnlyField> & { [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K> };
 ```
 
 Workflow-app params: `page: "static"`, the workflows that ARE the product,
@@ -4859,25 +4914,6 @@ a page that wants them calls `fetchClientConfig()` itself), `workflows`, and
 `workflows` is REQUIRED here, unlike on [AgentDef](#agentdef): a workflow app whose
 whole API is `/workflows/*` and which declares none serves a form with nothing
 behind it, and the page's `api.start(name, …)` would 400 on every submit.
-
-#### Type Declaration
-
-##### page
-
-```ts
-page: "static";
-```
-
-See [AgentDef.page](#page) — the explicit opt-in to a workflow app.
-
-##### workflows
-
-```ts
-workflows: NonNullable<AgentDef["workflows"]>;
-```
-
-See [AgentDef.workflows](#workflows). The whole product: a workflow app is an
-agent whose work happens here.
 
 #### Remarks
 
@@ -5049,7 +5085,7 @@ SDK's `toolChoice`.
 ```ts
 type ToolContext = {
   delegate: DelegateFn;
-  env: Readonly<Record<string, string>>;
+  env: Readonly<Partial<Record<string, string>>>;
   generate: GenerateFn;
   messages: readonly Message[];
   sessionId: string;
@@ -5159,13 +5195,24 @@ this, and belongs in that value's own module.
 ##### env
 
 ```ts
-env: Readonly<Record<string, string>>;
+env: Readonly<Partial<Record<string, string>>>;
 ```
 
 Environment variables available to this agent's tools (from `.env` under
 `aai dev`, `aai secret` in production). Custom keys a tool depends on
 should be declared in [AgentDef.requiredEnv](#requiredenv) so a missing value
 fails at deploy time.
+
+**`Partial`, so every read is `string | undefined`.** A variable that was
+never set is `undefined` at runtime whatever the type says, and the type
+used to say `string`: `ctx.env.NEVER_DECLARED` type-checked, built green,
+and threw a `TypeError` on the first live call — which `tool-executor.ts`
+then hands to the MODEL, so the caller hears the agent improvise an
+apology. `noUncheckedIndexedAccess` says the same thing, but it is the
+AUTHOR's tsconfig and cannot be relied on from here.
+
+Reach for [requireEnv](#requireenv) rather than a `??` at each site — it throws
+a sentence naming the variable and pointing at `requiredEnv`.
 
 ##### generate
 

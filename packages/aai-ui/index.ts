@@ -142,11 +142,16 @@ export {
   isTerminal,
   type WorkflowApi,
   type WorkflowApiOptions,
+  type WorkflowInputOf,
   type WorkflowOutputOf,
   type WorkflowRun,
   type WorkflowRunStatus,
   type WorkflowSummary,
 } from "./workflow-client.ts";
+// What `submit()` takes: `WorkflowInputOf<D>`, or `undefined` for a def with no
+// input schema. It is in the rendered signature of both submit hooks, so it is
+// a name a page can read rather than one it has to re-derive.
+export type { SubmitInputOf } from "./workflow-def-types.ts";
 // The five default status lines, so a page overrides the one word it has a
 // better term for instead of restating the union.
 export { WORKFLOW_STATUS_LABELS } from "./workflow-status-labels.ts";

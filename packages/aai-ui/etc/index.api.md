@@ -24,7 +24,7 @@ import type { TextareaHTMLAttributes } from 'react';
 import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
-import type { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
+import { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
@@ -334,10 +334,7 @@ export function SubmitButton(input: {
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element;
 
 // @public
-type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined : WorkflowInputOf<D>;
-
-// @public
-type SubmitOutputOf<D> = WorkflowOutputOf<D>;
+export type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined : WorkflowInputOf<D>;
 
 // @public
 export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
@@ -529,13 +526,13 @@ export type UseWorkflowsResult = {
 };
 
 // @public
-export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
 
 // @public
-export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowSubmitOptions = {
@@ -575,6 +572,8 @@ export type WorkflowApiOptions = {
 export function WorkflowFields(input: {
     workflow?: WorkflowSummary | string | undefined;
 }): JSX.Element | null;
+
+export { WorkflowInputOf }
 
 export { WorkflowOutputOf }
 

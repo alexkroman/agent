@@ -87,13 +87,13 @@ export type WorkflowAppMisuse<K extends string> =
  * sentence in place of a bare excess-property error, so the diagnostic names the
  * rule and what to do about it. Never pass one as a string.
  */
-export type StaticAgentParams = StaticAgentParamsBase & {
+export type StaticAgentParams = Omit<StaticAgentParamsCore, WorkflowAppOnlyField> & {
   [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
 };
 
 /**
- * {@link StaticAgentParams} WITHOUT the compile-error messages — the static arm
- * as it appears in the {@link AgentParams} union that `agent()` takes.
+ * The static arm as it appears in the {@link AgentParams} union that `agent()`
+ * takes — {@link StaticAgentParams} WITHOUT the compile-error messages.
  *
  * The split exists because **tsc prints the whole union at every call site**,
  * so a message on one arm is a message on every diagnostic. Measured, before
@@ -115,8 +115,17 @@ export type StaticAgentParams = StaticAgentParamsBase & {
  * writing a workflow app arrives, and where `page: "static"` is not a surprise.
  * Reaching the static arm through `agent({ page: "static" })` still works and
  * now reports a plain excess-property error naming the field.
+ *
+ * This is the arm both public names are built from, and it is deliberately the
+ * one on the barrel: `AgentParams` names it, so a reader following that union
+ * has somewhere to land. {@link StaticAgentParams} `Omit`s these keys before
+ * re-adding them as messages rather than intersecting the two maps — an
+ * intersection of `never` with a message type is `never`, which would silently
+ * take the sentence away from `workflowApp()`, the one place it belongs.
+ *
+ * @public
  */
-type StaticAgentParamsBase = Omit<
+export type StaticAgentParamsCore = Omit<
   SharedAgentParams,
   WorkflowAppOnlyField | FrontDoorField | "workflows"
 > & {
@@ -127,16 +136,7 @@ type StaticAgentParamsBase = Omit<
    * agent whose work happens here.
    */
   workflows: NonNullable<AgentDef["workflows"]>;
-};
-
-/**
- * The static arm as it appears in {@link AgentParams}. Shares
- * {@link StaticAgentParamsBase} with {@link StaticAgentParams} rather than
- * extending it: an intersection of `never` with a message type is `never`, so
- * layering the two maps would silently take the sentence away from
- * `workflowApp()` — which is the one place it belongs.
- */
-export type StaticAgentParamsCore = StaticAgentParamsBase & {
+} & {
   // `never`, not the message — and the difference is the whole point of the
   // split. The KEY has to be present and un-satisfiable or the field is merely
   // absent, and an absent field is structurally fine: `{ page: "static",

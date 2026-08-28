@@ -40,6 +40,7 @@ import type {
   AnyWorkflowDef,
   UploadParallel,
   UploadProgress,
+  WorkflowOutputOf,
   WorkflowSummary,
 } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -47,10 +48,10 @@ import { useRunControls } from "./_run-controls.ts";
 import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
 import { useUploadPause } from "./_upload-pause.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
-import type { SubmitInputOf, SubmitOutputOf } from "./_workflow-def-types.ts";
 import type { FormValues } from "./components/form-types.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
+import type { SubmitInputOf } from "./workflow-def-types.ts";
 
 /** Options for {@link useWorkflows}. */
 export type UseWorkflowsOptions = {
@@ -346,7 +347,7 @@ export type UseWorkflowSubmitOptions = {
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   workflow: string,
   opts: UseWorkflowSubmitOptions = {},
-): WorkflowSubmission<SubmitOutputOf<D>, SubmitInputOf<D>> {
+): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
   const { api, key, wait, intervalMs, parallel } = opts;
   const [runId, setRunId] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
@@ -360,7 +361,7 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   // The caller's client through a ref — see `_workflow-api-ref.ts`.
   const getClient = useWorkflowApiRef(api);
 
-  const tracked = useWorkflowRun<SubmitOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
+  const tracked = useWorkflowRun<WorkflowOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
   const { wake, cancel } = useRunControls(runId, getClient);
 
   const submit = useCallback(

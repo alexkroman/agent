@@ -8,8 +8,8 @@
  *
  * Distinct from `aai:workflow`, which is the same concept from the other side
  * of the wire — `workflow()` declares one, this reaches it. The two share three
- * names (`isTerminal`, `WorkflowSummary`, `WorkflowOutputOf`, re-exported here
- * from the SDK) and are separately versioned, because a change can break an
+ * names (`isTerminal`, `WorkflowSummary`, `WorkflowInputOf`/`WorkflowOutputOf`,
+ * re-exported here from the SDK) and are separately versioned, because a change can break an
  * author on one side and not the other.
  *
  * Re-exported from `@alexkroman1/aai-ui`. This file is not shipped and nothing
@@ -21,6 +21,7 @@
 export {
   createWorkflowApi,
   isTerminal,
+  type SubmitInputOf,
   UploadProgressBar,
   type UploadStatus,
   type UseDownloadUrlOptions,
@@ -43,6 +44,7 @@ export {
   WORKFLOW_STATUS_LABELS,
   type WorkflowApi,
   type WorkflowApiOptions,
+  type WorkflowInputOf,
   type WorkflowOutputOf,
   WorkflowProgress,
   type WorkflowRun,

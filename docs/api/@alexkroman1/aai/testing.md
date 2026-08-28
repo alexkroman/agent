@@ -22,7 +22,7 @@ order, roughly by what a spec reaches for first:
   name the model calls it by, the last of those being `runTool` with the agent
   bound; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
   own FILES (`tools/`, `system-prompt.md`) onto its `agent.ts` default export
-  the way the build does, and `withDiscoveredTools`, the tools half alone.
+  the way the build does — the one function a spec needs.
 - `_testing-tool-results.ts` — `ok` / `okPosition`, unwrapping what a gated
   tool answered; `_testing-schema.ts` — what a tool's or workflow's input
   schema accepts, without reaching through `~standard`.
@@ -1255,65 +1255,6 @@ expect(await run("add_item", { item: "apple" })).toEqual({ added: "apple" });
 const ctx = createToolContext();
 await run("add_item", { item: "apple" }, ctx);
 expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
-```
-
-***
-
-### withDiscoveredTools()
-
-```ts
-function withDiscoveredTools<D>(def: D, modules: ToolModules): D;
-```
-
-The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
-`tools/` directory declares.
-
-Pass `import.meta.glob("./tools/*.ts", { eager: true })` — see the module doc
-for why the glob belongs at the call site. Every rule the build applies applies
-here too, and each is an error naming the file: the name grammar, the
-default-export requirement, no nested files, and a name declared twice.
-
-A project with no `tools/` directory gets an empty glob and the def unchanged.
-
-Structural rather than `AgentDef`, the same as [toolOf](#toolof) and
-[runTool](#runtool) next door, and it hands back the def it was given — so a spec
-may pass the agent's default export, a bare `{ tools }` literal, or anything
-else carrying one, and keeps the type it passed in.
-
-#### Type Parameters
-
-##### D
-
-`D` *extends* [`ToolBearingAgent`](#toolbearingagent)
-
-#### Parameters
-
-##### def
-
-`D`
-
-##### modules
-
-[`ToolModules`](manifest.md#toolmodules)
-
-#### Returns
-
-`D`
-
-#### Example
-
-```ts no-check
-// `no-check`: import.meta.glob needs your project's vite/client types.
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
-import authored from "./agent.ts";
-
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
-
-test("adds an item", async () => {
-  expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
-    added: "apple",
-  });
-});
 ```
 
 ## Interfaces

@@ -745,18 +745,15 @@ export interface StateProjection<V = unknown> {
 }
 
 // @public
-export type StaticAgentParams = StaticAgentParamsBase & {
+export type StaticAgentParams = Omit<StaticAgentParamsCore, WorkflowAppOnlyField> & {
     [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
 };
 
 // @public
-type StaticAgentParamsBase = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
+type StaticAgentParamsCore = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
     page: "static";
     workflows: NonNullable<AgentDef["workflows"]>;
-};
-
-// @public
-type StaticAgentParamsCore = StaticAgentParamsBase & {
+} & {
     [K in WorkflowAppOnlyField]?: never;
 };
 

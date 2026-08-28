@@ -25,6 +25,28 @@ function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSche
 
 ***
 
+### assertPipelineTuning()
+
+```ts
+function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
+```
+
+#### Parameters
+
+##### mode
+
+[`SessionMode`](#sessionmode)
+
+##### tuning
+
+`PipelineTuning`
+
+#### Returns
+
+`void`
+
+***
+
 ### toAgentConfig()
 
 ```ts
@@ -69,6 +91,7 @@ function toAgentConfig(source: AgentConfigSource): {
   };
   sttPrompt?: string;
   systemPrompt: string;
+  temperature?: number;
   text?: true;
   toolChoice?:   | "auto"
      | "required"
@@ -139,6 +162,7 @@ the runtime.
   };
   sttPrompt?: string;
   systemPrompt: string;
+  temperature?: number;
   text?: true;
   toolChoice?:   | "auto"
      | "required"
@@ -302,6 +326,12 @@ optional sttPrompt?: string;
 
 ```ts
 systemPrompt: string;
+```
+
+##### temperature?
+
+```ts
+optional temperature?: number;
 ```
 
 ##### text?

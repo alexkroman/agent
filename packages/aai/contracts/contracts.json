@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 8,
-    "supported": [8],
+    "current": 9,
+    "supported": [9],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
@@ -9,7 +9,8 @@
       "4": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
       "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "6": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "7": "`agent({ system })` is gone; the field is `systemPrompt`. The alias existed to match the Vercel AI SDK's spelling and made `agent({ system, systemPrompt })` representable, which then needed a runtime throw to forbid — one concept with two names and a rule to police them. A stale `system` is reported by name, because it is in the stray-field renames map."
+      "7": "`agent({ system })` is gone; the field is `systemPrompt`. The alias existed to match the Vercel AI SDK's spelling and made `agent({ system, systemPrompt })` representable, which then needed a runtime throw to forbid — one concept with two names and a rule to police them. A stale `system` is reported by name, because it is in the stray-field renames map.",
+      "8": "Pre-release: `StaticAgentParams` is now `Omit<StaticAgentParamsCore, WorkflowAppOnlyField>` plus the misuse messages, rather than sharing a third unexported base with the arm — so this epoch would in fact still compile, the shape being identical. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty. The change exists so the docs build has one name to resolve instead of two: TypeDoc refuses an undocumented type on a public signature, and `StaticAgentParamsBase` was a second one."
     }
   },
   "builtins": {
