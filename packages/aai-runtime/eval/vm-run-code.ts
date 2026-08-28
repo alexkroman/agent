@@ -14,7 +14,15 @@
  * So four template evals — `code-interpreter`, `math-buddy`, `night-owl` and
  * `personal-finance` — each wrote the same eleven lines: a `runInNewContext`
  * with a capturing `console.log`, a one-second timeout, and `errorMessage` on
- * the throw. Byte-identical in all four, comment included. This is that, once.
+ * the throw. Byte-identical in all four, comment included. This is that, once,
+ * and all four now call it.
+ *
+ * **They did not, for a while, and the gap was invisible.** This module shipped
+ * with its argument written and the four copies left in place, so the dedupe
+ * existed and had no consumer — a state no gate can see: `knip` counts the
+ * barrel re-export as a use, and the template-coverage ratchet records an
+ * unexercised export without judging it. An extraction is finished when the
+ * copies are GONE, not when the replacement compiles.
  *
  * **The wrong version was easy to write two ways**, and both were in the copies:
  *
