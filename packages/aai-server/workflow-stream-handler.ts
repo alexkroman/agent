@@ -44,11 +44,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
-import { constantTimeEquals } from "./_timing-safe.ts";
 import type { AppContext } from "./context.ts";
-import { guestTokenFor } from "./guest-token.ts";
+import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
 import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
 import { qualifyStreamName } from "./workflow-stream-namespace.ts";
 
@@ -67,19 +65,6 @@ export const WORKFLOW_STREAM_ROUTE = "/workflow-stream";
  * which is exactly what that parameter exists for.
  */
 export const STREAM_READ_MAX_MS = 600_000;
-
-/** The bearer this slug's running guest would hold, compared in constant time. */
-async function assertGuestBearer(c: AppContext, slug: string): Promise<void> {
-  const supplied = c.req.header("authorization")?.replace(/^Bearer /, "");
-  if (supplied === undefined || supplied === "") {
-    throw new HTTPException(401, { message: "unauthorized" });
-  }
-  const version = await c.env.store.getAgentVersion(slug);
-  if (version === null) throw new HTTPException(503, { message: "agent unavailable" });
-  if (!constantTimeEquals(supplied, guestTokenFor(agentSandboxName(slug, version)))) {
-    throw new HTTPException(401, { message: "unauthorized" });
-  }
-}
 
 /**
  * `startIndex` off the query, or undefined.

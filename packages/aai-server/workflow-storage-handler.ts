@@ -42,12 +42,10 @@ import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { decodeTypedJson, encodeTypedJson } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
-import { constantTimeEquals } from "./_timing-safe.ts";
 import type { AppContext } from "./context.ts";
-import { guestTokenFor } from "./guest-token.ts";
+import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
 import { claimRun, ownsRun, runIdsFor } from "./workflow-run-owner.ts";
 import { decideScope, isStorageMethod, type StorageMethod } from "./workflow-storage-scope.ts";
 import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
@@ -99,19 +97,6 @@ function parseCall(raw: unknown): StorageCall {
   }
   if (!Array.isArray(raw.args)) throw new HTTPException(400, { message: "args must be an array" });
   return { method: raw.method, args: raw.args };
-}
-
-/** The bearer this slug's running guest would hold, compared in constant time. */
-async function assertGuestBearer(c: AppContext, slug: string): Promise<void> {
-  const supplied = c.req.header("authorization")?.replace(/^Bearer /, "");
-  if (supplied === undefined || supplied === "") {
-    throw new HTTPException(401, { message: "unauthorized" });
-  }
-  const version = await c.env.store.getAgentVersion(slug);
-  if (version === null) throw new HTTPException(503, { message: "agent unavailable" });
-  if (!constantTimeEquals(supplied, guestTokenFor(agentSandboxName(slug, version)))) {
-    throw new HTTPException(401, { message: "unauthorized" });
-  }
 }
 
 /**
