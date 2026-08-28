@@ -555,8 +555,9 @@ bundling rule as `/step` — import them there, never through the root barrel:
   recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
   `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
   the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
-  lives on `/step` with the other step primitives.) Use the `Classified` wrappers above: a provider
-  refusal — a container it will not read, a recording with no speech — arrives
+  lives on `/step` with the other step primitives.) Use the `Classified`
+  wrappers above: a provider refusal — a container it will not read, a
+  recording with no speech — arrives
   with `retryable: false`, and unclassified a step re-uploads the same bytes
   until its attempts run out.
 - **`@alexkroman1/aai/ffmpeg`** — `transcodeToWav(bytes, { sampleRate })`,
@@ -935,7 +936,7 @@ agent (`telephony` defaults to `true`, and to `false` for a `page: "static"`
 workflow app, which has no stages to put on a call). Point the carrier at it
 with a `carrier` query parameter naming who is dialling:
 
-```
+```text
 wss://<your-agent-url>/phone?carrier=twilio
 wss://<your-agent-url>/phone?carrier=telnyx
 ```
