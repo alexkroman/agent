@@ -306,6 +306,108 @@ describe("createQueueDeliverer", () => {
     });
   });
 
+  describe("routing one slug's concurrent deliveries", () => {
+    /**
+     * The store the DELIVERER reads, counted — the broker gets the plain one, so
+     * the count is exactly how many times the routing step ran.
+     */
+    function countingRoutes(store: ReturnType<typeof createTestStore>) {
+      let reads = 0;
+      return {
+        reads: () => reads,
+        store: {
+          getAgentVersion: async (slug: string) => {
+            reads += 1;
+            return await store.getAgentVersion(slug);
+          },
+        },
+      };
+    }
+
+    async function deliverConcurrently(count: number, hold: Promise<unknown>) {
+      const store = createTestStore();
+      const slots = createSlotCache();
+      await store.putAgent(agentRow(SLUG));
+      const version = (await store.getAgentVersion(SLUG)) ?? 1;
+      setSlot(slots, { slug: SLUG, sandbox: fakeSandbox(), version });
+      const counted = countingRoutes(store);
+      const guest = recordingGuest();
+      const deliver = createQueueDeliverer({
+        store: counted.store,
+        broker: { slots, store },
+        // Every delivery is HELD open, so all `count` of them really overlap —
+        // which is the window this collapses, and the only way to observe it.
+        fetchFn: async (input, init) => {
+          await hold;
+          return await guest.fetchFn(input, init);
+        },
+      });
+      const runs = Array.from({ length: count }, (_, i) =>
+        deliver(message({ id: `m${i}`, payload: envelope({ runId: `r${i}` }) })),
+      );
+      return { runs, counted, guest };
+    }
+
+    test("routes ONCE for messages that overlap, and still delivers every one", async () => {
+      // `claimDue` is `distinct on (slug, runId)`, so several messages for one
+      // agent in a pass is the ordinary case rather than an edge one — and on a
+      // cold slug the broker is the seconds-long part, so they overlap almost
+      // entirely.
+      const release = Promise.withResolvers<void>();
+      const { runs, counted, guest } = await deliverConcurrently(4, release.promise);
+      release.resolve();
+      await expect(Promise.all(runs)).resolves.toEqual([
+        { type: "completed" },
+        { type: "completed" },
+        { type: "completed" },
+        { type: "completed" },
+      ]);
+      expect(counted.reads()).toBe(1);
+      // The fan-out is UNCHANGED: sharing an answer to "where is this agent" is
+      // not sharing a delivery.
+      expect(guest.calls).toHaveLength(4);
+    });
+
+    test("retains nothing, so a later delivery routes again", async () => {
+      // A brokered origin is only good while that sandbox is up. A memo would
+      // hand the next pass an origin nothing is listening on.
+      const { deliver } = await resident();
+      await deliver(message({ id: "m1" }));
+      await deliver(message({ id: "m2" }));
+      const store = createTestStore();
+      const slots = createSlotCache();
+      await store.putAgent(agentRow(SLUG));
+      const version = (await store.getAgentVersion(SLUG)) ?? 1;
+      setSlot(slots, { slug: SLUG, sandbox: fakeSandbox(), version });
+      const counted = countingRoutes(store);
+      const sequential = createQueueDeliverer({
+        store: counted.store,
+        broker: { slots, store },
+        fetchFn: recordingGuest().fetchFn,
+      });
+      await sequential(message({ id: "m1" }));
+      await sequential(message({ id: "m2", payload: envelope({ runId: "r2" }) }));
+      expect(counted.reads()).toBe(2);
+    });
+
+    test("a refusal reaches every joined delivery, and each one fails", async () => {
+      const store = createTestStore();
+      await store.putAgent(agentRow(SLUG));
+      const deliver = createQueueDeliverer({
+        store,
+        broker: { slots: createSlotCache(), store, isDraining: () => true },
+        fetchFn: recordingGuest().fetchFn,
+      });
+      const results = await Promise.allSettled([
+        deliver(message({ id: "m1" })),
+        deliver(message({ id: "m2", payload: envelope({ runId: "r2" }) })),
+      ]);
+      // Each settles its OWN message: the sweep's per-message isolation is what
+      // turns these into two independent backoffs.
+      expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
+    });
+  });
+
   describe("a payload the enqueue side should not have written", () => {
     test.each([
       ["not an object", "just a string"],

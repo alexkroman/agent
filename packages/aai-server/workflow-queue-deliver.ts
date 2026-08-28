@@ -31,9 +31,27 @@
  * A body that is not JSON, or JSON without a finite `timeoutSeconds`, is
  * `completed` — the DevKit's own reader does the same (a bare `catch {}` around
  * the parse), and guessing otherwise would strand a healthy run.
+ *
+ * ## Concurrent deliveries to ONE slug broker once
+ *
+ * `claimDue` is `distinct on (slug, runId)`, so one pass routinely holds several
+ * messages for the same agent — one per active run — and the sweep fans them out
+ * `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` at a time. Every one of them asked the
+ * broker for the same slug independently, which is worst exactly where it costs
+ * most: on a COLD slug the broker is the seconds-long part of a delivery, so the
+ * concurrent deliveries overlap almost entirely and each pays a full routing
+ * round trip for an answer another is already fetching.
+ *
+ * {@link createSingleFlight} collapses that window and RETAINS NOTHING, which is
+ * what makes it the right primitive rather than a cache: a brokered origin is
+ * only good while that sandbox is up, so a delivery starting after the previous
+ * one settled must route again. Nothing about the fan-out changes — the same
+ * number of deliveries are in flight, they just share one answer to "where is
+ * this agent".
  */
 
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
+import { createSingleFlight } from "./_memo.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
 import { guestTokenFor } from "./guest-token.ts";
 import { createLogger } from "./logger.ts";
@@ -107,25 +125,36 @@ function parkedFor(text: string): number | undefined {
  */
 export function createQueueDeliverer(opts: QueueDelivererOptions): DeliverMessage {
   const fetchFn = opts.fetchFn ?? fetch;
+  // Per SLUG, and only for as long as a routing call is actually running — see
+  // the module doc. A rejection is shared too, which is correct: every joiner
+  // would have got the same refusal, and each still settles its own message.
+  const routing = createSingleFlight<{ guestOrigin: string; version: number }>();
   return async (message: QueuedMessage) => {
     const { slug } = message;
-    const brokered = await brokerSessionUrl(slug, opts.broker);
-    if (!brokered.ok) {
-      // Both cases THROW, and neither is silently dropped. A 404 means the slug
-      // has no agent — normally impossible, because the queue row's FK cascades
-      // on delete, so this is a delete/redeploy race — and a 503 means the boot
-      // is still in flight, which the next tick joins. The sweep's backoff
-      // covers both, and its abandonment budget bounds a slug that never comes
-      // back. A "drop it now" outcome would turn that race into a lost run.
-      throw new Error(`broker refused ${slug}: HTTP ${brokered.status}`);
-    }
-    const version = await opts.store.getAgentVersion(slug);
-    if (version === null) throw new Error(`no deployed version for ${slug}`);
+    const { guestOrigin, version } = await routing.run(slug, async () => {
+      const brokered = await brokerSessionUrl(slug, opts.broker);
+      if (!brokered.ok) {
+        // Both cases THROW, and neither is silently dropped. A 404 means the slug
+        // has no agent — normally impossible, because the queue row's FK cascades
+        // on delete, so this is a delete/redeploy race — and a 503 means the boot
+        // is still in flight, which the next tick joins. The sweep's backoff
+        // covers both, and its abandonment budget bounds a slug that never comes
+        // back. A "drop it now" outcome would turn that race into a lost run.
+        throw new Error(`broker refused ${slug}: HTTP ${brokered.status}`);
+      }
+      // INSIDE the flight with the broker, because the two answer one question
+      // together: the version is what the guest's bearer is derived from, and a
+      // version read beside a DIFFERENT broker's origin is a token for another
+      // sandbox.
+      const deployed = await opts.store.getAgentVersion(slug);
+      if (deployed === null) throw new Error(`no deployed version for ${slug}`);
+      return { guestOrigin: brokered.guestOrigin, version: deployed };
+    });
     // Unwraps the QUEUE's envelope, not the DevKit's message: `data` holds the
     // devalue bytes and nothing here parses them.
     const body = envelopeBody(parseEnvelope(message.payload));
 
-    const res = await fetchFn(guestHttpUrl(brokered.guestOrigin, GUEST_ROUTES.workflowQueue), {
+    const res = await fetchFn(guestHttpUrl(guestOrigin, GUEST_ROUTES.workflowQueue), {
       method: "POST",
       headers: {
         // The CALLER's headers go FIRST, so every platform header below WINS a
