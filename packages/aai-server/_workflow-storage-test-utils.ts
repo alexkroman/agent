@@ -71,23 +71,75 @@ export function fakeWorld(
 }
 
 /** `claimRun`'s insert: nothing inserted means the id is already owned. */
-export function claimReply(params: unknown[] | undefined): Record<string, unknown>[] {
+export function claimReply(
+  params: unknown[] | undefined,
+  owners: Record<string, string> = OWNERS,
+): Record<string, unknown>[] {
   const runId = String(params?.[0] ?? "");
-  return OWNERS[runId] === undefined ? [{ slug: String(params?.[1] ?? "") }] : [];
+  return owners[runId] === undefined ? [{ slug: String(params?.[1] ?? "") }] : [];
 }
 
 /** `ownerOf`: which agent owns the run named in the params. */
-export function ownerReply(params: unknown[] | undefined): Record<string, unknown>[] {
-  const owner = OWNERS[String(params?.[0] ?? "")];
+export function ownerReply(
+  params: unknown[] | undefined,
+  owners: Record<string, string> = OWNERS,
+): Record<string, unknown>[] {
+  const owner = owners[String(params?.[0] ?? "")];
   return owner === undefined ? [] : [{ slug: owner }];
 }
 
 /** `runIdsFor`: the runs of the agent named in the params. */
-export function runIdsReply(params: unknown[] | undefined): Record<string, unknown>[] {
+export function runIdsReply(
+  params: unknown[] | undefined,
+  owners: Record<string, string> = OWNERS,
+): Record<string, unknown>[] {
   const slug = String(params?.[0] ?? "");
-  return Object.entries(OWNERS)
+  return Object.entries(owners)
     .filter(([, owner]) => owner === slug)
     .map(([run_id]) => ({ run_id }));
+}
+
+/**
+ * The EGRESS check's query: which of these ids does this slug own?
+ *
+ * Its own responder, matched before `runIdsFor`'s, because the two statements
+ * share a prefix and differ only in their tail — and answering the egress check
+ * with `runIdsFor`'s reply would make it pass for the wrong reason, which for a
+ * check whose whole output is "nothing was foreign" is indistinguishable from
+ * working.
+ */
+export function ownedAmongReply(
+  params: unknown[] | undefined,
+  owners: Record<string, string> = OWNERS,
+): Record<string, unknown>[] {
+  const slug = String(params?.[0] ?? "");
+  const asked = Array.isArray(params?.[1]) ? params[1].map(String) : [];
+  return asked.filter((runId) => owners[runId] === slug).map((run_id) => ({ run_id }));
+}
+
+/**
+ * One ownership table as a `fakeAdminDbOver` responder.
+ *
+ * Pure dispatch over the four helpers above — every suite here needs the same
+ * statements answered against some map of run id to slug, and each spec writing
+ * its own inline is a duplicate that also trips Biome's cognitive-complexity cap.
+ * `owners` defaults to the shared {@link OWNERS}; a spec that needs a different
+ * table (an agent owning exactly one run, say) passes its own.
+ *
+ * ORDER MATTERS on the middle two: the egress check's statement and
+ * `runIdsFor`'s share a `select run_id from …` prefix, so the more specific one
+ * is matched first.
+ */
+export function ownershipResponder(
+  owners: Record<string, string> = OWNERS,
+): (sql: string, params?: unknown[]) => Record<string, unknown>[] {
+  const routes: [string, (p: unknown[] | undefined) => Record<string, unknown>[]][] = [
+    ["insert into aai_platform.workflow_run_owner", (p) => claimReply(p, owners)],
+    ["select slug from aai_platform.workflow_run_owner", (p) => ownerReply(p, owners)],
+    ["any($2::text[])", (p) => ownedAmongReply(p, owners)],
+    ["select run_id from aai_platform.workflow_run_owner", (p) => runIdsReply(p, owners)],
+  ];
+  return (sql, params) => routes.find(([needle]) => sql.includes(needle))?.[1](params) ?? [];
 }
 
 /**
@@ -101,14 +153,7 @@ export function runIdsReply(params: unknown[] | undefined): Record<string, unkno
  * against no filter at all.
  */
 export async function platform(world = fakeWorld()) {
-  const adminDb = fakeAdminDbOver((sql, params) => {
-    if (sql.includes("insert into aai_platform.workflow_run_owner")) return claimReply(params);
-    if (sql.includes("select slug from aai_platform.workflow_run_owner")) return ownerReply(params);
-    if (sql.includes("select run_id from aai_platform.workflow_run_owner")) {
-      return runIdsReply(params);
-    }
-    return [];
-  });
+  const adminDb = fakeAdminDbOver(ownershipResponder());
   const harness = await createTestOrchestrator({ adminDb, runStorage: world });
   await deploy(harness.fetch, MINE);
   await deploy(harness.fetch, THEIRS);
