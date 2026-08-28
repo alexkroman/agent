@@ -139,7 +139,10 @@ export function createUploadsHandler(
     const adminDb = opts.adminDb;
     // 501, like the enqueue, storage and session-state routes: there are no
     // platform upload records on this deployment and a retry will not make any.
-    // The guest reads this once and falls back to its local store, SAYING so.
+    // TERMINAL for the guest — `createUploadStore`'s `opts.platform` arm is taken
+    // once, so there is no local store to fall back TO, which is what
+    // `uploads-platform.ts` means by "the store above has no fallback". See
+    // `notConfigured`.
     if (!adminDb) throw notConfigured("platform upload records");
 
     const body: unknown = await c.req.json().catch(() => undefined);

@@ -107,8 +107,10 @@ export function createSessionStateHandler(
     const slug = await guestSlug(c);
     const adminDb = opts.adminDb;
     // 501, like the enqueue and storage routes: there is no platform session state
-    // on this deployment and a retry will not make one. A guest reading this falls
-    // back to memory and SAYS so, rather than retrying forever.
+    // on this deployment and a retry will not make one. TERMINAL for the guest —
+    // its backend is chosen once at construction, so this fails the call, which
+    // for session state is `hydrate`. See `notConfigured` for why that is
+    // described rather than fixed with a fallback.
     if (!adminDb) throw notConfigured("platform session state");
 
     const body: unknown = await c.req.json().catch(() => undefined);

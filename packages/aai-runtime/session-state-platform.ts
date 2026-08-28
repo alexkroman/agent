@@ -37,6 +37,16 @@
  * because resuming onto state that did not load would silently drop it), while
  * `flush` never rejects and logs instead. So every method here propagates, and the
  * caller keeps its own policy.
+ *
+ * **A 501 is not special, and that is the contract.** The platform answers it when
+ * the deployment has no platform database at all, and this backend does not
+ * downgrade to memory on reading one — `selectBackend` chose it ONCE, from whether
+ * the boot env named a platform, so there is nothing per request to re-decide. A
+ * 501 therefore fails `hydrate`, i.e. the session start. Silently becoming memory
+ * instead would report `durable: true` in the boot line for an agent that is not,
+ * which the module doc above calls the worse failure. `aai-server`'s
+ * `notConfigured` states the same contract from the other end, and names the one
+ * deployment shape where it bites.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";

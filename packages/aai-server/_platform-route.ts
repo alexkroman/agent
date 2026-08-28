@@ -71,8 +71,31 @@ export async function guestSlug(c: AppContext): Promise<string> {
  * 501 and not 503, which is the distinction the whole guest-side retry policy
  * rests on: 503 says "later", and there is no later here — no platform database
  * means no queue, no run storage, no session state and no upload records, on this
- * deployment, permanently. A guest reading 501 stops and says what it fell back
- * to; a guest reading 503 backs off forever.
+ * deployment, permanently.
+ *
+ * ## A 501 is TERMINAL for the caller. Nothing falls back
+ *
+ * Two of these handlers used to say the guest "falls back to memory / to its
+ * local store, SAYING so", and no such code was ever written on either side.
+ * Both guest-side backends are selected ONCE, at construction, from whether the
+ * boot env named a platform (`resolvePlatformQueue`) — `selectBackend` in
+ * `aai-runtime/runtime-session-state.ts` and the `opts.platform` arm of
+ * `createUploadStore` — so a status arriving per request cannot reach the
+ * decision, and `uploads-platform.ts` states the consequence correctly for its
+ * side: "the store above has no fallback". A 501 fails the call, and for session
+ * state that is `hydrate`, i.e. the session START.
+ *
+ * That is the right behaviour to describe rather than the wrong one to
+ * implement: a backend that silently downgraded would take an agent the boot log
+ * called `durable: true` and make it memory, which is the failure that guide
+ * calls worse than admitting memory up front. What it leaves open is one
+ * REACHABLE configuration — a memory-tier platform (no `SUPABASE_DB_URL`) in
+ * local dev, where `rememberPublicOrigin` supplies the origin that puts
+ * `AAI_PUBLIC_BASE_URL` in a guest's boot env — where every deployed agent picks
+ * these backends and every session start then fails on a 501. The fix is a
+ * deployment refusing to spawn a guest it cannot serve, or a boot env that omits
+ * the platform keys on that tier; it is not a fallback, and it is not this
+ * function's to make.
  *
  * @internal
  */
