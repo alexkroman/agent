@@ -6,6 +6,8 @@
 
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { WS_OPEN } from "@alexkroman1/aai/host-internal";
+import type { SessionWebSocket } from "@alexkroman1/aai-runtime";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { type FakeHostChannel, installFakeHostChannel } from "./_test-utils.ts";
 import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
@@ -464,7 +466,7 @@ describe("control-channel dispatch", () => {
   });
 
   test("malformed notifications are ignored", () => {
-    expect(() => handleNotification({ jsonrpc: "2.0" } as never)).not.toThrow();
+    expect(() => handleNotification({ jsonrpc: "2.0" })).not.toThrow();
   });
 });
 
@@ -509,19 +511,46 @@ describe("control-channel param validation", () => {
   });
 });
 
-/** A fake session socket: records closes, replays close events. */
-function fakeSocket() {
-  const listeners = new Map<string, () => void>();
+/**
+ * The one event shape {@link fakeSocket} replays. An INTERSECTION of what
+ * `SessionWebSocket`'s four `addEventListener` overloads hand their listeners,
+ * which is what lets one implementation satisfy all four — a per-overload
+ * implementation signature needs an `any` (see `_mock-ws.ts`), and narrowing
+ * the socket at the call site is the `as never` this replaced.
+ */
+type FrameEvent = { code?: number; reason?: string } & { data: unknown } & { message?: string };
+
+/**
+ * A fake session socket: records closes, replays close events.
+ *
+ * Structurally a {@link SessionWebSocket}, so the `startSession` calls below
+ * need no cast — which is also the assertion that `lazyRuntime` touches only
+ * the socket contract the runtime really promises it.
+ */
+function fakeSocket(): SessionWebSocket & {
+  closes: { code: number; reason: string }[];
+  emit(type: string): void;
+} {
+  const listeners = new Map<string, (event: FrameEvent) => void>();
+  const closes: { code: number; reason: string }[] = [];
+  const addEventListener: SessionWebSocket["addEventListener"] = (
+    type: string,
+    listener: (event: FrameEvent) => void,
+  ) => {
+    listeners.set(type, listener);
+  };
   return {
-    closes: [] as { code: number; reason: string }[],
-    close(code: number, reason: string) {
-      this.closes.push({ code, reason });
+    readyState: WS_OPEN,
+    closes,
+    close(code?: number, reason?: string) {
+      closes.push({ code: code ?? 0, reason: reason ?? "" });
     },
-    on(event: string, fn: () => void) {
-      listeners.set(event, fn);
+    send() {
+      // Nothing here reads what a session sends; the socket is a close recorder.
     },
-    emit(event: string) {
-      listeners.get(event)?.();
+    addEventListener,
+    emit(type: string) {
+      listeners.get(type)?.({ code: 1000, reason: "", data: null, message: "" });
     },
   };
 }
@@ -534,7 +563,7 @@ describe("lazyRuntime", () => {
     });
     const ws = fakeSocket();
 
-    runtime.startSession(ws as never, {} as never);
+    runtime.startSession(ws);
 
     expect(ws.closes).toEqual([{ code: 1013, reason: "draining" }]);
     expect(state.activeSessions).toBe(0);
@@ -545,7 +574,7 @@ describe("lazyRuntime", () => {
     const state = makeState();
     const ws = fakeSocket();
 
-    lazyRuntime(state).startSession(ws as never, {} as never);
+    lazyRuntime(state).startSession(ws);
 
     expect(ws.closes).toEqual([{ code: 1011, reason: "Agent not loaded" }]);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("session refused"));
@@ -568,8 +597,8 @@ describe("lazyRuntime", () => {
     const first = fakeSocket();
     const second = fakeSocket();
 
-    runtime.startSession(first as never, {} as never);
-    runtime.startSession(second as never, {} as never);
+    runtime.startSession(first);
+    runtime.startSession(second);
 
     expect(builds).toBe(1); // lazy AND memoized — one runtime for all sessions
     expect(started).toEqual([first, second]);

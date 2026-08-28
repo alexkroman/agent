@@ -16,7 +16,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { resolveDeployTarget } from "./_agent.ts";
 import { apiRequest, checkedResponse } from "./_api-client.ts";
 import { updateProjectConfig } from "./_config.ts";
@@ -132,7 +132,7 @@ export async function executePull(opts: {
     serverUrl,
     studioProject: opts.project,
     studioSourceHash: remote.sourceHash,
-    ...(remote.deployedSlug ? { slug: remote.deployedSlug } : {}),
+    ...omitUndefined({ slug: remote.deployedSlug }),
   });
 
   const count = Object.keys(remote.files).length;
@@ -225,7 +225,7 @@ async function pushProject(opts: {
     serverUrl,
     studioProject: project,
     studioSourceHash: result.sourceHash,
-    ...(slug ? { slug } : {}),
+    ...omitUndefined({ slug }),
   });
   return {
     project,

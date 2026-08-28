@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { resolveDeployTarget } from "./_agent.ts";
 import { buildAgentBundle, evalWorkerConfig } from "./_bundler.ts";
 import { updateProjectConfig } from "./_config.ts";
@@ -69,7 +70,7 @@ export async function executeDeploy(opts: {
     // user declared in .env deliberately targets a different account and
     // must win — matching the server's own defaultEnv merge semantics.
     env: uploadEnv,
-    ...(slug ? { slug } : {}),
+    ...omitUndefined({ slug }),
     ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
     apiKey,
   });

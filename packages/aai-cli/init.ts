@@ -2,6 +2,7 @@
 
 import path from "node:path";
 import { styleText } from "node:util";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
 import { execa } from "execa";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
@@ -177,7 +178,7 @@ async function tryPublish(
   // inside executePublish — pass the explicit flag through untouched.
   const { executePublish } = await import("./studio.ts");
   try {
-    const result = await executePublish({ cwd, ...(server ? { server } : {}) });
+    const result = await executePublish({ cwd, ...omitUndefined({ server }) });
     if (result.ok) {
       return { slug: result.data.slug, url: result.data.url, studioUrl: result.data.studioUrl };
     }

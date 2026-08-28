@@ -12,15 +12,13 @@
 // SCRIPTED model (its `stubReply`): the real session, the real slot, the real
 // tool, a fake reply. That proves the wiring and nothing about the choice.
 
-import { runInNewContext } from "node:vm";
 import { withSystemPrompt } from "@alexkroman1/aai/manifest";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { withDiscoveredTools } from "@alexkroman1/aai/testing";
-import { errorMessage } from "@alexkroman1/aai/utils";
 import {
+  createVmRunCode,
   customEventsIn,
   lastStateIn,
-  type RunCodeExecutor,
   toolResultIn,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -76,35 +74,6 @@ const pushedRecs = (events: readonly SessionEvent[]) =>
 
 /** The `wind_down` nudges in `events` — `customEventsIn` filters by name. */
 const nudges = (events: readonly SessionEvent[]) => customEventsIn(events, "wind_down");
-
-/**
- * A `run_code` executor, so the sleep-cycle case can assert the ANSWER.
- *
- * The builtin refuses without one — the Modal container is the security
- * boundary, and off-platform there is none — which left this template's
- * headline feature assertable as a CALL and never as a number. A `node:vm`
- * context with a capturing `console.log` is what a developer would reach for on
- * their own machine, and it is enough: the code under test is arithmetic the
- * model wrote, not a program.
- *
- * A template eval imports from `@alexkroman1/aai-runtime/eval` and
- * `/eval/vitest` and nowhere else — the ROOT barrel drags the host runtime's
- * node-reaching module graph into this project's TypeScript program, which is
- * three errors in runtime files no eval ever calls. `RunCodeExecutor` is
- * re-exported from `/eval` for exactly that reason.
- */
-const runCode: RunCodeExecutor = async (code) => {
-  const lines: string[] = [];
-  const log = (...args: unknown[]): void => {
-    lines.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
-  };
-  try {
-    runInNewContext(code, { console: { log } }, { timeout: 1000 });
-  } catch (err) {
-    return { error: errorMessage(err) };
-  }
-  return lines.join("\n");
-};
 
 /** Two-digit, for the clock arithmetic below. */
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -267,6 +236,7 @@ describeEval(
       },
     );
   },
-  // `runCode` is what makes the case above about an ANSWER rather than a call.
-  { runCode },
+  // `createVmRunCode()` is what makes the case above about an ANSWER rather than
+  // a call — see its doc for why the timeout and the swallowed throw matter.
+  { runCode: createVmRunCode() },
 );

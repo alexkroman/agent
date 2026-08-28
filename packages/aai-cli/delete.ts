@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { requireDeployedSlug, resolveDeployTarget } from "./_agent.ts";
 import { type ApiTestSeam, apiRequest, apiTestSeam, HINT_NOT_DEPLOYED } from "./_api-client.ts";
 import { writeProjectConfig } from "./_config.ts";
@@ -58,7 +59,7 @@ export async function executeDelete(opts: {
     // takes the first-push path and recreates the project. `serverUrl` is
     // kept deliberately: it is still where this directory should publish.
     await writeProjectConfig(cwd, { serverUrl });
-    return ok({ project, ...(config.slug ? { slug: config.slug } : {}) });
+    return ok({ project, ...omitUndefined({ slug: config.slug }) });
   }
 
   // `requireDeployedSlug(config)`, not a second `getServerInfo` — that call

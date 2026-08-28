@@ -404,8 +404,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       onSessionEnd: (sid, sink) => {
         userOnSessionEnd?.(sid, sink);
       },
-      ...omitUndefined({ sessionStartTimeoutMs }),
-      ...(resumeFrom ? { resumeFrom } : {}),
+      ...omitUndefined({ sessionStartTimeoutMs, resumeFrom }),
     });
   }
 

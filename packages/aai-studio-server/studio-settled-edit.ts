@@ -11,6 +11,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Context } from "hono";
 import { requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
@@ -60,7 +61,7 @@ export function previewOrigin(c: Context<StudioHonoEnv>): {
 } {
   return {
     serverUrl: requestPublicOrigin(c),
-    ...(c.var.userId && { userId: c.var.userId }),
+    ...omitUndefined({ userId: c.var.userId }),
   };
 }
 

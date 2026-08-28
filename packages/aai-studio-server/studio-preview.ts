@@ -30,6 +30,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createKeyedLock, TtlCache, withLock } from "aai-server/platform-barrel";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import {
@@ -355,7 +356,7 @@ export function createPreviewDeployer(
           scope,
           project,
           serverUrl: target.serverUrl,
-          ...(target.userId && { userId: target.userId }),
+          ...omitUndefined({ userId: target.userId }),
         })
         .then(triggerDrain)
         .catch(bestEffort("enqueue"));

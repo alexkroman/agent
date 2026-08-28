@@ -127,9 +127,9 @@ export function createStudioApp(opts: StudioAppOpts): {
     ...omitUndefined({
       rateLimiters: opts.studioRateLimiters,
       sessionRegistry: opts.studioSessionRegistry,
+      replicaId: opts.replicaId,
     }),
     previewQueue: opts.previewQueue,
-    ...(opts.replicaId && { replicaId: opts.replicaId }),
   });
   app.route("/studio", studioRoutes.routes);
   // Bare `/studio` and `/studio/` — send the browser to the studio page.

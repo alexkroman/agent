@@ -142,8 +142,7 @@ export function createStudioRoutes(options: StudioRouteOptions): {
       broker = (options.broker ?? createStudioSessionBroker)({
         workspaces: c.env.workspaces,
         chats: c.env.chats,
-        ...omitUndefined({ registry: options.sessionRegistry }),
-        ...(options.replicaId && { replicaId: options.replicaId }),
+        ...omitUndefined({ registry: options.sessionRegistry, replicaId: options.replicaId }),
         previewQueue: options.previewQueue,
         // Runs after any successful deploy, on both paths — see
         // studio-deploy-hooks.ts.
