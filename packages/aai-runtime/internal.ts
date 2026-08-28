@@ -71,6 +71,26 @@ export {
   UPLOAD_PART_BYTES,
   UPLOAD_TOKEN_RE,
 } from "@alexkroman1/aai/host-internal";
+// The two sizes an upload is measured in, plus the id grammar. Exported for the
+// PLATFORM, which owns the byte route a deployed guest brokers through: its window
+// cap and its key derivation have to be stated in the same units the SDK cuts in,
+// and a second copy of either number is a silent disagreement about where an object
+// begins. Not on an authoring subpath — an agent author never picks these.
+//
+// `publishStepEnv` is the publisher half of the step env — the READER (`stepEnv`)
+// is authoring API on `@alexkroman1/aai/utils`, and lives in `sdk/` because the
+// step bundle bundles it. Only a host calls this: the guest at bundle load,
+// `aai dev` on every rebuild.
+// The five paths the PLATFORM serves a guest on, plus the credential pair every
+// client here takes. Declared on this side because the dependency runs one way —
+// `aai-server` imports this package and never the reverse — so the five handlers
+// take their route from the table rather than restating the literal.
+export {
+  PLATFORM_ROUTES,
+  type PlatformEndpoint,
+  type PlatformRoute,
+  platformUrl,
+} from "./platform-endpoint.ts";
 // The console-backed `Logger` the CLI, the guest and the platform's own logger
 // all start from. The `Logger` TYPE — the thing a host implements — is
 // contracted, on the root barrel.
@@ -139,16 +159,6 @@ export {
   PRESENCE_LOCK_CLASS,
   PRESENCE_LOCK_OBJECT,
 } from "./workflow-lock-sweep.ts";
-// The two sizes an upload is measured in, plus the id grammar. Exported for the
-// PLATFORM, which owns the byte route a deployed guest brokers through: its window
-// cap and its key derivation have to be stated in the same units the SDK cuts in,
-// and a second copy of either number is a silent disagreement about where an object
-// begins. Not on an authoring subpath — an agent author never picks these.
-//
-// `publishStepEnv` is the publisher half of the step env — the READER (`stepEnv`)
-// is authoring API on `@alexkroman1/aai/utils`, and lives in `sdk/` because the
-// step bundle bundles it. Only a host calls this: the guest at bundle load,
-// `aai dev` on every rebuild.
 export {
   createPlatformQueueSend,
   enqueueToPlatform,

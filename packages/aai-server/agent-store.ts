@@ -79,20 +79,6 @@ export type AgentRows = {
    * goes through {@link put}, which bumps on its own.
    */
   touch(slug: string): Promise<boolean>;
-  /**
-   * Every deployed slug.
-   *
-   * The one read here that is not per-slug. Its caller was the durable-workflow
-   * wake sweep, which had to go the other way round — from a per-app database
-   * SCHEMA back to the agent it belonged to, `appDbIdentifier` being a one-way
-   * hash. The platform reads its own queue now, so nothing needs that direction.
-   *
-   * Deliberately unbounded and uncached: one short column read on a leader-elected
-   * sweep tick, and the ROW is what makes a wake legitimate — an agent deleted
-   * between ticks simply is not in the list, which is what keeps a sweep from
-   * resurrecting one.
-   */
-  slugs(): Promise<string[]>;
 };
 
 const TABLE = "aai_platform.agents";
@@ -117,7 +103,6 @@ const DELETE_SQL = `delete from ${TABLE} where slug = $1`;
 const TOUCH_SQL = `update ${TABLE} set version = version + 1, updated_at = now()
 where slug = $1 returning version`;
 const VERSION_SQL = `select version from ${TABLE} where slug = $1`;
-const SLUGS_SQL = `select slug from ${TABLE} order by slug`;
 
 /** Postgres-backed agent rows over the platform admin connection. */
 export function createPgAgentRows(sql: SqlExec): AgentRows {
@@ -171,15 +156,6 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
       const rows = await sql(TOUCH_SQL, [slug]);
       return rows.length > 0;
     },
-
-    async slugs() {
-      const rows = await sql(SLUGS_SQL);
-      // A non-string slug cannot exist (the column is text and the pattern is
-      // enforced at deploy), so this filters rather than throwing: unlike
-      // `get`, no ownership decision hangs off this read — the worst a dropped
-      // row costs is one agent's wake sweep.
-      return rows.map((row) => row.slug).filter((slug): slug is string => typeof slug === "string");
-    },
   };
 }
 
@@ -216,11 +192,6 @@ export function createMemoryAgentRows(): AgentRows {
       if (!row) return Promise.resolve(false);
       rows.set(slug, { ...row, version: row.version + 1 });
       return Promise.resolve(true);
-    },
-    slugs() {
-      // Sorted, like the Postgres half: a caller that caps how much it does per
-      // tick must not see a different set depending on which store it got.
-      return Promise.resolve([...rows.keys()].sort());
     },
   };
 }

@@ -33,6 +33,7 @@
  * the parse), and guessing otherwise would strand a healthy run.
  */
 
+import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
 import { guestTokenFor } from "./guest-token.ts";
 import { createLogger } from "./logger.ts";
@@ -87,16 +88,16 @@ export type QueueDelivererOptions = {
  * either of which would reach the store as an interval Postgres cannot compute.
  */
 function parkedFor(text: string): number | undefined {
-  try {
-    const seconds = (JSON.parse(text) as { timeoutSeconds?: unknown }).timeoutSeconds;
-    if (typeof seconds !== "number" || !Number.isFinite(seconds)) return undefined;
-    // A negative is not a sleep. The store clamps at zero anyway; a negative here
-    // more likely means the field means something other than what we think.
-    return seconds >= 0 ? seconds : undefined;
-  } catch {
-    // Not JSON. The overwhelmingly common 2xx body, and `completed`.
-    return undefined;
-  }
+  // `safeJsonParse` rather than a local try/catch: the overwhelmingly common 2xx
+  // body is not JSON at all, and `undefined` is unambiguous because JSON cannot
+  // encode it.
+  const body = safeJsonParse(text);
+  if (!isRecord(body)) return undefined;
+  const seconds = body.timeoutSeconds;
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return undefined;
+  // A negative is not a sleep. The store clamps at zero anyway; a negative here
+  // more likely means the field means something other than what we think.
+  return seconds >= 0 ? seconds : undefined;
 }
 
 /**

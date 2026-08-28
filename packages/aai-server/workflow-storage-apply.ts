@@ -24,18 +24,20 @@
  * a guess.
  */
 
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { HTTPException } from "hono/http-exception";
 import { createLogger } from "./logger.ts";
+import type { SqlExec } from "./secret-store.ts";
 import {
   claimNewRun,
   claimRun,
   ownsRun,
+  ownsRuns,
   RunClaimRefusedError,
   runIdsFor,
 } from "./workflow-run-owner.ts";
 import { assertEveryRunIsOurs } from "./workflow-storage-egress.ts";
-import { decideScope, type StorageMethod } from "./workflow-storage-scope.ts";
+import { decideScope, type StorageMethod, type StorageScope } from "./workflow-storage-scope.ts";
 import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
 import { qualifyStreamName, unqualifyStreamName } from "./workflow-stream-namespace.ts";
 
@@ -70,14 +72,22 @@ export type StorageCall = { method: StorageMethod; args: unknown[] };
  *
  * The members arrive typed `unknown` — `workflow-storage-world.ts` says why it does
  * not name the DevKit's `World` — so this narrows rather than casts through
- * `unknown`: a spread makes the keys strings, `isRecord` narrows the group, and the
- * `typeof` check is what licenses the one assertion. A double cast would have been
- * shorter and would stop reporting the moment their shape moves.
+ * `unknown`: `isRecord` narrows the handle and then the group, and the `typeof`
+ * check is what licenses the one assertion. A double cast would have been shorter
+ * and would stop reporting the moment their shape moves.
+ *
+ * The widening is an ASSIGNMENT to `unknown`, not the `{ ...storage }` this used to
+ * open with. The spread's job was to make the keys strings so `isRecord` had
+ * something to narrow — `isRecord` on a value already typed `PlatformWorldStorage`
+ * keeps that type and cannot be indexed by a string (TS7053) — and it allocated a
+ * fresh object on EVERY storage request, per `events.create` of every durable run
+ * plus once per entity of a `runs.list` page. Going through `unknown` narrows
+ * identically and allocates nothing.
  */
 function memberOf(storage: PlatformWorldStorage, method: StorageMethod): Callable {
   const [groupName, name] = method.split(".");
-  const bag: Record<string, unknown> = { ...storage };
-  const group = groupName === undefined ? undefined : bag[groupName];
+  const bag: unknown = storage;
+  const group = isRecord(bag) && groupName !== undefined ? bag[groupName] : undefined;
   const fn = isRecord(group) && name !== undefined ? group[name] : undefined;
   if (typeof fn !== "function") {
     // Their shape moved. A 501 rather than a 500: this deployment cannot serve the
@@ -105,7 +115,7 @@ function pageItems(value: unknown): unknown[] | undefined {
 
 export type ServeContext = {
   slug: string;
-  sql: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]>;
+  sql: SqlExec;
   storage: PlatformWorldStorage;
 };
 
@@ -151,42 +161,66 @@ export type ServeContext = {
  * shared-correlation lookup into a 502.
  */
 export async function serve(call: StorageCall, ctx: ServeContext): Promise<unknown> {
-  const reply = await dispatch(call, ctx);
-  await assertEveryRunIsOurs(reply, { slug: ctx.slug, sql: ctx.sql, method: call.method });
+  const decision = decideScope(call.method, call.args);
+  if (!decision.ok) throw new HTTPException(400, { message: decision.reason });
+
+  // The one check every run-keyed method shares, run before anything dispatches.
+  // 404, never 403 — see the module doc: a 403 would confirm that a run id exists.
+  if (
+    decision.requiredRunId !== undefined &&
+    !(await ownsRun(ctx.sql, decision.requiredRunId, ctx.slug))
+  ) {
+    throw new HTTPException(404, { message: "no such run" });
+  }
+
+  const reply = await dispatch(call, ctx, decision.scope);
+
+  // `known` is the id the gate above just PROVED ours, and passing it is what keeps
+  // the check off a second round trip for it — see `assertEveryRunIsOurs`. Deciding
+  // the scope here rather than inside `dispatch` is what makes that possible, and it
+  // splits the two jobs the right way besides: this function owns the POLICY (decide,
+  // gate, check the reply) and `dispatch` owns only the routing.
+  await assertEveryRunIsOurs(reply, {
+    slug: ctx.slug,
+    sql: ctx.sql,
+    method: call.method,
+    ...omitUndefined({ known: decision.requiredRunId }),
+  });
   return reply;
 }
 
 /** Route the call to the one function its scope names. */
-async function dispatch(call: StorageCall, ctx: ServeContext): Promise<unknown> {
-  const decision = decideScope(call.method, call.args);
-  if (!decision.ok) throw new HTTPException(400, { message: decision.reason });
-
-  // The one check every run-keyed method shares. 404, never 403 — see the module
-  // doc: a 403 would confirm that a run id exists.
-  if (decision.requiredRunId !== undefined) {
-    if (!(await ownsRun(ctx.sql, decision.requiredRunId, ctx.slug))) {
-      throw new HTTPException(404, { message: "no such run" });
-    }
-    // The two STREAM kinds also carry a required run id, and they have more to do
-    // once it checks out — the name has to be qualified, and a list of names
-    // unqualified. Everything else is a plain forward.
-    if (decision.scope.kind !== "stream" && decision.scope.kind !== "own-streams") {
+async function dispatch(
+  call: StorageCall,
+  ctx: ServeContext,
+  scope: StorageScope,
+): Promise<unknown> {
+  // ONE exhaustive switch, every kind NAMED. It used to be an `if` block that
+  // returned for some kinds and a switch whose `default` carried `create-run` — so
+  // answering "what happens for `steps.list`?" meant holding both structures at
+  // once, the kind list was enumerated twice, and, worst, a new `StorageScope` kind
+  // compiled clean and silently got `create-run`'s handler.
+  // `workflow-storage-scope.ts` argues that an unscoped method must be a COMPILE
+  // error rather than a call that quietly reaches the DevKit; a `default` carrying a
+  // real case is what let that argument stop at the enforcement step.
+  switch (scope.kind) {
+    // Ownership above was the whole check, so the call forwards unchanged.
+    case "run-arg":
+    case "run-param":
       return memberOf(ctx.storage, call.method)(...call.args);
-    }
-  }
-
-  switch (decision.scope.kind) {
     case "own-runs":
       return scopeOwnRuns(call, ctx);
     case "filter-runs":
       return scopeFilterRuns(call, ctx);
     case "resolve-hook":
       return scopeResolveHook(call, ctx);
+    // The two STREAM kinds carry a required run id AND have more to do once it
+    // checks out: the name has to be qualified, and a list of names unqualified.
     case "stream":
-      return scopeStream(call, ctx, decision.scope.nameIndex);
+      return scopeStream(call, ctx, scope.nameIndex);
     case "own-streams":
       return scopeOwnStreams(call, ctx);
-    default:
+    case "create-run":
       // A refused claim is answered 404, the same as every other way this surface
       // says "not yours". Letting `RunClaimRefusedError` reach the shared handler
       // would answer 5xx, which both reads as "retry me" for a decision no retry
@@ -202,6 +236,16 @@ async function dispatch(call: StorageCall, ctx: ServeContext): Promise<unknown> 
         }
         throw err;
       }
+    default: {
+      // Unreachable: the arms above exhaust `StorageScope["kind"]`, and this
+      // ASSIGNMENT is what keeps that true — a new kind stops compiling here rather
+      // than reaching the DevKit unscoped. Present because biome's
+      // `useDefaultSwitchClause` wants an arm; `decideScope` cannot produce another.
+      const unreachable: never = scope;
+      throw new HTTPException(500, {
+        message: `unhandled storage scope ${JSON.stringify(unreachable)}`,
+      });
+    }
   }
 }
 
@@ -306,11 +350,18 @@ async function scopeFilterRuns(call: StorageCall, ctx: ServeContext): Promise<un
     log.warn("listByCorrelationId reply is not a page", { slug: ctx.slug });
     throw new HTTPException(502, { message: "run storage returned an unreadable page" });
   }
-  const kept: unknown[] = [];
-  for (const item of items) {
+  // ONE query for the page, not one per item: `ownsRun` in this loop was a round
+  // trip per event on the reserved admin connection, and a correlation-id page is
+  // exactly where the item count is not one.
+  const runIds = items.flatMap((item) => {
     const runId = entityRunId(item);
-    if (runId !== undefined && (await ownsRun(ctx.sql, runId, ctx.slug))) kept.push(item);
-  }
+    return runId === undefined ? [] : [runId];
+  });
+  const ours = await ownsRuns(ctx.sql, runIds, ctx.slug);
+  const kept = items.filter((item) => {
+    const runId = entityRunId(item);
+    return runId !== undefined && ours.has(runId);
+  });
   // Nothing was dropped, so the page is wholly this agent's and its own `cursor`
   // and `hasMore` describe it correctly.
   if (kept.length === items.length) return reply;

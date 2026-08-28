@@ -23,3 +23,19 @@
  * @internal
  */
 export type WorldKind = "platform" | "postgres" | "local";
+
+/**
+ * The package name the DevKit resolves for the Postgres world.
+ *
+ * Here for the reason {@link WorldKind} is: BOTH halves of the split need it and
+ * neither should import the other. `workflow-world.ts` resolves it into
+ * `WORKFLOW_TARGET_WORLD`, and `workflow-world-migrate.ts` substring-matches it to
+ * decide whether `setupDatabase` has to run — and while it was declared twice, a
+ * rename or a fork applied to one copy reproduced exactly the failure that second
+ * function's own doc documents: a Postgres world loaded, classified `local`, never
+ * migrated, logging `harness starting local workflow world` and then failing a
+ * query.
+ *
+ * @internal
+ */
+export const POSTGRES_WORLD = "@workflow/world-postgres";

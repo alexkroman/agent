@@ -43,9 +43,10 @@
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import type { UploadPart } from "./_upload-blobs.ts";
+import { partsOf } from "./_upload-blobs.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
 import { UploadIdTakenError } from "./_upload-store.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
 
 /**
  * How long one record call may take.
@@ -58,14 +59,14 @@ import { UploadIdTakenError } from "./_upload-store.ts";
  */
 const UPLOAD_RECORD_TIMEOUT_MS = 20_000;
 
-export type PlatformUploadRecordsOptions = {
-  /** The agent's public base URL, slug included — `AAI_PUBLIC_BASE_URL`. */
-  base: string;
-  /** This sandbox's bearer — `AAI_GUEST_TOKEN`. */
-  token: string;
-  /** Test seam — production uses the global. */
-  fetch?: typeof globalThis.fetch | undefined;
-};
+/**
+ * What this backend needs to reach the platform.
+ *
+ * An alias of {@link PlatformEndpoint}: the four platform clients take exactly the
+ * same credential pair, which is why one `resolvePlatformQueue()` result is already
+ * handed to three of them. The name is kept because it is what the call sites read.
+ */
+export type PlatformUploadRecordsOptions = PlatformEndpoint;
 
 /** One call to the platform's upload-records route. */
 async function call(
@@ -75,7 +76,7 @@ async function call(
   body: Record<string, unknown> = {},
 ): Promise<unknown> {
   const fetchFn = opts.fetch ?? globalThis.fetch;
-  const url = `${opts.base.replace(/\/+$/, "")}/upload-records`;
+  const url = platformUrl(opts.base, PLATFORM_ROUTES.uploadRecords);
   const res = await pTimeout(
     fetchFn(url, {
       method: "POST",
@@ -102,20 +103,6 @@ async function call(
     throw new Error(`upload-records ${method} answered 200 without a result`);
   }
   return parsed.result;
-}
-
-/** The boundary list off the wire, dropping anything malformed. */
-function partsOf(value: unknown): UploadPart[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    if (!isRecord(entry) || typeof entry.at !== "number" || typeof entry.bytes !== "number") {
-      // Dropped rather than thrown on, matching the other backends: a corrupt entry
-      // would make an upload unreadable forever, where a MISSING window only makes
-      // the readable prefix shorter and a resumed transfer asks for it again.
-      return [];
-    }
-    return [{ at: entry.at, bytes: entry.bytes }];
-  });
 }
 
 /** One record off the wire, or `undefined` when the platform answered `null`. */

@@ -48,19 +48,15 @@ export const APP_DB_WORLD_POOL_MAX = 4;
 export const APP_DB_WORLD_WORKER_CONCURRENCY = APP_DB_WORLD_POOL_MAX - 1;
 
 /**
- * `@workflow/world-postgres`'s streamer `LISTEN`, which is a `pg.Client` of its
- * own rather than a pool member — so it is a term here and not inside the pool.
- */
-export const APP_DB_WORLD_LISTEN = 1;
-
-/**
- * The guest's ONE app-database handle: `ctx.db`, the session-state backend,
- * workflow uploads and the wake hint, all leased off it (`host/app-db.ts`).
+ * The guest's ONE handle on the database it was given (`aai-runtime/app-db.ts`).
  *
- * Three, so the budget keeps {@link APP_DB_BOOT_SPARE}. A pool that is full
- * QUEUES the next query (postgres.js), where a role at its limit REFUSES the
- * next connection — so a tight pool costs a few milliseconds of latency and a
- * loose one costs a failure, which is the whole reason this number is small.
+ * `ctx.db`, the session-state backend, workflow uploads and the wake hint all used
+ * to lease off it; all four are gone, and what still does is the workflow
+ * correlation-key index (`workflow-runtime.ts`) and the queue-lock sweep. Three
+ * remains the size because a pool that is full QUEUES the next query
+ * (postgres.js), where a role at its limit REFUSES the next connection — so a
+ * tight pool costs a few milliseconds of latency and a loose one costs a failure,
+ * which is the whole reason this number is small.
  */
 export const APP_DB_POOL_MAX = 3;
 

@@ -114,14 +114,18 @@ export async function commitSlots(
  * so the append-only property is structural and `discard` can do what it says.
  */
 export async function discardSession(sql: SqlExec, slug: string, sessionId: string): Promise<void> {
-  await sql("delete from aai_platform.session_slots where slug = $1 and session_id = $2", [
-    slug,
-    sessionId,
-  ]);
-  await sql("delete from aai_platform.session_events where slug = $1 and session_id = $2", [
-    slug,
-    sessionId,
-  ]);
+  // ONE statement, not two awaited in series. The two deletes are independent —
+  // no ordering requirement either way — and this runs on a connection reserved
+  // out of a pool of `ADMIN_POOL_MAX`, so the second round trip was holding that
+  // reservation for nothing. A CTE also makes the pair atomic, which two
+  // statements on an unwrapped connection were not.
+  await sql(
+    `with slots as (
+       delete from aai_platform.session_slots where slug = $1 and session_id = $2
+     )
+     delete from aai_platform.session_events where slug = $1 and session_id = $2`,
+    [slug, sessionId],
+  );
 }
 
 /**

@@ -362,19 +362,6 @@ export function agentRowsConformance(make: () => AgentRows): void {
   test("delete of an absent slug is idempotent", async () => {
     await expect(make().delete(uid())).resolves.toBeUndefined();
   });
-
-  test("slugs lists what was put, and drops what was deleted", async () => {
-    const rows = make();
-    const [a, b] = [uid(), uid()];
-    await rows.put({ slug: a, credential_hashes: [], worker_hash: "w", client_files: {} });
-    await rows.put({ slug: b, credential_hashes: [], worker_hash: "w", client_files: {} });
-    // A SUPERSET assertion, because the stack arm shares a database with
-    // whatever else is in it — the contract is "mine are listed", not "only
-    // mine are".
-    expect(await rows.slugs()).toEqual(expect.arrayContaining([a, b]));
-    await rows.delete(a);
-    expect(await rows.slugs()).not.toContain(a);
-  });
 }
 
 // ── SecretStore ─────────────────────────────────────────────────────────────

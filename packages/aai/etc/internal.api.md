@@ -22,9 +22,6 @@ export const APP_DB_POOL_MAX = 3;
 export const APP_DB_PRESENCE_LOCK = 1;
 
 // @public
-export const APP_DB_WORLD_LISTEN = 1;
-
-// @public
 export const APP_DB_WORLD_POOL_MAX = 4;
 
 // @public

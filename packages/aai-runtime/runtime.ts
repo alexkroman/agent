@@ -205,7 +205,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       llm: effectiveProviders.llm,
       env,
       providerEnv,
-      resolvedDb,
       workflows,
       logger,
       emitters,

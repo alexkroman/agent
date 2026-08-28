@@ -152,6 +152,34 @@ export async function ownsRun(sql: SqlExec, runId: string, slug: string): Promis
 }
 
 /**
+ * Which of `runIds` does `slug` own?
+ *
+ * The BATCH form of {@link ownsRun}, and the one every caller with more than one
+ * id in hand should reach for: one round trip however many ids, against a
+ * connection reserved out of a pool of `ADMIN_POOL_MAX`. Two callers had grown
+ * their own — the egress check wrote this `select` inline, which put a second
+ * owner on this table's schema, and `scopeFilterRuns` awaited `ownsRun` once per
+ * item of a page, which is a round trip per event.
+ *
+ * Returns the subset that is ours, so a caller filters (`has`) or detects a
+ * breach (a missing id) off the same answer. An unowned run is simply absent, for
+ * the reason {@link ownsRun} answers false rather than throwing.
+ */
+export async function ownsRuns(
+  sql: SqlExec,
+  runIds: readonly string[],
+  slug: string,
+): Promise<Set<string>> {
+  if (runIds.length === 0) return new Set();
+  const rows = await sql(
+    `select run_id from aai_platform.workflow_run_owner
+      where slug = $1 and run_id = any($2::text[])`,
+    [slug, [...runIds]],
+  );
+  return new Set(rows.flatMap((r) => (typeof r.run_id === "string" ? [r.run_id] : [])));
+}
+
+/**
  * This agent's run ids, newest first.
  *
  * What `runs.list` is scoped to. The LIMIT is the caller's, and it is required

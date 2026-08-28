@@ -3,9 +3,9 @@
  * What DELIVERS the durable-workflow queue: claim due messages, hand each to the
  * tenant's guest, ack or back off.
  *
- * Split from `workflow-queue-store.ts` along the seam `workflow-wake.ts` and
- * `_workflow-wake-read.ts` already use: the store decides which messages are due
- * and moves them between states, this decides what to DO about one. Read the
+ * Split from `workflow-queue-store.ts` along the seam the retired wake sweep drew
+ * first: the store decides which messages are due and moves them between states,
+ * this decides what to DO about one. Read the
  * store first — its module doc carries why delivery is out of band at all, and
  * the three queue designs that had to fail before this shape was clear.
  *
@@ -33,11 +33,11 @@
  * delivery eventual, and the listener is a latency optimization on the common
  * path. Anything that treats the notification as the record of work is wrong.
  *
- * ## NO LEADER LOCK, unlike the wake sweep
+ * ## NO LEADER LOCK, unlike the wake sweep this replaced
  *
- * `workflow-wake.ts` elects one replica per tick because its work is idempotent
- * but duplicated — every replica would read every app's hint. Here the claim
- * itself is the coordination: `claimDue`'s UPDATE re-checks the unclaimed
+ * That sweep elected one replica per tick because its work was idempotent but
+ * duplicated — every replica would read every app's hint. Here the claim itself is
+ * the coordination: `claimDue`'s UPDATE re-checks the unclaimed
  * predicate under the row lock, so N replicas sweeping at once take DISJOINT sets
  * (asserted in `workflow-queue-store.scenario.test.ts`, where removing that
  * re-check hands one message to eight sweeps at once). So more replicas is more
@@ -47,6 +47,7 @@
  * @module
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { createIntervalSweep } from "./_interval-sweep.ts";
 import { mapConcurrent } from "./_pool.ts";
@@ -231,7 +232,7 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
           id: message.id,
           slug: message.slug,
           attempt: message.attempt,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         });
         return await settle((sql) => fail(sql, message.id, message.attempt));
       }
@@ -312,7 +313,7 @@ export function startWorkflowQueueSweep(
       void runner.trigger().catch((error: unknown) => {
         // The interval's own pass reports through `runQueuePass`; a trigger from
         // this path has no other caller, so a rejection here would be unhandled.
-        log.warn("notified queue pass failed", { error: String(error) });
+        log.warn("notified queue pass failed", { error: errorMessage(error) });
       });
     })
     .then((unlisten) => {
@@ -332,7 +333,7 @@ export function startWorkflowQueueSweep(
       log.warn(
         `queue NOTIFY subscription failed — delivery falls back to the ${intervalMs}ms ` +
           "poll alone, which is slower per step but loses nothing",
-        { error: String(error) },
+        { error: errorMessage(error) },
       );
     });
 

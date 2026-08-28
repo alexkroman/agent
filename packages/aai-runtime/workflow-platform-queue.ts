@@ -40,6 +40,7 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
+import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
 import { encodeTypedJson } from "./workflow-typed-json.ts";
 
 /**
@@ -64,33 +65,14 @@ type EnqueueBody = {
   delaySeconds?: number | undefined;
 };
 
-export type PlatformQueueOptions = {
-  /**
-   * The agent's public base URL, slug included — `AAI_PUBLIC_BASE_URL`.
-   *
-   * The same value `_upload-blobs-brokered.ts` takes, and for the same reason: the
-   * guest does not COMPOSE this URL, so it cannot name another app's slug even in
-   * principle. The platform derives the tenant from the slug in the path and
-   * verifies this sandbox's bearer against it.
-   */
-  base: string;
-  /**
-   * This sandbox's bearer — `AAI_GUEST_TOKEN`.
-   *
-   * Already in the guest's environment, because it is what the guest verifies
-   * INBOUND platform requests with. Presented outbound it proves the reverse, and
-   * it is bound to one sandbox name, so it authorizes exactly one slug. See
-   * `aai-server/workflow-enqueue-handler.ts`.
-   */
-  token: string;
-  /** Test seam — production uses the global. */
-  fetch?: typeof globalThis.fetch | undefined;
-};
-
-/** `<base>/workflow-enqueue`, tolerating a trailing slash on the base. */
-function enqueueUrl(base: string): string {
-  return `${base.replace(/\/+$/, "")}/workflow-enqueue`;
-}
+/**
+ * What this client needs to reach the platform.
+ *
+ * An alias of {@link PlatformEndpoint}: the four platform clients take exactly the
+ * same credential pair, which is why one `resolvePlatformQueue()` result is already
+ * handed to three of them. The name is kept because it is what the call sites read.
+ */
+export type PlatformQueueOptions = PlatformEndpoint;
 
 /**
  * The run id a queue payload belongs to.
@@ -127,8 +109,11 @@ export async function enqueueToPlatform(
   body: EnqueueBody,
 ): Promise<string> {
   const fetchFn = opts.fetch ?? globalThis.fetch;
+  // Built ONCE. It used to be computed twice per enqueue, the second time only to
+  // interpolate into a timeout message the ~always-taken success path discards.
+  const url = platformUrl(opts.base, PLATFORM_ROUTES.workflowEnqueue);
   const res = await pTimeout(
-    fetchFn(enqueueUrl(opts.base), {
+    fetchFn(url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${opts.token}`,
@@ -136,10 +121,7 @@ export async function enqueueToPlatform(
       },
       body: JSON.stringify(body),
     }),
-    {
-      milliseconds: ENQUEUE_TIMEOUT_MS,
-      message: `enqueue to ${enqueueUrl(opts.base)} timed out`,
-    },
+    { milliseconds: ENQUEUE_TIMEOUT_MS, message: `enqueue to ${url} timed out` },
   );
   if (!res.ok) {
     // The body is in the error: the platform answers 400 naming the field it

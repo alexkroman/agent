@@ -16,7 +16,6 @@
 import { createPlatformStorage } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import {
-  bearerFor,
   callStorage,
   deploy,
   fakeWorld,
@@ -24,7 +23,7 @@ import {
   platform,
   THEIRS,
 } from "./_workflow-storage-test-utils.ts";
-import { createTestOrchestrator } from "./test-utils.ts";
+import { bearerFor, createTestOrchestrator } from "./test-utils.ts";
 
 describe("POST /:slug/workflow-storage", () => {
   describe("authorization", () => {

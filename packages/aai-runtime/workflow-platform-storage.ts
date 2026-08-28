@@ -37,6 +37,7 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
+import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
 import { decodeTypedJson, encodeTypedJson } from "./workflow-typed-json.ts";
 
 /**
@@ -52,24 +53,14 @@ const STORAGE_TIMEOUT_MS = 15_000;
 /** One Storage method, as this client presents it. */
 type StorageFn = (...args: unknown[]) => Promise<unknown>;
 
-export type PlatformStorageOptions = {
-  /**
-   * The agent's public base URL, slug included — `AAI_PUBLIC_BASE_URL`.
-   *
-   * The guest does not COMPOSE this, so it cannot name another app's prefix even in
-   * principle; the platform derives the tenant from the slug in the path.
-   */
-  base: string;
-  /** This sandbox's bearer — `AAI_GUEST_TOKEN`. */
-  token: string;
-  /** Test seam — production uses the global. */
-  fetch?: typeof globalThis.fetch | undefined;
-};
-
-/** `<base>/workflow-storage`, tolerating a trailing slash on the base. */
-function storageUrl(base: string): string {
-  return `${base.replace(/\/+$/, "")}/workflow-storage`;
-}
+/**
+ * What this client needs to reach the platform.
+ *
+ * An alias of {@link PlatformEndpoint}: the four platform clients take exactly the
+ * same credential pair, which is why one `resolvePlatformQueue()` result is already
+ * handed to three of them. The name is kept because it is what the call sites read.
+ */
+export type PlatformStorageOptions = PlatformEndpoint;
 
 /**
  * Make one storage call.
@@ -82,7 +73,7 @@ export async function callPlatformStorage(
   args: readonly unknown[],
 ): Promise<unknown> {
   const fetchFn = opts.fetch ?? globalThis.fetch;
-  const url = storageUrl(opts.base);
+  const url = platformUrl(opts.base, PLATFORM_ROUTES.workflowStorage);
   const res = await pTimeout(
     fetchFn(url, {
       method: "POST",
@@ -213,7 +204,7 @@ export function createPlatformStreamReader(
 ): (name: string, startIndex?: number) => Promise<ReadableStream<Uint8Array>> {
   return async (name: string, startIndex?: number) => {
     const fetchFn = opts.fetch ?? globalThis.fetch;
-    const url = new URL(`${opts.base.replace(/\/+$/, "")}/workflow-stream`);
+    const url = new URL(platformUrl(opts.base, PLATFORM_ROUTES.workflowStream));
     url.searchParams.set("name", name);
     // A NEGATIVE index is legal and load-bearing: their doc says it starts that many
     // chunks before the current end, which is how a reconnecting reader asks for

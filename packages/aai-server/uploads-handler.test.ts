@@ -16,9 +16,12 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-import { guestTokenFor } from "./guest-token.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
-import { createTestOrchestrator, fakeAdminDbOver, type TestFetch } from "./test-utils.ts";
+import {
+  bearerFor,
+  createTestOrchestrator,
+  fakeAdminDbOver,
+  type TestFetch,
+} from "./test-utils.ts";
 
 const MINE = "mine-upl";
 const THEIRS = "theirs-upl";
@@ -74,14 +77,6 @@ async function deploy(fetch: TestFetch, slug: string): Promise<void> {
     }),
   });
   if (!res.ok) throw new Error(`deploy ${slug} answered ${res.status}`);
-}
-
-async function bearerFor(
-  store: { getAgentVersion(slug: string): Promise<number | null> },
-  slug: string,
-): Promise<string> {
-  const version = (await store.getAgentVersion(slug)) ?? 1;
-  return guestTokenFor(agentSandboxName(slug, version));
 }
 
 function callRoute(

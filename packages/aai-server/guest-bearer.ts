@@ -27,12 +27,16 @@
  *
  * The alternative — a caller extracting the header and passing a string — puts the
  * "did you remember to strip `Bearer `" step at five call sites. The whole point is
- * that a route asks one question and gets the whole policy.
+ * that a route asks one question and gets the whole policy. The strip itself is
+ * `parseBearer`, shared with `middleware.ts`: it answers `""` for a header that is
+ * not a Bearer credential, where a `.replace(/^Bearer /, "")` would hand the raw
+ * header on as if it were the token.
  *
  * @internal
  */
 
 import { HTTPException } from "hono/http-exception";
+import { parseBearer } from "./_bearer.ts";
 import { constantTimeEquals } from "./_timing-safe.ts";
 import type { AppContext } from "./context.ts";
 import { guestTokenFor } from "./guest-token.ts";
@@ -44,8 +48,8 @@ import { agentSandboxName } from "./sandbox-directory.ts";
  * @internal
  */
 export async function assertGuestBearer(c: AppContext, slug: string): Promise<void> {
-  const supplied = c.req.header("authorization")?.replace(/^Bearer /, "");
-  if (supplied === undefined || supplied === "") {
+  const supplied = parseBearer(c.req.header("authorization"));
+  if (supplied === "") {
     throw new HTTPException(401, { message: "unauthorized" });
   }
   const version = await c.env.store.getAgentVersion(slug);

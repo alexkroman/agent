@@ -20,10 +20,10 @@
 // accepted rather than overlooked: someone who opens Settings to ask what their
 // workflows are doing is asking a question only the agent can answer, and the
 // alternative — a card that shows nothing until you press a button — answers it
-// less often than it costs. The refresh is manual for the same reason it is on
-// the Database card: the numbers are as old as the last fetch, which is stale
-// exactly when they matter, and a poll would hold a container open for a pane
-// nobody is watching.
+// less often than it costs. The refresh is manual, and the reason is the one the
+// deleted Database card made first: the numbers are as old as the last fetch,
+// which is stale exactly when they matter, and a poll would hold a container open
+// for a pane nobody is watching.
 
 import {
   createWorkflowApiClient,

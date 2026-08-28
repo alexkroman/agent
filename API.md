@@ -2723,9 +2723,6 @@ export const APP_DB_POOL_MAX = 3;
 export const APP_DB_PRESENCE_LOCK = 1;
 
 // @public
-export const APP_DB_WORLD_LISTEN = 1;
-
-// @public
 export const APP_DB_WORLD_POOL_MAX = 4;
 
 // @public
@@ -8212,26 +8209,36 @@ type LogLevel = "info" | "warn" | "error" | "debug";
 // @internal
 export function payloadRunId(message: unknown): string | undefined;
 
-// @public (undocumented)
-export type PlatformQueueOptions = {
+// @internal
+export const PLATFORM_ROUTES: {
+    readonly sessionState: "/session-state";
+    readonly uploadRecords: "/upload-records";
+    readonly workflowStorage: "/workflow-storage";
+    readonly workflowStream: "/workflow-stream";
+    readonly workflowEnqueue: "/workflow-enqueue";
+};
+
+// @internal
+export type PlatformEndpoint = {
     base: string;
     token: string;
     fetch?: typeof globalThis.fetch | undefined;
 };
 
-// @public (undocumented)
-export type PlatformStorageOptions = {
-    base: string;
-    token: string;
-    fetch?: typeof globalThis.fetch | undefined;
-};
+// @public
+export type PlatformQueueOptions = PlatformEndpoint;
 
-// @public (undocumented)
-type PlatformUploadRecordsOptions = {
-    base: string;
-    token: string;
-    fetch?: typeof globalThis.fetch | undefined;
-};
+// @public
+export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
+
+// @public
+export type PlatformStorageOptions = PlatformEndpoint;
+
+// @public
+type PlatformUploadRecordsOptions = PlatformEndpoint;
+
+// @internal
+export function platformUrl(base: string, route: PlatformRoute): string;
 
 // @internal
 export type PoolPresence = {

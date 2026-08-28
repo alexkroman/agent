@@ -33,6 +33,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
+import { isOneOf } from "./_body-fields.ts";
 
 /**
  * Every Storage method the platform serves.
@@ -164,7 +165,7 @@ export const STORAGE_SCOPES: Record<StorageMethod, StorageScope> = {
 
 /** Is `value` one of the methods this platform serves? */
 export function isStorageMethod(value: unknown): value is StorageMethod {
-  return typeof value === "string" && (STORAGE_METHODS as readonly string[]).includes(value);
+  return isOneOf(STORAGE_METHODS, value);
 }
 
 /**

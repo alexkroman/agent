@@ -21,7 +21,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
+import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
+import { isOneOf, requiredInt, requiredString } from "./_body-fields.ts";
 import type { AppContext } from "./context.ts";
 import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
@@ -35,11 +37,20 @@ import {
   type PlatformSessionEvent,
   readEvents,
 } from "./platform-session-state.ts";
+import type { SqlExec } from "./secret-store.ts";
 
 const log = createLogger("session.state");
 
-/** This route's own path under `/:slug`. */
-export const SESSION_STATE_ROUTE = "/session-state";
+/**
+ * This route's own path under `/:slug`.
+ *
+ * From `PLATFORM_ROUTES`, not a literal: the guest client that CALLS this route
+ * (`aai-runtime/platform-endpoint.ts`) is the other half of one wire, and a
+ * literal on each side is a rename away from a 404 the runtime can only report as
+ * `answered HTTP 404`. `aai-server` already imports that package's `/internal`;
+ * the dependency does not run the other way, which is why the table lives there.
+ */
+export const SESSION_STATE_ROUTE = PLATFORM_ROUTES.sessionState;
 
 /**
  * Cap on a request body.
@@ -57,25 +68,7 @@ const METHODS = ["load", "commit", "discard", "appendEvents", "readEvents", "cou
 type Method = (typeof METHODS)[number];
 
 function isMethod(value: unknown): value is Method {
-  return typeof value === "string" && (METHODS as readonly string[]).includes(value);
-}
-
-/** A required non-empty string field. */
-function requiredString(body: Record<string, unknown>, key: string): string {
-  const value = body[key];
-  if (typeof value !== "string" || value === "") {
-    throw new HTTPException(400, { message: `${key} is required` });
-  }
-  return value;
-}
-
-/** A required finite integer field. */
-function requiredInt(body: Record<string, unknown>, key: string): number {
-  const value = body[key];
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new HTTPException(400, { message: `${key} must be an integer` });
-  }
-  return value;
+  return isOneOf(METHODS, value);
 }
 
 /** `{ slot: value }`, every value a string. */
@@ -152,7 +145,7 @@ export function createSessionStateHandler(
 }
 
 type Ctx = {
-  sql: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]>;
+  sql: SqlExec;
   slug: string;
   sessionId: string;
 };
@@ -180,7 +173,17 @@ async function serve(method: Method, ctx: Ctx, body: Record<string, unknown>): P
         requiredInt(body, "startIndex"),
         requiredInt(body, "limit"),
       );
-    default:
+    case "countEvents":
       return nextEventIndex(sql, slug, sessionId);
+    default: {
+      // Unreachable: the six arms above exhaust `Method`, and this ASSIGNMENT is
+      // what keeps that true. `countEvents` used to live in this arm, which meant a
+      // seventh `METHODS` entry compiled clean and silently answered with the event
+      // count; now it stops compiling here. The arm exists because biome's
+      // `useDefaultSwitchClause` wants one, not because a call can reach it —
+      // `isMethod` has already refused anything else with a 400.
+      const unreachable: never = method;
+      throw new HTTPException(400, { message: `unknown method ${String(unreachable)}` });
+    }
   }
 }

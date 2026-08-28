@@ -41,6 +41,7 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
+import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
 import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
 
 /**
@@ -52,14 +53,14 @@ import type { SessionStateBackend, StoredSessionEvent } from "./session-state-st
  */
 const SESSION_STATE_TIMEOUT_MS = 10_000;
 
-export type PlatformSessionStateOptions = {
-  /** The agent's public base URL, slug included — `AAI_PUBLIC_BASE_URL`. */
-  base: string;
-  /** This sandbox's bearer — `AAI_GUEST_TOKEN`. */
-  token: string;
-  /** Test seam — production uses the global. */
-  fetch?: typeof globalThis.fetch | undefined;
-};
+/**
+ * What this backend needs to reach the platform.
+ *
+ * An alias of {@link PlatformEndpoint}: the four platform clients take exactly the
+ * same credential pair, which is why one `resolvePlatformQueue()` result is already
+ * handed to three of them. The name is kept because it is what the call sites read.
+ */
+export type PlatformSessionStateOptions = PlatformEndpoint;
 
 /** One call to the platform's session-state route. */
 async function call(
@@ -68,7 +69,7 @@ async function call(
   body: Record<string, unknown>,
 ): Promise<unknown> {
   const fetchFn = opts.fetch ?? globalThis.fetch;
-  const url = `${opts.base.replace(/\/+$/, "")}/session-state`;
+  const url = platformUrl(opts.base, PLATFORM_ROUTES.sessionState);
   const res = await pTimeout(
     fetchFn(url, {
       method: "POST",

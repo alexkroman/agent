@@ -73,7 +73,6 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = c
     llm: undefined,
     env: {},
     providerEnv: {},
-    resolvedDb: undefined,
     workflows: undefined,
     logger,
     emitters,

@@ -15,10 +15,10 @@
  * Three policies are available when a pass is still running as its next tick
  * fires, and they are not interchangeable:
  *
- * - **drop the tick** — what both sweeps want, and what this implements. Both
- *   passes re-read their whole candidate set from the database, so a tick
- *   skipped while the previous pass is still going loses nothing: the next one
- *   sees everything the skipped one would have.
+ * - **drop the tick** — what its callers want, and what this implements. A pass
+ *   re-reads its whole candidate set from the database, so a tick skipped while
+ *   the previous pass is still going loses nothing: the next one sees everything
+ *   the skipped one would have.
  * - **coalesce into one trailing run** — `createCoalescingRunner`
  *   (`@alexkroman1/aai/host-internal`), which is in this tree and is the WRONG
  *   primitive here. It exists for work triggered by an EVENT, where "a run was
@@ -26,9 +26,9 @@
  *   tick is not an event: nothing is waiting on this pass, so a trailing run
  *   started the instant an overrunning pass settles is just the queueing below
  *   with one slot.
- * - **queue** — nobody wants this. Both passes hold a reserved admin connection
- *   and a transaction-scoped advisory lock, so backing them up against each
- *   other is how one slow pass becomes a connection pile-up.
+ * - **queue** — nobody wants this. A pass holds a reserved admin connection for
+ *   its duration, so backing them up against each other is how one slow pass
+ *   becomes a connection pile-up.
  *
  * ## `unref`, always
  *
@@ -40,16 +40,17 @@
  *
  * ## What it deliberately does NOT do
  *
- * **Leader election.** Both callers take `pg_try_advisory_xact_lock` INSIDE
- * their pass, on a reserved connection, because a try-lock needs connection
+ * **Leader election.** A caller that needs one takes `pg_try_advisory_xact_lock`
+ * INSIDE its pass, on a reserved connection, because a try-lock needs connection
  * affinity and the lock has to be held across the pass's own reads. That is a
- * property of the pass, not of the schedule, and a scheduler that tried to own
- * it would need a database handle it has no other use for.
+ * property of the pass, not of the schedule, and a scheduler that tried to own it
+ * would need a database handle it has no other use for. The one caller left needs
+ * none — `workflow-queue-sweep.ts` argues why its claim IS the coordination — so
+ * this is a statement about where the concern belongs, not about what is in use.
  *
- * **A pass on `start()`.** Both callers accept one interval of latency at boot
- * (`workflow-wake.ts` states it: "Latency is one interval plus a boot"), and an
- * immediate pass would fire on every replica the moment a deploy rolls, which
- * is the one moment they are all contending for the same lock.
+ * **A pass on `start()`.** A caller accepts one interval of latency at boot; an
+ * immediate pass would fire on every replica the moment a deploy rolls, which is
+ * the one moment they are all contending for whatever they contend for.
  */
 
 /**

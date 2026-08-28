@@ -29,7 +29,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
+import { isOneOf, requiredSize, requiredString } from "./_body-fields.ts";
 import type { AppContext } from "./context.ts";
 import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
@@ -44,11 +46,20 @@ import {
   readUpload,
   updateUpload,
 } from "./platform-uploads.ts";
+import type { SqlExec } from "./secret-store.ts";
 
 const log = createLogger("uploads.records");
 
-/** This route's own path under `/:slug`. */
-export const UPLOAD_RECORDS_ROUTE = "/upload-records";
+/**
+ * This route's own path under `/:slug`.
+ *
+ * From `PLATFORM_ROUTES`, not a literal: the guest client that CALLS this route
+ * (`aai-runtime/platform-endpoint.ts`) is the other half of one wire, and a
+ * literal on each side is a rename away from a 404 the runtime can only report as
+ * `answered HTTP 404`. `aai-server` already imports that package's `/internal`;
+ * the dependency does not run the other way, which is why the table lives there.
+ */
+export const UPLOAD_RECORDS_ROUTE = PLATFORM_ROUTES.uploadRecords;
 
 /**
  * Cap on a request body.
@@ -75,25 +86,7 @@ const METHODS = ["read", "claim", "insert", "update", "finish"] as const;
 type Method = (typeof METHODS)[number];
 
 function isMethod(value: unknown): value is Method {
-  return typeof value === "string" && (METHODS as readonly string[]).includes(value);
-}
-
-/** A required non-empty string field. */
-function requiredString(body: Record<string, unknown>, key: string): string {
-  const value = body[key];
-  if (typeof value !== "string" || value === "") {
-    throw new HTTPException(400, { message: `${key} is required` });
-  }
-  return value;
-}
-
-/** A required non-negative integer field. */
-function requiredSize(body: Record<string, unknown>, key: string): number {
-  const value = body[key];
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw new HTTPException(400, { message: `${key} must be a non-negative integer` });
-  }
-  return value;
+  return isOneOf(METHODS, value);
 }
 
 /** The boundary list off the wire, refusing anything malformed. */
@@ -188,7 +181,7 @@ export function createUploadsHandler(
 }
 
 type Ctx = {
-  sql: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]>;
+  sql: SqlExec;
   slug: string;
   id: string;
 };
@@ -214,8 +207,15 @@ async function serve(method: Method, ctx: Ctx, body: Record<string, unknown>): P
         parts: parts(body),
       });
       return null;
-    default:
+    case "finish":
       await finishUpload(sql, slug, id, requiredSize(body, "size"));
       return null;
+    default: {
+      // Unreachable, and the ASSIGNMENT is what keeps it so — see the twin in
+      // `session-state-handler.ts`. `finish` used to live in this arm, so a sixth
+      // `METHODS` entry compiled clean and silently finished the upload.
+      const unreachable: never = method;
+      throw new HTTPException(400, { message: `unknown method ${String(unreachable)}` });
+    }
   }
 }

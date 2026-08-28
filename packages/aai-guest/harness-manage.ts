@@ -112,12 +112,12 @@ export function createManageHandler(
  * Workflow work in flight, so the idle controller can see it.
  *
  * A guest measures "nobody needs me" by its session count, which is the whole
- * truth for a voice agent and half of it for one with durable workflows: a run
- * woken by the platform (`aai-server/workflow-wake.ts`) has NO session, so
- * without this the sandbox self-exits five minutes into an hour-long run —
- * mid-step, leaving the job locked until graphile-worker's 4-hour expiry lets
- * another worker rescue it. The wake would then have bought at most one idle
- * window of progress per sweep.
+ * truth for a voice agent and half of it for one with durable workflows: a run the
+ * platform delivered a queued message to (`aai-server/workflow-queue-sweep.ts`)
+ * has NO session, so without this the sandbox self-exits five minutes into an
+ * hour-long run — mid-step, leaving the message claimed until
+ * `QUEUE_CLAIM_STALE_MS` lapses and a later sweep reclaims it. The delivery would
+ * then have bought at most one idle window of progress per message.
  *
  * Settlement is the RESPONSE's `close`, which fires whether the handler answered
  * or the socket died, so a callback cannot leak the counter and pin a sandbox

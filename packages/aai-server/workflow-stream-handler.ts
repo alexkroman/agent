@@ -43,6 +43,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import type { AppContext } from "./context.ts";
 import { assertGuestBearer } from "./guest-bearer.ts";
@@ -52,8 +53,16 @@ import { qualifyStreamName } from "./workflow-stream-namespace.ts";
 
 const log = createLogger("workflow.stream");
 
-/** This route's own path under `/:slug`. */
-export const WORKFLOW_STREAM_ROUTE = "/workflow-stream";
+/**
+ * This route's own path under `/:slug`.
+ *
+ * From `PLATFORM_ROUTES`, not a literal: the guest client that CALLS this route
+ * (`aai-runtime/platform-endpoint.ts`) is the other half of one wire, and a
+ * literal on each side is a rename away from a 404 the runtime can only report as
+ * `answered HTTP 404`. `aai-server` already imports that package's `/internal`;
+ * the dependency does not run the other way, which is why the table lives there.
+ */
+export const WORKFLOW_STREAM_ROUTE = PLATFORM_ROUTES.workflowStream;
 
 /**
  * How long one live read may hold the response open.

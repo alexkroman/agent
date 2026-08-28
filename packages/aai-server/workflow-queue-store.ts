@@ -396,7 +396,13 @@ export async function fail(
     log.warn("message abandoned after the retry budget", { id, attempt: next });
     return "dropped";
   }
-  const backoffMs = RETRY_BACKOFF_MS[attempt] ?? RETRY_BACKOFF_MS.at(-1) ?? 60_000;
+  // In range by construction: the guard above returned for every `attempt` the table
+  // does not cover, so this is at most `QUEUE_MAX_ATTEMPTS - 2`. The `??` is what
+  // `noUncheckedIndexedAccess` asks for, not a real branch. It used to carry TWO arms
+  // that disagreed about the value — `.at(-1)` (300_000) and a literal 60_000 — so
+  // whichever fired was a coin flip about intent; one arm, matching the table's own
+  // longest wait, is the whole of what an unreachable fallback can honestly say.
+  const backoffMs = RETRY_BACKOFF_MS[attempt] ?? 300_000;
   await sql(
     `update aai_platform.workflow_queue
         set attempt = $2,

@@ -192,10 +192,11 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   /** Platform admin SQL executor, with a platform db — see ServiceConfig.sql. */
   sql?: SqlExec;
   /**
-   * The admin pool itself, for the one consumer that needs a RESERVED
-   * connection rather than a statement: the durable-workflow wake sweep, whose
-   * pass is one transaction holding an advisory lock and a `set local`
-   * statement timeout (workflow-wake.ts).
+   * The admin pool itself, for the consumers that need a RESERVED connection
+   * rather than a statement: the durable-workflow queue sweep
+   * (`workflow-queue-sweep.ts`), whose `LISTEN` and whose claim/ack pair must run
+   * on one connection, and the five guest-called platform routes, each of which
+   * reserves one for the life of its request.
    */
   adminDb?: AdminDb;
 } {

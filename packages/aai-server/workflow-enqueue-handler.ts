@@ -52,7 +52,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
+import { optionalString, requiredString } from "./_body-fields.ts";
 import type { AppContext } from "./context.ts";
 import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
@@ -79,8 +81,13 @@ export const MAX_ENQUEUE_BODY_BYTES = 1_048_576;
  * direction and would read as the same surface. There is no guest counterpart to
  * this one at all — it is the platform answering — so it has no `GUEST_ROUTES`
  * entry and no exposure declaration to make.
+ *
+ * It does have a CALLER, though, and that is why the string comes from
+ * `PLATFORM_ROUTES` rather than being spelled here: `aai-runtime`'s
+ * `platform-endpoint.ts` is the guest half of this wire, and a literal on each
+ * side is a rename away from a 404 nothing names.
  */
-export const WORKFLOW_ENQUEUE_ROUTE = "/workflow-enqueue";
+export const WORKFLOW_ENQUEUE_ROUTE = PLATFORM_ROUTES.workflowEnqueue;
 
 /** What the guest sends. Mirrors `QueueOptions` plus the message itself. */
 type EnqueueRequest = {
@@ -95,16 +102,6 @@ type EnqueueRequest = {
   delaySeconds?: number;
 };
 
-/** A string field, or undefined when absent. Throws when present and wrong. */
-function optionalString(body: Record<string, unknown>, key: string): string | undefined {
-  const value = body[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new HTTPException(400, { message: `${key} must be a string` });
-  }
-  return value;
-}
-
 /** A string map, or undefined when absent. Throws when present and wrong. */
 function optionalHeaders(raw: unknown): Record<string, string> | undefined {
   if (raw === undefined) return undefined;
@@ -118,14 +115,6 @@ function optionalHeaders(raw: unknown): Record<string, string> | undefined {
 }
 
 /** A required non-empty string, or the 400 that names it. */
-function requiredString(raw: Record<string, unknown>, key: string): string {
-  const value = raw[key];
-  if (typeof value !== "string" || value === "") {
-    throw new HTTPException(400, { message: `${key} is required` });
-  }
-  return value;
-}
-
 /** Parse and validate the body, or throw the 400 that names the field. */
 function parseEnqueueRequest(raw: unknown): EnqueueRequest {
   if (!isRecord(raw)) throw new HTTPException(400, { message: "body must be a JSON object" });

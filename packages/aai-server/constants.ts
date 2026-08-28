@@ -189,7 +189,7 @@ export const MANAGE_REQUEST_TIMEOUT_MS = 5000;
  */
 export const SHUTDOWN_TEARDOWN_TIMEOUT_MS = envMs(process.env.SHUTDOWN_TEARDOWN_TIMEOUT_MS, 20_000);
 
-// ── Durable-workflow wake sweep (workflow-wake.ts) ───────────────────────────
+// ── Guest harness resolution ─────────────────────────────────────────────────
 
 /**
  * Locate the built Node guest harness — the `aai-guest` workspace package's

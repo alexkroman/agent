@@ -9,10 +9,10 @@
  * The interesting part is the key store, because the two cases are not "prod and
  * a test" but two legitimate deployments:
  *
- * - **With `ctx.db`** — the correlation-key index is a table in the database the
- *   AUTHOR supplied. This used to be every platform workflow app, because creating
- *   one switched storage on; the platform provisions no database now, so it is
- *   whoever set a `DATABASE_URL` secret.
+ * - **With a `DATABASE_URL`** — the correlation-key index is a table in the database
+ *   the AUTHOR supplied. This used to be every platform workflow app, because
+ *   creating one switched app storage on; the platform provisions no database now,
+ *   so it is whoever set the secret.
  * - **Without** — `aai dev` against the Local World, which keeps runs in
  *   `.workflow-data/` and needs no database; and a deployed app on the platform
  *   world, whose RUNS are durable on the platform's own database even though this
