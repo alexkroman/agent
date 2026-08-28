@@ -90,10 +90,18 @@ export const MAX_POLL_ATTEMPTS = 180;
  */
 const MAX_TRANSCRIPT_CHARS = 18_000;
 
-/** Submissions in flight at once — polite to the provider, still parallel. */
+/**
+ * Submissions in flight at once — polite to the provider, still parallel.
+ *
+ * Inside the workflow world's default worker concurrency (three on the
+ * `DATABASE_URL` path), so this width is what really runs — see "The WINDOW is
+ * not the concurrency" in `mapConcurrent`.
+ */
 const SUBMIT_CONCURRENCY = 2;
 
-/** Status checks in flight at once. Cheaper calls, so a wider gate. */
+/** Status checks in flight at once. Cheaper calls, so a wider gate — and three is
+ *  also where the world's default worker concurrency caps it, so this is the
+ *  widest a stock deployment executes. */
 const POLL_CONCURRENCY = 3;
 
 /**

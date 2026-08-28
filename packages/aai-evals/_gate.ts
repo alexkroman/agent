@@ -50,6 +50,32 @@ const HOW_TO =
 type GatedDescribe = typeof describe | typeof describe.skip;
 
 /**
+ * Say something the HARNESS did, on a stream a reporter cannot swallow.
+ *
+ * Not `console.*`, and the reason is measured. Vitest intercepts `console` and
+ * hands the capture to whichever reporter it resolved — and vitest 4 resolves an
+ * unset `reporters` to `std-env`'s `isAgent ? "agent" : "default"`, where the
+ * agent reporter prints a passing file's captured output NOWHERE. Every line
+ * this module and `_register.ts` write is about a file that PASSES: a skip
+ * announcing itself, a filter that matched nothing, and the eval REPORT, which
+ * is the entire product of the tier. So under an agent all three vanished and
+ * the tier's own rule — "the worst outcome available to a tier nobody runs is a
+ * SILENT skip" — was being broken by the mechanism meant to enforce it.
+ *
+ * This repo pins `reporters: ["default"]` in `vitest.shared.ts`, which is why
+ * these read correctly here today and why the failure is one nobody would see
+ * until the tier ran somewhere else. `announceEvalMode`
+ * (`@alexkroman1/aai-runtime/eval/describe.ts`) is the same fix at the SDK layer
+ * and carries the full measurement.
+ *
+ * The stream is the one `console.log`/`console.warn` would have used, so piping
+ * behaves as before; only the interception is bypassed.
+ */
+export function sayFromHarness(text: string, stream: "out" | "err" = "err"): void {
+  (stream === "out" ? process.stdout : process.stderr).write(`${text}\n`);
+}
+
+/**
  * A precondition the tier needs is missing: say so, or FAIL when a pipeline
  * asked for the tier by name.
  *
@@ -65,7 +91,7 @@ function announceOrThrow(reason: string, howTo: string): void {
     // outcome a green-but-skipped suite cannot be confused with.
     throw new Error(`AAI_REQUIRE_EVAL is set but ${reason}.\n${howTo}`);
   }
-  console.warn(`\n[skipped: ${reason}] eval tier not run.\n${howTo}\n`);
+  sayFromHarness(`\n[skipped: ${reason}] eval tier not run.\n${howTo}\n`);
 }
 
 if (KEY === undefined) announceOrThrow("no API key resolved", HOW_TO);

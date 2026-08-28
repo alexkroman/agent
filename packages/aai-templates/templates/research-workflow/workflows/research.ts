@@ -65,7 +65,13 @@ import {
   RESEARCH_SYSTEM,
 } from "./prompts.ts";
 
-/** Angles investigated at once. The far side of every one is a rate limit. */
+/**
+ * Angles investigated at once. The far side of every one is a rate limit.
+ *
+ * Inside the workflow world's default worker concurrency (three on the
+ * `DATABASE_URL` path), so this width is what really runs — see "The WINDOW is
+ * not the concurrency" in `mapConcurrent`.
+ */
 const ANGLE_CONCURRENCY = 2;
 
 /**

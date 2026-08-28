@@ -167,7 +167,16 @@ export const BYTES_IN_FLIGHT = 640 * 1024 * 1024;
  *
  * The table above was measured under the old per-round barrier. Re-measuring it is
  * worth doing before this number moves again: the window makes a wide fan-out
- * cheaper at the tail, which if anything argues for a HIGHER knee.
+ * cheaper at the tail, which if anything argues for a HIGHER knee. *
+ * **What EXECUTES at this width is the world's call, not this number's.**
+ * `mapConcurrent` bounds how many step calls the body has in flight; how many
+ * run at once is the workflow world's worker concurrency, which on the
+ * `DATABASE_URL` path defaults to three — so on a default deployment a width
+ * above three is inert while still costing a queued job per item. That makes
+ * this the FAR SIDE's knee and the width to use once an operator has raised
+ * the ceiling, not a promise about a stock deployment. See "The WINDOW is not
+ * the concurrency" in `@alexkroman1/aai/step`'s `mapConcurrent`; the numbers
+ * above were measured against the endpoint and say nothing about that layer.
  */
 export const MAX_SEGMENT_CONCURRENCY = 32;
 
