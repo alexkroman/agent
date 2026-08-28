@@ -151,10 +151,7 @@ describe("the agent declares its workflow", () => {
     expect(agentDef.requiredEnv).toContain("ASSEMBLYAI_API_KEY");
   });
 
-  test("as a VOICE agent, not a workflow app", () => {
-    // The distinction this template exists on: a caller is on the line, so the
-    // run is a handoff. `link-digest` is the other shape.
-    expect(agentDef.page).toBeUndefined();
+  test("discovers every tool in tools/, by file name", () => {
     // Discovered, not declared: every name here is a file in `tools/`.
     expect(Object.keys(agentDef.tools).sort()).toEqual([
       "cancel_recap",

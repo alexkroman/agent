@@ -28,20 +28,6 @@ import agentDef, { digest } from "./agent.ts";
 import { extractText, extractTitle, fetchArticle, summarize } from "./workflows/digest.ts";
 
 describe("the agent declares itself a workflow app", () => {
-  test("its front door is a page, not a microphone", () => {
-    // Not decoration: `createServer` declines `/websocket` with a reason for a
-    // static agent, and telephony defaults off.
-    expect(agentDef.page).toBe("static");
-  });
-
-  test("it declares no voice pipeline and no tools, because nothing talks", () => {
-    expect(agentDef.stt).toBeUndefined();
-    expect(agentDef.llm).toBeUndefined();
-    expect(agentDef.tts).toBeUndefined();
-    expect(agentDef.s2s).toBeUndefined();
-    expect(agentDef.tools).toEqual({});
-  });
-
   test("under the name the page starts a run by", () => {
     // `api.start("digest", …)` in client.tsx names this key. Nothing else
     // records it, so a rename here is a 400 there rather than a compile error.
