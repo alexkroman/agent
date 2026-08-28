@@ -50,14 +50,63 @@ import type { WorkflowClient } from "./workflow.ts";
  *
  * @public
  */
+/**
+ * Read a variable off {@link ToolContext.env}, failing by NAME when it is not set.
+ *
+ * The `ToolContext` twin of `requireStepEnv`, and there for the same reason: a
+ * missing credential is not transient, so it should say which key and how to
+ * set it rather than surface as a `TypeError` on the first property access —
+ * which `tool-executor.ts` serializes and hands to the MODEL, so what a caller
+ * hears is the agent apologising for something no log line explains.
+ *
+ * ```ts no-check
+ * export default tool({
+ *   description: "Look up a note",
+ *   inputSchema: z.object({ id: z.string() }),
+ *   async execute({ id }, ctx) {
+ *     const key = requireEnv(ctx, "NOTES_API_KEY");
+ *     return await fetch(`https://notes.example.com/${id}`, {
+ *       headers: { authorization: `Bearer ${key}` },
+ *     }).then((r) => r.json());
+ *   },
+ * });
+ * ```
+ *
+ * @public
+ */
+export function requireEnv(
+  ctx: { env: Readonly<Partial<Record<string, string>>> },
+  name: string,
+): string {
+  const value = ctx.env[name];
+  if (!value) {
+    throw new Error(
+      `Missing ${name} in the agent env. Add it to .env for \`aai dev\`, or run \`aai secret put ${name}\`, ` +
+        "and list it in `requiredEnv` so a deploy checks it.",
+    );
+  }
+  return value;
+}
+
 export type ToolContext = {
   /**
    * Environment variables available to this agent's tools (from `.env` under
    * `aai dev`, `aai secret` in production). Custom keys a tool depends on
    * should be declared in {@link AgentDef.requiredEnv} so a missing value
    * fails at deploy time.
+   *
+   * **`Partial`, so every read is `string | undefined`.** A variable that was
+   * never set is `undefined` at runtime whatever the type says, and the type
+   * used to say `string`: `ctx.env.NEVER_DECLARED` type-checked, built green,
+   * and threw a `TypeError` on the first live call — which `tool-executor.ts`
+   * then hands to the MODEL, so the caller hears the agent improvise an
+   * apology. `noUncheckedIndexedAccess` says the same thing, but it is the
+   * AUTHOR's tsconfig and cannot be relied on from here.
+   *
+   * Reach for {@link requireEnv} rather than a `??` at each site — it throws
+   * a sentence naming the variable and pointing at `requiredEnv`.
    */
-  env: Readonly<Record<string, string>>;
+  env: Readonly<Partial<Record<string, string>>>;
   /**
    * This session's slot storage. **Reach for {@link sessionSlot}, not this** —
    * it is on the context because a slot declared in one module has no other way

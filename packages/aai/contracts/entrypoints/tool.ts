@@ -18,6 +18,7 @@ export {
   type InferToolOutput,
   isToolFailure,
   type Message,
+  requireEnv,
   type ToolContext,
   type ToolDef,
   type ToolFailure,

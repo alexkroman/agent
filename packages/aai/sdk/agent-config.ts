@@ -15,6 +15,7 @@
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
+import { assertNoStrayFields } from "./_stray-fields.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
@@ -172,6 +173,17 @@ export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 const HOST_ONLY_FIELD_SET: ReadonlySet<string> = new Set(HOST_ONLY_AGENT_FIELDS);
 
 /**
+ * Every key an authored agent may carry: the serializable config fields plus
+ * the host-only ones the deny-list strips. DERIVED from the schema rather than
+ * listed, so a new field is known here the moment it is declared there — a
+ * hand-kept copy would reject the field on the branch that adds it.
+ */
+const KNOWN_AGENT_FIELDS: ReadonlySet<string> = new Set([
+  ...Object.keys(AgentConfigSchema.shape),
+  ...HOST_ONLY_AGENT_FIELDS,
+]);
+
+/**
  * What {@link toAgentConfig} accepts: every serializable {@link AgentConfig}
  * field (`mode` excepted — it is derived, never supplied) plus the host-only
  * fields the deny-list strips. `AgentDef` is assignable to this by
@@ -198,6 +210,9 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // raw `export default {...}` that skipped `agent()` behaves the same.
   const normalized = normalizeAgentConveniences(source) as AgentConfigSource;
   const src = { ...normalized, ...(defaultProviders(normalized) ?? {}) };
+  // BEFORE the cross-field rules, so a misspelled field is reported as itself
+  // rather than as whatever rule notices its absence three checks later.
+  assertNoStrayFields(src, KNOWN_AGENT_FIELDS);
   // After the fill, `assertProviderTriple` classifies the mode (and still
   // rejects s2s combined with pipeline stages) so the server can trust it.
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s, src.text);

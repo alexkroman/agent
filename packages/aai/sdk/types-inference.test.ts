@@ -54,7 +54,12 @@ describe("ToolDef type inference", () => {
     expectTypeOf<ToolContext>().toHaveProperty("env");
     expectTypeOf<ToolContext>().toHaveProperty("messages");
     expectTypeOf<ToolContext["messages"]>().toEqualTypeOf<readonly Message[]>();
-    expectTypeOf<ToolContext["env"]>().toEqualTypeOf<Readonly<Record<string, string>>>();
+    // `Partial`, so a read is `string | undefined`. Pinned because the value it
+    // protects is a credential: typed `string`, `ctx.env.NEVER_SET` compiled,
+    // built, deployed, and threw a `TypeError` on the first live call — which
+    // reaches the caller as the agent apologising. Widening this back is that
+    // bug returning, so it fails here rather than in someone's phone call.
+    expectTypeOf<ToolContext["env"]>().toEqualTypeOf<Readonly<Partial<Record<string, string>>>>();
   });
 });
 

@@ -36,6 +36,7 @@
     "ProcedureRunOptions",
     "ProviderCredentialOptions",
     "ProviderDescriptor",
+    "requireEnv",
     "ResolveOneOptions",
     "responseErrorMessage",
     "S2sAgentParams",
@@ -297,7 +298,9 @@
     "WAV_HEADER_BYTES",
     "WriteUploadOptions"
   ],
-  "@alexkroman1/aai/step-errors": ["throwStepError"],
+  "@alexkroman1/aai/step-errors": [
+    "throwStepError"
+  ],
   "@alexkroman1/aai/step-files": [
     "ReadUploadToFileOptions",
     "STEP_FILE_WINDOW_BYTES",
@@ -366,8 +369,12 @@
     "toolOf",
     "ToolRunner"
   ],
-  "@alexkroman1/aai/testing/vitest": ["MockWorkflowsOptions"],
-  "@alexkroman1/aai/tools": ["CallOptions"],
+  "@alexkroman1/aai/testing/vitest": [
+    "MockWorkflowsOptions"
+  ],
+  "@alexkroman1/aai/tools": [
+    "CallOptions"
+  ],
   "@alexkroman1/aai/tts": [
     "ASSEMBLYAI_TTS_LANGUAGES",
     "assemblyAITts",

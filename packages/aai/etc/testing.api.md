@@ -210,7 +210,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -703,9 +703,9 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public
+// @public (undocumented)
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;

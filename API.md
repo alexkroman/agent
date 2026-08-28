@@ -1522,9 +1522,9 @@ interface SubagentToolCall {
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
-// @public
+// @public (undocumented)
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;
@@ -2173,6 +2173,11 @@ type RejectThenable<R> = IsAny<R> extends true ? unknown : [R] extends [never] ?
 type RejectThenableResult<R> = IsAny<R> extends true ? R : [R] extends [never] ? R : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : R;
 
 // @public
+export function requireEnv(ctx: {
+    env: Readonly<Partial<Record<string, string>>>;
+}, name: string): string;
+
+// @public
 export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
 
 // @public
@@ -2214,7 +2219,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 export type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -2576,9 +2581,9 @@ export type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public
+// @public (undocumented)
 export type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;
@@ -3491,7 +3496,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -3760,9 +3765,9 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public
+// @public (undocumented)
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;
@@ -5122,7 +5127,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -5615,9 +5620,9 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public
+// @public (undocumented)
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;
