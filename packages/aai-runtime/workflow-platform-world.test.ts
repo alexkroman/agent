@@ -13,6 +13,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   composePlatformWorld,
   describePlatformQueueGap,
+  platformGuestOptions,
   resolvePlatformQueue,
 } from "./workflow-platform-world.ts";
 
@@ -52,6 +53,20 @@ describe("resolvePlatformQueue", () => {
     ["blank values", { AAI_PUBLIC_BASE_URL: "  ", AAI_GUEST_TOKEN: "  " }],
   ])("declines %s", (_label, env) => {
     expect(resolvePlatformQueue(env)).toBeUndefined();
+  });
+});
+
+describe("platformGuestOptions", () => {
+  test("reads the PROCESS env, which is where the platform puts the pair", () => {
+    vi.stubEnv("AAI_PUBLIC_BASE_URL", BASE);
+    vi.stubEnv("AAI_GUEST_TOKEN", TOKEN);
+    expect(platformGuestOptions()).toEqual({ base: BASE, token: TOKEN });
+  });
+
+  test("declines when the process env has neither, which is `aai dev`", () => {
+    vi.stubEnv("AAI_PUBLIC_BASE_URL", undefined);
+    vi.stubEnv("AAI_GUEST_TOKEN", undefined);
+    expect(platformGuestOptions()).toBeUndefined();
   });
 });
 

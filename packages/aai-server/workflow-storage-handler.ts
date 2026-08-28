@@ -33,8 +33,8 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import {
-  decodeTypedJson,
-  encodeTypedJson,
+  decodeStorageJson,
+  encodeStorageJson,
   PLATFORM_ROUTES,
 } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
@@ -72,7 +72,7 @@ export const MAX_STORAGE_BODY_BYTES = 4_194_304;
 /** The request body, or undefined when it is not JSON this route can read. */
 function decodeBody(text: string): unknown {
   try {
-    return decodeTypedJson(text);
+    return decodeStorageJson(text);
   } catch {
     return undefined;
   }
@@ -126,7 +126,11 @@ export function createWorkflowStorageHandler(
       const result = await serve(call, { slug, sql, storage });
       // ENCODED the same way, for the same reason in the other direction:
       // `runs.get` returns input and output, and `c.json` would flatten both.
-      return new Response(encodeTypedJson({ result }), {
+      // `ok` rides along because a VOID method's `result` does not survive
+      // `JSON.stringify` — see the client's own note in
+      // `aai-runtime/workflow-platform-storage.ts`. Without it `writeToStream`
+      // answered `{}` and the guest read its own success as a protocol error.
+      return new Response(encodeStorageJson({ ok: true, result }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });

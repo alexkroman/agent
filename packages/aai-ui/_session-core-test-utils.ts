@@ -117,13 +117,22 @@ export class MockWebSocket {
     for (const cb of this._listeners.get("error") ?? []) cb(new Event("error"));
   }
 
-  /** Simulate server-initiated close. */
-  simulateClose(code = 1000) {
+  /**
+   * Simulate server-initiated close.
+   *
+   * `reason` is a parameter because the server WRITES one on a refusal and the
+   * client is supposed to show it: a guest that cannot build its runtime closes
+   * 1011 with "Anthropic LLM: missing API key. Set ANTHROPIC_API_KEY in the agent
+   * env." Hard-coding `""` here is what let the close handler discard the field
+   * for as long as it did — every spec fed it the one value that made the branch
+   * unreachable.
+   */
+  simulateClose(code = 1000, reason = "") {
     this.readyState = 3;
     for (const cb of this._listeners.get("close") ?? []) {
       // jsdom has no global CloseEvent; a plain Event with the close fields
       // satisfies both session-core and partysocket's event cloning.
-      cb(Object.assign(new Event("close"), { code, reason: "" }));
+      cb(Object.assign(new Event("close"), { code, reason }));
     }
   }
 }

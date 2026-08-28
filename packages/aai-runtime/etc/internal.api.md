@@ -37,12 +37,6 @@ import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 export function agentServerEnv(env: Record<string, string>): Record<string, string>;
 
 // @internal
-export function binaryReplacer(this: unknown, key: string, value: unknown): unknown;
-
-// @internal
-export function binaryReviver(_key: string, value: unknown): unknown;
-
-// @internal
 export function callPlatformStorage(opts: PlatformStorageOptions, method: string, args: readonly unknown[]): Promise<unknown>;
 
 // @internal
@@ -145,10 +139,10 @@ export function createUploadStore(opts: {
 export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
 
 // @internal
-export function decodeTypedJson(text: string): unknown;
+export function decodeStorageJson(text: string): unknown;
 
 // @internal
-export function encodeTypedJson(value: unknown): string;
+export function encodeStorageJson(value: unknown): string;
 
 // @public
 type EnqueueBody = {

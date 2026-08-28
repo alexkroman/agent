@@ -14,10 +14,18 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { decodeTypedJson, encodeTypedJson } from "./workflow-typed-json.ts";
+import {
+  decodeStorageJson,
+  decodeTypedJson,
+  encodeStorageJson,
+  encodeTypedJson,
+} from "./workflow-typed-json.ts";
 
 /** Encode then decode, which is what crossing the wire does. */
 const roundTrip = (value: unknown): unknown => decodeTypedJson(encodeTypedJson(value));
+
+/** The same, over the storage RPC's codec, which also carries dates. */
+const storageRoundTrip = (value: unknown): unknown => decodeStorageJson(encodeStorageJson(value));
 
 describe("ordinary JSON values", () => {
   test.each([
@@ -265,5 +273,95 @@ describe("the withPlainViews pre-pass", () => {
     // the IDENTICAL object, which is what keeps the common reply cheap.
     const plain = { data: [{ id: "r1" }, { id: "r2" }], cursor: null };
     expect(roundTrip(plain)).toEqual(plain);
+  });
+});
+
+describe("dates", () => {
+  /**
+   * The regression this whole branch exists for. Their schema declares
+   * `timestamp('started_at')`, drizzle reads it in `mode: 'date'`, and the guest's
+   * runtime then computes `+run.startedAt` — so a `Date` that crossed as an ISO
+   * STRING became `NaN`, which `JSON.stringify` writes into the enqueued step
+   * payload as `null`, which the guest's own step handler rejects with
+   * `workflowStartedAt: expected number, received null`. Every durable run on the
+   * platform stalled at `step_created`.
+   */
+  test("survives as a Date, so +date is still a number", () => {
+    const startedAt = new Date("2026-08-28T03:39:33.132Z");
+    const back = storageRoundTrip({ startedAt }) as { startedAt: Date };
+    expect(back.startedAt).toBeInstanceOf(Date);
+    expect(back.startedAt.getTime()).toBe(startedAt.getTime());
+  });
+
+  test("is not fooled by toJSON, which runs BEFORE the replacer", () => {
+    // The same hazard `Buffer` has: by the time the replacer sees the value it is
+    // already an ISO string, so only the holder can say what was really there.
+    const encoded = JSON.parse(encodeStorageJson({ at: new Date(0) })) as {
+      at: { __type: string; iso: string };
+    };
+    expect(encoded.at.__type).toBe("Date");
+    expect(encoded.at.iso).toBe("1970-01-01T00:00:00.000Z");
+  });
+
+  test.each([
+    ["in an array", { chunks: [new Date(0)] }],
+    ["nested in a record", { run: { startedAt: new Date(0) } }],
+    ["beside bytes", { at: new Date(0), input: new Uint8Array([1]) }],
+  ])("round-trips %s", (_label, value) => {
+    expect(storageRoundTrip(value)).toEqual(value);
+  });
+
+  test("round-trips an INVALID date rather than throwing while encoding", () => {
+    // `toISOString()` throws on one, and a codec that throws mid-reply turns a bad
+    // timestamp in one row into a 500 for the whole call.
+    const back = storageRoundTrip({ at: new Date(Number.NaN) }) as { at: Date };
+    expect(back.at).toBeInstanceOf(Date);
+    expect(Number.isNaN(back.at.getTime())).toBe(true);
+  });
+
+  test("leaves an ordinary ISO string a string", () => {
+    // A tenant's own timestamp field is not ours to promote.
+    const back = storageRoundTrip({ when: "2026-08-28T03:39:33.132Z" }) as { when: unknown };
+    expect(back.when).toBe("2026-08-28T03:39:33.132Z");
+  });
+
+  test.each([
+    ["a wrong __type", '{"x":{"__type":"DateTime","iso":"1970-01-01T00:00:00.000Z"}}'],
+    ["no iso field", '{"x":{"__type":"Date"}}'],
+    ["a non-string iso", '{"x":{"__type":"Date","iso":7}}'],
+  ])("leaves %s alone rather than guessing", (_label, text) => {
+    const back = decodeStorageJson(text) as { x: unknown };
+    expect(back.x).not.toBeInstanceOf(Date);
+  });
+});
+
+describe("the queue codec is the DevKit's, and stays theirs", () => {
+  /**
+   * The boundary that cost a second stalled run. `workflow-platform-queue.ts`
+   * encodes a queue message with this pair and the DevKit's own
+   * `createQueueHandler` decodes it — so an envelope of OURS on this path is one
+   * they cannot read. With the date envelope here, their parse answered
+   * `requestedAt: expected date, received Invalid Date` (`new Date(anObject)`)
+   * and the sweep abandoned the message exactly as the bug it was fixing did.
+   */
+  test("sends a Date as the ISO string toJSON produces, never an envelope", () => {
+    const encoded = JSON.parse(encodeTypedJson({ requestedAt: new Date(0) })) as {
+      requestedAt: unknown;
+    };
+    expect(encoded.requestedAt).toBe("1970-01-01T00:00:00.000Z");
+  });
+
+  test("still encodes bytes, which is the half that IS theirs", () => {
+    const encoded = JSON.parse(encodeTypedJson({ x: new Uint8Array([1, 2]) })) as {
+      x: { __type: string };
+    };
+    expect(encoded.x.__type).toBe("Uint8Array");
+  });
+
+  test("leaves a date envelope unrevived, so nothing depends on it by accident", () => {
+    const back = decodeTypedJson('{"at":{"__type":"Date","iso":"1970-01-01T00:00:00.000Z"}}') as {
+      at: unknown;
+    };
+    expect(back.at).not.toBeInstanceOf(Date);
   });
 });

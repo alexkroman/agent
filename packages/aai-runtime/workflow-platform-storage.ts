@@ -37,8 +37,9 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
+import { WorkflowRunNotFoundError } from "workflow/errors";
 import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
-import { decodeTypedJson, encodeTypedJson } from "./workflow-typed-json.ts";
+import { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 
 /**
  * How long one storage call may take.
@@ -81,7 +82,7 @@ export async function callPlatformStorage(
         authorization: `Bearer ${opts.token}`,
         "content-type": "application/json",
       },
-      body: encodeTypedJson({ method, args }),
+      body: encodeStorageJson({ method, args }),
     }),
     { milliseconds: STORAGE_TIMEOUT_MS, message: `storage ${method} timed out` },
   );
@@ -91,15 +92,67 @@ export async function callPlatformStorage(
     // look at this guest or at the platform: a 400 is a call this code built
     // wrongly, a 404 is a run this agent does not own, a 501 is a deployment with
     // no run storage, and a 503 is worth retrying.
-    throw new Error(`storage ${method} answered HTTP ${res.status}: ${text.slice(0, 500)}`);
+    throw storageFailure(method, res.status, text, args);
   }
-  const body = decodeTypedJson(text);
-  if (!(isRecord(body) && "result" in body)) {
+  const body = decodeStorageJson(text);
+  // `ok` is the discriminator, and `"result" in body` was the bug it replaces.
+  // JSON.stringify DROPS an undefined value, so a VOID method — `writeToStream`,
+  // which is what every `report()` line goes through — encoded as `{}` and
+  // tripped that check on a call the platform had just completed successfully.
+  // The run survived (the error is caught a layer up) and its whole narration
+  // was silently lost, so `<WorkflowProgress>` stayed empty on every template
+  // that narrates, with one `storage writeToStream answered 200 without a
+  // result` per line in the guest's log and nothing at all on the page.
+  //
+  // A key that survives JSON is the only kind that can tell "void" from
+  // "malformed", which is what the check is FOR: an empty or truncated body
+  // still fails it, and `body.result` is still `undefined` for a void call.
+  if (!(isRecord(body) && body.ok === true)) {
     // A 200 the contract does not cover. Throwing means the step retries; returning
     // undefined would look like "no such run" to every caller.
     throw new Error(`storage ${method} answered 200 without a result`);
   }
   return body.result;
+}
+
+/**
+ * A storage call the platform refused, in the vocabulary its CALLER speaks.
+ *
+ * A 404 from this route means exactly one thing — the run named in the call is
+ * not visible to this agent, whether because it never existed or because it is
+ * somebody else's (`workflow-storage-handler.ts` argues why those must be the
+ * same answer). The DevKit already has a name for that, and its own runtime and
+ * ours already translate it correctly everywhere: `getRun` answers `undefined`,
+ * `cancel` answers `false`, `wakeUp` answers `0`. A plain `Error` matched none of
+ * those, so it propagated to the workflow API as a 500 — and `readRun`'s
+ * `if (!run) 404` branch, which is the right answer, was unreachable.
+ *
+ * Measured before and after against a deployed agent: `GET`, `DELETE` and `wake`
+ * on a well-formed run id nobody had ever issued all answered
+ * `{"error":"Internal server error"}`; all three answer 404 now.
+ *
+ * `WorkflowRunNotFoundError.is` is a NAME check rather than an `instanceof`,
+ * which is what makes throwing their class safe here: a guest holds two copies
+ * of this code (the harness bundles one, the agent's bundle carries another) and
+ * a prototype identity does not survive that seam. Every other status stays a
+ * plain error carrying the status, because for those the status IS the finding.
+ */
+function storageFailure(
+  method: string,
+  status: number,
+  body: string,
+  args: readonly unknown[],
+): Error {
+  const detail = `storage ${method} answered HTTP ${status}: ${body.slice(0, 500)}`;
+  if (status !== 404) return new Error(detail);
+  // Their constructor takes the RUN ID and formats it into the message, so it is
+  // worth passing the real one: every run-scoped method on this surface takes it
+  // first (`STORAGE_SCOPES`'s `run-arg` at index 0), and the ones that do not are
+  // named by their method instead rather than by a lie.
+  const subject = typeof args[0] === "string" && args[0] !== "" ? args[0] : method;
+  const notFound = new WorkflowRunNotFoundError(subject);
+  notFound.message = `${notFound.message} — ${detail}`;
+  return notFound;
 }
 
 /**

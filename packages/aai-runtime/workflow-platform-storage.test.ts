@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { WorkflowRunNotFoundError } from "workflow/errors";
 import {
   callPlatformStorage,
   createPlatformStorage,
@@ -23,7 +24,9 @@ const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";
 
 /** Records what crossed and answers as the platform would. */
-function recordingPlatform(answer: () => Response = () => Response.json({ result: { ok: true } })) {
+function recordingPlatform(
+  answer: () => Response = () => Response.json({ ok: true, result: { done: true } }),
+) {
   const calls: { url: string; method: string; headers: Headers; body: string }[] = [];
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const req = new Request(input, init);
@@ -136,6 +139,7 @@ describe("what crosses to the platform", () => {
   test("decodes binary in the REPLY back to a Uint8Array", async () => {
     const { storage } = storageWith(() =>
       Response.json({
+        ok: true,
         result: {
           runId: "run_1",
           input: { __type: "Uint8Array", data: Buffer.from([1, 2]).toString("base64") },
@@ -150,7 +154,7 @@ describe("what crosses to the platform", () => {
 
 describe("the reply", () => {
   test("unwraps `result` rather than handing back the envelope", async () => {
-    const { storage } = storageWith(() => Response.json({ result: { runId: "run_1" } }));
+    const { storage } = storageWith(() => Response.json({ ok: true, result: { runId: "run_1" } }));
     await expect(storage.runs.get("run_1")).resolves.toEqual({ runId: "run_1" });
   });
 
@@ -158,14 +162,13 @@ describe("the reply", () => {
     // `runs.get` for a run the platform knows nothing about answers null rather
     // than failing, and a client that treated null as "no result" would turn that
     // into an error the DevKit does not expect.
-    const { storage } = storageWith(() => Response.json({ result: null }));
+    const { storage } = storageWith(() => Response.json({ ok: true, result: null }));
     await expect(storage.runs.get("run_1")).resolves.toBeNull();
   });
 
   test.each([
     [400, "unknown storage method"],
     [401, "unauthorized"],
-    [404, "no such run"],
     [501, "platform run storage not configured"],
     [503, "storage call failed"],
   ])(
@@ -181,8 +184,18 @@ describe("the reply", () => {
     },
   );
 
+  test("accepts a VOID reply, which carries `ok` and no result at all", async () => {
+    // The regression this envelope exists for. `JSON.stringify` drops an undefined
+    // value, so `writeToStream` — every `report()` line — answered `{}` and the
+    // client read its own success as a protocol error, losing the whole of a run's
+    // narration while the run itself completed.
+    const { storage } = storageWith(() => Response.json({ ok: true }));
+    await expect(storage.runs.get("run_1")).resolves.toBeUndefined();
+  });
+
   test.each([
-    ["no result key", () => Response.json({ ok: true })],
+    ["no ok key", () => Response.json({ result: 1 })],
+    ["an empty object", () => Response.json({})],
     ["a bare array", () => Response.json([1, 2])],
     ["a body that is not JSON", () => new Response("ok", { status: 200 })],
   ])("rejects a 200 with %s", async (_label, answer) => {
@@ -190,6 +203,26 @@ describe("the reply", () => {
     // fails the step, which the platform's queue retries.
     const { storage } = storageWith(answer);
     await expect(storage.runs.get("run_1")).rejects.toThrow();
+  });
+
+  test.each([
+    ["runs.get", (s: ReturnType<typeof storageWith>["storage"]) => s.runs.get("run_gone")],
+    ["events.create", (s: ReturnType<typeof storageWith>["storage"]) => s.events.create("r", {})],
+    ["steps.list", (s: ReturnType<typeof storageWith>["storage"]) => s.steps.list({ runId: "r" })],
+  ])("turns a 404 on %s into the DevKit's own not-found error", async (_label, callIt) => {
+    // A 404 from this route means one thing: the run is not visible to this agent.
+    // The DevKit has a name for that and every handler already translates it —
+    // `getRun` answers undefined, `cancel` false, `wakeUp` 0. A plain Error matched
+    // none of them, so it reached the workflow API as a 500 and `readRun`'s
+    // `if (!run) 404` branch was unreachable.
+    const { storage } = storageWith(() => Response.json({ error: "no such run" }, { status: 404 }));
+    await expect(callIt(storage)).rejects.toSatisfy(WorkflowRunNotFoundError.is);
+  });
+
+  test("keeps every other status a plain error, where the status IS the finding", async () => {
+    const { storage } = storageWith(() => Response.json({ error: "nope" }, { status: 503 }));
+    await expect(storage.runs.get("run_1")).rejects.toThrow(/HTTP 503/);
+    await expect(storage.runs.get("run_1")).rejects.not.toSatisfy(WorkflowRunNotFoundError.is);
   });
 
   test("propagates a transport failure rather than swallowing it", async () => {

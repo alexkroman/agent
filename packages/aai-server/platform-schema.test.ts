@@ -336,14 +336,32 @@ describe("platform schema migrations", () => {
   });
 
   test("are idempotent, so re-applying is safe", () => {
-    const sql = migrationSql();
+    // The VENDORED DevKit schema is excluded, and it is the one file whose
+    // idempotency is not per-statement. Its DDL is `@workflow/world-postgres`'s
+    // own, copied verbatim by `scripts/sync-workflow-schema.mjs` — rewriting the
+    // statements is exactly what vendoring exists not to do — and it is wrapped
+    // in drizzle's own guard: a `do` block that compares each journal entry's
+    // `when` against the greatest `created_at` in `workflow_drizzle
+    // .workflow_migrations` and executes nothing that is already recorded. That
+    // is the "inside a DO block that checks for itself" exception this test's
+    // comment already names, and it is verified both ways against a real stack —
+    // re-applying over a bootstrapped database wrote no second row, and the
+    // DevKit's own `bootstrap` after this migration applied nothing.
+    // `workflow-schema-gate.test.ts` is what holds that file honest.
+    const sql = migrationFiles()
+      .filter((name) => !name.includes("workflow_devkit_schema"))
+      .map((name) => readFileSync(path.join(migrationsDir, name), "utf-8"))
+      .join("\n");
     // Every bare create must be guarded; the exceptions are inside DO blocks
     // that check for themselves (the publication, the pgmq queue).
     const creates = [...sql.matchAll(/^\s*create (table|schema|extension|index)([^;]*)/gim)];
     expect(creates.length).toBeGreaterThan(0);
     // Soft, so a migration adding several unguarded creates names them all.
+    // Compared case-INSENSITIVELY because the scan above is: a migration written
+    // in SQL's own uppercase would otherwise fail this while being perfectly
+    // guarded, which is a gate rejecting correct work rather than catching bad.
     for (const [statement] of creates) {
-      expect.soft(statement).toContain("if not exists");
+      expect.soft(statement.toLowerCase()).toContain("if not exists");
     }
   });
 });

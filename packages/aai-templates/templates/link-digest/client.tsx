@@ -76,7 +76,13 @@ export function App() {
           required
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://example.com/article"
+          // A REAL article, because a placeholder is a suggestion and this one
+          // gets typed. `https://example.com/article` 404s, and the bare
+          // `example.com` a reader trims it to has no prose on it — so the first
+          // run of the template failed with the agent's own
+          // "returned no readable text — is the page rendered in JS?", which
+          // reads as the template being broken rather than the URL being empty.
+          placeholder="https://en.wikipedia.org/wiki/Speech_recognition"
           className="flex-1 rounded-md border px-3 py-2"
         />
         <button type="submit" disabled={pending} className="rounded-md border px-4 py-2">

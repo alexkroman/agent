@@ -11,7 +11,8 @@
  * to one file.
  */
 
-import { beforeEach, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { isRunNotFound } from "./workflow-wdk.ts";
 
 const getReadable = vi.fn();
 const getRun = vi.fn((_runId: string) => ({ getReadable }));
@@ -21,9 +22,21 @@ vi.mock("workflow/api", () => ({
   resumeHook: vi.fn(),
   start: vi.fn(),
 }));
+// FAITHFUL to the real predicates, which check `name` rather than the prototype
+// (their own cross-copy-safe design). The stub used to answer `false`
+// unconditionally, which made every not-found translation in this adapter — the
+// three that turn a missing run into `undefined`, `false` and `0` — unreachable
+// from its own spec.
+// The factory is HOISTED above every top-level binding, so the predicate is
+// inlined rather than shared — `vi.mock` cannot close over a `const` declared
+// here (`Cannot access 'named' before initialization`).
 vi.mock("workflow/errors", () => ({
-  HookNotFoundError: { is: () => false },
-  WorkflowRunNotFoundError: { is: () => false },
+  HookNotFoundError: {
+    is: (value: unknown) => value instanceof Error && value.name === "HookNotFoundError",
+  },
+  WorkflowRunNotFoundError: {
+    is: (value: unknown) => value instanceof Error && value.name === "WorkflowRunNotFoundError",
+  },
 }));
 vi.mock("workflow/runtime", () => ({ getWorld: vi.fn() }));
 
@@ -109,4 +122,40 @@ test("readStream hands the readable to the caller WITHOUT cancelling it", async 
   // the caller is the one still reading.
   expect(readable.cancel).not.toHaveBeenCalled();
   expect(getReadable).toHaveBeenCalledWith({ startIndex: -1 });
+});
+
+describe("a run that is gone is an ANSWER, however the DevKit wraps it", () => {
+  /**
+   * `wakeUp` re-throws as `new Error("Failed to wake up run …", { cause })`, so a
+   * predicate reading one error's `name` answered false for the one case it
+   * exists to catch — and the public API turned `{ woken: 0 }` into a 500.
+   * Measured against a deployed agent on a well-formed run id nobody had issued.
+   */
+  const notFound = (): Error => {
+    const err = new Error('Workflow run "wrun_x" not found');
+    err.name = "WorkflowRunNotFoundError";
+    return err;
+  };
+
+  test("sees it through one layer of wrapping", () => {
+    const wrapped = new Error("Failed to wake up run wrun_x: nope", { cause: notFound() });
+    expect(isRunNotFound(wrapped)).toBe(true);
+  });
+
+  test("still sees a bare one", () => {
+    expect(isRunNotFound(notFound())).toBe(true);
+  });
+
+  test("does not mistake an unrelated failure for it", () => {
+    // The direction that matters: reporting "no such run" for a lost database
+    // would tell a caller polling a live run that it had been swept.
+    expect(isRunNotFound(new Error("connection terminated unexpectedly"))).toBe(false);
+  });
+
+  test("terminates on a cause CYCLE rather than hanging the error path", () => {
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    Object.defineProperty(a, "cause", { value: b });
+    expect(isRunNotFound(a)).toBe(false);
+  });
 });

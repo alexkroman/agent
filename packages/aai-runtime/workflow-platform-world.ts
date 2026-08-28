@@ -81,6 +81,42 @@ export function resolvePlatformQueue(
 }
 
 /**
+ * The same pair, from THIS PROCESS's environment — never from the agent's.
+ *
+ * A separate name rather than "remember to omit the argument", because omitting
+ * it is what two callers did not do and the cost was invisible from either end.
+ * `runtime.ts` read the pair out of `providerEnv` and `workflow-install.ts` out
+ * of `opts.env`, both of which are the TENANT's environment: the secrets file at
+ * `AAI_AGENT_ENV_PATH`, which is the one place these two keys never appear. The
+ * platform puts them in the sandbox's process env, which is why the WORLD —
+ * `configureWorkflowWorld`, passing nothing — resolved while the other two did
+ * not.
+ *
+ * **What that cost, measured on a deployed agent:** its session state fell to
+ * the MEMORY backend, so `aai_platform.session_events` and `session_slots` stayed
+ * empty across 25 sessions and a resume after the sandbox restarted re-greeted
+ * instead of restoring history — while the same guest logged `harness starting
+ * platform workflow world` one line earlier. Its uploads fell to the LOCAL
+ * directory for the same reason, one release after they became the platform's.
+ * The comment above the session-state call already claimed the invariant this
+ * function now enforces: "read from the same pair the platform world uses, so a
+ * deployment cannot end up with durable runs and memory-only turns".
+ *
+ * **It is also the safer read**, which is the reason to prefer it even where a
+ * tenant env would happen to work. `agentServerEnv` strips only `AAI_ALLOW_HOST`,
+ * so an agent may set any other `AAI_*` key as a secret — and under the old
+ * spelling an agent that set these two chose the base URL its own session state
+ * and upload records were sent to, with a bearer of its choosing. Reading the
+ * process env takes that away: these are the platform's statements about the
+ * sandbox it spawned, and nothing inside the sandbox may make them.
+ *
+ * @internal
+ */
+export function platformGuestOptions(): PlatformQueueOptions | undefined {
+  return resolvePlatformQueue(process.env);
+}
+
+/**
  * Names the half-configured case, or undefined when the environment is coherent.
  *
  * Its own function because the caller reports it and this decides it: one of the

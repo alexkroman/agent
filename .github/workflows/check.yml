@@ -200,6 +200,7 @@ jobs:
           pnpm run check:guest-toolchain
           pnpm run check:agent-guide
           pnpm run check:scaffold
+          pnpm run check:workflow-schema
           pnpm run check:konsistent
 
   # Unit tests sharded by package — run in parallel

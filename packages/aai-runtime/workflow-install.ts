@@ -32,7 +32,7 @@ import type { CloseableDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { speakOverWebSocket } from "./step-speak.ts";
-import { resolvePlatformQueue } from "./workflow-platform-world.ts";
+import { platformGuestOptions } from "./workflow-platform-world.ts";
 import { createStepReporter } from "./workflow-report.ts";
 import {
   createUploadStore,
@@ -139,8 +139,11 @@ export function installWorkflowSupport(opts: {
   const blobs = resolveUploadBlobs(omitUndefined({ env: opts.env, broker: opts.uploadBroker }));
   // The PLATFORM's record home, when there is one. Resolved from the same two env
   // keys the workflow world uses, so an upload's record and a run's queue can never
-  // disagree about whether this guest is deployed.
-  const platform = resolvePlatformQueue(opts.env);
+  // disagree about whether this guest is deployed — which they DID, because this
+  // read `opts.env` (the agent's own) where those keys never appear, so a deployed
+  // guest announced "workflow uploads are LOCAL … no platform" one line after the
+  // harness announced the platform world. See `platformGuestOptions`.
+  const platform = platformGuestOptions();
   const store = createUploadStore({
     db,
     localDir,

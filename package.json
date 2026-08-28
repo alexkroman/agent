@@ -47,6 +47,8 @@
     "check:agent-guide": "node scripts/sync-agent-guide.mjs --check",
     "sync:scaffold": "node scripts/sync-scaffold-versions.mjs",
     "check:scaffold": "node scripts/sync-scaffold-versions.mjs --check",
+    "sync:workflow-schema": "node scripts/sync-workflow-schema.mjs",
+    "check:workflow-schema": "node scripts/sync-workflow-schema.mjs --check",
     "check:knip": "knip",
     "check:publint": "turbo run check:publint",
     "api-report": "node scripts/api-report.mjs",

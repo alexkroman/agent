@@ -79,6 +79,14 @@ run_ratchets() {
   # catalog migration had already broken it into writing the literal
   # `"catalog:"` into a manifest npm cannot resolve. Pure file comparison.
   pnpm run check:scaffold || failed=1
+  # The DevKit's `workflow` schema is the platform's durable-run journal, and
+  # nothing in this repo created it: three migrations say it is "created by
+  # @workflow/world-postgres's own migration" and the only thing that ever ran
+  # that migration was the GUEST, against its own database, before the world
+  # moved to the platform. It is a vendored migration now, generated from the
+  # installed package — so this is the fourth committed copy in this shape, and
+  # it goes stale the first time they add a table. Pure fs comparison.
+  pnpm run check:workflow-schema || failed=1
   # Structural conventions (konsistent.json): the shapes Biome and tsc cannot
   # see because none of them is wrong WITHIN a file — a provider module that
   # exports four of its five symbols, a *-barrel.ts that grew a local
