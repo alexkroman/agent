@@ -30,7 +30,6 @@
  * if nothing confirms a guess.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import {
   decodeStorageJson,
@@ -38,8 +37,8 @@ import {
   PLATFORM_ROUTES,
 } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
+import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
-import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import { type StorageCall, serve } from "./workflow-storage-apply.ts";
@@ -105,14 +104,11 @@ export function createWorkflowStorageHandler(
   opts: StorageHandlerOptions,
 ): (c: AppContext) => Promise<Response> {
   return async (c) => {
-    const slug = c.var.slug;
-    await assertGuestBearer(c, slug);
+    const slug = await guestSlug(c);
     const { adminDb, storage } = opts;
-    if (!(adminDb && storage)) {
-      // 501, like the enqueue route: there is no run storage on this deployment and
-      // a retry will not make one.
-      throw new HTTPException(501, { message: "platform run storage not configured" });
-    }
+    // 501, like the enqueue route: there is no run storage on this deployment and
+    // a retry will not make one.
+    if (!(adminDb && storage)) throw notConfigured("platform run storage");
     // DECODED with the binary reviver, not `c.req.json()`. A run's input and a
     // step's arguments are `Uint8Array` at specVersion >= 2, and plain JSON turns
     // one into an index map — so the world would be handed `{"0":7}` where it
@@ -120,29 +116,22 @@ export function createWorkflowStorageHandler(
     // `aai-runtime/workflow-typed-json.ts`, which is the codec BOTH sides use.
     const call = parseCall(decodeBody(await c.req.text()));
 
-    const reserved = await adminDb.reserve();
-    const sql = (q: string, p?: unknown[]) => reserved.query(q, p);
-    try {
-      const result = await serve(call, { slug, sql, storage });
-      // ENCODED the same way, for the same reason in the other direction:
-      // `runs.get` returns input and output, and `c.json` would flatten both.
-      // `ok` rides along because a VOID method's `result` does not survive
-      // `JSON.stringify` — see the client's own note in
-      // `aai-runtime/workflow-platform-storage.ts`. Without it `writeToStream`
-      // answered `{}` and the guest read its own success as a protocol error.
-      return new Response(encodeStorageJson({ ok: true, result }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    } catch (err: unknown) {
-      if (err instanceof HTTPException) throw err;
-      log.warn("storage call failed", { slug, method: call.method, error: errorMessage(err) });
-      // 503: from the guest's point of view every remaining cause is transient (a
-      // connection shortage, a partitioned database), and the DevKit retries the
-      // step that was reading.
-      throw new HTTPException(503, { message: "storage call failed", cause: err });
-    } finally {
-      reserved.release();
-    }
+    return await withReserved(
+      adminDb,
+      { log, failure: "storage call failed", detail: { slug, method: call.method } },
+      async (sql) => {
+        const result = await serve(call, { slug, sql, storage });
+        // ENCODED the same way, for the same reason in the other direction:
+        // `runs.get` returns input and output, and `c.json` would flatten both.
+        // `ok` rides along because a VOID method's `result` does not survive
+        // `JSON.stringify` — see the client's own note in
+        // `aai-runtime/workflow-platform-storage.ts`. Without it `writeToStream`
+        // answered `{}` and the guest read its own success as a protocol error.
+        return new Response(encodeStorageJson({ ok: true, result }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    );
   };
 }

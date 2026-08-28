@@ -27,13 +27,12 @@
  * `UploadIdTakenError` rather than a retry.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { isOneOf, requiredSize, requiredString } from "./_body-fields.ts";
+import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
-import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import {
@@ -136,15 +135,12 @@ export function createUploadsHandler(
   opts: UploadsHandlerOptions,
 ): (c: AppContext) => Promise<Response> {
   return async (c) => {
-    const slug = c.var.slug;
-    await assertGuestBearer(c, slug);
+    const slug = await guestSlug(c);
     const adminDb = opts.adminDb;
-    if (!adminDb) {
-      // 501, like the enqueue, storage and session-state routes: there are no
-      // platform upload records on this deployment and a retry will not make any.
-      // The guest reads this once and falls back to its local store, SAYING so.
-      throw new HTTPException(501, { message: "platform upload records not configured" });
-    }
+    // 501, like the enqueue, storage and session-state routes: there are no
+    // platform upload records on this deployment and a retry will not make any.
+    // The guest reads this once and falls back to its local store, SAYING so.
+    if (!adminDb) throw notConfigured("platform upload records");
 
     const body: unknown = await c.req.json().catch(() => undefined);
     if (!isRecord(body)) throw new HTTPException(400, { message: "body must be a JSON object" });
@@ -153,30 +149,25 @@ export function createUploadsHandler(
       // read.
       throw new HTTPException(400, { message: "unknown upload-records method" });
     }
+    const method = body.method;
     const id = requiredString(body, "id");
 
-    const reserved = await adminDb.reserve();
-    const sql = (q: string, p?: unknown[]) => reserved.query(q, p);
-    try {
-      return c.json({ result: await serve(body.method, { sql, slug, id }, body) }, 200);
-    } catch (err: unknown) {
-      if (err instanceof HTTPException) throw err;
-      if (err instanceof PlatformUploadIdTakenError) {
+    return await withReserved(
+      adminDb,
+      {
+        log,
+        failure: "upload-records call failed",
+        detail: { slug, method },
         // 409 and NOT logged as a failure: a refused claim is this route working.
-        // The runtime turns it back into `UploadIdTakenError`, which is a 409 to the
-        // caller who chose the id.
-        throw new HTTPException(409, { message: "upload id already taken", cause: err });
-      }
-      log.warn("upload-records call failed", {
-        slug,
-        method: body.method,
-        error: errorMessage(err),
-      });
-      // 503: every remaining cause is transient from the guest's point of view.
-      throw new HTTPException(503, { message: "upload-records call failed", cause: err });
-    } finally {
-      reserved.release();
-    }
+        // The runtime turns it back into `UploadIdTakenError`, which is a 409 to
+        // the caller who chose the id.
+        statusFor: (err) =>
+          err instanceof PlatformUploadIdTakenError
+            ? new HTTPException(409, { message: "upload id already taken", cause: err })
+            : undefined,
+      },
+      async (sql) => c.json({ result: await serve(method, { sql, slug, id }, body) }, 200),
+    );
   };
 }
 
