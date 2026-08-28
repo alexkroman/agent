@@ -1294,9 +1294,10 @@ exists because the thing it replaces had gone wrong at least once:
 - **`materialize(dir, files)`** — `withBuildDir`'s middle argument, inlined five
   times in one file and defined a sixth in another.
 
-**A turn's settle outlives its response, so `studio-chat.test.ts` drains before
-unhooking the host channel.** `onFinish` fires, then `snapshotWorkspace` walks
-the tree, then two host RPCs go out — all after `serve().close()` has returned.
+**A turn's settle outlives its response, so `studio-chat.scenario.test.ts`
+drains before unhooking the host channel.** `onFinish` fires, then
+`snapshotWorkspace` walks the tree, then two host RPCs go out — all after
+`serve().close()` has returned.
 `setHostSend` is a process singleton, so a previous test's settle landed in the
 NEXT test's recorder, and the assertions were weakened to tolerate it
 (`toBeGreaterThanOrEqual(2)` plus a content filter, with the flake message they
@@ -1307,15 +1308,17 @@ since the previous poll — the last one covering the filesystem walk between
 turn that never reaches `onFinish` must not redden every following test.
 
 **A test's TIER is what it touches, and this package is the worst offender.**
-Eleven files here still write to the filesystem, bind a port, or spawn a
-subprocess while sitting in the 5s unit tier, and `studio-chat.test.ts` stubs out
-the real `typecheck` because of it.
+Ten files here still write to the filesystem, bind a port, or spawn a subprocess
+while sitting in the 5s unit tier. It was eleven; `studio-chat` is the one that
+left, and it left because the budget stopped being theoretical — the file lost a
+`vi.waitFor` race on a loaded CI runner, with its own in-file notes already
+recording two earlier ones at the same assertions.
 
 The scenario tier is REACHABLE now — `vitest.config.ts` excludes both slow-tier
 globs (without which a rename left a file in BOTH tiers), and `package.json`
 declares the `test:scenario`/`check:scenario` pair that turbo's `check:scenario`
-task fans out to. `studio-build` and `studio-test` are the worked example, and
-what they taught is worth copying:
+task fans out to. `studio-build`, `studio-test` and `studio-chat` are the worked
+examples, and what they taught is worth copying:
 
 - **A moved file gives up its unit coverage, and the fix is a SPLIT, not a
   floor.** Moving both files whole took the package from 83.88/75.58/84.49/85.79
@@ -1327,6 +1330,36 @@ what they taught is worth copying:
   the typecheck gate and the real vitest spawns are scenario. That is the tier
   rule applied properly, and it lands at 81.73/74.41/82.59/83.48. Floors do not
   move.
+- **A file with no pure half still splits — on the CALLER's side of the I/O.**
+  `studio-chat` had no `scrubDir` to keep behind: every test went through a real
+  `http.createServer` and a materialized workspace. What is unit-legal is the
+  exported function itself, driven over IN-MEMORY `IncomingMessage`/
+  `ServerResponse` — the real Node objects, the real serialized HTTP read back
+  off an intercepted socket write, no port and no disk. That covers the whole
+  dispatch (CORS, 409, the bearer gate, the `/studio/tools` inventory, the
+  method refusals, the 423) plus `runTurn`'s two body rejections and one
+  text-only streamed turn, in **145ms against the old file's 1326ms**. Measured
+  at each step, because the first two attempts were not enough: whole move
+  78.67/73.85/80.22/79.70 (three floors failed), dispatch only
+  81.41/76.49/81.33/82.62 (two failed), and with the body rejections and the
+  turn **82.81/77.29/83.00/84.19** — every floor clear, against a pre-split
+  83.24/77.52/84.12/84.53. Floors do not move.
+- **Incidental coverage is not coverage, and the per-file gate is what says
+  so.** `studio-turn-settle.ts` had no spec at all — every line of it was
+  reached by `studio-chat.test.ts`'s real turns — so the move dropped it to
+  35.2% and `check:coverage-per-file` failed on it alone, which the package
+  average could never have shown. It has its own unit spec now, with
+  `snapshotWorkspace` MOCKED: what that module decides is which RPCs go out
+  and with which flags (`done: true` is the one the host keys preview deploys
+  off), how a walk's warnings are reported, that a burst of checkpoints
+  coalesces to one trailing run, and that a failed checkpoint is logged rather
+  than thrown into an otherwise-fine reply. Walking a real tree is
+  `studio-workspace-fs.ts`'s subject.
+- **Two Node details are worth knowing before writing another one of these.** A
+  detached `ServerResponse` needs `assignSocket` to be writable at all, and it
+  never emits `finish` — the bytes arrive, the event does not — so anchor on the
+  `end` CALL. And `expect` inside a helper trips `noMisplacedAssertion`, which
+  matches lexical position rather than the call graph.
 - **Delete the hand-written `timeout: 120_000`s.** Five of them, which WERE the
   scenario tier's timeout re-declared because the tier was not used.
 - **A shared PID is not a shared module registry.** Both files ran green in the

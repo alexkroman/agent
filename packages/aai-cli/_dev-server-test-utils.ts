@@ -54,6 +54,12 @@ export const mockCreateServer = vi.fn();
 const mockRequiredProviderEnvVars = vi.fn();
 export const mockEnsureApiKey = vi.fn();
 export const mockResolveServerEnv = vi.fn();
+/**
+ * The session-state DDL the dev server applies when the project declares a
+ * `DATABASE_URL`. A mock rather than the real thing because the real one opens a
+ * Postgres pool, which is what the tier rules put in `test:scenario`.
+ */
+export const mockEnsureSessionStateSchema = vi.fn();
 export const mockValidateAgentExport = vi.fn();
 
 /**
@@ -104,6 +110,7 @@ export function primeDevServerMocks(): void {
     mockRequiredProviderEnvVars,
     mockEnsureApiKey,
     mockResolveServerEnv,
+    mockEnsureSessionStateSchema,
     mockValidateAgentExport,
     mockChokidarWatch,
   ]) {
@@ -178,6 +185,13 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     // rather than failing it. That the literal still matches the SDK is
     // asserted in `_dev-server-serve.test.ts`, which does not mock the barrel.
     WORKFLOW_API_PREFIX: "/workflows",
+    // Applied once at boot when the project declares a `DATABASE_URL`. It was
+    // keyed on the `/internal` factory below until it went PUBLIC — the
+    // scaffold's `server.mjs` needs it and may only import the published
+    // surface — and a mock keyed where the code no longer imports from is not a
+    // stale comment, it is a hard vitest error naming the missing export.
+    // Inert here; the specs assert on the CALL.
+    ensureSessionStateSchema: mockEnsureSessionStateSchema,
   };
 }
 

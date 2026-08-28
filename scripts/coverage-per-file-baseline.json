@@ -5,7 +5,6 @@
     "packages/aai-guest/harness.ts": 26.5,
     "packages/aai-guest/studio-build.ts": 30.3,
     "packages/aai-guest/studio-test.ts": 38.7,
-    "packages/aai-runtime/workflow-wdk.ts": 19.4,
     "packages/aai-server/modal-context.ts": 44.7,
     "packages/aai-studio-server/studio-secret-routes.ts": 30.7,
     "packages/aai-templates/templates/dispatch-center/tools/ops_dashboard.ts": 0,

@@ -167,7 +167,25 @@ export function createTelephonyBridge(
     const message = safeJsonParse(text);
     if (!isRecord(message)) return;
     const type = message.type;
-    if (type === "config") {
+    // `session.configured`, which is what `session-core.ts` EMITS. This branch
+    // tested `"config"` — the one `config` in the protocol is
+    // `HostConfigMessageSchema`, a client-to-SERVER host-mode frame that no
+    // session ever sends outbound — so `configure()` never ran on any call: both
+    // resamplers stayed null, every agent frame hit the "before the config
+    // frame" drop below, and every caller frame was dropped silently by the
+    // `toSession === null` guard in `handleCarrierFrame`.
+    //
+    // Measured against a stub agent over a real `/phone` socket: the call
+    // connected, logged "Session ready", dropped the greeting's four audio
+    // frames, and delivered ZERO samples to the STT across three seconds of
+    // caller audio. Telephony connected and neither end could hear the other.
+    //
+    // The same file already carries this exact lesson about the reset branch —
+    // "spent its life testing a type no runtime emits". That one was fixed and
+    // this one was not, because the unit tests mint their own frame: see
+    // `configFrame` in the spec, now typed against the protocol so a rename is a
+    // compile error rather than a silent dead branch.
+    if (type === "session.configured") {
       const { sampleRate, ttsSampleRate } = message;
       if (typeof sampleRate === "number" && typeof ttsSampleRate === "number") {
         configure(sampleRate, ttsSampleRate);

@@ -28,9 +28,30 @@ import type { GuestFetch, GuestProcLike } from "./warm-harness.ts";
  */
 export const GUEST_READY_TIMEOUT_MS = 120_000;
 
-/** Per-attempt cap and retry delay for the health poll. */
+/** Per-attempt cap for the health poll. */
 const AGENT_HEALTH_ATTEMPT_MS = 2000;
-const AGENT_HEALTH_RETRY_MS = 250;
+
+/**
+ * Delay between health attempts.
+ *
+ * **This interval is pure added latency on every cold spawn**, because what the
+ * poll is waiting for finishes between two attempts: a guest that becomes ready
+ * 1 ms after an attempt is not noticed until the next one. So the spawn's
+ * measured cost is the guest's real boot time rounded UP to a multiple of this
+ * number, and the average penalty is half of it.
+ *
+ * It was 250 ms, which is 19% of a measured 1.3 s agent-mode boot and enough to
+ * make the same bundle time 1310 ms or 1580 ms run to run — a spread wide enough
+ * that it reads as noise in the bundle rather than as a constant in the poller.
+ *
+ * 25 ms instead. The cost is attempt COUNT — ~50 over a 1.3 s boot rather than
+ * ~5 — and every one of those is a loopback connect to a port nothing is
+ * listening on yet, which is the cheapest failure a socket has. Both callers are
+ * local (the subprocess and microsandbox backends); Modal evaluates a readiness
+ * probe in-container and never reaches this poll, so no attempt here crosses a
+ * network.
+ */
+const AGENT_HEALTH_RETRY_MS = 25;
 
 /**
  * Poll the guest's public `/health` until it answers 200 — agent-mode

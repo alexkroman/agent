@@ -16,9 +16,27 @@ import { defineConfig } from "vitest/config";
  * explicit `import { test } from "vitest"`. Both spellings are common, both
  * are correct, and tsconfig's `types: ["vitest/globals"]` already promises
  * the un-imported one — this makes the runtime match the types.
+ *
+ * `reporters` is PINNED, and left unset it is not merely a default — it is a
+ * different reporter depending on who is running. Vitest 4 resolves an unset
+ * value to `std-env`'s `isAgent ? "agent" : "default"`, and the agent reporter
+ * prints a passing file's captured console output nowhere. So `aai test` run by
+ * a coding agent — this project's own studio agent, or a CLI agent in your
+ * terminal — swallowed every `console.log` from a test that passed, which is
+ * exactly where you put one while working out what an agent said or which tool
+ * it reached for. Measured on a scaffolded project, vitest 4.1.10: with the
+ * agent markers in the environment a module-scope `console.warn` printed
+ * nothing; with them stripped it printed; pinning this restored it either way.
+ *
+ * That reporter exists to keep an agent's output small, so this is a real
+ * trade — it is pinned because a debugging line you cannot see costs more than
+ * the tokens it saves, and because a test run that behaves differently
+ * depending on who typed the command is the harder thing to reason about. Drop
+ * the line if you would rather have the terser output.
  */
 export default defineConfig({
   test: {
     globals: true,
+    reporters: ["default"],
   },
 });

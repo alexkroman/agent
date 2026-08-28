@@ -49,7 +49,7 @@
 
 import type { AgentDef } from "@alexkroman1/aai";
 import { describe, test } from "vitest";
-import { type EvalMode, resolveWorkflowEvalMode } from "./describe.ts";
+import { announceEvalMode, type EvalMode, resolveWorkflowEvalMode } from "./describe.ts";
 import {
   type EvalWorkflows,
   type EvalWorkflowsOptions,
@@ -123,11 +123,12 @@ export function describeWorkflowEval(
   options?: Omit<EvalWorkflowsOptions, "agent">,
 ): void {
   const { mode, reason } = resolveWorkflowEvalMode(agent);
-  // One line, every run, before any case — the same rule `describeEval` follows:
+  // One line, every run, before any case — the same rule `describeEval` follows,
+  // through the same stderr write for the same reason (see `announceEvalMode`):
   // a reader who cannot tell a wiring check from a real measurement has been
   // handed the wrong confidence. The wording differs because what is scripted
   // differs: here it is whatever the CASE decided to fake.
-  console.warn(
+  announceEvalMode(
     mode === "live"
       ? `eval: ${agent.name} — LIVE workflow run (${reason}). Its steps really call out.`
       : `eval: ${agent.name} — SCRIPTED workflow run (${reason}). Each case fakes its own providers.`,

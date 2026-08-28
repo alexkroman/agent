@@ -423,6 +423,10 @@ the user requests outright is unaffected.
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
 - `_dev-server.ts` — dev server for directory-based agents: loads `agent.ts`,
   builds runtime, watches for file changes, optionally runs Vite for client HMR
+- `_dev-vite-config.ts` — `viteDevConfig`, the proxy table that IS the agent API
+  as the browser can see it under `aai dev` (see below). Its own module because
+  it is worth reading without the watcher/restart/env plumbing around it, and
+  because that plumbing had pushed `_dev-server.ts` past the length cap
 - `_dev-restart.ts` — the watch loop's restart state machine (see below)
 - `_bundler.ts` — bundles `agent.ts` (and optional `client.tsx`) into
   deployable artifacts

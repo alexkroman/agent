@@ -15,6 +15,8 @@ type DevData = { url: string };
 export async function executeDev(opts: {
   cwd: string;
   port: string;
+  /** `--watch`. Undefined leaves the decision to `AAI_DEV_WATCH`. */
+  watch?: boolean | undefined;
 }): Promise<CommandResult<DevData>> {
   const port = parsePort(opts.port);
   const agentName = path.basename(path.resolve(opts.cwd));
@@ -44,7 +46,7 @@ export async function executeDev(opts: {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
-  cleanup = await startDevServer({ cwd: opts.cwd, port });
+  cleanup = await startDevServer({ cwd: opts.cwd, port, watch: opts.watch });
 
   const url = `http://localhost:${port}`;
   log.success(`${styleText("bold", agentName)} running at ${fmtUrl(url)}`);

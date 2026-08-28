@@ -71,7 +71,7 @@ import { errorMessage } from "./utils.ts";
  * @public
  */
 export function toStepError(cause: unknown, message?: string): Error {
-  if (cause instanceof Response) {
+  if (isResponseLike(cause)) {
     const sentence = message ?? `HTTP ${cause.status}`;
     if (!isTransientStatus(cause.status)) return new FatalError(sentence);
     return retryableError(sentence, retryAfter(cause));
@@ -80,6 +80,52 @@ export function toStepError(cause: unknown, message?: string): Error {
   // No verdict is available, so none is invented — see this function's doc.
   if (cause instanceof Error && message === undefined) return cause;
   return new Error(message ?? errorMessage(cause), { cause });
+}
+
+/**
+ * Whether `cause` is a `Response` — recognised STRUCTURALLY, never with
+ * `instanceof`, for the reason {@link hasCarriedVerdict} gives one paragraph
+ * down and one this function was PAYING when it read `cause instanceof
+ * Response`.
+ *
+ * A `"use step"` body is bundled separately and executed in its own realm, and
+ * the `fetch` it calls belongs to the HOST — so the response it is handed was
+ * built by another realm's undici and `instanceof` against this realm's
+ * `Response` is false. Measured inside a real step bundle under `aai dev`:
+ * `{ instanceofResponse: false, ctor: "Response", realmTag: "[object Response]",
+ * globalResponseIsSame: true }` — the object IS a response, the binding IS the
+ * realm's global, and the two realms simply never meet.
+ *
+ * What that cost is the whole of this module's job, silently: every `Response`
+ * fell through to the unclassifiable arm and came back a plain `Error`, which
+ * the DevKit retries with its own one-second default. Both of the two things
+ * this function exists to decide were therefore inert in production, measured
+ * against a stub far side through a real step bundle:
+ *
+ * | | `instanceof` | structural |
+ * | --- | --- | --- |
+ * | 401, fatal by contract | 3455ms, 3 retries | 349ms, ONE attempt |
+ * | 503 asking `Retry-After: 5` | 3334ms (a 1s cadence) | 15,345ms (3 x 5s) |
+ *
+ * A bad credential spent the whole retry budget re-asking with a key that could
+ * never work, and a rate limit's own delay was discarded — so N fan-out
+ * siblings all asked again one second later, which is the exact pile-up
+ * `stepFetchOk` and the `*Classified` wrappers were written to prevent. An
+ * explicit `throw new FatalError(...)` from the same step stopped in 378ms
+ * throughout, which is what located the fault here rather than in the DevKit.
+ *
+ * The shape is narrow enough not to catch anything else this function takes: a
+ * carried verdict has `message`/`retryable` and no `ok`, and an `Error` has
+ * neither `status` nor `ok`.
+ */
+function isResponseLike(cause: unknown): cause is Response {
+  return (
+    isRecord(cause) &&
+    typeof cause.status === "number" &&
+    typeof cause.ok === "boolean" &&
+    isRecord(cause.headers) &&
+    typeof cause.headers.get === "function"
+  );
 }
 
 /** An error that has already classified its own failure. */

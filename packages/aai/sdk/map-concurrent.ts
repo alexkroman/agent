@@ -47,6 +47,33 @@
  * settles. Neither shape rescues it; a body that needs two steps per item runs
  * them as two fan-outs.
  *
+ * ## The WINDOW is not the concurrency — the WORLD's worker count is
+ *
+ * `size` bounds how many step calls this body has in flight. How many of them
+ * EXECUTE at once is decided one layer down, by the workflow world's worker
+ * concurrency, and on the `DATABASE_URL` path that is
+ * `APP_DB_WORLD_WORKER_CONCURRENCY` — **three**. So a window of 8 or 17 runs
+ * three wide, and past three a wider window buys nothing while still costing a
+ * queued job per item.
+ *
+ * Measured on `aai dev` against a local Postgres, 16 steps each awaiting a 2s
+ * loopback response, window 16: **12.3s, an effective 2.6x**. The same run with
+ * `WORKFLOW_POSTGRES_WORKER_CONCURRENCY=12` (and `WORKFLOW_POSTGRES_MAX_POOL_SIZE=13`,
+ * since the concurrency is derived one below the pool): **4.4s, 7.3x**. Nothing
+ * about the body changed. Against a FAST far side the wide window is actively
+ * worse — 32 loopback steps took 903ms at window 2 and 1587ms at window 16, a
+ * 76% penalty for asking for eight times the concurrency.
+ *
+ * Two things follow. **Size the window against the far side's latency, not
+ * against the item count**: the engine spends ~38ms per step (measured, and
+ * steady across three far-side latencies), so a window only pays where the far
+ * side costs meaningfully more than that — which is why a real provider taking
+ * seconds rewards 8 or 17 and a loopback stub does not. And **the ceiling is an
+ * operator's knob, not an author's**: those two environment variables are read
+ * from the SERVER's process environment (a project's `.env` is the agent env and
+ * does not reach it), so a self-hosted deployment that owns its database can
+ * raise them. See `sdk/app-db-budget.ts` for why the default is what it is.
+ *
  * ## It is not workflow-specific, and needs no workflow to run
  *
  * Nothing here imports the DevKit: this is a plain bounded map, so a tool body

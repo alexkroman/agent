@@ -130,6 +130,7 @@ export function buildHarnessSpawn(params: HarnessSpawnParams): {
       // The only inherited variable. A container image ships a PATH and tool
       // code may shell out; everything else is withheld (see module doc).
       ...omitUndefined({ PATH: process.env.PATH }),
+      ...compileCacheEnv(),
       ...params.extraEnv,
     },
     // Not the server's cwd: a neutral directory mirrors the container's, and
@@ -152,6 +153,11 @@ const KILL_GRACE_MS = 250;
 function realContext(execPath = process.execPath): SubprocessSpawnContext {
   return {
     runGuestProcess(params) {
+      // Here rather than in either exported spawn function: this is the ONE
+      // real spawn path — the agent server and the studio's warm harness both
+      // reach it — and a test that injects its own context correctly gets no
+      // warm-up at all. Once per process, and never awaited.
+      warmCompileCacheOnce(params.harnessPath, execPath);
       const { execArgv, env, cwd } = buildHarnessSpawn(params);
       const child = spawn(execPath, [...execArgv, params.harnessPath], {
         cwd,
@@ -182,7 +188,86 @@ function realContext(execPath = process.execPath): SubprocessSpawnContext {
   };
 }
 
+/**
+ * The V8 compile cache the guest and the warm-up both point at.
+ *
+ * The MODAL guest has had this from `guestExecBaseEnv()` all along, so its
+ * absence here was a parity gap that cost real time rather than a decision.
+ * Measured on this backend: evaluating the 16.4 MB `harness.mjs` in a fresh
+ * process is ~1170ms cold and ~500ms against a warm cache, out of a ~2.0s cold
+ * spawn.
+ *
+ * A path under `tmpdir()` rather than the image's baked directory, because this
+ * backend has no image: the harness file is the same across spawns on a dev
+ * machine, so every spawn after the warm-up reads what it wrote. Node keys
+ * entries by file content AND its own version, so a rebuilt harness or a Node
+ * upgrade simply misses and re-populates — there is nothing to invalidate.
+ *
+ * NOT `guestExecBaseEnv()` itself: that also sets the CONTAINED flag, which is
+ * exactly what must not be set here (see the module doc, and
+ * `aai/host/ssrf.ts`) — a subprocess guest is not contained, and claiming it is
+ * would switch off the screening this backend needs most.
+ */
+function compileCacheEnv(): Record<string, string> {
+  return { NODE_COMPILE_CACHE: join(tmpdir(), "aai-guest-compile-cache") };
+}
+
 // ── Spawning ─────────────────────────────────────────────────────────────────
+
+/**
+ * Whether this process has already kicked off the compile-cache warm-up.
+ *
+ * Per PROCESS, not per spawn: the cache is keyed by file content, so one run
+ * serves every later guest and a second warm-up would only re-write what is
+ * already there.
+ */
+let warmedCompileCache = false;
+
+/**
+ * Populate the V8 compile cache once, in the background, by running the harness
+ * in its warm-up mode.
+ *
+ * **The env var alone buys nothing here, which is the whole reason this exists.**
+ * Node writes cache entries when a process EXITS cleanly, and an agent guest is
+ * a long-lived server that this backend terminates with a signal — so measured
+ * over two real spawns through the local platform, `NODE_COMPILE_CACHE` was set
+ * on both guests and the directory held zero files afterwards. The Modal image
+ * does not have this problem because it warms the cache at BUILD time
+ * (`AAI_GUEST_WARMUP=1`, `modal-harness-image.ts`), and this is the same trick
+ * for a backend that has no image to bake.
+ *
+ * Measured: the harness run as an entry point costs 1167ms cold and 500ms
+ * against a warm cache, out of a ~2.0s cold spawn on this backend.
+ *
+ * Fire-and-forget, and deliberately not awaited by the spawn that triggers it:
+ * blocking the first guest for a second to make later guests faster is the wrong
+ * trade for a dev backend. A guest that starts while the warm-up is still
+ * writing reads whatever is complete — Node validates each entry on its own, so
+ * a partial cache is a partial saving rather than a fault.
+ */
+function warmCompileCacheOnce(harnessPath: string, execPath: string): void {
+  if (warmedCompileCache) return;
+  warmedCompileCache = true;
+  try {
+    const child = spawn(execPath, [harnessPath], {
+      env: {
+        ...omitUndefined({ PATH: process.env.PATH }),
+        ...compileCacheEnv(),
+        AAI_GUEST_WARMUP: "1",
+      },
+      cwd: tmpdir(),
+      stdio: "ignore",
+      detached: false,
+    });
+    // Nothing waits on it and nothing reads its output; what must not happen is
+    // an `error` event with no listener taking the SERVER down with it.
+    child.on("error", (err) =>
+      log.debug("Compile-cache warm-up failed", { err: errorMessage(err) }),
+    );
+  } catch (err) {
+    log.debug("Compile-cache warm-up could not spawn", { err: errorMessage(err) });
+  }
+}
 
 /**
  * Spawn a warm Node harness as a local child process and dial its WebSocket.

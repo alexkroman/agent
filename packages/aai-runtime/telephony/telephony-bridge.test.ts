@@ -1,4 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
+import type { SessionEventBody } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "../_mock-ws.ts";
 import { makeLogger } from "../_test-utils.ts";
@@ -13,8 +14,24 @@ const TTS_RATE = 24_000;
 /** One carrier frame: 20 ms of 8 kHz μ-law. */
 const FRAME_SAMPLES = TELEPHONY_SAMPLE_RATE / 50;
 
+/**
+ * The frame the SESSION really emits, typed so it cannot drift again.
+ *
+ * It used to be a hand-written `{ type: "config", … }` — a shape no runtime
+ * sends — so every test in this file passed while the bridge configured itself
+ * on nothing and a real call went deaf in both directions. `SessionEventBody`
+ * is the protocol's own union, so a rename now fails to COMPILE here instead of
+ * failing silently on a phone.
+ */
 function configFrame(sampleRate = SESSION_RATE, ttsSampleRate = TTS_RATE): string {
-  return JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate, ttsSampleRate });
+  const event: SessionEventBody = {
+    type: "session.configured",
+    audioFormat: "pcm16",
+    sampleRate,
+    ttsSampleRate,
+    sessionId: "sess_test",
+  };
+  return JSON.stringify(event);
 }
 
 /** A μ-law payload of `samples` sine samples, base64'd as a carrier sends it. */

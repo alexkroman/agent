@@ -15,6 +15,7 @@
 import type { Db } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import {
+  applySessionStateDdl,
   createPostgresStateBackend,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
@@ -126,5 +127,68 @@ describe("events", () => {
 
     const empty = recordingDb([]);
     expect(await backendOn(empty.db).countEvents("s1")).toBe(0);
+  });
+});
+
+describe("applySessionStateDdl", () => {
+  /** A logger that records only what this function is specified to emit. */
+  function capturingLogger() {
+    const warnings: string[] = [];
+    const noop = () => undefined;
+    return {
+      warnings,
+      logger: { debug: noop, info: noop, warn: (m: string) => void warnings.push(m), error: noop },
+    };
+  }
+
+  test("issues the DDL for BOTH tables", async () => {
+    // The regression this closes: `aai dev` reported `sessionState: postgres,
+    // durable: true` against a database where neither table existed, and every
+    // session then died at start on the events one.
+    const { db, calls } = recordingDb();
+    const { logger, warnings } = capturingLogger();
+
+    expect(await applySessionStateDdl({ db, logger })).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.sql).toContain(SESSION_STATE_TABLE);
+    expect(calls[1]?.sql).toContain(SESSION_EVENT_TABLE);
+    expect(warnings).toEqual([]);
+  });
+
+  test("the statements are `if not exists`, so a second boot is a no-op", async () => {
+    const { db, calls } = recordingDb();
+    const { logger } = capturingLogger();
+    await applySessionStateDdl({ db, logger });
+    for (const call of calls) expect(call.sql).toContain("create table if not exists");
+  });
+
+  test("a failure WARNS and returns false rather than throwing", async () => {
+    // Never fatal: a self-hosted role that may not CREATE because a real
+    // migration already made these tables has to keep booting, and the
+    // backend's own error is the better diagnostic if they truly are absent.
+    const db: Db = {
+      query: () => Promise.reject(new Error("permission denied for schema public")),
+    };
+    const { logger, warnings } = capturingLogger();
+
+    expect(await applySessionStateDdl({ db, logger })).toBe(false);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("permission denied for schema public");
+    // Names both tables, so the warning alone says what to create.
+    expect(warnings[0]).toContain(SESSION_STATE_TABLE);
+    expect(warnings[0]).toContain(SESSION_EVENT_TABLE);
+  });
+
+  test("stops at the first failing statement", async () => {
+    let seen = 0;
+    const db: Db = {
+      query: () => {
+        seen += 1;
+        return Promise.reject(new Error("nope"));
+      },
+    };
+    const { logger } = capturingLogger();
+    await applySessionStateDdl({ db, logger });
+    expect(seen).toBe(1);
   });
 });

@@ -959,6 +959,7 @@
     "createTextAgent",
     "createToolCallRepair",
     "decliningRuntime",
+    "ensureSessionStateSchema",
     "partKey",
     "partsOf",
     "registerLlmKind",

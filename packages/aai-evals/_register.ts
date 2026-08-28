@@ -27,7 +27,7 @@
  */
 
 import { afterAll, expect, test } from "vitest";
-import { evalOnly } from "./_gate.ts";
+import { evalOnly, sayFromHarness } from "./_gate.ts";
 import { evalShortfalls, formatEvalReport } from "./report.ts";
 import { type EvalReport, type EvalSpec, evalMinScore, runEval } from "./runner.ts";
 
@@ -51,7 +51,9 @@ export type EvalCase = { readonly name: string; readonly body: EvalSpec["body"] 
 export function registerEvalCases(cases: readonly EvalCase[]): void {
   const reports: EvalReport[] = [];
   afterAll(() => {
-    if (reports.length > 0) console.log(`\n${formatEvalReport(reports)}\n`);
+    // The tier's whole product, on stdout as `console.log` had it — see
+    // `sayFromHarness` for why it is not `console.log` any more.
+    if (reports.length > 0) sayFromHarness(`\n${formatEvalReport(reports)}\n`, "out");
   });
 
   const only = evalOnly();
@@ -61,7 +63,7 @@ export function registerEvalCases(cases: readonly EvalCase[]): void {
       : cases.filter((c) => c.name.toLowerCase().includes(only.toLowerCase()));
 
   if (selected.length === 0) {
-    console.warn(
+    sayFromHarness(
       `\n[AAI_EVAL_ONLY=${only}] no case in this file matched. Its cases:\n` +
         `${cases.map((c) => `  - ${c.name}`).join("\n")}\n`,
     );

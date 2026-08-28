@@ -15,3 +15,8 @@ export type {
   SessionStateBackend,
   SessionStateStore,
 } from "../../runtime-barrel.ts";
+export {
+  // The DDL applier a self-hosted operator calls at boot — the other half of
+  // "the tables come with the database".
+  ensureSessionStateSchema,
+} from "../../runtime-barrel.ts";

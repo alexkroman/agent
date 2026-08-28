@@ -120,6 +120,38 @@ describe("session-core automatic reconnection (partysocket)", () => {
     expect(created.length).toBeGreaterThan(2);
   });
 
+  // A FATAL error is the server saying this session cannot work. Retried, the
+  // ladder runs in full while the page says CONNECTING, and the one sentence
+  // that says what to fix — the server writes a good one — lands ~110 seconds
+  // and 10 socket opens later, when partysocket happens to run out of retries.
+  // Measured in Chromium against a `workflowApp()` under `aai dev`.
+  it("does not reconnect after a FATAL error, and keeps the server's message", async () => {
+    core.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    const socket = created[0];
+    socket?.simulateOpen();
+    socket?.simulateMessage(makeConfig());
+    socket?.simulateMessage(
+      JSON.stringify({
+        type: "error.reported",
+        code: "protocol",
+        message: "this agent serves a static page, not voice sessions",
+        fatal: true,
+      }),
+    );
+    socket?.simulateClose();
+
+    // The error the server wrote, on screen NOW rather than after the ladder.
+    expect(core.getSnapshot().state).toBe("error");
+    expect(core.getSnapshot().error?.message).toContain("static page");
+
+    // And no eleventh chance: on the platform each attempt re-brokers, so a
+    // refusal retried ten times is ten calls that can boot a sandbox.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(created).toHaveLength(1);
+    expect(core.getSnapshot().state).toBe("error");
+  });
+
   it("a socket error inside the retry cycle is not reported on a later clean close", async () => {
     core.connect();
     await vi.advanceTimersByTimeAsync(0);

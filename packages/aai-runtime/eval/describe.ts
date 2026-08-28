@@ -237,6 +237,36 @@ function modeFrom(
 }
 
 /**
+ * Say which mode this run got — one line, every run, before any case.
+ *
+ * A DIRECT stderr write, not `console.warn`, and that is the whole point of the
+ * function. Vitest INTERCEPTS `console` and hands what it captures to the
+ * reporter, so whether the line is ever seen is the REPORTER's decision — and
+ * vitest 4 picks that reporter for you: with `reporters` unset it resolves
+ * `std-env`'s `isAgent ? "agent" : "default"`, and the agent reporter prints a
+ * passing file's captured output nowhere. A scaffolded agent project sets no
+ * `reporters`. So `aai eval` run BY AN AGENT — this repo's own studio coding
+ * agent included — showed the line only when the run FAILED, which is the one
+ * case where it does not matter.
+ *
+ * Measured on a scaffolded project, vitest 4.1.10, one passing case: with the
+ * agent markers in the environment `console.warn` printed nothing while a
+ * `process.stderr.write` beside it printed; with those markers stripped — a
+ * human at a terminal — `console.warn` printed too. Pinning
+ * `reporters: ["default"]` restores it as well, which is exactly why THIS repo
+ * never saw it: `vitest.shared.ts` pins that value and every config here
+ * spreads it.
+ *
+ * A stderr write is right rather than merely sufficient: it is the reporter's
+ * job to decide what a TEST said, and not the reporter's job to decide whether
+ * the harness may state what it just did. The trailing newline is ours for the
+ * same reason — nothing is formatting this.
+ */
+export function announceEvalMode(line: string): void {
+  process.stderr.write(`${line}\n`);
+}
+
+/**
  * Declare an eval suite for `agent`.
  *
  * ```ts no-check
@@ -262,9 +292,7 @@ export function describeEval(
     process.env,
     omitUndefined({ llm: options?.llm }),
   );
-  // One line, every run, before any case: a reader who cannot tell a wiring
-  // check from a behaviour measurement has been handed the wrong confidence.
-  console.warn(
+  announceEvalMode(
     mode === "live"
       ? `eval: ${agent.name} — LIVE model (${reason}). This spends tokens.`
       : `eval: ${agent.name} — SCRIPTED model (${reason}). This checks the wiring, not the agent's behaviour.`,

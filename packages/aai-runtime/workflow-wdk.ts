@@ -17,7 +17,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { getRun, resumeHook, start } from "workflow/api";
-import { HookNotFoundError, WorkflowRunNotFoundError } from "workflow/errors";
+import { EntityConflictError, HookNotFoundError, WorkflowRunNotFoundError } from "workflow/errors";
 import { getWorld } from "workflow/runtime";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
 
@@ -52,8 +52,43 @@ import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-
  * predicate is the only thing standing between it and a 500.
  */
 export function isRunNotFound(err: unknown): boolean {
+  return causeChainHas(err, (at) => WorkflowRunNotFoundError.is(at));
+}
+
+/**
+ * Is this — or anything it WRAPS — the DevKit refusing to move a run that is
+ * already over?
+ *
+ * The second half of `cancel`'s answer, and it was missing. A world throws
+ * `EntityConflictError("Cannot transition run from terminal state \"completed\"")`
+ * rather than a not-found, so the predicate above answered false and the
+ * documented `cancelled: false` was unreachable for the only case that produces
+ * it in practice: a run that FINISHED between the render and the click.
+ * Measured against a real Postgres world under `aai dev` — `DELETE
+ * /workflows/runs/<id>` on a completed run answered `500 Internal server error`,
+ * which is the two-tabs race the route's own comment says is ordinary.
+ *
+ * Not narrowed by message: the wording is a third party's, and inside `cancel`
+ * the only entity a conflict can be about is the run being cancelled, so the
+ * class alone already means "that run will not transition". Cancelling an
+ * already-CANCELLED run does not reach here — the world accepts the same
+ * terminal status again — which is why the failure only ever showed on
+ * `completed` and `failed`.
+ */
+function isRunOver(err: unknown): boolean {
+  return isRunNotFound(err) || causeChainHas(err, (at) => EntityConflictError.is(at));
+}
+
+/**
+ * Walk an error's `cause` chain, bounded, asking `pred` of each link.
+ *
+ * Shared by both predicates above rather than written twice: the wrapping is the
+ * DevKit's to change, and a second copy is the one that would not be updated.
+ * Bounded, so a cause cycle cannot hang the handler that is reporting an error.
+ */
+function causeChainHas(err: unknown, pred: (at: unknown) => boolean): boolean {
   for (let at: unknown = err, depth = 0; at !== undefined && depth < 8; depth++) {
-    if (WorkflowRunNotFoundError.is(at)) return true;
+    if (pred(at)) return true;
     at = at instanceof Error ? at.cause : undefined;
   }
   return false;
@@ -129,8 +164,9 @@ export function wdkAdapter(): WdkAdapter {
         // `cancel` on an already-terminal run is not an error a caller should see
         // as one: `WorkflowClient.cancel` resolves false for "it was already
         // over", which is the same answer whether the run completed a second ago
-        // or was never there.
-        if (isRunNotFound(err)) return false;
+        // or was never there. Both spellings of "already over" — see
+        // {@link isRunOver}, which is what makes the second one reachable.
+        if (isRunOver(err)) return false;
         throw err;
       }
     },
