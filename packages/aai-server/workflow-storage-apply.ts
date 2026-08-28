@@ -34,6 +34,7 @@ import {
   RunClaimRefusedError,
   runIdsFor,
 } from "./workflow-run-owner.ts";
+import { assertEveryRunIsOurs } from "./workflow-storage-egress.ts";
 import { decideScope, type StorageMethod } from "./workflow-storage-scope.ts";
 import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
 import { qualifyStreamName, unqualifyStreamName } from "./workflow-stream-namespace.ts";
@@ -108,8 +109,55 @@ export type ServeContext = {
   storage: PlatformWorldStorage;
 };
 
-/** Apply the call's scope, then forward it. */
+/**
+ * Apply the call's scope, forward it, and CHECK WHAT COMES BACK.
+ *
+ * The egress check is the second half, and it is here rather than in the handler
+ * so that a scope kind added to the switch below cannot skip it.
+ *
+ * **Why an egress check exists at all.** `workflow-run-owner.ts` used to claim
+ * that "ownership is checked on the way IN, not filtered on the way out … so a
+ * bug in a projection query cannot leak across tenants". That is true of four
+ * scope kinds and false of three — `filter-runs`, `resolve-hook` and
+ * `own-streams` all call the DevKit FIRST and sort it out afterwards — so the
+ * design already needed an outbound check three times and wrote it three times,
+ * each one shaped to its own method and none of them covering the others.
+ *
+ * This asserts the property all of them are trying to produce, at the one place
+ * every reply passes through, in terms of the REPLY rather than of the method
+ * that produced it. What it therefore covers, without knowing which scope ran: a
+ * filter that stops filtering, a resolve-then-check that stops checking, a wrong
+ * `index` in `STORAGE_SCOPES` (compile-clean, and `decideScope` would happily
+ * require the wrong argument), a DevKit reply shape that changes under one of
+ * them, and a new scope kind whose author picks a plausible-but-wrong rule.
+ *
+ * **What it does NOT cover, stated because the obvious claim is wrong.** It would
+ * not have caught the `scopeCreate` bug this file was hardened for. That bug
+ * wrongly ESTABLISHED ownership — `claimRun` inserted the row and the attacker
+ * then genuinely owned the run — so by the time a reply came back there was
+ * nothing foreign in it to find. A check on the way out cannot see a boundary
+ * that was moved on the way in; `claimNewRun` is what covers that, by refusing
+ * to move it. The two are complements, not overlapping nets.
+ *
+ * **A miss is 502, not 404.** A 404 would say "no such run", which is a normal
+ * answer a client handles; this is the platform noticing it was about to hand a
+ * tenant something that is not theirs, which is an invariant breach and should
+ * page someone. It is logged at `error` with the offending id.
+ *
+ * **It does not replace the three filters.** Dropping another tenant's events
+ * from a `listByCorrelationId` page is CORRECT — a correlation id legitimately
+ * spans tenants — so those methods must keep filtering, and this then sees only
+ * what they kept. Removing them and letting this catch the leak would turn every
+ * shared-correlation lookup into a 502.
+ */
 export async function serve(call: StorageCall, ctx: ServeContext): Promise<unknown> {
+  const reply = await dispatch(call, ctx);
+  await assertEveryRunIsOurs(reply, { slug: ctx.slug, sql: ctx.sql, method: call.method });
+  return reply;
+}
+
+/** Route the call to the one function its scope names. */
+async function dispatch(call: StorageCall, ctx: ServeContext): Promise<unknown> {
   const decision = decideScope(call.method, call.args);
   if (!decision.ok) throw new HTTPException(400, { message: decision.reason });
 
