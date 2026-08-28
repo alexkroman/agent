@@ -24,6 +24,7 @@
 import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
 import { SLUG_LOCK_NAMESPACE } from "./platform-lock.ts";
 import { SESSION_STATE_RETENTION } from "./platform-session-state.ts";
+import { UPLOAD_RECORD_RETENTION } from "./platform-uploads.ts";
 import {
   AGENT_ENV_SECRET_PREFIX,
   PLATFORM_STORAGE_KEY_SECRET,
@@ -211,6 +212,26 @@ begin
 end $$`;
 
 /**
+ * Upload records nobody will read again.
+ *
+ * One statement over one table, and the window is IMPORTED from
+ * `platform-uploads.ts` for the reason the session-state sweep's is: a cron command
+ * is text, so a literal here would be a second copy of the retention policy with
+ * nothing holding the two together.
+ *
+ * **Seven days rather than session state's two**, because an upload is an INPUT to
+ * runs that may sleep — `podcast-digest` parks for days between digests — so
+ * expiring one at two days would break the workflow the retention exists to
+ * support.
+ *
+ * It reclaims the ROW and not the bytes. Those are the bucket's, swept by
+ * `aai-sweep-blob-gc` against its own rule, and the two are deliberately not
+ * chained: a row deleted here is one nothing can name an object by, which is the
+ * same state an upload that was never recorded is in.
+ */
+const SWEEP_UPLOAD_RECORDS = `delete from aai_platform.workflow_uploads where created_at < now() - interval '${UPLOAD_RECORD_RETENTION}'`;
+
+/**
  * Expired studio session registrations — the same hygiene as above for the
  * studio broker's own registry (aai-studio-server/studio-session-registry.ts),
  * whose rows carry guest credentials and so should not linger past their
@@ -365,6 +386,15 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
       name: "aai-sweep-session-state",
       schedule: "23 * * * *",
       command: SWEEP_SESSION_STATE,
+    },
+    // The other half of "a guest keeps nothing durable on disk": upload records are
+    // the platform's now, so their expiry is too. Daily rather than hourly — the
+    // window is seven days, so an hourly pass would scan for nothing 23 times out
+    // of 24.
+    {
+      name: "aai-sweep-upload-records",
+      schedule: "36 5 * * *",
+      command: SWEEP_UPLOAD_RECORDS,
     },
     ...(opts.storage
       ? [

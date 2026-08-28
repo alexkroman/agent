@@ -47,6 +47,11 @@ import {
   UPLOAD_BYTES_ROUTE,
 } from "./upload-handler.ts";
 import {
+  createUploadsHandler,
+  MAX_UPLOAD_RECORD_BODY_BYTES,
+  UPLOAD_RECORDS_ROUTE,
+} from "./uploads-handler.ts";
+import {
   createWorkflowEnqueueHandler,
   MAX_ENQUEUE_BODY_BYTES,
   WORKFLOW_ENQUEUE_ROUTE,
@@ -155,6 +160,17 @@ export function registerAgentWorkflowRoutes(
     SESSION_STATE_ROUTE,
     limit(MAX_SESSION_STATE_BODY_BYTES),
     createSessionStateHandler(omitUndefined({ adminDb: opts.adminDb })),
+  );
+
+  // The guest's workflow UPLOAD records — the last piece of a guest's durable state
+  // that lived on local disk. Its bytes do not come through here: those go to the
+  // bucket through the upload broker. Same bearer and the same slug-in-every-
+  // statement scoping as session state; `platform-uploads.ts` has why it moved and
+  // what keeping it on disk cost.
+  agents.post(
+    UPLOAD_RECORDS_ROUTE,
+    limit(MAX_UPLOAD_RECORD_BODY_BYTES),
+    createUploadsHandler(omitUndefined({ adminDb: opts.adminDb })),
   );
 
   // The durable-workflow API, brokered to the guest. Registered even though a

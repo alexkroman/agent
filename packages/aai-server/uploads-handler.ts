@@ -1,0 +1,221 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * `POST /:slug/upload-records` — the guest's workflow upload RECORDS.
+ *
+ * The bytes never come through here: those go to the bucket through the upload
+ * broker's own routes. This is the record, and it is the last piece of a guest's
+ * durable state that lived on local disk — see `platform-uploads.ts` for why that
+ * was wrong and what it cost.
+ *
+ * ## The shape is `session-state`'s, deliberately
+ *
+ * `{ method, id, … }` behind one bearer check, dispatched to one statement. The
+ * alternative is six routes and six places to restate the same scoping, and the
+ * scoping is the only security-relevant thing here.
+ *
+ * The SLUG comes from the bearer, never from the body — `assertGuestBearer` proves
+ * the caller is the guest currently deployed for it, and every statement in the
+ * store takes it as a parameter. So a guessed upload id reaches nothing: there is
+ * no query that can be pointed at another agent's rows.
+ *
+ * ## One status is load-bearing beyond the usual
+ *
+ * A CLAIMED id answers **409**. That is not an error class the other guest routes
+ * have, and it is the whole point of `claim` existing separately from `insert`: a
+ * caller-chosen id must be refusable, and the refusal has to be distinguishable
+ * from "the platform is broken" so the runtime can turn it back into its own
+ * `UploadIdTakenError` rather than a retry.
+ */
+
+import { errorMessage } from "@alexkroman1/aai";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { HTTPException } from "hono/http-exception";
+import type { AppContext } from "./context.ts";
+import { assertGuestBearer } from "./guest-bearer.ts";
+import { createLogger } from "./logger.ts";
+import type { AdminDb } from "./platform-lock.ts";
+import {
+  claimUpload,
+  finishUpload,
+  insertUpload,
+  PlatformUploadIdTakenError,
+  type PlatformUploadPart,
+  type PlatformUploadRecord,
+  readUpload,
+  updateUpload,
+} from "./platform-uploads.ts";
+
+const log = createLogger("uploads.records");
+
+/** This route's own path under `/:slug`. */
+export const UPLOAD_RECORDS_ROUTE = "/upload-records";
+
+/**
+ * Cap on a request body.
+ *
+ * A record carries a name, a type, three numbers and a boundary list. The list is
+ * the only part that grows — one entry per window — and a whole-file upload of the
+ * largest size the store allows produces a few thousand. 1 MiB is far above that
+ * and far below anything worth buffering.
+ */
+export const MAX_UPLOAD_RECORD_BODY_BYTES = 1_048_576;
+
+/**
+ * Every method this route serves — the `UploadRecords` seam, minus `ensure`.
+ *
+ * `ensure` is absent because there is nothing to ensure: the table is a MIGRATION
+ * here, not a lazy `create table if not exists`. That laziness existed because an
+ * app's first workflow might be its first ever deploy and there was no provisioning
+ * pass to hang DDL off; the platform's own schema has one. A guest still calls
+ * `ensure` on its backend, and the platform backend answers it locally without a
+ * round trip.
+ */
+const METHODS = ["read", "claim", "insert", "update", "finish"] as const;
+
+type Method = (typeof METHODS)[number];
+
+function isMethod(value: unknown): value is Method {
+  return typeof value === "string" && (METHODS as readonly string[]).includes(value);
+}
+
+/** A required non-empty string field. */
+function requiredString(body: Record<string, unknown>, key: string): string {
+  const value = body[key];
+  if (typeof value !== "string" || value === "") {
+    throw new HTTPException(400, { message: `${key} is required` });
+  }
+  return value;
+}
+
+/** A required non-negative integer field. */
+function requiredSize(body: Record<string, unknown>, key: string): number {
+  const value = body[key];
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new HTTPException(400, { message: `${key} must be a non-negative integer` });
+  }
+  return value;
+}
+
+/** The boundary list off the wire, refusing anything malformed. */
+function parts(body: Record<string, unknown>): PlatformUploadPart[] {
+  const value = body.parts;
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new HTTPException(400, { message: "parts must be an array" });
+  return value.map((entry) => {
+    if (!isRecord(entry) || typeof entry.at !== "number" || typeof entry.bytes !== "number") {
+      // REFUSED here rather than dropped, unlike the read path: a malformed window
+      // arriving from the guest is a bug in the guest, and accepting it would store
+      // a record whose prefix silently disagrees with its bytes. On the way OUT a
+      // corrupt entry is dropped, because there the alternative is an upload that
+      // can never be read at all.
+      throw new HTTPException(400, { message: "each part needs a numeric at and bytes" });
+    }
+    return { at: entry.at, bytes: entry.bytes };
+  });
+}
+
+/** A full record off the wire, for `claim` and `insert`. */
+function record(body: Record<string, unknown>): PlatformUploadRecord {
+  const expected = body.expected;
+  if (expected !== undefined && (typeof expected !== "number" || !Number.isInteger(expected))) {
+    throw new HTTPException(400, { message: "expected must be an integer when present" });
+  }
+  return {
+    name: typeof body.name === "string" ? body.name : "",
+    type: typeof body.type === "string" ? body.type : "",
+    size: requiredSize(body, "size"),
+    complete: body.complete === true,
+    // ABSENT is a value here — it is what says "not a parts upload" — so the key is
+    // omitted rather than set to undefined.
+    ...omitUndefined({ expected }),
+    parts: parts(body),
+  };
+}
+
+export type UploadsHandlerOptions = { adminDb?: AdminDb | undefined };
+
+/**
+ * Build the upload-records handler.
+ *
+ * @internal
+ */
+export function createUploadsHandler(
+  opts: UploadsHandlerOptions,
+): (c: AppContext) => Promise<Response> {
+  return async (c) => {
+    const slug = c.var.slug;
+    await assertGuestBearer(c, slug);
+    const adminDb = opts.adminDb;
+    if (!adminDb) {
+      // 501, like the enqueue, storage and session-state routes: there are no
+      // platform upload records on this deployment and a retry will not make any.
+      // The guest reads this once and falls back to its local store, SAYING so.
+      throw new HTTPException(501, { message: "platform upload records not configured" });
+    }
+
+    const body: unknown = await c.req.json().catch(() => undefined);
+    if (!isRecord(body)) throw new HTTPException(400, { message: "body must be a JSON object" });
+    if (!isMethod(body.method)) {
+      // Not echoed: the value is caller-supplied and this reply is a tenant's to
+      // read.
+      throw new HTTPException(400, { message: "unknown upload-records method" });
+    }
+    const id = requiredString(body, "id");
+
+    const reserved = await adminDb.reserve();
+    const sql = (q: string, p?: unknown[]) => reserved.query(q, p);
+    try {
+      return c.json({ result: await serve(body.method, { sql, slug, id }, body) }, 200);
+    } catch (err: unknown) {
+      if (err instanceof HTTPException) throw err;
+      if (err instanceof PlatformUploadIdTakenError) {
+        // 409 and NOT logged as a failure: a refused claim is this route working.
+        // The runtime turns it back into `UploadIdTakenError`, which is a 409 to the
+        // caller who chose the id.
+        throw new HTTPException(409, { message: "upload id already taken", cause: err });
+      }
+      log.warn("upload-records call failed", {
+        slug,
+        method: body.method,
+        error: errorMessage(err),
+      });
+      // 503: every remaining cause is transient from the guest's point of view.
+      throw new HTTPException(503, { message: "upload-records call failed", cause: err });
+    } finally {
+      reserved.release();
+    }
+  };
+}
+
+type Ctx = {
+  sql: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]>;
+  slug: string;
+  id: string;
+};
+
+/** Dispatch one call. The slug comes from `ctx`, never from the body. */
+async function serve(method: Method, ctx: Ctx, body: Record<string, unknown>): Promise<unknown> {
+  const { sql, slug, id } = ctx;
+  switch (method) {
+    case "read":
+      // `null` rather than omitting the key: the guest distinguishes "no record" from
+      // a malformed reply, and `{ result: undefined }` serializes to neither.
+      return (await readUpload(sql, slug, id)) ?? null;
+    case "claim":
+      await claimUpload(sql, slug, id, record(body));
+      return null;
+    case "insert":
+      await insertUpload(sql, slug, id, record(body));
+      return null;
+    case "update":
+      await updateUpload(sql, slug, id, {
+        size: requiredSize(body, "size"),
+        complete: body.complete === true,
+        parts: parts(body),
+      });
+      return null;
+    default:
+      await finishUpload(sql, slug, id, requiredSize(body, "size"));
+      return null;
+  }
+}

@@ -234,6 +234,11 @@ describeWithStack("the platform migration applies and the stores work against it
       // tenant column, so this is what scopes every storage read once that world
       // runs on the platform's database rather than in each guest.
       "workflow_run_owner",
+      // Workflow upload RECORDS (`20260828000000_platform_uploads.sql`) — the last
+      // piece of a guest's durable state that lived on local disk. The BYTES are
+      // not here; they are the bucket's. Tenancy is in the primary key, like
+      // session state, because this schema is the platform's own.
+      "workflow_uploads",
     ]);
   });
 });

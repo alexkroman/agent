@@ -61,6 +61,10 @@ import { createFileUploadBlobs, createFileUploadRecords } from "./_upload-files.
 import { createPostgresUploadRecords } from "./_upload-records.ts";
 import { type UploadStore, UploadsUnavailableError } from "./_upload-store.ts";
 import { createBlobUploadStore } from "./_upload-store-blobs.ts";
+import {
+  createPlatformUploadRecords,
+  type PlatformUploadRecordsOptions,
+} from "./uploads-platform.ts";
 
 export {
   createMemoryUploadBlobs,
@@ -174,6 +178,13 @@ export function createUploadStore(opts: {
    * that read it share one filesystem lifetime.
    */
   localDir?: string | undefined;
+  /**
+   * The PLATFORM's record home, when this guest is deployed on one: its public base
+   * URL and this sandbox's bearer, as `resolvePlatformQueue` reads them.
+   *
+   * Checked before `db`, deliberately — see the arm below.
+   */
+  platform?: PlatformUploadRecordsOptions | undefined;
   /** Key prefix for this deployment's objects. Defaults to {@link UPLOAD_KEY_PREFIX}. */
   prefix?: string | undefined;
   /** Cap for a body that names none. Defaults to `MAX_WORKFLOW_UPLOAD_BYTES`. */
@@ -181,11 +192,49 @@ export function createUploadStore(opts: {
 }): UploadStore {
   const prefix = opts.prefix ?? UPLOAD_KEY_PREFIX;
   const maxBytes = opts.maxBytes ?? MAX_WORKFLOW_UPLOAD_BYTES;
+  // THE PLATFORM's records win over a `DATABASE_URL`, and the order is the whole
+  // correction. This tree used to start at `db`, on the premise stated one arm
+  // down: "a database means durable runs, so the bytes have to be durable too."
+  // The workflow queue moving to the platform falsified it — a deployed app's runs
+  // are durable with no database of the author's — so the choice keyed off a signal
+  // that had stopped meaning durability, and a deployed guest with no
+  // `DATABASE_URL` got durable runs with their uploads in a directory that
+  // recycles. One sandbox filled its filesystem that way.
+  //
+  // Preferring the platform even when the author HAS a database is the same rule
+  // `configureWorkflowWorld` follows for the world itself: a deployed guest keeps
+  // its durable state where the platform keeps it, whether or not it happens to
+  // have a database of its own. Two homes chosen by different rules is how a run
+  // and its uploads end up in different places.
+  if (opts.platform) {
+    // NOT `uploadBytesAreRemote`, and the difference is the point: that predicate
+    // requires a `db` because it is the db arm's guard, narrowing to
+    // `{ db, blobs }`. Reusing it here refuses the very case this arm exists for —
+    // a deployed guest with no `DATABASE_URL` — which is a bug this spec caught.
+    //
+    // The requirement is still real: a durable RECORD behind bytes that die with
+    // the container is the same failure in reverse, and worse, because the record
+    // then names an object nothing can produce.
+    if (!opts.blobs) {
+      return createUnavailableUploadStore(
+        `somewhere to put the bytes (\`${UPLOAD_STORAGE_URL_ENV}\`)`,
+      );
+    }
+    return createBlobUploadStore({
+      records: createPlatformUploadRecords(opts.platform),
+      blobs: opts.blobs,
+      prefix,
+      maxBytes,
+    });
+  }
   if (opts.db) {
     // A database means durable runs, so the bytes have to be durable too — a
     // directory on this one machine cannot serve a run resumed by another process,
     // which is the whole failure `_upload-files.ts` describes. Refused rather than
     // downgraded: the local arm would be a QUIETER version of that bug, not a fix.
+    //
+    // Still reachable, and it is `aai dev` and a self-hosted server: no platform
+    // above them, a `DATABASE_URL` of the operator's own.
     if (!uploadBytesAreRemote(opts)) {
       return createUnavailableUploadStore(
         `somewhere to put the bytes (\`${UPLOAD_STORAGE_URL_ENV}\`)`,
