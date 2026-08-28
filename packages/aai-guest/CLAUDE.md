@@ -1344,6 +1344,17 @@ examples, and what they taught is worth copying:
   81.41/76.49/81.33/82.62 (two failed), and with the body rejections and the
   turn **82.81/77.29/83.00/84.19** — every floor clear, against a pre-split
   83.24/77.52/84.12/84.53. Floors do not move.
+- **Incidental coverage is not coverage, and the per-file gate is what says
+  so.** `studio-turn-settle.ts` had no spec at all — every line of it was
+  reached by `studio-chat.test.ts`'s real turns — so the move dropped it to
+  35.2% and `check:coverage-per-file` failed on it alone, which the package
+  average could never have shown. It has its own unit spec now, with
+  `snapshotWorkspace` MOCKED: what that module decides is which RPCs go out
+  and with which flags (`done: true` is the one the host keys preview deploys
+  off), how a walk's warnings are reported, that a burst of checkpoints
+  coalesces to one trailing run, and that a failed checkpoint is logged rather
+  than thrown into an otherwise-fine reply. Walking a real tree is
+  `studio-workspace-fs.ts`'s subject.
 - **Two Node details are worth knowing before writing another one of these.** A
   detached `ServerResponse` needs `assignSocket` to be writable at all, and it
   never emits `finish` — the bytes arrive, the event does not — so anchor on the
