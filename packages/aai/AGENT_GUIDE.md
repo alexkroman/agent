@@ -18,8 +18,12 @@ You are helping build a voice agent using the **aai** framework.
 The fast loop: edit → `pnpm dev` (browser, talk to it) →
 `pnpm test` (logic) → `pnpm build` (validate bundle).
 
-1. **Iterate in `pnpm dev`** — hot reload + browser UI. Speak to the
-   agent to verify behavior end-to-end. This is the primary feedback loop.
+1. **Iterate in `pnpm dev`** — browser UI, and `pnpm dev -- --watch` to
+   rebuild and restart on every save. Speak to the agent to verify behavior
+   end-to-end. This is the primary feedback loop. Watching is OPT-IN because a
+   restart ends in-flight voice sessions, which is right while you are editing
+   and wrong while something is driving the agent for twenty minutes;
+   `AAI_DEV_WATCH=1` is the same switch for a process supervisor.
 2. **Run `pnpm test` after logic changes** — vitest. Co-locate tests as
    `agent.test.ts` (see `pipeline-simple` template for a reference).
    **When the project has an `agent.test.ts` (the default `simple`

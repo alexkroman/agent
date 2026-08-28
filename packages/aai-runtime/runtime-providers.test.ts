@@ -55,8 +55,13 @@ describe("createRuntime provider resolution", () => {
     // `runtime-transport.test.ts`'s "a pipelineProviders thunk that throws".
     const logger = makeLogger();
     createRuntime({ agent: providerless({ page: "static" }), env: {}, logger });
-    // The runtime was built and reported its mode; only the credential-bearing
-    // resolution was left undone.
-    expect(logger.info).toHaveBeenCalledWith("Session mode resolved", expect.anything());
+    // The runtime was built and reported ITSELF; only the credential-bearing
+    // resolution was left undone. A workflow app's line is its own, and says
+    // only what resolved — printing `mode: pipeline` plus three stages' settings
+    // here would describe the very resolution this test asserts did not happen.
+    expect(logger.info).toHaveBeenCalledWith(
+      "Workflow app resolved",
+      expect.objectContaining({ sessionState: expect.anything() }),
+    );
   });
 });

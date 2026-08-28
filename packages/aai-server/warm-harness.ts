@@ -17,10 +17,7 @@
  */
 
 import { createServer } from "node:net";
-import { errorMessage } from "@alexkroman1/aai";
-import { sleep } from "@alexkroman1/aai/internal";
 import type { LogPage } from "@alexkroman1/aai-runtime";
-import { WebSocket } from "ws";
 import { readGuestLogs } from "./agent-logs.ts";
 import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";
 import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest-routes.ts";
@@ -30,13 +27,12 @@ import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
+// Re-exported rather than moved at every call site: three backends and a
+// scenario test take the dial from here, and `guest-dial.ts` is a split for the
+// line cap rather than a new boundary anyone asked for.
+export { type DialGuest, dialGuest } from "./guest-dial.ts";
+
 const log = createLogger("guest");
-
-/** Budget for the harness WebSocket to become dialable after exec. */
-const GUEST_DIAL_TIMEOUT_MS = 30_000;
-
-/** Delay between dial attempts while the harness server boots. */
-const GUEST_DIAL_RETRY_MS = 250;
 
 /** Per-request cap on the manage-surface probes (status/drain). */
 
@@ -112,44 +108,6 @@ export function drainProcStream(stream: ReadableStream<Uint8Array>, label: strin
     const text = decoder.decode(value, { stream: true }).trimEnd();
     if (text) log.warn(`${label}: ${text}`);
   });
-}
-
-// ── Guest WebSocket dial ─────────────────────────────────────────────────────
-
-/** How the host reaches a spawned harness — injectable for tests. */
-export type DialGuest = (url: string, token: string) => Promise<RpcWebSocket>;
-
-function connectOnce(url: string, token: string): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url, { headers: { authorization: `Bearer ${token}` } });
-    ws.once("open", () => resolve(ws));
-    ws.once("error", (err) => reject(err));
-    ws.once("unexpected-response", (_req, res) => {
-      reject(new Error(`guest WebSocket dial rejected: HTTP ${res.statusCode}`));
-    });
-  });
-}
-
-/**
- * Dial the harness WebSocket, retrying while the harness server boots (the
- * endpoint — a Modal tunnel or a local published port — exists before the
- * guest process listens, so early attempts are refused/reset).
- */
-export async function dialGuest(url: string, token: string): Promise<RpcWebSocket> {
-  const deadline = Date.now() + GUEST_DIAL_TIMEOUT_MS;
-  for (;;) {
-    try {
-      return await connectOnce(url, token);
-    } catch (err) {
-      if (Date.now() >= deadline) {
-        throw new Error(
-          `guest WebSocket not dialable after ${GUEST_DIAL_TIMEOUT_MS}ms: ${errorMessage(err)}`,
-          { cause: err },
-        );
-      }
-      await sleep(GUEST_DIAL_RETRY_MS, { unref: true });
-    }
-  }
 }
 
 // ── Guest liveness ───────────────────────────────────────────────────────────

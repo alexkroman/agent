@@ -18,10 +18,9 @@ import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout, { TimeoutError } from "p-timeout";
 import { openAppDb } from "./app-db.ts";
-import { describeResolvedProviders } from "./providers/_provider-settings.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
-import { resolveEffectiveProviders } from "./runtime-providers.ts";
+import { logResolvedRuntime, resolveEffectiveProviders } from "./runtime-providers.ts";
 import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
 import { attachSessionState, createRuntimeSessionState } from "./runtime-session-state.ts";
 import { attachSessionStream } from "./runtime-session-stream.ts";
@@ -129,16 +128,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     s2s: effectiveProviders.s2s,
   });
 
-  // Report the resolved mode once per runtime. A pipeline agent whose providers
-  // fail to reach the runtime does not error — before the pipeline-by-default
-  // flip it ran a perfectly healthy S2S session instead — so "which transport
-  // is this agent on" has to be answerable from one log line rather than
-  // inferred from the shape of the message stream.
-  //
-  // Each stage reports its EFFECTIVE settings, not just its kind: almost every
-  // one of them is a default nobody wrote down (endpointing window, Voice
-  // Focus threshold, gateway model id, TTS voice), and those are the values a
-  // misbehaving session gets blamed on. See _provider-settings.ts.
   // Per-session slot state, over Postgres when the app has a database and memory
   // otherwise, plus its grace-window sweeps — see `runtime-session-state.ts`.
   // It REPLACES the `Map` this used to be.
@@ -157,10 +146,13 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     ...omitUndefined({ platform: platformState }),
   });
 
-  logger.info("Session mode resolved", {
+  // What this runtime resolved, once, at boot — including the WORKFLOW APP case,
+  // whose line is deliberately not the pipeline one. See `runtime-providers.ts`.
+  logResolvedRuntime({
+    logger,
     slug,
-    mode: effectiveProviders.mode,
-    ...describeResolvedProviders(effectiveProviders),
+    page: agent.page,
+    providers: effectiveProviders,
     sessionState: sessionState.describe,
   });
   // Owned maps because teardown is async on both: a reconnect resuming the

@@ -16,6 +16,8 @@ import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { SessionMode } from "@alexkroman1/aai/manifest";
 import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
+import { describeResolvedProviders } from "./providers/_provider-settings.ts";
+import type { Logger } from "./runtime-config.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import { textAgentHasNoSession } from "./text-agent.ts";
 
@@ -60,4 +62,51 @@ export function resolveEffectiveProviders(
     };
   }
   return { stt, llm, tts, s2s, mode: assertProviderTriple(stt, llm, tts, s2s) };
+}
+
+/**
+ * Report what this runtime resolved, once, at boot.
+ *
+ * Here rather than in `runtime.ts` because it is a report OF the resolution
+ * above it — and because that file is at the line cap, which is where this
+ * module came from in the first place.
+ *
+ * A pipeline agent whose providers fail to reach the runtime does not error —
+ * before the pipeline-by-default flip it ran a perfectly healthy S2S session
+ * instead — so "which transport is this agent on" has to be answerable from one
+ * log line rather than inferred from the shape of the message stream. Each stage
+ * reports its EFFECTIVE settings, not just its kind: almost every one is a
+ * default nobody wrote down (endpointing window, Voice Focus threshold, gateway
+ * model id, TTS voice), and those are the values a misbehaving session gets
+ * blamed on. See `_provider-settings.ts`.
+ *
+ * A WORKFLOW APP gets its own line. A `page: "static"` agent's providers are
+ * DEFERRED behind a thunk nobody calls — that deferral is what lets one boot
+ * with no credentials at all (`runtime-providers.test.ts`) — so `mode: pipeline`
+ * plus a stt/llm/tts settings dump reports three resolutions that did not
+ * happen. Observed under `aai dev`: an app with no model and no microphone
+ * described itself as an AssemblyAI voice pipeline down to the TTS voice, and
+ * six shipped templates are workflow apps. What the line answers for one is "is
+ * this durable", which is `sessionState` — the half that is real.
+ */
+export function logResolvedRuntime(opts: {
+  logger: Logger;
+  slug: string;
+  page: AgentDef["page"];
+  providers: ReturnType<typeof resolveEffectiveProviders>;
+  sessionState: { backend: string; durable: boolean };
+}): void {
+  if (opts.page === "static") {
+    opts.logger.info("Workflow app resolved", {
+      slug: opts.slug,
+      sessionState: opts.sessionState,
+    });
+    return;
+  }
+  opts.logger.info("Session mode resolved", {
+    slug: opts.slug,
+    mode: opts.providers.mode,
+    ...describeResolvedProviders(opts.providers),
+    sessionState: opts.sessionState,
+  });
 }
