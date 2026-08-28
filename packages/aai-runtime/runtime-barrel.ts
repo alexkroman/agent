@@ -181,6 +181,10 @@ export type { SessionEventPage, SessionEventStream } from "./session-event-strea
 // this one reached no published subpath at all — so an embedder either hardcoded the
 // string or left the route as it found it.
 export { SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
+// Applying the session-state DDL to a database this deployment OWNS. The tables
+// come with the database and the owner applies them; a self-hosted server is that
+// owner, so it needs a way to say so at boot. See the function's own doc.
+export { ensureSessionStateSchema } from "./session-state-postgres.ts";
 export type {
   SessionStateBackend,
   SessionStateStore,

@@ -19,6 +19,7 @@ import {
   type AgentServer,
   createRuntime,
   createServer,
+  ensureSessionStateSchema,
   type Logger,
   requiredProviderEnvVars,
   withHostCredentialFallback,
@@ -26,7 +27,6 @@ import {
 import {
   configureWorkflowWorld,
   createWorkflowSurface,
-  ensureSessionStateSchema,
   handleWorkflowRequest,
   publishStepEnv,
   startWorkflowWorldIfDeclared,

@@ -17,7 +17,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
-import { createAgentServer, withHostCredentialFallback } from "@alexkroman1/aai-runtime";
+import {
+  createAgentServer,
+  ensureSessionStateSchema,
+  withHostCredentialFallback,
+} from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -131,6 +135,24 @@ const env = await resolveAgentEnv();
  * not what the outside world dials.
  */
 const publicUrl = process.env.PUBLIC_URL?.trim();
+
+/**
+ * Create the session-state tables, when this agent has a database.
+ *
+ * A `DATABASE_URL` puts session state in Postgres, and those tables come with
+ * whoever OWNS the database — which for a self-hosted agent is you, with no
+ * migration step anywhere to hang them off. Without this the server starts,
+ * reports `sessionState: postgres, durable: true`, and then every session dies
+ * at start with a fatal error the browser shows as "Session failed to start",
+ * the real reason (`relation "aai_session_events" does not exist`) appearing
+ * only in this process's log.
+ *
+ * Best-effort: if a real migration already created them and this role may not
+ * CREATE, it warns and the server starts anyway.
+ */
+if (env.DATABASE_URL) {
+  await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: console });
+}
 
 const server = createAgentServer({
   agent,

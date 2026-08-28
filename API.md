@@ -7409,6 +7409,12 @@ export const DEFAULT_LOG_PAGE_LINES = 500;
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
 
 // @public
+export function ensureSessionStateSchema(opts: {
+    url: string;
+    logger: Logger;
+}): Promise<boolean>;
+
+// @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
     type: T;
 }>;
@@ -8147,12 +8153,6 @@ type EnqueueBody = {
 
 // @internal
 export function enqueueToPlatform(opts: PlatformQueueOptions, body: EnqueueBody): Promise<string>;
-
-// @internal
-export function ensureSessionStateSchema(opts: {
-    url: string;
-    logger: Logger;
-}): Promise<boolean>;
 
 // @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {

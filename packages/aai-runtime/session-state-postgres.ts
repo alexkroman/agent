@@ -160,8 +160,8 @@ const CREATE_EVENT_TABLE_SQL = (table: string) => `create table if not exists ${
  * `schema` qualifies the names for a caller that is not already IN the app's
  * schema. The platform passes `public` and runs it on a connection into the app's
  * own DATABASE, where that is simply the default — there is no `search_path` pin
- * any more, because an app owning its own database needs none (see
- * whoever owns the database). The guest does not run this at all.
+ * any more, because an app owning its own database needs none. The guest does not
+ * run this at all.
  *
  * @internal
  */
@@ -178,13 +178,15 @@ export function sessionStateDdl(schema?: string): string[] {
  *
  * The contract above says whoever owns the database applies the DDL — "a
  * migration on the platform's own, or the operator of a self-hosted deployment".
- * `aai dev` is that operator and had no way to act on it: a project that sets
- * `DATABASE_URL` (which the scaffold's own `.env` invites, for durable workflow
- * runs) got a boot line reporting `sessionState: postgres, durable: true` and
- * then **every session died at start** with a fatal 1011 the client reads as
+ * There are TWO of those operators and neither had a way to act on it: `aai dev`,
+ * and the scaffold's `server.mjs`, which is what `npm start` runs. A project that
+ * sets `DATABASE_URL` (which the scaffold's own `.env` invites, for durable
+ * workflow runs) got a boot line reporting `sessionState: postgres, durable: true`
+ * and then **every session died at start** with a fatal 1011 the client reads as
  * "Session failed to start", the real reason —
- * `relation "aai_session_events" does not exist` — being visible only in the dev
- * server's log. Reproduced on a clean project against a plain Postgres 16.
+ * `relation "aai_session_events" does not exist` — being visible only in the
+ * server's log. Reproduced on a clean project against a plain Postgres 16, on both
+ * paths.
  *
  * The asymmetry is what makes it a bug rather than a missing chore: the workflow
  * world migrates itself on that same boot and says so, so one subsystem
@@ -201,7 +203,14 @@ export function sessionStateDdl(schema?: string): string[] {
  * afterwards, and a pool held open for two statements would sit against the
  * connection budget `sdk/app-db-budget.ts` describes for the rest of the process.
  *
- * @internal
+ * **PUBLIC, because the second of those operators is not ours.** `aai dev` could
+ * have reached this through `@alexkroman1/aai-runtime/internal`, where it started;
+ * `server.mjs` is a file that ships to a user and may only import the published
+ * surface, so a self-hosted deployment could not apply the DDL it is contractually
+ * responsible for. Hence the root barrel and the `session-state` capability — the
+ * missing half of a rule this module already stated, not a convenience.
+ *
+ * @public
  */
 export async function ensureSessionStateSchema(opts: {
   url: string;
