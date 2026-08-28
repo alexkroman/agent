@@ -19,6 +19,8 @@
     "test:aai-evals": "pnpm --filter aai-evals test",
     "test:mutate:sdk": "stryker run stryker.sdk.config.mjs",
     "bench:uploads": "node scripts/upload-sweep.mjs",
+    "loadtest": "node scripts/loadtest.mjs",
+    "loadtest:boot": "bash scripts/loadtest-boot.sh",
     "aai": "node packages/aai-cli/cli.ts",
     "dev:aai-server": "pnpm --filter aai-studio-server dev",
     "typecheck": "turbo run typecheck",
