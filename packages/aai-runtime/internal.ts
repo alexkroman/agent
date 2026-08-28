@@ -126,6 +126,9 @@ export { createSessionEventStream, stampSessionEvent } from "./session-event-str
 // `WORKFLOW_WAKE_TABLE` below states for its own table.
 export {
   createPostgresStateBackend,
+  // Applying that DDL to a database the PROCESS owns, at boot — what `aai dev`
+  // and a self-hosted server call, being the operator the contract names.
+  ensureSessionStateSchema,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
   // The tables' DDL, applied by whoever CREATES an app schema — the platform, at

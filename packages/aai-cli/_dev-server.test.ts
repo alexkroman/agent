@@ -12,6 +12,7 @@ import {
   mockCreateRuntime,
   mockCreateServer,
   mockEnsureApiKey,
+  mockEnsureSessionStateSchema,
   mockListen,
   mockResolveServerEnv,
   mockValidateAgentExport,
@@ -257,6 +258,71 @@ describe("startDevServer", () => {
           expect(chokidarState.close).toHaveBeenCalledTimes(1);
         },
       );
+    });
+  });
+
+  /**
+   * A `DATABASE_URL` puts session state in Postgres, and the tables come with
+   * whoever OWNS that database — under `aai dev` the developer, with no
+   * migration step anywhere. Before this, the boot line said
+   * `sessionState: postgres, durable: true` and every session then died with a
+   * fatal 1011 whose real cause (`relation "aai_session_events" does not
+   * exist`) reached only the dev log.
+   */
+  describe("session-state schema", () => {
+    test("is ensured when the project declares a DATABASE_URL", async () => {
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+        mockResolveServerEnv.mockResolvedValue({
+          ASSEMBLYAI_API_KEY: "k",
+          DATABASE_URL: "postgres://u:p@127.0.0.1:5432/db",
+        });
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        expect(mockEnsureSessionStateSchema).toHaveBeenCalledWith(
+          expect.objectContaining({ url: "postgres://u:p@127.0.0.1:5432/db" }),
+        );
+        await cleanup();
+      });
+    });
+
+    test("is NOT ensured without one — that agent is on memory state", async () => {
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+        mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "k" });
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        expect(mockEnsureSessionStateSchema).not.toHaveBeenCalled();
+        await cleanup();
+      });
+    });
+
+    /**
+     * Before the runtime, which opens its own pool from the same URL and starts
+     * serving: a first session that landed between the two would take exactly
+     * the failure this fixes.
+     */
+    test("runs before the runtime is built", async () => {
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+        mockResolveServerEnv.mockResolvedValue({
+          ASSEMBLYAI_API_KEY: "k",
+          DATABASE_URL: "postgres://u:p@127.0.0.1:5432/db",
+        });
+        const order: string[] = [];
+        mockEnsureSessionStateSchema.mockImplementation(async () => void order.push("ddl"));
+        mockCreateRuntime.mockImplementation(() => {
+          order.push("runtime");
+          return { shutdown: vi.fn() };
+        });
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        expect(order).toEqual(["ddl", "runtime"]);
+        await cleanup();
+      });
     });
   });
 

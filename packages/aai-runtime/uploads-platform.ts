@@ -35,16 +35,35 @@
  *
  * `claim` refusing an id is this backend working, not failing — it is what makes a
  * caller-chosen id safe. So a 409 is translated back into `UploadIdTakenError`
- * rather than becoming a generic error the store would retry. Everything else
- * non-2xx throws, because the store above has no fallback and a silent failure
- * would mean an upload whose bytes are in the bucket and whose record says nothing
- * arrived.
+ * rather than becoming a generic error the store would retry.
+ *
+ * ## A 501 is a CONFIGURATION condition, not a failed call
+ *
+ * The second translated status, and the reason it needs translating is the same:
+ * a 501 says the platform above this guest holds no upload records AT ALL (see
+ * `uploads-handler.ts`, which answers it when it has no admin database), which is
+ * a named condition rather than a call that went wrong. So it becomes
+ * `UploadsUnavailableError` — the one error the upload routes answer with its own
+ * message, as a 501 carrying the body.
+ *
+ * Untranslated it fell to the generic throw, and the cost was exactly what that
+ * class exists to prevent: `sendUploadFailure` did not recognise it, so a caller
+ * got `500 {"error":"Internal server error"}` while the sentence naming what to
+ * configure stayed in the platform's log. Observed against a local platform with
+ * no `SUPABASE_DB_URL` — every upload 500ed with nothing to act on.
+ *
+ * Neither translation is a FALLBACK, and the difference matters: this arm is
+ * taken once (`createUploadStore`'s `opts.platform` branch), so there is no local
+ * store to fall back TO — and a local record behind the platform's bucket would
+ * be the half-durable pairing `_upload-store-blobs.ts` refuses everywhere else.
+ * Everything else non-2xx throws, because a silent failure would mean an upload
+ * whose bytes are in the bucket and whose record says nothing arrived.
  */
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { partsOf } from "./_upload-blobs.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
-import { UploadIdTakenError } from "./_upload-store.ts";
+import { UploadIdTakenError, UploadsUnavailableError } from "./_upload-store.ts";
 import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
 import { platformResult } from "./platform-rpc.ts";
 
@@ -68,6 +87,25 @@ const UPLOAD_RECORD_TIMEOUT_MS = 20_000;
  */
 export type PlatformUploadRecordsOptions = PlatformEndpoint;
 
+/**
+ * The error a 501 becomes — this deployment's platform has no upload records.
+ *
+ * Its own function because the MESSAGE is the whole value: it reaches a browser
+ * in the 501 body, so it has to name the missing thing and how to supply it
+ * rather than describe the call that failed.
+ */
+function notConfiguredError(): UploadsUnavailableError {
+  return new UploadsUnavailableError(
+    "This deployment's platform has no workflow upload records configured, so an " +
+      "upload has nowhere to record what arrived.\n\n" +
+      "A production platform provisions them with its own database. A LOCAL platform " +
+      "(`AAI_LOCAL_DEV=1`) has none until it has a `SUPABASE_DB_URL` — `supabase start` " +
+      "from the repo root, which `scripts/dev-server.mjs` then resolves for it.\n\n" +
+      "An agent run WITHOUT a platform does not need this: `aai dev` keeps uploads in " +
+      "the local workflow world beside its runs.",
+  );
+}
+
 /** One call to the platform's upload-records route. */
 async function call(
   opts: PlatformUploadRecordsOptions,
@@ -80,11 +118,17 @@ async function call(
     label: `upload-records ${method}`,
     timeoutMs: UPLOAD_RECORD_TIMEOUT_MS,
     body: JSON.stringify({ method, id, ...body }),
-    // The one non-2xx that is not a failure — see the module doc. Translated back
-    // into the store's own error so `claim`'s contract holds across all three
-    // backends, and decided from the STATUS alone: what the platform said about a
-    // refused id does not change what a refused id means.
-    errorFor: (status) => (status === 409 ? new UploadIdTakenError(id) : undefined),
+    // The two non-2xx statuses that are not failures of this call — see the module
+    // doc. Both decided from the STATUS alone: what the platform said about a
+    // refused id, or about its own configuration, does not change what either
+    // status means.
+    // Falls through to the generic error for every other status, which is the
+    // `undefined` this seam reads as "take the default".
+    errorFor: (status) => {
+      // `claim`'s contract, held across all three backends.
+      if (status === 409) return new UploadIdTakenError(id);
+      if (status === 501) return notConfiguredError();
+    },
   });
 }
 
