@@ -21,12 +21,12 @@ import {
   createServer,
   type Logger,
   requiredProviderEnvVars,
-  WORKFLOW_API_PREFIX,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
 import {
   configureWorkflowWorld,
   createWorkflowSurface,
+  ensureSessionStateSchema,
   handleWorkflowRequest,
   publishStepEnv,
   startWorkflowWorldIfDeclared,
@@ -38,13 +38,12 @@ import pDebounce from "p-debounce";
 import type { ViteDevServer } from "vite";
 import { createWorkerEvaluator, type EvaluatedWorker } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
-import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
+import { viteDevConfig } from "./_dev-vite-config.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { notify, outputSilenced } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
-import { DEDUPED_PEERS } from "./_vite-env.ts";
 import { buildWorker } from "./worker-bundler.ts";
 import { buildWorkflows } from "./workflow-bundler.ts";
 
@@ -247,65 +246,6 @@ export type DevServerOptions = {
 };
 
 /**
- * Vite dev-server config for the client SPA. Extracted so the proxy wiring
- * is unit-testable: `/websocket` MUST proxy with `ws: true` or `aai dev`
- * with a `client.tsx` serves a page whose WebSocket never connects.
- *
- * **This table is the whole agent API as the browser can see it**, which is
- * the thing to hold in mind before adding a route to `createServer`. Vite owns
- * the port the user is told to open and answers everything not listed here
- * itself — with a bare 404 carrying none of the agent server's headers, so the
- * failure looks like a missing route rather than a missing proxy entry.
- *
- * `/workflows` is why that matters beyond voice. A WORKFLOW APP
- * (`workflowApp()`) has no session and no socket: `page()` mounts a
- * form and every single thing it does — listing workflows, starting a run,
- * polling it, streaming its events — is a same-origin `fetch` under that
- * prefix. Unproxied, the two workflow-app templates were dead on arrival under
- * `aai dev` (`404 POST /workflows/runs` the instant the form is submitted)
- * while the backend served the API correctly one port over. A string key
- * prefix-matches, so this one entry covers `/runs`, `/runs/:id` and the
- * `/runs/:id/events` SSE stream.
- *
- * `strictPort` because the reported URL is `http://localhost:<port>` —
- * without it, Vite silently binds port+N when the port is busy and the
- * printed/JSON-returned URL points at whatever else was listening.
- *
- * `AAI_DEV_HOST` reaches BOTH servers. Binding only the backend left Vite —
- * the port the user is told to open — on loopback, i.e. failing exactly the
- * case that variable exists for (`aai dev` in a container, reached from the host).
- */
-export function viteDevConfig(
-  cwd: string,
-  vitePort: number,
-  backendPort: number,
-): import("vite").InlineConfig {
-  const target = `http://localhost:${backendPort}`;
-  return {
-    root: cwd,
-    plugins: [fallbackHtmlPlugin(cwd)],
-    // The same peer contract `buildClient` states, for the same reason and a
-    // different symptom — see DEDUPED_PEERS. Without it a project whose SDK is
-    // linked rather than installed loads two Reacts and renders a blank page.
-    resolve: { dedupe: DEDUPED_PEERS },
-    server: {
-      port: vitePort,
-      strictPort: true,
-      // Omitted rather than `undefined`: Vite reads this key's PRESENCE.
-      ...omitUndefined({ host: devBindHost() }),
-      proxy: {
-        "/health": target,
-        "/client-config": target,
-        "/websocket": { target, ws: true },
-        // The workflow HTTP API. See the doc comment above: this is the entire
-        // front door of a `page: "static"` app, not an extra.
-        [WORKFLOW_API_PREFIX]: target,
-      },
-    },
-  };
-}
-
-/**
  * Start the dev server for a directory-based agent.
  *
  * Returns a cleanup function to shut down the server and watchers.
@@ -336,11 +276,32 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   // not the storage behind them.
   let workflowWorldStarted = false;
 
+  /**
+   * Whether the session-state tables have been ensured this process.
+   *
+   * Once, like the workflow world above and for the same reason: a rebuild
+   * replaces the routes, not the storage behind them, and re-running the DDL on
+   * every file save would be two round trips per keystroke burst.
+   */
+  let sessionSchemaEnsured = false;
+
   /** Full build sequence, shared by initial startup and every restart. */
   async function buildServer(): Promise<AgentServer> {
     const worker = await loadWorker(cwd, evaluateWorker);
     const agentDef = worker.agent;
     const env = await resolveAgentEnv(cwd, agentDef);
+
+    // A project with a `DATABASE_URL` puts session state in Postgres, and the
+    // tables come with whoever OWNS that database — which under `aai dev` is the
+    // developer, with no migration step anywhere to hang the DDL off. Without
+    // this every session died at start with a fatal 1011 and the reason
+    // (`relation "aai_session_events" does not exist`) only in this log. Before
+    // the runtime opens its own pool from the same URL, so the first session
+    // cannot race the DDL.
+    if (env.DATABASE_URL && !sessionSchemaEnsured) {
+      sessionSchemaEnsured = true;
+      await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: devLogger });
+    }
 
     // BEFORE `createWorkflowSurface`, which imports `workflow/runtime` and
     // resolves a world from the environment as it loads — configured after, a

@@ -54,6 +54,12 @@ export const mockCreateServer = vi.fn();
 const mockRequiredProviderEnvVars = vi.fn();
 export const mockEnsureApiKey = vi.fn();
 export const mockResolveServerEnv = vi.fn();
+/**
+ * The session-state DDL the dev server applies when the project declares a
+ * `DATABASE_URL`. A mock rather than the real thing because the real one opens a
+ * Postgres pool, which is what the tier rules put in `test:scenario`.
+ */
+export const mockEnsureSessionStateSchema = vi.fn();
 export const mockValidateAgentExport = vi.fn();
 
 /**
@@ -104,6 +110,7 @@ export function primeDevServerMocks(): void {
     mockRequiredProviderEnvVars,
     mockEnsureApiKey,
     mockResolveServerEnv,
+    mockEnsureSessionStateSchema,
     mockValidateAgentExport,
     mockChokidarWatch,
   ]) {
@@ -198,6 +205,9 @@ export function aaiRuntimeModule(): Record<string, unknown> {
 export function aaiRuntimeInternalModule(): Record<string, unknown> {
   return {
     publishStepEnv: vi.fn(),
+    // Applied once at boot when the project declares a `DATABASE_URL` — see
+    // `ensureSessionStateSchema`. Inert here; the specs assert on the CALL.
+    ensureSessionStateSchema: mockEnsureSessionStateSchema,
     // The console-backed logger the dev server hands the runtime in human
     // mode (see createDevLogger); these specs only need it to exist.
     consoleLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

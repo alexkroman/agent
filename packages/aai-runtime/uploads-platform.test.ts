@@ -10,7 +10,7 @@
 
 import { describe, expect, test } from "vitest";
 import { fakeFetch } from "./_test-utils.ts";
-import { UploadIdTakenError } from "./_upload-store.ts";
+import { UploadIdTakenError, UploadsUnavailableError } from "./_upload-store.ts";
 import { createPlatformUploadRecords } from "./uploads-platform.ts";
 
 /**
@@ -78,6 +78,38 @@ describe("createPlatformUploadRecords", () => {
     await expect(
       records.claim("dup", { name: "", type: "", size: 0, complete: false, parts: [] }),
     ).rejects.toThrow(UploadIdTakenError);
+  });
+
+  test("a 501 becomes UploadsUnavailableError, so the route can answer 501", async () => {
+    // The regression: this fell to the generic throw below, `sendUploadFailure`
+    // did not recognise it, and every upload against a platform with no records
+    // answered `500 Internal server error` with the actionable sentence left in
+    // the platform's log. The class exists precisely to stop that.
+    const { fetch } = recordingFetch({
+      status: 501,
+      body: { error: "platform upload records not configured" },
+    });
+    const records = createPlatformUploadRecords(opts(fetch));
+    await expect(records.finish("u1", 1)).rejects.toThrow(UploadsUnavailableError);
+  });
+
+  test("the 501 message names the condition and how to supply it", async () => {
+    // The message IS the value here — it is what reaches a browser in the 501
+    // body, so it has to name the missing thing rather than the failed call.
+    const { fetch } = recordingFetch({ status: 501, body: { error: "nope" } });
+    await expect(createPlatformUploadRecords(opts(fetch)).read("u1")).rejects.toThrow(
+      /no workflow upload records configured[\s\S]*SUPABASE_DB_URL/,
+    );
+  });
+
+  test("a 501 is NOT reported as a generic HTTP failure", async () => {
+    // Guards the ordering: a `!res.ok` branch placed first would still throw,
+    // with the status in the text and the class lost — which passes a naive
+    // "it rejects" assertion while restoring the exact bug.
+    const { fetch } = recordingFetch({ status: 501, body: { error: "nope" } });
+    await expect(createPlatformUploadRecords(opts(fetch)).read("u1")).rejects.not.toThrow(
+      /answered HTTP 501/,
+    );
   });
 
   test("any other non-2xx throws, naming the status", async () => {

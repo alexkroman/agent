@@ -3,15 +3,21 @@
  * The durable half of the session-state store: one row per `(session, slot)` in
  * the app's own database.
  *
- * ## Why the table is created here rather than provisioned
+ * ## Who creates the table
  *
- * Because there is no provisioning pass to hang a DDL step off — an agent's
- * first session may be its first ever deploy. That is the same position
- * `host/workflow-wake-hint.ts` and `host/workflow-keys.ts` are in, so this takes
- * the same route with the same posture: `create table if not exists` in the
- * tenant's own schema, owned and written by the tenant's own role, and therefore
- * **never authority for anything the platform decides**. The platform reads it
- * only to reclaim rows whose guest is gone.
+ * Not this backend, and not on its read or write paths — see
+ * {@link createPostgresStateBackend}, which carries that argument. The shape is
+ * {@link sessionStateDdl} and the OWNER of the database applies it: a migration on
+ * the platform's own, or {@link ensureSessionStateSchema} at boot for a deployment
+ * that brought its own `DATABASE_URL`.
+ *
+ * This section used to say the opposite — "`create table if not exists` in the
+ * tenant's own schema" — describing the lazy DDL that was removed from those paths,
+ * so the header and the function body disagreed about the module's central rule.
+ *
+ * What has not changed is the posture: these tables are owned and written by the
+ * TENANT's own role and are therefore **never authority for anything the platform
+ * decides**. The platform reads them only to reclaim rows whose guest is gone.
  *
  * ## What the app's schema guarantees, which is the premise
  *
@@ -42,7 +48,10 @@
  * not what bounds a commit; the bound that holds is the tool call's own deadline.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import type { Db } from "@alexkroman1/aai/internal";
+import { createPostgresDb } from "./postgres-db.ts";
+import type { Logger } from "./runtime-config.ts";
 import type { SessionStateBackend } from "./session-state-store.ts";
 
 /**
@@ -162,6 +171,78 @@ export function sessionStateDdl(schema?: string): string[] {
     CREATE_TABLE_SQL(qualify(SESSION_STATE_TABLE)),
     CREATE_EVENT_TABLE_SQL(qualify(SESSION_EVENT_TABLE)),
   ];
+}
+
+/**
+ * Apply {@link sessionStateDdl} to a database this process OWNS, once, at boot.
+ *
+ * The contract above says whoever owns the database applies the DDL — "a
+ * migration on the platform's own, or the operator of a self-hosted deployment".
+ * `aai dev` is that operator and had no way to act on it: a project that sets
+ * `DATABASE_URL` (which the scaffold's own `.env` invites, for durable workflow
+ * runs) got a boot line reporting `sessionState: postgres, durable: true` and
+ * then **every session died at start** with a fatal 1011 the client reads as
+ * "Session failed to start", the real reason —
+ * `relation "aai_session_events" does not exist` — being visible only in the dev
+ * server's log. Reproduced on a clean project against a plain Postgres 16.
+ *
+ * The asymmetry is what makes it a bug rather than a missing chore: the workflow
+ * world migrates itself on that same boot and says so, so one subsystem
+ * provisions and the other silently does not.
+ *
+ * **Best-effort, and never fatal.** A self-hosted deployment whose role may not
+ * CREATE — because a real migration already made these tables — must keep
+ * booting, so a failure here is one warning and the run continues. If the tables
+ * genuinely are absent, the backend's own error still says exactly that, which is
+ * a better diagnostic than refusing to start.
+ *
+ * It opens its OWN single-connection pool and closes it: the caller (the CLI dev
+ * server) has no `Db` of its own, the runtime builds one from the same URL
+ * afterwards, and a pool held open for two statements would sit against the
+ * connection budget `sdk/app-db-budget.ts` describes for the rest of the process.
+ *
+ * @internal
+ */
+export async function ensureSessionStateSchema(opts: {
+  url: string;
+  logger: Logger;
+}): Promise<boolean> {
+  const db = createPostgresDb({ url: opts.url, max: 1 });
+  try {
+    return await applySessionStateDdl({ db, logger: opts.logger });
+  } finally {
+    await db.close().catch(() => undefined);
+  }
+}
+
+/**
+ * {@link ensureSessionStateSchema} minus the pool — the half worth specifying.
+ *
+ * Split out so the decisions (which statements, in order, and warn-rather-than-
+ * throw) are testable against a `Db` double, leaving the exported wrapper as
+ * nothing but open/close. A test-only parameter on the wrapper would have bought
+ * the same coverage and put the seam in the shipped signature.
+ *
+ * Not on `internal.ts`: the wrapper is the entry point a host calls, and this is
+ * reachable from its own package's spec without widening that surface.
+ *
+ * @internal
+ */
+export async function applySessionStateDdl(opts: { db: Db; logger: Logger }): Promise<boolean> {
+  try {
+    // Sequentially, not `Promise.all`: two `create table if not exists` racing on
+    // one connection is a needless way to meet Postgres's own catalog locks, and
+    // there are two statements.
+    for (const statement of sessionStateDdl()) await opts.db.query(statement);
+    return true;
+  } catch (err) {
+    opts.logger.warn(
+      `could not ensure the session-state tables (${SESSION_STATE_TABLE}, ${SESSION_EVENT_TABLE}) ` +
+        `in DATABASE_URL: ${errorMessage(err)}. Sessions will fail to start unless a migration ` +
+        "has already created them.",
+    );
+    return false;
+  }
 }
 
 const APPEND_EVENTS_SQL = `insert into ${SESSION_EVENT_TABLE} (session_id, event_index, event)
