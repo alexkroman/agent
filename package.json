@@ -22,6 +22,7 @@
     "loadtest": "node scripts/loadtest.mjs",
     "loadtest:boot": "bash scripts/loadtest-boot.sh",
     "loadtest:endpoint": "node scripts/loadtest-stub-endpoint.mjs",
+    "loadtest:phone": "node scripts/loadtest-phone.mjs",
     "loadtest:platform": "node scripts/loadtest-platform.mjs",
     "loadtest:probe": "node scripts/loadtest-probe.mjs",
     "loadtest:runs": "node scripts/loadtest-runs.mjs",

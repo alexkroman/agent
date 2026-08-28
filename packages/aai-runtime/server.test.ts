@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { SessionEventBody } from "@alexkroman1/aai/protocol";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { makeAgent, makeLogger, silentLogger } from "./_test-utils.ts";
@@ -334,17 +335,30 @@ describe("createServer telephony route", () => {
   });
 
   /** A runtime that echoes one 20 ms chunk of 24 kHz TTS back per inbound frame. */
+  /**
+   * A runtime that echoes, and the frame it opens with is the point.
+   *
+   * `session.configured` is what `session-core.ts` emits. This fake sent
+   * `{ type: "config" }` — a client-to-SERVER host-mode shape no session
+   * produces — and so did the bridge's own spec, which is how "carries a call in
+   * both directions" passed while a real call carried nothing in either: the
+   * bridge configured its resamplers on a frame that never arrived, then dropped
+   * the agent's audio as "before the config frame" and the caller's silently.
+   *
+   * Typed as `SessionEventBody` so the next rename is a compile error here
+   * rather than a green suite over a dead integration.
+   */
   function echoRuntime(received: unknown[]): SessionRuntime {
+    const configured: SessionEventBody = {
+      type: "session.configured",
+      audioFormat: "pcm16",
+      sampleRate: 16_000,
+      ttsSampleRate: 24_000,
+      sessionId: "sess_test",
+    };
     return {
       startSession(ws) {
-        ws.send(
-          JSON.stringify({
-            type: "config",
-            audioFormat: "pcm16",
-            sampleRate: 16_000,
-            ttsSampleRate: 24_000,
-          }),
-        );
+        ws.send(JSON.stringify(configured));
         ws.addEventListener("message", (event: { data: unknown }) => {
           received.push(event.data);
           if (event.data instanceof Uint8Array) ws.send(new Uint8Array(480 * 2));
