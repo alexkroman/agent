@@ -19,13 +19,11 @@
 // model-written JavaScript in the host process. That is right, and it left this
 // template's whole subject assertable as a CALL and never as an answer: a
 // `toBeDefined()` on the result is satisfied by the refusal itself. So the suite
-// passes `runCode` (below) — a developer's own machine may, a deployment may
-// not — and every case here asserts BOTH halves: that Coda reached for code, and
-// what the code came back with.
-import { runInNewContext } from "node:vm";
+// passes `createVmRunCode()` — a developer's own machine may evaluate generated
+// code, a deployment may not — and every case here asserts BOTH halves: that
+// Coda reached for code, and what the code came back with.
 import { withSystemPrompt } from "@alexkroman1/aai/manifest";
-import { errorMessage } from "@alexkroman1/aai/utils";
-import type { RunCodeExecutor } from "@alexkroman1/aai-runtime/eval";
+import { createVmRunCode } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import authored from "./agent.ts";
@@ -39,36 +37,6 @@ const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string,
     .filter((c) => c.name === "run_code")
     .map((c) => String(c.args.code ?? ""))
     .join("\n");
-
-/**
- * A `run_code` executor, so these cases can assert the ANSWER.
- *
- * The builtin refuses without one — the Modal container is the security
- * boundary, and off-platform there is none — so a case could assert the CALL and
- * the code it carried, and never what the code came back with. A `node:vm`
- * context with a capturing `console.log` is what a developer would reach for on
- * their own machine, and it is enough here: what runs is arithmetic, not a
- * program. It is NOT a sandbox and does not pretend to be one; a deployed agent
- * still gets the refusal.
- *
- * A template eval imports from `@alexkroman1/aai-runtime/eval` and
- * `/eval/vitest` and nowhere else — the ROOT barrel drags the host runtime's
- * node-reaching module graph into this project's TypeScript program, which is
- * three errors in runtime files no eval ever calls. `RunCodeExecutor` is
- * re-exported from `/eval` for exactly that reason.
- */
-const runCode: RunCodeExecutor = async (code) => {
-  const lines: string[] = [];
-  const log = (...args: unknown[]): void => {
-    lines.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
-  };
-  try {
-    runInNewContext(code, { console: { log } }, { timeout: 1000 });
-  } catch (err) {
-    return { error: errorMessage(err) };
-  }
-  return lines.join("\n");
-};
 
 /** What every `run_code` call in this turn PRINTED, joined. */
 const outputIn = (turn: { toolCalls: readonly { name: string; result?: string }[] }) =>
@@ -160,6 +128,7 @@ describeEval(
       { stubReply: [{ tool: "run_code", args: { code: "console.log(1 + 1)" } }, "That's two."] },
     );
   },
-  // `runCode` is what makes these cases about the ANSWER and not just the call.
-  { runCode },
+  // `createVmRunCode()` is what makes these cases about the ANSWER and not just
+  // the call — see its doc for why the timeout and the swallowed throw matter.
+  { runCode: createVmRunCode() },
 );
