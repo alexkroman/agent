@@ -178,6 +178,22 @@ export interface AgentDef extends PipelineVoiceTuning {
    */
   maxSteps: number;
   /**
+   * Sampling temperature for the agent's OWN model calls — the conversational
+   * loop, in pipeline and text modes.
+   *
+   * Omitted by default, so the model's own default applies; some models (Claude
+   * 5 among them) ignore it and warn, so set it only for a temperature-capable
+   * one. A booking desk and a game master want different values, and until this
+   * existed neither could say so: `ctx.generate` and `subagent()` both took a
+   * temperature while the main loop — the one that does almost all the talking
+   * — took no sampling parameter at all.
+   *
+   * S2S REJECTS it rather than ignoring it (`assertSamplingScope`): there the
+   * model runs inside the provider's service and this runtime never sees the
+   * request.
+   */
+  temperature?: number;
+  /**
    * How the LLM selects tools each step.
    *
    * @defaultValue `"auto"` (`DEFAULT_TOOL_CHOICE`) — the model decides.
@@ -415,7 +431,7 @@ export interface AgentDef extends PipelineVoiceTuning {
    * export default agent({
    *   name: "Docs Assistant",
    *   text: true,
-   *   system: "Answer questions about the docs.",
+   *   systemPrompt: "Answer questions about the docs.",
    * });
    * ```
    *

@@ -14,14 +14,11 @@
 // the answer as well as the code that was submitted. `fetch_json` is
 // unaffected — it makes a real request, so the currency case really does reach a
 // live rates API.
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
-import { createVmRunCode } from "@alexkroman1/aai-runtime/eval";
+
+import agentDef from "virtual:aai/agent";
+import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
-import authored from "./agent.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
-const agentDef = withSystemPrompt(authored, systemPrompt);
 
 type Turn = { toolCalls: readonly { name: string; args: Record<string, unknown> }[] };
 
@@ -36,12 +33,18 @@ const codeIn = (turn: Turn) =>
 const fetchedUrls = (turn: Turn) =>
   turn.toolCalls.filter((c) => c.name === "fetch_json").map((c) => String(c.args.url ?? ""));
 
-/** What every `run_code` call in this turn PRINTED, joined. */
-const outputIn = (turn: { toolCalls: readonly { name: string; result?: string }[] }) =>
-  turn.toolCalls
-    .filter((c) => c.name === "run_code")
-    .map((c) => c.result ?? "")
-    .join("\n");
+/**
+ * A `run_code` executor, so these cases can assert the ANSWER.
+ *
+ * The builtin refuses without one — the Modal container is the security
+ * boundary, and off-platform there is none — so a case could assert the CALL and
+ * the code it carried, and never what the code came back with.
+ * `createVmRunCode()` is a `node:vm` context with a capturing `console.log`,
+ * which is enough here: what runs is arithmetic, not a program. It is NOT a
+ * sandbox and does not pretend to be one; a deployed agent still gets the
+ * refusal.
+ */
+const runCode = createVmRunCode();
 
 describeEval(
   agentDef,
@@ -66,7 +69,7 @@ describeEval(
         // Without an executor `run_code` answers with a refusal, so every claim
         // above is satisfied by an agent that then divides in its head — which is
         // the failure this template's whole run_code rule exists to prevent.
-        const output = outputIn(turn);
+        const output = toolResultsIn(turn.toolCalls, "run_code").join("\n");
         expect(output, `run_code printed: ${output}`).toMatch(/\b36(\.0+)?\b/);
       },
       { live: true },
@@ -131,7 +134,6 @@ describeEval(
       },
     );
   },
-  // `createVmRunCode()` is what makes these cases about the ANSWER and not just
-  // the call — see its doc for why the timeout and the swallowed throw matter.
-  { runCode: createVmRunCode() },
+  // `runCode` is what makes these cases about the ANSWER and not just the call.
+  { runCode },
 );

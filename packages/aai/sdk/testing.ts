@@ -22,7 +22,7 @@
  *   name the model calls it by, the last of those being `runTool` with the agent
  *   bound; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
  *   own FILES (`tools/`, `system-prompt.md`) onto its `agent.ts` default export
- *   the way the build does, and `withDiscoveredTools`, the tools half alone.
+ *   the way the build does — the one function a spec needs.
  * - `_testing-tool-results.ts` — `ok` / `okPosition`, unwrapping what a gated
  *   tool answered; `_testing-schema.ts` — what a tool's or workflow's input
  *   schema accepts, without reaching through `~standard`.
@@ -76,7 +76,6 @@ export {
 export {
   deployedAgent,
   type ProjectFiles,
-  withDiscoveredTools,
 } from "./testing-discovery.ts";
 export {
   type StubGateway,

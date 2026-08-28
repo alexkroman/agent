@@ -1,4 +1,8 @@
+// By SOURCE path, not package name: the repo root declares no dependency on
+// the SDK, and this config is repo tooling rather than something we ship.
+
 import { defineConfig } from "vitest/config";
+import { aaiAgentPlugin } from "./packages/aai/host/testing-vite.ts";
 import { sharedConfig, sharedSetupFiles } from "./vitest.shared.ts";
 
 /**
@@ -58,6 +62,9 @@ const profile = profiles[profileKey] ?? profiles.integration;
  * teardown.
  */
 export default defineConfig({
+  // Serves `virtual:aai/agent` to the template evals, the same as the
+  // per-package config does for their unit specs — see its module doc.
+  plugins: [aaiAgentPlugin()],
   ...sharedConfig,
   test: {
     ...sharedConfig.test,

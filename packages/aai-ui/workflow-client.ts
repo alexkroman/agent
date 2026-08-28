@@ -65,6 +65,11 @@ export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
  */
 export type {
   WorkflowApi,
+  // Both halves of a def's shape, not just the output. `WorkflowInputOf` is
+  // what a page names to type the object it hands `submit()`, and it was absent
+  // here while its sibling was present — so a page typing a form value reached
+  // past this package into `@alexkroman1/aai/workflow-api` for one name.
+  WorkflowInputOf,
   WorkflowOutputOf,
   // The status union on its own, so a page can type a lookup keyed by it —
   // which is what `WORKFLOW_STATUS_LABELS` is and what a page extending it

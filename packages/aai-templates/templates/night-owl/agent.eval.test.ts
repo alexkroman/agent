@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the companion actually pick from its own shelf?
 //
 // `agent.test.ts` calls `recommend` directly, which settles what the tool does
@@ -11,22 +9,6 @@
 // Run it with `aai eval`. Without a provider key every case runs against a
 // SCRIPTED model (its `stubReply`): the real session, the real slot, the real
 // tool, a fake reply. That proves the wiring and nothing about the choice.
-
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
-import {
-  createVmRunCode,
-  customEventsIn,
-  lastStateIn,
-  toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
-import { expect } from "vitest";
-import { z } from "zod";
-import authoredAgent from "./agent.ts";
-import { CATEGORIES, MOODS } from "./shared.ts";
-import systemPrompt from "./system-prompt.md?raw";
 
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
@@ -42,10 +24,18 @@ import systemPrompt from "./system-prompt.md?raw";
  * different agent than the one that deploys, and every tool-choice claim below
  * then passes or fails for the wrong reason.
  */
-const agentDef = withSystemPrompt(
-  withDiscoveredTools(authoredAgent, import.meta.glob("./tools/*.ts", { eager: true })),
-  systemPrompt,
-);
+import agentDef from "virtual:aai/agent";
+import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import {
+  createVmRunCode,
+  customEventsIn,
+  lastStateIn,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval";
+import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { expect } from "vitest";
+import { z } from "zod";
+import { CATEGORIES, MOODS } from "./shared.ts";
 
 /**
  * One `recommend` answer, and the whole projection, as the wire carries them.
@@ -74,6 +64,18 @@ const pushedRecs = (events: readonly SessionEvent[]) =>
 
 /** The `wind_down` nudges in `events` — `customEventsIn` filters by name. */
 const nudges = (events: readonly SessionEvent[]) => customEventsIn(events, "wind_down");
+
+/**
+ * A `run_code` executor, so the sleep-cycle case can assert the ANSWER.
+ *
+ * The builtin refuses without one — the Modal container is the security
+ * boundary, and off-platform there is none — which left this template's
+ * headline feature assertable as a CALL and never as a number. A `node:vm`
+ * context with a capturing `console.log` is what a developer would reach for on
+ * their own machine, and `createVmRunCode()` is exactly that: the code under
+ * test is arithmetic the model wrote, not a program.
+ */
+const runCode = createVmRunCode();
 
 /** Two-digit, for the clock arithmetic below. */
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -236,7 +238,6 @@ describeEval(
       },
     );
   },
-  // `createVmRunCode()` is what makes the case above about an ANSWER rather than
-  // a call — see its doc for why the timeout and the swallowed throw matter.
-  { runCode: createVmRunCode() },
+  // `runCode` is what makes the case above about an ANSWER rather than a call.
+  { runCode },
 );

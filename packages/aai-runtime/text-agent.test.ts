@@ -42,7 +42,7 @@ describe("createTextAgent", () => {
   test("streams a reply, sending the agent's system prompt", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "hello there" }] });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", text: true, system: "Be brief." }),
+      agent: textAgent({ name: "Helper", text: true, systemPrompt: "Be brief." }),
       model,
       logger: silentLogger,
     });
@@ -438,11 +438,13 @@ describe("createTextAgent", () => {
   test("a per-turn system prompt overrides the agent's", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", text: true, system: "Base." }),
+      agent: textAgent({ name: "Helper", text: true, systemPrompt: "Base." }),
       model,
       logger: silentLogger,
     });
-    await drain(chat.stream({ messages: [{ role: "user", content: "hi" }], system: "Per turn." }));
+    await drain(
+      chat.stream({ messages: [{ role: "user", content: "hi" }], systemPrompt: "Per turn." }),
+    );
     const prompt = model.calls[0]?.prompt as { role: string; content: unknown }[];
     expect(prompt[0]).toMatchObject({ role: "system", content: "Per turn." });
   });

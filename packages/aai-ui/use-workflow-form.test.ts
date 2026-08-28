@@ -13,6 +13,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockWorkflowApi, refuseNetwork, workflowRun as run } from "./_react-test-utils.ts";
+import type { TestWorkflow } from "./_workflow-test-defs.ts";
 import { useWorkflowSubmit, useWorkflows } from "./use-workflow-form.ts";
 import { MAX_MISSING_READS } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -107,7 +108,9 @@ describe("useWorkflows", () => {
 describe("useWorkflowSubmit", () => {
   test("starts a run and follows it to completion", async () => {
     const api = fakeApi();
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ url: "u" }));
 
@@ -123,7 +126,9 @@ describe("useWorkflowSubmit", () => {
     const api = fakeApi({
       get: vi.fn(async () => (++reads === 1 ? run({ status: "running" }) : await settled.promise)),
     });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({}));
     await waitFor(() => expect(result.current.run?.status).toBe("running"));
@@ -140,7 +145,9 @@ describe("useWorkflowSubmit", () => {
     // than in every page with a file field.
     const api = fakeApi();
     const file = new File(["abc"], "standup.wav", { type: "audio/wav" });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ recording: file, languageCode: "en" }));
 
@@ -165,7 +172,11 @@ describe("useWorkflowSubmit", () => {
     const asked = fakeApi();
     const file = new File(["abc"], "standup.wav", { type: "audio/wav" });
     const withParts = renderHook(() =>
-      useWorkflowSubmit("digest", { api: asked, intervalMs: POLL_MS, parallel: true }),
+      useWorkflowSubmit<TestWorkflow>("digest", {
+        api: asked,
+        intervalMs: POLL_MS,
+        parallel: true,
+      }),
     );
     await act(() => withParts.result.current.submit({ recording: file }));
     expect(asked.uploadStream).toHaveBeenCalledWith(expect.any(String), file, {
@@ -182,7 +193,7 @@ describe("useWorkflowSubmit", () => {
     // would leave this spec with no second upload to read the options off.
     const other = new File(["abc"], "planning.wav", { type: "audio/wav" });
     const without = renderHook(() =>
-      useWorkflowSubmit("digest", { api: plain, intervalMs: POLL_MS }),
+      useWorkflowSubmit<TestWorkflow>("digest", { api: plain, intervalMs: POLL_MS }),
     );
     await act(() => without.result.current.submit({ recording: other }));
     expect(plain.uploadStream).toHaveBeenCalledWith(expect.any(String), other, {
@@ -207,7 +218,9 @@ describe("useWorkflowSubmit", () => {
       }),
     });
     const files = [new File(["a"], "one.wav"), new File(["b"], "two.wav")];
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
     expect(result.current.upload).toBeUndefined();
 
     let submitted: Promise<void> = Promise.resolve();
@@ -251,7 +264,9 @@ describe("useWorkflowSubmit", () => {
         throw new Error("upload exceeds 268435456 bytes");
       }),
     });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ recording: new File(["a"], "big.wav") }));
 
@@ -282,7 +297,9 @@ describe("useWorkflowSubmit", () => {
       }),
     });
     const files = [new File(["a"], "one.wav"), new File(["b"], "two.wav")];
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     let submitted: Promise<void> = Promise.resolve();
     await act(async () => {
@@ -328,7 +345,9 @@ describe("useWorkflowSubmit", () => {
         throw new Error("unreachable");
       }),
     });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     let submitted: Promise<void> = Promise.resolve();
     await act(async () => {
@@ -353,7 +372,9 @@ describe("useWorkflowSubmit", () => {
     // corrupt it with nothing reporting so.
     const api = fakeApi();
     const mixed = [new File(["a"], "one.wav"), "two.wav"];
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ recordings: mixed }));
 
@@ -364,7 +385,9 @@ describe("useWorkflowSubmit", () => {
   test("stores every file of a multiple field, in order", async () => {
     const api = fakeApi();
     const files = [new File(["a"], "one.wav"), new File(["b"], "two.wav")];
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ recordings: files }));
 
@@ -378,7 +401,9 @@ describe("useWorkflowSubmit", () => {
 
   test("leaves an input with no files exactly as it was", async () => {
     const api = fakeApi();
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ url: "u", count: 3, deep: true }));
 
@@ -392,7 +417,9 @@ describe("useWorkflowSubmit", () => {
         throw new Error("upload exceeds 268435456 bytes");
       }),
     });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ recording: new File(["a"], "big.wav") }));
 
@@ -403,7 +430,7 @@ describe("useWorkflowSubmit", () => {
   test("passes a correlation key through when one is given", async () => {
     const api = fakeApi();
     const { result } = renderHook(() =>
-      useWorkflowSubmit("digest", { api, key: "user-7", intervalMs: POLL_MS }),
+      useWorkflowSubmit<TestWorkflow>("digest", { api, key: "user-7", intervalMs: POLL_MS }),
     );
     await act(() => result.current.submit({}));
     expect(api.start).toHaveBeenCalledWith("digest", {}, { key: "user-7" });
@@ -414,7 +441,7 @@ describe("useWorkflowSubmit", () => {
       startAndWait: vi.fn(async () => run({ runId: "wrun_5", status: "completed" })),
     });
     const { result } = renderHook(() =>
-      useWorkflowSubmit("digest", { api, wait: 5000, intervalMs: POLL_MS }),
+      useWorkflowSubmit<TestWorkflow>("digest", { api, wait: 5000, intervalMs: POLL_MS }),
     );
 
     await act(() => result.current.submit({}));
@@ -430,7 +457,9 @@ describe("useWorkflowSubmit", () => {
         throw new Error("url: invalid");
       }),
     });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({}));
 
@@ -445,7 +474,9 @@ describe("useWorkflowSubmit", () => {
     // one — which is why the id is dropped BEFORE the request rather than when
     // it returns.
     const api = fakeApi();
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({}));
     await waitFor(() => expect(result.current.run?.status).toBe("completed"));
@@ -478,7 +509,9 @@ describe("useWorkflowSubmit", () => {
     // for the life of the page, with the correct error directly above it.
     vi.useFakeTimers();
     const api = fakeApi({ get: vi.fn(async () => undefined) });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(async () => {
       await result.current.submit({});
@@ -496,7 +529,9 @@ describe("useWorkflowSubmit", () => {
 
   test("reset puts the form back to its initial state", async () => {
     const api = fakeApi();
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({}));
     await waitFor(() => expect(result.current.run).toBeDefined());
@@ -514,7 +549,9 @@ describe("useWorkflowSubmit: wake and cancel", () => {
     // `podcast-digest` each keep a module-scope client purely to write
     // `api.wake(runId)`.
     const api = fakeApi({ get: vi.fn(async () => run({ status: "running" })) });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ url: "u" }));
     await waitFor(() => expect(result.current.run?.status).toBe("running"));
@@ -532,7 +569,7 @@ describe("useWorkflowSubmit: wake and cancel", () => {
     // answers for a run that had already moved on, so the no-run case is the
     // same answer rather than a branch every caller has to write.
     const api = fakeApi();
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api }));
+    const { result } = renderHook(() => useWorkflowSubmit<TestWorkflow>("digest", { api }));
 
     await expect(result.current.wake()).resolves.toBe(0);
     await expect(result.current.cancel()).resolves.toBe(false);
@@ -545,7 +582,9 @@ describe("useWorkflowSubmit: wake and cancel", () => {
       get: vi.fn(async () => run({ status: "running" })),
       wake: vi.fn(async () => 1),
     });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({}));
     await waitFor(() => expect(result.current.run?.status).toBe("running"));
@@ -556,7 +595,9 @@ describe("useWorkflowSubmit: wake and cancel", () => {
     // Distinct from `cancel()`, which stops the run and leaves the form where it
     // is. Confusing the two is how "clear this" becomes "throw the work away".
     const api = fakeApi({ get: vi.fn(async () => run({ status: "running" })) });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({}));
     await waitFor(() => expect(result.current.run?.status).toBe("running"));

@@ -18,6 +18,7 @@
  * session field on a workflow app, and a `tools` map on anything at all.
  */
 
+import type { StaticAgentParamsCore } from "./agent-params-static.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
@@ -77,7 +78,9 @@ export type AgentParams =
   | PipelineAgentParams
   | S2sAgentParams
   | TextAgentParams
-  | StaticAgentParams;
+  // The message-free arm: see `StaticAgentParamsCore`. `workflowApp()` takes
+  // the arm that carries the workflow-app diagnostics.
+  | StaticAgentParamsCore;
 
 /**
  * Fields shared by both session modes: everything on {@link AgentDef} minus
@@ -89,8 +92,6 @@ export type SharedAgentParams = Omit<
   DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField
 > &
   Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
-    /** Alias of `systemPrompt` (the Vercel AI SDK's field name). */
-    system?: string;
     /**
      * Not a field. See `InlineToolsMisuse` — a tool is declared by its
      * FILE, so this is typed as the message that names the one to create.
@@ -404,86 +405,13 @@ export type EndpointingOnDescriptorMisuse<K extends string> =
   `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
 
 /**
- * The {@link AgentDef} fields a WORKFLOW APP cannot use, typed as messages on
- * {@link StaticAgentParams}.
- *
- * A `page: "static"` agent has no session and no LLM loop: nothing reads a
- * system prompt, nothing executes a tool, nothing opens the socket `syncState`
- * pushes over. Every one of these was silently ACCEPTED and inert before this
- * arm existed, and the `link-digest` template shipped a `systemPrompt`
- * addressed to a model that never runs — with a comment claiming
- * `GET /client-config` served it, which serves `name`/`greeting`/`page` and
- * has never carried a system prompt.
- *
- * Derived from the two existing lists where they already say this, so a new
- * pipeline knob or provider stage is rejected here for free.
+ * The workflow-app arm lives in its own module (this file hit the 500-line
+ * cap); its four public names are re-exported here so `AgentParams` and the
+ * arms an author names stay one import.
  */
-export type WorkflowAppOnlyField =
-  | ProviderField
-  | PipelineOnlyField
-  | "system"
-  | "systemPrompt"
-  | "sttPrompt"
-  | "maxSteps"
-  | "toolChoice"
-  // `tools` is deliberately NOT here, though a workflow app has no model to
-  // call one: it would give the field two messages across the union, and tsc
-  // prints the whole union at every call site. It printed the workflow-app
-  // sentence FIRST, so an author who wrote a plain voice agent — the
-  // overwhelmingly common case for this mistake — was told about
-  // `page: "static"`, a thing they had never heard of, before the sentence that
-  // names the file to create. One message for one field: the arm inherits
-  // `tools?: InlineToolsMisuse` from `SharedAgentParams`, which is true of
-  // every arm (a tool is a FILE) and leads with the remedy.
-  | "builtinTools"
-  | "minTurnSilenceMs"
-  | "maxTurnSilenceMs"
-  | "syncState"
-  // Session events, for the same reason `syncState` is here: there is no session
-  // to observe. A workflow app's own narration is `report()` from a step.
-  | "events"
-  | "idleTimeoutMs"
-  | "voice";
-
-/** The message a {@link WorkflowAppOnlyField} carries. */
-export type WorkflowAppMisuse<K extends string> =
-  `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
-
-/**
- * Workflow-app params: `page: "static"`, the workflows that ARE the product,
- * and nothing from the session half of the agent shape.
- *
- * Not a session mode like the other three arms — a front door. What it drops is
- * everything downstream of having a session at all.
- *
- * What it keeps is the surface a page and a deploy actually read: `name` and
- * `greeting` (both served by `GET /client-config`, so a page can render its
- * shell from the agent — `page()` does not fetch it the way `client()` does, so
- * a page that wants them calls `fetchClientConfig()` itself), `workflows`, and
- * `requiredEnv` (a `"use step"` body reads keys with `stepEnv` from
- * `@alexkroman1/aai/utils`, and a deploy still checks they are present).
- *
- * `workflows` is REQUIRED here, unlike on {@link AgentDef}: a workflow app whose
- * whole API is `/workflows/*` and which declares none serves a form with nothing
- * behind it, and the page's `api.start(name, …)` would 400 on every submit.
- *
- * @remarks
- * The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
- * not values this arm accepts. Setting one of those fields makes `tsc` print the
- * sentence in place of a bare excess-property error, so the diagnostic names the
- * rule and what to do about it. Never pass one as a string.
- */
-export type StaticAgentParams = Omit<
-  SharedAgentParams,
-  WorkflowAppOnlyField | FrontDoorField | "workflows"
-> & {
-  /** See {@link AgentDef.page} — the explicit opt-in to a workflow app. */
-  page: "static";
-  /**
-   * See {@link AgentDef.workflows}. The whole product: a workflow app is an
-   * agent whose work happens here.
-   */
-  workflows: NonNullable<AgentDef["workflows"]>;
-} & {
-  [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
-};
+export type {
+  StaticAgentParams,
+  StaticAgentParamsCore,
+  WorkflowAppMisuse,
+  WorkflowAppOnlyField,
+} from "./agent-params-static.ts";

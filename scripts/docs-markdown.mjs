@@ -141,6 +141,10 @@ const MIN_BYTES = 300_000;
  */
 const UNDOCUMENTED_SUBPATHS = {
   aai: {
+    "./testing/vite":
+      "a Vite plugin serving `virtual:aai/agent`. Its consumer is a `vitest.config.ts`, not an " +
+      "agent.ts or a spec body, and its one exported function is documented at its own source — " +
+      "a reference page here would sit under the authoring API describing build wiring.",
     "./internal":
       "The escape hatch, not an API. Its 49 exports are `@internal` by " +
       "intent — the subpath exists so they are reachable without sitting in " +

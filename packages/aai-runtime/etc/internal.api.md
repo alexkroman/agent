@@ -176,6 +176,7 @@ type ExecuteToolCallOptions = {
     generate?: HostGenerateFn | undefined;
     subagents?: SubagentRunner | undefined;
     logger?: Logger | undefined;
+    onUncaught?: ((message: string) => void) | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;

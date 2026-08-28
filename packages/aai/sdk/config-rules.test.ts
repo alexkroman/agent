@@ -6,8 +6,8 @@
 
 import { describe, expect, test } from "vitest";
 import { agentConfigWarnings, assertProviderTriple } from "./config-rules.ts";
-import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
-import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
+import type { AgentConfig } from "./manifest-barrel.ts";
+import { toAgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropicLlm } from "./providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
@@ -404,10 +404,12 @@ describe("toAgentConfig — AssemblyAI TTS language validation", () => {
 });
 
 describe("author conveniences on raw configs (no agent())", () => {
-  test("toAgentConfig maps `system` to systemPrompt", () => {
-    const parsed = rawConfig({ name: "raw", system: "Be terse." });
-    expect(parsed.systemPrompt).toBe("Be terse.");
-    expect("system" in parsed).toBe(false);
+  test("toAgentConfig reports `system` by name — it was an alias and is gone", () => {
+    // A raw `export default {...}` is exactly where a stale `system` survives
+    // an upgrade, because no `agent()` call type-checked it on the way in.
+    expect(() => rawConfig({ name: "raw", system: "Be terse." })).toThrow(
+      /`system` \(renamed to `systemPrompt`\)/,
+    );
   });
 
   test("toAgentConfig desugars a string llm alongside a full triple", () => {
@@ -418,31 +420,6 @@ describe("author conveniences on raw configs (no agent())", () => {
       tts: { kind: "assemblyai", options: {} },
     });
     expect(parsed.llm?.kind).toBe("gateway");
-  });
-
-  test("toAgentConfig rejects both system and systemPrompt", () => {
-    expect(() => rawConfig({ name: "raw", system: "a", systemPrompt: "b" })).toThrow(/aliases/);
-  });
-});
-
-describe("manifest-barrel type contracts", () => {
-  test("agentToolsToSchemas returns ToolSchema[]", () => {
-    const schemas: ToolSchema[] = agentToolsToSchemas({});
-    expect(schemas).toEqual([]);
-  });
-});
-
-describe("toAgentConfig — text mode", () => {
-  test("`text: true` classifies as text and injects no pipeline stages", () => {
-    const parsed = rawConfig({ name: "chat", text: true });
-    expect(parsed.mode).toBe("text");
-    // The pipeline-by-default fill is what a text agent must NOT get: an
-    // injected stt/tts is an audio path nobody asked for, and it would
-    // reclassify the agent as pipeline on the very next parse.
-    expect(parsed.stt).toBeUndefined();
-    expect(parsed.tts).toBeUndefined();
-    expect(parsed.s2s).toBeUndefined();
-    expect(parsed.text).toBe(true);
   });
 
   test("keeps an explicit llm, which is the one stage it has", () => {
@@ -479,5 +456,79 @@ describe("toAgentConfig — text mode", () => {
     // the voice call sites' `Exclude<SessionMode, "text">` cannot become a lie.
     expect(assertProviderTriple(undefined, undefined, undefined, undefined)).toBe("s2s");
     expect(assertProviderTriple(undefined, {}, undefined, undefined, true)).toBe("text");
+  });
+});
+
+describe("EU residency warning", () => {
+  // `assemblyAIPipeline({ region: "eu" })` — the call in that function's own
+  // @example — routes STT and the LLM gateway to the EU and TTS to the single
+  // (US) endpoint. Documented in a JSDoc, which is the wrong strength of
+  // statement for the one option here that is a compliance claim.
+  test("warns when an EU stage sits beside a TTS stage that has no EU endpoint", () => {
+    const warnings = agentConfigWarnings({
+      stt: { kind: "assemblyai", options: { region: "eu" } },
+      llm: { kind: "assemblyai", options: { region: "eu" } },
+      tts: { kind: "assemblyai", options: {} },
+    });
+    expect(warnings.join("\n")).toContain("outside the EU");
+    expect(warnings.join("\n")).toContain("streaming-tts.assemblyai.com");
+  });
+
+  test("says nothing for a US agent", () => {
+    expect(
+      agentConfigWarnings({
+        stt: { kind: "assemblyai", options: {} },
+        tts: { kind: "assemblyai", options: {} },
+      }),
+    ).toEqual([]);
+  });
+
+  test("says nothing when there is no TTS stage — nothing leaves the region", () => {
+    expect(agentConfigWarnings({ stt: { kind: "assemblyai", options: { region: "eu" } } })).toEqual(
+      [],
+    );
+  });
+
+  test("an EU LLM alone is enough to warn — the stages are independent", () => {
+    const warnings = agentConfigWarnings({
+      llm: { kind: "assemblyai", options: { region: "eu" } },
+      tts: { kind: "assemblyai", options: {} },
+    });
+    expect(warnings).toHaveLength(1);
+  });
+});
+
+test("the warning fires on assemblyAIPipeline({ region: 'eu' }) itself", () => {
+  // The call in `assemblyAIPipeline`'s own @example. Built through the real
+  // preset rather than a hand-written descriptor, so a change to how the preset
+  // threads `region` cannot pass this by accident.
+  const warnings = agentConfigWarnings(assemblyAIPipeline({ region: "eu" }));
+  expect(warnings.join("\n")).toContain("outside the EU");
+});
+
+describe("temperature scope", () => {
+  // The main conversational loop took no sampling parameter at all, while
+  // `ctx.generate` and `subagent()` both did — so the one model call that does
+  // almost all the talking was the one an author could not tune.
+  test("a pipeline agent may set it, and it reaches the config", () => {
+    expect(rawConfig({ name: "Line", temperature: 0.2 }).temperature).toBe(0.2);
+  });
+
+  test("a text agent may set it — nothing about it is voice-specific", () => {
+    expect(rawConfig({ name: "Docs", text: true, temperature: 0.9 }).temperature).toBe(0.9);
+  });
+
+  test("an S2S agent is REFUSED, rather than having it silently dropped", () => {
+    expect(() => rawConfig({ name: "Line", s2s: assemblyAIS2s(), temperature: 0.2 })).toThrow(
+      /no effect in s2s mode/,
+    );
+  });
+
+  test("out of range is refused by the schema", () => {
+    expect(() => rawConfig({ name: "Line", temperature: 5 })).toThrow(/configuration is invalid/);
+  });
+
+  test("unset stays unset — the model's own default applies", () => {
+    expect(rawConfig({ name: "Line" }).temperature).toBeUndefined();
   });
 });

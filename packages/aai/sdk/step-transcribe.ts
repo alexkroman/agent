@@ -199,6 +199,11 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
  *   attempt, and the only one whose cost is the file.
  *
  * @public
+ *
+ * **From a `"use step"` body, prefer `stepTranscribeUploadClassified`
+ * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+ * error a step throws, and raw every failure looks alike to it — a bad API key is
+ * retried until the attempts run out.
  */
 export async function stepTranscribeUpload(
   uploadId: string,
@@ -272,6 +277,11 @@ export async function stepTranscribeUpload(
  * ```
  *
  * @public
+ *
+ * **From a `"use step"` body, prefer `stepTranscribeSubmitClassified`
+ * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+ * error a step throws, and raw every failure looks alike to it — a bad API key is
+ * retried until the attempts run out.
  */
 export async function stepTranscribeSubmit(
   audioUrl: string,
@@ -317,6 +327,11 @@ export async function stepTranscribeSubmit(
  *   otherwise be handed no words and asked to work anyway.
  *
  * @public
+ *
+ * **From a `"use step"` body, prefer `stepTranscribePollClassified`
+ * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+ * error a step throws, and raw every failure looks alike to it — a bad API key is
+ * retried until the attempts run out.
  */
 export async function stepTranscribePoll(
   id: string,

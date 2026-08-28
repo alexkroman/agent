@@ -30,6 +30,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai/step-files` — `packages/aai/etc/step-files.api.md`
 - `@alexkroman1/aai/stt` — `packages/aai/etc/stt.api.md`
 - `@alexkroman1/aai/testing` — `packages/aai/etc/testing.api.md`
+- `@alexkroman1/aai/testing/vite` — `packages/aai/etc/testing-vite.api.md`
 - `@alexkroman1/aai/testing/vitest` — `packages/aai/etc/testing-vitest.api.md`
 - `@alexkroman1/aai/tools` — `packages/aai/etc/tools.api.md`
 - `@alexkroman1/aai/tts` — `packages/aai/etc/tts.api.md`
@@ -304,6 +305,7 @@ const AgentConfigSchema: z.ZodObject<{
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
+    temperature: z.ZodOptional<z.ZodNumber>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -1504,11 +1506,11 @@ export type SttTurnMeta = {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -1524,7 +1526,7 @@ export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 // @public
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;
@@ -1797,6 +1799,7 @@ export interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -1805,7 +1808,7 @@ export interface AgentDef extends PipelineVoiceTuning {
 }
 
 // @public
-export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
+export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -2173,6 +2176,11 @@ type RejectThenable<R> = IsAny<R> extends true ? unknown : [R] extends [never] ?
 type RejectThenableResult<R> = IsAny<R> extends true ? R : [R] extends [never] ? R : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : R;
 
 // @public
+export function requireEnv(ctx: {
+    env: Readonly<Partial<Record<string, string>>>;
+}, name: string): string;
+
+// @public
 export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
 
 // @public
@@ -2214,7 +2222,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 export type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -2416,7 +2424,6 @@ export interface SessionSlotOptions<T, After = void> {
 
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
-    system?: string;
     tools?: InlineToolsMisuse;
 };
 
@@ -2506,11 +2513,16 @@ export interface StateProjection<V = unknown> {
 }
 
 // @public
-export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
+export type StaticAgentParams = Omit<StaticAgentParamsCore, WorkflowAppOnlyField> & {
+    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
+};
+
+// @public
+type StaticAgentParamsCore = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
     page: "static";
     workflows: NonNullable<AgentDef["workflows"]>;
 } & {
-    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
+    [K in WorkflowAppOnlyField]?: never;
 };
 
 // @public
@@ -2533,11 +2545,11 @@ export function subagent(def: SubagentDef): SubagentDef;
 // @public
 export interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -2578,7 +2590,7 @@ export type ToolChoice = "auto" | "required" | "none" | {
 
 // @public
 export type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;
@@ -3250,6 +3262,7 @@ export const AgentConfigSchema: z.ZodObject<{
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
+    temperature: z.ZodOptional<z.ZodNumber>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -3317,6 +3330,8 @@ export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
 export function agentConfigWarnings(config: {
     tts?: unknown;
     s2s?: unknown;
+    stt?: unknown;
+    llm?: unknown;
 }): string[];
 
 // @public
@@ -3337,6 +3352,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -3355,7 +3371,7 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @internal
+// @public (undocumented)
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
 // @internal
@@ -3491,7 +3507,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -3736,11 +3752,11 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -3762,7 +3778,7 @@ type ToolChoice = "auto" | "required" | "none" | {
 
 // @public
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;
@@ -4936,6 +4952,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -5122,7 +5139,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -5584,11 +5601,11 @@ export type StubUploadWrite = {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -5617,7 +5634,7 @@ type ToolChoice = "auto" | "required" | "none" | {
 
 // @public
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;
@@ -5667,9 +5684,6 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 type WakeUpOptions = {
     correlationIds?: string[];
 };
-
-// @public
-export function withDiscoveredTools<D extends ToolBearingAgent>(def: D, modules: ToolModules): D;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
@@ -5738,6 +5752,24 @@ type WorkflowSummary = {
     description?: string;
     inputSchema?: unknown;
     uploads?: readonly string[];
+};
+```
+
+## `@alexkroman1/aai/testing/vite`
+
+```ts
+// @public
+export const AAI_AGENT_MODULE = "virtual:aai/agent";
+
+// @public
+export function aaiAgentPlugin(): AaiVitePlugin;
+
+// @public
+export type AaiVitePlugin = {
+    readonly name: string;
+    readonly enforce: "pre";
+    resolveId(id: string, importer?: string): string | undefined;
+    load(id: string): string | undefined;
 };
 ```
 
@@ -6076,11 +6108,8 @@ export function visitWebpage<T = DefaultToolResult>(url: string | ({
 // @public
 export function webSearch<T = DefaultToolResult>(query: string | ({
     query: string;
-    max_results?: number;
     maxResults?: number;
-} & CallOptions), options?: {
-    maxResults?: number;
-} & CallOptions): Promise<T | ToolFailure>;
+} & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;
 ```
 
 ## `@alexkroman1/aai/tts`
@@ -7846,7 +7875,8 @@ export interface TextTurnOptions {
     stopWhen?: readonly ((opts: {
         steps: readonly StepResult<ToolSet>[];
     }) => boolean | PromiseLike<boolean>)[];
-    system?: string;
+    systemPrompt?: string;
+    temperature?: number;
     toolChoice?: ToolChoice;
 }
 
@@ -8172,6 +8202,7 @@ type ExecuteToolCallOptions = {
     generate?: HostGenerateFn | undefined;
     subagents?: SubagentRunner | undefined;
     logger?: Logger | undefined;
+    onUncaught?: ((message: string) => void) | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;
@@ -8606,6 +8637,7 @@ export function defaultClientDir(): string;
 ## `@alexkroman1/aai-ui`
 
 ```ts
+import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ButtonHTMLAttributes } from 'react';
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
 import { ComponentType } from 'react';
@@ -8625,6 +8657,7 @@ import type { TextareaHTMLAttributes } from 'react';
 import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
+import { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
@@ -8934,6 +8967,9 @@ export function SubmitButton(input: {
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element;
 
 // @public
+export type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined : WorkflowInputOf<D>;
+
+// @public
 export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
 
 // @public
@@ -9123,13 +9159,13 @@ export type UseWorkflowsResult = {
 };
 
 // @public
-export function useWorkflowStream<R = unknown>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<R>;
+export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
 
 // @public
-export function useWorkflowSubmit<R = unknown>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<R>;
+export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowSubmitOptions = {
@@ -9170,6 +9206,8 @@ export function WorkflowFields(input: {
     workflow?: WorkflowSummary | string | undefined;
 }): JSX.Element | null;
 
+export { WorkflowInputOf }
+
 export { WorkflowOutputOf }
 
 // @public
@@ -9187,11 +9225,12 @@ export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
 export { WorkflowRunStatus }
 
 // @public
-export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
+export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;
 
 // @public
-export type WorkflowSubmission<R = unknown> = {
-    submit: (input: unknown) => Promise<void>;
+export type WorkflowSubmission<R = unknown, I = unknown> = {
+    submit: (input: I) => Promise<void>;
+    submitForm: (values: FormValues) => Promise<void>;
     reset: () => void;
     wake: () => Promise<number>;
     cancel: () => Promise<boolean>;

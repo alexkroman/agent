@@ -55,13 +55,14 @@ const TRACK_TINT_PCT = 12;
  * parent's state) has nothing to pause.
  *
  * @example
- * ```tsx
+ * ```tsx no-check
  * import { Form, SubmitButton, UploadProgressBar, useWorkflowSubmit, WorkflowFields } from "@alexkroman1/aai-ui";
+ * import type { transcribe } from "./agent.ts";
  *
  * function TranscribeForm() {
- *   const { submit, upload, pending, error } = useWorkflowSubmit("transcribe");
+ *   const { submitForm, upload, pending, error } = useWorkflowSubmit<typeof transcribe>("transcribe");
  *   return (
- *     <Form onSubmit={(values) => submit(values)} error={error}>
+ *     <Form onSubmit={submitForm} error={error}>
  *       <WorkflowFields workflow="transcribe" />
  *       <UploadProgressBar upload={upload} />
  *       <SubmitButton pending={pending}>Transcribe</SubmitButton>

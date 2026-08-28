@@ -58,7 +58,10 @@ export type SessionEventContext = {
    * Environment variables available to this agent (from `.env` under `aai dev`,
    * `aai secret` in production).
    */
-  env: Readonly<Record<string, string>>;
+  // `Partial` for the same reason as `ToolContext.env`: a variable that was
+  // never set is `undefined` however the type reads, and typed `string` an
+  // undeclared read compiled and deployed. See `requireEnv`.
+  env: Readonly<Partial<Record<string, string>>>;
   /**
    * This session's slot storage — **reach for {@link sessionSlot}, not this**,
    * exactly as in a tool. It is on the context because a slot declared in one

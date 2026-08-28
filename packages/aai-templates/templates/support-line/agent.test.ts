@@ -1,26 +1,7 @@
-/// <reference types="vite/client" />
-
-import {
-  createToolContext,
-  stubGenerate,
-  toolRunner,
-  withDiscoveredTools,
-} from "@alexkroman1/aai/testing";
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
+import { createToolContext, stubGenerate, toolRunner } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
-import authoredAgent from "./agent.ts";
-
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS: it is what a scaffolded project runs, so it may not import
- * anything outside its own template, and `import.meta.glob` is expanded against
- * the file containing it either way. This is the pattern a user writes.
- */
-const agentDef = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
 
 import { MAX_ATTEMPTS, runCorrectiveRag } from "./procedure.ts";
 import {

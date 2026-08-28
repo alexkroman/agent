@@ -395,6 +395,10 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         generate,
         subagents,
         logger,
+        // Non-fatal: the turn continues and the model still gets the failure.
+        // The frame exists so a throw is VISIBLE — see `onUncaught`.
+        onUncaught: (message) =>
+          liveEmitter()?.emit({ type: "error.reported", code: "tool", message, fatal: false }),
         timeoutMs: opts.toolTimeoutMs,
         // Always defined: `ctx.send` is a no-op when no socket holds the id
         // (the same shape a missing sink produced before), and binding it

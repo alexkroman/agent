@@ -33,6 +33,20 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    agent that no longer exists. When a test fails after your change, decide
    which side is stale: updating the test to match the new agent is a normal
    fix, not a workaround. Do not delete a test to make it pass.
+
+   **A spec that needs the agent as DEPLOYED imports one module:**
+
+   ```ts no-check
+   import agentDef from "virtual:aai/agent";
+   ```
+
+   That is `agent.ts` with its `tools/` directory discovered and its
+   `system-prompt.md` applied — the same lowering `aai build` does, so a spec
+   measures the agent that ships rather than the raw default export (which has
+   no tools and the framework's default prompt). `vitest.config.ts` registers
+   the plugin that serves it; a scaffolded project already has it. For a runner
+   that is not vitest, `deployedAgent` on `@alexkroman1/aai/testing` is the same
+   thing written out.
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
    the agent's shape; an eval drives a real session and asserts what it did.
    Cases live in `agent.eval.test.ts` (the `simple` template ships one):
@@ -178,8 +192,8 @@ import { agent } from "@alexkroman1/aai";
 export default agent({
   name: string;                              // required — display name
   systemPrompt?: string;                     // usually ABSENT — write system-prompt.md
-                                             // instead; declare it only to COMPOSE
-                                             // one (`system` is an accepted alias)
+                                             // instead; declare it only to COMPOSE one.
+                                             // There is no `system` alias — one name.
   greeting?: string;                         // default: "Hey there..."
   voice?: string;                            // TTS voice for the default pipeline, e.g. "michael"
                                              // (shorthand for tts: assemblyAITts({ voice });
@@ -195,6 +209,10 @@ export default agent({
                                              // (there is no `tools` field — a tool is a FILE;
                                              //  see "A file in tools/ IS a tool")
   maxSteps?: number;                         // default: 10 — max tool calls per turn
+  temperature?: number;                      // sampling temperature for the agent's OWN model calls
+                                             // (pipeline and text). Unset = the model's default; some
+                                             // models ignore it and warn. S2S REFUSES it — the model
+                                             // runs in the provider's service and never sees this.
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
@@ -207,6 +225,18 @@ export default agent({
   preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default false; true opts in)
   syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
                                              // (read it with useAgentState; see UI hooks)
+  minTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ENDS a user turn once the
+                                             // text reads complete (default 560)
+  maxTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ends a turn REGARDLESS of
+                                             // content (default 1600). The endpointing knob to reach for:
+                                             // it bounds the utterances that never read as finished.
+                                             // Both are shorthand for the same options on the default
+                                             // assemblyAIStt() stage — invalid with an explicit `stt`.
+  requiredEnv?: string[];                    // env vars this agent reads. A deploy CHECKS them, so a
+                                             // missing key fails at `aai push` instead of mid-call.
+                                             // Declare every key any tool or step reads.
+  text?: true;                               // text-only agent: no STT, no TTS, `llm` is the one stage
+  events?: SessionEventHandlers;             // observe the session (see "Watching the session")
 });
 ```
 
@@ -487,6 +517,11 @@ is the one to use**:
 | `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*Classified` |
 | `sendToChannel` (`/channels`) | `sendToChannelClassified` |
 
+`stepFetchOk` is the one that is not spelled `*Classified`, and the name is the
+difference: the others turn an already-thrown failure into a classified one,
+while this also turns a NON-2XX RESPONSE into a throw — `stepFetch` resolves
+with a `404` rather than raising it. Two changes, so two names.
+
 The whole of what a wrapper adds is `throwStepError`, and that is worth having
 because the DevKit's retry policy is decided by WHICH error a step throws. Raw,
 every failure looks the same to it: a bad API key is retried until the attempts
@@ -516,11 +551,13 @@ every one of those bundles. A step pays nothing for the extra import line.
 Three more subpaths a `workflows/*.ts` module can reach, all with the same
 bundling rule as `/step` — import them there, never through the root barrel:
 
-- **`@alexkroman1/aai/transcribe`** — `stepTranscribeSync(bytes)` for a short
+- **`@alexkroman1/aai/step`** — `stepTranscribeSync(bytes)` for a short
   recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
   `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
-  the `TRANSCRIBE_*` limits. Use the `Classified` wrappers above: a provider
-  refusal — a container it will not read, a recording with no speech — arrives
+  the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
+  lives on `/step` with the other step primitives.) Use the `Classified`
+  wrappers above: a provider refusal — a container it will not read, a
+  recording with no speech — arrives
   with `retryable: false`, and unclassified a step re-uploads the same bytes
   until its attempts run out.
 - **`@alexkroman1/aai/ffmpeg`** — `transcodeToWav(bytes, { sampleRate })`,
@@ -724,7 +761,7 @@ rather than fail the turn:
 import { webSearch } from "@alexkroman1/aai/tools";
 import { isToolFailure } from "@alexkroman1/aai/utils";
 
-const found = await webSearch<{ results?: { url?: string }[] }>({ query, max_results: 4 });
+const found = await webSearch<{ results?: { url?: string }[] }>({ query, maxResults: 4 });
 // NOT `(found.results ?? [])` — a REFUSED search would then read as an empty web.
 if (isToolFailure(found)) return `That search failed: ${found.error}`;
 return (found.results ?? []).map((one) => one.url);
@@ -881,8 +918,39 @@ export default agent({
 Tools, the database, `ctx`, and the UI all behave identically across modes.
 Only the audio + LLM transport differs.
 
-**There is no text-only agent mode.** An agent is a voice conversation —
-every pipeline agent must declare a real TTS provider.
+**Four front doors, each one field on `agent()`.** Omit them all for PIPELINE
+(voice, cascaded STT → LLM → TTS) — the default, and the mode this guide
+assumes. `s2s:` selects speech-to-speech. **`text: true` selects a text-only
+agent**: no STT, no TTS, `llm` is the one stage, and the host runs it with
+`createTextAgent` from `@alexkroman1/aai-runtime`. `workflowApp()` (see
+"Workflow apps") builds a form with no session at all. Setting a field from the
+wrong arm is a compile error naming the rule, so the modes cannot be mixed by
+accident. Every pipeline agent must declare a real TTS provider — that is a
+statement about pipeline mode, not about the SDK.
+
+### Answering a phone call
+
+A deployed voice agent already serves carrier media streams — there is nothing
+to switch on. `createServer` mounts `WS /phone` whenever the agent is a voice
+agent (`telephony` defaults to `true`, and to `false` for a `page: "static"`
+workflow app, which has no stages to put on a call). Point the carrier at it
+with a `carrier` query parameter naming who is dialling:
+
+```text
+wss://<your-agent-url>/phone?carrier=twilio
+wss://<your-agent-url>/phone?carrier=telnyx
+```
+
+Twilio and Telnyx are the two carriers this build decodes (`CARRIER_CODECS`);
+an unknown `carrier` is declined at the upgrade. Both speak 8 kHz mu-law, which
+the bridge transcodes in both directions, so the agent, its tools and its slots
+behave exactly as they do in the browser — a phone call is a transport, not a
+mode. Nothing about `agent.ts` changes to support one.
+
+Turn the route off with `telephony: false` on `createServer`. If you are
+embedding the runtime yourself rather than deploying, the pieces are
+`createTelephonyBridge`, `startTelephonySession`, `TELEPHONY_PATH` and
+`carrierByName`, all on `@alexkroman1/aai-runtime`.
 
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.
@@ -1081,7 +1149,12 @@ same way in `aai dev` and deployed.
 ### `ctx` (ToolContext)
 
 ```ts no-check
-ctx.env: Readonly<Record<string, string>>     // secrets from .env / aai secret put
+ctx.env: Readonly<Partial<Record<string, string>>> // secrets from .env / aai secret put.
+                                               // Partial: every read is `string | undefined`.
+                                               // Use requireEnv(ctx, "KEY") to fail by NAME
+                                               // instead of throwing a TypeError at the model.
+ctx.workflows: WorkflowClient                  // start / signal / wake / find / stream a durable run
+                                               // from a tool (see "Workflows")
 ctx.slots: SlotStore                           // where sessionSlot() keeps this session's state —
                                                // reach for the slot, never this (see "Session state")
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
@@ -1286,8 +1359,8 @@ an SDK dependency. `support-line` is the worked example.
 
 `ctx.generate` is ONE prompt. When answering takes an unknown number of tool
 calls whose intermediate results the conversation has no reason to carry,
-delegate to a **subagent** instead: a second tool loop with its own
-instructions, model, tools and — the whole point — its own context window.
+delegate to a **subagent** instead: a second tool loop with its own system
+prompt, model, tools and — the whole point — its own context window.
 
 ```ts
 import { subagent, tool } from "@alexkroman1/aai";
@@ -1295,7 +1368,9 @@ import { z } from "zod";
 
 const researcher = subagent({
   name: "researcher",
-  instructions:
+  // `systemPrompt`, the same field name `agent()` uses — a subagent is a
+  // field-for-field smaller agent, so nothing about it is spelled differently.
+  systemPrompt:
     "Research the task with the tools you have. IMPORTANT: your final message " +
     "is the only thing the caller sees — end with a self-contained summary.",
   builtinTools: ["web_search", "visit_webpage"],
@@ -1489,7 +1564,7 @@ something it has to notice and switch off.
 
 | Tool | Description | Params |
 | --- | --- | --- |
-| `web_search` | Search the web (DuckDuckGo) — no API key required | `query`, `max_results?` (default 5) |
+| `web_search` | Search the web (DuckDuckGo) — no API key required | `query`, `maxResults?` (default 5) |
 | `visit_webpage` | Fetch URL to plain text | `url` |
 | `get_page_design` | Fetch URL's raw HTML + CSS (style blocks and linked stylesheets) to study/mimic a site's design | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |

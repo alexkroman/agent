@@ -359,14 +359,14 @@ function TranscriptionDesk() {
   // ALL THREE hooks are called every render, because a hook may not be conditional —
   // and that costs nothing here: none of them does anything until its `submit` is
   // called, and `useWorkflowRun` underneath them holds no id until then either.
-  const streamed = useWorkflowStream<Transcript>(WORKFLOWS.streaming, { parallel });
-  const stored = useWorkflowSubmit<Transcript>(WORKFLOWS.classic, { parallel });
-  const batched = useWorkflowSubmit<Transcript>(WORKFLOWS.batch, { parallel });
+  const streamed = useWorkflowStream<typeof transcribe>(WORKFLOWS.streaming, { parallel });
+  const stored = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.classic, { parallel });
+  const batched = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.batch, { parallel });
   // The batch flow uploads the same way the classic one does — the id comes from the
   // store — so it is the SAME hook against a different workflow. Only the streaming
   // mode needs the other one, because only it needs the id before the bytes.
   const active = mode === "streaming" ? streamed : mode === "batch" ? batched : stored;
-  const { submit, run, upload, pending, error, reset, pauseUpload, resumeUpload } = active;
+  const { submitForm, run, upload, pending, error, reset, pauseUpload, resumeUpload } = active;
   // History is per WORKFLOW, so the list follows the mode: two flows that produce
   // the same output are still two different things to have run, and merging them
   // would put a run under a heading that cannot explain it.
@@ -422,7 +422,7 @@ function TranscriptionDesk() {
       <Form
         onSubmit={(values) => {
           total.start();
-          return submit(values);
+          return submitForm(values);
         }}
         error={error}
       >

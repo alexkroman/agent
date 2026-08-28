@@ -386,10 +386,11 @@ describe("API-EXPORTS.json", () => {
     expect(surface["@alexkroman1/aai/workflow-api"]).toContain("WorkflowRunSnapshot");
     expect(surface["@alexkroman1/aai"]).not.toContain("WorkflowRunSnapshot");
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("WorkflowRunSnapshot");
-    // `ToolModules` is `withDiscoveredTools`'s parameter and lives on
-    // `/manifest`, which is not an authoring subpath at all — so it is forgotten
-    // HERE and absent from the root too, which is the intended shape: the value a
-    // caller passes is an `import.meta.glob` result, not something to name.
+    // `ToolModules` is `ProjectFiles.tools`'s type and lives on `/manifest`,
+    // which is not an authoring subpath at all — so it is forgotten HERE and
+    // absent from the root too, which is the intended shape: the value a caller
+    // passes is an `import.meta.glob` result, not something to name. Most specs
+    // now import `virtual:aai/agent` and never see one.
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("ToolModules");
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
       "ProjectFiles",
@@ -452,7 +453,6 @@ describe("API-EXPORTS.json", () => {
       "toolInputIssues",
       "toolOf",
       "toolRunner",
-      "withDiscoveredTools",
     ]);
     // The vitest half is mostly the INSTALLATION of each fake above it — the
     // same stubs with `onTestFinished(restore)` done. That is the whole reason

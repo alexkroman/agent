@@ -28,14 +28,12 @@ import {
   type StubGatewayCall,
   schemaInputIssues,
   toolRunner,
-  withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { mockWorkflows, installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
-import authoredAgent from "./agent.ts";
 import { research } from "./shared.ts";
 import {
   countSources,
@@ -63,18 +61,8 @@ vi.mock("@alexkroman1/aai/tools", () => ({
   visitWebpage: vi.fn(async () => ({ content: "The page body." })),
 }));
 
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS: it is what a scaffolded project runs, so it may not import
- * anything outside its own template, and `import.meta.glob` is expanded against
- * the file containing it either way. This is the pattern a user writes.
- */
-const agentDef = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 
 /**
  * Every tool here is driven through the agent's own table, by the name the model
@@ -404,7 +392,7 @@ describe("the steps that research", () => {
 
     const note = await investigate(brief, "Tool use");
 
-    expect(webSearch).toHaveBeenCalledWith({ query: "otter tool use", max_results: 5 });
+    expect(webSearch).toHaveBeenCalledWith({ query: "otter tool use", maxResults: 5 });
     expect(visitWebpage).toHaveBeenCalledWith("https://otters.example/tools");
     expect(note.findings).toContain("crack shellfish");
     expect(note.sources).toEqual([{ title: "Otters", url: "https://otters.example/tools" }]);

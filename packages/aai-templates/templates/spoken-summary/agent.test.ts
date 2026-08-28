@@ -54,7 +54,6 @@ describe("the declaration", () => {
     // The page calls `api.start("spokenSummary", …)`, so a rename here is a
     // runtime 400 rather than a compile error. This is what pins it.
     expect(Object.keys(agentDef.workflows ?? {})).toEqual(["spokenSummary"]);
-    expect(agentDef.page).toBe("static");
   });
 
   test("declares no providers and exactly the one credential its steps read", () => {

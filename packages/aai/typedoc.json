@@ -49,6 +49,12 @@
     // off the root barrel and out of the docs, while still appearing inline in
     // the arms' rendered signatures. See the re-export comment at the foot of
     // `sdk/define.ts`.
+    //
+    // `StaticAgentParamsCore` is one of the arms rather than a field list, and
+    // it is here for the same reason: it exists so the twenty misuse MESSAGES
+    // stay off the union tsc prints at every `agent()` call site, and the shape
+    // it names is documented as `StaticAgentParams` — which a reader does click,
+    // and which `Omit`s this one rather than sharing a third base.
     "DefaultedAgentField",
     "EndpointingOnDescriptorMisuse",
     "FrontDoorField",
@@ -59,6 +65,7 @@
     "ProviderField",
     "SilenceNudgeField",
     "SilenceNudgeParams",
+    "StaticAgentParamsCore",
     "StaticFrontDoorMisuse",
     "WorkflowAppMisuse",
     "WorkflowAppOnlyField",

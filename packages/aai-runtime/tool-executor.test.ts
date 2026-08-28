@@ -163,6 +163,56 @@ describe("executeToolCall", () => {
   });
 });
 
+describe("executeToolCall — reporting a THROW", () => {
+  // `tool` is one of eight SessionErrorCode values and was emitted by nothing.
+  // A throwing tool produced no error frame and no session event — only a
+  // logger.warn in a ring buffer that dies with the sandbox — so the likeliest
+  // bug in a voice agent was also the least observable one.
+  test("onUncaught fires when execute throws, and names the tool", async () => {
+    const onUncaught = vi.fn();
+    const tool = makeTool({
+      execute: () => {
+        throw new TypeError("Cannot read properties of undefined (reading 'slice')");
+      },
+    });
+    await run("lookup_note", {}, tool, { onUncaught });
+    expect(onUncaught).toHaveBeenCalledTimes(1);
+    // The raw error never names the tool; the model gets `errorMessage(err)`
+    // alone, so the tool name is the half only this layer can add.
+    expect(onUncaught.mock.calls[0]?.[0]).toBe(
+      "Tool \"lookup_note\" threw: Cannot read properties of undefined (reading 'slice')",
+    );
+  });
+
+  test("onUncaught does NOT fire for a RETURNED ToolFailure — that is the author saying 'expected'", async () => {
+    const onUncaught = vi.fn();
+    const tool = makeTool({ execute: () => ({ error: "The notes service answered 404." }) });
+    await run("lookup_note", {}, tool, { onUncaught });
+    expect(onUncaught).not.toHaveBeenCalled();
+  });
+
+  test("the model still gets the failure — reporting is additive, not a diversion", async () => {
+    const onUncaught = vi.fn();
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("boom");
+      },
+    });
+    const result = await run("t", {}, tool, { onUncaught });
+    expect(result).toContain("boom");
+    expect(onUncaught).toHaveBeenCalled();
+  });
+
+  test("a throw with no onUncaught still returns the failure", async () => {
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("boom");
+      },
+    });
+    await expect(run("t", {}, tool)).resolves.toContain("boom");
+  });
+});
+
 describe("executeToolCall — cancellation", () => {
   test("ctx.signal follows the caller's signal", async () => {
     // ctx.signal is a per-call signal (so a timeout can fire it too), chained

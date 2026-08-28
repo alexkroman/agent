@@ -187,6 +187,11 @@ function isStreamingBody(body: StepFetchInit["body"]): boolean {
  *   status, which is returned like any other: only the caller knows whether a
  *   `404` is fatal.
  * @public
+ *
+ * **From a `"use step"` body, prefer `stepFetchOk`
+ * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+ * error a step throws, and raw every failure looks alike to it — a bad API key is
+ * retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
  */
 export async function stepFetch(url: string, init: StepFetchInit = {}): Promise<Response> {
   const published = (globalThis as StepFetchSlot)[STEP_FETCH_SLOT];

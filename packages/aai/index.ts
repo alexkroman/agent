@@ -36,7 +36,7 @@
  *
  * | Subpath | Reach for it when |
  * | --- | --- |
- * | `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `withDiscoveredTools`, `runTool` |
+ * | `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
  * | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
  * | `@alexkroman1/aai/step`, `/step-errors` | writing a `"use step"` body inside a workflow |
  * | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |
@@ -136,6 +136,33 @@ export type {
   TtsProvider,
 } from "./sdk/providers.ts";
 /**
+ * DECLARING a workflow — and only that.
+ *
+ * `workflow()` is on the root barrel because declaring one sits beside declaring
+ * a tool: an author writes both in `agent.ts`. Everything about the RUN it
+ * starts — the option bags, the snapshot union, its guard, `WorkflowOutputOf`,
+ * the wait cap — is on `@alexkroman1/aai/workflow-api`, whose reader is a page,
+ * a script, or a tool annotating a result. Seventeen names, none of which an
+ * `agent.ts` ever writes, and the barrel's membership test is exactly that.
+ *
+ * `WorkflowClient` stays because `ToolContext.workflows` names it.
+ *
+ * The engine behind all of it (the Workflow DevKit) is not re-exported from
+ * anywhere here: an author imports `sleep`, `defineHook` and the directives from
+ * `workflow` directly, which keeps this SDK from having to track that package's
+ * surface.
+ */
+/**
+ * Reading a credential off `ctx.env`.
+ *
+ * On the root barrel rather than `/utils` because it takes a `ToolContext` and
+ * is written inside a tool body, which is the root's own membership test — and
+ * because the failure it exists to prevent (a `TypeError` on an undeclared
+ * variable, serialized to the model, apologised for out loud) is one an author
+ * should not have to find a subpath to avoid.
+ */
+export { requireEnv } from "./sdk/require-env.ts";
+/**
  * Standard Schema acceptance — the two an author names.
  *
  * `StandardSchemaV1` and its result/issue types are the ecosystem SPEC that
@@ -218,21 +245,4 @@ export {
   toolFailure,
   withLock,
 } from "./sdk/utils.ts";
-/**
- * DECLARING a workflow — and only that.
- *
- * `workflow()` is on the root barrel because declaring one sits beside declaring
- * a tool: an author writes both in `agent.ts`. Everything about the RUN it
- * starts — the option bags, the snapshot union, its guard, `WorkflowOutputOf`,
- * the wait cap — is on `@alexkroman1/aai/workflow-api`, whose reader is a page,
- * a script, or a tool annotating a result. Seventeen names, none of which an
- * `agent.ts` ever writes, and the barrel's membership test is exactly that.
- *
- * `WorkflowClient` stays because `ToolContext.workflows` names it.
- *
- * The engine behind all of it (the Workflow DevKit) is not re-exported from
- * anywhere here: an author imports `sleep`, `defineHook` and the directives from
- * `workflow` directly, which keeps this SDK from having to track that package's
- * surface.
- */
 export { type WorkflowClient, type WorkflowDef, workflow } from "./sdk/workflow.ts";

@@ -22,14 +22,11 @@
 // passes `createVmRunCode()` — a developer's own machine may evaluate generated
 // code, a deployment may not — and every case here asserts BOTH halves: that
 // Coda reached for code, and what the code came back with.
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
-import { createVmRunCode } from "@alexkroman1/aai-runtime/eval";
+
+import agentDef from "virtual:aai/agent";
+import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
-import authored from "./agent.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
-const agentDef = withSystemPrompt(authored, systemPrompt);
 
 /** The code every `run_code` call in this turn carried, joined. */
 const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string, unknown> }[] }) =>
@@ -38,12 +35,18 @@ const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string,
     .map((c) => String(c.args.code ?? ""))
     .join("\n");
 
-/** What every `run_code` call in this turn PRINTED, joined. */
-const outputIn = (turn: { toolCalls: readonly { name: string; result?: string }[] }) =>
-  turn.toolCalls
-    .filter((c) => c.name === "run_code")
-    .map((c) => c.result ?? "")
-    .join("\n");
+/**
+ * A `run_code` executor, so these cases can assert the ANSWER.
+ *
+ * The builtin refuses without one — the Modal container is the security
+ * boundary, and off-platform there is none — so a case could assert the CALL and
+ * the code it carried, and never what the code came back with.
+ * `createVmRunCode()` is a `node:vm` context with a capturing `console.log`,
+ * which is enough here: what runs is arithmetic, not a program. It is NOT a
+ * sandbox and does not pretend to be one; a deployed agent still gets the
+ * refusal.
+ */
+const runCode = createVmRunCode();
 
 describeEval(
   agentDef,
@@ -65,7 +68,7 @@ describeEval(
         // none, `run_code` answers "only available in the sandboxed runtime", so
         // every claim above passes for an agent that then does the sum in its
         // head — which is the exact regression the CRITICAL RULE exists to stop.
-        const output = outputIn(turn);
+        const output = toolResultsIn(turn.toolCalls, "run_code").join("\n");
         expect(output, `run_code printed: ${output}`).toContain("107823");
 
         // "Report RESULTS, never intentions": the call goes out before Coda says
@@ -97,7 +100,7 @@ describeEval(
         // Greenwich (measured: this printed "Friday"). Asserting the weekday
         // would measure the machine running the eval. The two arithmetic cases
         // in this suite have no such dependency and do assert their answers.
-        const output = outputIn(turn);
+        const output = toolResultsIn(turn.toolCalls, "run_code").join("\n");
         expect(output, `run_code printed: ${output}`).not.toMatch(
           /only available in the sandboxed runtime/,
         );
@@ -128,7 +131,6 @@ describeEval(
       { stubReply: [{ tool: "run_code", args: { code: "console.log(1 + 1)" } }, "That's two."] },
     );
   },
-  // `createVmRunCode()` is what makes these cases about the ANSWER and not just
-  // the call — see its doc for why the timeout and the swallowed throw matter.
-  { runCode: createVmRunCode() },
+  // `runCode` is what makes these cases about the ANSWER and not just the call.
+  { runCode },
 );

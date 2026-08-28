@@ -650,6 +650,11 @@ when the request never got an answer — a reset
   status, which is returned like any other: only the caller knows whether a
   `404` is fatal.
 
+**From a `"use step"` body, prefer `stepFetchOk`
+(`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+error a step throws, and raw every failure looks alike to it — a bad API key is
+retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
+
 ***
 
 ### stepGenerate()
@@ -890,6 +895,11 @@ forever.
   and the one that reads least like a failure: everything downstream would
   otherwise be handed no words and asked to work anyway.
 
+**From a `"use step"` body, prefer `stepTranscribePollClassified`
+(`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+error a step throws, and raw every failure looks alike to it — a bad API key is
+retried until the attempts run out.
+
 ***
 
 ### stepTranscribeSubmit()
@@ -961,6 +971,11 @@ export async function checkJob(id: string): Promise<string | undefined> {
   return progress.done ? progress.transcript.text : undefined;
 }
 ```
+
+**From a `"use step"` body, prefer `stepTranscribeSubmitClassified`
+(`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+error a step throws, and raw every failure looks alike to it — a bad API key is
+retried until the attempts run out.
 
 ***
 
@@ -1087,6 +1102,11 @@ An upload in the agent's own store, as `writeUpload` or a
 on a refusal, carrying the verdict `toStepError`
   reads. Give this step extra retries: it is the one call here worth another
   attempt, and the only one whose cost is the file.
+
+**From a `"use step"` body, prefer `stepTranscribeUploadClassified`
+(`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+error a step throws, and raw every failure looks alike to it — a bad API key is
+retried until the attempts run out.
 
 ***
 

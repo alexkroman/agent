@@ -42,19 +42,6 @@ const INPUT: RedlineInput = {
 // ─── 1. The declaration ──────────────────────────────────────────────────────
 
 describe("the agent declares itself a workflow app", () => {
-  test("its front door is a page, not a microphone", () => {
-    // The port's own decision: seven long-form model calls in sequence is not
-    // something anyone holds a phone for.
-    expect(agentDef.page).toBe("static");
-  });
-
-  test("it declares no voice pipeline and no tools, because nothing talks", () => {
-    expect(agentDef.stt).toBeUndefined();
-    expect(agentDef.llm).toBeUndefined();
-    expect(agentDef.tts).toBeUndefined();
-    expect(agentDef.tools).toEqual({});
-  });
-
   test("under the name the page starts a run by", () => {
     // `useWorkflowSubmit("redline")` in client.tsx names this key. Nothing else
     // records it, so a rename here is a 400 there rather than a compile error.

@@ -34,7 +34,6 @@ import {
   parseSchemaInput,
   schemaInputIssues,
   toolRunner,
-  withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
@@ -44,7 +43,6 @@ import {
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createHook, type Hook, sleep } from "workflow";
-import authoredAgent from "./agent.ts";
 import { recap } from "./shared.ts";
 import {
   askWhetherToKeep,
@@ -72,18 +70,8 @@ vi.mock("workflow", async (importActual) => ({
   createHook: vi.fn(),
 }));
 
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS: it is what a scaffolded project runs, so it may not import
- * anything outside its own template, and `import.meta.glob` is expanded against
- * the file containing it either way. This is the pattern a user writes.
- */
-const agentDef = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 
 /**
  * Every tool here is driven through the agent's own table, by the name the model
@@ -151,10 +139,7 @@ describe("the agent declares its workflow", () => {
     expect(agentDef.requiredEnv).toContain("ASSEMBLYAI_API_KEY");
   });
 
-  test("as a VOICE agent, not a workflow app", () => {
-    // The distinction this template exists on: a caller is on the line, so the
-    // run is a handoff. `link-digest` is the other shape.
-    expect(agentDef.page).toBeUndefined();
+  test("discovers every tool in tools/, by file name", () => {
     // Discovered, not declared: every name here is a file in `tools/`.
     expect(Object.keys(agentDef.tools).sort()).toEqual([
       "cancel_recap",

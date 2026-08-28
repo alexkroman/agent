@@ -15,10 +15,12 @@
 
 import { type DefaultToolResult, sessionSlot } from "@alexkroman1/aai";
 import { expectTypeOf, test } from "vitest";
+import type { FormValues } from "./components/form-types.ts";
 import { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 import type { ChatMessage, ToolCallInfo } from "./types.ts";
 import { type ConversationItem, useConversation } from "./use-conversation.ts";
 import { useDownloadUrl } from "./use-download-url.ts";
+import { useWorkflowSubmit } from "./use-workflow-form.ts";
 
 type Quote = { symbol: string; price: number };
 
@@ -153,4 +155,34 @@ test("useDownloadUrl reports pending unconditionally and the rest optionally", (
   expectTypeOf(result.pending).toEqualTypeOf<boolean>();
   expectTypeOf(result.url).toEqualTypeOf<string | undefined>();
   expectTypeOf(result.error).toEqualTypeOf<string | undefined>();
+});
+
+/**
+ * The workflow hooks are typed by the DEF, which types BOTH halves.
+ *
+ * They used to take the output type alone, and the asymmetry was the bug: a
+ * page already wrote `WorkflowOutputOf<typeof digest>` for the output while
+ * `submit` took `unknown`, so `submit({ ur1: 42 })` compiled and arrived as a
+ * 400 in the browser.
+ *
+ * The DEF-typed half is proved by the six workflow templates, which typecheck
+ * against a real `workflow({ input: z.object(…) })` — building one here would
+ * need `zod` (not a dependency of this package) or `StandardSchemaV1` (on
+ * `/host-internal`, which a browser package may not import). A/B'd on
+ * `link-digest`: reintroducing `submit({ ur1: 42 })` fails with `TS2353: 'ur1'
+ * does not exist in type '{ url: string; }'`.
+ *
+ * There is no untyped fallback: the def is REQUIRED, so an un-parameterized
+ * call does not compile. That is deliberate — the fallback was the last way to
+ * get an untyped `submit` back, and an escape hatch nobody needs is one
+ * somebody uses. A workflow that declares no input schema gets `submit(): void`
+ * rather than an unusable `never` parameter, which `SubmitInputOf` is what
+ * makes true.
+ */
+test("submitForm is the door for DOM-scraped values, and stays loose on purpose", () => {
+  // `FormValues` is `Record<string, unknown>` read off the elements at submit
+  // time, so the shape is not knowable here and the SERVER validates it against
+  // the workflow's schema. Tightening this would be a lie.
+  const submission = useWorkflowSubmit("digest");
+  expectTypeOf(submission.submitForm).parameter(0).toEqualTypeOf<FormValues>();
 });

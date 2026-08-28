@@ -161,12 +161,9 @@ Answers `{ error }` for a page it could not read — narrow with
 function webSearch<T>(query: 
   | string
   | {
-  max_results?: number;
   maxResults?: number;
   query: string;
-} & CallOptions, options?: {
-  maxResults?: number;
-} & CallOptions): Promise<ToolFailure | T>;
+} & CallOptions, options?: CallOptions): Promise<ToolFailure | T>;
 ```
 
 Search the web (DuckDuckGo-backed, no API key) and return ranked results.
@@ -188,16 +185,13 @@ a different claim and the one this repo shipped twice.
 
   \| `string`
   \| \{
-  `max_results?`: `number`;
   `maxResults?`: `number`;
   `query`: `string`;
 \} & [`CallOptions`](#calloptions)
 
 ##### options?
 
-\{
-  `maxResults?`: `number`;
-\} & [`CallOptions`](#calloptions)
+[`CallOptions`](#calloptions)
 
 #### Returns
 

@@ -33,11 +33,8 @@ export function visitWebpage<T = DefaultToolResult>(url: string | ({
 // @public
 export function webSearch<T = DefaultToolResult>(query: string | ({
     query: string;
-    max_results?: number;
     maxResults?: number;
-} & CallOptions), options?: {
-    maxResults?: number;
-} & CallOptions): Promise<T | ToolFailure>;
+} & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;
 
 // (No @packageDocumentation comment for this package)
 

@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the confirmation gate actually gate? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly and asserts about the state it
@@ -22,15 +20,6 @@
 // product questions from its own knowledge and skips the tools the prompt exists
 // to route it through, so a case run that way measures nothing it claims to.
 
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
-import { type EvalSession, type EvalTurn, lastStateIn } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
-import { expect } from "vitest";
-import { z } from "zod";
-import authoredAgent from "./agent.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
  *
@@ -39,10 +28,11 @@ import systemPrompt from "./system-prompt.md?raw";
  * outside its own template. An eval that forgot it would run an agent with NO
  * tools and read as a model that refuses to act.
  */
-const agentDef = withSystemPrompt(
-  withDiscoveredTools(authoredAgent, import.meta.glob("./tools/*.ts", { eager: true })),
-  systemPrompt,
-);
+import agentDef from "virtual:aai/agent";
+import { type EvalSession, type EvalTurn, lastStateIn } from "@alexkroman1/aai-runtime/eval";
+import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { expect } from "vitest";
+import { z } from "zod";
 
 /**
  * What the BROWSER is sent, as this eval reads it.

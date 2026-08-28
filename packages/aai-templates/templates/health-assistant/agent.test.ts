@@ -1,9 +1,6 @@
-/// <reference types="vite/client" />
-
 import { isToolFailure } from "@alexkroman1/aai";
-import { toolInputIssues, toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { toolInputIssues, toolRunner } from "@alexkroman1/aai/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import authoredAgent from "./agent.ts";
 import { excerptAround, type FdaLabel, toDrugInfo } from "./fda.ts";
 
 /**
@@ -24,16 +21,8 @@ vi.mock("./fda.ts", async (importOriginal) => ({
 const { fetchFdaLabel } = await import("./fda.ts");
 const label = vi.mocked(fetchFdaLabel);
 
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS — a scaffolded project has no repo helper to import.
- */
-const agentDef = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 
 /**
  * Every tool here takes arguments and none of them touches session state, so no

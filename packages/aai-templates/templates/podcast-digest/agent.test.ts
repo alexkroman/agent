@@ -92,7 +92,6 @@ const slackInput = (slackWebhookUrl: string) => ({
 describe("the declaration", () => {
   test("is a workflow app with one workflow and a static page", () => {
     expect(agentDef.name).toBe("Podcast Digest");
-    expect(agentDef.page).toBe("static");
     expect(Object.keys(agentDef.workflows ?? {})).toEqual(["dailyDigest"]);
     expect(agentDef.workflows?.dailyDigest).toBe(dailyDigest);
   });

@@ -452,3 +452,43 @@ test("workflowApp() returns an AgentDef and takes no page field", () => {
   expectTypeOf<Parameters<typeof workflowApp>[0]>().not.toHaveProperty("page");
   expectTypeOf<Parameters<typeof workflowApp>[0]>().toHaveProperty("workflows");
 });
+
+/**
+ * The workflow-app diagnostics belong to `workflowApp()`, not to every
+ * `agent()` call site.
+ *
+ * tsc prints the WHOLE union at every call site, so a message on the static arm
+ * is a message on every diagnostic. Before the split, `agent({ maxSteps: "12"
+ * })` — a plain voice agent, an ordinary one-character mistake — reported
+ * `Type 'string' is not assignable to type 'number | "\`maxSteps\` has no effect
+ * on a workflow app — \`page: "static"\` …"'`, telling an author about a front
+ * door they had never heard of and burying `number`. It reports
+ * `not assignable to type 'number'` now.
+ *
+ * The two halves below are what make that true AND keep the field rejected;
+ * losing either one is a regression this file exists to catch.
+ */
+test("the static arm of AgentParams carries no message, and still rejects the field", () => {
+  type StaticArm = Extract<AgentParams, { page: "static" }>;
+  // `never`, so it is ABSORBED in the union tsc prints — this is the half that
+  // cleans up the voice agent's diagnostic.
+  expectTypeOf<StaticArm["maxSteps"]>().toEqualTypeOf<undefined>();
+  expectTypeOf<StaticArm["systemPrompt"]>().toEqualTypeOf<undefined>();
+  // …and the KEY is still present and un-satisfiable, which is the half that
+  // keeps a workflow app from declaring a field it has no use for. An absent
+  // field would be structurally fine and this object would extend the arm.
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: NonNullable<AgentDef["workflows"]>;
+    maxSteps: number;
+  }>().not.toExtend<AgentParams>();
+});
+
+test('workflowApp() keeps the sentence — it is where `page: "static"` is not a surprise', () => {
+  type AppParams = Parameters<typeof workflowApp>[0];
+  expectTypeOf<AppParams["maxSteps"]>().toEqualTypeOf<
+    | `\`maxSteps\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`
+    | undefined
+  >();
+});

@@ -1315,13 +1315,14 @@ and never guard the element.
 
 #### Example
 
-```tsx
+```tsx no-check
 import { Form, SubmitButton, UploadProgressBar, useWorkflowSubmit, WorkflowFields } from "@alexkroman1/aai-ui";
+import type { transcribe } from "./agent.ts";
 
 function TranscribeForm() {
-  const { submit, upload, pending, error } = useWorkflowSubmit("transcribe");
+  const { submitForm, upload, pending, error } = useWorkflowSubmit<typeof transcribe>("transcribe");
   return (
-    <Form onSubmit={(values) => submit(values)} error={error}>
+    <Form onSubmit={submitForm} error={error}>
       <WorkflowFields workflow="transcribe" />
       <UploadProgressBar upload={upload} />
       <SubmitButton pending={pending}>Transcribe</SubmitButton>
@@ -1554,11 +1555,12 @@ See [UseDownloadUrlResult](#usedownloadurlresult).
 
 #### Example
 
-```tsx
+```tsx no-check
 import { useDownloadUrl, useWorkflowSubmit } from "@alexkroman1/aai-ui";
+import type { spokenSummary } from "./agent.ts";
 
 function Playback() {
-  const { run } = useWorkflowSubmit<{ audio: string }>("spokenSummary");
+  const { run } = useWorkflowSubmit<typeof spokenSummary>("spokenSummary");
   const output = run?.status === "completed" ? run.output : undefined;
   const audio = useDownloadUrl(output?.audio);
   if (audio.pending) return <p>Fetching audio…</p>;
@@ -2248,7 +2250,7 @@ function WorkflowPicker({ onPick }: { onPick: (name: string) => void }) {
 ### useWorkflowStream()
 
 ```ts
-function useWorkflowStream<R>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<R>;
+function useWorkflowStream<D>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 ```
 
 Start a workflow run and stream a file into it while it works.
@@ -2260,13 +2262,9 @@ either way. What differs is only WHEN the id becomes valid.
 
 #### Type Parameters
 
-##### R
+##### D
 
-`R` = `unknown`
-
-The workflow's output type, which is what makes
-  `run.status === "completed"` narrow to a typed `run.output`. Derive it with
-  `WorkflowOutputOf<typeof myWorkflow>`.
+`D` *extends* [`AnyWorkflowDef`](../aai/workflow-api.md#anyworkflowdef)
 
 #### Parameters
 
@@ -2280,7 +2278,7 @@ The workflow's output type, which is what makes
 
 #### Returns
 
-[`WorkflowStreamSubmission`](#workflowstreamsubmission)\<`R`\>
+[`WorkflowStreamSubmission`](#workflowstreamsubmission)\<[`WorkflowOutputOf`](#workflowoutputof)\<`D`\>, [`SubmitInputOf`](#submitinputof)\<`D`\>\>
 
 #### Example
 
@@ -2299,20 +2297,28 @@ const { submit, run, upload, pending, error } = useWorkflowStream("transcribe");
 ### useWorkflowSubmit()
 
 ```ts
-function useWorkflowSubmit<R>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<R>;
+function useWorkflowSubmit<D>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 ```
 
 Start a workflow from a form, and follow the run it creates.
 
 #### Type Parameters
 
-##### R
+##### D
 
-`R` = `unknown`
+`D` *extends* [`AnyWorkflowDef`](../aai/workflow-api.md#anyworkflowdef)
 
-The workflow's output type, which is what makes
-  `run.status === "completed"` narrow to a typed `run.output`. Derive it with
-  `WorkflowOutputOf<typeof myWorkflow>`.
+The workflow DEFINITION, which types both halves of the
+  submission: `submit(input)` takes what the workflow's schema parses to, and
+  `run.status === "completed"` narrows to a typed `run.output`.
+
+  It used to be the OUTPUT type alone, and the asymmetry was the bug: a page
+  already wrote `WorkflowOutputOf<typeof digest>` to get the output, while
+  `submit` took `unknown`, so `submit({ ur1: 42 })` compiled and arrived as a
+  400 in the browser. Naming the def instead types the input from the same
+  declaration — and `import type` is ERASED, so it costs the bundle nothing.
+  Passing an output type where a def belongs is now a compile error rather
+  than a silent loss of typing, which is the point.
 
 #### Parameters
 
@@ -2326,20 +2332,21 @@ The workflow's output type, which is what makes
 
 #### Returns
 
-[`WorkflowSubmission`](#workflowsubmission)\<`R`\>
+[`WorkflowSubmission`](#workflowsubmission)\<[`WorkflowOutputOf`](#workflowoutputof)\<`D`\>, [`SubmitInputOf`](#submitinputof)\<`D`\>\>
 
 #### Example
 
-```tsx
+```tsx no-check
 import { Form, SubmitButton, TextField, useWorkflowSubmit } from "@alexkroman1/aai-ui";
+import type { digest } from "./agent.ts";
 
 function DigestForm() {
-  const { submit, run, pending, error } = useWorkflowSubmit("digest");
+  const { submit, run, pending, error } = useWorkflowSubmit<typeof digest>("digest");
   return (
     <Form onSubmit={(values) => submit(values)} error={error}>
       <TextField name="url" label="Link" type="url" required />
       <SubmitButton pending={pending}>Digest</SubmitButton>
-      {run?.status === "completed" && <p>Done.</p>}
+      {run?.status === "completed" && <p>{run.output.title}</p>}
     </Form>
   );
 }
@@ -2390,14 +2397,15 @@ straight through before one is made.
 
 #### Example
 
-```tsx
+```tsx no-check
 import { Form, SubmitButton, WorkflowFields, useWorkflowSubmit }
   from "@alexkroman1/aai-ui";
+import type { transcribe } from "./agent.ts";
 
 function StartRun() {
-  const { submit, pending, error } = useWorkflowSubmit("transcribe");
+  const { submitForm, pending, error } = useWorkflowSubmit<typeof transcribe>("transcribe");
   return (
-    <Form onSubmit={(values) => submit(values)} error={error}>
+    <Form onSubmit={submitForm} error={error}>
       <WorkflowFields workflow="transcribe" />
       <SubmitButton pending={pending}>Transcribe</SubmitButton>
     </Form>
@@ -4014,6 +4022,33 @@ Cleared when the turn is committed to `messages`.
 
 ***
 
+### SubmitInputOf
+
+```ts
+type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined : WorkflowInputOf<D>;
+```
+
+What `submit()` takes for `D` — `undefined` when `D` declares no schema.
+
+This is what [WorkflowInputOf](#workflowinputof) cannot say on its own: a def whose
+`input` schema is absent has no parsed input, and `never` as a parameter type
+accepts nothing at all — not even `undefined` — so a workflow that declares
+no schema would have an uncallable `submit`. It gets `undefined` instead, i.e.
+`submit(undefined)`. Explicit rather than `void`, which would let the argument
+be omitted and which Biome's `noConfusingVoidType` rejects outside a return or
+type-parameter position.
+
+The `[T] extends [never]` spelling is deliberate: a bare `T extends never`
+distributes over a naked type parameter and answers `never` for a union.
+
+#### Type Parameters
+
+##### D
+
+`D`
+
+***
+
 ### ToolCallInfo
 
 ```ts
@@ -5424,6 +5459,64 @@ against the same client.
 
 ***
 
+### WorkflowInputOf
+
+```ts
+type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+```
+
+A workflow's INPUT type — what its declared schema parses to, which is
+exactly what the body's parameter should be.
+
+**The reason it exists is that nothing checks a hand-written parameter.**
+[WorkflowBody](../aai/workflow-api.md#workflowbody) takes its input as a function PARAMETER, so it is
+contravariant: a body declaring a WIDER shape than the schema produces is
+assignable, and a body declaring the same shape with a field's optionality or
+a default's type subtly different is assignable too. Both compile. A
+`z.number().default(5)` against a body that writes `input.limit ?? 3` is the
+sharp version — the schema guarantees `limit` is present, the `??` is dead,
+and the two numbers disagree with nothing to report it.
+
+Two details a restated shape gets wrong by hand, both of which this gets
+right for free. A zod `.optional()` infers a property that may be PRESENT AND
+`undefined`, which under `exactOptionalPropertyTypes` is `?: T | undefined`
+and not `?: T` — two templates carry the same four-line comment explaining
+that, which is a comment `z.infer` makes unnecessary. And a `.default()` makes
+the OUTPUT property required while the input stays optional, so a body reading
+it needs no fallback at all.
+
+Like [WorkflowOutputOf](#workflowoutputof), it needs no build step: `import type` is
+erased, so a body in `workflows/` naming `WorkflowInputOf<typeof theDef>`
+through a type-only import of `../agent.ts` drags no runtime cycle behind it.
+
+#### Type Parameters
+
+##### D
+
+`D`
+
+#### Example
+
+```ts no-check
+// agent.ts
+export const digest = workflow({
+  input: z.object({ topic: z.string(), limit: z.number().default(5) }),
+  run: digestFlow,
+});
+
+// workflows/digest.ts — `import type` is erased, so there is no cycle.
+import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
+import type { digest } from "../agent.ts";
+
+export async function digestFlow(input: WorkflowInputOf<typeof digest>) {
+  "use workflow";
+  // `limit` is `number`, not `number | undefined` — the default already ran.
+  return await research(input.topic, input.limit);
+}
+```
+
+***
+
 ### WorkflowOutputOf
 
 ```ts
@@ -5514,7 +5607,7 @@ Lifecycle of one workflow run.
 ### WorkflowStreamSubmission
 
 ```ts
-type WorkflowStreamSubmission<R> = WorkflowSubmission<R>;
+type WorkflowStreamSubmission<R, I> = WorkflowSubmission<R, I>;
 ```
 
 What [useWorkflowStream](#useworkflowstream) returns: a [WorkflowSubmission](#workflowsubmission), exactly.
@@ -5542,12 +5635,16 @@ follow from WHEN the run is created — it exists before its bytes do:
 
 `R` = `unknown`
 
+##### I
+
+`I` = `unknown`
+
 ***
 
 ### WorkflowSubmission
 
 ```ts
-type WorkflowSubmission<R> = {
+type WorkflowSubmission<R, I> = {
   cancel: () => Promise<boolean>;
   error: string | undefined;
   pauseUpload: () => void;
@@ -5555,7 +5652,8 @@ type WorkflowSubmission<R> = {
   reset: () => void;
   resumeUpload: () => void;
   run: WorkflowRun<R> | undefined;
-  submit: (input: unknown) => Promise<void>;
+  submit: (input: I) => Promise<void>;
+  submitForm: (values: FormValues) => Promise<void>;
   upload: UploadStatus | undefined;
   wake: () => Promise<number>;
 };
@@ -5578,6 +5676,10 @@ of after it. Here the run does not exist until the last byte lands.
 ##### R
 
 `R` = `unknown`
+
+##### I
+
+`I` = `unknown`
 
 #### Properties
 
@@ -5673,7 +5775,7 @@ The run, once started, followed to completion.
 ##### submit
 
 ```ts
-submit: (input: unknown) => Promise<void>;
+submit: (input: I) => Promise<void>;
 ```
 
 Start a run with this input. Resolves once the run EXISTS — progress
@@ -5684,7 +5786,38 @@ submission was accepted.
 
 ###### input
 
-`unknown`
+`I`
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### submitForm
+
+```ts
+submitForm: (values: FormValues) => Promise<void>;
+```
+
+Start a run from a `<Form>`'s values, which are UNVALIDATED.
+
+The same function as [WorkflowSubmission.submit](#submit), with the type the
+form path can honestly offer. `FormValues` is `Record<string, unknown>`
+scraped off the DOM at submit time — a `<TextField name="limit">`
+contributes a string whatever the schema says — so the shape is not known
+here and the SERVER is what checks it against the workflow's schema.
+
+Two doors rather than one loose one: `submit` takes the workflow's own
+input type, so a hand-built object is checked at compile time and
+`submit({ ur1: 42 })` is an error; widening it to accept `FormValues` would
+have made every object satisfy it and given the typing back. Reaching for
+this one is the author saying "these came from a form", which is a fact
+about the values and not a cast.
+
+###### Parameters
+
+###### values
+
+[`FormValues`](#formvalues)
 
 ###### Returns
 

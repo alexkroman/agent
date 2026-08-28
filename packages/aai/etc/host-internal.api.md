@@ -21,6 +21,7 @@ const AgentConfigSchema: z.ZodObject<{
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
+    temperature: z.ZodOptional<z.ZodNumber>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -1221,11 +1222,11 @@ export type SttTurnMeta = {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -1241,7 +1242,7 @@ export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 // @public
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;

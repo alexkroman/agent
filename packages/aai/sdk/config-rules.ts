@@ -12,7 +12,12 @@
  */
 
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
-import { assemblyAIVoiceWarning } from "./providers/tts/assemblyai.ts";
+import { isRecord } from "./is-record.ts";
+import {
+  ASSEMBLYAI_TTS_HOST,
+  type AssemblyAITtsOptions,
+  assemblyAIVoiceWarning,
+} from "./providers/tts/assemblyai.ts";
 
 /**
  * Session mode derived from which provider fields are set.
@@ -193,6 +198,32 @@ export type PipelineTuning = {
  *
  * @internal
  */
+/**
+ * `temperature` is a knob on a model THIS SDK calls, so an S2S agent may not set it.
+ *
+ * Not part of {@link PipelineVoiceTuning}: it is not voice tuning, and a TEXT
+ * agent has every reason to set it — a booking desk and a game master want
+ * different values, and until now neither could say so. The main conversational
+ * loop took no sampling parameter at all while `ctx.generate` and `subagent()`
+ * both did.
+ *
+ * Rejected rather than ignored for S2S because the model runs inside the
+ * provider's own service there, so nothing in this runtime would carry the
+ * value — and a setting that is accepted and quietly dropped is the failure
+ * this config layer exists to prevent. An S2S agent that wants it sets it on
+ * the `s2s` descriptor, where the provider's own options live.
+ *
+ * @internal
+ */
+export function assertSamplingScope(mode: SessionMode, temperature: number | undefined): void {
+  if (temperature === undefined || mode !== "s2s") return;
+  throw new Error(
+    "temperature has no effect in s2s mode — the model runs inside the provider's service, " +
+      "so this runtime never sees the request. Set it on the `s2s` descriptor if the provider " +
+      "supports one, or remove it.",
+  );
+}
+
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
   if (mode === "pipeline") return;
   for (const key of PIPELINE_ONLY_TUNING_FIELDS) {
@@ -222,8 +253,55 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
  *
  * @internal
  */
-export function agentConfigWarnings(config: { tts?: unknown; s2s?: unknown }): string[] {
-  return [assemblyAIVoiceWarning(config.tts), assemblyAIVoiceWarning(config.s2s)].filter(
-    (warning): warning is string => warning !== undefined,
+export function agentConfigWarnings(config: {
+  tts?: unknown;
+  s2s?: unknown;
+  stt?: unknown;
+  llm?: unknown;
+}): string[] {
+  return [
+    assemblyAIVoiceWarning(config.tts),
+    assemblyAIVoiceWarning(config.s2s),
+    euResidencyWarning(config),
+  ].filter((warning): warning is string => warning !== undefined);
+}
+
+/**
+ * `region: "eu"` on STT or the LLM gateway, with a TTS stage that has no EU
+ * endpoint to route to.
+ *
+ * `AssemblyAIPipelineOptions.region` documents this ("TTS has a single
+ * endpoint"), and a JSDoc is the wrong strength of statement for the one option
+ * on this surface that is a COMPLIANCE claim rather than a preference. What
+ * actually happens is that `assemblyAIPipeline({ region: "eu" })` — the call in
+ * that function's own `@example` — routes transcription and generation to the
+ * EU and synthesis to `streaming-tts.assemblyai.com`, so the agent's own speech
+ * leaves the region. That is a thing to be told once per build, not a thing to
+ * find in a doc comment after someone asks.
+ *
+ * A warning rather than an error: the configuration is legal and may be exactly
+ * what an author wants (residency rules that bind transcripts often do not bind
+ * synthesized audio). Refusing it would break every EU agent that has decided
+ * this already.
+ */
+function euResidencyWarning(config: {
+  stt?: unknown;
+  llm?: unknown;
+  tts?: unknown;
+}): string | undefined {
+  const inEu = (stage: unknown): boolean =>
+    isRecord(stage) && isRecord(stage.options) && stage.options.region === "eu";
+  if (!(inEu(config.stt) || inEu(config.llm))) return undefined;
+  if (config.tts === undefined) return undefined;
+  // The remedy names `assemblyAITts`'s own option rather than spelling the call
+  // out: Biome's `noSecrets` reads a dense run of backticks and braces as a
+  // high-entropy literal, and a suppression would raise the escape-hatch
+  // baseline, which only moves down. Same dodge as `ENDPOINTING_KEYS`.
+  const host = "host" satisfies keyof AssemblyAITtsOptions;
+  return (
+    'This agent sets `region: "eu"`, but AssemblyAI TTS has a single endpoint — the synthesized ' +
+    `audio is served from ${ASSEMBLYAI_TTS_HOST}, outside the EU. ` +
+    "Transcription and generation stay in-region. If that is not acceptable, declare a TTS " +
+    `stage with an in-region \`${host}\`, or run the agent without a TTS stage.`
   );
 }

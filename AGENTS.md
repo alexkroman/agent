@@ -898,13 +898,13 @@ resolve directly to `.ts` source — no build step needed.
 
 ### Disambiguating cross-package names
 
-**Seven names are published by two packages at once.** Settle any claim here
+**Eight names are published by two packages at once.** Settle any claim here
 against `API-EXPORTS.json` — it records the SUBPATH each name comes from, which
-is the whole question. Six are on `aai` and `aai-ui`, each a re-export of the
+is the whole question. Seven are on `aai` and `aai-ui`, each a re-export of the
 single `aai` declaration — one concept with two reference pages, not a
 collision: `ClientConfigResponse` and `SessionErrorCode` (`/protocol`; the
 latter's union is eight wire codes), plus `WorkflowApi`, `WorkflowSummary`,
-`WorkflowOutputOf` and `isTerminal` (`/workflow-api`).
+`WorkflowOutputOf`, `WorkflowRunStatus` and `isTerminal` (`/workflow-api`).
 
 **Exactly one real COLLISION is left** — one word for the two sides of one
 wire, neither reference page naming the other:

@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "builtins",
+  "epoch": 2,
+  "sha256": "b02179b7c87e8aeefdd374aa60f0fce084d61cd64fa713e49692f2aad573c699",
+  "exports": ["CallOptions", "fetchJson", "visitWebpage", "webSearch"]
+}

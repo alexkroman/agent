@@ -1,6 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
+import { assertNoStrayFields } from "./_stray-fields.ts";
+import { KNOWN_AGENT_FIELDS } from "./agent-config.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import type { AgentParams, DefaultedAgentField, StaticAgentParams } from "./agent-params.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
@@ -108,7 +110,30 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  * @public
  */
 export function agent(def: AgentParams): AgentDef {
+  return buildAgent(def);
+}
+
+/**
+ * The shared body of {@link agent} and {@link workflowApp}.
+ *
+ * They cannot forward to each other through the public types: `workflowApp`
+ * takes the arm that carries the workflow-app compile-error MESSAGES, while
+ * `agent`'s static arm types the same fields `never` so tsc's printed union
+ * stays readable for a voice agent (see `StaticAgentParamsCore`). A message
+ * type is not assignable to `never`, so `agent({ ...def, page: "static" })` no
+ * longer type-checks from inside `workflowApp` — and the fix is this shared
+ * body rather than a cast, which is the same runtime object either way.
+ */
+function buildAgent(def: object): AgentDef {
   assertNoInlineTools(def);
+  // The same net `toAgentConfig` holds, one layer earlier. `agent()` is where
+  // an author is standing, so a field the SDK does not know should fail here
+  // rather than at `aai build` — and a raw `export default {...}` that skips
+  // this function still meets the check at the config boundary.
+  assertNoStrayFields(
+    normalizeAgentConveniences(def) as Record<string, unknown>,
+    KNOWN_AGENT_FIELDS,
+  );
   /**
    * `omitUndefined` because a spread lets an own key whose value is
    * `undefined` WIN over the default beneath it. Writing
@@ -198,7 +223,7 @@ function assertNoInlineTools(def: unknown): void {
  * @public
  */
 export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef {
-  return agent({ ...def, page: "static" });
+  return buildAgent({ ...def, page: "static" });
 }
 
 /**

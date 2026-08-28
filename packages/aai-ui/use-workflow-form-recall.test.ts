@@ -16,6 +16,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockWorkflowApi, refuseNetwork, workflowRun as run } from "./_react-test-utils.ts";
 import { recallUploadId, rememberUploadId } from "./_upload-recall.ts";
+import type { TestWorkflow } from "./_workflow-test-defs.ts";
 import { useWorkflowSubmit } from "./use-workflow-form.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
 
@@ -64,7 +65,9 @@ describe("a reload resumes the upload rather than restarting it", () => {
       })),
     });
     rememberUploadId("digest", pick(), "upl_from_the_last_load");
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ recording: pick() }));
 
@@ -83,7 +86,9 @@ describe("a reload resumes the upload rather than restarting it", () => {
     // bytes are all in, so the run starts on the id and nothing is uploaded.
     const api = fakeApi();
     rememberUploadId("digest", pick(), "upl_all_in");
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ recording: pick() }));
 
@@ -101,7 +106,9 @@ describe("a reload resumes the upload rather than restarting it", () => {
       }),
     });
     rememberUploadId("digest", pick(), "upl_gone");
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ recording: pick() }));
 
@@ -129,7 +136,9 @@ describe("a reload resumes the upload rather than restarting it", () => {
       })),
     });
     rememberUploadId("digest", pick(), "upl_partial_put");
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(() => result.current.submit({ recording: pick() }));
 
@@ -156,7 +165,9 @@ describe("a reload resumes the upload rather than restarting it", () => {
         throw new Error("unreachable");
       }),
     });
-    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    const { result } = renderHook(() =>
+      useWorkflowSubmit<TestWorkflow>("digest", { api, intervalMs: POLL_MS }),
+    );
 
     await act(async () => {
       void result.current.submit({ recording: pick() });

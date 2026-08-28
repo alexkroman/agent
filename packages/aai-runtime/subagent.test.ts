@@ -52,7 +52,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     const result = await run(
-      subagent({ name: "researcher", instructions: "Research and summarize." }),
+      subagent({ name: "researcher", systemPrompt: "Research and summarize." }),
       { task: "Is it raining?" },
       parentCall(),
     );
@@ -77,7 +77,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     const result = await run(
-      subagent({ name: "researcher", instructions: "Look things up.", tools: { lookup } }),
+      subagent({ name: "researcher", systemPrompt: "Look things up.", tools: { lookup } }),
       { task: "What is the tide doing?" },
       parentCall(),
     );
@@ -104,7 +104,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     const result = await run(
-      subagent({ name: "researcher", instructions: "Look things up.", tools: { lookup } }),
+      subagent({ name: "researcher", systemPrompt: "Look things up.", tools: { lookup } }),
       { task: "anything" },
       parentCall(),
     );
@@ -125,7 +125,7 @@ describe("createSubagentRunner", () => {
       inputSchema: z.object({}),
       execute: async (_args, ctx) => {
         await ctx
-          .delegate(subagent({ name: "nested", instructions: "hi" }), { task: "again" })
+          .delegate(subagent({ name: "nested", systemPrompt: "hi" }), { task: "again" })
           .catch((err: unknown) => {
             refusal = err instanceof Error ? err.message : String(err);
           });
@@ -135,7 +135,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     await run(
-      subagent({ name: "researcher", instructions: "Delegate.", tools: { deeper } }),
+      subagent({ name: "researcher", systemPrompt: "Delegate.", tools: { deeper } }),
       { task: "anything" },
       parentCall(),
     );
@@ -158,7 +158,7 @@ describe("createSubagentRunner", () => {
     const result = await run(
       subagent({
         name: "researcher",
-        instructions: "Look things up.",
+        systemPrompt: "Look things up.",
         tools: { lookup },
         maxSteps: 1,
       }),
@@ -176,7 +176,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     await run(
-      subagent({ name: "researcher", instructions: "Be brief." }),
+      subagent({ name: "researcher", systemPrompt: "Be brief." }),
       { task: "Summarize.", context: "The caller is Ada." },
       parentCall(),
     );
@@ -194,7 +194,7 @@ describe("createSubagentRunner", () => {
     await run(
       subagent({
         name: "researcher",
-        instructions: "Search.",
+        systemPrompt: "Search.",
         builtinTools: ["web_search", "calculate"],
       }),
       { task: "anything" },
@@ -211,7 +211,7 @@ describe("createSubagentRunner", () => {
   it("rejects naming the subagent when no LLM is configured or named", async () => {
     const run = createSubagentRunner({ env: {}, logger: silent });
     await expect(
-      run(subagent({ name: "researcher", instructions: "hi" }), { task: "x" }, parentCall()),
+      run(subagent({ name: "researcher", systemPrompt: "hi" }), { task: "x" }, parentCall()),
     ).rejects.toThrow(/subagent "researcher": no LLM configured/);
   });
 
@@ -221,7 +221,7 @@ describe("createSubagentRunner", () => {
     const controller = new AbortController();
 
     await run(
-      subagent({ name: "researcher", instructions: "hi" }),
+      subagent({ name: "researcher", systemPrompt: "hi" }),
       { task: "x" },
       parentCall({ signal: controller.signal }),
     );

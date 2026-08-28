@@ -656,7 +656,8 @@ export interface TextTurnOptions {
     stopWhen?: readonly ((opts: {
         steps: readonly StepResult<ToolSet>[];
     }) => boolean | PromiseLike<boolean>)[];
-    system?: string;
+    systemPrompt?: string;
+    temperature?: number;
     toolChoice?: ToolChoice;
 }
 

@@ -24,6 +24,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -210,7 +211,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -672,11 +673,11 @@ export type StubUploadWrite = {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -705,7 +706,7 @@ type ToolChoice = "auto" | "required" | "none" | {
 
 // @public
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;
@@ -755,9 +756,6 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 type WakeUpOptions = {
     correlationIds?: string[];
 };
-
-// @public
-export function withDiscoveredTools<D extends ToolBearingAgent>(def: D, modules: ToolModules): D;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

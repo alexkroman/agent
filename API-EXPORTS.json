@@ -327,6 +327,7 @@
     "omitUndefined",
     "procedure",
     "pushCapped",
+    "requireEnv",
     "resolveOne",
     "responseErrorMessage",
     "safeJsonParse",
@@ -662,8 +663,12 @@
     "stubUploads",
     "toolInputIssues",
     "toolOf",
-    "toolRunner",
-    "withDiscoveredTools"
+    "toolRunner"
+  ],
+  "@alexkroman1/aai/testing/vite": [
+    "AAI_AGENT_MODULE",
+    "AaiVitePlugin",
+    "aaiAgentPlugin"
   ],
   "@alexkroman1/aai/testing/vitest": [
     "MockWorkflowsOptions",
@@ -1077,6 +1082,7 @@
     "SidebarLayout",
     "StartScreen",
     "SubmitButton",
+    "SubmitInputOf",
     "TextAreaField",
     "TextField",
     "ToolCallInfo",
@@ -1104,6 +1110,7 @@
     "WorkflowApi",
     "WorkflowApiOptions",
     "WorkflowFields",
+    "WorkflowInputOf",
     "WorkflowOutputOf",
     "WorkflowProgress",
     "WorkflowRun",

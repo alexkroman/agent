@@ -45,11 +45,11 @@ export const MAX_RESEARCH_STEPS = 6;
  * "Finish with a summary" is not politeness. The parent gets the subagent's
  * FINAL message, so a run that ends by saying "Done." has thrown away
  * everything it read and no budget recovers it — this is the failure mode the
- * `SubagentDef.instructions` contract warns about, stated once, here.
+ * `SubagentDef.systemPrompt` contract warns about, stated once, here.
  */
 export const researcher = subagent({
   name: "researcher",
-  instructions: [
+  systemPrompt: [
     "You are a research agent working one angle of a briefing.",
     "",
     "Search, then open the two or three most promising pages and read them.",
@@ -77,7 +77,7 @@ export const researcher = subagent({
  */
 export const factChecker = subagent({
   name: "fact-checker",
-  instructions: [
+  systemPrompt: [
     "You check ONE claim against what you can find on the web.",
     "",
     "Search for it. Answer in one sentence, starting with one of",

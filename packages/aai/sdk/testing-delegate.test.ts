@@ -5,12 +5,12 @@ import { createToolContext } from "./_testing-context.ts";
 import { subagent } from "./subagent.ts";
 import { stubDelegate } from "./testing-delegate.ts";
 
-const researcher = subagent({ name: "researcher", instructions: "Research." });
-const checker = subagent({ name: "fact-checker", instructions: "Check." });
+const researcher = subagent({ name: "researcher", systemPrompt: "Research." });
+const checker = subagent({ name: "fact-checker", systemPrompt: "Check." });
 
 describe("subagent", () => {
   it("returns its definition unchanged", () => {
-    const def = { name: "researcher", instructions: "Research." };
+    const def = { name: "researcher", systemPrompt: "Research." };
     expect(subagent(def)).toBe(def);
   });
 });

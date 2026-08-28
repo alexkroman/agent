@@ -17,6 +17,7 @@ export const AgentConfigSchema: z.ZodObject<{
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
+    temperature: z.ZodOptional<z.ZodNumber>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -84,6 +85,8 @@ export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
 export function agentConfigWarnings(config: {
     tts?: unknown;
     s2s?: unknown;
+    stt?: unknown;
+    llm?: unknown;
 }): string[];
 
 // @public
@@ -104,6 +107,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -122,7 +126,7 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @internal
+// @public (undocumented)
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
 // @internal
@@ -258,7 +262,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -503,11 +507,11 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -529,7 +533,7 @@ type ToolChoice = "auto" | "required" | "none" | {
 
 // @public
 type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;

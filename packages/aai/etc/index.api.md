@@ -31,6 +31,7 @@ export interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -39,7 +40,7 @@ export interface AgentDef extends PipelineVoiceTuning {
 }
 
 // @public
-export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
+export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -407,6 +408,11 @@ type RejectThenable<R> = IsAny<R> extends true ? unknown : [R] extends [never] ?
 type RejectThenableResult<R> = IsAny<R> extends true ? R : [R] extends [never] ? R : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : R;
 
 // @public
+export function requireEnv(ctx: {
+    env: Readonly<Partial<Record<string, string>>>;
+}, name: string): string;
+
+// @public
 export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
 
 // @public
@@ -448,7 +454,7 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 // @public
 export type SessionEventContext = {
     sessionId: string;
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
 };
 
@@ -650,7 +656,6 @@ export interface SessionSlotOptions<T, After = void> {
 
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
-    system?: string;
     tools?: InlineToolsMisuse;
 };
 
@@ -740,11 +745,16 @@ export interface StateProjection<V = unknown> {
 }
 
 // @public
-export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
+export type StaticAgentParams = Omit<StaticAgentParamsCore, WorkflowAppOnlyField> & {
+    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
+};
+
+// @public
+type StaticAgentParamsCore = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
     page: "static";
     workflows: NonNullable<AgentDef["workflows"]>;
 } & {
-    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
+    [K in WorkflowAppOnlyField]?: never;
 };
 
 // @public
@@ -767,11 +777,11 @@ export function subagent(def: SubagentDef): SubagentDef;
 // @public
 export interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -812,7 +822,7 @@ export type ToolChoice = "auto" | "required" | "none" | {
 
 // @public
 export type ToolContext = {
-    env: Readonly<Record<string, string>>;
+    env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
     delegate: DelegateFn;

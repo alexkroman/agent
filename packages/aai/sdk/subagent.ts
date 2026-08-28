@@ -3,7 +3,7 @@
  * The `ctx.delegate` capability contract — hand a bounded, context-isolated
  * task to a SUBAGENT from inside a tool's `execute`.
  *
- * A subagent is a second tool loop: its own instructions, its own model, its
+ * A subagent is a second tool loop: its own systemPrompt, its own model, its
  * own tools, and — the whole point — its own context window. The parent's
  * conversation never sees the subagent's steps, only what it returns. That is
  * the Vercel AI SDK's subagent pattern (`ToolLoopAgent` invoked from a tool),
@@ -26,7 +26,7 @@
  *
  * const researcher = subagent({
  *   name: "researcher",
- *   instructions:
+ *   systemPrompt:
  *     "Research the task with the tools you have. When you are done, write a " +
  *     "short summary of what you found — that summary is all the caller sees.",
  *   builtinTools: ["web_search", "visit_webpage"],
@@ -51,7 +51,7 @@ import type { BuiltinTool, ToolDef } from "./types.ts";
  * A subagent definition — what {@link subagent} returns and
  * {@link DelegateFn} runs.
  *
- * Every field except `name` and `instructions` is optional, and the defaults
+ * Every field except `name` and `systemPrompt` is optional, and the defaults
  * are the parent agent's: the same LLM descriptor, no tools, and
  * the framework default (`DEFAULT_MAX_STEPS`) steps.
  *
@@ -72,9 +72,9 @@ export interface SubagentDef {
    * which is the subagent's FINAL message — so a subagent that ends its run by
    * saying "Done." has thrown away everything it learned, and no amount of
    * step budget recovers it. This is the single most common way a subagent
-   * disappoints, and the remedy is one sentence in the instructions.
+   * disappoints, and the remedy is one sentence in the systemPrompt.
    */
-  instructions: string;
+  systemPrompt: string;
   /**
    * LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
    * model-id string — the same shorthand as `agent({ llm })` and
@@ -139,7 +139,7 @@ export interface DelegateOptions {
    */
   task: string;
   /**
-   * Extra context appended after the subagent's own `instructions` for this
+   * Extra context appended after the subagent's own `systemPrompt` for this
    * call — the caller's name, what has already been ruled out, the format the
    * answer should take. Absent by default, because a subagent that needs the
    * conversation to make sense is one whose task was underspecified.
@@ -171,7 +171,7 @@ export interface SubagentToolCall {
  * @public
  */
 export interface DelegateResult {
-  /** The subagent's final message — see {@link SubagentDef.instructions}. */
+  /** The subagent's final message — see {@link SubagentDef.systemPrompt}. */
   text: string;
   /** How many steps the run took, including the final answering step. */
   steps: number;

@@ -59,11 +59,7 @@ import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
 // digest.ts` already declares.
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import type { dailyDigest } from "./agent.ts";
-
-/** What a completed run reports, derived from the workflow rather than restated. */
-type Digest = WorkflowOutputOf<typeof dailyDigest>;
 
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
 const WORKFLOW = "dailyDigest";
@@ -73,7 +69,8 @@ export function App() {
   // `run.output` instead of `unknown`. `error` is the agent's own sentence for a
   // rejected input — better copy than anything this page could write, and the
   // reason there is no `try`/`catch` here.
-  const { submit, run, pending, error, wake, cancel } = useWorkflowSubmit<Digest>(WORKFLOW);
+  const { submitForm, run, pending, error, wake, cancel } =
+    useWorkflowSubmit<typeof dailyDigest>(WORKFLOW);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
@@ -81,7 +78,7 @@ export function App() {
 
       {/* `submit()` resolves as soon as the run EXISTS — deliberately not when it
           finishes, which here could be a month away. */}
-      <Form onSubmit={(values) => submit(values)} error={error}>
+      <Form onSubmit={submitForm} error={error}>
         <WorkflowFields workflow={WORKFLOW} />
         <SubmitButton pending={pending}>
           {pending ? "Digest scheduled" : "Start digest"}

@@ -22,7 +22,7 @@ still React, still the same theme tokens.
 `client()` mounts the default chat shell with your sidebar, or replaces the
 whole UI with a custom component:
 
-```tsx
+```tsx no-check
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
 
@@ -53,7 +53,7 @@ client({ sidebar: OrderSidebar });
 one control per scalar property of the workflow's own input schema, so adding
 a field to the schema adds it to the page:
 
-```tsx
+```tsx no-check
 import "@alexkroman1/aai-ui/styles.css";
 import {
   Form,
@@ -64,12 +64,14 @@ import {
   WorkflowFields,
   WorkflowProgress,
 } from "@alexkroman1/aai-ui";
+// Type-only, so it is ERASED — the agent module is not in this bundle.
+import type { digest } from "./agent.ts";
 
 function App() {
-  const { submit, run, pending, upload, error } = useWorkflowSubmit("digest");
+  const { submitForm, run, pending, upload, error } = useWorkflowSubmit<typeof digest>("digest");
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
-      <Form onSubmit={submit} error={error}>
+      <Form onSubmit={submitForm} error={error}>
         <WorkflowFields workflow="digest" />
         <SubmitButton pending={pending}>Summarize</SubmitButton>
       </Form>

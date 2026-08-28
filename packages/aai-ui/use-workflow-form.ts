@@ -37,8 +37,10 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type {
+  AnyWorkflowDef,
   UploadParallel,
   UploadProgress,
+  WorkflowOutputOf,
   WorkflowSummary,
 } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -46,8 +48,10 @@ import { useRunControls } from "./_run-controls.ts";
 import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
 import { useUploadPause } from "./_upload-pause.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
+import type { FormValues } from "./components/form-types.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
+import type { SubmitInputOf } from "./workflow-def-types.ts";
 
 /** Options for {@link useWorkflows}. */
 export type UseWorkflowsOptions = {
@@ -192,13 +196,30 @@ export type UploadStatus = UploadProgress & {
  * in, so a page can render `<WorkflowProgress>` beside the upload bar instead
  * of after it. Here the run does not exist until the last byte lands.
  */
-export type WorkflowSubmission<R = unknown> = {
+export type WorkflowSubmission<R = unknown, I = unknown> = {
   /**
    * Start a run with this input. Resolves once the run EXISTS — progress
    * arrives through `run` — so a `<Form>`'s handler can await it to know the
    * submission was accepted.
    */
-  submit: (input: unknown) => Promise<void>;
+  submit: (input: I) => Promise<void>;
+  /**
+   * Start a run from a `<Form>`'s values, which are UNVALIDATED.
+   *
+   * The same function as {@link WorkflowSubmission.submit}, with the type the
+   * form path can honestly offer. `FormValues` is `Record<string, unknown>`
+   * scraped off the DOM at submit time — a `<TextField name="limit">`
+   * contributes a string whatever the schema says — so the shape is not known
+   * here and the SERVER is what checks it against the workflow's schema.
+   *
+   * Two doors rather than one loose one: `submit` takes the workflow's own
+   * input type, so a hand-built object is checked at compile time and
+   * `submit({ ur1: 42 })` is an error; widening it to accept `FormValues` would
+   * have made every object satisfy it and given the typing back. Reaching for
+   * this one is the author saying "these came from a form", which is a fact
+   * about the values and not a cast.
+   */
+  submitForm: (values: FormValues) => Promise<void>;
   /** Clear the run and any error, putting the form back to its initial state. */
   reset: () => void;
   /**
@@ -292,21 +313,30 @@ export type UseWorkflowSubmitOptions = {
 /**
  * Start a workflow from a form, and follow the run it creates.
  *
- * @typeParam R - The workflow's output type, which is what makes
- *   `run.status === "completed"` narrow to a typed `run.output`. Derive it with
- *   `WorkflowOutputOf<typeof myWorkflow>`.
+ * @typeParam D - The workflow DEFINITION, which types both halves of the
+ *   submission: `submit(input)` takes what the workflow's schema parses to, and
+ *   `run.status === "completed"` narrows to a typed `run.output`.
+ *
+ *   It used to be the OUTPUT type alone, and the asymmetry was the bug: a page
+ *   already wrote `WorkflowOutputOf<typeof digest>` to get the output, while
+ *   `submit` took `unknown`, so `submit({ ur1: 42 })` compiled and arrived as a
+ *   400 in the browser. Naming the def instead types the input from the same
+ *   declaration — and `import type` is ERASED, so it costs the bundle nothing.
+ *   Passing an output type where a def belongs is now a compile error rather
+ *   than a silent loss of typing, which is the point.
  *
  * @example
- * ```tsx
+ * ```tsx no-check
  * import { Form, SubmitButton, TextField, useWorkflowSubmit } from "@alexkroman1/aai-ui";
+ * import type { digest } from "./agent.ts";
  *
  * function DigestForm() {
- *   const { submit, run, pending, error } = useWorkflowSubmit("digest");
+ *   const { submit, run, pending, error } = useWorkflowSubmit<typeof digest>("digest");
  *   return (
  *     <Form onSubmit={(values) => submit(values)} error={error}>
  *       <TextField name="url" label="Link" type="url" required />
  *       <SubmitButton pending={pending}>Digest</SubmitButton>
- *       {run?.status === "completed" && <p>Done.</p>}
+ *       {run?.status === "completed" && <p>{run.output.title}</p>}
  *     </Form>
  *   );
  * }
@@ -314,10 +344,10 @@ export type UseWorkflowSubmitOptions = {
  *
  * @public
  */
-export function useWorkflowSubmit<R = unknown>(
+export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   workflow: string,
   opts: UseWorkflowSubmitOptions = {},
-): WorkflowSubmission<R> {
+): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
   const { api, key, wait, intervalMs, parallel } = opts;
   const [runId, setRunId] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
@@ -331,7 +361,7 @@ export function useWorkflowSubmit<R = unknown>(
   // The caller's client through a ref — see `_workflow-api-ref.ts`.
   const getClient = useWorkflowApiRef(api);
 
-  const tracked = useWorkflowRun<R>(runId, omitUndefined({ api, intervalMs }));
+  const tracked = useWorkflowRun<WorkflowOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
   const { wake, cancel } = useRunControls(runId, getClient);
 
   const submit = useCallback(
@@ -405,6 +435,7 @@ export function useWorkflowSubmit<R = unknown>(
 
   return {
     submit,
+    submitForm: submit,
     reset,
     wake,
     cancel,
