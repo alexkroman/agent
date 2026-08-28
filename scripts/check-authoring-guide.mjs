@@ -51,7 +51,7 @@
  * job both run this after it for that reason.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   capabilities,
@@ -69,6 +69,9 @@ const GUIDE_PATH = join(ROOT, "packages/aai-templates/scaffold/CLAUDE.md");
 
 /** The committed export surface, keyed by module specifier. */
 const EXPORTS_PATH = join(ROOT, "API-EXPORTS.json");
+
+/** Where the workspace packages live — the corpus `publishedSpecifiers` reads. */
+const PACKAGES_ROOT = join(ROOT, "packages");
 
 /**
  * Capabilities that reach the example-facing surface but are NOT the shipped
@@ -99,6 +102,11 @@ const UNDOCUMENTED_CAPABILITIES = {
  */
 const MIN_CAPABILITIES = 30;
 const MIN_CODE_SPANS = 600;
+/**
+ * Distinct `@alexkroman1/…` specifiers named in the guide's code. Measured at
+ * the time of writing: 22.
+ */
+const MIN_CITED_SPECIFIERS = 15;
 
 /**
  * The guide's CODE, as one string: every fenced block plus every inline span.
@@ -129,6 +137,30 @@ function exampleFacingNames(pkg, exportsByPath) {
     for (const name of exportsByPath[specifier] ?? []) names.add(name);
   }
   return names;
+}
+
+/**
+ * Every specifier any workspace package actually exports, read from the
+ * `exports` maps themselves rather than from `API-EXPORTS.json`.
+ *
+ * The export map is the thing Node resolves against, and it is strictly wider
+ * than the typed entry points: `@alexkroman1/aai-ui/styles` is a stylesheet and
+ * `@alexkroman1/aai-cli` has no API report at all, yet the guide names both
+ * correctly. Checking against the reports would have failed all three.
+ */
+function publishedSpecifiers() {
+  const specifiers = new Set();
+  for (const dir of readdirSync(PACKAGES_ROOT)) {
+    const manifest = join(PACKAGES_ROOT, dir, "package.json");
+    if (!existsSync(manifest)) continue;
+    const { name, exports } = JSON.parse(readFileSync(manifest, "utf8"));
+    if (!name) continue;
+    for (const key of Object.keys(exports ?? { ".": true })) {
+      if (key.includes("*")) continue;
+      specifiers.add(key === "." ? name : `${name}/${key.replace(/^\.\//, "")}`);
+    }
+  }
+  return specifiers;
 }
 
 /** Every in-scope capability, with the names that would satisfy it. */
@@ -167,6 +199,42 @@ if (spans.length < MIN_CODE_SPANS) {
     `Only ${spans.length} code spans found in ${rel(GUIDE_PATH)} (floor ${MIN_CODE_SPANS}). ` +
       "The fence/inline extractor stopped matching, so every capability below would report as " +
       "undocumented for the wrong reason.",
+  );
+}
+
+// Every `@alexkroman1/…` specifier the guide's CODE names must be a real
+// subpath. The guide sent authors to `@alexkroman1/aai/transcribe` for months:
+// `package.json` has no such key and no wildcard, so the import throws
+// `ERR_PACKAGE_PATH_NOT_EXPORTED`. It survived because it is PROSE-adjacent —
+// `check-doc-examples` only compiles fenced `ts` blocks, and 28 of this guide's
+// 47 fences are `no-check` — while every generated artifact in the repo
+// (`etc/*.api.md`, the epochs, API-EXPORTS.json) knew the true list all along.
+const KNOWN_SPECIFIERS = publishedSpecifiers();
+// Only specifiers in an IMPORT position. A bare package name is also how the
+// guide spells `npx @alexkroman1/aai-cli init` and a `node_modules/...` path,
+// neither of which Node ever resolves as a subpath — scoping to what an author
+// would copy into an import is what keeps this gate from reporting those three.
+const citedSpecifiers = [
+  ...new Set(
+    [...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["'](@alexkroman1\/[^"']+)["']/g)].map(
+      (match) => match[1],
+    ),
+  ),
+];
+if (citedSpecifiers.length < MIN_CITED_SPECIFIERS) {
+  problems.push(
+    `Only ${citedSpecifiers.length} package specifiers found in the guide's code (floor ` +
+      `${MIN_CITED_SPECIFIERS}). The extractor stopped matching, so no unresolvable subpath ` +
+      "below could be reported.",
+  );
+}
+const unresolvable = citedSpecifiers.filter((one) => !KNOWN_SPECIFIERS.has(one));
+if (unresolvable.length > 0) {
+  problems.push(
+    `${unresolvable.length} specifier(s) the guide names in code are not exported by any ` +
+      "package, so the import an author copies throws ERR_PACKAGE_PATH_NOT_EXPORTED:\n" +
+      unresolvable.map((one) => `  ${one}`).join("\n") +
+      "\n\nUse a specifier the owning package's `exports` map actually declares.",
   );
 }
 

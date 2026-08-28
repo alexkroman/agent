@@ -207,6 +207,18 @@ export default agent({
   preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default false; true opts in)
   syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
                                              // (read it with useAgentState; see UI hooks)
+  minTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ENDS a user turn once the
+                                             // text reads complete (default 560)
+  maxTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ends a turn REGARDLESS of
+                                             // content (default 1600). The endpointing knob to reach for:
+                                             // it bounds the utterances that never read as finished.
+                                             // Both are shorthand for the same options on the default
+                                             // assemblyAIStt() stage — invalid with an explicit `stt`.
+  requiredEnv?: string[];                    // env vars this agent reads. A deploy CHECKS them, so a
+                                             // missing key fails at `aai push` instead of mid-call.
+                                             // Declare every key any tool or step reads.
+  text?: true;                               // text-only agent: no STT, no TTS, `llm` is the one stage
+  events?: SessionEventHandlers;             // observe the session (see "Watching the session")
 });
 ```
 
@@ -516,10 +528,11 @@ every one of those bundles. A step pays nothing for the extra import line.
 Three more subpaths a `workflows/*.ts` module can reach, all with the same
 bundling rule as `/step` — import them there, never through the root barrel:
 
-- **`@alexkroman1/aai/transcribe`** — `stepTranscribeSync(bytes)` for a short
+- **`@alexkroman1/aai/step`** — `stepTranscribeSync(bytes)` for a short
   recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
   `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
-  the `TRANSCRIBE_*` limits. Use the `Classified` wrappers above: a provider
+  the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
+  lives on `/step` with the other step primitives.) Use the `Classified` wrappers above: a provider
   refusal — a container it will not read, a recording with no speech — arrives
   with `retryable: false`, and unclassified a step re-uploads the same bytes
   until its attempts run out.
@@ -881,8 +894,39 @@ export default agent({
 Tools, the database, `ctx`, and the UI all behave identically across modes.
 Only the audio + LLM transport differs.
 
-**There is no text-only agent mode.** An agent is a voice conversation —
-every pipeline agent must declare a real TTS provider.
+**Four front doors, each one field on `agent()`.** Omit them all for PIPELINE
+(voice, cascaded STT → LLM → TTS) — the default, and the mode this guide
+assumes. `s2s:` selects speech-to-speech. **`text: true` selects a text-only
+agent**: no STT, no TTS, `llm` is the one stage, and the host runs it with
+`createTextAgent` from `@alexkroman1/aai-runtime`. `workflowApp()` (see
+"Workflow apps") builds a form with no session at all. Setting a field from the
+wrong arm is a compile error naming the rule, so the modes cannot be mixed by
+accident. Every pipeline agent must declare a real TTS provider — that is a
+statement about pipeline mode, not about the SDK.
+
+### Answering a phone call
+
+A deployed voice agent already serves carrier media streams — there is nothing
+to switch on. `createServer` mounts `WS /phone` whenever the agent is a voice
+agent (`telephony` defaults to `true`, and to `false` for a `page: "static"`
+workflow app, which has no stages to put on a call). Point the carrier at it
+with a `carrier` query parameter naming who is dialling:
+
+```
+wss://<your-agent-url>/phone?carrier=twilio
+wss://<your-agent-url>/phone?carrier=telnyx
+```
+
+Twilio and Telnyx are the two carriers this build decodes (`CARRIER_CODECS`);
+an unknown `carrier` is declined at the upgrade. Both speak 8 kHz mu-law, which
+the bridge transcodes in both directions, so the agent, its tools and its slots
+behave exactly as they do in the browser — a phone call is a transport, not a
+mode. Nothing about `agent.ts` changes to support one.
+
+Turn the route off with `telephony: false` on `createServer`. If you are
+embedding the runtime yourself rather than deploying, the pieces are
+`createTelephonyBridge`, `startTelephonySession`, `TELEPHONY_PATH` and
+`carrierByName`, all on `@alexkroman1/aai-runtime`.
 
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.
@@ -1081,7 +1125,12 @@ same way in `aai dev` and deployed.
 ### `ctx` (ToolContext)
 
 ```ts no-check
-ctx.env: Readonly<Record<string, string>>     // secrets from .env / aai secret put
+ctx.env: Readonly<Partial<Record<string, string>>> // secrets from .env / aai secret put.
+                                               // Partial: every read is `string | undefined`.
+                                               // Use requireEnv(ctx, "KEY") to fail by NAME
+                                               // instead of throwing a TypeError at the model.
+ctx.workflows: WorkflowClient                  // start / signal / wake / find / stream a durable run
+                                               // from a tool (see "Workflows")
 ctx.slots: SlotStore                           // where sessionSlot() keeps this session's state —
                                                // reach for the slot, never this (see "Session state")
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
