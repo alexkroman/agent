@@ -132,9 +132,14 @@ const VIEW_WALK_MAX_DEPTH = 32;
  * The prototype test is what makes {@link withPlainViews} safe to let past: a class
  * instance must NOT be rebuilt key-by-key, because `isRecord(new Date())` is true
  * and `Object.keys` of a `Date` is empty — a structural copy would erase it.
+ *
+ * `isRecord` and not the two comparisons inline: its array exclusion is wanted here
+ * (the caller has already dispatched an array to {@link viewsInArray} before asking)
+ * and `guard-invariants` rule 17 is right that the open-coded spelling narrows to
+ * `object`, on which the property reads below would each need a cast.
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null) return false;
+  if (!isRecord(value)) return false;
   const proto = Object.getPrototypeOf(value) as unknown;
   return proto === Object.prototype || proto === null;
 }
@@ -150,19 +155,21 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * holder. The bytes were still materialized. Both sides of the guest↔platform
  * storage wire pay it, per call, and the Postgres world hands back a `Buffer` for
  * every `bytea` column: a run's input and output, a step's, hook metadata, every
- * stream chunk. Measured through `encodeTypedJson`, best of five:
+ * stream chunk. Measured through `encodeTypedJson` on Node 26 (the version this
+ * package requires), best of five:
  *
  * | payload | without | with |
  * | --- | --- | --- |
- * | `events.create`, 64 KiB x1000 | 785 ms | 276 ms |
- * | `steps.get`, two 1 MiB fields x50 | 1510 ms | 563 ms |
- * | `runs.list`, 100 entities w/ 4 KiB each x100 | 500 ms | 296 ms |
- * | 500 plain entities, NO binary x200 | 85 ms | 110 ms |
+ * | `events.create`, 64 KiB x1000 | 273 ms | 98 ms |
+ * | `steps.get`, two 1 MiB fields x50 | 740 ms | 223 ms |
+ * | `runs.list`, 100 entities w/ 4 KiB each x100 | 363 ms | 199 ms |
+ * | 500 plain entities, NO binary x200 | 74 ms | 110 ms |
  *
  * The last row is the cost, stated rather than hidden: a payload with no binary in
- * it pays for the traversal that discovers so — 0.13 ms per encode of a 500-entity
- * page, against 0.5 ms saved per `events.create`, which is the call every
- * step-to-step hop makes. Every binary-carrying path is 1.7-2.8x faster.
+ * it pays for the traversal that discovers so — 0.18 ms per encode of a 500-entity
+ * page, against 0.18 ms saved per `events.create`, which is the call every
+ * step-to-step hop makes and the far commoner one. Every binary-carrying path is
+ * 1.8-3.3x faster.
  *
  * The swap is ZERO-COPY: `new Uint8Array(b.buffer, b.byteOffset, b.byteLength)` is a
  * window onto the same memory, and a plain `Uint8Array` has no `toJSON`, so
