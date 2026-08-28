@@ -53,6 +53,7 @@ import { mapConcurrent } from "./_pool.ts";
 import { envCount, envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
+import type { SqlExec } from "./secret-store.ts";
 import {
   ack,
   claimDue,
@@ -186,43 +187,56 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   }
   if (claimed.length === 0) return empty;
 
-  const settle = await adminDb.reserve();
-  const sql = (q: string, p?: unknown[]) => settle.query(q, p);
-  const outcomes: ("delivered" | "rescheduled" | "retry" | "dropped")[] = [];
-  try {
-    // Bounded fan-out over a fixed list, in ITEM order — `_pool.ts`'s own doc
-    // argues why a worker pool rather than a semaphore: a lapsed acquire in a
-    // background pass is work silently not done.
-    const results = await mapConcurrent(
-      claimed,
-      opts.concurrency ?? WORKFLOW_QUEUE_DELIVER_CONCURRENCY,
-      async (message) => {
-        try {
-          const outcome = await opts.deliver(message);
-          if (outcome.type === "reschedule") {
-            await reschedule(sql, message.id, outcome.delaySeconds);
-            return "rescheduled" as const;
-          }
-          await ack(sql, message.id);
-          return "delivered" as const;
-        } catch (err) {
-          // PER-MESSAGE isolation. One unreachable guest must not cost every
-          // other tenant its tick — which is the same argument the wake sweep's
-          // per-app connection makes, one layer up.
-          log.debug("delivery failed", {
-            id: message.id,
-            slug: message.slug,
-            attempt: message.attempt,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          return await fail(sql, message.id, message.attempt);
+  // The settle statements take a connection PER STATEMENT, not one for the pass.
+  // This used to reserve once around the whole fan-out below, which is the exact
+  // shortage the claim above is careful to avoid, one paragraph later and far
+  // worse: a settle is interleaved with DELIVERIES, and a delivery is
+  // `brokerSessionUrl` (up to `BROKER_READY_TIMEOUT_MS`) plus a POST bounded at
+  // `QUEUE_DELIVERY_TIMEOUT_MS`. At the defaults — 32 messages a tick, 8 in
+  // flight — one pass against unreachable guests pinned a connection for minutes
+  // out of `ADMIN_POOL_MAX`, which is 4 for the whole replica.
+  //
+  // Each of `ack`/`fail`/`reschedule` is a single statement and no transaction
+  // spans them, so per-statement is not merely cheaper — it is all they need. A
+  // burst of concurrent settles simply queues on the pool, holding it for one
+  // round trip each rather than for a delivery each.
+  const settle = async <T>(run: (sql: SqlExec) => Promise<T>): Promise<T> => {
+    const conn = await adminDb.reserve();
+    try {
+      return await run((q, p) => conn.query(q, p));
+    } finally {
+      conn.release();
+    }
+  };
+  // Bounded fan-out over a fixed list, in ITEM order — `_pool.ts`'s own doc
+  // argues why a worker pool rather than a semaphore: a lapsed acquire in a
+  // background pass is work silently not done.
+  const outcomes = await mapConcurrent(
+    claimed,
+    opts.concurrency ?? WORKFLOW_QUEUE_DELIVER_CONCURRENCY,
+    async (message) => {
+      try {
+        const outcome = await opts.deliver(message);
+        if (outcome.type === "reschedule") {
+          await settle((sql) => reschedule(sql, message.id, outcome.delaySeconds));
+          return "rescheduled" as const;
         }
-      },
-    );
-    outcomes.push(...results);
-  } finally {
-    settle.release();
-  }
+        await settle((sql) => ack(sql, message.id));
+        return "delivered" as const;
+      } catch (err) {
+        // PER-MESSAGE isolation. One unreachable guest must not cost every
+        // other tenant its tick — which is the same argument the wake sweep's
+        // per-app connection makes, one layer up.
+        log.debug("delivery failed", {
+          id: message.id,
+          slug: message.slug,
+          attempt: message.attempt,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return await settle((sql) => fail(sql, message.id, message.attempt));
+      }
+    },
+  );
 
   const pass: SweepPass = {
     claimed: claimed.length,

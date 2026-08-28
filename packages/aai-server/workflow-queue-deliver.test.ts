@@ -160,6 +160,36 @@ describe("createQueueDeliverer", () => {
       expect(calls[0]?.headers.get("x-trace")).toBe("abc");
       expect(calls[0]?.headers.get("x-vqs-queue-name")).toBe("__wkf_step_r1");
     });
+
+    test("a message's own headers cannot overwrite the platform's", async () => {
+      // The case above uses a key nothing else claims, so it passed while the
+      // caller's spread came LAST and could replace every header beside it.
+      // `message.headers` is a tenant's own `queue(name, msg, { headers })` and
+      // `optionalHeaders` keeps no key allow-list, so these are values a tenant
+      // can really send. Overriding the bearer makes the guest answer 401 and
+      // the sweep burn all five attempts with nothing naming the payload;
+      // overriding `x-vqs-queue-name` re-points the message at another
+      // entrypoint.
+      const { deliver, calls } = await resident();
+      await deliver(
+        message({
+          headers: {
+            authorization: "Bearer forged",
+            "x-vqs-queue-name": "__wkf_workflow_someone_else",
+            "x-vqs-message-id": "not-mine",
+            "x-vqs-message-attempt": "0",
+            "content-type": "text/plain",
+          },
+        }),
+      );
+      const headers = calls[0]?.headers;
+      expect(headers?.get("authorization")).not.toBe("Bearer forged");
+      expect(headers?.get("authorization")).toMatch(/^Bearer .+/);
+      expect(headers?.get("x-vqs-queue-name")).toBe("__wkf_step_r1");
+      expect(headers?.get("x-vqs-message-id")).toBe("m1");
+      expect(headers?.get("x-vqs-message-attempt")).toBe("0");
+      expect(headers?.get("content-type")).toBe("application/json");
+    });
   });
 
   describe("the guest's answer", () => {

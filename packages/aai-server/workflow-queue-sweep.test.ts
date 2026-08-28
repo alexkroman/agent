@@ -42,6 +42,14 @@ function fakeDb(claimed: QueuedMessage[]): {
   db: AdminDb;
   statements: string[];
   released: () => number;
+  /**
+   * Connections reserved and not yet given back.
+   *
+   * The count that matters for the pool, and the one {@link released} cannot
+   * express: a pass that reserves twice and releases once has `released() === 1`
+   * and is holding a connection.
+   */
+  held: () => number;
   /** Fire the NOTIFY the sweep subscribed with. */
   notify: () => void;
   /** How many subscriptions were torn down — a stop that leaks one is a leak. */
@@ -50,6 +58,7 @@ function fakeDb(claimed: QueuedMessage[]): {
   const statements: string[] = [];
   let handed = false;
   let released = 0;
+  let held = 0;
   const notifiers: (() => void)[] = [];
   let unlistened = 0;
   const inner = fakeAdminDbOver((sql) => {
@@ -81,10 +90,12 @@ function fakeDb(claimed: QueuedMessage[]): {
     },
     reserve: async () => {
       const r = await inner.reserve();
+      held += 1;
       return {
         query: r.query,
         release: () => {
           released += 1;
+          held -= 1;
           r.release();
         },
       };
@@ -94,6 +105,7 @@ function fakeDb(claimed: QueuedMessage[]): {
     db,
     statements,
     released: () => released,
+    held: () => held,
     notify: () => {
       for (const fire of notifiers) fire();
     },
@@ -239,6 +251,31 @@ describe("runQueuePass", () => {
     });
     // The claim's reservation is already back before the first delivery runs.
     expect(releasedAtDelivery).toBeGreaterThanOrEqual(1);
+  });
+
+  test("NO connection is held across a delivery, not merely the claim's", async () => {
+    // The case above counts RELEASES, which the claim's own release satisfies —
+    // so it passed while the settle phase reserved a second connection before
+    // the fan-out and released it only after every delivery had resolved. That
+    // is the shortage the paragraph above describes, arriving one phase later:
+    // at the defaults (32 a tick, 8 in flight) against guests that are timing
+    // out, one pass pinned a connection for minutes out of ADMIN_POOL_MAX = 4.
+    const { db, held } = fakeDb(Array.from({ length: 6 }, (_, i) => msg(`m${i}`)));
+    let peakDuringDelivery = 0;
+    await runQueuePass({
+      adminDb: db,
+      concurrency: 3,
+      deliver: async () => {
+        peakDuringDelivery = Math.max(peakDuringDelivery, held());
+        await sleep(5);
+        peakDuringDelivery = Math.max(peakDuringDelivery, held());
+        return { type: "completed" };
+      },
+    });
+    expect(peakDuringDelivery).toBe(0);
+    // And the pass really did settle each message, so the zero above is "nothing
+    // was held" rather than "nothing happened".
+    expect(held()).toBe(0);
   });
 
   test("delivery concurrency is bounded", async () => {

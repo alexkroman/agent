@@ -91,14 +91,26 @@ export async function ownsRun(sql: SqlExec, runId: string, slug: string): Promis
  * What `runs.list` is scoped to. The LIMIT is the caller's, and it is required
  * rather than defaulted: a list route with an implicit ceiling is one that
  * silently truncates, and the DevKit's own list takes a page size.
+ *
+ * `offset` is what lets `runs.list` SCAN. This table holds ownership and nothing
+ * else — no `workflowName`, no `status` — so the caller's filters can only be
+ * applied after each run's record is fetched, and a filtered page therefore has
+ * to walk further than one batch. The ordering is total (`run_id` breaks ties on
+ * `created_at`), which is what makes a walk by offset coherent rather than a
+ * source of duplicates and gaps.
  */
-export async function runIdsFor(sql: SqlExec, slug: string, limit: number): Promise<string[]> {
+export async function runIdsFor(
+  sql: SqlExec,
+  slug: string,
+  limit: number,
+  offset = 0,
+): Promise<string[]> {
   const rows = await sql(
     `select run_id from aai_platform.workflow_run_owner
       where slug = $1
       order by created_at desc, run_id desc
-      limit $2`,
-    [slug, limit],
+      limit $2 offset $3`,
+    [slug, limit, offset],
   );
   return rows.flatMap((r) => (typeof r.run_id === "string" ? [r.run_id] : []));
 }

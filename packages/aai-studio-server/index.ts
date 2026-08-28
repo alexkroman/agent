@@ -123,7 +123,7 @@ async function main(): Promise<void> {
   const port = resolvePort(env.PORT, DEFAULT_PORT);
 
   let draining = false;
-  const base = buildServiceConfig(env);
+  const base = await buildServiceConfig(env);
   assertSandboxBackendOrWarn(env);
   // Awaited, so a bucket that is missing or PUBLIC refuses the boot — the one
   // piece of this platform's Supabase state that lives in the dashboard
@@ -141,6 +141,11 @@ async function main(): Promise<void> {
   const teardown = async (): Promise<void> => {
     await teardownSandboxes({ slots: base.slots, broker: { dispose: disposeStudio } });
     await base.events.close();
+    // The workflow world's own `close` ends the streamer's dedicated `LISTEN`
+    // client and the pool behind it. Last, and after the guests: a guest still
+    // draining may write one more journal entry through `/:slug/workflow-storage`,
+    // and closing the world under it would fail that write rather than the run.
+    await base.runStorage?.close();
   };
 
   // Both apps in one process, dispatched by path. Each app carries

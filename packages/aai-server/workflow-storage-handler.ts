@@ -74,6 +74,18 @@ const DEFAULT_RUN_PAGE = 50;
 /** The most it will answer with, whatever the caller asks for. */
 const MAX_RUN_PAGE = 500;
 
+/**
+ * The most run ids `runs.list` will WALK to fill one filtered page.
+ *
+ * A filter is applied after each run's record is fetched (see
+ * {@link scopeOwnRuns}), so a page that matches nothing near the top costs one
+ * `runs.get` per id scanned. Unbounded, a `status` filter matching nothing on an
+ * agent with a hundred thousand runs is a hundred thousand reads for an empty
+ * answer. Four full pages is far past any diagnostic surface's reach and still a
+ * bounded cost; hitting it answers `hasMore: true`, which is the truth.
+ */
+const MAX_RUN_SCAN = MAX_RUN_PAGE * 4;
+
 /** A minimal view of the DevKit members this route calls. */
 type Callable = (...args: unknown[]) => Promise<unknown>;
 
@@ -257,26 +269,55 @@ async function serve(call: StorageCall, ctx: ServeContext): Promise<unknown> {
  * do, and a page derived from the ownership table's ordering rather than theirs.
  * A run list is a diagnostic surface — the studio's runs pane, `aai workflow list`
  * — not a hot path, and the alternative is a cross-tenant query.
+ *
+ * **The filters are applied to a SCAN, not to one truncated page.** It used to
+ * take the newest `limit` ids, filter those, and answer `hasMore: false` — so an
+ * agent whose 50 newest runs are all `running`, asked for `status: "completed"`,
+ * got an empty list plus an assurance that there was nothing further to fetch,
+ * while completed runs sat one page back. The ownership table carries neither
+ * field, so the filter cannot be pushed into the query; walking is what is left.
+ * {@link MAX_RUN_SCAN} bounds it.
  */
 async function scopeOwnRuns(call: StorageCall, ctx: ServeContext): Promise<unknown> {
   const params = isRecord(call.args[0]) ? call.args[0] : {};
   const pagination = isRecord(params.pagination) ? params.pagination : {};
   const asked = typeof pagination.limit === "number" ? pagination.limit : DEFAULT_RUN_PAGE;
   const limit = Math.max(1, Math.min(MAX_RUN_PAGE, asked));
+  // One MORE than the page, so a full page can tell "there is another one" from
+  // "that was all" without a second query — and so an unfiltered list still costs
+  // exactly one batch, as it did before.
+  const batch = limit + 1;
 
-  const ids = await runIdsFor(ctx.sql, ctx.slug, limit);
   const get = memberOf(ctx.storage, "runs.get");
-  const runs = await Promise.all(
-    ids.map((id) =>
-      // A run whose ownership row outlived its journal answers undefined rather
-      // than failing the whole list — one missing run must not blank the pane.
-      get(id, params).catch(() => undefined),
-    ),
-  );
-  const wanted = runs.filter((run) => run !== undefined).filter((run) => matches(run, params));
+  const wanted: unknown[] = [];
+  let scanned = 0;
+  let exhausted = false;
+  while (wanted.length <= limit && scanned < MAX_RUN_SCAN) {
+    const ids = await runIdsFor(ctx.sql, ctx.slug, batch, scanned);
+    scanned += ids.length;
+    const runs = await Promise.all(
+      ids.map((id) =>
+        // A run whose ownership row outlived its journal answers undefined rather
+        // than failing the whole list — one missing run must not blank the pane.
+        get(id, params).catch(() => undefined),
+      ),
+    );
+    for (const run of runs) {
+      if (run !== undefined && matches(run, params)) wanted.push(run);
+    }
+    // A short batch is the end of this agent's runs; anything else means the walk
+    // stopped early and the caller may have more waiting.
+    if (ids.length < batch) {
+      exhausted = true;
+      break;
+    }
+  }
   // Their own reply shape, so the guest's client needs no special case: a
   // paginated response with the items and no cursor.
-  return { data: wanted, pagination: { hasMore: false } };
+  return {
+    data: wanted.slice(0, limit),
+    pagination: { hasMore: wanted.length > limit || !exhausted },
+  };
 }
 
 /** Does a run satisfy the caller's `workflowName` / `status` filters? */
