@@ -12,13 +12,10 @@
 // `agent.ts` alone would measure Scout with none of its own rules — and its
 // rules are the entire subject of this file. The reasoning is spelled out in
 // `../code-interpreter/agent.eval.test.ts`.
-import { deployedAgent } from "@alexkroman1/aai/testing";
+
+import agentDef from "virtual:aai/agent";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
-import authored from "./agent.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
-const agentDef = deployedAgent(authored, { systemPrompt: systemPrompt });
 
 /**
  * The registrable label of every host this turn's tool results mentioned —

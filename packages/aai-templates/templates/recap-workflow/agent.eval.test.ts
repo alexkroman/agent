@@ -28,14 +28,6 @@
 //     model stays live and is what a live run measures.
 //
 // And what no eval here can see: anything below the audio boundary.
-import { deployedAgent } from "@alexkroman1/aai/testing";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
-import type { EvalToolCall, EvalWorkflows } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
-import { expect } from "vitest";
-import { z } from "zod";
-import authoredAgent from "./agent.ts";
-import { recap, SAMPLE_RECORDING } from "./shared.ts";
 
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
@@ -48,9 +40,13 @@ import { recap, SAMPLE_RECORDING } from "./shared.ts";
  * The glob is written here rather than reached for from a shared helper because
  * this file SHIPS — see `agent.test.ts`.
  */
-const agentDef = deployedAgent(authoredAgent, {
-  tools: import.meta.glob("./tools/*.ts", { eager: true }),
-});
+import agentDef from "virtual:aai/agent";
+import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+import type { EvalToolCall, EvalWorkflows } from "@alexkroman1/aai-runtime/eval";
+import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { expect } from "vitest";
+import { z } from "zod";
+import { recap, SAMPLE_RECORDING } from "./shared.ts";
 
 /**
  * The key every step reads with `requireStepEnv` — the one name `agent.ts`

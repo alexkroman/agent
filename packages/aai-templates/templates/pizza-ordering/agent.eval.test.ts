@@ -1,5 +1,6 @@
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
 // An EVAL: does the order-taker actually take the order?
 //
 // `agent.test.ts` drives the six tools directly, which settles what each one
@@ -16,21 +17,7 @@ import { lastStateIn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
-import authoredAgent from "./agent.ts";
 import { MENU } from "./shared.ts";
-
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS — a scaffolded project has no repo helper to import. Without
- * it the eval would drive an agent with no tools at all, which is the one
- * failure mode a green eval must not be able to hide.
- */
-const agentDef = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
 
 /**
  * What the BROWSER is sent, as this eval reads it.

@@ -36,7 +36,7 @@
  *
  * | Subpath | Reach for it when |
  * | --- | --- |
- * | `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `withDiscoveredTools`, `runTool` |
+ * | `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
  * | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
  * | `@alexkroman1/aai/step`, `/step-errors` | writing a `"use step"` body inside a workflow |
  * | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |

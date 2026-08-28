@@ -33,6 +33,11 @@
       "types": "./dist/sdk/testing-vitest.d.ts",
       "import": "./dist/sdk/testing-vitest.js"
     },
+    "./testing/vite": {
+      "@dev/source": "./host/testing-vite.ts",
+      "types": "./dist/host/testing-vite.d.ts",
+      "import": "./dist/host/testing-vite.js"
+    },
     "./channels": {
       "@dev/source": "./sdk/channels-barrel.ts",
       "types": "./dist/sdk/channels-barrel.d.ts",

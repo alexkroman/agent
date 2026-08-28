@@ -663,8 +663,12 @@
     "stubUploads",
     "toolInputIssues",
     "toolOf",
-    "toolRunner",
-    "withDiscoveredTools"
+    "toolRunner"
+  ],
+  "@alexkroman1/aai/testing/vite": [
+    "AAI_AGENT_MODULE",
+    "AaiVitePlugin",
+    "aaiAgentPlugin"
   ],
   "@alexkroman1/aai/testing/vitest": [
     "MockWorkflowsOptions",

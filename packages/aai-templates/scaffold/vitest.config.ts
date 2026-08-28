@@ -1,3 +1,4 @@
+import { aaiAgentPlugin } from "@alexkroman1/aai/testing/vite";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -33,8 +34,13 @@ import { defineConfig } from "vitest/config";
  * the tokens it saves, and because a test run that behaves differently
  * depending on who typed the command is the harder thing to reason about. Drop
  * the line if you would rather have the terser output.
+ *
+ * `aaiAgentPlugin` serves `virtual:aai/agent` — the agent lowered the way
+ * `aai build` lowers it, so a spec imports one module instead of rebuilding it
+ * out of a glob, a `?raw` read and `deployedAgent`.
  */
 export default defineConfig({
+  plugins: [aaiAgentPlugin()],
   test: {
     globals: true,
     reporters: ["default"],

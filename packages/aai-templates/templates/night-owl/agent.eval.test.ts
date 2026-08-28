@@ -10,21 +10,6 @@
 // SCRIPTED model (its `stubReply`): the real session, the real slot, the real
 // tool, a fake reply. That proves the wiring and nothing about the choice.
 
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { deployedAgent } from "@alexkroman1/aai/testing";
-import {
-  createVmRunCode,
-  customEventsIn,
-  lastStateIn,
-  toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
-import { expect } from "vitest";
-import { z } from "zod";
-import authoredAgent from "./agent.ts";
-import { CATEGORIES, MOODS } from "./shared.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
  *
@@ -39,10 +24,18 @@ import systemPrompt from "./system-prompt.md?raw";
  * different agent than the one that deploys, and every tool-choice claim below
  * then passes or fails for the wrong reason.
  */
-const agentDef = deployedAgent(authoredAgent, {
-  tools: import.meta.glob("./tools/*.ts", { eager: true }),
-  systemPrompt: systemPrompt,
-});
+import agentDef from "virtual:aai/agent";
+import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import {
+  createVmRunCode,
+  customEventsIn,
+  lastStateIn,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval";
+import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { expect } from "vitest";
+import { z } from "zod";
+import { CATEGORIES, MOODS } from "./shared.ts";
 
 /**
  * One `recommend` answer, and the whole projection, as the wire carries them.

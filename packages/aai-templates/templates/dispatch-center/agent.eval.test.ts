@@ -1,5 +1,20 @@
+/**
+ * The def a DEPLOYED agent runs: authored, plus what `tools/` declares, plus
+ * what `system-prompt.md` says.
+ *
+ * BOTH wrappers are load-bearing and neither is applied by `agent()` — they are
+ * applied by the BUILD (`aai build` enumerates `tools/` and resolves the prompt
+ * file), so an eval driving the raw default export would measure a twelve-tool
+ * desk with no tools and the FRAMEWORK DEFAULT prompt. For this template that
+ * is the whole subject: "location is always the first priority", the radio
+ * style and "never leave a critical incident without a resource" are all in
+ * that file.
+ *
+ * The glob is written here rather than reached for from a shared helper because
+ * this file SHIPS — it is what a scaffolded project runs.
+ */
+import dispatchAgent from "virtual:aai/agent";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { deployedAgent } from "@alexkroman1/aai/testing";
 // An EVAL: does the desk actually behave? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly. What it cannot ask is whether the
@@ -23,28 +38,6 @@ import { type EvalSession, type EvalTurn, lastStateIn } from "@alexkroman1/aai-r
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
-import authoredAgent from "./agent.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares, plus
- * what `system-prompt.md` says.
- *
- * BOTH wrappers are load-bearing and neither is applied by `agent()` — they are
- * applied by the BUILD (`aai build` enumerates `tools/` and resolves the prompt
- * file), so an eval driving the raw default export would measure a twelve-tool
- * desk with no tools and the FRAMEWORK DEFAULT prompt. For this template that
- * is the whole subject: "location is always the first priority", the radio
- * style and "never leave a critical incident without a resource" are all in
- * that file.
- *
- * The glob is written here rather than reached for from a shared helper because
- * this file SHIPS — it is what a scaffolded project runs.
- */
-const dispatchAgent = deployedAgent(authoredAgent, {
-  tools: import.meta.glob("./tools/*.ts", { eager: true }),
-  systemPrompt: systemPrompt,
-});
 
 /** The six tools gated on `working` — the ones that refuse until something has
  *  been logged. Listed here so ADDING an ungated mutating tool is a deliberate

@@ -334,7 +334,7 @@ export function SubmitButton(input: {
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element;
 
 // @public
-type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? void : WorkflowInputOf<D>;
+type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined : WorkflowInputOf<D>;
 
 // @public
 type SubmitOutputOf<D> = WorkflowOutputOf<D>;

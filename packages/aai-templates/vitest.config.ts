@@ -1,3 +1,4 @@
+import { aaiAgentPlugin } from "@alexkroman1/aai/testing/vite";
 import { defineConfig } from "vitest/config";
 import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
 
@@ -6,6 +7,8 @@ import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
 // resolves out of the box — no custom raw-text plugin needed.
 export default defineConfig({
   ...sharedConfig,
+  // Serves `virtual:aai/agent` to each template's specs — see its module doc.
+  plugins: [aaiAgentPlugin()],
   test: {
     ...sharedConfig.test,
     // Project name for `--project aai-templates`; the workspace root discovers this

@@ -60,6 +60,8 @@ const NON_AUTHORING_SUBPATHS = {
     "./slugify": "how a human name becomes a slug, for the CLI, the platform and the studio",
     "./workspace-files": "the studio's workspace layout, read by the platform and the CLI",
     "./internal": "cross-package infrastructure, explicitly not semver-covered",
+    "./testing/vite":
+      "a Vite plugin serving `virtual:aai/agent` — build tooling a `vitest.config.ts` registers, not something an agent.ts or a spec BODY writes against",
     "./host-internal":
       "the SDK internals the FRAMEWORK packages need across the package boundary — aai-runtime principally, plus the guest, the studio server and the template gate; not semver-covered",
   },

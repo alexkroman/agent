@@ -7,7 +7,7 @@
  * by (a model, a workflow client, a gateway), the three slots a `"use step"`
  * body reaches through — the upload store, the HTTP `stepFetch` makes its
  * request with, and the synthesizer `stepSpeak` speaks through — and
- * `withDiscoveredTools`, which is how a spec gets the def a DEPLOYED
+ * `deployedAgent`, which is how a spec gets the def a DEPLOYED
  * agent runs when the project's tools are files rather than inline.
  *
  * Three families joined it, each because the same lines were being re-derived
@@ -115,7 +115,6 @@ export {
   toolInputIssues,
   toolOf,
   toolRunner,
-  withDiscoveredTools,
 } from "../../sdk/testing.ts";
 export {
   installStubGateway,

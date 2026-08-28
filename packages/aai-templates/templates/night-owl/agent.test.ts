@@ -1,25 +1,14 @@
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import {
   createToolContext,
   parseToolInput,
   toolInputIssues,
   toolRunner,
-  withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
-import authoredAgent from "./agent.ts";
 import { CATEGORIES, MOODS, nightProjection, nightSlot } from "./shared.ts";
-
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS — a scaffolded project has no repo helper to import.
- */
-const agentDef = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
 
 /**
  * `runTool` takes the context in the ARGUMENTS' place when a tool needs none,

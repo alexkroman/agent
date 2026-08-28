@@ -10,15 +10,6 @@
 // SCRIPTED model (its `stubReply`) — the real session and the real tools, a
 // fake reply — which proves the wiring and says nothing about the discipline.
 
-import { deployedAgent } from "@alexkroman1/aai/testing";
-import { toolResultIn } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
-import { expect } from "vitest";
-import { z } from "zod";
-import authoredAgent from "./agent.ts";
-import { faqs } from "./shared.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
  *
@@ -33,10 +24,12 @@ import systemPrompt from "./system-prompt.md?raw";
  * drives it measures a different agent than the one that deploys, and every
  * tool-choice claim below then passes or fails for the wrong reason.
  */
-const agentDef = deployedAgent(authoredAgent, {
-  tools: import.meta.glob("./tools/*.ts", { eager: true }),
-  systemPrompt: systemPrompt,
-});
+import agentDef from "virtual:aai/agent";
+import { toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { expect } from "vitest";
+import { z } from "zod";
+import { faqs } from "./shared.ts";
 
 /**
  * A knowledge-base HIT, as the model saw it — `tool.completed` carries it

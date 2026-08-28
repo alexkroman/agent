@@ -185,10 +185,19 @@ describe("the markdown config", () => {
     // that stopped finding `exports` would compare nothing against nothing and
     // print its checkmark. Here the comparison is against the config TEXT.
     //
-    // It also re-states the size of the deny-list rather than its contents: an
-    // entry is a decision with a paragraph attached, and the failure worth
-    // catching is somebody adding a fourth to make a red gate green.
-    const denied = ["./host-internal", "./internal", "./slugify", "./workspace-files"];
+    // It also re-states the deny-list rather than reading it: an entry is a
+    // decision with a paragraph attached, and the failure worth catching is
+    // somebody adding a fifth to make a red gate green. `./testing/vite` is the
+    // one that is not an internals subpath — it is BUILD tooling, a Vite plugin
+    // a `vitest.config.ts` registers, so a reference page under the authoring
+    // API would describe wiring rather than anything an author writes.
+    const denied = [
+      "./host-internal",
+      "./internal",
+      "./slugify",
+      "./testing/vite",
+      "./workspace-files",
+    ];
     const inspected = Object.entries(siteConfig).flatMap(([globKey, config]) => {
       const pkg = repoPathOf(globKey).split("/")[1];
       if (pkg === undefined) throw new Error(`unparsable glob key ${globKey}`);

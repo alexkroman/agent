@@ -3,7 +3,6 @@ import {
   type StubDelegateCall,
   stubDelegate,
   toolRunner,
-  withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
@@ -24,17 +23,8 @@ import {
 /** A finding whose cost is irrelevant to the case at hand. */
 const NO_WORK: AngleWork = { searches: 0, reads: 0 };
 
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS — it is what a scaffolded project runs, so it may not import
- * anything outside its own template.
- */
-const agentDef = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 
 const run = toolRunner(agentDef);
 

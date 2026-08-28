@@ -1,26 +1,8 @@
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
-import {
-  createToolContext,
-  okPosition,
-  stubGenerate,
-  toolRunner,
-  withDiscoveredTools,
-} from "@alexkroman1/aai/testing";
+import { createToolContext, okPosition, stubGenerate, toolRunner } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
-import authoredAgent from "./agent.ts";
-
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS: it is what a scaffolded project runs, so it may not import
- * anything outside its own template, and `import.meta.glob` is expanded against
- * the file containing it either way. This is the pattern a user writes.
- */
-const agentDef = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
 
 import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./procedure.ts";
 import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";

@@ -19,14 +19,6 @@
 // unreachable openFDA reads as a drug that could not be resolved, which this
 // template already refuses on).
 
-import { deployedAgent } from "@alexkroman1/aai/testing";
-import { toolResultIn } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
-import { expect } from "vitest";
-import { z } from "zod";
-import authoredAgent from "./agent.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
  *
@@ -41,10 +33,11 @@ import systemPrompt from "./system-prompt.md?raw";
  * drives it measures a different agent than the one that deploys, and every
  * tool-choice claim below then passes or fails for the wrong reason.
  */
-const agentDef = deployedAgent(authoredAgent, {
-  tools: import.meta.glob("./tools/*.ts", { eager: true }),
-  systemPrompt: systemPrompt,
-});
+import agentDef from "virtual:aai/agent";
+import { toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { expect } from "vitest";
+import { z } from "zod";
 
 /** The drugs an interaction check was actually asked about, lowercased. */
 const drugsIn = (args: Record<string, unknown>): string[] =>

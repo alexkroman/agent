@@ -1,7 +1,6 @@
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
-import { createToolContext, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { createToolContext, deployedAgent } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
-import authoredAgent from "./agent.ts";
 import { callFlow, retailSlot } from "./store.ts";
 
 /** Tools that legitimately run before the caller is identified — the six
@@ -18,17 +17,23 @@ const PUBLIC_TOOLS = new Set([
 ]);
 
 /**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
+ * The def a DEPLOYED agent runs, lowered BY HAND — the one place in the
+ * templates that still does.
  *
- * The glob is written HERE rather than reached for from a shared helper because
- * this file SHIPS: it is what a scaffolded project runs, so it may not import
- * anything outside its own template, and `import.meta.glob` is expanded against
- * the file containing it either way. This is the pattern a user writes.
+ * `virtual:aai/agent` is what every other spec imports and what a user should
+ * reach for. This file is the exception on purpose: its whole subject is the
+ * tool REGISTRY, so doing the discovery explicitly is the thing under test
+ * rather than setup around it. It is also the worked example for a project
+ * whose runner is not vitest, and so cannot register the plugin.
  */
-const retailAgent = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
+import authoredAgent from "./agent.ts";
+import systemPrompt from "./system-prompt.md?raw";
+
+const retailAgent = deployedAgent(authoredAgent, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+  systemPrompt,
+});
+
 const registry = Object.entries(retailAgent.tools);
 
 // `createToolContext()` rather than a cast: it carries a real slot store (the

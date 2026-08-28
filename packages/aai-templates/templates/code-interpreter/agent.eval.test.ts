@@ -22,14 +22,11 @@
 // passes `createVmRunCode()` — a developer's own machine may evaluate generated
 // code, a deployment may not — and every case here asserts BOTH halves: that
 // Coda reached for code, and what the code came back with.
-import { deployedAgent } from "@alexkroman1/aai/testing";
+
+import agentDef from "virtual:aai/agent";
 import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
-import authored from "./agent.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
-const agentDef = deployedAgent(authored, { systemPrompt: systemPrompt });
 
 /** The code every `run_code` call in this turn carried, joined. */
 const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string, unknown> }[] }) =>

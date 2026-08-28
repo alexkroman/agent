@@ -12,14 +12,11 @@
 // different agent; and `run_code` refuses unless the EVAL supplies an executor,
 // which this suite does — so the cases below assert the answer the code came
 // back with as well as the code the tutor wrote.
-import { deployedAgent } from "@alexkroman1/aai/testing";
+
+import agentDef from "virtual:aai/agent";
 import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
-import authored from "./agent.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
-const agentDef = deployedAgent(authored, { systemPrompt: systemPrompt });
 
 /** The code every `run_code` call in this turn carried, joined. */
 const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string, unknown> }[] }) =>

@@ -30,6 +30,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai/step-files` — `packages/aai/etc/step-files.api.md`
 - `@alexkroman1/aai/stt` — `packages/aai/etc/stt.api.md`
 - `@alexkroman1/aai/testing` — `packages/aai/etc/testing.api.md`
+- `@alexkroman1/aai/testing/vite` — `packages/aai/etc/testing-vite.api.md`
 - `@alexkroman1/aai/testing/vitest` — `packages/aai/etc/testing-vitest.api.md`
 - `@alexkroman1/aai/tools` — `packages/aai/etc/tools.api.md`
 - `@alexkroman1/aai/tts` — `packages/aai/etc/tts.api.md`
@@ -5688,9 +5689,6 @@ type WakeUpOptions = {
 };
 
 // @public
-export function withDiscoveredTools<D extends ToolBearingAgent>(def: D, modules: ToolModules): D;
-
-// @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
     workflowId?: string;
 };
@@ -5757,6 +5755,24 @@ type WorkflowSummary = {
     description?: string;
     inputSchema?: unknown;
     uploads?: readonly string[];
+};
+```
+
+## `@alexkroman1/aai/testing/vite`
+
+```ts
+// @public
+export const AAI_AGENT_MODULE = "virtual:aai/agent";
+
+// @public
+export function aaiAgentPlugin(): AaiVitePlugin;
+
+// @public
+export type AaiVitePlugin = {
+    readonly name: string;
+    readonly enforce: "pre";
+    resolveId(id: string, importer?: string): string | undefined;
+    load(id: string): string | undefined;
 };
 ```
 
@@ -8954,7 +8970,7 @@ export function SubmitButton(input: {
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element;
 
 // @public
-type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? void : WorkflowInputOf<D>;
+type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined : WorkflowInputOf<D>;
 
 // @public
 type SubmitOutputOf<D> = WorkflowOutputOf<D>;

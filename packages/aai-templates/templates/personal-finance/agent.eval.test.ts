@@ -14,14 +14,11 @@
 // the answer as well as the code that was submitted. `fetch_json` is
 // unaffected — it makes a real request, so the currency case really does reach a
 // live rates API.
-import { deployedAgent } from "@alexkroman1/aai/testing";
+
+import agentDef from "virtual:aai/agent";
 import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
-import authored from "./agent.ts";
-import systemPrompt from "./system-prompt.md?raw";
-
-const agentDef = deployedAgent(authored, { systemPrompt: systemPrompt });
 
 type Turn = { toolCalls: readonly { name: string; args: Record<string, unknown> }[] };
 

@@ -22,6 +22,20 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    agent that no longer exists. When a test fails after your change, decide
    which side is stale: updating the test to match the new agent is a normal
    fix, not a workaround. Do not delete a test to make it pass.
+
+   **A spec that needs the agent as DEPLOYED imports one module:**
+
+   ```ts no-check
+   import agentDef from "virtual:aai/agent";
+   ```
+
+   That is `agent.ts` with its `tools/` directory discovered and its
+   `system-prompt.md` applied — the same lowering `aai build` does, so a spec
+   measures the agent that ships rather than the raw default export (which has
+   no tools and the framework's default prompt). `vitest.config.ts` registers
+   the plugin that serves it; a scaffolded project already has it. For a runner
+   that is not vitest, `deployedAgent` on `@alexkroman1/aai/testing` is the same
+   thing written out.
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
    the agent's shape; an eval drives a real session and asserts what it did.
    Cases live in `agent.eval.test.ts` (the `simple` template ships one):

@@ -758,9 +758,6 @@ type WakeUpOptions = {
 };
 
 // @public
-export function withDiscoveredTools<D extends ToolBearingAgent>(def: D, modules: ToolModules): D;
-
-// @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
     workflowId?: string;
 };
