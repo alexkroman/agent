@@ -716,13 +716,13 @@ Two rules from it that a reader of THIS package needs in front of them:
   caller's to write, so a use inside the request is self-directed (a caller who
   lies gets its own lie back) while one that outlives it is an injection — see
   "Durable workflows" below for the shipped instance.
-- **Deploy, delete, and PROVISIONING a database move sandboxes; a secret change
-  does not.** All three write the agents row, whose `version` is the one
-  cross-replica invalidation signal (`sandbox-invalidate.ts`); the documented
-  way to apply a secret is still to redeploy. Storage was on the other side of
-  that line until enabling one was found to reach production NEVER, not merely
-  late — `storage-handler.ts`'s module doc has the failure and why the bump is
-  scoped to a change that really happened.
+- **Deploy and delete move sandboxes; a secret change does not.** Both write the
+  agents row, whose `version` is the one cross-replica invalidation signal
+  (`sandbox-invalidate.ts`); the way to apply a secret is to redeploy. A third
+  mover, provisioning a database, is gone with per-app databases — and the rule
+  it established is why `AgentRows.touch` is kept: a mutation that changes a
+  guest's ENVIRONMENT without changing its code has to bump that row, or the
+  resident guest keeps the env it was spawned with.
 
 ## Modal sandbox notes
 
@@ -1600,12 +1600,13 @@ untouched and could not have helped: it steers QUEUE dispatch and never reaches
 callbacks. (The other gap this section used to name — a parked run that nothing
 ever boots the guest for — is what the wake sweep below closes.)
 
-**In production `AAI_PUBLIC_ORIGIN` is the ONLY source of that value, and any
-deployment that mints durable URLs owes it.** It is baked at spawn and there is
-one sandbox per slug fleet-wide, so a per-request mechanism would buy nothing
-anyway — a URL handed to a payment provider has to outlive the request that
-minted it. Unset, the key is omitted and the SDK throws naming the option,
-which is the designed answer.
+**`AAI_PUBLIC_ORIGIN` is the ONLY source of that value in production, and boot
+is REFUSED without one** — it is baked at spawn, and one sandbox per slug
+fleet-wide means a per-request mechanism would buy nothing anyway. It was
+OPTIONAL until the same value became half of what a guest needs to install the
+platform workflow world, at which point unset meant every durable run silently
+ran on the LOCAL world instead. `PLATFORM_TIER_ENV` (`_boot.ts`) carries that
+account and why none of the three can be defaulted.
 
 An OBSERVED origin (`rememberPublicOrigin`, wired into `app-middleware.ts` for
 the spawn paths that hold no request — the blue-green handover fires off the

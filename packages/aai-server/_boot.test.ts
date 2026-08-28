@@ -5,6 +5,7 @@ import {
   assertServiceRoleKey,
   hasPlatformDb,
   isLocalDev,
+  PLATFORM_TIER_ENV,
   requireEnv,
   resolvePort,
 } from "./_boot.ts";
@@ -147,4 +148,52 @@ describe("resolvePort", () => {
       expect(() => resolvePort(raw, 8080)).toThrow("Invalid PORT");
     },
   );
+});
+
+/**
+ * What a platform tier requires, and why the list is worth a spec of its own.
+ *
+ * `AAI_PUBLIC_ORIGIN` was OPTIONAL until it became the only source of the base
+ * URL a guest needs to reach the platform's workflow routes. Nothing failed when
+ * that changed — a deployment without it kept booting and quietly ran every
+ * durable workflow on the DevKit's local world, where the runs die with the
+ * sandbox. This pins the requirement so the same silent downgrade cannot come
+ * back by someone trimming the list.
+ */
+describe("PLATFORM_TIER_ENV", () => {
+  test("names the three whose absence is silent", () => {
+    // Spelled out rather than asserted by length: a member REMOVED here is a
+    // silent-failure mode restored, so the diff has to show which.
+    expect([...PLATFORM_TIER_ENV]).toEqual([
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "AAI_PUBLIC_ORIGIN",
+    ]);
+  });
+
+  test("a platform tier missing the public origin is REFUSED, and the error names it", () => {
+    // The case that motivated the list. Boot has to fail rather than fall back:
+    // the fallback is durable runs that are not durable.
+    expect(() =>
+      requireEnv(
+        { SUPABASE_URL: "https://x.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" },
+        PLATFORM_TIER_ENV,
+      ),
+    ).toThrow("AAI_PUBLIC_ORIGIN");
+  });
+
+  test("a fully configured platform tier passes", () => {
+    // The positive control: without it the spec above would pass against a
+    // `requireEnv` that rejected everything.
+    expect(
+      requireEnv(
+        {
+          SUPABASE_URL: "https://x.supabase.co",
+          SUPABASE_SERVICE_ROLE_KEY: "k",
+          AAI_PUBLIC_ORIGIN: "https://aai.example",
+        },
+        PLATFORM_TIER_ENV,
+      ).AAI_PUBLIC_ORIGIN,
+    ).toBe("https://aai.example");
+  });
 });

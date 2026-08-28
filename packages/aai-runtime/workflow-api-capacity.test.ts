@@ -10,7 +10,11 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { isInsufficientResources } from "./workflow-api-http.ts";
+import {
+  isDiskFull,
+  isInsufficientResources,
+  workflowApiErrorStatus,
+} from "./workflow-api-http.ts";
 
 describe("isInsufficientResources", () => {
   /** The one that actually happened, and the one that reaches us WRAPPED. */
@@ -52,5 +56,84 @@ describe("isInsufficientResources", () => {
     const b = { cause: a };
     a.cause = b;
     expect(isInsufficientResources(a)).toBe(false);
+  });
+});
+
+/**
+ * A full DISK, which is a different answer from a full database.
+ *
+ * The condition was observed on a dev sandbox transcribing uploaded audio: a
+ * guest with no `DATABASE_URL` keeps run state and upload bytes on local disk,
+ * that disk filled, and every layer treated it as transient — the DevKit's queue
+ * retried, the platform's forward answered `503 … retry shortly`, and the log
+ * filled with identical lines. Retrying a write that failed for want of space
+ * fails again.
+ */
+describe("isDiskFull", () => {
+  test("finds ENOSPC through the cause chain the DevKit wraps it in", () => {
+    // The `code` is almost never on the value that was thrown: the world, the
+    // queue and the API each re-wrap it.
+    const driver = Object.assign(new Error("ENOSPC: no space left on device, write"), {
+      code: "ENOSPC",
+    });
+    const wrapped = new Error("step failed", { cause: new Error("write", { cause: driver }) });
+    expect(isDiskFull(wrapped)).toBe(true);
+    expect(isDiskFull(driver)).toBe(true);
+  });
+
+  test("is not fooled by a message that merely says ENOSPC", () => {
+    // The `code` is the signal, not the text — an agent's own error is allowed to
+    // mention a disk without becoming one.
+    expect(isDiskFull(new Error("ENOSPC: no space left on device"))).toBe(false);
+  });
+
+  test("does not confuse a full DATABASE with a full disk", () => {
+    // The two need different answers, which is the whole reason for two
+    // predicates: one clears on its own, the other does not.
+    const pgFull = Object.assign(new Error("too many connections"), { code: "53300" });
+    expect(isDiskFull(pgFull)).toBe(false);
+    expect(isInsufficientResources(pgFull)).toBe(true);
+  });
+
+  test("survives a cause CYCLE rather than hanging", () => {
+    // Same guard as its sibling. A cycle is reachable when a wrapper sets
+    // `cause` to something that already references it, and a hang here is a
+    // wedged request rather than an error.
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    Object.defineProperty(a, "cause", { value: b });
+    expect(isDiskFull(a)).toBe(false);
+  });
+});
+
+/**
+ * The STATUS a full disk maps to, and the absence of `Retry-After` as a signal.
+ */
+describe("workflowApiErrorStatus on a full disk", () => {
+  const enospc = Object.assign(new Error("write"), { code: "ENOSPC" });
+
+  test("answers 507 and tells the operator what to do about it", () => {
+    const mapped = workflowApiErrorStatus(enospc);
+    expect(mapped).toMatchObject({ status: 507 });
+    // Narrowed with an explicit refusal rather than `mapped?.error`: the union is
+    // `false | {…}`, and `false` is not nullish, so an optional chain does not
+    // exclude it — biome's `useOptionalChain` suggests one here and is wrong.
+    if (mapped === false) expect.fail("a full disk must map to a status");
+    expect(mapped.error).toContain("DATABASE_URL");
+  });
+
+  test("carries NO Retry-After, unlike the database's 503", () => {
+    // The distinction is the point: a saturated pool clears itself, a full disk
+    // does not, so advising a retry would be advising a loop.
+    expect(workflowApiErrorStatus(enospc)).not.toHaveProperty("retryAfter");
+    const pgFull = Object.assign(new Error("too many connections"), { code: "53300" });
+    expect(workflowApiErrorStatus(pgFull)).toMatchObject({ status: 503, retryAfter: "1" });
+  });
+
+  test("a full disk wins over the database check, because it is more specific", () => {
+    // Both predicates would fire on an error carrying both codes down its chain;
+    // the disk's answer is the one that must not be retried.
+    const both = Object.assign(new Error("write", { cause: enospc }), { code: "53300" });
+    expect(workflowApiErrorStatus(both)).toMatchObject({ status: 507 });
   });
 });

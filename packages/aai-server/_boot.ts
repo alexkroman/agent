@@ -17,6 +17,39 @@ export function requireEnv<const K extends string>(
 }
 
 /**
+ * The env a PLATFORM tier requires beyond `SUPABASE_DB_URL` itself, refused at
+ * boot rather than resolved into a mixture.
+ *
+ * A list rather than three call sites, because what they share is the argument:
+ * every one of them fails SILENTLY when absent, so a half-configured platform is
+ * worse than a refused one.
+ *
+ * - **`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`** — Realtime. Without them a
+ *   replica never invalidates a resident sandbox on redeploy and never pushes
+ *   studio SSE, and both failures are quiet.
+ * - **`AAI_PUBLIC_ORIGIN`** — the newest, and the one whose requirement changed
+ *   under it. It was needed for durable webhook URLs and nothing else, so it was
+ *   optional; it is now the only source of `agentPublicBaseUrl`, which a guest
+ *   receives as `AAI_PUBLIC_BASE_URL`, which is half of what
+ *   `resolvePlatformQueue` needs to install the PLATFORM workflow world. Unset,
+ *   every durable run falls back to the DevKit's LOCAL world — queue in the
+ *   guest's memory, state in a directory, both gone with the sandbox — while the
+ *   platform's own queue table is never read. The trace is one `console.error` in
+ *   a guest's stderr, and what a tenant sees is a workflow that worked in the
+ *   studio and forgets everything in production.
+ *
+ *   It cannot be defaulted or derived: an origin learned from a request is the
+ *   CALLER's to write, and that middleware runs before any auth, so one
+ *   unauthenticated request would decide the URL baked into the next sandbox this
+ *   replica spawns — for any tenant (`rememberPublicOrigin`).
+ */
+export const PLATFORM_TIER_ENV = [
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "AAI_PUBLIC_ORIGIN",
+] as const;
+
+/**
  * Whether platform state lives in Supabase — the one question every STORE
  * selection asks (`service-config.ts`), and the one auth answers too.
  *

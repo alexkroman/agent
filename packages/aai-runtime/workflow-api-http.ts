@@ -292,13 +292,59 @@ export function isInsufficientResources(err: unknown): boolean {
 }
 
 /**
+ * Is `err` the guest's own FILESYSTEM being full?
+ *
+ * `ENOSPC`, and it is not the database's `53` class: the local workflow world
+ * keeps run state in a directory and the local upload store keeps an upload's
+ * bytes beside it, so a guest with no `DATABASE_URL` writes both to a disk that
+ * is a few gigabytes and has no cleanup.
+ *
+ * ## Why this needs naming rather than falling through to a 500
+ *
+ * Observed on a dev sandbox transcribing uploaded audio: every write raised
+ * `ENOSPC`, the DevKit's local queue retried each message
+ * (`Queue message failed (attempt 2, HTTP 500)`), the platform's forward saw the
+ * connection reset and answered `503 agent unavailable, retry shortly` — and the
+ * log filled with fifty identical lines naming a symptom nobody could act on.
+ * Every layer read a full disk as transient. None of them is: retrying a write
+ * that failed for want of space fails again, and the run only makes progress if
+ * something outside the process frees bytes.
+ *
+ * So the status is **507 Insufficient Storage** with no `Retry-After`. 507 is
+ * the one status that means exactly this, and omitting `Retry-After` is the
+ * signal — the 503 beside it carries `"1"` because that condition clears on its
+ * own, and this one does not.
+ *
+ * Same `cause` walk as {@link isInsufficientResources}, and for the same reason:
+ * the error arrives wrapped by the DevKit's world, so the `code` is rarely on
+ * the value that was thrown.
+ */
+export function isDiskFull(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (isRecord(cur) && !seen.has(cur)) {
+    seen.add(cur);
+    // `ENOSPC` exactly, never a prefix: `errno`/`code` are a closed vocabulary
+    // and a `startsWith` would also match a hypothetical `ENOSPCFOO`.
+    if (cur.code === "ENOSPC") return true;
+    cur = cur.cause;
+  }
+  return false;
+}
+
+/**
  * Map a thrown value to a workflow-API status, or `false` to let it be a 500.
  *
  * Here rather than inline in `createWorkflowApi`'s `onError` because it is a
- * TABLE — two entries today and the shape invites more — and because both
- * entries are about the same distinction: a caller has to tell "my request was
- * wrong", "come back shortly" and "the agent is broken" apart, and only the last
- * is worth paging anyone about.
+ * TABLE — three entries now — and because they are about one distinction: a
+ * caller has to tell "my request was wrong", "come back shortly", "come back
+ * when someone has freed space" and "the agent is broken" apart, and only the
+ * last is worth paging anyone about.
+ *
+ * ORDER matters between the two 5xx entries. A full disk is checked FIRST
+ * because it is the more specific condition and the only one that must not be
+ * retried; the database-capacity 503 below it says "retry shortly" and would be
+ * wrong advice for a disk.
  */
 export function workflowApiErrorStatus(
   err: unknown,
@@ -306,6 +352,19 @@ export function workflowApiErrorStatus(
   if (err instanceof BodyTooLargeError) {
     // 413, not 400 or 500: the request was well-formed and too big.
     return { status: 413, error: err.message };
+  }
+  if (isDiskFull(err)) {
+    // 507, and NO `Retry-After` — see `isDiskFull`. Every layer above this used
+    // to read a full disk as transient and retry it, which is how one sandbox
+    // produced fifty identical log lines and no progress.
+    return {
+      status: 507,
+      error:
+        "the agent's sandbox has no disk space left. This agent keeps workflow " +
+        "runs and uploads on local disk because it has no DATABASE_URL; restart " +
+        "it for a fresh sandbox, or set a DATABASE_URL secret so they are not " +
+        "stored there at all.",
+    };
   }
   if (isInsufficientResources(err)) {
     // 503, not 500: the request was fine and the DATABASE has no room.

@@ -11,7 +11,13 @@ import { randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
-import { assertServiceRoleKey, hasPlatformDb, isLocalDev, requireEnv } from "./_boot.ts";
+import {
+  assertServiceRoleKey,
+  hasPlatformDb,
+  isLocalDev,
+  PLATFORM_TIER_ENV,
+  requireEnv,
+} from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
 import { createBundleStore } from "./bundle-store.ts";
@@ -255,7 +261,11 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // no Realtime credential is a server that never invalidates a resident sandbox
   // on redeploy and never pushes studio SSE, and BOTH of those failures are
   // silent (see realtime-events.ts on the channel that rejoins forever).
-  const realtime = requireEnv(env, ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]);
+  // ONE list, in `_boot.ts` beside `hasPlatformDb` — which is where the two-tier
+  // rule is argued — so the policy is testable without opening a pool, and so a
+  // fourth requirement is one edit rather than a third call here. Its doc carries
+  // why each of the three fails silently when absent.
+  const realtime = requireEnv(env, PLATFORM_TIER_ENV);
   bootstrapPlatformDb(exec, env);
   // The budget in `MAX_PLATFORM_DB_CONNECTIONS` is a claim about provisioned
   // hardware; this is the one place holding a connection to check it against.
