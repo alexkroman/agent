@@ -184,6 +184,10 @@ export default agent({
                                              // (there is no `tools` field — a tool is a FILE;
                                              //  see "A file in tools/ IS a tool")
   maxSteps?: number;                         // default: 10 — max tool calls per turn
+  temperature?: number;                      // sampling temperature for the agent's OWN model calls
+                                             // (pipeline and text). Unset = the model's default; some
+                                             // models ignore it and warn. S2S REFUSES it — the model
+                                             // runs in the provider's service and never sees this.
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)

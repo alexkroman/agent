@@ -21,6 +21,7 @@ const AgentConfigSchema: z.ZodObject<{
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
+    temperature: z.ZodOptional<z.ZodNumber>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";

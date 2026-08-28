@@ -61,8 +61,8 @@
     "dropped": {}
   },
   "text": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [2, 3],
     "dropped": {
       "1": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
     }

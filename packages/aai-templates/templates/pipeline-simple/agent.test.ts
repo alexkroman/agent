@@ -1,3 +1,4 @@
+import { agent } from "@alexkroman1/aai";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s, openaiS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt, deepgramStt, elevenLabsStt, sonioxStt } from "@alexkroman1/aai/stt";
@@ -57,7 +58,7 @@ describe("swapping any other stage", () => {
       [elevenLabsStt(), "elevenlabs"],
       [sonioxStt({ languages: ["en", "es"] }), "soniox"],
     ] as const) {
-      const config = toAgentConfig({ name: "Line", stt });
+      const config = toAgentConfig(agent({ name: "Line", stt }));
       expect(config.stt?.kind).toBe(kind);
       // Whatever the STT stage is, the two it does not touch still default.
       expect(config.llm?.kind).toBe("assemblyai");
@@ -71,7 +72,7 @@ describe("swapping any other stage", () => {
       [cartesiaTts(), "cartesia"],
       [rimeTts(), "rime"],
     ] as const) {
-      expect(toAgentConfig({ name: "Line", tts }).tts?.kind).toBe(kind);
+      expect(toAgentConfig(agent({ name: "Line", tts })).tts?.kind).toBe(kind);
     }
     // A voice outside the catalog still compiles — it may be one shipped after
     // this release — and `agentConfigWarnings` is what says so. See its doc.
@@ -83,7 +84,7 @@ describe("swapping any other stage", () => {
       [assemblyAIS2s(), "assemblyai"],
       [openaiS2s({ voice: "alloy" }), "openai-realtime"],
     ] as const) {
-      const config = toAgentConfig({ name: "Line", s2s });
+      const config = toAgentConfig(agent({ name: "Line", s2s }));
       expect(config.s2s?.kind).toBe(kind);
       expect(config.mode).toBe("s2s");
       // No cascade is filled in: speech-to-speech has no separate STT or TTS,
@@ -93,9 +94,12 @@ describe("swapping any other stage", () => {
     }
   });
 
-  test("mixing S2S with a pipeline stage is refused, by the config and by the type", () => {
-    expect(() =>
-      toAgentConfig({ name: "Line", s2s: assemblyAIS2s(), tts: cartesiaTts() }),
-    ).toThrow();
+  test("mixing S2S with a pipeline stage is refused, by the type AND by the config", () => {
+    // The type refuses it outright: `agent({ s2s, tts })` does not compile, which
+    // is why this reaches the runtime rule by spreading instead. Both halves
+    // matter — the second is what catches a raw `export default {...}` that
+    // never went through `agent()`.
+    const s2sAgent = agent({ name: "Line", s2s: assemblyAIS2s() });
+    expect(() => toAgentConfig({ ...s2sAgent, tts: cartesiaTts() })).toThrow();
   });
 });

@@ -657,6 +657,7 @@ export interface TextTurnOptions {
         steps: readonly StepResult<ToolSet>[];
     }) => boolean | PromiseLike<boolean>)[];
     system?: string;
+    temperature?: number;
     toolChoice?: ToolChoice;
 }
 

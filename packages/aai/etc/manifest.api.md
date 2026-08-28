@@ -17,6 +17,7 @@ export const AgentConfigSchema: z.ZodObject<{
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
+    temperature: z.ZodOptional<z.ZodNumber>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -106,6 +107,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
+    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -124,7 +126,7 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @internal
+// @public (undocumented)
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
 // @internal

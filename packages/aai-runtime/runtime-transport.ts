@@ -166,6 +166,7 @@ export function createTransportFactory(
       ttsSampleRate: s2sConfig.outputSampleRate,
       maxSteps: agentConfig.maxSteps,
       toolChoice: agentConfig.toolChoice,
+      temperature: agentConfig.temperature,
       ...omitUndefined({ sttPrompt: agentConfig.sttPrompt }),
       silenceTimeoutMs: agentConfig.silenceTimeoutMs,
       silencePrompt: agentConfig.silencePrompt,

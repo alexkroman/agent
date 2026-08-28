@@ -198,6 +198,32 @@ export type PipelineTuning = {
  *
  * @internal
  */
+/**
+ * `temperature` is a knob on a model THIS SDK calls, so an S2S agent may not set it.
+ *
+ * Not part of {@link PipelineVoiceTuning}: it is not voice tuning, and a TEXT
+ * agent has every reason to set it — a booking desk and a game master want
+ * different values, and until now neither could say so. The main conversational
+ * loop took no sampling parameter at all while `ctx.generate` and `subagent()`
+ * both did.
+ *
+ * Rejected rather than ignored for S2S because the model runs inside the
+ * provider's own service there, so nothing in this runtime would carry the
+ * value — and a setting that is accepted and quietly dropped is the failure
+ * this config layer exists to prevent. An S2S agent that wants it sets it on
+ * the `s2s` descriptor, where the provider's own options live.
+ *
+ * @internal
+ */
+export function assertSamplingScope(mode: SessionMode, temperature: number | undefined): void {
+  if (temperature === undefined || mode !== "s2s") return;
+  throw new Error(
+    "temperature has no effect in s2s mode — the model runs inside the provider's service, " +
+      "so this runtime never sees the request. Set it on the `s2s` descriptor if the provider " +
+      "supports one, or remove it.",
+  );
+}
+
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
   if (mode === "pipeline") return;
   for (const key of PIPELINE_ONLY_TUNING_FIELDS) {

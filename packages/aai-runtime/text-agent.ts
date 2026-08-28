@@ -144,6 +144,8 @@ export interface TextTurnOptions {
   system?: string;
   /** Overrides the agent's `maxSteps` for this turn. */
   maxSteps?: number;
+  /** Overrides the agent's `temperature` for this turn. */
+  temperature?: number;
   /** Overrides the agent's `toolChoice` for this turn. */
   toolChoice?: ToolChoice;
   /**
@@ -343,6 +345,9 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
         messages: turn.messages,
         tools: turnTools,
         toolChoice: turn.toolChoice ?? agent.toolChoice ?? "auto",
+        // Only when set — some models ignore it and warn. Per-turn beats the
+        // agent's own, the way `maxSteps` and `toolChoice` above already do.
+        ...omitUndefined({ temperature: turn.temperature ?? agent.temperature }),
         // `maxSteps` bounds TOOL-CALLING steps; the budget is one larger so
         // the forced answer step has somewhere to run. Caller conditions are
         // alternatives, not replacements — a wall-clock deadline must be able

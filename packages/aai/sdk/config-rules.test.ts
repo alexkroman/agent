@@ -528,3 +528,30 @@ test("the warning fires on assemblyAIPipeline({ region: 'eu' }) itself", () => {
   const warnings = agentConfigWarnings(assemblyAIPipeline({ region: "eu" }));
   expect(warnings.join("\n")).toContain("outside the EU");
 });
+
+describe("temperature scope", () => {
+  // The main conversational loop took no sampling parameter at all, while
+  // `ctx.generate` and `subagent()` both did — so the one model call that does
+  // almost all the talking was the one an author could not tune.
+  test("a pipeline agent may set it, and it reaches the config", () => {
+    expect(rawConfig({ name: "Line", temperature: 0.2 }).temperature).toBe(0.2);
+  });
+
+  test("a text agent may set it — nothing about it is voice-specific", () => {
+    expect(rawConfig({ name: "Docs", text: true, temperature: 0.9 }).temperature).toBe(0.9);
+  });
+
+  test("an S2S agent is REFUSED, rather than having it silently dropped", () => {
+    expect(() => rawConfig({ name: "Line", s2s: assemblyAIS2s(), temperature: 0.2 })).toThrow(
+      /no effect in s2s mode/,
+    );
+  });
+
+  test("out of range is refused by the schema", () => {
+    expect(() => rawConfig({ name: "Line", temperature: 5 })).toThrow(/configuration is invalid/);
+  });
+
+  test("unset stays unset — the model's own default applies", () => {
+    expect(rawConfig({ name: "Line" }).temperature).toBeUndefined();
+  });
+});

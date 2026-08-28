@@ -17,7 +17,12 @@ import { z } from "zod";
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
-import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
+import {
+  assertPipelineTuning,
+  assertProviderTriple,
+  assertSamplingScope,
+  assertSilencePolicy,
+} from "./config-rules.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
@@ -108,6 +113,9 @@ export const AgentConfigSchema = z.object({
   greeting: z.string().default(DEFAULT_GREETING),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().int().positive().optional(),
+  // Sampling temperature for the agent's OWN model calls (pipeline and text
+  // modes). `assertSamplingScope` rejects it for s2s rather than dropping it.
+  temperature: z.number().min(0).max(2).optional(),
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
@@ -218,6 +226,7 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s, src.text);
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
+  assertSamplingScope(mode, src.temperature);
   // Runs inside the generated bundle entry too, so the studio's test_agent
   // surfaces a bad TTS language as a load error rather than shipping a mute agent.
   assertAssemblyAITtsLanguage(src.tts);
