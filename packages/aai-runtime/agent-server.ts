@@ -39,8 +39,8 @@
  * Import via `@alexkroman1/aai-runtime`. See `examples/self-hosted-server`.
  */
 
-import type { Db } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
+import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
 import { type AgentServer, createServer, type PassthroughServerOptions } from "./server.ts";

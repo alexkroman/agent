@@ -59,7 +59,6 @@ export {
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
-  createUnusedDb,
   deployedAgent,
   ok,
   okPosition,

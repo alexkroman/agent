@@ -3,7 +3,7 @@
 // tool plumbing (including sandbox mode), and executeToolCall. Session
 // lifecycle/routing specs live in runtime-lifecycle.test.ts.
 
-import type { Db, ToolDef } from "@alexkroman1/aai";
+import type { ToolDef } from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
 import {
   ASSEMBLYAI_S2S_SAMPLE_RATE,
@@ -14,7 +14,6 @@ import {
   DEFAULT_BUILTIN_TOOLS,
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
-  STORAGE_DISABLED_MESSAGE,
 } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, anthropicLlm } from "@alexkroman1/aai/llm";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
@@ -88,24 +87,9 @@ describe("createRuntime", () => {
     expect(await exec.executeTool("add", { a: 3, b: 4 }, "s1", [])).toBe("7");
   });
 
-  test("executeTool passes db to tool context", async () => {
-    const db: Db = {
-      query: async <T>() => [{ value: "value1" }] as T[],
-    };
-    const agent = makeAgent({
-      tools: {
-        read_db: {
-          description: "Read from the database",
-          execute: async (_args, ctx) => {
-            const rows = await ctx.db.query<{ value: string }>("select value from t");
-            return rows[0]?.value ?? "missing";
-          },
-        },
-      },
-    });
-    const exec = createRuntime({ agent, env: {}, db });
-    expect(await exec.executeTool("read_db", {}, "s1", [])).toBe("value1");
-  });
+  // An "executeTool passes db to tool context" test stood here, running a tool
+  // that read rows through `ctx.db`. Gone with the field — the platform
+  // provisions no database and hands tool code none.
 
   // providerEnv exists so a self-hosted caller can feed shell-exported
   // credentials to the provider resolvers without agent code being able to
@@ -405,19 +389,9 @@ describe("executeToolCall", () => {
     );
   });
 
-  test("throws the no-database guidance when db is not provided and a tool uses it", async () => {
-    const tool: ToolDef = {
-      description: "Access the database",
-      execute: async (_args, ctx) => {
-        await ctx.db.query("select 1");
-        return "ok";
-      },
-    };
-    const logger = makeLogger();
-    const result = await executeToolCall("dbTool", {}, { tool, env: {}, logger });
-    expect(result).toContain("error");
-    expect(result).toContain(STORAGE_DISABLED_MESSAGE);
-  });
+  // A "throws the no-database guidance when db is not provided" test stood here.
+  // `ctx.db` is gone, so there is no guidance to throw: a tool reaching for it
+  // now gets a `TypeError`, which `tool-executor.test.ts` pins as the contract.
 
   test("a sessionless call gets its own detached slot store", async () => {
     // Detached rather than shared: two such calls must not read each other's

@@ -43,8 +43,14 @@ describe("ToolDef type inference", () => {
     expectTypeOf<Ctx>().toMatchTypeOf<ToolContext>();
   });
 
-  test("ToolContext provides db, env, messages", () => {
-    expectTypeOf<ToolContext>().toHaveProperty("db");
+  test("ToolContext provides env and messages, and NO db", () => {
+    // `db` was here. It is gone with `ctx.db`, and the absence is pinned at the
+    // type level so a tool written against the old API fails to COMPILE rather
+    // than at run time. `.not` rather than an expect-error suppression comment:
+    // `check:hatches` counts those (and counts them in PROSE too, which is how
+    // this note came to be worded around it), and a suppression would also pass
+    // for the wrong reason if the line stopped erroring for an unrelated cause.
+    expectTypeOf<ToolContext>().not.toHaveProperty("db");
     expectTypeOf<ToolContext>().toHaveProperty("env");
     expectTypeOf<ToolContext>().toHaveProperty("messages");
     expectTypeOf<ToolContext["messages"]>().toEqualTypeOf<readonly Message[]>();

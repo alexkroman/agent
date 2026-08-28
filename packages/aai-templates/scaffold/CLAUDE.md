@@ -371,9 +371,10 @@ everything in flight is lost when that process goes away. That is the honest
 tradeoff, and it is what
 lets you build a workflow app before provisioning anything.
 
-Two things do need the database whatever the run does: `ctx.db`, and a workflow
-**upload** — an upload's record is a row, so `api.upload` and the file-taking
-form hooks refuse by name until storage is on (see "Database API" below).
+One thing does need a database whatever the run does: a workflow **upload**. An
+upload's record is a row, so `api.upload` and the file-taking form hooks refuse
+by name without a `DATABASE_URL`. (`ctx.db` was the other; there is no `ctx.db`
+— see "Persisting data" below.)
 
 ### Workflow bodies live in `workflows/`
 
@@ -420,7 +421,8 @@ warned about by `aai build` and `aai dev`, naming the file and the call:
   JSON-shaped and small. Put bytes in storage and pass the key.
 - **A step gets no tool context.** It is bundled and dispatched separately from
   the agent, so there is no `ctx` in one — see below for how it reaches the
-  agent's env and a model anyway. `ctx.db` has no step-side equivalent yet.
+  agent's env and a model anyway. A step reaches a database the same way a tool
+  does now — its own client, its own credential from `requireStepEnv`.
 
 ### A step's env, and calling a model from one
 
@@ -1067,7 +1069,6 @@ same way in `aai dev` and deployed.
 ctx.env: Readonly<Record<string, string>>     // secrets from .env / aai secret put
 ctx.slots: SlotStore                           // where sessionSlot() keeps this session's state —
                                                // reach for the slot, never this (see "Session state")
-ctx.db: Db                                     // SQL database you configure — needs DATABASE_URL (see Database section)
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
 ctx.send(event: string, data: unknown): void   // push custom event to browser client (silently dropped over 64 KB JSON)
@@ -1536,79 +1537,49 @@ that case — `slot.update`'s window is synchronous — so reach for the lock wh
 the thing being mutated is outside the session. `withLock` takes an optional
 acquire deadline and throws `KeyedLockTimeoutError` when it runs out.
 
-## Database API — `ctx.db`
+## Persisting data — bring your own client
 
-Persistent SQL storage scoped per app, backed by the app's own Postgres
-schema. Access via `ctx.db`:
+**There is no `ctx.db`.** It was a SQL handle on the tool context, backed first
+by a Postgres the platform provisioned per app and later by a `DATABASE_URL` an
+author set. The platform provisions no database, and no longer hands tool code
+one either.
 
-```ts no-check
-ctx.db.query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>
-```
-
-One parameterized statement per call, `$1, $2…` placeholders — never
-interpolate values into the SQL string. The rows come back as plain objects;
-`jsonb` columns are returned already parsed (no `JSON.parse` needed).
-A query returning more than 1000 rows throws — always bound reads with
-`LIMIT` (paginate with `LIMIT`/`OFFSET`).
-
-**`ctx.db` is a database YOU bring** — the platform provisions none — and
-accessing it throws until one is configured:
-
-- Deployed: set a `DATABASE_URL` secret (`aai secret put DATABASE_URL …`, or the
-  studio's Secrets pane), pointing at your own Postgres
-- `aai dev`: set `DATABASE_URL` in the project `.env`
-
-Both environments share one agent's secrets, so a preview and a published agent
-point at the same database unless you give them different values. That is worth
-knowing before you write to it from a preview.
-
-**A workflow UPLOAD needs one more thing locally: somewhere to put the bytes.**
-A deployed agent gets it from the platform; under `aai dev` the bytes go to a
-bucket you point it at, and the Supabase CLI prints the two values
-(`supabase start`, then `supabase status -o env`):
-
-```sh
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
-AAI_UPLOAD_STORAGE_URL=http://127.0.0.1:54321
-AAI_UPLOAD_STORAGE_KEY=<SERVICE_ROLE_KEY>
-AAI_UPLOAD_STORAGE_BUCKET=blobs
-```
-
-`blobs`, not `uploads`: that is the one bucket the local stack declares
-(`supabase/config.toml`, applied by `supabase start`), and uploads land under an
-`uploads/` PREFIX inside it — the same layout production uses beside its
-`blobs/<sha256>` deploy artifacts. Nothing creates a bucket for you.
-
-`.env.example` in a scaffolded project carries this block commented out.
-
-Without both halves `api.upload(file)` fails naming the one that is missing —
-never quietly into a directory, which is what it used to do and then lose by the
-time a resumed run read it.
-
-Create tables lazily from tool code and upsert with `on conflict`:
+So a tool that needs to persist anything uses a client of its own:
 
 ```ts no-check
-await ctx.db.query(`create table if not exists app_state (
-  key text primary key,
-  value jsonb not null,
-  updated_at timestamptz not null default now()
-)`);
-await ctx.db.query(
-  "insert into app_state (key, value, updated_at) values ($1, $2::jsonb, now()) " +
-    "on conflict (key) do update set value = excluded.value, updated_at = now()",
-  ["user:123", JSON.stringify({ name: "Alex" })],
-);
-const rows = await ctx.db.query<{ value: { name: string } }>(
-  "select value from app_state where key = $1",
-  ["user:123"],
-);
+// tools/save_note.ts — a driver you added, a credential you set.
+import { tool } from "@alexkroman1/aai";
+import postgres from "postgres";
+import { z } from "zod";
+
+// Module scope, so one pool serves every call in this sandbox.
+const sql = postgres(process.env.DATABASE_URL ?? "");
+
+export default tool({
+  description: "Save a note.",
+  inputSchema: z.object({ body: z.string() }),
+  execute: async ({ body }) => {
+    await sql`insert into notes (body) values (${body})`;
+    return "saved";
+  },
+});
 ```
 
-Use `ctx.db` for data that must outlive the session (saves, filed records,
-user profiles). For scratch that only the current session needs, prefer
-a `sessionSlot` (per-session state, stored when the app has a database); the
-`remember`/`recall` builtins likewise remain for session-scoped notes the
-LLM manages itself.
+Add the driver to your project's `package.json` and the URL with `aai secret put
+DATABASE_URL …` (or in `.env` under `aai dev`). Nothing here is privileged — an
+HTTP API, a provider SDK or a hosted KV works the same way.
+
+**What the platform DOES persist for you**, with no setup:
+
+- **`sessionSlot`** — this session's state, durable across a crash or a
+  redeploy. Reach for it before reaching for a database; most agents need
+  nothing else.
+- **Durable workflow runs** — a run survives the sandbox recycling, every
+  redeploy, and a multi-day `sleep()`.
+
+Those two cover almost everything an agent wants. A database is for data that
+must outlive a session AND be queryable: a ledger, filed records, cross-session
+saves.
 
 ## Custom UI — `client()`
 
@@ -1954,14 +1925,13 @@ Common mistakes when working in aai projects:
   platform's Modal/Deno sandbox; the self-hosted `aai dev` server has no
   sandbox, so there `run_code` refuses with an error result. Deploy to test
   it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
-- **`ctx.db` throws until you configure a `DATABASE_URL`.** The platform
-  provisions no database: set the secret (deployed) or the `.env` value
-  (`aai dev`) before shipping tools that persist data. A deployed agent reads
-  its connection string when its sandbox is BUILT, so a newly set secret
-  reaches it on the next deploy rather than immediately.
-- **The database is per-app.** Rows are shared by every session of one
-  deployment — key them yourself if sessions must not see each other's data
-  (or keep session-scoped data in a `sessionSlot`).
+- **There is no `ctx.db`.** The platform provisions no database and hands tool
+  code none, so a tool that persists brings its own client — see "Persisting
+  data". Two consequences worth knowing before you do: a deployed agent reads a
+  secret when its sandbox is BUILT, so a newly set `DATABASE_URL` reaches it on
+  the next deploy rather than immediately; and a database you bring is shared by
+  every session of the deployment, so key rows yourself if sessions must not see
+  each other's data (or keep session-scoped data in a `sessionSlot`).
 - **Rime language codes are ISO 639-3** (3-letter, e.g. `"eng"`), not
   ISO 639-1 (`"en"`).
 

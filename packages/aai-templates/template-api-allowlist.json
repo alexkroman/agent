@@ -321,7 +321,6 @@
   "@alexkroman1/aai/testing": [
     "createProgressStream",
     "createStubWorkflows",
-    "createUnusedDb",
     "deployedAgent",
     "ProjectFiles",
     "RunSnapshotOverrides",

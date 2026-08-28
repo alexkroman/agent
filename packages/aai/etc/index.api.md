@@ -109,11 +109,6 @@ export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "
 export function createKeyedLock(): KeyedLock;
 
 // @public
-export type Db = {
-    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
-};
-
-// @public
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer E)[] ? readonly DeepReadonly<E>[] : T extends object ? {
     readonly [K in keyof T]: DeepReadonly<T[K]>;
 } : T;
@@ -454,7 +449,6 @@ type SessionEvent = z.infer<typeof SessionEventSchema>;
 export type SessionEventContext = {
     sessionId: string;
     env: Readonly<Record<string, string>>;
-    db: Db;
     slots: SlotStore;
 };
 
@@ -820,7 +814,6 @@ export type ToolChoice = "auto" | "required" | "none" | {
 export type ToolContext = {
     env: Readonly<Record<string, string>>;
     slots: SlotStore;
-    db: Db;
     generate: GenerateFn;
     delegate: DelegateFn;
     messages: readonly Message[];

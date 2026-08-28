@@ -1,7 +1,12 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import type { AgentDef, Db, ToolDef } from "../index.ts";
+import type { AgentDef, ToolDef } from "../index.ts";
 import { agent, tool } from "../index.ts";
+// `Db` moved OFF the root when `ctx.db` went away — it is still the shape the
+// runtime's own Postgres consumers take (upload records, session state, the
+// world's postgres arm), so its contract still matters; it is just no longer an
+// authoring type. See `sdk/db.ts`.
+import type { Db } from "../internal.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "./constants.ts";
 import { withTools } from "./tool-registry.ts";
@@ -72,6 +77,8 @@ describe("type contracts", () => {
   });
 
   test("Db.query returns Promise<Record<string, unknown>[]> by default", () => {
+    // Still pinned, and deliberately: an INTERNAL type with three consumers across
+    // two packages is exactly the kind whose signature drifts unnoticed.
     const query: Db["query"] = () => Promise.resolve([]);
     expectTypeOf(query("select 1")).toEqualTypeOf<Promise<Record<string, unknown>[]>>();
   });

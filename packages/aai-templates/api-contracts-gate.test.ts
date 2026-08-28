@@ -362,10 +362,15 @@ describe("API-EXPORTS.json", () => {
     // The reports include types a public signature mentions but does not export
     // (`includeForgottenExports`). Those are reviewable in the report and must
     // NOT appear here, or the list stops meaning "what a consumer can import".
-    // `Db` is exported from the root and merely referenced by `/testing`.
-    expect(surface["@alexkroman1/aai"]).toContain("Db");
+    // `Db` was the original example here — exported from the root and merely
+    // REFERENCED by `/testing`. It is off the root now (it went to `/internal`
+    // with `ctx.db`), so it appears on neither, which is a weaker case than the
+    // one this spec needs: the assertion is about a name that IS exported
+    // somewhere not leaking into a subpath that only mentions it.
+    expect(surface["@alexkroman1/aai"]).not.toContain("Db");
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("Db");
-    // Same for `WorkflowClient`, which `createStubWorkflows` takes and returns.
+    // `WorkflowClient` is the live case, which `createStubWorkflows` takes and
+    // returns.
     expect(surface["@alexkroman1/aai"]).toContain("WorkflowClient");
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("WorkflowClient");
     // …and for `GenerateFn` and `ToolDef`, which the fakes added in epoch 9 take
@@ -428,7 +433,6 @@ describe("API-EXPORTS.json", () => {
       "createRunSnapshot",
       "createStubWorkflows",
       "createToolContext",
-      "createUnusedDb",
       "deployedAgent",
       "ok",
       "okPosition",

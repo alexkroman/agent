@@ -1,9 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { Db, SessionEventHandlers, SlotStore } from "@alexkroman1/aai";
+import type { SessionEventHandlers, SlotStore } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
-import { createUnusedDb } from "@alexkroman1/aai/testing";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
@@ -19,7 +18,6 @@ const SID = "s-1";
  * The SDK's own published helper rather than a cast object: it REJECTS naming
  * itself, so a hook that unexpectedly queried would say so.
  */
-const UNUSED_DB: Db = createUnusedDb();
 
 /**
  * A hook context's `slots`, per case.
@@ -30,12 +28,7 @@ const UNUSED_DB: Db = createUnusedDb();
  */
 const slotsFor = () => createDetachedSlotStore();
 
-function setup(opts?: {
-  handlers?: SessionEventHandlers;
-  db?: () => Db;
-  slots?: SlotStore;
-  commit?: () => void;
-}) {
+function setup(opts?: { handlers?: SessionEventHandlers; slots?: SlotStore; commit?: () => void }) {
   const events: SessionEvent[] = [];
   const client: ClientSink = {
     open: true,
@@ -57,7 +50,6 @@ function setup(opts?: {
             handlers: opts.handlers,
             env: { MY_KEY: "v" },
             slots,
-            db: opts.db ?? (() => UNUSED_DB),
           },
         }
       : {}),
@@ -99,7 +91,6 @@ describe("session emitter", () => {
         handlers: { "*": (e) => seen.push(e.type) },
         env: {},
         slots: slotsFor(),
-        db: () => UNUSED_DB,
       },
     });
 
@@ -167,7 +158,6 @@ describe("session event hooks", () => {
         handlers: { "*": () => order.push("hook") },
         env: {},
         slots: slotsFor(),
-        db: () => UNUSED_DB,
       },
     });
 
@@ -217,17 +207,24 @@ describe("session event hooks", () => {
     );
   });
 
-  test("the context carries the session id, the agent env and the db", () => {
-    const seen: { sessionId: string; env: unknown; db: unknown }[] = [];
+  test("the context carries the session id and the agent env, and NO db", () => {
+    // `db` was the third field. It went with `ctx.db` — the platform provides no
+    // database, so a hook that persists brings its own client. Its absence is
+    // asserted rather than just untested: a hook written against the old shape has
+    // to fail loudly.
+    const seen: { sessionId: string; env: unknown; keys: string[] }[] = [];
     const { emitter } = setup({
       handlers: {
-        "*": (_e, ctx) => seen.push({ sessionId: ctx.sessionId, env: ctx.env, db: ctx.db }),
+        "*": (_e, ctx) =>
+          seen.push({ sessionId: ctx.sessionId, env: ctx.env, keys: Object.keys(ctx) }),
       },
     });
 
     emitter.emit({ type: "speech.started" });
 
-    expect(seen).toEqual([{ sessionId: SID, env: { MY_KEY: "v" }, db: UNUSED_DB }]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ sessionId: SID, env: { MY_KEY: "v" } });
+    expect(seen[0]?.keys).not.toContain("db");
   });
 
   test("the id is stable, so a handler can key on it", () => {
@@ -241,47 +238,15 @@ describe("session event hooks", () => {
     expect(ids).toEqual([events[0]?.meta.id]);
   });
 
-  test("a hook on an agent with NO storage still runs", () => {
-    const seen: string[] = [];
-    const { emitter } = setup({
-      handlers: { "*": (e) => seen.push(e.type) },
-      db: () => {
-        throw new Error("Storage is not enabled for this app");
-      },
-    });
+  // A "hook on an agent with NO storage still runs" test stood here, and what it
+  // protected was real: built eagerly, a handler on a storage-less agent did not
+  // run at all, which was backwards since hooks are useful without storage (a log
+  // line, a metric). With `db` off the context there is nothing left to resolve
+  // eagerly, so the failure is unreachable rather than merely untested.
 
-    emitter.emit({ type: "speech.started" });
-
-    // `ctx.db` is a getter, so a handler that never reads it never resolves it.
-    // Built eagerly, this handler did not run at all — and hooks are useful
-    // without storage (a log line, a metric), so that was exactly backwards.
-    expect(seen).toEqual(["speech.started"]);
-  });
-
-  test("a hook that READS ctx.db without storage fails alone, non-fatally", () => {
-    const seen: string[] = [];
-    const { emitter, logger } = setup({
-      handlers: {
-        "speech.started": (_e, ctx) => {
-          void ctx.db;
-        },
-        "*": (e) => seen.push(e.type),
-      },
-      db: () => {
-        throw new Error("Storage is not enabled for this app");
-      },
-    });
-
-    expect(() => emitter.emit({ type: "speech.started" })).not.toThrow();
-
-    // The throw is the enablement guidance, caught per handler — so the other
-    // handler is untouched.
-    expect(seen).toEqual(["speech.started"]);
-    expect(logger.warn).toHaveBeenCalledWith(
-      "Session event hook failed",
-      expect.objectContaining({ type: "speech.started" }),
-    );
-  });
+  // A "hook that READS ctx.db without storage fails alone" test stood here. The
+  // general property — one handler throwing does not take the others down — is
+  // covered by the throwing-handler test elsewhere in this file.
 
   test("a hook that writes a slot gets one commit; one that only reads gets none", () => {
     const commit = vi.fn();
@@ -392,20 +357,8 @@ describe("session event hooks", () => {
     expect(slots.read("late")).toBe(2);
   });
 
-  test("an agent that declares no handlers pays nothing", () => {
-    const db = vi.fn(() => UNUSED_DB);
-    const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
-    const emitter = createSessionEmitter({
-      sessionId: SID,
-      client: { open: true, event: vi.fn(), playAudioChunk: vi.fn() },
-      stream,
-      hooks: { env: {}, slots: slotsFor(), db },
-    });
-
-    emitter.emit({ type: "speech.started" });
-
-    // The thunk is why: an agent with no hooks must not resolve a database on
-    // every event it emits.
-    expect(db).not.toHaveBeenCalled();
-  });
+  // An "agent that declares no handlers pays nothing" test stood here, proving
+  // the `db` THUNK was never resolved without hooks. Both the thunk and `db` are
+  // gone with `ctx.db`; there is nothing left on the hook deps whose resolution
+  // costs anything, so the property it protected cannot regress.
 });

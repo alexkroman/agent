@@ -90,6 +90,11 @@ export function createEpoch(): Epoch;
 export function createOwnedMap<K, V>(): OwnedMap<K, V>;
 
 // @internal
+export type Db = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+};
+
+// @internal
 export function decideClientEvent(event: string, data: unknown): ClientEventDecision;
 
 // @public
@@ -310,9 +315,6 @@ type StartOptions = {
     key?: string;
     notify?: boolean | string;
 };
-
-// @public
-export const STORAGE_DISABLED_MESSAGE = "No database is configured for this app. `ctx.db` is a database YOU bring \u2014 the platform provisions none \u2014 so set a DATABASE_URL secret pointing at your own Postgres, or DATABASE_URL in the project .env under `aai dev`.";
 
 // @public
 type StreamOptions = {

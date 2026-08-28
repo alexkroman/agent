@@ -36,7 +36,7 @@
  * this file only asserts that a stop schedules (or declines to schedule) one.
  */
 
-import type { Db } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeClientSink, makeEmitter, makeLogger, makeMockCore } from "./_test-utils.ts";
 import {

@@ -49,7 +49,6 @@
  */
 
 import type {
-  Db,
   SessionEventContext,
   SessionEventHandler,
   SessionEventHandlers,
@@ -75,12 +74,6 @@ export type SessionEventHookDeps = {
   handlers?: SessionEventHandlers | undefined;
   /** `ctx.env` — the agent-visible env, never `providerEnv`. */
   env: Readonly<Record<string, string>>;
-  /**
-   * `ctx.db`. A THUNK because resolving it is what throws the enablement
-   * guidance when storage is off, and an agent with no hooks must not pay that
-   * for every event it emits.
-   */
-  db: () => Db;
   /**
    * `ctx.slots` — this session's view of the state store, the same object a tool
    * call's context carries. Not a thunk: it is a plain cache view, so resolving
@@ -193,29 +186,23 @@ function runHooks(
  * The hook deps for one agent, or undefined when it declared no handlers.
  *
  * Here rather than at the call site because every part of it is this module's
- * contract — including the one decision that is easy to get wrong: `db` is a
- * THUNK, so an agent with no handlers never resolves a database and one WITHOUT
- * storage still gets its hooks (see `context`).
+ * contract. It used to carry a `db` THUNK — deferred so an agent with no handlers
+ * never resolved a database and one without storage still got its hooks — and that
+ * went with `ctx.db`: the platform provides no database, so a hook that persists
+ * brings its own client.
  *
  * @internal
  */
 export function hookDepsFor(opts: {
   handlers: SessionEventHandlers | undefined;
   env: Readonly<Record<string, string>>;
-  db: Db | undefined;
   slots: SlotStore;
-  /** Thrown when a handler reads `ctx.db` on an agent that has no storage. */
-  storageDisabledMessage: string;
 }): SessionEventHookDeps | undefined {
   if (!opts.handlers) return undefined;
   return {
     handlers: opts.handlers,
     env: opts.env,
     slots: opts.slots,
-    db: () => {
-      if (!opts.db) throw new Error(opts.storageDisabledMessage);
-      return opts.db;
-    },
   };
 }
 
@@ -279,11 +266,6 @@ export function createSessionEmitter(opts: {
     // The WATCHED view rather than `hooks.slots`, so the commit is paid by a
     // batch that wrote and by no other — see `watchWrites`.
     slots,
-    get db(): Db {
-      // By construction: `handlers` is only set when `hooks` is, and `runHooks`
-      // is the only caller.
-      return hooks ? hooks.db() : missingHookDeps();
-    },
   });
 
   function publish(body: SessionEventBody): SessionEvent {
@@ -317,15 +299,4 @@ export function createSessionEmitter(opts: {
   }
 
   return { emit: publish };
-}
-
-/**
- * The `db` a hook context reports when the emitter was built without hook deps.
- *
- * Unreachable — `context()` only resolves `db` when `hooks` is set — and a
- * thrower rather than a cast, so a future caller that reaches it gets a named
- * failure instead of `undefined` presenting as a database.
- */
-function missingHookDeps(): never {
-  throw new Error("Session event hooks were not configured for this session");
 }

@@ -6,7 +6,7 @@
  * AgentDef → tools → direct executor → db in tool context.
  */
 
-import type { AgentDef, Db } from "@alexkroman1/aai";
+import type { AgentDef } from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
@@ -34,55 +34,12 @@ describe("SDK integration: AgentDef → tool execution", () => {
     expect(result).toBe("Hello, Alice!");
   });
 
-  test("tool with db access works end-to-end", async () => {
-    const store = new Map<string, string>();
-    // Fake Db that speaks the one-method contract; injected the way the
-    // platform injects the app's real Postgres-backed Db.
-    const db: Db = {
-      query: async <T>(sql: string, params?: unknown[]): Promise<T[]> => {
-        const [key, value] = (params ?? []) as [string, string?];
-        if (sql.startsWith("insert")) {
-          store.set(key, value ?? "");
-          return [] as T[];
-        }
-        const found = store.get(key);
-        return (found === undefined ? [] : [{ value: found }]) as T[];
-      },
-    };
-    const agent: AgentDef = {
-      name: "db-agent",
-      systemPrompt: "Be helpful.",
-      greeting: "Hello!",
-      maxSteps: 5,
-      tools: {
-        save: {
-          description: "Save a value",
-          inputSchema: z.object({ key: z.string(), value: z.string() }),
-          execute: async ({ key, value }: { key: string; value: string }, ctx) => {
-            await ctx.db.query("insert into vals (key, value) values ($1, $2)", [key, value]);
-            return "saved";
-          },
-        },
-        load: {
-          description: "Load a value",
-          inputSchema: z.object({ key: z.string() }),
-          execute: async ({ key }: { key: string }, ctx) => {
-            const rows = await ctx.db.query<{ value: string }>(
-              "select value from vals where key = $1",
-              [key],
-            );
-            return rows[0]?.value ?? "not found";
-          },
-        },
-      },
-    };
-
-    const exec = createRuntime({ agent, env: { ASSEMBLYAI_API_KEY: "test" }, db });
-    await exec.executeTool("save", { key: "color", value: "blue" }, "s1", []);
-    const result = await exec.executeTool("load", { key: "color" }, "s1", []);
-    expect(result).toBe("blue");
-  });
-
+  // A "tool with db access works end-to-end" test stood here, injecting a fake
+  // `Db` the way the platform injected an app's real Postgres. `ctx.db` is gone:
+  // the platform provisions no database and no longer hands one to tool code, so
+  // an author who wants SQL brings their own client and credential. Nothing
+  // replaces it here — a tool calling somebody else's library is not this
+  // package's surface to integration-test.
   test("env vars are passed to tool context", async () => {
     const agent: AgentDef = {
       name: "env-agent",

@@ -7,9 +7,10 @@
  * and in-process self-hosted mode.
  */
 
-import type { AgentDef, Db, StateProjection, ToolDef } from "@alexkroman1/aai";
+import type { AgentDef, StateProjection, ToolDef } from "@alexkroman1/aai";
 import type { AgentEnv, OwnedMap, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
+import type { Db } from "@alexkroman1/aai/internal";
 import {
   clientEventDropMessage,
   DEFAULT_BUILTIN_TOOLS,
@@ -240,7 +241,7 @@ function setupSubagents(deps: ToolSetupDeps): SubagentRunner {
 
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
 function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): ToolSetup {
-  const { agent, opts, env, resolvedDb, workflows, notifier, logger } = deps;
+  const { agent, opts, env, workflows, notifier, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
   const subagents = setupSubagents(deps);
@@ -269,7 +270,6 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
         tool,
         env: frozenEnv,
         sessionId: sessionId ?? "",
-        db: resolvedDb,
         workflows: withNotify(workflows, notifier, sessionId),
         messages,
         generate,
@@ -294,7 +294,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
-  const { agent, opts, env, resolvedDb, workflows, notifier, logger, emitters, stateStore } = deps;
+  const { agent, opts, env, workflows, notifier, logger, emitters, stateStore } = deps;
   const builtinOpts = {
     ...omitUndefined({ fetch: opts.fetch }),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -393,9 +393,6 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         env: frozenEnv,
         slots: stateStore.viewFor(sid),
         sessionId: sid,
-        // db traffic is a TCP socket, not fetch, so the egress guard never
-        // sees it — no exemption wrapper needed.
-        db: resolvedDb,
         workflows: withNotify(workflows, notifier, sid),
         messages,
         generate,

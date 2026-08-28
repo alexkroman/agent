@@ -8,7 +8,6 @@ import { createDetachedSlotStore, rejectingWorkflows } from "@alexkroman1/aai/ho
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
-import { createUnusedDb } from "@alexkroman1/aai/testing";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { type Mock, vi } from "vitest";
@@ -91,7 +90,6 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     // instead of dying on a TypeError against an empty object. `as never` is
     // assignable to every position and stops reporting when `Db` grows a
     // method — the laundering idiom the escape-hatch ratchet now counts.
-    db: createUnusedDb(),
     generate: () => Promise.reject(new Error("generate not mocked")),
     delegate: () => Promise.reject(new Error("delegate not mocked")),
     messages: [],

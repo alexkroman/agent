@@ -1,9 +1,10 @@
 {
   "db": {
-    "current": 3,
-    "supported": [2, 3],
+    "current": 4,
+    "supported": [2, 4],
     "dropped": {
-      "1": "additive: CreatePostgresDbOptions gains optional connectTimeoutSeconds and queryTimeoutMs (network-partition query bound); backward-compatible, and aai-runtime has no external consumer to keep an epoch-1 template for"
+      "1": "additive: CreatePostgresDbOptions gains optional connectTimeoutSeconds and queryTimeoutMs (network-partition query bound); backward-compatible, and aai-runtime has no external consumer to keep an epoch-1 template for",
+      "3": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
     }
   },
   "eval": {
@@ -12,9 +13,11 @@
     "dropped": {}
   },
   "keys": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
+    }
   },
   "logging": {
     "current": 1,
@@ -27,17 +30,19 @@
     "dropped": {}
   },
   "runtime": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
     }
   },
   "server": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
     }
   },
   "session": {
@@ -56,9 +61,11 @@
     "dropped": {}
   },
   "text": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
+    }
   },
   "tools": {
     "current": 1,

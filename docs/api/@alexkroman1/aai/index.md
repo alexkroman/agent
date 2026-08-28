@@ -1273,10 +1273,12 @@ agent({
   name: "Audited",
   events: {
     "tool.called": (e, ctx) => {
-      void ctx.db.query("insert into audit (id, tool) values ($1, $2)", [
-        e.meta.id,
-        e.toolName,
-      ]);
+      // A hook gets `ctx.env` and `ctx.slots`, never a database — persist
+      // through a client of your own if you need to.
+      void fetch(`${ctx.env.AUDIT_URL}`, {
+        method: "POST",
+        body: JSON.stringify({ id: e.meta.id, tool: e.toolName }),
+      });
     },
     "*": (e) => console.log(e.meta.at, e.type),
   },
@@ -3796,59 +3798,6 @@ ones you want; `[]` and omitting the field mean the same thing.
 
 ***
 
-### Db
-
-```ts
-type Db = {
-  query: Promise<T[]>;
-};
-```
-
-SQL database handle available to tool `execute` code when storage is
-enabled for the app. Backed by the app's Supabase Postgres schema.
-
-#### Example
-
-```ts
-import type { ToolContext } from "@alexkroman1/aai";
-declare const ctx: ToolContext; // the context a tool's execute receives
-
-await ctx.db.query("insert into notes (body) values ($1)", ["hello"]);
-const rows = await ctx.db.query<{ body: string }>("select body from notes");
-```
-
-#### Methods
-
-##### query()
-
-```ts
-query<T>(sql: string, params?: unknown[]): Promise<T[]>;
-```
-
-Run one parameterized SQL statement ($1, $2… placeholders). Resolves with the result rows.
-
-###### Type Parameters
-
-###### T
-
-`T` = `Record`\<`string`, `unknown`\>
-
-###### Parameters
-
-###### sql
-
-`string`
-
-###### params?
-
-`unknown`[]
-
-###### Returns
-
-`Promise`\<`T`[]\>
-
-***
-
 ### DeepReadonly
 
 ```ts
@@ -4564,7 +4513,6 @@ Compile-time stage tag; never present at runtime.
 
 ```ts
 type SessionEventContext = {
-  db: Db;
   env: Readonly<Record<string, string>>;
   sessionId: string;
   slots: SlotStore;
@@ -4593,19 +4541,12 @@ What a write here still cannot do is be READ by the turn it happened in: the
 model sees a slot's value through a tool result, and this runs beside that
 path rather than in front of it.
 
-`db` is here because the first thing an audit hook wants is somewhere to write,
-and the agent already has one.
+`db` used to be here, because the first thing an audit hook wants is somewhere
+to write and the agent already had one. It is gone with `ctx.db`: the platform
+provides no database, so a hook that wants to persist brings its own client and
+credential — the same change tool code saw, and for the same reason.
 
 #### Properties
-
-##### db
-
-```ts
-db: Db;
-```
-
-The app database, when storage is enabled. Accessing it without throws with
-the enablement guidance, exactly as `ctx.db` does in a tool.
 
 ##### env
 
@@ -4655,7 +4596,7 @@ The return type is `unknown`, and that is deliberate rather than lazy.
 handler anyone writes: TypeScript's rule that a value-returning function is
 assignable where `void` is expected applies to `void` ALONE, not to a union
 containing it — so `(e) => seen.push(e)` (returning `number`) and
-`(e) => void db.query(…)` are errors, on an observe-only API where the return
+`(e) => void persist(…)` are errors, on an observe-only API where the return
 value is by definition ignored. `unknown` accepts every shape, and the emitter
 checks for a promise at run time to decide whether to attach a rejection
 handler.
@@ -5107,7 +5048,6 @@ SDK's `toolChoice`.
 
 ```ts
 type ToolContext = {
-  db: Db;
   delegate: DelegateFn;
   env: Readonly<Record<string, string>>;
   generate: GenerateFn;
@@ -5140,11 +5080,13 @@ import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 const lookupNote = tool({
-  description: "Look up a note from the database",
+  description: "Look up a note",
   inputSchema: z.object({ id: z.string() }),
   execute: async ({ id }, ctx) => {
-    const rows = await ctx.db.query("select body from notes where id = $1", [id]);
-    return { id, note: rows[0] ?? null };
+    // `ctx.env` for a credential, and whatever client the author brought —
+    // there is no `ctx.db`, because the platform hands tool code no database.
+    const res = await fetch(`${ctx.env.NOTES_API}/notes/${id}`);
+    return { id, note: res.ok ? await res.json() : null };
   },
 });
 ```
@@ -5177,16 +5119,6 @@ dropped (with a warning log), not thrown.
 `void`
 
 #### Properties
-
-##### db
-
-```ts
-db: Db;
-```
-
-SQL database for this app — one you configure, since the platform provisions
-none. Available when a `DATABASE_URL` is set (a secret when deployed, the
-project `.env` under `aai dev`); accessing it otherwise throws.
 
 ##### delegate
 

@@ -12,7 +12,6 @@
  * Re-exported from `types.ts`, so no import path changes.
  */
 
-import type { Db } from "./db.ts";
 import type { GenerateFn } from "./generate.ts";
 import type { SlotStore } from "./session-state.ts";
 import type { DelegateFn } from "./subagent.ts";
@@ -38,11 +37,13 @@ import type { WorkflowClient } from "./workflow.ts";
  * import { z } from "zod";
  *
  * const lookupNote = tool({
- *   description: "Look up a note from the database",
+ *   description: "Look up a note",
  *   inputSchema: z.object({ id: z.string() }),
  *   execute: async ({ id }, ctx) => {
- *     const rows = await ctx.db.query("select body from notes where id = $1", [id]);
- *     return { id, note: rows[0] ?? null };
+ *     // `ctx.env` for a credential, and whatever client the author brought —
+ *     // there is no `ctx.db`, because the platform hands tool code no database.
+ *     const res = await fetch(`${ctx.env.NOTES_API}/notes/${id}`);
+ *     return { id, note: res.ok ? await res.json() : null };
  *   },
  * });
  * ```
@@ -67,12 +68,6 @@ export type ToolContext = {
    * types it, and is the only thing that writes it.
    */
   slots: SlotStore;
-  /**
-   * SQL database for this app — one you configure, since the platform provisions
-   * none. Available when a `DATABASE_URL` is set (a secret when deployed, the
-   * project `.env` under `aai dev`); accessing it otherwise throws.
-   */
-  db: Db;
   /**
    * One-shot LLM generation, executed on the host (like `db`).
    * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use

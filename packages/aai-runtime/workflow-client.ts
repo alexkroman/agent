@@ -42,13 +42,13 @@
  * runs under it.
  */
 
-import type { Db } from "@alexkroman1/aai";
 import {
   formatSchemaIssues,
   MISSING_WORKFLOW_ID_MESSAGE,
   PUBLIC_URL_UNCONFIGURED_MESSAGE,
   toToolJsonSchema,
 } from "@alexkroman1/aai/host-internal";
+import type { Db } from "@alexkroman1/aai/internal";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type {

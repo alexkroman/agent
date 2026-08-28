@@ -42,7 +42,7 @@
  * not what bounds a commit; the bound that holds is the tool call's own deadline.
  */
 
-import type { Db } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import type { SessionStateBackend } from "./session-state-store.ts";
 
 /**

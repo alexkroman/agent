@@ -730,7 +730,7 @@ rides on the `s2s` descriptor — `voice` is a compile error there.
 ## `ctx.generate` (one-shot LLM generation)
 
 Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
-**runtime capability like `ctx.db`**. One implementation,
+**runtime capability like `ctx.generate`**. One implementation,
 `createGenerateFn` (`host/generate.ts`, exported from `/runtime`), runs
 wherever the runtime runs — inside the guest sandbox on the platform,
 in-process under `aai dev`: descriptors resolve through the same
@@ -1126,41 +1126,40 @@ Three things the API is load-bearing about:
 copy: the SDK owns never-guess, the template owns what an order id looks like
 when a caller reads it aloud and which words name a status.
 
-## Storage (`ctx.db`)
+## Persistence, and the three things that were removed
 
-There is no KV store anymore, and **the platform provisions no database
-either.** Persistent state is a Postgres the AUTHOR brings: put a `DATABASE_URL`
-in the agent's secrets (`aai secret put`, the studio's Secrets pane, or the
-project `.env` under `aai dev`) and its tools get `ctx.db` — a SQL handle
-(`query<T>(sql, params?)`, `$1` placeholders) against that database. Accessing
-`ctx.db` without one throws saying so.
+**There is no `ctx.db`.** It was a SQL handle on `ToolContext` and on the
+session-event hook context — first the platform's per-app Postgres, then a
+`DATABASE_URL` an author set. The platform provisions no database and hands tool
+code none, so a tool that persists brings its own client and credential. `Db`
+survives as an `@internal` type: the shape this runtime's own Postgres consumers
+take (upload records, the session-state backend, the world's postgres arm), not
+an authoring type. `sdk/db.ts` carries that.
 
-It used to be an opt-in the PLATFORM fulfilled — `aai storage enable <slug>` or
-a studio Database card provisioned a DATABASE and login role per app and
-injected the credentials as `DATABASE_URL` LAST, silently overriding whatever
-the author had set. All gone; see "The platform provisions no tenant database"
-in `packages/aai-server/CLAUDE.md`.
+Removing it dropped ten capability epochs — `aai:db` retired outright, and
+`agent`/`tool`/`dialog`/`state`/`subagent`/`testing` plus five `aai-runtime`
+ones bumped, because `ToolContext` appears in their reports. The `aai:testing`
+bump also removed `createUnusedDb`, the rejecting `Db` that `createToolContext`
+defaulted to.
 
-**Durable state did NOT go with it.** Durable workflow runs and turn-level
-durability (session slots, the event log) are the PLATFORM's, reached over HTTP,
-and no longer depend on the agent having a database at all. `ctx.db` is now only
-what its name says: SQL an author writes against a database they chose.
+**What the platform DOES persist**, with no setup, is the part worth leading
+with: `sessionSlot` for a session's own state (durable across a crash and a
+redeploy, through the platform's session-state backend), and durable workflow
+runs (surviving an idle sandbox, every redeploy, and a multi-day `sleep()`).
+Those cover almost everything; a database is for data that must outlive a
+session AND be queryable.
 
-**`ctx.db` connects DIRECTLY from the guest** — `DATABASE_URL` rides in with the
-rest of the agent env and the bundle's runtime opens its own connection, exactly
-as `aai dev` does with a project `.env`. The old host-proxied `db/query` RPC is
-gone: it kept a versioned RPC in the harness↔bundle contract to protect a
-credential that only reaches the tenant's own data anyway. This is now the ONLY
-shape — there is no platform-composed value to prefer over the author's.
+**No KV store and no vector store either** — `ctx.vector`, the `vector:` agent
+field, the `@alexkroman1/aai/vector` subpath and the platform-owned
+`PINECONE_API_KEY` were all removed. If retrieval returns it will be a client an
+author brings, like SQL.
 
-Session-scoped scratch belongs in a `sessionSlot` (or the `remember`/`recall`
-builtins, in-memory per-session) — durable through the PLATFORM's session-state
-backend, which needs no database of the author's, so the two differ in SHAPE (a
-typed value per session vs. SQL an author writes) rather than in whether they
-survive. There is no
-Vector store anymore either — `ctx.vector`, the `vector:` agent field, the
-`@alexkroman1/aai/vector` subpath and the platform-owned `PINECONE_API_KEY` were
-all removed; if retrieval returns it follows `ctx.db`'s path.
+**One shipped template paid for this**: `solo-rpg` lost `save_game`/`load_game`.
+A template cannot reach a database — the scaffold ships no driver, and shipped
+template code cannot import `@alexkroman1/aai-runtime` (templates type-check
+under the scaffold tsconfig, which that package's source is not clean under). So
+no template demonstrates cross-session persistence, which is a real gap in the
+examples rather than a tidy outcome.
 
 ## Guest network access
 

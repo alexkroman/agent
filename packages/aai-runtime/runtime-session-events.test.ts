@@ -9,16 +9,15 @@
  * that the same events are readable back off the runtime.
  */
 
-import type { Db, SessionEventHandlers } from "@alexkroman1/aai";
+import type { SessionEventHandlers } from "@alexkroman1/aai";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { omitUndefined } from "@alexkroman1/aai/utils";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 
 const SID = "s-1";
 
-function runtimeWith(events: SessionEventHandlers, db?: Db) {
+function runtimeWith(events: SessionEventHandlers) {
   const agent = makeAgent({
     tools: {
       ping: { description: "say something", execute: () => "ok" },
@@ -29,7 +28,6 @@ function runtimeWith(events: SessionEventHandlers, db?: Db) {
     agent,
     env: { MY_KEY: "v" },
     logger: silentLogger,
-    ...omitUndefined({ db }),
   });
 }
 
@@ -134,30 +132,11 @@ describe("agent({ events }) through the runtime", () => {
     await expect(runtime.sessionEvents?.read(SID, 0)).resolves.toMatchObject({ tail: 1 });
   });
 
-  test("hooks run on an agent with NO storage, and reading ctx.db is what fails", () => {
-    const ran: string[] = [];
-    const runtime = runtimeWith({
-      "speech.started": (_e, ctx) => {
-        void ctx.db;
-      },
-      "*": (e) => ran.push(e.type),
-    });
-    const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
-
-    // The handle is a getter, so an agent with no database still gets its hooks —
-    // and the one that reaches for `ctx.db` fails alone, non-fatally.
-    expect(() => session.report({ type: "speech.started" })).not.toThrow();
-    expect(ran).toEqual(["speech.started"]);
-  });
-
-  test("with storage enabled a hook gets the handle", () => {
-    const db: Db = { query: vi.fn(() => Promise.resolve([])) };
-    const handles: unknown[] = [];
-    const runtime = runtimeWith({ "*": (_e, ctx) => handles.push(ctx.db) }, db);
-    const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
-
-    session.report({ type: "speech.started" });
-
-    expect(handles).toEqual([db]);
-  });
+  // Two tests about `ctx.db` on the hook context stood here — that hooks still
+  // ran on an agent with no storage, and that a hook got the handle when there
+  // was one. `db` is gone from `SessionEventContext` along with `ctx.db`: the
+  // platform provides no database, so a hook that wants to persist brings its
+  // own client. What the first of them was really protecting — that ONE hook
+  // throwing does not break the session — is covered by "a throwing handler does
+  // not break the session" above, which is the general case.
 });

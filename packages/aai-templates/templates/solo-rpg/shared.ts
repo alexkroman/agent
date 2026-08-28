@@ -1,5 +1,4 @@
-import { type DeepReadonly, dialog, sessionSlot, type ToolContext } from "@alexkroman1/aai";
-import { z } from "zod";
+import { type DeepReadonly, dialog, sessionSlot } from "@alexkroman1/aai";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
 export const MAX_SESSION_LOG = 50;
@@ -390,7 +389,7 @@ export const gameProjection = gameSlot.projection((game) => game);
  * `storyFlow.reset` — and it is what lets `gameOver` be a genuinely `final`
  * state, which is the whole point of having one: `position().done` means the
  * story ended, and XState delivers no events to a done actor, so an `on: {
- * SETUP }` there would have been dead config that looked live. `load_game`
+ * SETUP }` there would have been dead config that looked live. A resumed run
  * resets for the same reason. `SETUP` therefore appears once, on the only state
  * that can be transitioned out of.
  */
@@ -450,66 +449,18 @@ export const storyFlow = dialog("story", storySpec);
  */
 export type FrozenGameState = DeepReadonly<GameState>;
 
-// ── Persistent save slots (ctx.db) ───────────────────────────────────────────
-// save_game / load_game are genuine cross-session persistence, so they use
-// the app's SQL database, which you supply: set a DATABASE_URL secret when
-// deployed, or DATABASE_URL in .env under `aai dev`. The platform provisions
-// none.
+// ── No cross-session saves, and why ─────────────────────────────────────────
+// `save_game` / `load_game` stood here, keyed by slot name and backed by an
+// `app_state` table through `ctx.db`. Both are gone with `ctx.db` itself: the
+// platform provides tool code no database, and a template cannot reach one — the
+// scaffold ships no Postgres client, and shipped template code cannot import
+// `@alexkroman1/aai-runtime` (templates type-check under the scaffold tsconfig,
+// which that package's source is not clean under).
 //
-// Slots are keyed by name alone — the whole point of a save is loading it in
-// a LATER session, whose sessionId differs, so the key can't embed one. The
-// storage is per app, so every player of one deployment shares the slot
-// namespace; without player identity that is the price of resumability.
-export function saveSlotKey(slot?: string): string {
-  return `save:${slot ?? "autosave"}`;
-}
-
-/** The slot-name grammar, shared by save_game and load_game so a name that
- *  can be saved can always be loaded. */
-export const saveSlotParam = z
-  .string()
-  .regex(/^[A-Za-z0-9_-]{1,32}$/, "letters, digits, dashes, underscores; max 32 chars")
-  .describe("Save slot name, defaults to autosave")
-  .optional();
-
-const ENSURE_APP_STATE = `create table if not exists app_state (
-  key text primary key,
-  value jsonb not null,
-  updated_at timestamptz not null default now()
-)`;
-
-// Memoized per process (each session's tools run in a fresh sandbox, so this
-// is at most one round-trip per session); a failure clears the memo so the
-// next call retries instead of caching the error forever.
-let ensureP: Promise<unknown> | null = null;
-function ensureTable(ctx: ToolContext): Promise<unknown> {
-  ensureP ??= ctx.db.query(ENSURE_APP_STATE).catch((err) => {
-    ensureP = null;
-    throw err;
-  });
-  return ensureP;
-}
-
-/** Read one saved value. jsonb columns come back from the postgres driver
- *  already parsed, so the value needs no JSON.parse here. */
-export async function loadState<T>(ctx: ToolContext, key: string): Promise<T | null> {
-  await ensureTable(ctx);
-  const rows = await ctx.db.query<{ value: T }>("select value from app_state where key = $1", [
-    key,
-  ]);
-  return rows[0]?.value ?? null;
-}
-
-/** Upsert one value. Serialized explicitly and cast with `::jsonb` so the
- *  write is driver-agnostic about object parameters. */
-export async function saveState(ctx: ToolContext, key: string, value: unknown): Promise<void> {
-  await ensureTable(ctx);
-  await ctx.db.query(
-    "insert into app_state (key, value, updated_at) values ($1, $2::jsonb, now()) " +
-      "on conflict (key) do update set value = excluded.value, updated_at = now()",
-    [key, JSON.stringify(value)],
-  );
-}
+// So this adventure is SINGLE-SESSION: everything lives in `sessionSlot`s and
+// ends when the call does. An author who wants saves adds a client of their own
+// (`postgres`, `pg`, a provider SDK) and a `DATABASE_URL` secret — which is the
+// supported pattern, just not one a shipped template can demonstrate.
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 export function d(sides: number): number {

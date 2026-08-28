@@ -30,7 +30,8 @@
  * deploying it.
  */
 
-import type { AgentDef, Db } from "@alexkroman1/aai";
+import type { AgentDef } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";
 import { createWorkflowClient, resolveKeyStore } from "./workflow-client.ts";

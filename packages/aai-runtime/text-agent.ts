@@ -47,9 +47,10 @@
  * - malformed tool arguments are repaired (see `tool-call-repair.ts`).
  */
 
-import type { AgentDef, Db, Message, ToolChoice } from "@alexkroman1/aai";
+import type { AgentDef, Message, ToolChoice } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
+import type { Db } from "@alexkroman1/aai/internal";
 import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
@@ -294,7 +295,6 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
       // conversation, which is what makes its slots mean the same thing here as
       // in a session.
       sessionId: call.sessionId || sessionId,
-      db: opts.db,
       workflows: opts.workflows,
       messages: call.messages,
       generate,

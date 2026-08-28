@@ -8,8 +8,8 @@
  * correlation key survive a restart" is not otherwise answerable from outside.
  */
 
-import type { Db } from "@alexkroman1/aai";
 import { workflow } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import type { WorkflowBody } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test } from "vitest";
 import { makeLogger } from "./_test-utils.ts";

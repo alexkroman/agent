@@ -128,9 +128,9 @@ keeps compiling when the client GAINS a method and leaves that method
 `undefined`. Two shipped templates had exactly that, and adding `wakeUp` and
 `stream` to the client is what surfaced it: the casts still compiled.
 
-Rejecting rather than no-op defaults for the same reason [createUnusedDb](#createunuseddb)
-rejects — a tool that reaches for a method the test did not stub should say so,
-not silently receive `undefined`. `listing` is the exception and returns `[]`,
+Rejecting rather than no-op defaults, for the reason `createUnusedDb` rejected
+before it went away with `ctx.db` — a tool that reaches for a method the test
+did not stub should say so, not silently receive `undefined`. `listing` is the exception and returns `[]`,
 because it is synchronous and an empty list is a truthful answer.
 
 ```ts
@@ -218,22 +218,6 @@ test("recommend pushes its picks to the client", async () => {
   expect(ctx.sent).toEqual([{ event: "recommendations", data: expect.anything() }]);
 });
 ```
-
-***
-
-### createUnusedDb()
-
-```ts
-function createUnusedDb(): Db;
-```
-
-A `Db` whose every query rejects, naming the field — the default for a test
-context, so a tool that unexpectedly reaches for storage fails with that
-sentence instead of a `TypeError` on `undefined`.
-
-#### Returns
-
-[`Db`](index.md#db)
 
 ***
 

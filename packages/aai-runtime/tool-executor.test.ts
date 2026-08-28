@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ToolDef } from "@alexkroman1/aai";
-import { STORAGE_DISABLED_MESSAGE } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { makeTool, sleep } from "./_test-utils.ts";
@@ -84,20 +83,26 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, tool, { messages: [{ role: "user", content: "hi" }] })).toBe("1");
   });
 
-  test("db throws when not provided", async () => {
+  test("the context carries NO db, so a tool reaching for one finds nothing", async () => {
+    // `ctx.db` is gone: the platform provisions no database and no longer hands one
+    // to tool code, so an author who wants SQL brings their own client and
+    // credential. This used to answer a curated "storage is not enabled" message.
+    //
+    // Asserted rather than deleted, because "the field is absent" is the contract
+    // now and a tool written against the old API has to fail LOUDLY rather than
+    // reading `undefined` and moving on.
     const tool = makeTool({
       execute: (_args, ctx) => {
-        void ctx.db;
-        return "no error";
+        // Read through an assertion because the field is GONE from the type — which
+        // is the contract. A tool written against the old API sees `undefined`, and
+        // this asserts that rather than that some replacement exists.
+        const reached = (ctx as { db?: unknown }).db;
+        return reached === undefined ? "no ctx.db" : "unexpectedly had one";
       },
     });
     const result = await run("test", {}, tool);
-    // The CONSTANT, not a copy of its text. What this spec claims is that the
-    // executor surfaces THIS message rather than some other error — the wording
-    // itself is pinned by `aai-guest/limits.test.ts`, which holds the guest's
-    // import-free duplicate against it. A third hand-written copy here is just
-    // one more thing to drift when the message is reworded, which it has been.
-    expect(JSON.parse(result)).toEqual({ error: STORAGE_DISABLED_MESSAGE });
+    // A string result comes back raw, not JSON-wrapped.
+    expect(result).toBe("no ctx.db");
   });
 
   test("handles async tool execution", async () => {

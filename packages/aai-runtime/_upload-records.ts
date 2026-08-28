@@ -43,7 +43,7 @@
  * @internal
  */
 
-import type { Db } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import { ensureOnce } from "./_ensure-once.ts";
 import { partsOf, type UploadPart } from "./_upload-blobs.ts";
 import { UPLOADS_TABLE, UploadIdTakenError } from "./_upload-store.ts";

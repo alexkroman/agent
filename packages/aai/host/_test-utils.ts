@@ -14,7 +14,6 @@ import type { ToolContext } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { createDetachedSlotStore, rejectingWorkflows } from "@alexkroman1/aai/host-internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
-import { createUnusedDb } from "@alexkroman1/aai/testing";
 import { vi } from "vitest";
 
 /**
@@ -40,7 +39,6 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     // instead of dying on a TypeError against an empty object. `as never` is
     // assignable to every position and stops reporting when `Db` grows a
     // method — the laundering idiom the escape-hatch ratchet now counts.
-    db: createUnusedDb(),
     generate: () => Promise.reject(new Error("generate not mocked")),
     delegate: () => Promise.reject(new Error("delegate not mocked")),
     messages: [],

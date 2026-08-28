@@ -7,7 +7,6 @@ import { writeUpload } from "./step-uploads-write.ts";
 import {
   createStubWorkflows,
   createToolContext,
-  createUnusedDb,
   stubReporter,
   stubUploads,
   type TestToolContext,
@@ -20,7 +19,8 @@ describe("createToolContext", () => {
     // casts the gap away, so the field list is the assertion.
     const ctx = createToolContext();
     expect(Object.keys(ctx).sort()).toEqual([
-      "db",
+      // `db` was first here, and its removal is the point: `ctx.db` is gone, so a
+      // helper still supplying one would advertise an API the runtime does not build.
       "delegate",
       "env",
       "generate",
@@ -65,9 +65,17 @@ describe("createToolContext", () => {
     ]);
   });
 
-  test("db rejects with a message naming the field", async () => {
-    const ctx = createToolContext();
-    await expect(ctx.db.query("select 1")).rejects.toThrow(/ctx\.db was not stubbed/);
+  test("carries NO db, because `ctx.db` no longer exists", () => {
+    // It used to default to a `Db` whose every query rejected naming the field.
+    // The platform provisions no database and no longer hands one to tool code, so
+    // an author who wants SQL brings their own client — and a test context that
+    // still offered one would advertise an API the runtime does not build.
+    //
+    // The ABSENCE is the whole contract here. The "a stale tool will not compile"
+    // half is pinned at the type level in `types-inference.test.ts`, which is where
+    // it belongs: asserting it at run time needs a double cast to get past the
+    // checker, and that cast is exactly what `check:hatches` counts.
+    expect("db" in createToolContext()).toBe(false);
   });
 
   test("generate rejects with a message naming the field", async () => {
@@ -76,16 +84,13 @@ describe("createToolContext", () => {
   });
 
   test("overrides win over the defaults", () => {
-    const db = createUnusedDb();
     const ctx = createToolContext({
       sessionId: "fixed",
       env: { API_KEY: "k" },
-      db,
       messages: [{ role: "user", content: "hi" }],
     });
     expect(ctx.sessionId).toBe("fixed");
     expect(ctx.env).toEqual({ API_KEY: "k" });
-    expect(ctx.db).toBe(db);
     expect(ctx.messages).toEqual([{ role: "user", content: "hi" }]);
   });
 
@@ -101,12 +106,13 @@ describe("createToolContext", () => {
   });
 
   test("an `undefined` override leaves the DEFAULT, never an undefined field", async () => {
-    // Spread naively, `{ ...{ db: undefined } }` overwrites the rejecting
-    // default and the tool under test then dies on a TypeError instead of on
-    // the sentence that names the missing stub.
-    const db = undefined;
-    const ctx = createToolContext({ db, sessionId: "s" });
-    await expect(ctx.db.query("select 1")).rejects.toThrow(/ctx\.db was not stubbed/);
+    // Spread naively, `{ ...{ generate: undefined } }` overwrites the rejecting
+    // default and the tool under test then dies on a TypeError instead of on the
+    // sentence that names the missing stub. (This was written against `db`, which
+    // is gone — `generate` is the same shape and the rule is the point.)
+    const generate = undefined;
+    const ctx = createToolContext({ generate, sessionId: "s" });
+    await expect(ctx.generate({ prompt: "hi" })).rejects.toThrow(/ctx\.generate was not stubbed/);
   });
 
   test("the overrides type accepts `undefined` for every field", () => {
@@ -180,18 +186,6 @@ describe("createToolContext", () => {
     a.slots.write("cart", { items: ["apple"] }, true);
     expect(b.slots.read("cart")).toBeUndefined();
     expect(a.sessionId).not.toBe(b.sessionId);
-  });
-});
-
-describe("createUnusedDb", () => {
-  test("every query rejects", async () => {
-    const db = createUnusedDb();
-    await expect(db.query("select 1")).rejects.toThrow(/not stubbed/);
-    await expect(db.query("insert into t values ($1)", [1])).rejects.toThrow(/not stubbed/);
-  });
-
-  test("two instances are independent objects", () => {
-    expect(createUnusedDb()).not.toBe(createUnusedDb());
   });
 });
 

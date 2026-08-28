@@ -10,7 +10,7 @@
  * integration tier.
  */
 
-import type { Db } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import {
   createMemoryKeyStore,

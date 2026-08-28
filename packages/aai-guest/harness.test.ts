@@ -194,12 +194,23 @@ describe("executeTool (one-shot trial)", () => {
     );
   });
 
-  test("ctx.db throws database guidance when none is configured", async () => {
+  test("a tool reaching for ctx.db fails, because the field does not exist", async () => {
+    // This used to assert a curated "no database is configured" message. `ctx.db`
+    // is gone entirely — the platform hands tool code no database — so what a tool
+    // written against the old API gets is a TypeError. Asserted rather than
+    // deleted: failing LOUDLY is the contract, not reading `undefined` and moving
+    // on.
     const agent = makeAgent({
       tools: {
         usesDb: {
           description: "touch ctx.db",
-          execute: (_args, ctx) => ctx.db.query("select 1"),
+          execute: (_args, ctx) => {
+            const reached = (ctx as { db?: { query(s: string): Promise<unknown> } }).db;
+            // No non-null assertion: the point is that the field is ABSENT, and a
+            // `!` would assert the opposite of what this spec claims.
+            if (!reached) throw new Error("ctx.db is gone");
+            return reached.query("select 1");
+          },
         },
       },
     });
@@ -208,11 +219,7 @@ describe("executeTool (one-shot trial)", () => {
       { name: "usesDb", args: {}, sessionId: "s1", state: {} },
       TRIAL_OPTS,
     );
-    // Asserted against the exported constant, not a substring of it: the guest
-    // keeps an import-free DUPLICATE of this message (`limits.ts`) precisely so
-    // dev and prod read identically, and a hand-copied fragment here would be a
-    // third spelling to drift. `limits.test.ts` pins the two against each other.
-    expect(res.error).toContain("No database is configured");
+    expect(res.error).toBeTruthy();
   });
 
   test("ctx.env carries the loaded env into tool code", async () => {

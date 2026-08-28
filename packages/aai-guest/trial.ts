@@ -10,7 +10,7 @@ import { Worker } from "node:worker_threads";
 import { errorMessage, isToolFailure } from "@alexkroman1/aai";
 import pTimeout from "p-timeout";
 import type { AgentDef, ToolContext } from "./harness-types.ts";
-import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
+import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
 
 // ---- run_code builtin -------------------------------------------------------
 
@@ -168,13 +168,10 @@ export async function executeTool(
   const ctx: ToolContext = {
     env: opts.env,
     state,
-    // Lazy getter: only an actual ctx.db access should fail — constructing
-    // the context must not. Trials always run without storage (a real
-    // session's ctx.db is the bundle runtime's own DATABASE_URL connection;
-    // the harness has no database client of its own).
-    get db(): never {
-      throw new Error(STORAGE_DISABLED_MESSAGE);
-    },
+    // `db` was here, as a lazy getter that threw the enablement guidance — a
+    // trial never had storage, and only an ACTUAL access should have failed.
+    // `ctx.db` is gone entirely: the platform hands tool code no database, so a
+    // tool wanting SQL brings its own client and credential.
     generate: () => Promise.reject(new Error("generate is not available in trial tool runs")),
     delegate: () => Promise.reject(new Error("delegate is not available in trial tool runs")),
     messages: [],

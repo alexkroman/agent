@@ -45,8 +45,8 @@
  * the store: `runtime-barrel.ts` and six call sites already name it.
  */
 
-import type { Db } from "@alexkroman1/aai";
 import { MAX_WORKFLOW_UPLOAD_BYTES } from "@alexkroman1/aai/host-internal";
+import type { Db } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadBlobs } from "./_upload-blobs.ts";
