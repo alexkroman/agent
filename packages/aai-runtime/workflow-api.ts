@@ -74,16 +74,12 @@
  *
  * ## On authentication: this surface is as public as `/websocket` beside it
  *
- * A deliberate but real exposure. A page has no credential to present — it is
- * served to anyone who has the URL, exactly like the voice client — so requiring
- * one by default would mean no static page could ever work. The existing posture
- * is the same: anyone who knows a slug can open a voice session and spend the
- * tenant's provider budget. What is genuinely worse here is the COST SHAPE: a
- * run outlives the request that started it, and a loop of cheap POSTs can queue
- * far more work than a loop of voice sessions. So an operator who wants the
- * surface closed sets {@link WORKFLOW_API_TOKEN_ENV} in the agent env and every
- * route requires it as a bearer. Fail-OPEN when unset is the documented default,
- * not an oversight — see the `token` option.
+ * Fail-OPEN when unset is the documented default, not an oversight, and an
+ * operator closes the surface with {@link WORKFLOW_API_TOKEN_ENV}. The POSTURE —
+ * three separate exposure shapes, which of them a rate limit bounds, and why the
+ * unkeyed arm of `GET /runs` is the hinge the other two rest on — is
+ * `workflow-api-auth.ts`. It used to be a paragraph here that named only the
+ * cost shape, which is the one exposure that already has a mitigation.
  */
 
 import type http from "node:http";
@@ -92,13 +88,9 @@ import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { decodePathSegment } from "./_path-decode.ts";
 import type { Logger } from "./runtime-config.ts";
+import { workflowApiUnauthorized } from "./workflow-api-auth.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
-import {
-  bearerMatches,
-  claimUnder,
-  sendJson,
-  workflowApiErrorStatus,
-} from "./workflow-api-http.ts";
+import { claimUnder, sendJson, workflowApiErrorStatus } from "./workflow-api-http.ts";
 import {
   cancelRun,
   findRuns,
@@ -132,13 +124,11 @@ import type { UploadStore } from "./workflow-uploads.ts";
  * it — are unaffected.
  */
 export { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
+// Re-exported, not moved out of the public surface: the constant is declared
+// beside the posture that explains it, and this stays the import path every
+// consumer (and the `aai-runtime:workflow` contract) already names.
+export { WORKFLOW_API_TOKEN_ENV } from "./workflow-api-auth.ts";
 export { MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api-http.ts";
-
-/**
- * Env var holding the bearer this API requires. Unset leaves it open — see the
- * module doc.
- */
-export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
 
 // Re-exported: the alias is part of this API's own vocabulary (`engine` below
 // is typed with it), and it is declared beside the handlers that consume it.
@@ -150,15 +140,21 @@ export type WorkflowApiOptions = {
    * Resolve the client, or undefined — in which case every route answers 404
    * rather than 500, since there is no workflow API to speak of.
    *
-   * **Undefined has TWO causes and the answer must not pick one**: an agent that
-   * declared no workflows, and an agent that declared some with nowhere to keep
-   * the correlation index. Answering "this app declares no workflows" is a
-   * confident false statement in the second case — and the second case is the
-   * common one, because declaring a workflow is the part an author does not
-   * forget. So the answer is `WORKFLOWS_UNAVAILABLE_MESSAGE`, which names both
-   * halves and both fixes, and is the same sentence `ctx.workflows` rejects
-   * with, so the tool path and this one cannot disagree about a condition they
-   * share.
+   * **Undefined has exactly ONE cause: the agent declared no workflows.** This
+   * paragraph used to claim two — the second being "declared some with nowhere to
+   * keep the correlation index" — and argued from there that answering "this app
+   * declares no workflows" would be "a confident false statement in the second
+   * case", which it called the common one. There is no second case.
+   * `buildWorkflowClient` returns undefined on one condition
+   * (`!workflows || Object.keys(workflows).length === 0`), and
+   * `workflow-runtime.ts` states the rest outright: "A missing database is
+   * therefore NOT a reason to withhold the client."
+   *
+   * So the answer is `WORKFLOWS_UNAVAILABLE_MESSAGE`, which names that one cause
+   * and its one fix, and is the same sentence `ctx.workflows` rejects with, so
+   * the tool path and this one cannot disagree about a condition they share. The
+   * message was corrected to name one cause; this doc was the holdout still
+   * arguing that doing so was a mistake.
    *
    * A FUNCTION because the guest harness builds its runtime lazily, on the first
    * thing that needs it — and for a static app the first such thing is a request
@@ -439,13 +435,9 @@ export function createWorkflowApi(
     url: string,
     method: string,
   ): Promise<void> {
-    // The token is checked BEFORE the engine is resolved: resolving builds the
-    // runtime in the guest, which is work an unauthenticated caller must not be
-    // able to trigger.
-    if (token !== undefined && !bearerMatches(req.headers.authorization, token)) {
-      sendJson(res, 401, { error: "Missing or invalid workflow API token" });
-      return;
-    }
+    // BEFORE the engine is resolved: resolving builds the runtime in the guest,
+    // which is work an unauthenticated caller must not be able to trigger.
+    if (workflowApiUnauthorized(req, res, token)) return;
     // A resolver that THREW could not build the runtime — a misconfigured agent,
     // not an agent without workflows — so it answers 500 with the reason rather
     // than the 404 below, which would deny that the workflows exist.
@@ -458,8 +450,8 @@ export function createWorkflowApi(
       return;
     }
     if (!engine) {
-      // The SAME sentence `ctx.workflows` rejects with, because it is the same
-      // condition and it has two causes — see the option's doc.
+      // The SAME sentence `ctx.workflows` rejects with: one condition, one
+      // cause, one fix — see the option's doc.
       sendJson(res, 404, { error: WORKFLOWS_UNAVAILABLE_MESSAGE });
       return;
     }

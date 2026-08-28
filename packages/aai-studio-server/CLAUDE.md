@@ -699,7 +699,8 @@ voice agents without the CLI:
   Sandbox). The whole agentic loop lives in that guest — LLM calls dial
   the gateway from the guest on the caller's key, tools run on the guest
   filesystem, and `test_agent` loads the built bundle in place and can
-  trial-run its tools (no db — ctx.db reports storage-not-enabled): no
+  trial-run its tools (a tool that persists brings its own client, and has no
+  credential for one here): no
   tenant data and no platform secrets in the guest.
 - **Builds AND publishes run IN the guest sandbox, through the aai CLI —
   one path.** There is no host-side, out-of-process, or Modal-Function

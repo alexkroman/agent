@@ -1245,9 +1245,9 @@ Three things the templates now demonstrate rather than restate:
   `link-digest`'s no-readable-text case is the worked example, and says so in
   place.
 
-**`ctx.db` is still out of reach**, so every `file` step still writes nothing and
-carries `_`-prefixed parameters rather than naming a call it cannot make. That is
-the one remaining half of a tool context a step does not get.
+**There is no `ctx.db` at all now** — removed outright, not withheld from steps
+— so every `file` step still writes nothing and carries `_`-prefixed parameters
+rather than naming a call it cannot make.
 
 **`report()` was the one helper copied three times, and it is the SDK's now** —
 `@alexkroman1/aai/step`, used by every workflow template. The objection recorded

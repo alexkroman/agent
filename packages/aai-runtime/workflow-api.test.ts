@@ -202,6 +202,65 @@ describe("token", () => {
     await fetch(`${harness.url}/workflows`);
     expect(engine).not.toHaveBeenCalled();
   });
+
+  /**
+   * The block above only ever drove `GET /workflows` — the cheapest, most
+   * harmless route on the surface — so the token gate was pinned on the one
+   * verb whose exposure nobody worries about, and on none of the three #1309
+   * flagged: the run listing that hands out ids, and the two verbs that change a
+   * run somebody else started. A token check that moved inside a route (or a
+   * table entry that dispatched before the gate) would leave cancel and wake
+   * open with this suite green.
+   *
+   * Driven as a table because the claim is identical for each and the point is
+   * COVERAGE of the verb set — a loop here would report "workflow API token"
+   * and not which route leaked.
+   */
+  test.each([
+    {
+      what: "the run listing (enumerates ids)",
+      path: "/workflows/runs?workflow=digest",
+      method: "GET",
+    },
+    { what: "cancel", path: "/workflows/runs/wrun_1", method: "DELETE" },
+    { what: "wake", path: "/workflows/runs/wrun_1/wake", method: "POST" },
+  ])("a token closes $what", async ({ path, method }) => {
+    const client = fakeClient();
+    harness = await serve({ engine: () => client, token: "s3cret" });
+
+    const refused = await fetch(`${harness.url}${path}`, { method });
+    expect(refused.status).toBe(401);
+    // And it was refused BEFORE reaching the engine — a 401 that still ran the
+    // call would have cancelled the run it was refusing.
+    expect(client.recent).not.toHaveBeenCalled();
+    expect(client.cancel).not.toHaveBeenCalled();
+    expect(client.wakeUp).not.toHaveBeenCalled();
+
+    const admitted = await fetch(`${harness.url}${path}`, {
+      method,
+      headers: { Authorization: "Bearer s3cret" },
+    });
+    expect(admitted.status).toBe(200);
+  });
+
+  test("with no token those same three routes are OPEN — the documented default", async () => {
+    // Pinned deliberately, and not as an endorsement: `workflow-api-auth.ts`
+    // argues the posture and names closing the enumeration arm as the open
+    // question. If that decision is taken, THIS is the test that has to change,
+    // which is the point of writing it down as a test rather than as prose.
+    const client = fakeClient();
+    harness = await serve({ engine: () => client });
+    for (const [path, method] of [
+      ["/workflows/runs?workflow=digest", "GET"],
+      ["/workflows/runs/wrun_1", "DELETE"],
+      ["/workflows/runs/wrun_1/wake", "POST"],
+    ] as const) {
+      expect((await fetch(`${harness.url}${path}`, { method })).status).toBe(200);
+    }
+    expect(client.recent).toHaveBeenCalled();
+    expect(client.cancel).toHaveBeenCalled();
+    expect(client.wakeUp).toHaveBeenCalled();
+  });
 });
 
 describe("POST /runs", () => {
