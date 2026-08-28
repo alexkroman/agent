@@ -15,7 +15,16 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { isRunNotFound } from "./workflow-wdk.ts";
 
 const getReadable = vi.fn();
-const getRun = vi.fn((_runId: string) => ({ getReadable }));
+/**
+ * What `workflow/api`'s `getRun` hands back, as much of it as this spec drives.
+ *
+ * Declared once, on the mock, rather than cast at each call site: four
+ * `as unknown as` on one shape is the concentration that means a missing type,
+ * and a cast would also stop reporting the day a method is ADDED here.
+ */
+type FakeRun = { getReadable: typeof getReadable; cancel?: () => Promise<void> };
+
+const getRun = vi.fn((_runId: string): FakeRun => ({ getReadable }));
 
 vi.mock("workflow/api", () => ({
   getRun: (runId: string) => getRun(runId),
@@ -36,6 +45,9 @@ vi.mock("workflow/errors", () => ({
   },
   WorkflowRunNotFoundError: {
     is: (value: unknown) => value instanceof Error && value.name === "WorkflowRunNotFoundError",
+  },
+  EntityConflictError: {
+    is: (value: unknown) => value instanceof Error && value.name === "EntityConflictError",
   },
 }));
 vi.mock("workflow/runtime", () => ({ getWorld: vi.fn() }));
@@ -157,5 +169,59 @@ describe("a run that is gone is an ANSWER, however the DevKit wraps it", () => {
     const b = new Error("b", { cause: a });
     Object.defineProperty(a, "cause", { value: b });
     expect(isRunNotFound(a)).toBe(false);
+  });
+});
+
+describe("cancelling a run that is already over is an ANSWER, not a 500", () => {
+  /**
+   * The shape a world really throws, and the one the not-found predicate could
+   * not see. Measured against a real Postgres world under `aai dev`: `DELETE
+   * /workflows/runs/<id>` on a COMPLETED run logged `Cannot transition run from
+   * terminal state "completed"` and answered `500 Internal server error` — the
+   * two-tabs race the route's own comment calls ordinary.
+   */
+  const terminalConflict = (): Error => {
+    const err = new Error('Cannot transition run from terminal state "completed"');
+    err.name = "EntityConflictError";
+    return err;
+  };
+
+  test("a completed run answers false rather than throwing", async () => {
+    getRun.mockReturnValue({
+      getReadable,
+      cancel: () => Promise.reject(terminalConflict()),
+    });
+
+    await expect(wdkAdapter().cancel("wrun_x")).resolves.toBe(false);
+  });
+
+  test("so does one wrapped in the DevKit's own re-throw", async () => {
+    getRun.mockReturnValue({
+      getReadable,
+      cancel: () =>
+        Promise.reject(new Error("Failed to cancel run wrun_x", { cause: terminalConflict() })),
+    });
+
+    await expect(wdkAdapter().cancel("wrun_x")).resolves.toBe(false);
+  });
+
+  test("a live run still cancels, and reports that it did", async () => {
+    getRun.mockReturnValue({
+      getReadable,
+      cancel: () => Promise.resolve(undefined),
+    });
+
+    await expect(wdkAdapter().cancel("wrun_x")).resolves.toBe(true);
+  });
+
+  test("an unrelated failure still propagates", async () => {
+    // The direction that matters: swallowing a lost database would report the
+    // run as finished to a caller whose Stop button did nothing.
+    getRun.mockReturnValue({
+      getReadable,
+      cancel: () => Promise.reject(new Error("connection terminated unexpectedly")),
+    });
+
+    await expect(wdkAdapter().cancel("wrun_x")).rejects.toThrow(/connection terminated/);
   });
 });

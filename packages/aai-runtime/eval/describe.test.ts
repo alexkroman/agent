@@ -21,7 +21,7 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
 import { registerLlmKind } from "../providers/resolve.ts";
-import { describeEval, resolveEvalMode } from "./describe.ts";
+import { announceEvalMode, describeEval, resolveEvalMode } from "./describe.ts";
 import { toolResultIn } from "./events.ts";
 import { installStubLlm, STUB_LLM_API_KEY_ENV } from "./stub-llm.ts";
 
@@ -103,6 +103,26 @@ describe("installStubLlm", () => {
       a.release();
       b.release();
     }
+  });
+});
+
+describe("announceEvalMode", () => {
+  /**
+   * The one line that separates a wiring check from a behaviour measurement, and
+   * nothing asserted it was emitted at all — which is how it came to be dropped
+   * on every GREEN `aai eval` run for as long as it had been there. So the claim
+   * is the CHANNEL, not the wording: `console.warn` is intercepted by vitest and
+   * handed to the reporter, and the default reporter surfaces a passing file's
+   * captured output nowhere. A direct stderr write is what survives.
+   */
+  test("writes to stderr rather than through the intercepted console", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const warn = vi.spyOn(console, "warn").mockReturnValue(undefined);
+
+    announceEvalMode("eval: X — SCRIPTED model (reason).");
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(stderr).toHaveBeenCalledWith("eval: X — SCRIPTED model (reason).\n");
   });
 });
 

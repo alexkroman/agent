@@ -101,7 +101,12 @@ const describeWorkflowEvalWithFfmpeg: typeof describeWorkflowEval = (agent, defi
   if ((process.env.AAI_REQUIRE_FFMPEG ?? "") !== "") {
     throw new Error(`AAI_REQUIRE_FFMPEG is set but no ffmpeg was found.\n${HOW_TO}`);
   }
-  console.warn(`\n[skipped: no ffmpeg] ${agent.name} eval not run.\n${HOW_TO}\n`);
+  // A direct stderr write, not `console.warn`: vitest intercepts `console` and
+  // its default reporter surfaces a passing file's captured output nowhere, so
+  // the announcement that keeps this skip from being silent is dropped on the
+  // exact runs it exists for. `announceEvalMode` in the SDK carries the
+  // measurement.
+  process.stderr.write(`\n[skipped: no ffmpeg] ${agent.name} eval not run.\n${HOW_TO}\n`);
   skipSuite(agent.name, () => {
     // Named `test`, not aliased: Biome's `noMisplacedAssertion` matches the
     // CALLEE IDENTIFIER, so an `expect` inside a `vitestTest(…)` is an error.

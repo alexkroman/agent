@@ -176,6 +176,13 @@ export async function cancelRun(
   // 200 with `cancelled: false` rather than a 4xx for a run that had already
   // finished: two tabs pressing Stop is ordinary, and "it was already over" is
   // an ANSWER. The client surfaces the distinction; nothing needs an error to.
+  //
+  // This comment was here before the behaviour was. The engine translated only
+  // the DevKit's "no such run" into `false`, so a run that COMPLETED between the
+  // render and the click — the very race described above — reached the handler
+  // as an `EntityConflictError` and left as `500 Internal server error`. The
+  // translation lives with the adapter that has to know the DevKit's error
+  // vocabulary: `isRunOver` in `workflow-wdk.ts`.
   sendJson(res, 200, { runId, cancelled: await ctx.engine.cancel(runId) });
 }
 

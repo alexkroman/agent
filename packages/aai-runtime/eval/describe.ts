@@ -237,6 +237,29 @@ function modeFrom(
 }
 
 /**
+ * Say which mode this run got — one line, every run, before any case.
+ *
+ * A DIRECT stderr write, not `console.warn`, and that is the whole point of the
+ * function. Vitest INTERCEPTS `console` and hands what it captures to the
+ * reporter, and the default reporter surfaces a file's captured output only
+ * when it reports on that file — which, in the single-project run every
+ * scaffolded agent project has, means only when the file FAILED. So the line
+ * that exists to stop a reader mistaking a wiring check for a behaviour
+ * measurement was printed exactly when the run failed and swallowed exactly
+ * when it passed, on the one path a user takes: `aai eval` in their own
+ * project. Measured on a scaffolded project, one passing case, vitest 4.1.10 —
+ * `console.warn` produced nothing and `process.stderr.write` beside it printed;
+ * the same file's LIVE run, failing an assertion, printed both. It reads
+ * correctly in THIS repo either way, because the root config runs vitest in
+ * projects mode, which is why nothing here noticed.
+ *
+ * The trailing newline is ours for the same reason: nothing is formatting this.
+ */
+export function announceEvalMode(line: string): void {
+  process.stderr.write(`${line}\n`);
+}
+
+/**
  * Declare an eval suite for `agent`.
  *
  * ```ts no-check
@@ -262,9 +285,7 @@ export function describeEval(
     process.env,
     omitUndefined({ llm: options?.llm }),
   );
-  // One line, every run, before any case: a reader who cannot tell a wiring
-  // check from a behaviour measurement has been handed the wrong confidence.
-  console.warn(
+  announceEvalMode(
     mode === "live"
       ? `eval: ${agent.name} — LIVE model (${reason}). This spends tokens.`
       : `eval: ${agent.name} — SCRIPTED model (${reason}). This checks the wiring, not the agent's behaviour.`,
