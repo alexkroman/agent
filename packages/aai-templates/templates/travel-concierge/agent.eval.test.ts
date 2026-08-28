@@ -22,8 +22,7 @@
 // product questions from its own knowledge and skips the tools the prompt exists
 // to route it through, so a case run that way measures nothing it claims to.
 
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { deployedAgent } from "@alexkroman1/aai/testing";
 import { type EvalSession, type EvalTurn, lastStateIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -39,10 +38,10 @@ import systemPrompt from "./system-prompt.md?raw";
  * outside its own template. An eval that forgot it would run an agent with NO
  * tools and read as a model that refuses to act.
  */
-const agentDef = withSystemPrompt(
-  withDiscoveredTools(authoredAgent, import.meta.glob("./tools/*.ts", { eager: true })),
-  systemPrompt,
-);
+const agentDef = deployedAgent(authoredAgent, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+  systemPrompt: systemPrompt,
+});
 
 /**
  * What the BROWSER is sent, as this eval reads it.

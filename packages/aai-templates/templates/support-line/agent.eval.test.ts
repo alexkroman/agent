@@ -27,8 +27,7 @@
 // product questions from its own knowledge and skips the tools the prompt exists
 // to route it through, so a case run that way measures nothing it claims to.
 
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { deployedAgent } from "@alexkroman1/aai/testing";
 import { type EvalSession, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -37,10 +36,10 @@ import authoredAgent from "./agent.ts";
 import systemPrompt from "./system-prompt.md?raw";
 
 /** The def a DEPLOYED agent runs — see `agent.test.ts` on why the glob is here. */
-const agentDef = withSystemPrompt(
-  withDiscoveredTools(authoredAgent, import.meta.glob("./tools/*.ts", { eager: true })),
-  systemPrompt,
-);
+const agentDef = deployedAgent(authoredAgent, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+  systemPrompt: systemPrompt,
+});
 
 /**
  * What the BROWSER is sent, as this eval reads it.

@@ -1239,7 +1239,7 @@ interface SubagentToolCall {
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
-// @public (undocumented)
+// @public
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;

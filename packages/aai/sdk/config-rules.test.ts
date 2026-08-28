@@ -481,3 +481,50 @@ describe("toAgentConfig — text mode", () => {
     expect(assertProviderTriple(undefined, {}, undefined, undefined, true)).toBe("text");
   });
 });
+
+describe("EU residency warning", () => {
+  // `assemblyAIPipeline({ region: "eu" })` — the call in that function's own
+  // @example — routes STT and the LLM gateway to the EU and TTS to the single
+  // (US) endpoint. Documented in a JSDoc, which is the wrong strength of
+  // statement for the one option here that is a compliance claim.
+  test("warns when an EU stage sits beside a TTS stage that has no EU endpoint", () => {
+    const warnings = agentConfigWarnings({
+      stt: { kind: "assemblyai", options: { region: "eu" } },
+      llm: { kind: "assemblyai", options: { region: "eu" } },
+      tts: { kind: "assemblyai", options: {} },
+    });
+    expect(warnings.join("\n")).toContain("outside the EU");
+    expect(warnings.join("\n")).toContain("streaming-tts.assemblyai.com");
+  });
+
+  test("says nothing for a US agent", () => {
+    expect(
+      agentConfigWarnings({
+        stt: { kind: "assemblyai", options: {} },
+        tts: { kind: "assemblyai", options: {} },
+      }),
+    ).toEqual([]);
+  });
+
+  test("says nothing when there is no TTS stage — nothing leaves the region", () => {
+    expect(agentConfigWarnings({ stt: { kind: "assemblyai", options: { region: "eu" } } })).toEqual(
+      [],
+    );
+  });
+
+  test("an EU LLM alone is enough to warn — the stages are independent", () => {
+    const warnings = agentConfigWarnings({
+      llm: { kind: "assemblyai", options: { region: "eu" } },
+      tts: { kind: "assemblyai", options: {} },
+    });
+    expect(warnings).toHaveLength(1);
+  });
+});
+
+test("the warning fires on assemblyAIPipeline({ region: 'eu' }) itself", () => {
+  // The call in `assemblyAIPipeline`'s own @example. Built through the real
+  // preset rather than a hand-written descriptor, so a change to how the preset
+  // threads `region` cannot pass this by accident.
+  const warnings = agentConfigWarnings(assemblyAIPipeline({ region: "eu" }));
+  expect(warnings.join("\n")).toContain("outside the EU");
+});

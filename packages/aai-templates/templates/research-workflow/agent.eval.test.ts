@@ -29,7 +29,7 @@
 //
 // And what no eval here can see at all: anything below the audio boundary —
 // endpointing, barge-in, whether two sentences merged into one turn.
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { deployedAgent } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import type { EvalToolCall, EvalWorkflows } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -50,10 +50,9 @@ import { research } from "./shared.ts";
  * The glob is written here rather than reached for from a shared helper because
  * this file SHIPS — see `agent.test.ts`.
  */
-const agentDef = withDiscoveredTools(
-  authoredAgent,
-  import.meta.glob("./tools/*.ts", { eager: true }),
-);
+const agentDef = deployedAgent(authoredAgent, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+});
 
 /**
  * The key the run's steps read with `requireStepEnv`.

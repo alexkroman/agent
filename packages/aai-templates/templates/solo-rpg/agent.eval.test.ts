@@ -25,8 +25,7 @@
 // What no eval here can see: anything below the audio boundary — endpointing,
 // barge-in, a sentence split across two turns. Those need real paced audio.
 
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { deployedAgent } from "@alexkroman1/aai/testing";
 import { type EvalTurn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -43,10 +42,10 @@ import systemPrompt from "./system-prompt.md?raw";
  * eval run against the framework default prompt would measure an agent nobody
  * deployed.
  */
-const agentDef = withSystemPrompt(
-  withDiscoveredTools(authoredAgent, import.meta.glob("./tools/*.ts", { eager: true })),
-  systemPrompt,
-);
+const agentDef = deployedAgent(authoredAgent, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+  systemPrompt: systemPrompt,
+});
 
 /**
  * What each tool this file drives answers, off the wire.

@@ -66,8 +66,8 @@
     "completedOutput",
     "createFakeSttOpener",
     "createFakeTtsOpener",
-    "evalCredentials",
     "EvalCredentials",
+    "evalCredentials",
     "EvalEmitted",
     "EvalRunOptions",
     "EvalSessionOptions",
@@ -93,7 +93,6 @@
     "StubStep",
     "toolArgsIn",
     "toolCallsIn",
-    "toolResultsIn",
     "TURN_ENDS",
     "VmRunCodeOptions"
   ],
@@ -324,7 +323,6 @@
   "@alexkroman1/aai/testing": [
     "createProgressStream",
     "createStubWorkflows",
-    "deployedAgent",
     "ProjectFiles",
     "RunSnapshotOverrides",
     "runTool",

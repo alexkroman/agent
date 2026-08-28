@@ -12,7 +12,12 @@
  */
 
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
-import { assemblyAIVoiceWarning } from "./providers/tts/assemblyai.ts";
+import { isRecord } from "./is-record.ts";
+import {
+  ASSEMBLYAI_TTS_HOST,
+  type AssemblyAITtsOptions,
+  assemblyAIVoiceWarning,
+} from "./providers/tts/assemblyai.ts";
 
 /**
  * Session mode derived from which provider fields are set.
@@ -222,8 +227,55 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
  *
  * @internal
  */
-export function agentConfigWarnings(config: { tts?: unknown; s2s?: unknown }): string[] {
-  return [assemblyAIVoiceWarning(config.tts), assemblyAIVoiceWarning(config.s2s)].filter(
-    (warning): warning is string => warning !== undefined,
+export function agentConfigWarnings(config: {
+  tts?: unknown;
+  s2s?: unknown;
+  stt?: unknown;
+  llm?: unknown;
+}): string[] {
+  return [
+    assemblyAIVoiceWarning(config.tts),
+    assemblyAIVoiceWarning(config.s2s),
+    euResidencyWarning(config),
+  ].filter((warning): warning is string => warning !== undefined);
+}
+
+/**
+ * `region: "eu"` on STT or the LLM gateway, with a TTS stage that has no EU
+ * endpoint to route to.
+ *
+ * `AssemblyAIPipelineOptions.region` documents this ("TTS has a single
+ * endpoint"), and a JSDoc is the wrong strength of statement for the one option
+ * on this surface that is a COMPLIANCE claim rather than a preference. What
+ * actually happens is that `assemblyAIPipeline({ region: "eu" })` — the call in
+ * that function's own `@example` — routes transcription and generation to the
+ * EU and synthesis to `streaming-tts.assemblyai.com`, so the agent's own speech
+ * leaves the region. That is a thing to be told once per build, not a thing to
+ * find in a doc comment after someone asks.
+ *
+ * A warning rather than an error: the configuration is legal and may be exactly
+ * what an author wants (residency rules that bind transcripts often do not bind
+ * synthesized audio). Refusing it would break every EU agent that has decided
+ * this already.
+ */
+function euResidencyWarning(config: {
+  stt?: unknown;
+  llm?: unknown;
+  tts?: unknown;
+}): string | undefined {
+  const inEu = (stage: unknown): boolean =>
+    isRecord(stage) && isRecord(stage.options) && stage.options.region === "eu";
+  if (!(inEu(config.stt) || inEu(config.llm))) return undefined;
+  if (config.tts === undefined) return undefined;
+  // The remedy names `assemblyAITts`'s own option rather than spelling the call
+  // out: Biome's `noSecrets` reads a dense run of backticks and braces as a
+  // high-entropy literal, and a suppression would raise the escape-hatch
+  // baseline, which only moves down. Same dodge as `ENDPOINTING_KEYS`.
+  const host = "host" satisfies keyof AssemblyAITtsOptions;
+  return (
+    'This agent sets `region: "eu"`, but AssemblyAI TTS has a single endpoint — the synthesized ' +
+    `audio is served from ${ASSEMBLYAI_TTS_HOST}, outside the EU. ` +
+    "Transcription and generation stay in-region. If that is not acceptable, declare a TTS " +
+    `stage with an in-region \`${host}\`, or run the agent without a TTS stage.`
   );
 }

@@ -1522,7 +1522,7 @@ interface SubagentToolCall {
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
-// @public (undocumented)
+// @public
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -1805,7 +1805,7 @@ export interface AgentDef extends PipelineVoiceTuning {
 }
 
 // @public
-export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
+export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -2511,11 +2511,19 @@ export interface StateProjection<V = unknown> {
 }
 
 // @public
-export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
+export type StaticAgentParams = StaticAgentParamsBase & {
+    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
+};
+
+// @public
+type StaticAgentParamsBase = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
     page: "static";
     workflows: NonNullable<AgentDef["workflows"]>;
-} & {
-    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
+};
+
+// @public
+type StaticAgentParamsCore = StaticAgentParamsBase & {
+    [K in WorkflowAppOnlyField]?: never;
 };
 
 // @public
@@ -2581,7 +2589,7 @@ export type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public (undocumented)
+// @public
 export type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -3322,6 +3330,8 @@ export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
 export function agentConfigWarnings(config: {
     tts?: unknown;
     s2s?: unknown;
+    stt?: unknown;
+    llm?: unknown;
 }): string[];
 
 // @public
@@ -3765,7 +3775,7 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public (undocumented)
+// @public
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -5620,7 +5630,7 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public (undocumented)
+// @public
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -8177,6 +8187,7 @@ type ExecuteToolCallOptions = {
     generate?: HostGenerateFn | undefined;
     subagents?: SubagentRunner | undefined;
     logger?: Logger | undefined;
+    onUncaught?: ((message: string) => void) | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;

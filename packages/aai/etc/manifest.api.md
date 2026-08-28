@@ -84,6 +84,8 @@ export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
 export function agentConfigWarnings(config: {
     tts?: unknown;
     s2s?: unknown;
+    stt?: unknown;
+    llm?: unknown;
 }): string[];
 
 // @public
@@ -527,7 +529,7 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public (undocumented)
+// @public
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;

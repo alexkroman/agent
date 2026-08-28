@@ -1,8 +1,7 @@
 /// <reference types="vite/client" />
 
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { deployedAgent } from "@alexkroman1/aai/testing";
 // An EVAL: does the desk actually behave? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly. What it cannot ask is whether the
@@ -44,10 +43,10 @@ import systemPrompt from "./system-prompt.md?raw";
  * The glob is written here rather than reached for from a shared helper because
  * this file SHIPS — it is what a scaffolded project runs.
  */
-const dispatchAgent = withSystemPrompt(
-  withDiscoveredTools(authoredAgent, import.meta.glob("./tools/*.ts", { eager: true })),
-  systemPrompt,
-);
+const dispatchAgent = deployedAgent(authoredAgent, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+  systemPrompt: systemPrompt,
+});
 
 /** The six tools gated on `working` — the ones that refuse until something has
  *  been logged. Listed here so ADDING an ungated mutating tool is a deliberate

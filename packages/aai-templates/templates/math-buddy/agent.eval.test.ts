@@ -12,14 +12,14 @@
 // different agent; and `run_code` refuses unless the EVAL supplies an executor,
 // which this suite does — so the cases below assert the answer the code came
 // back with as well as the code the tutor wrote.
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
-import { createVmRunCode } from "@alexkroman1/aai-runtime/eval";
+import { deployedAgent } from "@alexkroman1/aai/testing";
+import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import authored from "./agent.ts";
 import systemPrompt from "./system-prompt.md?raw";
 
-const agentDef = withSystemPrompt(authored, systemPrompt);
+const agentDef = deployedAgent(authored, { systemPrompt: systemPrompt });
 
 /** The code every `run_code` call in this turn carried, joined. */
 const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string, unknown> }[] }) =>
@@ -28,12 +28,18 @@ const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string,
     .map((c) => String(c.args.code ?? ""))
     .join("\n");
 
-/** What every `run_code` call in this turn PRINTED, joined. */
-const outputIn = (turn: { toolCalls: readonly { name: string; result?: string }[] }) =>
-  turn.toolCalls
-    .filter((c) => c.name === "run_code")
-    .map((c) => c.result ?? "")
-    .join("\n");
+/**
+ * A `run_code` executor, so these cases can assert the ANSWER.
+ *
+ * The builtin refuses without one — the Modal container is the security
+ * boundary, and off-platform there is none — so a case could assert the CALL and
+ * the code it carried, and never what the code came back with.
+ * `createVmRunCode()` is a `node:vm` context with a capturing `console.log`,
+ * which is enough here: what runs is arithmetic, not a program. It is NOT a
+ * sandbox and does not pretend to be one; a deployed agent still gets the
+ * refusal.
+ */
+const runCode = createVmRunCode();
 
 describeEval(
   agentDef,
@@ -52,7 +58,7 @@ describeEval(
         expect(code).toMatch(/1\.60|1\.61|0\.621|8\.04/);
         // And the factor was applied rather than merely mentioned: five miles is
         // 8.0467 km, so whatever rounding the tutor chose the answer starts 8.0.
-        const output = outputIn(turn);
+        const output = toolResultsIn(turn.toolCalls, "run_code").join("\n");
         expect(output, `run_code printed: ${output}`).toMatch(/8\.0/);
       },
       { live: true },
@@ -76,7 +82,7 @@ describeEval(
         // face of a twenty-sided die. `Math.random` in the code says the tutor
         // asked for a roll; this says it GOT one — a `run_code` that refused
         // prints a sentence with no dice in it at all.
-        const output = outputIn(turn);
+        const output = toolResultsIn(turn.toolCalls, "run_code").join("\n");
         const rolled = [...output.matchAll(/\d+/g)].map((m) => Number(m[0]));
         expect(rolled.length, `run_code printed: ${output}`).toBeGreaterThanOrEqual(3);
         for (const face of rolled) {
@@ -109,7 +115,6 @@ describeEval(
       },
     );
   },
-  // `createVmRunCode()` is what makes these cases about the ANSWER and not just
-  // the call — see its doc for why the timeout and the swallowed throw matter.
-  { runCode: createVmRunCode() },
+  // `runCode` is what makes these cases about the ANSWER and not just the call.
+  { runCode },
 );

@@ -40,6 +40,7 @@ import { createWorkerEvaluator, type EvaluatedWorker } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
+import { createDevTypecheck } from "./_dev-typecheck.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { notify, outputSilenced } from "./_ui.ts";
@@ -407,7 +408,17 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   // never fire an event and the dev server would serve stale code until the
   // next save. Undefined unless AAI_DEV_WATCH is set — see devWatchEnabled.
   // The supervisor starts queueing, so an event landing mid-boot is held.
-  watcher = devWatchEnabled(opts.watch) ? watchDirectory(cwd, supervisor.request) : undefined;
+  // Typecheck at boot and on every restart, in the background. `aai dev` is the
+  // only command that did not, which made every compile-time diagnostic this
+  // SDK writes conditional on an editor being open — see `_dev-typecheck.ts`.
+  const devTypecheck = createDevTypecheck(cwd);
+  devTypecheck.request();
+  watcher = devWatchEnabled(opts.watch)
+    ? watchDirectory(cwd, () => {
+        devTypecheck.request();
+        supervisor.request();
+      })
+    : undefined;
 
   // Set once the backend has bound but before the supervisor owns it: if Vite
   // then fails to boot, this is the only handle on a server already holding

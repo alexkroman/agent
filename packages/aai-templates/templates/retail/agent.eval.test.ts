@@ -1,8 +1,7 @@
 /// <reference types="vite/client" />
 
-import { withSystemPrompt } from "@alexkroman1/aai/manifest";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { deployedAgent } from "@alexkroman1/aai/testing";
 // An EVAL: does this desk actually behave? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly and asserts about its result;
@@ -46,10 +45,10 @@ import systemPrompt from "./system-prompt.md?raw";
  * The glob is written here rather than reached for from a shared helper because
  * this file SHIPS — see `registry.test.ts`.
  */
-const retailAgent = withSystemPrompt(
-  withDiscoveredTools(authoredAgent, import.meta.glob("./tools/*.ts", { eager: true })),
-  systemPrompt,
-);
+const retailAgent = deployedAgent(authoredAgent, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+  systemPrompt: systemPrompt,
+});
 
 /** Harper Brown: exactly ONE pending order, which is what makes "cancel my
  *  pending order" unambiguous — `resolveOrder` refuses a reference that matches

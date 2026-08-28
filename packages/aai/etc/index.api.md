@@ -39,7 +39,7 @@ export interface AgentDef extends PipelineVoiceTuning {
 }
 
 // @public
-export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
+export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -745,11 +745,19 @@ export interface StateProjection<V = unknown> {
 }
 
 // @public
-export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
+export type StaticAgentParams = StaticAgentParamsBase & {
+    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
+};
+
+// @public
+type StaticAgentParamsBase = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
     page: "static";
     workflows: NonNullable<AgentDef["workflows"]>;
-} & {
-    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
+};
+
+// @public
+type StaticAgentParamsCore = StaticAgentParamsBase & {
+    [K in WorkflowAppOnlyField]?: never;
 };
 
 // @public
@@ -815,7 +823,7 @@ export type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public (undocumented)
+// @public
 export type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;

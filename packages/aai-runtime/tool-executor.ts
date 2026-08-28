@@ -90,6 +90,22 @@ type ExecuteToolCallOptions = {
    */
   subagents?: SubagentRunner | undefined;
   logger?: Logger | undefined;
+  /**
+   * Report that `execute` THREW — as distinct from returning a `ToolFailure`.
+   *
+   * The distinction is the one `toolFailure`/`isToolFailure` exists to draw. A
+   * returned failure is the author saying "this is expected, let the model
+   * recover"; a throw is a bug, and until this existed a throw produced no
+   * error frame, no client banner, no `error` session event, and one
+   * `logger.warn` in a ring buffer that dies with the sandbox. `tool` is one of
+   * the eight `SessionErrorCode` values and was emitted by NOTHING, so the
+   * likeliest bug in a voice agent was also its least observable: what a caller
+   * hears is the model improvising an apology around a serialized `TypeError`.
+   *
+   * Non-fatal by construction at the call sites — the turn continues, the model
+   * still gets the failure, and the frame is for whoever is watching.
+   */
+  onUncaught?: ((message: string) => void) | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
   /** Turn-scoped cancellation: unblocks the await (and is exposed to the tool
    *  as `ctx.signal`) when the issuing turn is cancelled or the session stops. */
@@ -189,7 +205,7 @@ export async function executeToolCall(
   args: Readonly<Record<string, unknown>>,
   options: ExecuteToolCallOptions,
 ): Promise<string> {
-  const { tool, logger } = options;
+  const { tool, logger, onUncaught } = options;
   const schema = tool.inputSchema ?? EMPTY_PARAMS;
   // The spec allows a sync or async validate; await normalizes both.
   const parsed = await schema["~standard"].validate(args);
@@ -236,6 +252,11 @@ export async function executeToolCall(
     } else {
       console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
     }
+    // The message names the TOOL, which the raw error never does: what reaches
+    // the model is `errorMessage(err)` alone, so a bare "Cannot read properties
+    // of undefined" was the whole diagnostic an author got for a bug in a file
+    // this function knows the name of.
+    onUncaught?.(`Tool "${name}" threw: ${errorMessage(err)}`);
     return serializeToolFailure(errorMessage(err));
   } finally {
     // The turn signal outlives this call; drop the follower or every tool

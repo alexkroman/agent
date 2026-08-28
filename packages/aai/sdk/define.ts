@@ -108,6 +108,21 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  * @public
  */
 export function agent(def: AgentParams): AgentDef {
+  return buildAgent(def);
+}
+
+/**
+ * The shared body of {@link agent} and {@link workflowApp}.
+ *
+ * They cannot forward to each other through the public types: `workflowApp`
+ * takes the arm that carries the workflow-app compile-error MESSAGES, while
+ * `agent`'s static arm types the same fields `never` so tsc's printed union
+ * stays readable for a voice agent (see `StaticAgentParamsCore`). A message
+ * type is not assignable to `never`, so `agent({ ...def, page: "static" })` no
+ * longer type-checks from inside `workflowApp` — and the fix is this shared
+ * body rather than a cast, which is the same runtime object either way.
+ */
+function buildAgent(def: object): AgentDef {
   assertNoInlineTools(def);
   /**
    * `omitUndefined` because a spread lets an own key whose value is
@@ -198,7 +213,7 @@ function assertNoInlineTools(def: unknown): void {
  * @public
  */
 export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef {
-  return agent({ ...def, page: "static" });
+  return buildAgent({ ...def, page: "static" });
 }
 
 /**
