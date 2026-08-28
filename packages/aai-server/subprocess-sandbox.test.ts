@@ -9,6 +9,7 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CONTAINED_ENV } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, it, vi } from "vitest";
 import { createFakeGuestSocket, type FakeGuestSocket } from "./_sandbox-vm-test-utils.ts";
 import {
@@ -103,9 +104,29 @@ describe("buildHarnessSpawn", () => {
       "AAI_GUEST_HOST",
       "AAI_GUEST_PORT",
       "AAI_GUEST_TOKEN",
+      // Not inherited — SET, and the only reason this list grows. See below.
+      "NODE_COMPILE_CACHE",
       "PATH",
     ]);
     expect(Object.values(env).join(" ")).not.toMatch(/secret/);
+  });
+
+  it("gives the guest V8's compile cache, which is ~20% of a cold spawn", () => {
+    // The Modal guest has had this from `guestExecBaseEnv()` all along, so its
+    // absence here was a parity gap rather than a decision: measured on this
+    // backend, evaluating the 16.4 MB harness costs ~1130ms cold against
+    // ~680ms warm, out of a ~2.0s cold spawn.
+    const { env } = buildHarnessSpawn(BASE_PARAMS);
+    expect(env.NODE_COMPILE_CACHE?.startsWith(tmpdir())).toBe(true);
+  });
+
+  it("does NOT claim the guest is CONTAINED, whatever else it sets", () => {
+    // The subtlety in reusing Modal's env builder, and the reason this backend
+    // spells the one variable out instead: `guestExecBaseEnv()` also sets this
+    // flag, and it is what switches SSRF screening off (`aai/host/ssrf.ts`). A
+    // subprocess guest shares the dev machine's network, so claiming
+    // containment here would disable the screening this backend needs most.
+    expect(buildHarnessSpawn(BASE_PARAMS).env[CONTAINED_ENV]).toBeUndefined();
   });
 
   it("does not run the guest in the server's working directory", () => {

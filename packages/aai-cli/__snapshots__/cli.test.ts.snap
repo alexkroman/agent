@@ -54,6 +54,7 @@ exports[`cli usage snapshots > aai dev --help 1`] = `
 USAGE dev [OPTIONS]
 OPTIONS
   -p, --port=<port>    Port to listen on (Default: 3000)
+            --watch    Restart on file changes (also AAI_DEV_WATCH=1)
              --json    Output JSON (auto-detected in non-TTY)"
 `;
 
