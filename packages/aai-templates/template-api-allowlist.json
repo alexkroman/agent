@@ -246,9 +246,7 @@
     "XaiLlmOptions"
   ],
   "@alexkroman1/aai/s2s": [
-    "assemblyAIS2s",
     "AssemblyAIS2sOptions",
-    "openaiS2s",
     "OpenAIS2sOptions",
     "OpenAIS2sVoice",
     "ProviderCredentialOptions",
@@ -308,15 +306,11 @@
   ],
   "@alexkroman1/aai/stt": [
     "ASSEMBLYAI_STT_EU_URL",
-    "assemblyAIStt",
     "AssemblyAISttOptions",
     "DEEPGRAM_DEFAULT_ENDPOINTING_MS",
-    "deepgramStt",
     "DeepgramSttOptions",
-    "elevenLabsStt",
     "ElevenLabsSttOptions",
     "ProviderCredentialOptions",
-    "sonioxStt",
     "SonioxSttOptions",
     "SttProvider"
   ],
@@ -375,18 +369,15 @@
   ],
   "@alexkroman1/aai/tts": [
     "ASSEMBLYAI_TTS_LANGUAGES",
-    "assemblyAITts",
     "AssemblyAITtsLanguage",
     "AssemblyAITtsOptions",
     "AssemblyAITtsVoice",
     "AssemblyAITtsVoiceId",
     "AssemblyAITtsVoiceInfo",
     "CARTESIA_DEFAULT_VOICE",
-    "cartesiaTts",
     "CartesiaTtsOptions",
     "ProviderCredentialOptions",
     "RIME_DEFAULT_VOICE",
-    "rimeTts",
     "RimeTtsOptions",
     "TtsProvider"
   ],

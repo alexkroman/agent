@@ -499,6 +499,11 @@ is the one to use**:
 | `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*Classified` |
 | `sendToChannel` (`/channels`) | `sendToChannelClassified` |
 
+`stepFetchOk` is the one that is not spelled `*Classified`, and the name is the
+difference: the others turn an already-thrown failure into a classified one,
+while this also turns a NON-2XX RESPONSE into a throw — `stepFetch` resolves
+with a `404` rather than raising it. Two changes, so two names.
+
 The whole of what a wrapper adds is `throwStepError`, and that is worth having
 because the DevKit's retry policy is decided by WHICH error a step throws. Raw,
 every failure looks the same to it: a bad API key is retried until the attempts
