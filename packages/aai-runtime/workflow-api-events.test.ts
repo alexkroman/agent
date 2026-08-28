@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   type EventSink,
   RUN_EVENT_HEARTBEAT_MS,
+  RUN_EVENT_MAX_READ_FAILURES,
   RUN_EVENT_POLL_MS,
   RUN_EVENT_STREAM_MAX_MS,
   type RunReader,
@@ -184,5 +185,64 @@ describe("streamRunEvents", () => {
     const after = chunks.length;
     await vi.advanceTimersByTimeAsync(RUN_EVENT_STREAM_MAX_MS);
     expect(chunks).toHaveLength(after);
+  });
+
+  test("an empty run id is `missing`, without asking the world about it", async () => {
+    // The route's `/events` suffix is stripped off whatever precedes it, so
+    // `GET /workflows/runs//events` — and its reachable spelling
+    // `/workflows/runs/events` — arrive here with the empty string. Every other
+    // run-id route refuses it before the read (`readRun` and `streamRunOutput`
+    // both spell `runId ? … : undefined`; `cancelRun` and `wakeRun` both open
+    // with `if (!runId)`), because the world rejects an id it cannot parse
+    // rather than answering "no such run" for it. Reaching the read was
+    // observed under `aai dev` as a stream that sent nothing but heartbeats for
+    // its full five-minute cap.
+    const empty = reader([run()]);
+    const { res, chunks } = fakeRes();
+    streamRunEvents(res, empty, "");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events(chunks)).toEqual(["missing"]);
+    expect(chunks.at(-1)).toBe("<end>");
+    expect(empty.get).not.toHaveBeenCalled();
+  });
+
+  test("a read that keeps failing hands the client back rather than holding in silence", async () => {
+    // Holding through a BLIP is the point of the retry above; holding through a
+    // permanent failure is not. Nothing downstream can tell the two apart —
+    // the frames are identical (none) — so an unbounded retry presents a dead
+    // stream as a healthy idle one until the duration cap, and the client's own
+    // poll, which would have surfaced the error, never takes over.
+    const failing: RunReader = { get: vi.fn(async () => Promise.reject(new Error("world gone"))) };
+    const logger = { warn: vi.fn() };
+    const { res, chunks } = fakeRes();
+    streamRunEvents(res, failing, "wrun_1", { logger });
+    await vi.advanceTimersByTimeAsync(RUN_EVENT_POLL_MS * (RUN_EVENT_MAX_READ_FAILURES + 2));
+    expect(events(chunks)).toEqual(["idle"]);
+    expect(chunks.at(-1)).toBe("<end>");
+    expect(failing.get).toHaveBeenCalledTimes(RUN_EVENT_MAX_READ_FAILURES);
+    // And the error is REPORTED. Swallowed, a lost database looked exactly like
+    // a quiet run.
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("read failed"),
+      expect.objectContaining({ runId: "wrun_1", error: "world gone" }),
+    );
+  });
+
+  test("an intermittent read does not accumulate toward the failure cap", async () => {
+    // The cap counts CONSECUTIVE failures: a stream watching a run for minutes
+    // over a flaky link would otherwise reach any fixed total eventually.
+    let calls = 0;
+    const flaky: RunReader = {
+      get: vi.fn(async () => {
+        calls += 1;
+        if (calls % 2 === 1) throw new Error("blip");
+        return run();
+      }),
+    };
+    const { res, chunks } = fakeRes();
+    streamRunEvents(res, flaky, "wrun_1");
+    await vi.advanceTimersByTimeAsync(RUN_EVENT_POLL_MS * (RUN_EVENT_MAX_READ_FAILURES * 4));
+    expect(events(chunks)).toEqual(["run"]);
+    expect(chunks.at(-1)).not.toBe("<end>");
   });
 });

@@ -353,7 +353,7 @@ const ROUTES: readonly Route[] = [
     matches: (url) => url.startsWith(RUNS_PREFIX) && url.endsWith("/events"),
     run: (_req, res, ctx, url) => {
       const id = runIdOr400(res, url, "/events");
-      if (id !== undefined) streamRunEvents(res, ctx.engine, id);
+      if (id !== undefined) streamRunEvents(res, ctx.engine, id, { logger: ctx.logger });
     },
   },
   // Same rule as `/events` above: a longer path that starts with the `/runs/`

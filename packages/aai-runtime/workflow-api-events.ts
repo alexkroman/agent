@@ -25,6 +25,7 @@
  * @internal
  */
 
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { isTerminal, type WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { SSE_HEADERS, sseFrame } from "./workflow-api-http.ts";
 
@@ -51,6 +52,31 @@ export const RUN_EVENT_HEARTBEAT_MS = 15_000;
  */
 export const RUN_EVENT_STREAM_MAX_MS = 5 * 60_000;
 
+/**
+ * How many CONSECUTIVE failed reads the stream absorbs before handing the
+ * client back.
+ *
+ * Retrying a failed read is right for a blip and wrong for anything permanent,
+ * and the two are indistinguishable from here — so the retry has to be bounded
+ * or a dead stream presents as a healthy quiet one. It produces no frames
+ * either way, so a page watching a run whose world has gone sees nothing but
+ * heartbeats until {@link RUN_EVENT_STREAM_MAX_MS}, while its own poll — which
+ * would have surfaced the error — never takes over.
+ *
+ * Observed under `aai dev`: `GET /workflows/runs//events`, which is what the
+ * route's suffix-stripping makes of `/workflows/runs/events`, reached the world
+ * with an empty id. An id the world cannot PARSE is rejected rather than
+ * answered "no such run", so every read threw and the response held for its
+ * full five minutes without a single event. The empty id is guarded below as
+ * well — that spelling should never reach a read — but the cap is what makes
+ * the general case (a lost database, a serialization fault) end in seconds
+ * instead of minutes.
+ *
+ * CONSECUTIVE, not a total: a stream watching a long run over a flaky link
+ * would reach any fixed total eventually, and each of those reads recovered.
+ */
+export const RUN_EVENT_MAX_READ_FAILURES = 5;
+
 /** What the stream needs to read. A slice of the client, so a test needs no world. */
 export type RunReader = { get(runId: string): Promise<WorkflowRunSnapshot | undefined> };
 
@@ -75,6 +101,12 @@ export type EventSink = {
 export type RunEventStream = { close(): void };
 
 /**
+ * The one method this module logs through, so a caller can pass its own
+ * `Logger` and a spec can pass an object literal.
+ */
+export type RunEventLogger = { warn?: (message: string, meta?: Record<string, unknown>) => void };
+
+/**
  * Serve one run's state as SSE until it is terminal.
  *
  * Returns a handle whose `close()` ends the response CLEANLY — a terminating
@@ -87,12 +119,14 @@ export function streamRunEvents(
   res: EventSink,
   reader: RunReader,
   runId: string,
-  options: { now?: () => number } = {},
+  options: { now?: () => number; logger?: RunEventLogger | undefined } = {},
 ): RunEventStream {
   const now = options.now ?? Date.now;
   const startedAt = now();
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Consecutive failed reads — see {@link RUN_EVENT_MAX_READ_FAILURES}. */
+  let failures = 0;
   // The last snapshot SENT, as JSON. Compared rather than deep-equalled because
   // the payload is what the client receives — if the bytes are identical there
   // is nothing to tell it, and any state change always changes them.
@@ -129,12 +163,31 @@ export function streamRunEvents(
     let run: WorkflowRunSnapshot | undefined;
     try {
       run = await reader.get(runId);
-    } catch {
+    } catch (err) {
       // A read that failed says nothing about the run, so the stream holds and
       // tries again. Ending here would send a page back to polling over a blip.
+      // BOUNDED, though: past the cap the failure is not a blip, and a stream
+      // that keeps this to itself is worse than no stream at all — see
+      // RUN_EVENT_MAX_READ_FAILURES.
+      failures += 1;
+      options.logger?.warn?.("Workflow run event read failed", {
+        runId,
+        error: errorMessage(err),
+        failures,
+      });
+      if (failures >= RUN_EVENT_MAX_READ_FAILURES) {
+        // `idle`, which the client already reads as "this stream gave up, go
+        // back to polling" — the poll then reports the underlying failure the
+        // way it reports every other one. A new frame kind would need every
+        // client to learn it to reach the same place.
+        send("idle", { runId });
+        finish();
+        return;
+      }
       arm();
       return;
     }
+    failures = 0;
     if (closed) return;
     if (run === undefined) {
       // A 404 is a STABLE answer — a run the world does not know about now will
@@ -171,7 +224,19 @@ export function streamRunEvents(
     if (timer !== undefined) clearTimeout(timer);
   });
 
-  void tick();
+  if (runId) {
+    void tick();
+  } else {
+    // The empty id every sibling route refuses before its read: `readRun` and
+    // `streamRunOutput` spell it `runId ? … : undefined`, `cancelRun` and
+    // `wakeRun` open with `if (!runId)`. It is not a run that is gone but an id
+    // the world cannot parse, so asking would throw rather than answer — which
+    // is how this route's five-minute silent hold was found. `missing` is the
+    // right frame for it either way: an id that can never name a run is the
+    // stable answer the client already stops on.
+    send("missing", { runId });
+    finish();
+  }
 
   return {
     close: () => {
