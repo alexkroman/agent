@@ -57,14 +57,15 @@ type JsonObjectSchema = {
  * beside it are not reordered when the schema lands.
  *
  * @example
- * ```tsx
+ * ```tsx no-check
  * import { Form, SubmitButton, WorkflowFields, useWorkflowSubmit }
  *   from "@alexkroman1/aai-ui";
+ * import type { transcribe } from "./agent.ts";
  *
  * function StartRun() {
- *   const { submit, pending, error } = useWorkflowSubmit("transcribe");
+ *   const { submitForm, pending, error } = useWorkflowSubmit<typeof transcribe>("transcribe");
  *   return (
- *     <Form onSubmit={(values) => submit(values)} error={error}>
+ *     <Form onSubmit={submitForm} error={error}>
  *       <WorkflowFields workflow="transcribe" />
  *       <SubmitButton pending={pending}>Transcribe</SubmitButton>
  *     </Form>

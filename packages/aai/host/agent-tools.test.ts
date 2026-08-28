@@ -49,16 +49,18 @@ describe("callable builtins", () => {
       async () => new Response("<html><body>hello</body></html>", { status: 200 }),
     );
     await expect(visitWebpage("https://example.com", { fetch })).resolves.toBeDefined();
-    await expect(webSearch("anything", { maxResults: 1, fetch })).resolves.toBeDefined();
+    await expect(webSearch("anything", { fetch })).resolves.toBeDefined();
   });
 
-  test("accepts the builtin's own argument shape, not just positional", () => {
-    // Agents reach for `{ query, max_results }` because that is the shape the
-    // model-facing builtin documents; guessing wrong cost a build round.
+  test("accepts the bag form as well as positional, with ONE name for the cap", () => {
+    // `maxResults` lives in the bag and nowhere else. It used to be settable as
+    // `max_results` too — the only snake_case identifier on this TypeScript
+    // surface — and again in the second parameter, so one option had three ways
+    // to arrive and two of them were undiscoverable from the other.
     const fetch = vi.fn(async () => new Response("<html>ok</html>", { status: 200 }));
     return Promise.all([
-      expect(webSearch({ query: "x", max_results: 2, fetch })).resolves.toBeDefined(),
       expect(webSearch({ query: "x", maxResults: 2, fetch })).resolves.toBeDefined(),
+      expect(webSearch("x", { fetch })).resolves.toBeDefined(),
       expect(visitWebpage({ url: "https://example.com", fetch })).resolves.toBeDefined(),
       expect(fetchJson({ url: "https://example.com", fetch })).resolves.toBeDefined(),
     ]);

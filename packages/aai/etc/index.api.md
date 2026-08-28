@@ -656,7 +656,6 @@ export interface SessionSlotOptions<T, After = void> {
 
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
-    system?: string;
     tools?: InlineToolsMisuse;
 };
 
@@ -781,11 +780,11 @@ export function subagent(def: SubagentDef): SubagentDef;
 // @public
 export interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }

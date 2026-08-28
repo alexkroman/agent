@@ -431,7 +431,7 @@ export interface AgentDef extends PipelineVoiceTuning {
    * export default agent({
    *   name: "Docs Assistant",
    *   text: true,
-   *   system: "Answer questions about the docs.",
+   *   systemPrompt: "Answer questions about the docs.",
    * });
    * ```
    *

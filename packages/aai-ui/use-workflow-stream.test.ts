@@ -16,6 +16,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockWorkflowApi, refuseNetwork } from "./_react-test-utils.ts";
+import type { TestWorkflow } from "./_workflow-test-defs.ts";
 import { useWorkflowStream } from "./use-workflow-stream.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
 
@@ -60,7 +61,7 @@ function recordingApi(over: Partial<WorkflowApi> = {}) {
 /** Render the hook and run one submission to completion. */
 async function submitFile(api: WorkflowApi, file?: File, parallel?: boolean) {
   const { result } = renderHook(() =>
-    useWorkflowStream("transcribe", { api, ...omitUndefined({ parallel }) }),
+    useWorkflowStream<TestWorkflow>("transcribe", { api, ...omitUndefined({ parallel }) }),
   );
   const chosen = file ?? new File([new Uint8Array([1, 2, 3])], "call.wav", { type: "audio/wav" });
   await act(async () => {
@@ -159,7 +160,7 @@ describe("useWorkflowStream", () => {
         return { id, name: "", type: "", size: 3, complete: true, url: `/u/${id}` };
       }),
     });
-    const { result } = renderHook(() => useWorkflowStream("transcribe", { api }));
+    const { result } = renderHook(() => useWorkflowStream<TestWorkflow>("transcribe", { api }));
 
     let submitted: Promise<void> = Promise.resolve();
     await act(async () => {
@@ -233,7 +234,7 @@ describe("useWorkflowStream", () => {
     // id from a previous submit, an empty optional. Refusing would be the hook
     // deciding what its own declaration means.
     const { api, calls } = recordingApi();
-    const { result } = renderHook(() => useWorkflowStream("transcribe", { api }));
+    const { result } = renderHook(() => useWorkflowStream<TestWorkflow>("transcribe", { api }));
     await act(async () => {
       await result.current.submit({ recording: "upl_already_stored" });
     });
@@ -247,7 +248,7 @@ describe("useWorkflowStream", () => {
       calls.push("list");
       return [{ name: "transcribe" }];
     });
-    const { result } = renderHook(() => useWorkflowStream("transcribe", { api }));
+    const { result } = renderHook(() => useWorkflowStream<TestWorkflow>("transcribe", { api }));
     await act(async () => {
       await result.current.submit({ topic: "cats" });
     });
@@ -340,7 +341,7 @@ describe("a file the workflow does not declare as an upload", () => {
    */
   test("passes a plain input through even with no upload declared", async () => {
     const { api, calls } = recordingApi({ list: vi.fn(async () => noUploads) });
-    const { result } = renderHook(() => useWorkflowStream("transcribe", { api }));
+    const { result } = renderHook(() => useWorkflowStream<TestWorkflow>("transcribe", { api }));
     await act(async () => {
       await result.current.submit({ recording: "upload_abc" });
     });

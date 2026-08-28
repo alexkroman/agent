@@ -148,9 +148,10 @@ export function createSubagentRunner(opts: CreateSubagentRunnerOptions): Subagen
     const agent = new ToolLoopAgent({
       id: sub.name,
       model,
+      // `instructions` is the agent library's own key; `systemPrompt` is ours.
       instructions: delegateOptions.context
-        ? `${sub.instructions}\n\n${delegateOptions.context}`
-        : sub.instructions,
+        ? `${sub.systemPrompt}\n\n${delegateOptions.context}`
+        : sub.systemPrompt,
       tools: toVercelTools(schemas, {
         executeTool,
         sessionId,

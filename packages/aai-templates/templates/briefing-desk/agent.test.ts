@@ -86,7 +86,7 @@ describe("the desk itself", () => {
   });
 
   test("tells each subagent that its final message is all the desk sees", () => {
-    expect(researcher.instructions).toMatch(/FINAL message/);
+    expect(researcher.systemPrompt).toMatch(/FINAL message/);
   });
 });
 

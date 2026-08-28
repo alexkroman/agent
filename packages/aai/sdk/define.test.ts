@@ -69,14 +69,14 @@ describe("agent()", () => {
   // what make the call illegal, so there is nothing legal to pass.
   const agentMisuse = (config: Record<string, unknown>) => agent(config as never);
 
-  test("`system` is an alias of systemPrompt", () => {
-    const def = agent({ name: "t", system: "You are terse." });
-    expect(def.systemPrompt).toBe("You are terse.");
-    expect("system" in def).toBe(false);
-  });
-
-  test("setting both `system` and `systemPrompt` throws", () => {
-    expect(() => agent({ name: "t", system: "a", systemPrompt: "b" })).toThrow(/aliases/);
+  test("`system` is not a field — it was an alias of `systemPrompt` and is gone", () => {
+    // One concept, one name. The alias existed to match the Vercel AI SDK's
+    // spelling and made `agent({ system, systemPrompt })` representable, which
+    // then needed a runtime throw to forbid. It is now a stray field, so
+    // `assertNoStrayFields` reports it and points at the name that exists.
+    expect(() => agentMisuse({ name: "t", system: "You are terse." })).toThrow(
+      /`system` \(renamed to `systemPrompt`\)/,
+    );
   });
 
   test("a key that is present-and-undefined does not clobber a default", () => {

@@ -21,7 +21,6 @@ import type { ChatMessage, ToolCallInfo } from "./types.ts";
 import { type ConversationItem, useConversation } from "./use-conversation.ts";
 import { useDownloadUrl } from "./use-download-url.ts";
 import { useWorkflowSubmit } from "./use-workflow-form.ts";
-import type { WorkflowRun } from "./workflow-client.ts";
 
 type Quote = { symbol: string; price: number };
 
@@ -173,17 +172,13 @@ test("useDownloadUrl reports pending unconditionally and the rest optionally", (
  * `link-digest`: reintroducing `submit({ ur1: 42 })` fails with `TS2353: 'ur1'
  * does not exist in type '{ url: string; }'`.
  *
- * What IS assertable here is the fallback, and it is the half that would break
- * silently: `WorkflowInputOf` of a non-def is `never`, which as a parameter
- * type accepts nothing at all, so an un-parameterized call would stop compiling
- * everywhere. `SubmitInputOf` maps that back to `unknown`.
+ * There is no untyped fallback: the def is REQUIRED, so an un-parameterized
+ * call does not compile. That is deliberate — the fallback was the last way to
+ * get an untyped `submit` back, and an escape hatch nobody needs is one
+ * somebody uses. A workflow that declares no input schema gets `submit(): void`
+ * rather than an unusable `never` parameter, which `SubmitInputOf` is what
+ * makes true.
  */
-test("an un-parameterized workflow hook keeps behaving exactly as before", () => {
-  const loose = useWorkflowSubmit("digest");
-  expectTypeOf(loose.submit).parameter(0).toBeUnknown();
-  expectTypeOf(loose.run).toExtend<WorkflowRun<unknown> | undefined>();
-});
-
 test("submitForm is the door for DOM-scraped values, and stays loose on purpose", () => {
   // `FormValues` is `Record<string, unknown>` read off the elements at submit
   // time, so the shape is not knowable here and the SERVER validates it against

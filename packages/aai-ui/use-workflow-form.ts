@@ -343,7 +343,7 @@ export type UseWorkflowSubmitOptions = {
  *
  * @public
  */
-export function useWorkflowSubmit<D extends AnyWorkflowDef = AnyWorkflowDef>(
+export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   workflow: string,
   opts: UseWorkflowSubmitOptions = {},
 ): WorkflowSubmission<SubmitOutputOf<D>, SubmitInputOf<D>> {

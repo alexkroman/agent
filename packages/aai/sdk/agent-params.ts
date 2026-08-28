@@ -92,8 +92,6 @@ export type SharedAgentParams = Omit<
   DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField
 > &
   Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
-    /** Alias of `systemPrompt` (the Vercel AI SDK's field name). */
-    system?: string;
     /**
      * Not a field. See `InlineToolsMisuse` — a tool is declared by its
      * FILE, so this is typed as the message that names the one to create.

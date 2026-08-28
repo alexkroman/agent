@@ -507,11 +507,11 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }

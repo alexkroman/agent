@@ -68,8 +68,20 @@ describe("stray agent fields", () => {
   });
 
   test("the author conveniences pass — normalization consumes them before the check", () => {
-    const config = configOf({ name: "A", system: "Be brief.", voice: "jane" });
-    expect(config.systemPrompt).toBe("Be brief.");
+    // `voice` desugars to a TTS descriptor and is gone by the time the check
+    // runs. `system` used to be in this list; it is a stray now.
+    const config = configOf({ name: "A", voice: "jane" });
+    expect(config.tts?.kind).toBe("assemblyai");
+  });
+
+  test("a REMOVED field is named as renamed, which edit distance cannot reach", () => {
+    // `system` to `systemPrompt` is six edits, past any cap a useful
+    // suggestion can afford — and it is the mistake most worth catching,
+    // because the author did not typo anything: they wrote a field that
+    // used to work.
+    expect(() => configOf({ name: "A", system: "Be brief." })).toThrow(
+      /`system` \(renamed to `systemPrompt`\)/,
+    );
   });
 
   test("endpointing shorthand passes — `takeNumber` deletes it before the check sees it", () => {

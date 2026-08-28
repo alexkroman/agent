@@ -175,7 +175,7 @@ export const SEARCH_RESULTS = 4;
 export const liveSearch: SearchFn = async (query) => {
   const results = await webSearch<{ results?: { title?: string; url?: string }[] }>({
     query,
-    max_results: SEARCH_RESULTS,
+    maxResults: SEARCH_RESULTS,
   });
   // A REFUSED search is not an empty web, and `webSearch` answers with
   // `{ error }` rather than throwing — so an unnarrowed `?? []` below would tell

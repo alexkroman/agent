@@ -157,13 +157,16 @@ export async function visitWebpage<T = DefaultToolResult>(
  * a different claim and the one this repo shipped twice.
  */
 export async function webSearch<T = DefaultToolResult>(
-  query: string | ({ query: string; max_results?: number; maxResults?: number } & CallOptions),
-  options?: { maxResults?: number } & CallOptions,
+  query: string | ({ query: string; maxResults?: number } & CallOptions),
+  options?: CallOptions,
 ): Promise<T | ToolFailure> {
   const spec = normalizeSpec("query", query, options);
-  // `max_results` is the builtin's spelling and `maxResults` the JS one;
-  // both arrive here because both are things an author reasonably writes.
-  const max = spec.max_results ?? spec.maxResults;
+  // ONE spelling in ONE position. It used to take `max_results` as well — the
+  // only snake_case identifier on this SDK's TypeScript surface, and the only
+  // option with two names — and `maxResults` in the second parameter too, so
+  // one option had three ways to arrive. `max_results` stays the WIRE name
+  // below because it is the builtin's own schema, which the model reads.
+  const max = spec.maxResults;
   return (await callBuiltin(
     "web_search",
     { query: spec.query, ...omitUndefined({ max_results: max }) },

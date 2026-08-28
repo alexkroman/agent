@@ -74,11 +74,12 @@ const PENDING: UseDownloadUrlResult = { pending: true };
  * @returns See {@link UseDownloadUrlResult}.
  *
  * @example
- * ```tsx
+ * ```tsx no-check
  * import { useDownloadUrl, useWorkflowSubmit } from "@alexkroman1/aai-ui";
+ * import type { spokenSummary } from "./agent.ts";
  *
  * function Playback() {
- *   const { run } = useWorkflowSubmit<{ audio: string }>("spokenSummary");
+ *   const { run } = useWorkflowSubmit<typeof spokenSummary>("spokenSummary");
  *   const output = run?.status === "completed" ? run.output : undefined;
  *   const audio = useDownloadUrl(output?.audio);
  *   if (audio.pending) return <p>Fetching audio…</p>;

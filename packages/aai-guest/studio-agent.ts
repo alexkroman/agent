@@ -96,7 +96,7 @@ export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps)
   const authored = agent({
     name: "AAI Studio",
     text: true,
-    system: session.system,
+    systemPrompt: session.system,
     // The model is host configuration delivered by `studio/session-init`; the
     // KEY is the caller's own and rides in as `providerEnv`, never here.
     llm: assemblyAILlm({

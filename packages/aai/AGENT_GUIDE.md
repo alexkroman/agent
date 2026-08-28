@@ -178,8 +178,8 @@ import { agent } from "@alexkroman1/aai";
 export default agent({
   name: string;                              // required — display name
   systemPrompt?: string;                     // usually ABSENT — write system-prompt.md
-                                             // instead; declare it only to COMPOSE
-                                             // one (`system` is an accepted alias)
+                                             // instead; declare it only to COMPOSE one.
+                                             // There is no `system` alias — one name.
   greeting?: string;                         // default: "Hey there..."
   voice?: string;                            // TTS voice for the default pipeline, e.g. "michael"
                                              // (shorthand for tts: assemblyAITts({ voice });
@@ -746,7 +746,7 @@ rather than fail the turn:
 import { webSearch } from "@alexkroman1/aai/tools";
 import { isToolFailure } from "@alexkroman1/aai/utils";
 
-const found = await webSearch<{ results?: { url?: string }[] }>({ query, max_results: 4 });
+const found = await webSearch<{ results?: { url?: string }[] }>({ query, maxResults: 4 });
 // NOT `(found.results ?? [])` — a REFUSED search would then read as an empty web.
 if (isToolFailure(found)) return `That search failed: ${found.error}`;
 return (found.results ?? []).map((one) => one.url);
@@ -1344,8 +1344,8 @@ an SDK dependency. `support-line` is the worked example.
 
 `ctx.generate` is ONE prompt. When answering takes an unknown number of tool
 calls whose intermediate results the conversation has no reason to carry,
-delegate to a **subagent** instead: a second tool loop with its own
-instructions, model, tools and — the whole point — its own context window.
+delegate to a **subagent** instead: a second tool loop with its own system
+prompt, model, tools and — the whole point — its own context window.
 
 ```ts
 import { subagent, tool } from "@alexkroman1/aai";
@@ -1353,7 +1353,9 @@ import { z } from "zod";
 
 const researcher = subagent({
   name: "researcher",
-  instructions:
+  // `systemPrompt`, the same field name `agent()` uses — a subagent is a
+  // field-for-field smaller agent, so nothing about it is spelled differently.
+  systemPrompt:
     "Research the task with the tools you have. IMPORTANT: your final message " +
     "is the only thing the caller sees — end with a self-contained summary.",
   builtinTools: ["web_search", "visit_webpage"],
@@ -1547,7 +1549,7 @@ something it has to notice and switch off.
 
 | Tool | Description | Params |
 | --- | --- | --- |
-| `web_search` | Search the web (DuckDuckGo) — no API key required | `query`, `max_results?` (default 5) |
+| `web_search` | Search the web (DuckDuckGo) — no API key required | `query`, `maxResults?` (default 5) |
 | `visit_webpage` | Fetch URL to plain text | `url` |
 | `get_page_design` | Fetch URL's raw HTML + CSS (style blocks and linked stylesheets) to study/mimic a site's design | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |

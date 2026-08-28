@@ -40,6 +40,8 @@ export function assertNoStrayFields(
   const stray = Object.keys(src).filter((key) => !known.has(key));
   if (stray.length === 0) return;
   const named = stray.map((key) => {
+    const renamed = RENAMED_FIELDS[key];
+    if (renamed !== undefined) return `\`${key}\` (renamed to \`${renamed}\`)`;
     const near = nearestName(key, known);
     return near === undefined ? `\`${key}\`` : `\`${key}\` (did you mean \`${near}\`?)`;
   });
@@ -50,6 +52,20 @@ export function assertNoStrayFields(
       "yours to keep, hold it in a module constant rather than on the agent.",
   );
 }
+
+/**
+ * Fields this SDK has REMOVED, and what replaced them.
+ *
+ * Edit distance cannot find these — `system` to `systemPrompt` is six edits,
+ * well past the cap a useful suggestion can afford — and they are exactly the
+ * mistakes most worth catching, because the author did not typo anything: they
+ * wrote a field that used to work. An entry costs one line and pays for itself
+ * the first time somebody upgrades.
+ */
+const RENAMED_FIELDS: Readonly<Record<string, string>> = {
+  system: "systemPrompt",
+  instructions: "systemPrompt",
+};
 
 /**
  * The closest name in `known` within edit distance 3, or `undefined` when

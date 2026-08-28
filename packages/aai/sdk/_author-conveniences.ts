@@ -26,13 +26,7 @@ import { assemblyAITts } from "./providers/tts/assemblyai.ts";
  */
 export function normalizeAgentConveniences(input: unknown): unknown {
   if (!isRecord(input)) return input;
-  const { system, voice, ...rest } = input;
-  if (typeof system === "string") {
-    if (rest.systemPrompt !== undefined) {
-      throw new Error("`system` and `systemPrompt` are aliases — set one, not both.");
-    }
-    rest.systemPrompt = system;
-  }
+  const { voice, ...rest } = input;
   if (typeof rest.llm === "string") rest.llm = normalizeLlm(rest.llm);
   if (voice !== undefined) {
     if (typeof voice !== "string") {

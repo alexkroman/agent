@@ -404,7 +404,7 @@ describe("the steps that research", () => {
 
     const note = await investigate(brief, "Tool use");
 
-    expect(webSearch).toHaveBeenCalledWith({ query: "otter tool use", max_results: 5 });
+    expect(webSearch).toHaveBeenCalledWith({ query: "otter tool use", maxResults: 5 });
     expect(visitWebpage).toHaveBeenCalledWith("https://otters.example/tools");
     expect(note.findings).toContain("crack shellfish");
     expect(note.sources).toEqual([{ title: "Otters", url: "https://otters.example/tools" }]);

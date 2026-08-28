@@ -186,7 +186,7 @@ const HOST_ONLY_FIELD_SET: ReadonlySet<string> = new Set(HOST_ONLY_AGENT_FIELDS)
  * listed, so a new field is known here the moment it is declared there — a
  * hand-kept copy would reject the field on the branch that adds it.
  */
-const KNOWN_AGENT_FIELDS: ReadonlySet<string> = new Set([
+export const KNOWN_AGENT_FIELDS: ReadonlySet<string> = new Set([
   ...Object.keys(AgentConfigSchema.shape),
   ...HOST_ONLY_AGENT_FIELDS,
 ]);

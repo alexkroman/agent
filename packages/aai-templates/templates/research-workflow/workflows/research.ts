@@ -430,7 +430,7 @@ async function search(query: string): Promise<{ summary: string; sources: Source
   try {
     const results = await webSearch<{ results?: { title?: string; url?: string }[] }>({
       query,
-      max_results: SEARCH_RESULTS,
+      maxResults: SEARCH_RESULTS,
     });
     // The `catch` below was written for exactly this and could not reach it:
     // `webSearch` ANSWERS with `{ error }` rather than throwing, so a refused

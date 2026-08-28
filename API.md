@@ -1505,11 +1505,11 @@ export type SttTurnMeta = {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -2423,7 +2423,6 @@ export interface SessionSlotOptions<T, After = void> {
 
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
-    system?: string;
     tools?: InlineToolsMisuse;
 };
 
@@ -2548,11 +2547,11 @@ export function subagent(def: SubagentDef): SubagentDef;
 // @public
 export interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -3755,11 +3754,11 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -5604,11 +5603,11 @@ export type StubUploadWrite = {
 // @public
 interface SubagentDef {
     builtinTools?: readonly BuiltinTool[];
-    instructions: string;
     llm?: LlmProvider | string;
     maxOutputTokens?: number;
     maxSteps?: number;
     name: string;
+    systemPrompt: string;
     temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
@@ -6096,11 +6095,8 @@ export function visitWebpage<T = DefaultToolResult>(url: string | ({
 // @public
 export function webSearch<T = DefaultToolResult>(query: string | ({
     query: string;
-    max_results?: number;
     maxResults?: number;
-} & CallOptions), options?: {
-    maxResults?: number;
-} & CallOptions): Promise<T | ToolFailure>;
+} & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;
 ```
 
 ## `@alexkroman1/aai/tts`
@@ -7866,7 +7862,7 @@ export interface TextTurnOptions {
     stopWhen?: readonly ((opts: {
         steps: readonly StepResult<ToolSet>[];
     }) => boolean | PromiseLike<boolean>)[];
-    system?: string;
+    systemPrompt?: string;
     temperature?: number;
     toolChoice?: ToolChoice;
 }
@@ -8958,10 +8954,10 @@ export function SubmitButton(input: {
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element;
 
 // @public
-type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? unknown : WorkflowInputOf<D>;
+type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? void : WorkflowInputOf<D>;
 
 // @public
-type SubmitOutputOf<D> = [WorkflowOutputOf<D>] extends [never] ? unknown : WorkflowOutputOf<D>;
+type SubmitOutputOf<D> = WorkflowOutputOf<D>;
 
 // @public
 export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
@@ -9153,13 +9149,13 @@ export type UseWorkflowsResult = {
 };
 
 // @public
-export function useWorkflowStream<D extends AnyWorkflowDef = AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
 
 // @public
-export function useWorkflowSubmit<D extends AnyWorkflowDef = AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowSubmitOptions = {

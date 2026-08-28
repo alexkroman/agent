@@ -163,7 +163,7 @@ export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmiss
  *
  * @public
  */
-export function useWorkflowStream<D extends AnyWorkflowDef = AnyWorkflowDef>(
+export function useWorkflowStream<D extends AnyWorkflowDef>(
   workflow: string,
   opts: UseWorkflowStreamOptions = {},
 ): WorkflowStreamSubmission<SubmitOutputOf<D>, SubmitInputOf<D>> {

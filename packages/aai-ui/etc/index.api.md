@@ -334,10 +334,10 @@ export function SubmitButton(input: {
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element;
 
 // @public
-type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? unknown : WorkflowInputOf<D>;
+type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? void : WorkflowInputOf<D>;
 
 // @public
-type SubmitOutputOf<D> = [WorkflowOutputOf<D>] extends [never] ? unknown : WorkflowOutputOf<D>;
+type SubmitOutputOf<D> = WorkflowOutputOf<D>;
 
 // @public
 export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
@@ -529,13 +529,13 @@ export type UseWorkflowsResult = {
 };
 
 // @public
-export function useWorkflowStream<D extends AnyWorkflowDef = AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
 
 // @public
-export function useWorkflowSubmit<D extends AnyWorkflowDef = AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<SubmitOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
 export type UseWorkflowSubmitOptions = {

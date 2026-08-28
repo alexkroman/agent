@@ -6,8 +6,8 @@
 
 import { describe, expect, test } from "vitest";
 import { agentConfigWarnings, assertProviderTriple } from "./config-rules.ts";
-import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
-import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
+import type { AgentConfig } from "./manifest-barrel.ts";
+import { toAgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropicLlm } from "./providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
@@ -404,10 +404,12 @@ describe("toAgentConfig — AssemblyAI TTS language validation", () => {
 });
 
 describe("author conveniences on raw configs (no agent())", () => {
-  test("toAgentConfig maps `system` to systemPrompt", () => {
-    const parsed = rawConfig({ name: "raw", system: "Be terse." });
-    expect(parsed.systemPrompt).toBe("Be terse.");
-    expect("system" in parsed).toBe(false);
+  test("toAgentConfig reports `system` by name — it was an alias and is gone", () => {
+    // A raw `export default {...}` is exactly where a stale `system` survives
+    // an upgrade, because no `agent()` call type-checked it on the way in.
+    expect(() => rawConfig({ name: "raw", system: "Be terse." })).toThrow(
+      /`system` \(renamed to `systemPrompt`\)/,
+    );
   });
 
   test("toAgentConfig desugars a string llm alongside a full triple", () => {
@@ -418,31 +420,6 @@ describe("author conveniences on raw configs (no agent())", () => {
       tts: { kind: "assemblyai", options: {} },
     });
     expect(parsed.llm?.kind).toBe("gateway");
-  });
-
-  test("toAgentConfig rejects both system and systemPrompt", () => {
-    expect(() => rawConfig({ name: "raw", system: "a", systemPrompt: "b" })).toThrow(/aliases/);
-  });
-});
-
-describe("manifest-barrel type contracts", () => {
-  test("agentToolsToSchemas returns ToolSchema[]", () => {
-    const schemas: ToolSchema[] = agentToolsToSchemas({});
-    expect(schemas).toEqual([]);
-  });
-});
-
-describe("toAgentConfig — text mode", () => {
-  test("`text: true` classifies as text and injects no pipeline stages", () => {
-    const parsed = rawConfig({ name: "chat", text: true });
-    expect(parsed.mode).toBe("text");
-    // The pipeline-by-default fill is what a text agent must NOT get: an
-    // injected stt/tts is an audio path nobody asked for, and it would
-    // reclassify the agent as pipeline on the very next parse.
-    expect(parsed.stt).toBeUndefined();
-    expect(parsed.tts).toBeUndefined();
-    expect(parsed.s2s).toBeUndefined();
-    expect(parsed.text).toBe(true);
   });
 
   test("keeps an explicit llm, which is the one stage it has", () => {

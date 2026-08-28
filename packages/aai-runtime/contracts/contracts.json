@@ -61,10 +61,12 @@
     "dropped": {}
   },
   "text": {
-    "current": 3,
-    "supported": [2, 3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
-      "1": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
+      "1": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
+      "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "3": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example. `TextTurnOptions.system` is `systemPrompt` — the last place the system prompt had a second name, now that the `agent({ system })` alias is gone."
     }
   },
   "tools": {

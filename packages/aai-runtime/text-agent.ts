@@ -15,7 +15,7 @@
  * import { createTextAgent } from "@alexkroman1/aai-runtime";
  *
  * const chat = createTextAgent({
- *   agent: agent({ name: "Helper", text: true, system: "Be brief." }),
+ *   agent: agent({ name: "Helper", text: true, systemPrompt: "Be brief." }),
  *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
  * });
  * const result = chat.stream({ messages: [{ role: "user", content: "hi" }] });
@@ -141,7 +141,7 @@ export interface TextTurnOptions {
   /** Aborts the LLM stream and every in-flight tool call. */
   signal?: AbortSignal;
   /** Overrides the agent's `systemPrompt` for this turn. */
-  system?: string;
+  systemPrompt?: string;
   /** Overrides the agent's `maxSteps` for this turn. */
   maxSteps?: number;
   /** Overrides the agent's `temperature` for this turn. */
@@ -341,7 +341,8 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
       const forceFinal = forceFinalAnswer(maxSteps, logger, sessionId);
       return streamText({
         model,
-        system: turn.system ?? agent.systemPrompt,
+        // `system` is the AI SDK's key; `systemPrompt` is ours, at both levels.
+        system: turn.systemPrompt ?? agent.systemPrompt,
         messages: turn.messages,
         tools: turnTools,
         toolChoice: turn.toolChoice ?? agent.toolChoice ?? "auto",

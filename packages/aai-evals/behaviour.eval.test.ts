@@ -45,7 +45,7 @@ function supportAgent() {
     agent({
       name: "Order Support",
       greeting: "Order support, how can I help?",
-      system: [
+      systemPrompt: [
         "You are an order support agent. Be brief — one or two sentences.",
         "Look an order up with lookup_order before saying anything about it.",
         "Cancel an order only with cancel_order, and only when the caller asks to cancel.",

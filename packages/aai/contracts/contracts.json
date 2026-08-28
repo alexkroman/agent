@@ -1,18 +1,23 @@
 {
   "agent": {
-    "current": 7,
-    "supported": [5, 6, 7],
+    "current": 8,
+    "supported": [8],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
-      "3": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "4": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles."
+      "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone \u2014 a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
+      "3": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "4": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "6": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "7": "`agent({ system })` is gone; the field is `systemPrompt`. The alias existed to match the Vercel AI SDK's spelling and made `agent({ system, systemPrompt })` representable, which then needed a runtime throw to forbid \u2014 one concept with two names and a rule to police them. A stale `system` is reported by name, because it is in the stray-field renames map."
     }
   },
   "builtins": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "`webSearch` takes ONE name for its cap, in ONE position: `maxResults`, in the options bag. It used to accept `max_results` too \u2014 the only snake_case identifier on this SDK's TypeScript surface \u2014 and `maxResults` again in the second parameter, so one option had three ways to arrive and two were undiscoverable from the third. `max_results` remains the WIRE name the model-facing builtin schema declares; only the TypeScript helper narrowed."
+    }
   },
   "channels": {
     "current": 1,
@@ -25,12 +30,14 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 5,
-    "supported": [4, 5],
+    "current": 6,
+    "supported": [6],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "3": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles."
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "3": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
+      "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
     }
   },
   "ffmpeg": {
@@ -42,7 +49,7 @@
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "llm": {
@@ -66,27 +73,29 @@
     "dropped": {}
   },
   "state": {
-    "current": 5,
-    "supported": [4, 5],
+    "current": 6,
+    "supported": [6],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "3": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles."
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "3": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
+      "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
     }
   },
   "step": {
     "current": 3,
     "supported": [3],
     "dropped": {
-      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
-      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone \u2014 a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "step-errors": {
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "step-files": {
@@ -100,30 +109,38 @@
     "dropped": {}
   },
   "subagent": {
-    "current": 4,
-    "supported": [3, 4],
+    "current": 5,
+    "supported": [5],
     "dropped": {
-      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles."
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
+      "3": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "4": "`SubagentDef.instructions` is `systemPrompt`. It was the only field renamed between `subagent()` and its larger sibling \u2014 otherwise a field-for-field smaller `agent()` \u2014 so one concept had two names depending on which declaration you were writing. Migration is the rename at each `subagent({ \u2026 })` call site; a stale one is reported BY NAME, because `instructions` is in the stray-field renames map."
     }
   },
   "testing": {
-    "current": 8,
-    "supported": [6, 7, 8],
+    "current": 9,
+    "supported": [9],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "3": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
-      "4": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "5": "createUnusedDb is removed with ctx.db: createToolContext no longer supplies a db, so a spec that imported the rejecting Db it defaulted to no longer compiles."
+      "3": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone \u2014 a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
+      "4": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "5": "createUnusedDb is removed with ctx.db: createToolContext no longer supplies a db, so a spec that imported the rejecting Db it defaulted to no longer compiles.",
+      "6": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "7": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "8": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
     }
   },
   "tool": {
-    "current": 5,
-    "supported": [3, 4, 5],
+    "current": 6,
+    "supported": [6],
     "dropped": {
-      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles."
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
+      "3": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
     }
   },
   "transcribe": {
@@ -150,15 +167,15 @@
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "workflow-api": {
     "current": 3,
     "supported": [3],
     "dropped": {
-      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
-      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone \u2014 a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile \u2014 dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   }
 }
