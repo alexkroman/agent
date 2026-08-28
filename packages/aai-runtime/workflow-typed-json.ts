@@ -48,6 +48,34 @@ function isBinaryEnvelope(value: unknown): value is BinaryEnvelope {
 }
 
 /**
+ * What the holder really had at `key`, BEFORE `toJSON` rewrote it.
+ *
+ * **An array holder is why this is not `isRecord(this) ? this[key] : value`.**
+ * `isRecord` answers false for an array by design (`sdk/is-record.ts` excludes
+ * them deliberately), so that spelling fell through to `value` for every array
+ * ELEMENT — and `value` is exactly the already-mangled thing the replacer exists
+ * to look past. Measured: `{b: buf}` encoded correctly while
+ * `{chunks: [buf]}` came out as `{"type":"Buffer","data":[1,2,3]}`, i.e. the bug
+ * this module's doc describes, reachable through
+ * `streamer.writeToStreamMulti(name, runId, chunks)` and through any DevKit
+ * method answering an array of `bytea` values. A plain `Uint8Array` in an array
+ * survived, which is what kept it out of sight: only `Buffer` has the `toJSON`.
+ *
+ * The comment that spelling carried — "at the top level `JSON.stringify` passes
+ * `{"": value}`, so the holder is always a record in practice" — was true of the
+ * ROOT call and said nothing about the recursion, which is where arrays appear.
+ *
+ * `JSON.stringify` passes an array index as a STRING, so the `Number` is for the
+ * type checker rather than for JavaScript — an array cannot be indexed by a
+ * `string` in TypeScript, and converting is cheaper than a cast.
+ */
+function holderValue(holder: unknown, key: string, value: unknown): unknown {
+  if (isRecord(holder)) return holder[key];
+  if (Array.isArray(holder)) return holder[Number(key)];
+  return value;
+}
+
+/**
  * `JSON.stringify` replacer: every `Uint8Array` becomes a tagged envelope.
  *
  * **It reads `this[key]`, not `value`, and that is not a style choice.**
@@ -63,14 +91,13 @@ function isBinaryEnvelope(value: unknown): value is BinaryEnvelope {
  * The DevKit's own transport tests `value`; it simply never carries a `Buffer`,
  * because a queue payload comes from devalue as a plain `Uint8Array`.
  *
+ * **An ARRAY is a holder too**, which is the whole reason {@link holderValue}
+ * exists rather than a bare `isRecord`. See its doc.
+ *
  * @internal
  */
 export function binaryReplacer(this: unknown, key: string, value: unknown): unknown {
-  // `isRecord` narrows `this` to a keyed bag, which is what lets `this[key]` be
-  // read without a cast. At the top level `JSON.stringify` passes `{"": value}`, so
-  // the holder is always a record in practice — the fallback is for a replacer
-  // invoked directly.
-  const raw = isRecord(this) ? this[key] : value;
+  const raw = holderValue(this, key, value);
   // `Buffer.from(view)` COPIES rather than aliasing the underlying buffer, which
   // matters for a `Uint8Array` that is a view into a larger allocation: encoding
   // the whole allocation would be a data leak as well as wrong.

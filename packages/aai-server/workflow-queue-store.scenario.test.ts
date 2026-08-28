@@ -213,6 +213,62 @@ describeWithPg("workflow queue store", () => {
   });
 
   /**
+   * OLDEST-DUE wins, across tenants.
+   *
+   * `distinct on` obliges an `order by` starting with its own expressions, so the
+   * single-CTE version of this query truncated to the limit in `(slug, runId)`
+   * order — lexicographically by TENANT. `wfq-t1` sorts before `wfq-t2`, so a
+   * `wfq-t1` with more due runs than one tick's width filled the candidate set
+   * every tick; claimed rows are excluded by the `not exists`, so the next tick
+   * took its NEXT batch and `wfq-t2` waited forever on that replica.
+   *
+   * The case is written with the STARVED tenant's message also being the oldest,
+   * which is what makes the assertion about fairness rather than about slug
+   * order: it is the message that has waited longest, and it loses on a name.
+   */
+  test("a busy early-sorting tenant cannot starve a later one", async () => {
+    await enqueue(sql, msg("older", "r-older", { slug: SLUGS[1] }));
+    // Backdate it rather than sleeping: the claim compares `available_at`, and
+    // every message enqueued in this test is otherwise due within one tick of
+    // the others.
+    await sql(
+      "update aai_platform.workflow_queue set available_at = now() - interval '1 hour' where id = $1",
+      ["older"],
+    );
+    // Five distinct RUNS on the early-sorting tenant, so `distinct on` yields
+    // five candidates from it alone — more than the width below.
+    for (let i = 0; i < 5; i++) await enqueue(sql, msg(`busy${i}`, `r${i}`));
+
+    const claimed = await claimDue(sql, 3);
+    expect(claimed).toHaveLength(3);
+    // The oldest message wins the tick whoever owns it. Ordered by slug, this
+    // was three `wfq-t1` messages and `older` was not among them.
+    expect(claimed.map((m) => m.id)).toContain("older");
+    expect(claimed[0]?.id).toBe("older");
+  });
+
+  /**
+   * The same starvation one level up: a tenant under CONTINUOUS load. One tick
+   * proves the ordering; this proves the later tenant is actually served while
+   * the earlier one keeps producing.
+   */
+  test("a continuously busy tenant does not keep a later one unclaimed", async () => {
+    await enqueue(sql, msg("waiting", "r-waiting", { slug: SLUGS[1] }));
+    let produced = 0;
+    const claimedIds: string[] = [];
+    for (let tick = 0; tick < 3; tick++) {
+      // The busy tenant refills faster than a tick can drain it.
+      for (let i = 0; i < 4; i++) await enqueue(sql, msg(`busy${produced++}`, `r${produced}`));
+      const claimed = await claimDue(sql, 2);
+      claimedIds.push(...claimed.map((m) => m.id));
+      // Settle them, or the `not exists` holds their runs and the next tick
+      // reads a different situation than a real sweep would.
+      for (const m of claimed) await ack(sql, m.id);
+    }
+    expect(claimedIds).toContain("waiting");
+  });
+
+  /**
    * Two replicas sweep at once. `for update skip locked` is what makes them take
    * DISJOINT sets — without it the second waits out the first's transaction and
    * the sweep rate halves on the one mechanism that resumes a parked run.

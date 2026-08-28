@@ -177,6 +177,103 @@ describe("POST /:slug/workflow-storage", () => {
       const body = (await res.json()) as { result: { data: unknown[] } };
       expect(body.result.data).toEqual([]);
     });
+
+    /**
+     * More runs than one page, so the filter has to be applied to a SCAN.
+     *
+     * The fixtures above own ONE run each, which is why the case below went
+     * unnoticed: with a single id there is no second page for a filter to miss.
+     * This responder honours `limit`/`offset` the way the real table does.
+     */
+    async function paged(statusOf: (id: string) => string, count = 60) {
+      const all = Array.from({ length: count }, (_, i) => `run_${String(i).padStart(3, "0")}`);
+      const adminDb = fakeAdminDbOver((sql, params) => {
+        if (sql.includes("select slug from aai_platform.workflow_run_owner")) {
+          return [{ slug: MINE }];
+        }
+        if (sql.includes("select run_id from aai_platform.workflow_run_owner")) {
+          const limit = Number(params?.[1] ?? 0);
+          const offset = Number(params?.[2] ?? 0);
+          return all.slice(offset, offset + limit).map((run_id) => ({ run_id }));
+        }
+        return [];
+      });
+      const runStorage = {
+        runs: {
+          get: (id: string) => Promise.resolve({ id, status: statusOf(id) }),
+          list: () => Promise.reject(new Error("runs.list must never be forwarded")),
+        },
+        steps: {},
+        events: {},
+        hooks: {},
+        streamer: {},
+        close: () => Promise.resolve(),
+      };
+      const harness = await createTestOrchestrator({ adminDb, runStorage });
+      await deploy(harness.fetch, MINE);
+      return harness;
+    }
+
+    test("finds matches BEYOND the first page rather than reporting none", async () => {
+      // The newest 50 are all running and the completed ones sit behind them.
+      // Filtering a single truncated page answered `{ data: [], hasMore: false }`
+      // — an empty list plus an assurance there was nothing more to fetch —
+      // while ten completed runs existed one page back.
+      const h = await paged((id) => (id >= "run_050" ? "completed" : "running"));
+      const res = await callStorage(
+        h.fetch,
+        MINE,
+        { method: "runs.list", args: [{ status: "completed", pagination: { limit: 10 } }] },
+        await bearerFor(h.store, MINE),
+      );
+      const body = (await res.json()) as {
+        result: { data: { id: string }[]; pagination: { hasMore: boolean } };
+      };
+      expect(body.result.data).toHaveLength(10);
+      expect(body.result.data.map((r) => r.id)).toContain("run_050");
+      // The walk reached the end of this agent's runs, so there is genuinely
+      // nothing further — which is a claim the old `hasMore: false` was making
+      // without having looked.
+      expect(body.result.pagination.hasMore).toBe(false);
+    });
+
+    test("reports hasMore when a full page leaves runs behind it", async () => {
+      const h = await paged(() => "running");
+      const res = await callStorage(
+        h.fetch,
+        MINE,
+        { method: "runs.list", args: [{ pagination: { limit: 10 } }] },
+        await bearerFor(h.store, MINE),
+      );
+      const body = (await res.json()) as {
+        result: { data: unknown[]; pagination: { hasMore: boolean } };
+      };
+      expect(body.result.data).toHaveLength(10);
+      expect(body.result.pagination.hasMore).toBe(true);
+    });
+
+    test("stops walking rather than reading every run of a huge agent", async () => {
+      // A filter matching nothing costs one `runs.get` per id scanned, so the
+      // walk is bounded (MAX_RUN_SCAN). Hitting the bound answers hasMore, which
+      // is the truthful answer: it stopped early.
+      const reads: string[] = [];
+      const h = await paged((id) => {
+        reads.push(id);
+        return "running";
+      }, 100_000);
+      const res = await callStorage(
+        h.fetch,
+        MINE,
+        { method: "runs.list", args: [{ status: "completed", pagination: { limit: 10 } }] },
+        await bearerFor(h.store, MINE),
+      );
+      const body = (await res.json()) as {
+        result: { data: unknown[]; pagination: { hasMore: boolean } };
+      };
+      expect(body.result.data).toEqual([]);
+      expect(body.result.pagination.hasMore).toBe(true);
+      expect(reads.length).toBeLessThan(2500);
+    });
   });
 
   describe("events.listByCorrelationId, which is filtered", () => {

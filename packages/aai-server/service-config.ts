@@ -61,6 +61,7 @@ import {
   type SqlExec,
 } from "./secret-store.ts";
 import { createStudioAuthFromEnv } from "./supabase-auth.ts";
+import { createPlatformWorldStorage } from "./workflow-storage-world.ts";
 import {
   createMemoryWorkspaceStore,
   createPgWorkspaceStore,
@@ -318,8 +319,23 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   };
 }
 
-/** Assemble the shared service bindings from the environment. */
-export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
+/**
+ * Assemble the shared service bindings from the environment.
+ *
+ * **Async because of the workflow world, and that is the point rather than a
+ * cost.** `ServiceConfig` has declared a `runStorage` binding since the DevKit's
+ * world moved onto the platform, and for that whole time nothing filled it:
+ * `createPlatformWorldStorage` had no caller anywhere outside a test util. So
+ * `/:slug/workflow-storage` and `/:slug/workflow-stream` answered 501 on every
+ * deployment, while the guest side routed to them UNCONDITIONALLY — a deployed
+ * sandbox always has `AAI_PUBLIC_BASE_URL` and `AAI_GUEST_TOKEN`, so
+ * `configureWorkflowWorld` always chose `"platform"`. Every durable run on the
+ * platform failed at its first `events.create` and was abandoned after the
+ * retry budget. A binding whose construction lives in a second place is a
+ * binding an entry can forget; this is the one function that reads the
+ * environment and builds them, so it builds this one too.
+ */
+export async function buildServiceConfig(env: NodeJS.ProcessEnv): Promise<ServiceConfig> {
   // One key, two consumers that both need service-role authority (Storage
   // blobs below, the Realtime streams in buildPlatformDb) and neither of which
   // reports an anon key as a credential problem — see assertServiceRoleKey.
@@ -337,6 +353,23 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const uploadBytes = buildUploadBytes(env);
   const { secrets, agents, workspaces, chats, events, slugLock, sql, adminDb } =
     buildPlatformDb(env);
+  // The DevKit's world on the platform's own database — where a durable run's
+  // journal lives now that no agent has a database of its own.
+  //
+  // `SUPABASE_DB_URL`, never `PLATFORM_POOLER_URL`: their streamer holds a
+  // dedicated `LISTEN` client, and a `LISTEN` needs session affinity for the same
+  // reason a session-scoped advisory lock does. That is also why
+  // `platformDbConnectionsPerReplica` counts this pool as DIRECT rather than
+  // excusing it as pooled. `assertSessionModeUrl` has already run over this URL
+  // inside `buildPlatformDb`, so a pooler pasted here was refused before we get
+  // here.
+  //
+  // Undefined without a platform database, which is `aai dev` and every unit
+  // test; the routes answer 501, the same answer the enqueue route beside them
+  // gives. The `@workflow/world-postgres` import is what this await pays for —
+  // the POOL is lazy, so a replica serving no workflow agent still opens no
+  // connection.
+  const runStorage = await createPlatformWorldStorage({ url: env.SUPABASE_DB_URL });
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure
@@ -383,6 +416,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     replicaId,
     ...omitUndefined({ sql }),
     ...omitUndefined({ adminDb }),
+    ...omitUndefined({ runStorage }),
     ...omitUndefined({ directory }),
   };
 }

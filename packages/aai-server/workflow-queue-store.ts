@@ -285,6 +285,18 @@ export async function enqueue(sql: SqlExec, params: EnqueueParams): Promise<{ id
  * - **Scoped by tenant AND run.** Run ids are ULIDs and collision is not the
  *   worry; sharing the key across tenants would be, because one tenant's traffic
  *   would then gate another's.
+ * - **OLDEST-DUE wins, which is why this is two CTEs rather than one.**
+ *   `distinct on` obliges an `order by` that STARTS with its own expressions, so
+ *   the single-CTE version truncated to `limit` in `(slug, runId)` order — i.e.
+ *   lexicographically by tenant. A tenant whose slug sorts early with more due
+ *   runs than one tick's width filled the candidate set every tick, and since
+ *   claimed rows are excluded by the `not exists` the next tick simply took its
+ *   NEXT batch: an `aaa-*` agent under steady load kept a `zzz-*` agent's
+ *   messages unclaimed on that replica indefinitely. `due` therefore keeps the
+ *   ordering `distinct on` requires and `candidates` re-orders the whole due set
+ *   by `available_at` before the limit, so the width is spent on the work that
+ *   has waited longest whoever owns it. `id` is the tiebreaker, so two rows due
+ *   in the same microsecond claim in a stable order rather than an arbitrary one.
  */
 export async function claimDue(
   sql: SqlExec,
@@ -292,8 +304,8 @@ export async function claimDue(
   staleMs = QUEUE_CLAIM_STALE_MS,
 ): Promise<QueuedMessage[]> {
   const rows = await sql(
-    `with candidates as (
-       select distinct on (q.slug, q.payload->>'runId') q.id
+    `with due as (
+       select distinct on (q.slug, q.payload->>'runId') q.id, q.available_at
        from aai_platform.workflow_queue q
        where q.available_at <= now()
          and (q.locked_at is null or q.locked_at < now() - ($2 || ' milliseconds')::interval)
@@ -305,7 +317,9 @@ export async function claimDue(
              and o.locked_at >= now() - ($2 || ' milliseconds')::interval
          )
        order by q.slug, q.payload->>'runId', q.available_at
-       limit $1
+     ),
+     candidates as (
+       select id from due order by available_at, id limit $1
      )
      update aai_platform.workflow_queue q
         set locked_at = now()

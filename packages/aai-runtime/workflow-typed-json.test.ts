@@ -121,6 +121,40 @@ describe("binary, which is the whole point", () => {
     expect(back[0]).toEqual(new Uint8Array([1]));
     expect(back[1]).toEqual(new Uint8Array([2]));
   });
+
+  /**
+   * The two ARRAY cases above use `Uint8Array`, and that is exactly why the
+   * `Buffer` version of them went unnoticed: only `Buffer` carries a `toJSON`,
+   * so only `Buffer` needs the replacer to look past `value` at the holder — and
+   * the holder guard was `isRecord`, which answers false for an array. A plain
+   * `Uint8Array` in an array round-tripped fine while a `Buffer` in one came back
+   * as `{type:"Buffer",data:[…]}`, the very shape this module exists to prevent.
+   */
+  test("a Buffer inside an ARRAY is carried as binary, not as Buffer's own toJSON", () => {
+    // What `streamer.writeToStreamMulti(name, runId, chunks)` really passes when
+    // the author is on Node, and what any DevKit method answering a list of
+    // `bytea` columns hands back.
+    const back = roundTrip({ chunks: [Buffer.from([1, 2, 3]), Buffer.from([4])] }) as {
+      chunks: Uint8Array[];
+    };
+    expect(back.chunks[0]).toBeInstanceOf(Uint8Array);
+    expect(back.chunks[0]).toEqual(new Uint8Array([1, 2, 3]));
+    expect(back.chunks[1]).toEqual(new Uint8Array([4]));
+  });
+
+  test("a Buffer at the top of an array, where the holder is the array itself", () => {
+    const back = roundTrip([Buffer.from("a"), Buffer.from("b")]) as Uint8Array[];
+    expect(back[0]).toBeInstanceOf(Uint8Array);
+    expect(Buffer.from(back[0] as Uint8Array).toString()).toBe("a");
+    expect(Buffer.from(back[1] as Uint8Array).toString()).toBe("b");
+  });
+
+  test("a Buffer nested in an object inside an array", () => {
+    const value = { data: [{ runId: "r1", output: Buffer.from([7]) }] };
+    const back = roundTrip(value) as { data: { runId: string; output: Uint8Array }[] };
+    expect(back.data[0]?.output).toBeInstanceOf(Uint8Array);
+    expect(back.data[0]?.output).toEqual(new Uint8Array([7]));
+  });
 });
 
 describe("the format is the DevKit's own", () => {

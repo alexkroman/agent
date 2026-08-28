@@ -127,6 +127,18 @@ export function createQueueDeliverer(opts: QueueDelivererOptions): DeliverMessag
     const res = await fetchFn(guestHttpUrl(brokered.guestOrigin, GUEST_ROUTES.workflowQueue), {
       method: "POST",
       headers: {
+        // The CALLER's headers go FIRST, so every platform header below WINS a
+        // key collision. This spread used to be last, which made the whole set
+        // caller-controlled: `queue(name, msg, { headers })` is a tenant's own
+        // call, `optionalHeaders` checks only that the VALUES are strings, and
+        // `enqueue` stores them verbatim. An `authorization` of the tenant's
+        // choosing replaced the bearer below, the guest answered 401, the sweep
+        // burned all five attempts, and nothing in the log named the payload; an
+        // `x-vqs-queue-name` re-pointed the message at another entrypoint.
+        //
+        // No key allow-list, deliberately — a tenant may send any header it
+        // likes to its own guest. It may not send OURS.
+        ...message.headers,
         // The bearer the guest's manage surface checks — an HMAC over this
         // sandbox's fleet-wide name, which a direct dialer cannot forge.
         authorization: `Bearer ${guestTokenFor(agentSandboxName(slug, version))}`,
@@ -136,7 +148,6 @@ export function createQueueDeliverer(opts: QueueDelivererOptions): DeliverMessag
         "x-vqs-queue-name": message.queueName,
         "x-vqs-message-id": message.id,
         "x-vqs-message-attempt": String(message.attempt),
-        ...message.headers,
       },
       // The devalue bytes, verbatim. The platform never looks INSIDE them — a
       // queue that parsed that payload would be a second implementation of
