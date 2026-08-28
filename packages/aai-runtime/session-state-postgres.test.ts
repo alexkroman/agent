@@ -45,11 +45,15 @@ describe("discard", () => {
     expect(calls[0]?.params).toEqual(["s1"]);
   });
 
-  // The event table is append-only to the app's own role by grant
-  // (`grantSessionTables` in aai-server), so a delete against it would not
-  // merely be wrong here — it would fail at the database and take the discard
-  // with it. Asserted separately from the count above because THIS is the
-  // regression: a `delete from aai_session_events` used to run beside it.
+  // A log a tool can delete is not a log. This used to say the event table was
+  // append-only "to the app's own role by grant (`grantSessionTables` in
+  // aai-server)", so a delete would fail at the database and take the discard
+  // with it — that role and that function went with per-app databases, and the
+  // table is now reached only on an admin connection. So the database no longer
+  // refuses the delete and THIS assertion is the only thing standing between a
+  // discard and the audit trail. Asserted separately from the count above
+  // because it is the regression: a `delete from aai_session_events` used to run
+  // beside it.
   test("issues no statement against the event table", async () => {
     const { db, calls } = recordingDb();
 

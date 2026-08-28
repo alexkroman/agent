@@ -212,10 +212,13 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
       await db.query(COMMIT_SQL, [sessionId, [...values.keys()], [...values.values()]]);
     },
     async discard(sessionId) {
-      // SLOTS only. The event table is append-only to this role by grant — a
-      // log a tool can delete is not a log (see `grantSessionTables` in
-      // by whoever owns the database — so its rows are reclaimed by the
-      // platform's own retention sweep, which runs as the admin. The cost is
+      // SLOTS only, and a log a tool can delete is not a log. This used to cite
+      // `grantSessionTables` in aai-server, which narrowed a per-app role to
+      // `select, insert` on the event table; that role went with per-app
+      // databases and the function no longer exists — the table is now reached
+      // only on an admin connection, which is what keeps a tool away from it.
+      // Either way this call does not delete events — so their rows are
+      // reclaimed by the retention sweep, which runs as the admin. The cost is
       // that a discarded session's events outlive its slots by up to the
       // retention window rather than going at the same moment; they are a few
       // KB in the tenant's own database, and the sweep already exists.

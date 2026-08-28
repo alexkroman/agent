@@ -69,7 +69,7 @@ export type ToolContext = {
    */
   slots: SlotStore;
   /**
-   * One-shot LLM generation, executed on the host (like `db`).
+   * One-shot LLM generation, executed on the host.
    * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use
    * another provider (its API key must be in the agent's env). Throws when
    * no LLM is configured or named. Pass a Zod `schema` for typed structured
@@ -84,8 +84,7 @@ export type ToolContext = {
    * The sibling of {@link ToolContext.generate}, and the line between them is
    * how many model turns the answer takes: `generate` is one prompt, `delegate`
    * is a loop whose intermediate tool results the caller has no reason to
-   * carry. Executes on the host wherever the runtime runs, like `db` and
-   * `generate`.
+   * carry. Executes on the host wherever the runtime runs, like `generate`.
    *
    * **A subagent's own tools cannot delegate further** — their `ctx.delegate`
    * rejects naming the reason. One level is a bill a caller can quote; a

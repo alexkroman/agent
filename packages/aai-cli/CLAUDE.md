@@ -830,9 +830,12 @@ both are fail-closed:
   `withHostCredentialFallback`, for the same reason. This record is merged into
   the env the per-connection runtime is built from, and that env is read for
   far more than provider keys: unbounded, a client sets `DATABASE_URL` and the
-  server opens `ctx.db` against a Postgres it controls, or sets
-  `AAI_ALLOW_HOST` and self-approves. So the gate is checked against the
-  SERVER's env before the merge, never the merged one. Unknown names are
+  server opens the workflow world, the upload store and the session-state
+  backend against a Postgres it controls, or sets `AAI_ALLOW_HOST` and
+  self-approves. (It used to say `ctx.db` here, which was the sharpest way to
+  put it and is gone; the three readers that remain are the argument now.) So
+  the gate is checked against the SERVER's env before the merge, never the
+  merged one. Unknown names are
   REJECTED by name rather than dropped — a silent drop turns a typo
   (`ASSEMBLYAI_KEY`) into a baffling provider-resolution failure two layers
   down, and turns a genuine smuggling attempt into something the operator never

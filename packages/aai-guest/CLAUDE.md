@@ -564,7 +564,7 @@ version it was built and tested against, the same one `aai dev` ran.
 | Modal memory/CPU limits (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) | works in dev, fails in prod | `aai dev` runs tools in the host process with no caps; a memory-hungry tool OOMs only when deployed. |
 | `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
 | `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. Two guards keep the cliff visible: the dev server warns when a required key resolved from the shell only (`agentEnvWarnings` in `_dev-server.ts` — it won't survive `aai deploy`, which uploads `.env`), and `aai deploy` preflights required credentials against the env it is about to upload (`aai-cli/_preflight.ts`), so the gap surfaces as a deploy-time warning naming the key rather than as an auth error at first session. It WARNS rather than rejects — the CLI cannot see secrets already stored server-side. |
-| `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
+| Durable-run backing (BYO `DATABASE_URL` in dev vs the platform's own database in prod) | different BACKEND, not a stricter one | Dev opens the DevKit's postgres world wherever the developer points it. A deployed guest reaches run storage, the queue, session state and upload records over HTTP and opens no tenant connection at all — so the per-app schema+role this row used to describe, and `ctx.db` with it, are gone. |
 | Platform sandboxes need Modal credentials in production only | prod is stricter | `aai dev` runs tools in-process; the platform spawns real Modal sandboxes in production (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`), and an isolation-free child process in local dev — see `packages/aai-server/CLAUDE.md`, "Modal sandbox notes". |
 
 ## Agent guests are servers (no control channel)
@@ -1040,7 +1040,8 @@ container around us** (`builtinFetch` in `host/ssrf.ts`).
   screen guards nothing a tenant cannot bypass in one line, because their own
   tool code has open egress by design — so it constrains the *model*, not the
   author. The container is the boundary and it holds no PLATFORM credentials
-  (`ctx.db`'s DATABASE_URL is the app's own scoped role).
+  (a `DATABASE_URL` in the boot env is the AUTHOR's own database, never the
+  platform's — the platform provisions none).
 - **Not contained** (`aai dev`, and the subprocess backend) → `safeFetch`.
   Here the host IS someone's machine: these same builtins run in the
   developer's own process, where a model-controlled URL can reach localhost,

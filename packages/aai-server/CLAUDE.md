@@ -475,12 +475,13 @@ workflow world and session state in Postgres), and cross-replica coordination
 lives in the same Postgres over `SUPABASE_DB_URL`.
 
 **Being stateless does not mean everything has to flow THROUGH the replica.**
-Two of the largest byte paths deliberately don't: `ctx.db` connects from the
-guest directly on the app's own scoped role, and a guest fetches its own worker
-bundle from a signed Storage URL (see "The guest fetches its own bundle"). The
-pattern both follow is the same — hand out a narrowly scoped capability and
-verify the result (a per-app Postgres role; a content hash) rather than proxy
-the bytes to keep the platform's credential out of reach.
+The largest byte path deliberately doesn't: a guest fetches its own worker
+bundle from a signed Storage URL (see "The guest fetches its own bundle") —
+hand out a narrowly scoped capability and verify the result (a content hash)
+rather than proxy the bytes. It named a SECOND path, `ctx.db` on a per-app role;
+both went with per-app databases, and run storage, the queue, session state and
+uploads are platform tables over HTTP now — so those bytes DO cross a replica,
+bounded there (`_platform-route.ts`).
 
 ### Where we differ from Supabase's own recommendations
 
@@ -1174,9 +1175,9 @@ Key properties:
 - **Open egress**: the container is the isolation boundary — a tenant can
   reach the internet, not the platform. Tool code, `ctx.generate`, and
   provider streams dial out from the guest directly (identical to
-  `aai dev`); `ctx.db` connects directly on the app's OWN scoped role
-  (`DATABASE_URL` in the agent's boot env) — platform ADMIN database
-  credentials never enter the guest.
+  `aai dev`); a `DATABASE_URL` in the boot env is the AUTHOR's own (the
+  platform provisions none; `ctx.db` is gone) — platform ADMIN credentials
+  never enter the guest.
 - **Minimal filesystem**: the guest sees the baked harness image — never
   the host filesystem.
 - **Resource limits**: Modal per-sandbox memory/CPU caps
@@ -1896,8 +1897,8 @@ sandbox** — a diagnostic that starts the thing it diagnoses answers a differen
 question, and a poll would keep an idle agent billable — hence `running` beside
 the lines, and `dropped` reported rather than swallowed.
 
-**The session event log is APPEND-ONLY to the app role** (`grantSessionTables`):
-`ctx.db` runs arbitrary SQL on that role, so `delete` there meant a tool could
-delete its own audit trail. Slots keep all four verbs; events get
-`select, insert`, so the admin sweep alone reclaims a discarded session's, and a
-database predating the split is healed by `reconcileSessionGrants`.
+**The append-only GRANT on the session event log went with its per-app role** —
+`grantSessionTables` held that role to `select, insert` because
+`ctx.db` ran arbitrary SQL on it. `aai_platform.session_events` is a platform
+table under deny-all RLS now, on the admin connection only — so no tool reaches
+it. UNCHANGED: `discard` drops slots only, events going to the sweep.
