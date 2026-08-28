@@ -39,8 +39,8 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import pTimeout from "p-timeout";
-import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
+import { platformPost } from "./platform-rpc.ts";
 import { encodeTypedJson } from "./workflow-typed-json.ts";
 
 /**
@@ -102,43 +102,48 @@ export function payloadRunId(message: unknown): string | undefined {
  * an idempotency key collapses onto a row already queued, and the DevKit uses the
  * id it is handed back to correlate.
  *
+ * The one platform route that answers OUTSIDE the `{result}` envelope, which is
+ * why this reads the reply itself rather than going through `platformResult`. A
+ * 200 whose body will not parse has to read as "no message id" — the same failure
+ * as a 200 that omits it — because a syntax error here would say nothing about
+ * what the DevKit is missing.
+ *
  * @internal
  */
 export async function enqueueToPlatform(
   opts: PlatformQueueOptions,
   body: EnqueueBody,
 ): Promise<string> {
-  const fetchFn = opts.fetch ?? globalThis.fetch;
-  // Built ONCE. It used to be computed twice per enqueue, the second time only to
-  // interpolate into a timeout message the ~always-taken success path discards.
-  const url = platformUrl(opts.base, PLATFORM_ROUTES.workflowEnqueue);
-  const res = await pTimeout(
-    fetchFn(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${opts.token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-    }),
-    { milliseconds: ENQUEUE_TIMEOUT_MS, message: `enqueue to ${url} timed out` },
-  );
-  if (!res.ok) {
-    // The body is in the error: the platform answers 400 naming the field it
-    // rejected, and 501 when the deployment has no queue at all. Without it the
-    // only record is a status code on a step that failed for no stated reason.
-    const detail = await res.text().catch(() => "");
-    throw new Error(`enqueue answered HTTP ${res.status}: ${detail.slice(0, 500)}`);
-  }
-  const parsed = (await res.json().catch(() => undefined)) as { messageId?: unknown } | undefined;
-  const messageId = parsed?.messageId;
-  if (typeof messageId !== "string" || messageId === "") {
+  // The error carries the platform's own reply: it answers 400 naming the field it
+  // rejected, and 501 when the deployment has no queue at all. Without it the only
+  // record is a status code on a step that failed for no stated reason.
+  const text = await platformPost(opts, {
+    route: PLATFORM_ROUTES.workflowEnqueue,
+    label: "enqueue",
+    timeoutMs: ENQUEUE_TIMEOUT_MS,
+    body: JSON.stringify(body),
+  });
+  const messageId = messageIdOf(text);
+  if (messageId === undefined) {
     // A 200 with no id is a platform that changed its contract. Throwing means the
     // step retries and the run survives; returning a made-up id would let the
     // DevKit correlate against something that does not exist.
     throw new Error("enqueue answered 200 without a messageId");
   }
   return messageId;
+}
+
+/** The `messageId` out of an enqueue reply, or `undefined` for any body without one. */
+function messageIdOf(text: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed)) return undefined;
+  const messageId = parsed.messageId;
+  return typeof messageId === "string" && messageId !== "" ? messageId : undefined;
 }
 
 /**

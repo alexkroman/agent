@@ -40,8 +40,8 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import pTimeout from "p-timeout";
-import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
+import { platformResult } from "./platform-rpc.ts";
 import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
 
 /**
@@ -68,28 +68,12 @@ async function call(
   method: string,
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const fetchFn = opts.fetch ?? globalThis.fetch;
-  const url = platformUrl(opts.base, PLATFORM_ROUTES.sessionState);
-  const res = await pTimeout(
-    fetchFn(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${opts.token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ method, ...body }),
-    }),
-    { milliseconds: SESSION_STATE_TIMEOUT_MS, message: `session-state ${method} timed out` },
-  );
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`session-state ${method} answered HTTP ${res.status}: ${text.slice(0, 500)}`);
-  }
-  const parsed: unknown = JSON.parse(text);
-  if (!(isRecord(parsed) && "result" in parsed)) {
-    throw new Error(`session-state ${method} answered 200 without a result`);
-  }
-  return parsed.result;
+  return await platformResult(opts, {
+    route: PLATFORM_ROUTES.sessionState,
+    label: `session-state ${method}`,
+    timeoutMs: SESSION_STATE_TIMEOUT_MS,
+    body: JSON.stringify({ method, ...body }),
+  });
 }
 
 /** A `{slot: value}` map off the wire, ignoring anything that is not a string. */

@@ -1,0 +1,164 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * One request to the platform: the POST, the deadline, and the status check that
+ * every guest-side client was making for itself.
+ *
+ * `platform-endpoint.ts` collapsed the credential pair and the five paths. What it
+ * left behind was four `call()` bodies — `session-state-platform.ts`,
+ * `uploads-platform.ts`, `workflow-platform-storage.ts` and
+ * `workflow-platform-queue.ts` — each spelling out the same seven steps: resolve
+ * the fetch seam, build the URL, set `authorization` and `content-type`, wrap the
+ * whole thing in `pTimeout`, read the body, throw on non-2xx with the status and a
+ * 500-character slice of the reply, and unwrap `result`. Four copies of a
+ * transport is four places for one of them to drift — and three of them already
+ * had, in a way no test could see: a body that fails MID-READ on a non-2xx
+ * response rejected with the read error and threw the HTTP status away, so a
+ * platform answering 503 while its connection dropped was indistinguishable from
+ * a network fault. Only the enqueue client guarded that (`.catch(() => "")`).
+ *
+ * ## The differences are PARAMETERS and a SPLIT, not four transports
+ *
+ * They are real and they are decisions, which is why this is a shared body with
+ * declared seams rather than one function the four call identically. Two exports
+ * rather than one, because the reply is where the four stop agreeing:
+ *
+ * - **{@link platformResult} is the `{result}` envelope**, and session state and
+ *   upload records are the two routes that reply in it.
+ * - **{@link platformPost} is the transport under all four**, and is what the
+ *   other two take because each reads a reply of its own. Storage speaks the
+ *   DevKit's typed-JSON envelope in both directions (a run's `input`/`output` are
+ *   `Uint8Array` at `specVersion >= 2`) and discriminates on `ok` rather than
+ *   `"result" in body` — a void method encodes as `{}` and tripped the latter.
+ *   The enqueue route replies `{messageId}`, and a 200 whose body will not parse
+ *   has to read as "no message id" rather than as a syntax error, because the
+ *   DevKit correlates on that id.
+ * - **{@link PlatformCall.errorFor} is a caller's own error for a non-2xx**, and
+ *   two routes have one for opposite reasons. The upload record route's 409 is
+ *   `claim` refusing an id, which is that backend WORKING. Storage's 404 has to
+ *   reach its caller as the DevKit's own `WorkflowRunNotFoundError`, because a
+ *   plain error there became a 500 where the right answer was 404.
+ * - **Only the live stream read has no deadline**, which is why it is not here at
+ *   all: it is a GET whose response is MEANT to stay open, so a timeout would cut
+ *   a healthy read at its own interval. It shares {@link platformBearer} and
+ *   nothing else.
+ *
+ * ## The timeout message names the deadline, not the URL
+ *
+ * `pTimeout`'s message is read by whoever is looking at a step that failed for no
+ * other stated reason, and the actionable fact is WHICH of the four deadlines
+ * elapsed — they are 10s, 15s, 15s and 20s, set for four different reasons. So it
+ * is `<label> timed out after <ms>ms`, matching `_upload-blobs-brokered.ts`, which
+ * already had it right. The enqueue client's message used to interpolate the URL
+ * instead; that was an artifact of the URL having once been built twice per call,
+ * and the base is one operator-set value the label does not need to repeat.
+ *
+ * @module platform-rpc
+ */
+
+import { isRecord } from "@alexkroman1/aai/utils";
+import pTimeout from "p-timeout";
+import { type PlatformEndpoint, type PlatformRoute, platformUrl } from "./platform-endpoint.ts";
+
+/** One POST to the platform, as its caller declares it. */
+export type PlatformCall = {
+  /** Which of `PLATFORM_ROUTES` this call is for. */
+  route: PlatformRoute;
+  /**
+   * What every error this call raises calls it — `session-state load`,
+   * `storage runs.get`, `upload-records claim`, `enqueue`.
+   *
+   * The method is IN the label rather than a field of its own because the four
+   * routes name their methods differently (a bare verb, a dotted DevKit path, or
+   * none at all for the enqueue route, which has one operation).
+   */
+  label: string;
+  /** How long the whole request may take, in milliseconds. */
+  timeoutMs: number;
+  /** The already-encoded request body — JSON for three routes, typed JSON for storage. */
+  body: string;
+  /**
+   * This caller's own error for a non-2xx, or `undefined` to take the generic one.
+   *
+   * Consulted before the generic error, and handed the reply body already read
+   * and guarded — so a caller that does not need the body (the upload records
+   * client's 409, which is `claim` refusing an id and means the same thing
+   * whatever the platform said about it) can ignore the second argument, while
+   * one that does (storage, whose 404 becomes the DevKit's own
+   * `WorkflowRunNotFoundError`) has it without reading the response twice.
+   */
+  errorFor?: ((status: number, detail: string) => Error | undefined) | undefined;
+};
+
+/**
+ * The one header that authorizes a guest to the platform.
+ *
+ * `AAI_GUEST_TOKEN`, bound to a single sandbox name and therefore to a single
+ * slug. Spelled once because it was spelled five times, and a bearer scheme that
+ * disagrees with the server's parser by a character is a 401 with nothing naming
+ * the header.
+ *
+ * @internal
+ */
+export function platformBearer(token: string): { authorization: string } {
+  return { authorization: `Bearer ${token}` };
+}
+
+/**
+ * POST one body to a platform route and hand back the reply text.
+ *
+ * Throws on anything but 2xx, naming the status and up to 500 characters of the
+ * platform's own reply — which is what tells a reader where to look: a 400 is a
+ * call this guest built wrongly, a 404 is a run this agent does not own, a 401 is
+ * a bearer this sandbox no longer holds, a 501 is a deployment without the
+ * feature, and a 503 is worth retrying.
+ *
+ * @internal
+ */
+export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): Promise<string> {
+  const fetchFn = opts.fetch ?? globalThis.fetch;
+  const res = await pTimeout(
+    fetchFn(platformUrl(opts.base, call.route), {
+      method: "POST",
+      headers: { ...platformBearer(opts.token), "content-type": "application/json" },
+      body: call.body,
+    }),
+    {
+      milliseconds: call.timeoutMs,
+      message: `${call.label} timed out after ${call.timeoutMs}ms`,
+    },
+  );
+  if (!res.ok) {
+    // The body is DETAIL and the status is the finding, so a reply that will not
+    // read must not replace it with a stream error. Three of the four clients
+    // read this unguarded and lost the status whenever it mattered most — which
+    // is also why the guard, rather than the ORDER, is what keeps a caller's own
+    // error independent of whether the reply could be read.
+    const detail = await res.text().catch(() => "");
+    throw (
+      call.errorFor?.(res.status, detail) ??
+      new Error(`${call.label} answered HTTP ${res.status}: ${detail.slice(0, 500)}`)
+    );
+  }
+  return await res.text();
+}
+
+/**
+ * {@link platformPost}, then the `{result}` envelope session state and upload
+ * records reply in.
+ *
+ * A 200 that is not that envelope throws rather than reading as `undefined`:
+ * `undefined` is a legitimate answer on those routes ("no such record", "no such
+ * run"), so a contract change would otherwise arrive as an empty result the caller
+ * believes. `null` INSIDE the envelope is passed through, which is why the check
+ * is `"result" in parsed` and not a truthiness test.
+ *
+ * @internal
+ */
+export async function platformResult(opts: PlatformEndpoint, call: PlatformCall): Promise<unknown> {
+  const text = await platformPost(opts, call);
+  const parsed: unknown = JSON.parse(text);
+  if (!(isRecord(parsed) && "result" in parsed)) {
+    throw new Error(`${call.label} answered 200 without a result`);
+  }
+  return parsed.result;
+}

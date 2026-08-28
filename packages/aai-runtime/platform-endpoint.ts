@@ -27,6 +27,12 @@
  * in this package and the servers are in another, so the strings are declared once,
  * here, and both ends read them.
  *
+ * ## The REQUEST is `platform-rpc.ts`, and it is a separate file
+ *
+ * This module is the declaration both packages read; the POST, the deadline and the
+ * status check are the guest's alone. Keeping them apart is what stops `aai-server`
+ * importing a fetch client to learn a path.
+ *
  * @module platform-endpoint
  */
 
