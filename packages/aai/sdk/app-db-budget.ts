@@ -48,6 +48,28 @@ export const APP_DB_WORLD_POOL_MAX = 4;
 export const APP_DB_WORLD_WORKER_CONCURRENCY = APP_DB_WORLD_POOL_MAX - 1;
 
 /**
+ * What that costs a FAN-OUT, because the number is invisible from the body.
+ *
+ * `mapConcurrent(items, 17, …)` reads as seventeen steps at once and executes
+ * three. Measured on `aai dev` against a local Postgres, 16 steps each awaiting
+ * a 2s loopback response, window 16: 12.3s, an effective 2.6x. The same run with
+ * `WORKFLOW_POSTGRES_WORKER_CONCURRENCY=12` and
+ * `WORKFLOW_POSTGRES_MAX_POOL_SIZE=13`: 4.4s, 7.3x. So this constant, not the
+ * window and not the CPU, is what bounds every durable fan-out on this path —
+ * `scripts/loadtest-runs.mjs --workflow=fanout` is the harness.
+ *
+ * It is still the right DEFAULT, and the reason is which deployments reach it: a
+ * deployed guest takes the platform's own queue (`resolvePlatformQueue` wins over
+ * a `DATABASE_URL`) and opens no database for workflows at all, so these
+ * constants bind `aai dev` and a SELF-HOSTED server. Both are places where the
+ * database may be shared with anything else the operator points at it, and
+ * neither has a platform to have sized a connection limit for them. An operator
+ * who owns their database raises the two variables above in the server's process
+ * environment — not the project's `.env`, which is the AGENT env and never
+ * reaches `configureWorkflowWorld`.
+ */
+
+/**
  * The guest's ONE handle on the database it was given (`aai-runtime/app-db.ts`).
  *
  * `ctx.db`, the session-state backend, workflow uploads and the wake hint all used

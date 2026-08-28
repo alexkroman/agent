@@ -1,7 +1,16 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignore": [
-    "examples/**"
+    "examples/**",
+    // Sources `scripts/loadtest-boot.sh` COPIES over a scaffolded project — the
+    // stubbed-provider agent and the workflow-step agent. They import what a
+    // scaffolded project has (`@alexkroman1/aai`, `workflow`, `zod`) and are
+    // resolved there, not here, so knip reads every import as an unlisted root
+    // dependency. Each directory carries its own package.json declaring them,
+    // which is what satisfies Biome; knip resolves a non-workspace manifest
+    // against the root instead. Same reason `examples/**` is above it.
+    "scripts/loadtest-stub-agent/**",
+    "scripts/loadtest-workflow-agent/**"
   ],
   "ignoreBinaries": [
     "safe-chain",

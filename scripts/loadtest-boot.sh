@@ -6,12 +6,20 @@
 #   AGENTS="simple retail" ./scripts/loadtest-boot.sh
 #   WORKDIR=/tmp/agents ./scripts/loadtest-boot.sh
 #   ./scripts/loadtest-boot.sh stub                  # the STUBBED-PROVIDER agent
+#   ./scripts/loadtest-boot.sh workflow              # the WORKFLOW-STEP agent
 #
 # `stub` is the one that can be driven through full TURNS: it scaffolds `simple`
 # and copies `loadtest-stub-agent/` over it, so all three provider stages are
 # local fakes and a turn rate is the runtime's with no vendor in it. Everything
 # else here needs real provider credentials to get past `session.configured`.
 # It lands on port 4900, clear of the template window.
+#
+# `workflow` is the DURABLE-ENGINE one: `loadtest-workflow-agent/` over
+# `simple`, three workflows whose steps reach no vendor, on port 4960. It runs
+# under `aai dev` and has to — a `"use workflow"` body is durable only after the
+# WDK builder has transformed it, so the single-process host `stub` uses would
+# run the bodies inline with no journal to measure. Pair it with
+# `pnpm loadtest:endpoint` for the fan-out.
 #
 # WORKDIR defaults OUTSIDE the repo, and an in-repo one is REFUSED below rather
 # than ignored — each scaffolded project installs ~70 MB of node_modules and
@@ -27,6 +35,8 @@
 #   pnpm loadtest --scenario=http|workflow|session --ports=<name>=<port>
 #   pnpm loadtest:probe --port=<port> [--speak]
 #   pnpm loadtest:turns --port=4900        # stub agent only
+#   pnpm loadtest:runs --port=4960 --workflow=chain|fanout|nap
+#   pnpm loadtest:endpoint                 # the far side a fan-out step calls
 #   pnpm loadtest:platform --slug=<slug> --guest=<origin>
 set -uo pipefail
 
@@ -76,12 +86,13 @@ psql_q() { psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc "$1" "${2:-postgres}
 # the reason (`relation "aai_session_events" does not exist`) appearing only in
 # the dev server's log. Creating the database is still ours.
 
-# `stub` replaces the AGENTS list with one project of its own — a different
-# measurement rather than a sixth template, so it does not share the window.
-if [ "${1:-}" = "stub" ]; then
-  AGENTS="stub"
-  STUB_PORT=4900
-fi
+# `stub` and `workflow` each replace the AGENTS list with one project of their
+# own — a different measurement rather than a sixth template, so neither shares
+# the template window.
+case "${1:-}" in
+  stub)     AGENTS="stub";     STUB_PORT=4900 ;;
+  workflow) AGENTS="workflow"; STUB_PORT=4960 ;;
+esac
 
 port=4110
 for template in $AGENTS; do
@@ -92,7 +103,7 @@ for template in $AGENTS; do
   # links the workspace SDK and writes the tsconfig, and none of that is worth
   # a second implementation.
   init_template=$template
-  [ "$template" = "stub" ] && init_template=simple
+  case "$template" in stub|workflow) init_template=simple ;; esac
 
   if [ ! -d "$dir" ]; then
     echo "scaffolding $template..."
@@ -100,12 +111,21 @@ for template in $AGENTS; do
       > "$WORKDIR/init-$template.log" 2>&1 || { echo "$template: init FAILED, see $WORKDIR/init-$template.log"; port=$((port+10)); continue; }
   fi
 
+  # Copied on EVERY run, not only the first: these sources are the thing being
+  # iterated on, and a stale copy silently benches the previous shape. The
+  # scaffold's own spec, eval and prompt go: they describe `simple`, and a
+  # `system-prompt.md` nothing reads is a BUILD ERROR by design.
   if [ "$template" = "stub" ]; then
-    # Copied on EVERY run, not only the first: these sources are the thing being
-    # iterated on, and a stale copy silently benches the previous shape.
     cp "$REPO"/scripts/loadtest-stub-agent/{agent,stubs,host}.ts "$dir/"
     rm -f "$dir/agent.test.ts" "$dir/agent.eval.test.ts" "$dir/system-prompt.md"
     port=${STUB_PORT:-4900}
+  fi
+  if [ "$template" = "workflow" ]; then
+    mkdir -p "$dir/workflows"
+    cp "$REPO/scripts/loadtest-workflow-agent/agent.ts" "$dir/"
+    cp "$REPO/scripts/loadtest-workflow-agent/workflows/load.ts" "$dir/workflows/"
+    rm -f "$dir/agent.test.ts" "$dir/agent.eval.test.ts" "$dir/system-prompt.md" "$dir/client.tsx"
+    port=${STUB_PORT:-4960}
   fi
 
   psql_q "select 1 from pg_database where datname='$db'" | grep -q 1 \

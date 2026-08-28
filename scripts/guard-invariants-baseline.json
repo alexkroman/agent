@@ -47,7 +47,8 @@
     "packages/aai-cli/workflow-bundler.ts": 1
   },
   "rule19_handRolledSleep": {
-    "packages/aai-cli/dev-workflow.scenario.test.ts": 1
+    "packages/aai-cli/dev-workflow.scenario.test.ts": 1,
+    "scripts/loadtest-runs.mjs": 1
   },
   "rule22_truthySpread": {
     "packages/aai-cli/_deploy.ts": 3,

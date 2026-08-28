@@ -73,8 +73,15 @@ const corpus: string[] = [
  * these: if one starts matching, this entry is what has gone stale.
  */
 const EMPTY_BY_CONSTRUCTION: Record<string, string> = {
-  "scripts/*.ts": "no TypeScript sits directly in scripts/ today",
-  "scripts/**/*.ts": "no TypeScript sits anywhere under scripts/ today",
+  // EMPTY. Both TypeScript pathspecs went live together when the load-test
+  // agents landed (`scripts/loadtest-stub-agent/`,
+  // `scripts/loadtest-workflow-agent/` — TypeScript sources copied over a
+  // scaffolded project), and BOTH is the part worth knowing: a git pathspec is
+  // fnmatch without `FNM_PATHNAME`, so `scripts/*.ts` crosses `/` too and
+  // `git ls-files` returns the same five files for either glob. The pair reads
+  // like a top-level/nested split and is not one — which is the whole reason
+  // this suite converts a pathspec to a regex rather than trusting how it
+  // looks. Entries only ever leave this record; that is the direction it moves.
 };
 
 /**
