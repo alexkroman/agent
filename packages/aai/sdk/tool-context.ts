@@ -68,9 +68,9 @@ export type ToolContext = {
    */
   slots: SlotStore;
   /**
-   * SQL database scoped to this app. Available when storage is enabled
-   * (`aai storage enable`, or Settings → Database in the studio); accessing
-   * it otherwise throws.
+   * SQL database for this app — one you configure, since the platform provisions
+   * none. Available when a `DATABASE_URL` is set (a secret when deployed, the
+   * project `.env` under `aai dev`); accessing it otherwise throws.
    */
   db: Db;
   /**

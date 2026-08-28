@@ -29,12 +29,12 @@
  * ## Storage is not optional here, unlike everywhere else
  *
  * Every other template says "enable the database for durability, but it is fine
- * to build without it". For this one it is closer to a requirement: without
- * storage the run lives in the process, and a process does not survive a
- * multi-day sleep. Set `DATABASE_URL` under `aai dev`, or `aai storage enable`
- * once deployed. Build it with `intervalUnit: "minutes"` and you will see it
- * work either way; leave it on `days` without storage and the second digest
- * never arrives.
+ * to build without it". Deployed, that is settled for you: the platform keeps
+ * runs on its own database, so a multi-day sleep survives. Under `aai dev`
+ * without a `DATABASE_URL` the run lives in the process, and a process does not
+ * survive a multi-day sleep — build with `intervalUnit: "minutes"` and you will
+ * see it work either way; leave it on `days` locally and the second digest never
+ * arrives.
  *
  * ## Batch polling, which is this file's one genuinely new mechanism
  *

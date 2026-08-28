@@ -65,11 +65,13 @@
  * the run really submits the recording, really polls it, and really deletes it
  * when it has to.
  *
- * Storage is what makes it DURABLE (`aai storage enable`, Settings → Database
- * in the studio, or `DATABASE_URL` under `aai dev`) — runs and the
- * correlation-key index both live there. Without it both live in the process:
- * the flow still runs, and a recap parked on a callback does not survive the
- * agent restarting, redeploying or going idle.
+ * Runs are DURABLE on the platform with nothing to configure, so a recap parked
+ * on a callback survives a restart, a redeploy and an idle sandbox.
+ *
+ * A `DATABASE_URL` you supply moves the correlation-key index out of memory,
+ * which is what lets `find()` resolve that parked run by key afterwards. Under
+ * `aai dev` with none, both the runs and the index go with the process: the flow
+ * still runs, it just does not outlive the server.
  */
 
 import { agent } from "@alexkroman1/aai";

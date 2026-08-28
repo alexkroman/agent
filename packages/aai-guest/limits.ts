@@ -108,9 +108,9 @@ export const AGENT_IDLE_POLL_MS = 5000;
  * `aai dev` and the platform read identically.
  */
 export const STORAGE_DISABLED_MESSAGE =
-  "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
-  "Settings → Database in the studio; under `aai dev`, set DATABASE_URL in the " +
-  "project .env.";
+  "No database is configured for this app. `ctx.db` is a database YOU bring — the " +
+  "platform provisions none — so set a DATABASE_URL secret pointing at your own " +
+  "Postgres, or DATABASE_URL in the project .env under `aai dev`.";
 
 /**
  * Studio workspace caps. Unlike the constants above — asserted rather than

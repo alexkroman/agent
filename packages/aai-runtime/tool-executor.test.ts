@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ToolDef } from "@alexkroman1/aai";
+import { STORAGE_DISABLED_MESSAGE } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { makeTool, sleep } from "./_test-utils.ts";
@@ -91,12 +92,12 @@ describe("executeToolCall", () => {
       },
     });
     const result = await run("test", {}, tool);
-    expect(JSON.parse(result)).toEqual({
-      error:
-        "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
-        "Settings → Database in the studio; under `aai dev`, set DATABASE_URL in the " +
-        "project .env.",
-    });
+    // The CONSTANT, not a copy of its text. What this spec claims is that the
+    // executor surfaces THIS message rather than some other error — the wording
+    // itself is pinned by `aai-guest/limits.test.ts`, which holds the guest's
+    // import-free duplicate against it. A third hand-written copy here is just
+    // one more thing to drift when the message is reworded, which it has been.
+    expect(JSON.parse(result)).toEqual({ error: STORAGE_DISABLED_MESSAGE });
   });
 
   test("handles async tool execution", async () => {

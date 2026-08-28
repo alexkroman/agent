@@ -372,12 +372,14 @@ callback. Reach for `agent()` when someone is on the line — a voice agent can
 also START a workflow from a tool (`ctx.workflows.start(def, input)`) and
 answer the turn, which is the other shape.
 
-**Storage is OPTIONAL, and what it buys is DURABILITY.** With a database
-(`aai storage enable`, Settings → Database in the studio, or `DATABASE_URL`
-under `aai dev`) runs live in it and survive a restart, a redeploy and an idle
-sandbox. Without one they live in the process that started them — you can
-submit the form, watch the run and read its result, and everything in flight is
-lost when that process goes away. That is the honest tradeoff, and it is what
+**Runs are DURABLE on the platform with no setup.** A deployed app's runs live
+on the platform's own database, so they survive a restart, a redeploy and an
+idle sandbox. There is nothing to enable.
+
+Under `aai dev` without a `DATABASE_URL` they live in the process that started
+them — you can submit the form, watch the run and read its result, and
+everything in flight is lost when that process goes away. That is the honest
+tradeoff, and it is what
 lets you build a workflow app before provisioning anything.
 
 Two things do need the database whatever the run does: `ctx.db`, and a workflow
@@ -1076,7 +1078,7 @@ same way in `aai dev` and deployed.
 ctx.env: Readonly<Record<string, string>>     // secrets from .env / aai secret put
 ctx.slots: SlotStore                           // where sessionSlot() keeps this session's state —
                                                // reach for the slot, never this (see "Session state")
-ctx.db: Db                                     // SQL database, needs storage enabled (see Database section)
+ctx.db: Db                                     // SQL database you configure — needs DATABASE_URL (see Database section)
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
 ctx.send(event: string, data: unknown): void   // push custom event to browser client (silently dropped over 64 KB JSON)
@@ -1192,9 +1194,10 @@ Four rules, and each is an error rather than advice if you get it wrong:
 - **Hold plain data.** Objects, arrays, strings, numbers, booleans and null. A
   `Map`, a `Set`, a `Date` or a class instance is refused with the field named,
   because none of them survives being stored.
-- **State is STORED when your app has a database** (`aai storage enable`, or a
-  `DATABASE_URL` in `.env`), so a crash or a redeploy no longer loses it. Without
-  one it lives in memory for the life of the process. You write the same code
+- **State is STORED on the platform**, so a crash or a redeploy no longer loses
+  it — the platform keeps a session's slots on its own database and there is
+  nothing to enable. Under `aai dev` it lives in memory for the life of the
+  process unless you set a `DATABASE_URL` in `.env`. You write the same code
   either way; that is the reason for the rules above.
 
 There is nothing to declare on `agent()` — the slot owns its own default. Use
@@ -1559,12 +1562,16 @@ interpolate values into the SQL string. The rows come back as plain objects;
 A query returning more than 1000 rows throws — always bound reads with
 `LIMIT` (paginate with `LIMIT`/`OFFSET`).
 
-**The database must be enabled** or accessing `ctx.db` throws:
+**`ctx.db` is a database YOU bring** — the platform provisions none — and
+accessing it throws until one is configured:
 
-- CLI: `aai storage enable`
-- Studio: Settings pane → Database → Enable database (covers both the
-  preview and published agents, each with its own schema)
+- Deployed: set a `DATABASE_URL` secret (`aai secret put DATABASE_URL …`, or the
+  studio's Secrets pane), pointing at your own Postgres
 - `aai dev`: set `DATABASE_URL` in the project `.env`
+
+Both environments share one agent's secrets, so a preview and a published agent
+point at the same database unless you give them different values. That is worth
+knowing before you write to it from a preview.
 
 **A workflow UPLOAD needs one more thing locally: somewhere to put the bytes.**
 A deployed agent gets it from the platform; under `aai dev` the bytes go to a
@@ -1958,12 +1965,11 @@ Common mistakes when working in aai projects:
   platform's Modal/Deno sandbox; the self-hosted `aai dev` server has no
   sandbox, so there `run_code` refuses with an error result. Deploy to test
   it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
-- **`ctx.db` throws until the database is enabled.** Enable it with
-  `aai storage enable` (CLI), Settings → Database (studio), or
-  `DATABASE_URL` in `.env` (`aai dev`) before shipping tools that persist
-  data. A deployed agent reads its connection string when its sandbox is
-  built, so enabling rebuilds it — the change reaches a running agent
-  without a redeploy.
+- **`ctx.db` throws until you configure a `DATABASE_URL`.** The platform
+  provisions no database: set the secret (deployed) or the `.env` value
+  (`aai dev`) before shipping tools that persist data. A deployed agent reads
+  its connection string when its sandbox is BUILT, so a newly set secret
+  reaches it on the next deploy rather than immediately.
 - **The database is per-app.** Rows are shared by every session of one
   deployment — key them yourself if sessions must not see each other's data
   (or keep session-scoped data in a `sessionSlot`).

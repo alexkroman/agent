@@ -41,10 +41,11 @@
  *   three services this uses: transcription, the LLM Gateway, and the voice.
  *   `requiredEnv` below is what makes a deploy check for it rather than letting
  *   the first run find out.
- * - **Storage** (`aai storage enable`, Settings → Database in the studio, or
- *   `DATABASE_URL` under `aai dev`). REQUIRED here, and more so than for most
- *   workflow apps: an upload's record is a row, and this app uses uploads at
- *   BOTH ends — the recording coming in and the summary going out.
+ * - **A `DATABASE_URL`** — a secret when deployed, `.env` under `aai dev`, and a
+ *   Postgres you bring since the platform provisions none. REQUIRED here, and
+ *   more so than for most workflow apps: an upload's record is a row, and this
+ *   app uses uploads at BOTH ends — the recording coming in and the summary
+ *   going out.
  *
  * ## The recording is UPLOADED, and the run carries its id
  *

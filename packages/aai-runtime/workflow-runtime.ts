@@ -9,13 +9,19 @@
  * The interesting part is the key store, because the two cases are not "prod and
  * a test" but two legitimate deployments:
  *
- * - **With `ctx.db`** — the correlation-key index is a table in the app's own
- *   schema. Every platform workflow app is here, which is why creating one
- *   switches storage on.
+ * - **With `ctx.db`** — the correlation-key index is a table in the database the
+ *   AUTHOR supplied. This used to be every platform workflow app, because creating
+ *   one switched storage on; the platform provisions no database now, so it is
+ *   whoever set a `DATABASE_URL` secret.
  * - **Without** — `aai dev` against the Local World, which keeps runs in
- *   `.workflow-data/` and needs no database. The index is then in memory and
- *   forgotten on restart, matching what the Local World already does to the runs
- *   themselves.
+ *   `.workflow-data/` and needs no database; and a deployed app on the platform
+ *   world, whose RUNS are durable on the platform's own database even though this
+ *   index is not. The index is then in memory and forgotten on restart.
+ *
+ *   Worth stating plainly because it is a real gap rather than a symmetry: a
+ *   deployed app with no `DATABASE_URL` has durable runs and a forgotten
+ *   correlation index, so `find()` by key stops resolving across a restart while
+ *   the runs themselves survive.
  *
  * A missing database is therefore NOT a reason to withhold the client. It was
  * tempting to make storage a hard requirement and have `ctx.workflows` reject

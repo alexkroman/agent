@@ -69,11 +69,13 @@
  * thing that changes under `aai dev` (the key has to be in `.env`, not just your
  * shell).
  *
- * Storage is what makes it DURABLE (`aai storage enable`, Settings → Database
- * in the studio, or `DATABASE_URL` under `aai dev`) — runs and the key index
- * both live there. Without it both live in the process, so a run in flight is
- * lost when the agent restarts, redeploys or goes idle; everything below still
- * works, which is what lets you try it before provisioning anything.
+ * Runs are DURABLE on the platform with nothing to configure — they live on the
+ * platform's own database and survive a restart, a redeploy and an idle sandbox.
+ *
+ * A `DATABASE_URL` you supply (a secret when deployed, `.env` under `aai dev`)
+ * buys the key index, which is what lets `find()` resolve a run by key across a
+ * restart. Under `aai dev` with none, the runs go with the process too —
+ * everything below still works, which is what lets you try it first.
  */
 
 import { agent } from "@alexkroman1/aai";

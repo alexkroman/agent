@@ -32,6 +32,7 @@ import type { CloseableDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { speakOverWebSocket } from "./step-speak.ts";
+import { resolvePlatformQueue } from "./workflow-platform-world.ts";
 import { createStepReporter } from "./workflow-report.ts";
 import {
   createUploadStore,
@@ -144,13 +145,28 @@ export function installWorkflowSupport(opts: {
   if (!db) {
     // ANNOUNCED, once, at construction. A store that quietly loses an upload with
     // its container is the shape this repo keeps paying for; a store that says which
-    // directory it is using, and that its runs go the same way, is a documented
-    // tradeoff. The local world logs its own line beside this one.
+    // directory it is using is a documented tradeoff. The local world logs its own
+    // line beside this one.
+    //
+    // The line DISTINGUISHES the two deployments, because a single sentence about
+    // both is wrong in one of them. It used to say an upload lives "exactly as long
+    // as the runs that read it" and to recommend `aai storage enable` — and both
+    // halves rotted: that command no longer exists (the platform provisions no
+    // tenant database; a `DATABASE_URL` is a secret the author sets), and RUNS are
+    // no longer tied to the author having a database at all. A deployed guest's
+    // durable runs are the platform's, over HTTP. Telling that author their runs
+    // are ephemeral sends them to fix a problem they do not have, by a route that
+    // is gone.
+    const onPlatform = resolvePlatformQueue(opts.env) !== undefined;
     opts.logger.info(
-      `workflow uploads are LOCAL (${localDir}): no DATABASE_URL, so an upload lives ` +
-        "as long as this process does — exactly as long as the runs that read it. " +
-        "Enable a database (`aai storage enable`, or Settings → Database in the " +
-        "studio) for uploads and runs that outlive a deploy.",
+      `workflow uploads are LOCAL (${localDir}): no DATABASE_URL, so an upload does ` +
+        "not outlive this container. " +
+        (onPlatform
+          ? "Durable RUNS are unaffected — they live on the platform — so this is " +
+            "about uploads alone. Set a DATABASE_URL secret pointing at a database " +
+            "you own for uploads that survive a redeploy."
+          : "Runs are local here too, so a restart forgets both. Set DATABASE_URL " +
+            "in this project's .env for uploads and runs that survive one."),
     );
   }
   publishUploadReader(store);

@@ -312,7 +312,7 @@ type StartOptions = {
 };
 
 // @public
-export const STORAGE_DISABLED_MESSAGE = "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings \u2192 Database in the studio; under `aai dev`, set DATABASE_URL in the project .env.";
+export const STORAGE_DISABLED_MESSAGE = "No database is configured for this app. `ctx.db` is a database YOU bring \u2014 the platform provisions none \u2014 so set a DATABASE_URL secret pointing at your own Postgres, or DATABASE_URL in the project .env under `aai dev`.";
 
 // @public
 type StreamOptions = {

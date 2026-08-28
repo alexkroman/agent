@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { GameState } from "../shared.ts";
 import { gameSlot, loadState, saveSlotKey, saveSlotParam, storyFlow } from "../shared.ts";
 
-// Requires storage — `aai storage enable` (or DATABASE_URL in .env under
+// Requires a DATABASE_URL you supply — a secret when deployed (or .env under
 // `aai dev`); the rest of the game works without it.
 export default tool({
   description: "Load a previously saved game.",

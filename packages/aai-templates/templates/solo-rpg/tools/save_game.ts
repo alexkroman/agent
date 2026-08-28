@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { gameSlot, saveSlotKey, saveSlotParam, saveState, storyFlow } from "../shared.ts";
 
-// Requires storage — `aai storage enable` (or DATABASE_URL in .env under
+// Requires a DATABASE_URL you supply — a secret when deployed (or .env under
 // `aai dev`); the rest of the game works without it.
 //
 /**
