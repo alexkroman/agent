@@ -69,15 +69,20 @@ Required Modal Secret named ``aai-server`` with (at least):
   all and the failure is silent (the queue looks fine and parked runs stop
   resuming)
 - ``AAI_PUBLIC_ORIGIN`` — the origin browsers reach this deployment on
-  (``https://<host>``, no trailing slash). Required for DURABLE WORKFLOW
-  webhooks and nothing else: it is what ``ctx.workflows.publicWebhookUrl()``
-  mints, and in production it is the only source for that value. The origin is
-  deliberately NOT learned from a request — ``Host``/``x-forwarded-host`` are
-  the caller's to write and this middleware runs before any auth, so one
-  unauthenticated request would otherwise decide the callback URL baked into
-  the next sandbox this replica spawns, for any tenant (see
-  ``rememberPublicOrigin``). Unset, an agent asking for a durable URL gets a
-  throw naming the option; every other route is unaffected
+  (``https://<host>``, no trailing slash). **REQUIRED: boot is refused without
+  it** (``PLATFORM_TIER_ENV`` in ``_boot.ts``), and this entry used to say the
+  opposite — "required for durable workflow webhooks and nothing else … every
+  other route is unaffected". That was true when the only reader was
+  ``ctx.workflows.publicWebhookUrl()``. It is now the only source of
+  ``agentPublicBaseUrl``, which a guest receives as ``AAI_PUBLIC_BASE_URL``,
+  which is half of what the guest needs to install the PLATFORM workflow world.
+  Unset, every durable run silently ran on the DevKit's local world instead —
+  queue in the guest's memory, state in a directory, both gone with the sandbox
+  — while the platform's own queue table went unread. The origin is deliberately
+  NOT learned from a request: ``Host``/``x-forwarded-host`` are the caller's to
+  write and that middleware runs before any auth, so one unauthenticated request
+  would otherwise decide the callback URL baked into the next sandbox this
+  replica spawns, for any tenant (see ``rememberPublicOrigin``)
 - optional: ``ASSEMBLYAI_API_KEY``
 - optional: ``AAI_ALLOWED_ORIGINS`` — comma-separated cross-origin callers to
   allow, or ``*``. Unset rejects every cross-origin request, which is right
