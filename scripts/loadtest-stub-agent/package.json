@@ -1,0 +1,10 @@
+{
+  "name": "loadtest-stub-agent",
+  "private": true,
+  "type": "module",
+  "//": "NOT a workspace member and never installed. It exists to declare what the two sources beside it import, which is what `loadtest-boot.sh stub` copies over a scaffolded project that already links both. Without it Biome's noUndeclaredDependencies resolves these imports against the repo ROOT manifest and reports every one — and the alternative, excluding the directory from the linter, is the exclusion `packages/aai-templates/CLAUDE.md` records as having hidden a real bug in shipped code.",
+  "dependencies": {
+    "@alexkroman1/aai": "workspace:*",
+    "@alexkroman1/aai-runtime": "workspace:*"
+  }
+}

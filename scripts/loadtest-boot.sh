@@ -5,15 +5,29 @@
 #   ./scripts/loadtest-boot.sh                       # default template set
 #   AGENTS="simple retail" ./scripts/loadtest-boot.sh
 #   WORKDIR=/tmp/agents ./scripts/loadtest-boot.sh
+#   ./scripts/loadtest-boot.sh stub                  # the STUBBED-PROVIDER agent
 #
-# WORKDIR defaults OUTSIDE the repo: each scaffolded project installs its own
-# node_modules (~70MB each), and putting that in the worktree is what the
-# .loadtest/ ignore rule exists to stop happening twice.
+# `stub` is the one that can be driven through full TURNS: it scaffolds `simple`
+# and copies `loadtest-stub-agent/` over it, so all three provider stages are
+# local fakes and a turn rate is the runtime's with no vendor in it. Everything
+# else here needs real provider credentials to get past `session.configured`.
+# It lands on port 4900, clear of the template window.
+#
+# WORKDIR defaults OUTSIDE the repo, and an in-repo one is REFUSED below rather
+# than ignored — each scaffolded project installs ~70 MB of node_modules and
+# carries .md files `check:markdown` would lint.
 #
 # Ports are spaced by 10 because a template with a `client.tsx` takes TWO — Vite
 # on the declared port and the agent backend on the next free one above it. Both
 # answer /health, so this prints the BACKEND port it found: that is the one to
-# aim loadtest.mjs at (see its header for what the Vite hop costs).
+# aim the harnesses at (see `loadtest.mjs` for what the Vite hop costs).
+#
+# The harnesses, once something is up:
+#
+#   pnpm loadtest --scenario=http|workflow|session --ports=<name>=<port>
+#   pnpm loadtest:probe --port=<port> [--speak]
+#   pnpm loadtest:turns --port=4900        # stub agent only
+#   pnpm loadtest:platform --slug=<slug> --guest=<origin>
 set -uo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -54,43 +68,66 @@ export ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY:-test}
 
 psql_q() { psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc "$1" "${2:-postgres}"; }
 
-# The session-state tables are NOT created by `aai dev`. `sessionStateDdl` is
-# the shape and whoever owns the database applies it — the platform does so when
-# provisioning, and locally that is us. Without this every session dies at start
-# with a fatal 1011 whose only clue, in the server log, is
-# `relation "aai_session_events" does not exist`.
-SESSION_DDL='
-create table if not exists aai_session_state (
-  session_id text not null, slot text not null, value jsonb not null,
-  updated_at timestamptz not null default now(), primary key (session_id, slot));
-create table if not exists aai_session_events (
-  session_id text not null, event_index bigint not null, event jsonb not null,
-  created_at timestamptz not null default now(), primary key (session_id, event_index));'
+# The session-state tables need no DDL here any more: `aai dev` applies
+# `sessionStateDdl` itself at boot, as does the scaffold's `server.mjs`. This
+# script used to carry a copy of that DDL, and finding out WHY it had to is what
+# fixed the bug — a project with a DATABASE_URL got a boot line reporting
+# `sessionState: postgres, durable: true` and then every session died at start,
+# the reason (`relation "aai_session_events" does not exist`) appearing only in
+# the dev server's log. Creating the database is still ours.
+
+# `stub` replaces the AGENTS list with one project of its own — a different
+# measurement rather than a sixth template, so it does not share the window.
+if [ "${1:-}" = "stub" ]; then
+  AGENTS="stub"
+  STUB_PORT=4900
+fi
 
 port=4110
 for template in $AGENTS; do
   dir="$WORKDIR/$template"
   db="aai_$(echo "$template" | tr -c 'a-z0-9' '_')"
 
+  # The stub agent is `simple` with its sources replaced: `aai init` is what
+  # links the workspace SDK and writes the tsconfig, and none of that is worth
+  # a second implementation.
+  init_template=$template
+  [ "$template" = "stub" ] && init_template=simple
+
   if [ ! -d "$dir" ]; then
     echo "scaffolding $template..."
-    ( cd "$WORKDIR" && node "$CLI" init "$template" --template "$template" --yes --skipDeploy ) \
+    ( cd "$WORKDIR" && node "$CLI" init "$template" --template "$init_template" --yes --skipDeploy ) \
       > "$WORKDIR/init-$template.log" 2>&1 || { echo "$template: init FAILED, see $WORKDIR/init-$template.log"; port=$((port+10)); continue; }
+  fi
+
+  if [ "$template" = "stub" ]; then
+    # Copied on EVERY run, not only the first: these sources are the thing being
+    # iterated on, and a stale copy silently benches the previous shape.
+    cp "$REPO"/scripts/loadtest-stub-agent/{agent,stubs,host}.ts "$dir/"
+    rm -f "$dir/agent.test.ts" "$dir/agent.eval.test.ts" "$dir/system-prompt.md"
+    port=${STUB_PORT:-4900}
   fi
 
   psql_q "select 1 from pg_database where datname='$db'" | grep -q 1 \
     || psql_q "create database $db" > /dev/null
-  psql -q -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$db" -c "$SESSION_DDL" > /dev/null
   grep -q '^DATABASE_URL=' "$dir/.env" 2>/dev/null \
     || echo "DATABASE_URL=postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$db" >> "$dir/.env"
 
-  ( cd "$dir" && nohup node "$CLI" dev --port "$port" > "$WORKDIR/dev-$template.log" 2>&1 & )
+  if [ "$template" = "stub" ]; then
+    # `host.ts`, deliberately: a stub registered inside a BUNDLED agent lands in
+    # the bundle's own copy of the runtime and the server resolves against
+    # another. Its header has the measurement. `node` strips the types.
+    ( cd "$dir" && nohup env PORT="$port" DATABASE_URL="$(grep -m1 '^DATABASE_URL=' .env | cut -d= -f2-)" \
+        node host.ts > "$WORKDIR/dev-$template.log" 2>&1 & )
+  else
+    ( cd "$dir" && nohup node "$CLI" dev --port "$port" > "$WORKDIR/dev-$template.log" 2>&1 & )
+  fi
   port=$((port+10))
 done
 
 echo
 echo "waiting for backends (this includes the first bundle + Vite boot)..."
-port=4110
+port=${STUB_PORT:-4110}
 for template in $AGENTS; do
   found=""
   for _ in $(seq 1 90); do
