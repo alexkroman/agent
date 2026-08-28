@@ -241,19 +241,26 @@ function modeFrom(
  *
  * A DIRECT stderr write, not `console.warn`, and that is the whole point of the
  * function. Vitest INTERCEPTS `console` and hands what it captures to the
- * reporter, and the default reporter surfaces a file's captured output only
- * when it reports on that file — which, in the single-project run every
- * scaffolded agent project has, means only when the file FAILED. So the line
- * that exists to stop a reader mistaking a wiring check for a behaviour
- * measurement was printed exactly when the run failed and swallowed exactly
- * when it passed, on the one path a user takes: `aai eval` in their own
- * project. Measured on a scaffolded project, one passing case, vitest 4.1.10 —
- * `console.warn` produced nothing and `process.stderr.write` beside it printed;
- * the same file's LIVE run, failing an assertion, printed both. It reads
- * correctly in THIS repo either way, because the root config runs vitest in
- * projects mode, which is why nothing here noticed.
+ * reporter, so whether the line is ever seen is the REPORTER's decision — and
+ * vitest 4 picks that reporter for you: with `reporters` unset it resolves
+ * `std-env`'s `isAgent ? "agent" : "default"`, and the agent reporter prints a
+ * passing file's captured output nowhere. A scaffolded agent project sets no
+ * `reporters`. So `aai eval` run BY AN AGENT — this repo's own studio coding
+ * agent included — showed the line only when the run FAILED, which is the one
+ * case where it does not matter.
  *
- * The trailing newline is ours for the same reason: nothing is formatting this.
+ * Measured on a scaffolded project, vitest 4.1.10, one passing case: with the
+ * agent markers in the environment `console.warn` printed nothing while a
+ * `process.stderr.write` beside it printed; with those markers stripped — a
+ * human at a terminal — `console.warn` printed too. Pinning
+ * `reporters: ["default"]` restores it as well, which is exactly why THIS repo
+ * never saw it: `vitest.shared.ts` pins that value and every config here
+ * spreads it.
+ *
+ * A stderr write is right rather than merely sufficient: it is the reporter's
+ * job to decide what a TEST said, and not the reporter's job to decide whether
+ * the harness may state what it just did. The trailing newline is ours for the
+ * same reason — nothing is formatting this.
  */
 export function announceEvalMode(line: string): void {
   process.stderr.write(`${line}\n`);

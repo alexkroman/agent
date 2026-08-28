@@ -112,8 +112,9 @@ describe("announceEvalMode", () => {
    * nothing asserted it was emitted at all — which is how it came to be dropped
    * on every GREEN `aai eval` run for as long as it had been there. So the claim
    * is the CHANNEL, not the wording: `console.warn` is intercepted by vitest and
-   * handed to the reporter, and the default reporter surfaces a passing file's
-   * captured output nowhere. A direct stderr write is what survives.
+   * handed to whichever reporter it resolved, and the one it picks for an AGENT
+   * prints a passing file's captured output nowhere. A direct stderr write is
+   * what survives any of them.
    */
   test("writes to stderr rather than through the intercepted console", () => {
     const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
