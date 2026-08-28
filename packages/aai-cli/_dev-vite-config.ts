@@ -43,33 +43,48 @@ import { DEDUPED_PEERS } from "./_vite-env.ts";
  * the port the user is told to open — on loopback, i.e. failing exactly the
  * case that variable exists for (`aai dev` in a container, reached from the host).
  *
- * ## Do not BENCHMARK a session through this port
+ * ## The target is an IP LITERAL, and that is a fix rather than a style choice
  *
- * The `/websocket` hop has a tail that is Vite's, not the agent's, and measuring
- * it will send you looking for a bug in the runtime that is not there. Measured
- * on the `retail` template, session handshakes to `session.configured`:
+ * `127.0.0.1`, never `localhost`. Vite opens a FRESH upstream connection for
+ * every WebSocket upgrade — an HTTP request reuses a pooled keep-alive socket and
+ * so resolves rarely — which means a hostname here is one `getaddrinfo` per
+ * session handshake. That lookup runs on libuv's threadpool (four threads,
+ * shared with every other fs and DNS call in a process that is ALSO serving the
+ * agent), and under load it intermittently stalls for almost exactly two
+ * seconds.
  *
- * | Target | rps | p50 | p99 |
- * | --- | --- | --- | --- |
- * | the backend port, direct | 338 | 26 ms | 102 ms |
- * | this port, through the proxy | 12-26 | 8-46 ms | 2.0-8.7 s |
+ * Measured on the `retail` template, session handshakes to `session.configured`:
  *
- * So the median is fine — which is what a developer opening one session
- * experiences, and why this is not worth re-architecting — while roughly one
- * handshake in thirty stalls for almost exactly 2 s, and a sustained burst
- * degrades further (one run left the proxy refusing upgrades entirely until the
- * dev server was restarted). It is NOT this table's target hostname: `localhost`
- * resolves IPv4-only here, so no Happy-Eyeballs fallback is involved.
+ * | Target | conc | rps | p50 | p99 |
+ * | --- | --- | --- | --- | --- |
+ * | `localhost` | 1 | 12-18 | 8-11 ms | 2.0 s |
+ * | `localhost` | 10 | 0.6 | 16.7 s | 16.7 s |
+ * | `127.0.0.1` | 1 | 89-207 | 4-9 ms | 23-49 ms |
+ * | `127.0.0.1` | 20 | 260 | 73 ms | 166 ms |
  *
- * Benchmark the BACKEND port. `startDevServer` picks it (`port + 1` upward), the
- * boot log names it, and it serves the same routes with no proxy in front.
+ * The `localhost` row is not a slow proxy, it is a queue: one handshake in thirty
+ * stalls two seconds on its own, and at concurrency 10 the stalls pile onto four
+ * threads until a sustained burst left the proxy refusing upgrades entirely until
+ * the dev server was restarted. With the literal it recovers from a burst and
+ * sits within ~1.5x of the backend port.
+ *
+ * Localized by timing the phases separately — TCP connect and the first frame
+ * were always fast, the 101 was not — and then by comparing the instant the
+ * client sent its upgrade against the backend's own log line for it: 23.808 out,
+ * 25.796 in, answered in 5 ms. The two seconds were spent before Vite dialled,
+ * which is what pointed at resolution rather than at either server.
+ *
+ * Not a behaviour change: `localhost` resolved to loopback anyway, so this
+ * removes the lookup and nothing else. An `AAI_DEV_HOST` that binds the backend
+ * to ONE non-loopback interface was unreachable through the proxy before this and
+ * still is.
  */
 export function viteDevConfig(
   cwd: string,
   vitePort: number,
   backendPort: number,
 ): import("vite").InlineConfig {
-  const target = `http://localhost:${backendPort}`;
+  const target = `http://127.0.0.1:${backendPort}`;
   return {
     root: cwd,
     plugins: [fallbackHtmlPlugin(cwd)],

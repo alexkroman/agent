@@ -78,15 +78,15 @@ describe("viteDevConfig", () => {
     const config = viteDevConfig("/proj", 3000, 3001);
     const proxy = config.server?.proxy as Record<string, unknown>;
     // Without ws:true the served client's WebSocket never connects.
-    expect(proxy["/websocket"]).toEqual({ target: "http://localhost:3001", ws: true });
-    expect(proxy["/health"]).toBe("http://localhost:3001");
+    expect(proxy["/websocket"]).toEqual({ target: "http://127.0.0.1:3001", ws: true });
+    expect(proxy["/health"]).toBe("http://127.0.0.1:3001");
   });
 
   test("proxies /client-config to the backend", () => {
     const config = viteDevConfig("/proj", 3000, 3001);
     const proxy = config.server?.proxy as Record<string, unknown>;
     // Without /client-config the default client can't learn the agent name.
-    expect(proxy["/client-config"]).toBe("http://localhost:3001");
+    expect(proxy["/client-config"]).toBe("http://127.0.0.1:3001");
   });
 
   test("proxies the workflow API, the whole front door of a static app", () => {
@@ -96,7 +96,7 @@ describe("viteDevConfig", () => {
     // call it makes is a same-origin fetch under this prefix. Unproxied, Vite
     // answers its own 404 and submitting the form fails with `Workflow API 404`
     // while the backend serves the API correctly one port over.
-    expect(proxy["/workflows"]).toBe("http://localhost:3001");
+    expect(proxy["/workflows"]).toBe("http://127.0.0.1:3001");
   });
 
   test("the workflow proxy key is the prefix the API is actually served under", () => {
@@ -105,6 +105,23 @@ describe("viteDevConfig", () => {
     // nothing answers, which is the same silent failure by a new route.
     const proxy = viteDevConfig("/proj", 3000, 3001).server?.proxy as Record<string, unknown>;
     expect(Object.keys(proxy)).toContain(WORKFLOW_API_PREFIX);
+  });
+
+  test("every proxy target is an IP LITERAL, never a hostname", () => {
+    // Vite opens a fresh upstream connection per WebSocket upgrade, so a hostname
+    // here is one `getaddrinfo` per session handshake — on libuv's four-thread
+    // pool, shared with the agent server in this same process. Measured with
+    // `localhost`: one handshake in thirty stalled ~2s, concurrency 10 collapsed
+    // to 0.6 rps at a 16.7s p50, and a sustained burst left the proxy refusing
+    // upgrades until the dev server was restarted. With the literal: 260 rps at
+    // a 166ms p99. Asserted over the WHOLE table so a route added later cannot
+    // reintroduce it for itself.
+    const proxy = viteDevConfig("/proj", 3000, 3001).server?.proxy as Record<string, unknown>;
+    const targets = Object.values(proxy).map((entry) =>
+      typeof entry === "string" ? entry : (entry as { target: string }).target,
+    );
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) expect(new URL(target).hostname).toBe("127.0.0.1");
   });
 
   test("dedupes React, so a linked SDK does not render a blank page", () => {
