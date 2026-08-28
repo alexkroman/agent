@@ -19,6 +19,7 @@
  */
 
 import { safeJsonParse } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { zValidator } from "@hono/zod-validator";
 import {
   invalidateApiKeyOwner,
@@ -131,7 +132,7 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
     if (!key) return c.json({ error: "No API key on file for this account" }, 409);
     const grant: CliLinkGrant = {
       uid: user.id,
-      ...(user.email && { email: user.email }),
+      ...omitUndefined({ email: user.email }),
       exp: Date.now() + CLI_LINK_TTL_MS,
     };
     await c.env.secrets.put(cliLinkSecretName(c.req.valid("json").code), JSON.stringify(grant));
@@ -157,6 +158,6 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
     }
     const key = await c.env.secrets.get(userApiKeySecretName(grant.uid));
     if (!key) return c.json({ error: "No API key on file for this account" }, 409);
-    return c.json({ apiKey: key, ...(grant.email && { email: grant.email }) });
+    return c.json({ apiKey: key, ...omitUndefined({ email: grant.email }) });
   });
 }

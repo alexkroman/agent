@@ -21,6 +21,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { resolveHarnessPath } from "aai-server/constants";
 import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox-vm";
 import { z } from "zod";
@@ -127,7 +128,7 @@ async function requestDeploy(
       files,
       serverUrl: target.serverUrl,
       apiKey: target.apiKey,
-      ...(target.slug ? { slug: target.slug } : {}),
+      ...omitUndefined({ slug: target.slug }),
       ...(target.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
       // Plain key (not a guarded spread): JSON-RPC drops an undefined value on
       // the wire, so an older guest still sees the field absent.

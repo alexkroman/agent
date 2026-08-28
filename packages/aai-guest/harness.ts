@@ -86,12 +86,7 @@ import {
   setHostSend,
 } from "./harness-rpc.ts";
 import { guestSdkVersion } from "./harness-sdk-version.ts";
-import type {
-  JsonRpcMessage,
-  JsonRpcNotification,
-  JsonRpcRequest,
-  JsonRpcResponse,
-} from "./harness-types.ts";
+import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "./harness-types.ts";
 
 import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
 import { withBuildDir } from "./studio-build.ts";
@@ -178,7 +173,16 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
   }
 }
 
-export function handleNotification(notif: JsonRpcNotification): void {
+/**
+ * A notification frame as it arrives off the wire, where `method` is
+ * UNVALIDATED — which is why this is not `JsonRpcNotification`. That type
+ * promises `method: string`, so the guard below read as dead code and the spec
+ * covering a malformed frame had to launder one past the checker with a cast.
+ * A real `JsonRpcNotification` is still assignable.
+ */
+type IncomingNotification = { jsonrpc: "2.0"; method?: unknown; params?: unknown };
+
+export function handleNotification(notif: IncomingNotification): void {
   // The frame came off the wire — a malformed notification with no string
   // `method` must be ignored, not allowed to throw and kill the handler.
   if (typeof notif?.method !== "string") return;
@@ -193,7 +197,7 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
   }
   // Notification (no id)
   if (!("id" in msg)) {
-    handleNotification(msg as JsonRpcNotification);
+    handleNotification(msg);
     return;
   }
   // Request — handle concurrently so the socket keeps draining.

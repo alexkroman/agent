@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { gzipSync } from "node:zlib";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { type ApiTestSeam, apiRequest, apiTestSeam, checkedResponse } from "./_api-client.ts";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
 
@@ -32,7 +32,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   // through untouched; the server inflates on Content-Encoding: gzip.
   const body = gzipSync(
     JSON.stringify({
-      ...(opts.slug ? { slug: opts.slug } : {}),
+      ...omitUndefined({ slug: opts.slug }),
       ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
       env: opts.env,
       worker: opts.bundle.worker,

@@ -20,7 +20,6 @@ import {
   publishStepEnv,
   type WorkflowSurface,
 } from "@alexkroman1/aai-runtime/internal";
-import type { WebSocket } from "ws";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
 import type { StudioSession } from "./studio-session.ts";
 import { runCode } from "./trial.ts";
@@ -291,14 +290,13 @@ export function lazyRuntime(
 ): SessionRuntime {
   return {
     startSession(ws, opts) {
-      const socket = ws as unknown as WebSocket;
       const refusal = hooks.refuse?.();
       if (refusal) {
-        socket.close(refusal.code, refusal.reason);
+        ws.close?.(refusal.code, refusal.reason);
         return;
       }
       state.activeSessions++;
-      socket.on("close", () => {
+      ws.addEventListener("close", () => {
         state.activeSessions = Math.max(0, state.activeSessions - 1);
       });
       let runtime: GuestRuntime;
@@ -309,7 +307,7 @@ export function lazyRuntime(
         // credential, invalid config) — answer with a close frame naming
         // the cause instead of a dangling socket.
         console.error(`session refused: ${errorMessage(err)}`);
-        socket.close(1011, errorMessage(err).slice(0, 100));
+        ws.close?.(1011, errorMessage(err).slice(0, 100));
         return;
       }
       runtime.startSession(ws, opts);
