@@ -342,7 +342,16 @@ export function createSessionCore(options: VoiceSessionOptions): SessionCore {
         // a survivor would fire against the NEXT attempt's open window.
         handshake.disarm();
         cleanupAudio();
-        if (!conn.retiredByServer && reconnectPending(socket)) {
+        // A FATAL error is the server saying the session cannot work, and it is
+        // not retryable by construction — the same rule as `retiredByServer`,
+        // read off the latch that already owns the question rather than a second
+        // flag every writer would have to set. Without it the ladder ran in full
+        // while the page said CONNECTING, and the server's own sentence landed
+        // ~110s and 10 socket opens later, when partysocket ran out of retries;
+        // on the platform the URL provider re-brokers per attempt, so those ten
+        // are ten broker calls that can boot a sandbox. Measured in
+        // `session-core-reconnect.test.ts`.
+        if (!(conn.retiredByServer || agentState.fatal()) && reconnectPending(socket)) {
           // partysocket retries with backoff. Keep the listeners attached
           // and the session logically alive: the URL provider re-derives the
           // resume URL and `onServerConfig` replays history on the next open.
