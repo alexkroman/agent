@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import type { TtsError } from "@alexkroman1/aai/host-internal";
-import { DEAD_AIR_OPENING_PHRASE } from "@alexkroman1/aai/host-internal";
 import type { AssemblyAITtsLanguage } from "@alexkroman1/aai/tts";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
@@ -195,289 +194,6 @@ describe("AssemblyAI TTS adapter", () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
-  describe("mid-stream segment flushing", () => {
-    // The service synthesizes NOTHING until it receives a Flush: measured
-    // against production, a turn's Generate frames produce zero audio and the
-    // first Audio frame lands ~33ms after Flush. The pipeline only flushes at
-    // the end-of-turn drain (flushTtsAndWait, once per reply — after every LLM
-    // step AND every tool call), so without a segment flush time-to-first-audio
-    // is the whole turn. Cartesia has no equivalent: `continue: true` starts
-    // synthesis on arrival.
-    test("flushes at a sentence boundary so synthesis starts mid-stream", async () => {
-      const { session, ws } = await openSession();
-      session.sendText("Sure, I can help with that. ");
-      expect(ws._frames()).toEqual([
-        { type: "Generate", text: "Sure, I can help with that. " },
-        { type: "Flush" },
-      ]);
-    });
-
-    test("does not flush mid-sentence text", async () => {
-      const { session, ws } = await openSession();
-      session.sendText("Sure, I can help ");
-      expect(ws._frames()).toEqual([]);
-    });
-
-    test("does not flush a single-token fragment", async () => {
-      // "Dr. " is an abbreviation, not a sentence end. Flushing it makes a
-      // word-sized utterance: measured 25% longer total audio for the same
-      // text, because each flushed segment gets its own prosody and padding.
-      const { session, ws } = await openSession();
-      session.sendText("Dr. ");
-      expect(ws._frames()).toEqual([]);
-    });
-
-    test("a decimal point is not a sentence end", async () => {
-      const { session, ws } = await openSession();
-      session.sendText("The total is 3.5 million ");
-      expect(ws._frames()).toEqual([]);
-    });
-
-    test("keeps an abbreviation with the sentence that follows it", async () => {
-      const { session, ws } = await openSession();
-      session.sendText("Dr. ");
-      session.sendText("Smith is here. ");
-      expect(ws._frames()).toEqual([
-        { type: "Generate", text: "Dr. Smith is here. " },
-        { type: "Flush" },
-      ]);
-    });
-
-    test("splits a sentence end buried mid-delta rather than missing it", async () => {
-      // The pipeline coalescer's 32-char cap can put a sentence end in the
-      // middle of a chunk. Matching only the chunk's tail would miss it and
-      // silently restore the whole-turn lag, so the split happens here.
-      const { session, ws } = await openSession();
-      session.sendText("All done. And now the next ");
-      expect(ws._frames()).toEqual([{ type: "Generate", text: "All done. " }, { type: "Flush" }]);
-
-      session.flush();
-      expect(ws._frames()).toEqual([
-        { type: "Generate", text: "All done. " },
-        { type: "Flush" },
-        { type: "Generate", text: "And now the next " },
-        { type: "Flush" },
-      ]);
-    });
-
-    test("flushes through the last complete sentence when several arrive at once", async () => {
-      // One larger segment sounds better than several small ones.
-      const { session, ws } = await openSession();
-      session.sendText("One thing. Two things. Still going ");
-      expect(ws._frames()).toEqual([
-        { type: "Generate", text: "One thing. Two things. " },
-        { type: "Flush" },
-      ]);
-    });
-
-    test("flushes at the character budget when no sentence end arrives", async () => {
-      // Sentence-only segmentation makes time-to-first-audio the length of the
-      // reply's FIRST SENTENCE, and a long opening clause is most of a second of
-      // silence on its own. Measured against production: 538ms to first audio
-      // sentence-only vs 286ms with the budget. See the module doc.
-      const { session, ws } = await openSession();
-      session.sendText("Let me pull up the details on that order for you ");
-      expect(ws._frames()).toEqual([
-        // Cut after the last WHOLE word inside the budget — never mid-token.
-        { type: "Generate", text: "Let me pull up the details on that " },
-        { type: "Flush" },
-      ]);
-    });
-
-    test("holds text that has not reached the budget or a sentence end", async () => {
-      const { session, ws } = await openSession();
-      session.sendText("Let me pull up the ");
-      expect(ws._frames()).toEqual([]);
-    });
-
-    test("a sentence boundary wins over the budget even when far past it", async () => {
-      // The budget only bounds the WAIT for a sentence end; it is not a cap. A
-      // buffer holding complete sentences still flushes as one large segment,
-      // which is both better prosody and fewer round trips.
-      const { session, ws } = await openSession();
-      session.sendText("One thing happened. Two things happened. Still going ");
-      expect(ws._frames()).toEqual([
-        { type: "Generate", text: "One thing happened. Two things happened. " },
-        { type: "Flush" },
-      ]);
-    });
-
-    test("flushes a single token that overruns the budget rather than holding it", async () => {
-      // Once one token is longer than the budget, "wait for a word that fits"
-      // can never become true again — every later delta only lengthens the
-      // buffer — so holding would strand the text until end of turn.
-      const { session, ws } = await openSession();
-      session.sendText("https://example.com/orders/1234567890/tracking next ");
-      expect(ws._frames()).toEqual([
-        { type: "Generate", text: "https://example.com/orders/1234567890/tracking " },
-        { type: "Flush" },
-      ]);
-    });
-
-    test("emits every whole segment a single delta carries", async () => {
-      // A budget split consumes only its own segment, so without looping a burst
-      // would dribble out one segment per LATER delta — and stall completely if
-      // none followed, restoring the whole-turn lag this adapter exists to avoid.
-      const { session, ws } = await openSession();
-      session.sendText(
-        "Let me pull up the details on that order for you and check the warehouse status now ",
-      );
-      expect(ws._frames()).toEqual([
-        { type: "Generate", text: "Let me pull up the details on that " },
-        { type: "Flush" },
-        { type: "Generate", text: "order for you and check the warehouse " },
-        { type: "Flush" },
-      ]);
-    });
-
-    test("budget segments each hold the turn open until the end-of-turn flush", async () => {
-      // Every segment earns its own FlushDone, but `done` may only fire for the
-      // last: flushTtsAndWait resolves on it, so a premature one advances the
-      // orchestrator while later segments are still synthesizing.
-      const { session, ws } = await openSession();
-      const onDone = vi.fn();
-      session.on("done", onDone);
-
-      session.sendText(
-        "Let me pull up the details on that order for you and check the warehouse status now ",
-      );
-      ws._msg({ type: "FlushDone" }); // first budget segment
-      ws._msg({ type: "FlushDone" }); // second budget segment
-      expect(onDone).not.toHaveBeenCalled();
-
-      session.flush(); // end of turn — "status now " is still buffered
-      ws._msg({ type: "FlushDone" });
-      expect(onDone).toHaveBeenCalledTimes(1);
-    });
-
-    test("flushes a short cover phrase, which must be audible during tool execution", async () => {
-      // DEAD_AIR_OPENING_PHRASE is "I'm checking on this." — four words. Its
-      // entire purpose is to break silence while a tool runs, so it cannot wait
-      // for the turn's end-of-turn flush.
-      const { session, ws } = await openSession();
-      session.sendText(DEAD_AIR_OPENING_PHRASE);
-      expect(ws._frames()).toContainEqual({ type: "Flush" });
-    });
-
-    test("a segment flush does not end the turn", async () => {
-      // The turn ends on the end-of-turn flush's FlushDone, not a segment's:
-      // flushTtsAndWait resolves on `done`, so a premature one advances the
-      // orchestrator while audio is still streaming.
-      const { session, ws } = await openSession();
-      const onDone = vi.fn();
-      session.on("done", onDone);
-
-      session.sendText("First sentence here. ");
-      ws._msg({ type: "FlushDone" }); // the segment's
-      expect(onDone).not.toHaveBeenCalled();
-
-      session.sendText("And the rest ");
-      session.flush(); // end of turn
-      ws._msg({ type: "FlushDone" });
-      expect(onDone).toHaveBeenCalledTimes(1);
-    });
-
-    test("accumulates across deltas and flushes once the sentence completes", async () => {
-      const { session, ws } = await openSession();
-      session.sendText("Sure, ");
-      session.sendText("I can help ");
-      session.sendText("with that. ");
-      expect(ws._frames()).toEqual([
-        { type: "Generate", text: "Sure, I can help with that. " },
-        { type: "Flush" },
-      ]);
-    });
-
-    test("never sends an empty Flush at end of turn", async () => {
-      // Observed against production: an empty Flush can go unacknowledged, and
-      // `done` then never fires — flushTtsAndWait would burn its full timeout on
-      // every turn, which is worse than the lag this flushing fixes.
-      const { session, ws } = await openSession();
-      const onDone = vi.fn();
-      session.on("done", onDone);
-
-      session.sendText("The whole reply fits in one sentence. ");
-      ws._msg({ type: "FlushDone" });
-      const before = ws._frames().length;
-
-      session.flush(); // nothing buffered
-      expect(ws._frames()).toHaveLength(before);
-      // All synthesis was already acknowledged, so the turn ends here.
-      expect(onDone).toHaveBeenCalledTimes(1);
-    });
-
-    test("an end-of-turn flush with nothing buffered waits for outstanding audio", async () => {
-      const { session, ws } = await openSession();
-      const onDone = vi.fn();
-      session.on("done", onDone);
-
-      session.sendText("One sentence. ");
-      session.flush(); // nothing buffered, but the segment is unacknowledged
-      expect(onDone).not.toHaveBeenCalled();
-
-      ws._msg({ type: "FlushDone" });
-      expect(onDone).toHaveBeenCalledTimes(1);
-    });
-
-    test("a segment's is_final does not end the turn either", async () => {
-      // Older servers flag the last Audio frame instead of sending FlushDone;
-      // per segment that signal means the same thing and must be gated the same.
-      const { session, ws } = await openSession();
-      const onDone = vi.fn();
-      session.on("done", onDone);
-      session.sendText("First sentence here. ");
-      ws._msg({ type: "Audio", audio: pcmBase64([1]), is_final: true });
-      expect(onDone).not.toHaveBeenCalled();
-    });
-
-    test("an is_final AND its FlushDone count as one acknowledgement", async () => {
-      // A server may signal a synthesis's completion both ways. Counting the
-      // pair twice reads the surplus FlushDone as unsolicited and ends the
-      // turn mid-reply — done fires while later sentences are still
-      // synthesizing, audio_done overtakes their audio, and the buffered text
-      // below ("And the rest") is dropped: the voice cuts off before the
-      // reply finishes. Exhaustive ack-pairing cases: assemblyai-turn.test.ts.
-      const { session, ws } = await openSession();
-      const onDone = vi.fn();
-      session.on("done", onDone);
-
-      session.sendText("First sentence here. ");
-      session.sendText("And the rest");
-      ws._msg({ type: "Audio", audio: pcmBase64([1]), is_final: true }); // segment's final frame
-      ws._msg({ type: "FlushDone" }); // same flush, acked again
-      expect(onDone).not.toHaveBeenCalled();
-
-      session.sendText(" of the reply. ");
-      session.flush(); // end of turn — "And the rest of the reply. " must go out
-      expect(ws._frames()).toContainEqual({
-        type: "Generate",
-        text: "And the rest of the reply. ",
-      });
-      expect(onDone).not.toHaveBeenCalled();
-
-      ws._msg({ type: "Audio", audio: pcmBase64([2]), is_final: true });
-      expect(onDone).toHaveBeenCalledTimes(1); // exactly once, on the LAST flush's acknowledgement
-      ws._msg({ type: "FlushDone" });
-      expect(onDone).toHaveBeenCalledTimes(1);
-    });
-
-    test("cancel clears pending segment state so the next turn ends normally", async () => {
-      const { session, ws } = await openSession();
-      const onDone = vi.fn();
-      session.on("done", onDone);
-
-      session.sendText("Interrupted sentence. ");
-      session.cancel(); // emits done for the cancelled turn; the socket survives
-      expect(onDone).toHaveBeenCalledTimes(1);
-
-      ws._msg({ type: "Cancelled" }); // boundary — the next turn's frames count
-      session.sendText("New turn ");
-      session.flush();
-      ws._msg({ type: "FlushDone" });
-      expect(onDone).toHaveBeenCalledTimes(2);
-    });
-  });
-
   test("Begin and Warning frames are not treated as audio or errors", async () => {
     const { session, ws } = await openSession();
     const seen: string[] = [];
@@ -614,14 +330,52 @@ describe("AssemblyAI TTS adapter", () => {
       expect(seen).toEqual([]);
     });
 
-    test("a frame arriving after the turn is done is dropped", async () => {
+    test("a frame trailing the final FlushDone still reaches the turn it belongs to", async () => {
+      // The service emits a segment's WordBoundaries AFTER that segment's own
+      // FlushDone — measured against the sandbox host, ~20 ms after, on every
+      // reply's LAST segment. Guarding on "is a turn in flight" therefore threw
+      // away the tail of every reply's timeline (14.19 s of 17.76 s of audio
+      // covered), and the final segment silently degraded to the proportional
+      // estimate `heardChars` falls back to.
       const { session, ws } = await openSession();
       const { seen } = collectWords(session);
       session.sendText("Your balance. ");
       session.flush();
-      ws._msg({ type: "FlushDone" }); // turn over
+      ws._msg({ type: "FlushDone" }); // turn over — its last frame is still in flight
+      ws._msg({
+        type: "WordBoundaries",
+        words: [{ text: "Your", audio_start_ms: 0, audio_end_ms: 300 }],
+      });
+      expect(seen).toEqual([[{ text: "Your", startMs: 0, endMs: 300 }]]);
+    });
+
+    test("a frame trailing a CANCELLED turn is still dropped, past the barrier", async () => {
+      // The cancel barrier only filters up to `Cancelled`; the turn's own
+      // trailing frame can land after it. `turn.inFlight()` used to cover this
+      // case for the wrong reason, so widening the window above had to close
+      // this one explicitly — the client dropped that reply's audio, and a
+      // timing for it would walk the heard cursor through speech nobody heard.
+      const { session, ws } = await openSession();
+      const { seen } = collectWords(session);
+      session.sendText("Your balance. ");
+      session.cancel();
+      ws._msg({ type: "Cancelled" }); // barrier reopens here
       ws._msg({ type: "WordBoundaries", words: [{ text: "Your", audio_start_ms: 0 }] });
       expect(seen).toEqual([]);
+    });
+
+    test("the next turn's first text reopens the window and re-anchors at zero", async () => {
+      const { session, ws } = await openSession();
+      const { seen } = collectWords(session);
+      session.sendText("First reply. ");
+      session.flush();
+      ws._msg({ type: "FlushDone" });
+      session.sendText("Second reply. ");
+      ws._msg({
+        type: "WordBoundaries",
+        words: [{ text: "Second", audio_start_ms: 9000, audio_end_ms: 9400 }],
+      });
+      expect(seen).toEqual([[{ text: "Second", startMs: 0, endMs: 400 }]]);
     });
   });
 

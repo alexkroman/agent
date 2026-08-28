@@ -242,12 +242,40 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
 
       const onSynthesisComplete = (ack: SynthesisAck): void => turn.onAck(ack);
 
-      // Word timings, rebased onto the turn's own audio timeline. A frame that
-      // lands once the turn is over belongs to no reply — dropping it is what
-      // keeps a late frame from being attributed to the next one.
+      // Word timings, rebased onto the turn's own audio timeline.
+      //
+      // **A `WordBoundaries` frame may TRAIL its own flush's `FlushDone`, so the
+      // turn being over is NOT a reason to drop one.** This guard was
+      // `if (!turn.inFlight()) return`, and measured against the sandbox host
+      // (2026-08-27) that dropped the final segment's frame on EVERY reply: the
+      // frame lands ~20ms after the ack that ends the turn (`+5182 ms`
+      // FlushDone, `+5205 ms` WordBoundaries), so the kept timings covered
+      // 14.19s of 17.76s of audio and the reply's last segment always degraded
+      // to `heardChars`'s proportional estimate — over exactly the span where
+      // per-flush padding makes that estimate worst, which is the error word
+      // timings exist to model (see `assemblyai-segment.ts`). It reaches
+      // `buildTailResumePrompt` too, which is the one reader still live after
+      // the turn's history is committed.
+      //
+      // What must be dropped instead is a frame belonging to a turn the NEXT
+      // one has already replaced: the timeline has been reset by then, so
+      // rebasing would anchor the old turn's offsets at zero on the new reply
+      // and walk the heard cursor through text this turn never spoke. Note
+      // `turn.inFlight()` never prevented THAT — a stale frame arriving once
+      // the next turn has begun sees a turn in flight and passes — so the
+      // window it closed was only the gap between `done` and the next turn's
+      // first text, which is precisely where a trailing frame belongs.
+      //
+      // The residual is unchanged and unclosable from here: the socket answers
+      // in order, so a stale frame still arrives before any of the new turn's
+      // own, and nothing in the parse distinguishes them. The service does send
+      // a `flush_id`, which is the field that would.
       const timeline = createWordTimeline();
+      // False while no turn owns the word timeline: before the first turn, and
+      // from a cancel until the next turn's first text.
+      let wordsTurnOpen = false;
       const onWords = (msg: AssemblyAITtsMessage): void => {
-        if (!turn.inFlight()) return;
+        if (!wordsTurnOpen) return;
         const words = timeline.rebase(readWordBoundaries(msg));
         if (words.length > 0) shell.emit("words", words);
       };
@@ -335,8 +363,12 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           if (text.length === 0 || shell.isClosed()) return;
           // First text of a new turn — nothing from the last one carries over,
           // the word timeline included (it re-anchors this turn's first frame
-          // at zero).
-          if (!turn.inFlight()) timeline.reset();
+          // at zero). This is also what CLOSES the previous turn's word window:
+          // a frame arriving from here on is rebased onto THIS turn.
+          if (!turn.inFlight()) {
+            timeline.reset();
+            wordsTurnOpen = true;
+          }
           turn.onTurnText();
           buffered += text;
           // Synthesize each segment as it lands rather than waiting for the end
@@ -377,6 +409,12 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           // and barge-in must not be microtask-deferred.
           buffered = "";
           timeline.reset();
+          // The abandoned turn's timings must not reach the session. The cancel
+          // barrier filters this turn's frames only until `Cancelled`, and
+          // `done` has already been emitted for it, so closing the window here
+          // is what stops a trailing frame landing on a reply the client has
+          // dropped.
+          wordsTurnOpen = false;
           const turnInFlight = turn.cancel();
           // Idempotent: nothing sent since the last done means nothing is
           // buffered server-side and no audio is in flight.

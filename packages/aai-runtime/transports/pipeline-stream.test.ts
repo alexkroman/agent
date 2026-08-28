@@ -79,6 +79,18 @@ describe("createTtsTextCoalescer", () => {
     expect(sent.join("")).toBe("Sure, I can help, what's up? Ask away.");
   });
 
+  test("a sentence closed by a CURLY quote ends a batch", () => {
+    // The closer class must stay in step with `SEGMENT_BOUNDARY_RE` in
+    // providers/tts/assemblyai-segment.ts (that module's doc argues both). A
+    // straight-only class could not see `me.”`, which is the spelling an LLM
+    // emits by default, so the batch ran on into the next sentence.
+    const { sent, send } = collect();
+    const c = createTtsTextCoalescer(send);
+    c.send("She ");
+    for (const word of ["said ", "“we ", "are ", "done.” "]) c.send(word);
+    expect(sent).toEqual(["She ", "said “we are done.” "]);
+  });
+
   test("does not flush on a mid-sentence clause mark", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
