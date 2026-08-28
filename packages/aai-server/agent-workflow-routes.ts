@@ -2,29 +2,34 @@
 /**
  * Every `/:slug/*` route the durable-workflow feature needs, registered once.
  *
- * Four of them, and they arrived one at a time in `orchestrator.ts` until the
- * fourth pushed that file to two lines under its cap. The seam is worth having on
- * its own terms: these four are the only routes on the agent surface whose
- * correctness is a claim about the DevKit's contract rather than about this
- * platform's, and three of them derive their METHOD LIST from
- * `GUEST_ROUTE_EXPOSURE` instead of restating it — which is the one thing a reader
- * has to notice, and hard to notice spread across sixty lines of unrelated
- * registrations.
+ * They arrived one at a time in `orchestrator.ts` until one pushed that file to two
+ * lines under its cap. The seam is worth having on its own terms: these are the only
+ * routes on the agent surface whose correctness is a claim about the DevKit's
+ * contract rather than about this platform's, and the ones that answer several verbs
+ * derive their METHOD LIST from `GUEST_ROUTE_EXPOSURE` instead of restating it —
+ * which is the one thing a reader has to notice, and hard to notice spread across
+ * sixty lines of unrelated registrations.
  *
- * They also disagree about direction in a way worth seeing together:
+ * They also disagree about direction and about authorization in a way worth seeing
+ * together. The count is deliberately not stated: it has been wrong twice, and the
+ * registrations below are the inventory.
  *
  * | Route | Caller | Authorization |
  * | --- | --- | --- |
  * | `…/webhook/:token` | a third party | the DevKit's path token |
  * | `/workflows/*` | a page, or a script | the agent's own `AAI_WORKFLOW_API_TOKEN`, forwarded |
- * | `/workflow-enqueue` | **this agent's guest** | the per-sandbox bearer, bound to one slug |
  * | `…/uploads/:id/:offset` | a browser, or the guest | an unguessable upload id |
+ * | `/workflow-enqueue` | **this agent's guest** | the per-sandbox bearer, bound to one slug |
+ * | `/workflow-storage` | **this agent's guest** | the same, plus per-run ownership both ways |
+ * | `/workflow-stream` | **this agent's guest** | the same, plus a namespaced stream name |
+ * | `/session-state` | **this agent's guest** | the same, and every statement is slug-scoped |
+ * | `/upload-records` | **this agent's guest** | the same |
  *
- * Only the third is a guest→platform call that needs a credential, and the
- * asymmetry is the point: the other three are open by design and each carries its
- * own argument for why that adds no reachability. See
- * `workflow-enqueue-handler.ts` for why the same argument does not extend to an
- * enqueue.
+ * The split in that table is the point: the first three are open by design and each
+ * carries its own argument for why that adds no reachability, while every
+ * guest→platform call needs the per-sandbox bearer. See
+ * `workflow-enqueue-handler.ts` for why the open-by-design argument does not extend
+ * to an enqueue, and `guest-bearer.ts` for the one check the bottom five share.
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -96,7 +101,7 @@ function limit(maxSize: number) {
 }
 
 /**
- * Register all four on the `/:slug` router.
+ * Register them all on the `/:slug` router.
  *
  * @internal
  */

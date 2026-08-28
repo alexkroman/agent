@@ -18,14 +18,8 @@
  */
 
 import { describe, expect, test } from "vitest";
-import {
-  bearerFor,
-  callStorage,
-  fakeWorld,
-  MINE,
-  platform,
-  THEIRS,
-} from "./_workflow-storage-test-utils.ts";
+import { callStorage, fakeWorld, MINE, platform, THEIRS } from "./_workflow-storage-test-utils.ts";
+import { bearerFor } from "./test-utils.ts";
 
 describe("POST /:slug/workflow-storage — the streamer", () => {
   /**

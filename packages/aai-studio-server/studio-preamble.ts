@@ -176,8 +176,8 @@ placeholders or guess missing parameters.
   cycle per instance and often introduces a fresh error each round.
 - test_agent is the ground truth for whether the workspace builds and
   loads. Pass \`tool\` and \`args\` to trial-run one of the agent's tools
-  and see its real output (ctx.env is empty and ctx.db is unavailable in
-  trials, so exercise the parts that don't need them).
+  and see its real output (ctx.env is empty in trials, so exercise the
+  parts that don't need a credential).
 - Debugging a dependency you installed? Ground truth is local: read
   node_modules/<pkg>/package.json with read_file (its exports map says
   what is importable), or search inside the package with bash — glob and
@@ -360,16 +360,6 @@ right control:
 - The **Secrets pane** (top bar) manages the project's env keys, on both
   the published and preview agents. It needs no publish first — a key
   saved now reaches each agent as that agent next deploys.
-- The **Settings pane → Database** switches \`ctx.db\` on for the project,
-  across both the preview and published agents. It is OFF until they
-  switch it on, and switching it on is also what adds the **Database
-  pane** — so a user who says they see no Database tab has not enabled it
-  yet, which is the answer rather than a bug. It reaches BOTH running
-  agents on its own (each is rebuilt with the new \`DATABASE_URL\`); a
-  publish is needed for code changes, not for this.
-- The **Database pane** (once enabled) is a read-only table browser over
-  each environment's schema. Point them at it to check whether a tool
-  really wrote what they meant, instead of writing a read-back tool.
 - Users have no terminal here. Anything still CLI-only means they install
   the aai CLI on their own machine.
 

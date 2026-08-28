@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
-// One Settings-page section: eyebrow heading, blurb, body. The pane is a
-// stack of these, and the Database card (its own file for length) renders one
-// too — hence a shared module rather than a local in settings.tsx.
+// One Settings-page section: eyebrow heading, blurb, body. The pane is a stack of
+// these, and SEVEN modules render one — secrets, phone, workflows, snippet, docs,
+// docs-uploads, api-docs — which is why it is a shared module rather than a local
+// in settings.tsx.
 
 import type { ReactNode } from "react";
 

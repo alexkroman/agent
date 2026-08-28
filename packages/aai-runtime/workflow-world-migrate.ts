@@ -10,10 +10,7 @@
  * DevKit's CLI changes; that half when the platform does.
  */
 
-import type { WorldKind } from "./workflow-world-kind.ts";
-
-/** The package name the DevKit resolves for the Postgres world. */
-const POSTGRES_WORLD = "@workflow/world-postgres";
+import { POSTGRES_WORLD, type WorldKind } from "./workflow-world-kind.ts";
 
 /**
  * What an operator-supplied `WORKFLOW_TARGET_WORLD` is, for MIGRATION purposes.

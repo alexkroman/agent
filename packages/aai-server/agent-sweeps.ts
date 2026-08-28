@@ -2,15 +2,17 @@
 /**
  * Every process-lifetime background pass the AGENT surface owns, started once.
  *
- * Three of them. They were inline in `orchestrator.ts` until the fourth arrived and
- * pushed that file past its length cap — which was the cheap reason for the split;
- * the fourth is gone now (see below) and the seam is worth keeping anyway.
- * The real one is that they are one KIND of thing and nothing else in that file
- * is: a route registration answers a request and returns, while each of these
- * lives for the process, runs on a timer, and takes its dependencies from the
- * same three places (`opts`, the assembled broker, the platform's admin
- * connection). Reading them together is how you see what this replica is doing
- * when nobody is calling it.
+ * ONE, as of this change. There were four: they were inline in `orchestrator.ts`
+ * until the last arrival pushed that file past its length cap, which was the cheap
+ * reason for the split. Three are gone — the wake sweep and the orphan-preview
+ * reaper for the reasons stated in the body, and the pressure sweep with the
+ * per-app databases it measured — and the seam is worth keeping anyway. The real
+ * reason is that this is one KIND of thing and nothing else in that file is: a
+ * route registration answers a request and returns, while this lives for the
+ * process, runs on a timer, and takes its dependencies from the same places
+ * (`opts`, the assembled broker, the platform's admin connection). It is also the
+ * one place a reader can see what this replica does when nobody is calling it,
+ * which a five-line call inlined back into a 400-line composition root is not.
  *
  * They stay wired to the agent surface rather than to an entry point for the
  * reason `watchAgentInvalidation` does: an entry that has to REMEMBER to start a
@@ -22,9 +24,8 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { BundleStore } from "./bundle-store.ts";
-import type { AdminDb, SlugMutationLock } from "./platform-lock.ts";
+import type { AdminDb } from "./platform-lock.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
-import type { SecretStore } from "./secret-store.ts";
 import { createQueueDeliverer } from "./workflow-queue-deliver.ts";
 import { startWorkflowQueueSweep } from "./workflow-queue-sweep.ts";
 
@@ -32,15 +33,13 @@ export type AgentSweepOptions = {
   store: BundleStore;
   /** The broker's dependency set, already assembled by the caller. */
   broker: ResolveSandboxOpts;
-  secrets?: SecretStore | undefined;
-  slugLock?: SlugMutationLock | undefined;
   adminDb?: AdminDb | undefined;
   isDraining?: (() => boolean) | undefined;
 };
 
 /**
- * Start all four. Fire-and-forget: each returns its own stop, and none is kept,
- * because these live exactly as long as the process does.
+ * Start them. Fire-and-forget: each returns its own stop and none is kept, because
+ * these live exactly as long as the process does.
  *
  * @internal
  */

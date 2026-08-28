@@ -17,9 +17,8 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import { HTTPException } from "hono/http-exception";
 import { createLogger } from "./logger.ts";
-
-/** The reserved connection's query, as `ServeContext` supplies it. */
-type Sql = (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]>;
+import type { SqlExec } from "./secret-store.ts";
+import { ownsRuns } from "./workflow-run-owner.ts";
 
 const log = createLogger("workflow.storage");
 
@@ -64,6 +63,17 @@ const WALK_MAX_DEPTH = 12;
  * A tenant that stores a well-formed FOREIGN run id inside its own run output
  * fails this check. That is a false positive, it is vanishingly unlikely, and it
  * fails closed.
+ *
+ * ## Binary fields are skipped, and skipping them is what makes this affordable
+ *
+ * `isRecord` answers TRUE for a `Buffer` — it is a non-null, non-array object — so
+ * without the view check below, `Object.entries` materializes one `[index, byte]`
+ * pair per byte and this recurses on every one of them. The Postgres world hands a
+ * `Buffer` back for every `bytea` column (`workflow-typed-json.ts`): a run's
+ * `input`/`output`, a step's, hook metadata, every stream chunk. Measured: a single
+ * 1 MiB buffer took **716 ms of synchronous event loop**, and `runs.list` multiplies
+ * that by the page. With the check it is 0.2 ms, and nothing is lost — a run id is a
+ * string, and bytes cannot hold one.
  */
 function runIdsIn(value: unknown, depth = 0, found: Set<string> = new Set()): Set<string> {
   if (depth > WALK_MAX_DEPTH) return found;
@@ -75,6 +85,9 @@ function runIdsIn(value: unknown, depth = 0, found: Set<string> = new Set()): Se
     for (const item of value) runIdsIn(item, depth + 1, found);
     return found;
   }
+  // Before the record branch: see the module doc. A typed-array view is bytes, and
+  // `isRecord` would otherwise walk it one byte at a time.
+  if (ArrayBuffer.isView(value)) return found;
   if (!isRecord(value)) return found;
   for (const [key, child] of Object.entries(value)) {
     if (RUN_ID_KEYS.has(key) && typeof child === "string" && child !== "") found.add(child);
@@ -86,21 +99,37 @@ function runIdsIn(value: unknown, depth = 0, found: Set<string> = new Set()): Se
 /**
  * Refuse to answer with a run this agent does not own.
  *
- * One query however many ids the reply mentions — the ownership table answers
- * which of them are ours, and anything missing from that answer is a breach.
+ * One query however many ids the reply mentions (`ownsRuns`) — the ownership table
+ * answers which of them are ours, and anything missing from that answer is a breach.
+ *
+ * ## `known` is what keeps this off the hot path's second round trip
+ *
+ * A run-keyed call has ALREADY proven its run id ours on the way in — `dispatch`'s
+ * shared `ownsRun` gate — and the reply then names that same id, so without this
+ * every `events.create`, `events.get`, `steps.get` and `steps.list` paid the
+ * ownership query TWICE, the second time while holding a connection reserved out of
+ * a pool of `ADMIN_POOL_MAX`. That is the hottest path on this surface: one pair per
+ * `step_started`/`step_completed` of every durable run.
+ *
+ * Subtracting it is sound rather than a shortcut. This check exists to catch a reply
+ * naming a run the REQUEST never asked about, and an id the request was gated on is
+ * by construction not that; it was checked against the same table, for the same
+ * slug, on the same connection, moments earlier. What it must never become is a
+ * caller passing ids it merely EXPECTS to be ours — only ids `ownsRun` actually
+ * returned true for belong here, which is why `dispatch` is the one caller that
+ * supplies it.
  */
 export async function assertEveryRunIsOurs(
   reply: unknown,
-  opts: { slug: string; sql: Sql; method: string },
+  opts: { slug: string; sql: SqlExec; method: string; known?: string | undefined },
 ): Promise<void> {
-  const ids = [...runIdsIn(reply)];
+  const known = opts.known;
+  const ids = [...runIdsIn(reply)].filter((id) => id !== known);
   if (ids.length === 0) return;
-  const rows = await opts.sql(
-    `select run_id from aai_platform.workflow_run_owner
-      where slug = $1 and run_id = any($2::text[])`,
-    [opts.slug, ids],
-  );
-  const ours = new Set(rows.flatMap((r) => (typeof r.run_id === "string" ? [r.run_id] : [])));
+  // `ownsRuns`, not a `select` of our own: `workflow-run-owner.ts` is this table's
+  // one owner, and the module that would silently keep answering "fine" through a
+  // schema change is the last one that should hold a second copy of the query.
+  const ours = await ownsRuns(opts.sql, ids, opts.slug);
   const foreign = ids.filter((id) => !ours.has(id));
   if (foreign.length === 0) return;
   // ERROR, not warn: every inbound check passed and the reply is still wrong, so

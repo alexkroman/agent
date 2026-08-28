@@ -29,15 +29,18 @@
  * ## They ARE in the per-replica sum, and the allowance is what paid for it
  *
  * These terms could not be added while per-app databases existed: at
- * `MAX_CONTAINERS` of 3 the fleet is `3 x (4 + 5) = 27` direct, and the
- * app-database allowance was 28, against a budget of 40. The two do not fit, and
- * they were never meant to — the allowance existed to give every workflow agent its
- * own six connections, which is exactly the cost this world removes.
+ * `MAX_CONTAINERS` of 3 the fleet is `3 x (SLUG_LOCK_POOL_MAX + PLATFORM_WORLD_POOL_MAX
+ * + PLATFORM_WORLD_LISTEN + QUEUE_NOTIFY_LISTEN)` direct, and the app-database
+ * allowance was 28, against a budget of 40. The two do not fit, and they were never
+ * meant to — the allowance existed to give every workflow agent its own six
+ * connections, which is exactly the cost this world removes.
  *
  * So the allowance went and the world took its place in the same change, which is
- * what `platform-db-budget.test.ts` now asserts directly: `27 <= 40`, with nothing
- * else claiming a share. That spec was written one increment before the world was
- * wired, so the destination was checkable before it was reachable.
+ * what `platform-db-budget.test.ts` asserts — and it asserts it by COMPUTING
+ * {@link platformDbConnectionsPerReplica} rather than against a number written
+ * here, which is why the sum is spelled as its terms above. A literal total went
+ * stale within one change: `QUEUE_NOTIFY_LISTEN` joined the sum and the prose still
+ * read `3 x (4 + 5) = 27`, understating the fleet by three.
  */
 
 import { SLUG_LOCK_POOL_MAX } from "./constants.ts";
@@ -112,11 +115,14 @@ export function platformWorldConnections(): number {
  *   deploy. Through the pooler a RIVAL connection acquired the same lock while it
  *   was held: mutual exclusion silently gone. That is the bug
  *   `assertSessionModeUrl` exists to prevent, and it stays DIRECT.
- * - `pg_try_advisory_xact_lock`, the wake sweep's leader election, is the only
- *   lock on the ADMIN pool and lives inside `begin … commit`. A transaction
- *   pooler pins one backend for a transaction, which is exactly that lock's
- *   lifetime: verified correct end to end — acquired, a rival refused while held,
- *   released by the commit.
+ * - `pg_try_advisory_xact_lock` lives inside `begin … commit`, and a transaction
+ *   pooler pins one backend for a transaction — exactly that lock's lifetime:
+ *   verified correct end to end when the wake sweep's leader election used it
+ *   (acquired, a rival refused while held, released by the commit). That sweep is
+ *   retired and the queue sweep that replaced it needs no leader lock at all, so
+ *   nothing on the ADMIN pool takes one today; the finding is kept because it is
+ *   what makes the pool SAFE to pool, and the next scheduled pass that wants one
+ *   should not have to re-derive it.
  *
  * Everything else on the admin pool is a single short query (Vault, agents rows,
  * workspaces, chats, the sweeps' scheduling), `createPostgresDb` already sets

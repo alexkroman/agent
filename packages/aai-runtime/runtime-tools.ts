@@ -10,7 +10,6 @@
 import type { AgentDef, StateProjection, ToolDef } from "@alexkroman1/aai";
 import type { AgentEnv, OwnedMap, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
-import type { Db } from "@alexkroman1/aai/internal";
 import {
   clientEventDropMessage,
   DEFAULT_BUILTIN_TOOLS,
@@ -135,8 +134,6 @@ type ToolSetupDeps = {
   /** Becomes `ctx.env` (frozen) — agent-owned only, see sdk/env-types.ts. */
   env: AgentEnv;
   providerEnv: ProviderEnv;
-  /** ctx.db when storage is enabled; undefined makes ctx.db access throw. */
-  resolvedDb: Db | undefined;
   /**
    * `ctx.workflows`. Undefined when the agent declares no workflows, and the
    * executor substitutes a client that rejects naming the reason — so this is

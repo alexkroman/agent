@@ -17,9 +17,8 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-import { guestTokenFor } from "./guest-token.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
 import {
+  bearerFor,
   captureLogs,
   createTestOrchestrator,
   deployAgent,
@@ -63,14 +62,6 @@ async function platform(over: { failWrites?: boolean } = {}) {
 }
 
 /** The bearer this slug's running guest would hold. */
-async function bearerFor(
-  store: { getAgentVersion(slug: string): Promise<number | null> },
-  slug: string,
-): Promise<string> {
-  const version = (await store.getAgentVersion(slug)) ?? 1;
-  return guestTokenFor(agentSandboxName(slug, version));
-}
-
 function enqueue(
   fetch: TestFetch,
   slug: string,

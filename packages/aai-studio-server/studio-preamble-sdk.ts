@@ -24,17 +24,24 @@ import { STUDIO_LLM_MODELS } from "./studio-llm.ts";
 /** Sections: Data Persistence → AI, Models, and Providers. */
 export const STUDIO_SDK_GUIDANCE = `## Data Persistence and Storage
 
-- \`ctx.state\` is session-scoped scratch — it does not survive the call.
-  When the user asks for data that persists across calls, build on
-  \`ctx.db\` (SQL with $1 placeholders); NEVER fake durable storage in
-  session state.
+- **THERE IS NO \`ctx.db\`.** It was a SQL handle on the tool context and it
+  is gone — writing one is code that does not compile. Do not reach for it,
+  and do not tell the user to enable it: there is no switch, no Settings
+  toggle and no pane to browse rows in.
+- **Reach for what the platform persists for you FIRST**, because it needs no
+  setup at all and covers almost every request:
+  - \`sessionSlot\` — this session's state, durable across a crash or a
+    redeploy. \`ctx.state\` by contrast is scratch that does not survive the
+    call, so never fake durable storage in it.
+  - **Durable workflow runs** — a run survives the sandbox recycling, every
+    redeploy, and a multi-day \`sleep()\`.
+- **A database is for data that must outlive a session AND be queryable** — a
+  ledger, filed records, cross-session saves. It is the user's to bring, and
+  neither of you can provision one: the tool imports its own driver (add it to
+  package.json) and reads \`process.env.DATABASE_URL\`, which the user sets on
+  the Secrets pane (or with \`aai secret put DATABASE_URL …\`) pointing at
+  their own Postgres. Build it that way, then tell them exactly that.
 - Parameterize every query — never interpolate user input into SQL.
-- **\`ctx.db\` is a database the USER brings, and neither of you can
-  provision one** — the platform provides no database. It throws until a
-  \`DATABASE_URL\` secret is set, which the user does on the Secrets pane
-  (or with \`aai secret put DATABASE_URL …\`), pointing at their own
-  Postgres. Build with ctx.db, then tell them exactly that. There is no
-  switch to flip and no pane to browse the rows in.
 - Note both environments share one agent's secrets, so a preview and a
   published agent hit the SAME database unless the user sets different
   values. Say so if you write to it from a preview.

@@ -9,6 +9,7 @@ import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
+import { guestTokenFor } from "./guest-token.ts";
 import { type Logger, type RecordedLine, recordingSink, setLogSink } from "./logger.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import {
@@ -21,6 +22,7 @@ import {
 } from "./platform-events.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import type { Sandbox } from "./sandbox.ts";
+import { agentSandboxName } from "./sandbox-directory.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore, type SecretStore, type SqlExec } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -241,6 +243,26 @@ export async function deployAgent(
   key = "key1",
 ): Promise<void> {
   await deploy(fetch, { key, body: { slug } });
+}
+
+/**
+ * The bearer `slug`'s running guest would present.
+ *
+ * The GUEST-side counterpart of {@link authHeaders}: those five platform routes
+ * verify `HMAC(secret, agentSandboxName(slug, version))` rather than an API key
+ * (`guest-bearer.ts`). Five suites had written this identically — the same reason
+ * AGENTS.md gives for building a request with `authFetch` rather than a header
+ * literal, on the other half of the surface.
+ *
+ * A missing agent falls back to version 1 so a suite can ask for the bearer of a
+ * slug it has not deployed, which is what the 401/503 cases need.
+ */
+export async function bearerFor(
+  store: { getAgentVersion(slug: string): Promise<number | null> },
+  slug: string,
+): Promise<string> {
+  const version = (await store.getAgentVersion(slug)) ?? 1;
+  return guestTokenFor(agentSandboxName(slug, version));
 }
 
 // ── SqlExec fakes ────────────────────────────────────────────────────────────

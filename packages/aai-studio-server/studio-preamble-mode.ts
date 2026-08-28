@@ -75,7 +75,7 @@ form-fronted workflow app instead.`,
   directory and nothing else, so a \`"use workflow"\` body written in agent.ts
   runs inline with no durability and nothing reporting it. The body replays
   from the top on every resume (no fetch, no clock, no randomness — those go
-  in a \`"use step"\` function), and a step gets no ctx: no ctx.env, no ctx.db.
+  in a \`"use step"\` function), and a step gets no ctx at all — no ctx.env.
 - A workflow app needs NO setup to run durably: a deployed app's runs live on
   the platform and survive the sandbox recycling and every redeploy. A workflow
   UPLOAD is the exception — its record needs a database the author supplied, so
@@ -206,8 +206,8 @@ unless they ask outright for a voice agent instead.`,
   randomness, no live handles — those go in a \`"use step"\` function, whose
   result is journaled and returned unchanged on replay. A step's arguments
   and return value cross a queue (JSON-shaped and small — put bytes in
-  storage and pass the key), and a step gets NO tool context: no ctx.env, no
-  ctx.db, so anything needing a credential is a fixture for now.
+  storage and pass the key), and a step gets NO tool context and so no
+  ctx.env — anything needing a credential is a fixture for now.
 - **Bound a fan-out with \`mapConcurrent\`** from "@alexkroman1/aai/step"
   (imported from that subpath, never the root, inside a \`workflows/*.ts\`
   module). The DevKit correlates journal entries to step calls by the order

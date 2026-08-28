@@ -17,9 +17,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
-import { guestTokenFor } from "./guest-token.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
-import { createTestOrchestrator, type TestFetch } from "./test-utils.ts";
+import { bearerFor, createTestOrchestrator, type TestFetch } from "./test-utils.ts";
 import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
 import { STREAM_READ_MAX_MS } from "./workflow-stream-handler.ts";
 
@@ -75,14 +73,6 @@ async function platform(world = fakeWorld()) {
   });
   if (!res.ok) throw new Error(`deploy answered ${res.status}`);
   return { ...harness, world };
-}
-
-async function bearerFor(
-  store: { getAgentVersion(slug: string): Promise<number | null> },
-  slug: string,
-): Promise<string> {
-  const version = (await store.getAgentVersion(slug)) ?? 1;
-  return guestTokenFor(agentSandboxName(slug, version));
 }
 
 function read(fetch: TestFetch, query: string, bearer?: string, slug = MINE): Promise<Response> {

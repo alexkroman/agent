@@ -142,11 +142,13 @@ export type OrchestratorOpts = {
    */
   directory?: SandboxDirectory;
   /**
-   * The platform admin connection, for the durable-workflow wake sweep
-   * (workflow-wake.ts) — the one thing in this process that boots a sandbox on a
-   * SCHEDULE rather than for a caller. Absent (no platform database: local dev,
-   * tests) leaves the sweep unstarted, which is correct there: `aai dev` runs the
-   * DevKit's local world, whose queue lives in that process's own memory.
+   * The platform admin connection, for the durable-workflow queue sweep
+   * (`workflow-queue-sweep.ts`) — the one thing in this process that boots a
+   * sandbox on a SCHEDULE rather than for a caller — and for the guest-called
+   * platform routes beside it. Absent (no platform database: local dev, tests)
+   * leaves the sweep unstarted and those routes answering 501, which is correct
+   * there: `aai dev` runs the DevKit's local world, whose queue lives in that
+   * process's own memory.
    */
   adminDb?: AdminDb;
   /**
@@ -328,8 +330,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   startAgentSweeps({
     store: opts.store,
     broker: brokerOpts,
-    ...omitUndefined({ secrets: opts.secrets }),
-    ...omitUndefined({ slugLock: opts.slugLock }),
     ...omitUndefined({ adminDb: opts.adminDb }),
     ...omitUndefined({ isDraining: opts.isDraining }),
   });

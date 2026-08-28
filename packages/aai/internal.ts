@@ -58,7 +58,6 @@ export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
 export {
   APP_DB_POOL_MAX,
   APP_DB_PRESENCE_LOCK,
-  APP_DB_WORLD_LISTEN,
   APP_DB_WORLD_POOL_MAX,
   APP_DB_WORLD_WORKER_CONCURRENCY,
 } from "./sdk/app-db-budget.ts";

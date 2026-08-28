@@ -10,8 +10,6 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { guestTokenFor } from "./guest-token.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
 import { createTestOrchestrator, fakeAdminDbOver, type TestFetch } from "./test-utils.ts";
 import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
 
@@ -173,14 +171,6 @@ export async function deploy(fetch: TestFetch, slug: string): Promise<void> {
     }),
   });
   if (!res.ok) throw new Error(`deploy ${slug} answered ${res.status}: ${await res.text()}`);
-}
-
-export async function bearerFor(
-  store: { getAgentVersion(slug: string): Promise<number | null> },
-  slug: string,
-): Promise<string> {
-  const version = (await store.getAgentVersion(slug)) ?? 1;
-  return guestTokenFor(agentSandboxName(slug, version));
 }
 
 export function callStorage(

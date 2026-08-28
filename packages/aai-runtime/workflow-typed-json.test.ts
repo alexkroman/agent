@@ -200,3 +200,70 @@ describe("malformed input", () => {
     },
   );
 });
+
+describe("the withPlainViews pre-pass", () => {
+  // `encodeTypedJson` swaps every `Buffer` for a plain `Uint8Array` view before
+  // `JSON.stringify` can call `Buffer.prototype.toJSON` — see that function's doc
+  // for what the discarded byte array costs. These cover what the swap must NOT
+  // break, which is the whole risk of a walk that rebuilds the structure.
+
+  test("a Buffer that is a WINDOW into a pool carries only its OWN bytes", () => {
+    // The one that would be a data leak rather than a slowdown: Node's pooled
+    // buffers are views into a shared 8 KiB allocation, so a view rebuilt without
+    // `byteOffset`/`byteLength` would carry whatever else is in the pool.
+    const pool = Buffer.alloc(64, 9);
+    const window = pool.subarray(8, 12);
+    window.fill(3);
+    const back = roundTrip({ b: window }) as { b: Uint8Array };
+    expect([...back.b]).toEqual([3, 3, 3, 3]);
+  });
+
+  test("a Date survives — the pre-pass must not rebuild a class instance", () => {
+    // `isRecord(new Date())` is true and `Object.keys` of one is empty, so a walk
+    // that structurally copied every record would erase it. `isPlainObject`'s
+    // prototype test is what prevents that.
+    const when = new Date("2026-01-02T03:04:05.000Z");
+    expect(roundTrip({ when })).toEqual({ when: "2026-01-02T03:04:05.000Z" });
+  });
+
+  test("a Buffer reached only through a class instance still encodes", () => {
+    // The pre-pass declines to rebuild the instance, so `toJSON` fires and
+    // `binaryReplacer`'s holder read handles it exactly as it did before the
+    // pre-pass existed. The worst case of the optimization is the old behaviour.
+    class Holder {
+      readonly bytes: Buffer;
+      constructor(bytes: Buffer) {
+        this.bytes = bytes;
+      }
+    }
+    const back = roundTrip({ h: new Holder(Buffer.from([1, 2])) }) as {
+      h: { bytes: Uint8Array };
+    };
+    expect([...back.h.bytes]).toEqual([1, 2]);
+  });
+
+  test("a cycle still throws stringify's own error, not a stack overflow", () => {
+    // The pre-pass recurses, so without its depth cap this would blow the stack
+    // before `JSON.stringify` could report the real problem.
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(() => encodeTypedJson(cyclic)).toThrow(/circular/i);
+  });
+
+  test("binary nested deeper than the walk cap still round-trips", () => {
+    // Past the cap the pre-pass hands the value back untouched, which is not a
+    // failure: `toJSON` fires and the replacer covers it.
+    let node: Record<string, unknown> = { b: Buffer.from([1]) };
+    for (let i = 0; i < 60; i += 1) node = { next: node };
+    let seen = roundTrip(node) as Record<string, unknown>;
+    for (let i = 0; i < 60; i += 1) seen = seen.next as Record<string, unknown>;
+    expect([...(seen.b as Uint8Array)]).toEqual([1]);
+  });
+
+  test("a binary-free value is returned unchanged, not copied", () => {
+    // The allocation-free path: a payload with no binary in it must come back as
+    // the IDENTICAL object, which is what keeps the common reply cheap.
+    const plain = { data: [{ id: "r1" }, { id: "r2" }], cursor: null };
+    expect(roundTrip(plain)).toEqual(plain);
+  });
+});

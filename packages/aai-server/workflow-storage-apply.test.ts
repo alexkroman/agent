@@ -16,7 +16,6 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  bearerFor,
   callStorage,
   deploy,
   fakeWorld,
@@ -25,7 +24,7 @@ import {
   platform,
   THEIRS,
 } from "./_workflow-storage-test-utils.ts";
-import { captureLogs, createTestOrchestrator, fakeAdminDbOver } from "./test-utils.ts";
+import { bearerFor, captureLogs, createTestOrchestrator, fakeAdminDbOver } from "./test-utils.ts";
 
 describe("storage scopes", () => {
   const logs = captureLogs();

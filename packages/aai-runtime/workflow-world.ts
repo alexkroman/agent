@@ -3,18 +3,24 @@
  * Choosing and starting the Workflow DevKit's "world" — the storage + queue a
  * run actually lives in.
  *
- * Two of them, and the split is the same one `ctx.db` already makes:
+ * THREE of them — see {@link WorldKind}, which is where the kinds are declared:
  *
- * - **Postgres** when the agent has a database. Runs, events and the job queue
- *   live in the app's own database, which is why creating a workflow app switches
- *   storage on. This is production.
- * - **Local** otherwise — `aai dev` against a project with no `DATABASE_URL`,
- *   and any deployed agent whose database is off (the studio's default). State
- *   goes in a directory ({@link defaultLocalDataDir}) and the queue is in
- *   memory, so a restart forgets in-flight runs and a redeploy forgets them all.
- *   That is the honest tradeoff, and it is what lets an author try a workflow
- *   before provisioning anything — which is the whole first experience of a
- *   workflow app in the studio, where a database is opt-in.
+ * - **Platform** for a deployed guest. Runs, events, the journal, streams and the
+ *   queue are the PLATFORM's, reached over HTTP, and the guest opens no database of
+ *   its own for workflows. This is production, and it needs no author setup at all.
+ * - **Postgres** when this process was handed a connection string — a self-hosted
+ *   `createServer`, or `aai dev` with a `DATABASE_URL`. Runs, events and the job
+ *   queue live in that database.
+ * - **Local** otherwise — `aai dev` against a project with no `DATABASE_URL`. State
+ *   goes in a directory ({@link defaultLocalDataDir}) and the queue is in memory, so
+ *   a restart forgets in-flight runs and a redeploy forgets them all. That is the
+ *   honest tradeoff, and it is what lets an author try a workflow before
+ *   configuring anything.
+ *
+ * The split used to be two, and to follow `ctx.db`: a workflow app switched app
+ * storage on, and an agent without a database got the Local world even when
+ * DEPLOYED. Both halves of that are gone — there is no `ctx.db` and the platform
+ * provisions no database — which is what the Platform kind replaced.
  *
  * ## The world is chosen by ENVIRONMENT, and it is cached on first read
  *
@@ -45,7 +51,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import { claimPoolPresenceAndSweep } from "./workflow-lock-sweep.ts";
 import { installPlatformWorld, resolvePlatformQueue } from "./workflow-platform-world.ts";
 import { resolveWorldSpecifier } from "./workflow-resolve.ts";
-import type { WorldKind } from "./workflow-world-kind.ts";
+import { POSTGRES_WORLD, type WorldKind } from "./workflow-world-kind.ts";
 import { classifySuppliedWorld, migratePostgresWorld } from "./workflow-world-migrate.ts";
 
 /** What the DevKit reads to pick a world. */
@@ -87,9 +93,6 @@ const POSTGRES_WORKER_CONCURRENCY = APP_DB_WORLD_WORKER_CONCURRENCY;
 const LOCAL_BASE_URL_ENV = "WORKFLOW_LOCAL_BASE_URL";
 /** Where the local world keeps its run state. */
 const LOCAL_DATA_DIR_ENV = "WORKFLOW_LOCAL_DATA_DIR";
-
-/** The package name the DevKit resolves for the Postgres world. */
-const POSTGRES_WORLD = "@workflow/world-postgres";
 
 export type { WorldKind } from "./workflow-world-kind.ts";
 

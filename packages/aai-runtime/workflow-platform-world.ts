@@ -39,8 +39,8 @@
  *
  * It does not take a workflow guest's app-database cost to zero, and earlier
  * framing of this work implied it would. Storage and the streamer still live in the
- * tenant's database and still need connections: `APP_DB_WORLD_LISTEN` is the
- * streamer's dedicated `pg.Client` and the world pool still serves storage reads.
+ * tenant's database and still need connections: the streamer holds a dedicated
+ * `pg.Client` of its own and the world pool still serves storage reads.
  * What goes is graphile-worker's held `LISTEN` connection, its worker concurrency,
  * and the queue-lock sweep's presence connection — which exists only to clear
  * graphile's own orphaned job locks. Taking the rest would mean moving the DevKit's

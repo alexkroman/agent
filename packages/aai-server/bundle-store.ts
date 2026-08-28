@@ -401,14 +401,6 @@ export function createBundleStore(
       return cachedSlugRead(versionCache, versionFlight, slug, () => agents.getVersion(slug));
     },
 
-    listSlugs() {
-      // Straight through, deliberately: the caches here are per-slug and a
-      // cached slug LIST would be the one read that can go stale in the
-      // direction that matters — an agent deleted since the last tick still
-      // getting its sandbox booted.
-      return agents.slugs();
-    },
-
     async getWorkerCode(slug) {
       const record = await getAgentCached(slug);
       if (!record) return null;
