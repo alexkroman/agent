@@ -17,6 +17,7 @@ import {
 import { describe, expect, test, vi } from "vitest";
 import {
   configureWorkflowWorld,
+  isPerProcessDataDir,
   localWorkflowDataDir,
   startWorkflowWorldIfDeclared,
 } from "./workflow-world.ts";
@@ -386,5 +387,26 @@ describe("an operator-supplied world", () => {
     const env = { WORKFLOW_TARGET_WORLD: target };
     configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 1, env });
     expect(env.WORKFLOW_TARGET_WORLD).toBe(target);
+  });
+});
+
+describe("isPerProcessDataDir", () => {
+  test("the default is per-process; a host-chosen directory is not", () => {
+    // The difference decides whether a local run and its upload survive a
+    // restart, and the boot announcement said "does not outlive this process"
+    // for BOTH. Measured: `aai dev` (project `.workflow-data`) returns an
+    // upload's bytes byte-identical across a restart; `server.mjs` takes the
+    // per-process default and does not.
+    const perProcess = localWorkflowDataDir({});
+    expect(isPerProcessDataDir(perProcess)).toBe(true);
+    expect(isPerProcessDataDir("/some/project/.workflow-data")).toBe(false);
+  });
+
+  test("an operator's own directory is host-chosen, whatever it is named", () => {
+    // Read through the env key the world already agreed on, so a value an
+    // operator set is never mistaken for the default.
+    const chosen = localWorkflowDataDir({ WORKFLOW_LOCAL_DATA_DIR: "/var/lib/agent/wf" });
+    expect(chosen).toBe("/var/lib/agent/wf");
+    expect(isPerProcessDataDir(chosen)).toBe(false);
   });
 });
