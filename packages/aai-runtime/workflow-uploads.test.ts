@@ -16,6 +16,7 @@
 
 import { UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
+import { fakeFetch } from "./_test-utils.ts";
 import type { UploadBlobs } from "./_upload-blobs.ts";
 import { UPLOAD_WINDOW_CONCURRENCY } from "./_upload-store.ts";
 import { body, memoryStore, ramp, recordingDb } from "./_upload-store-test-utils.ts";
@@ -453,5 +454,71 @@ describe("a whole-file write", () => {
     );
     expect(read).toHaveLength(4);
     expect(created.size).toBe(UPLOAD_PART_BYTES * 4);
+  });
+});
+
+/**
+ * Which HOME an upload's record gets, and why the platform outranks a database.
+ *
+ * This tree used to start at `db`, on a premise it stated: "a database means
+ * durable runs, so the bytes have to be durable too." The workflow queue moving to
+ * the platform falsified it — a deployed app's runs are durable with no database of
+ * the author's — so the choice keyed off a signal that had stopped meaning
+ * durability, and a deployed guest with no `DATABASE_URL` got durable runs with
+ * their uploads in a directory that recycles. One sandbox filled its filesystem
+ * that way and `ENOSPC`'d every write.
+ */
+describe("where an upload's record lives", () => {
+  /** A fetch that records the methods the platform backend sends. */
+  function platformFetch(): { fetch: typeof globalThis.fetch; methods: () => string[] } {
+    const methods: string[] = [];
+    // `fakeFetch` is the one place a double is narrowed to `fetch` — see
+    // `_test-utils.ts` on why a cast per call site is the wrong shape.
+    const fetch = fakeFetch(async (_url, init) => {
+      const body = JSON.parse(String(init.body ?? "{}")) as { method?: string };
+      methods.push(String(body.method));
+      // Enough for `create` to get through: a minted record, then a read of it.
+      return new Response(JSON.stringify({ result: null }), { status: 200 });
+    });
+    return { fetch, methods: () => methods };
+  }
+
+  test("a deployed guest uses the PLATFORM even when it also has a database", async () => {
+    // The correction, asserted as a preference rather than a fallback. Two homes
+    // chosen by different rules is how a run and its uploads end up in different
+    // places; `configureWorkflowWorld` makes the same choice for the world itself.
+    const { db } = memoryStore();
+    const { fetch, methods } = platformFetch();
+    const store = createUploadStore({
+      db,
+      blobs: createMemoryUploadBlobs(),
+      platform: { base: "https://aai.example/a", token: "t", fetch },
+    });
+    await store.create({ name: "clip.wav" }, body(ramp(4))).catch(() => undefined);
+    // The platform backend was the one that ran — `db` was not touched.
+    expect(methods().length).toBeGreaterThan(0);
+  });
+
+  test("a deployed guest with NO database still gets a durable record home", async () => {
+    // The bug this fixes: no `db`, so the old tree fell through to the local
+    // directory even though the platform was right there.
+    const { fetch, methods } = platformFetch();
+    const store = createUploadStore({
+      blobs: createMemoryUploadBlobs(),
+      localDir: "/should/not/be/used",
+      platform: { base: "https://aai.example/a", token: "t", fetch },
+    });
+    await store.create({ name: "clip.wav" }, body(ramp(4))).catch(() => undefined);
+    expect(methods().length).toBeGreaterThan(0);
+  });
+
+  test("the platform arm still REFUSES without somewhere to put the bytes", async () => {
+    // A durable record behind bytes that die with the container is the same failure
+    // in reverse — and the record would then name an object nothing can produce.
+    const store = createUploadStore({
+      localDir: "/should/not/be/used",
+      platform: { base: "https://aai.example/a", token: "t" },
+    });
+    await expect(store.create({}, body(ramp(4)))).rejects.toThrow(/AAI_UPLOAD_STORAGE_URL/);
   });
 });

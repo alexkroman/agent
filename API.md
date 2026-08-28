@@ -8157,6 +8157,7 @@ export function createUploadStore(opts: {
     db?: Db | undefined;
     blobs?: UploadBlobs | undefined;
     localDir?: string | undefined;
+    platform?: PlatformUploadRecordsOptions | undefined;
     prefix?: string | undefined;
     maxBytes?: number | undefined;
 }): UploadStore;
@@ -8249,6 +8250,13 @@ export type PlatformQueueOptions = {
 
 // @public (undocumented)
 export type PlatformStorageOptions = {
+    base: string;
+    token: string;
+    fetch?: typeof globalThis.fetch | undefined;
+};
+
+// @public (undocumented)
+type PlatformUploadRecordsOptions = {
     base: string;
     token: string;
     fetch?: typeof globalThis.fetch | undefined;

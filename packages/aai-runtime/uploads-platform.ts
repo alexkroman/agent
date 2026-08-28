@@ -1,0 +1,193 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The third {@link UploadRecords}: an upload's record over HTTP, on the platform.
+ *
+ * The other two are the app's own Postgres (`createPostgresUploadRecords`) and a
+ * directory (`createFileUploadRecords`). This one is what a DEPLOYED guest uses,
+ * and it exists because the choice between those two was made on a premise that
+ * stopped being true.
+ *
+ * ## What was wrong
+ *
+ * `createUploadStore` picked its home from whether the agent had a `ctx.db`, and
+ * its comment said why: "A database means durable runs, so the bytes have to be
+ * durable too." The workflow queue moving to the platform falsified that — a
+ * deployed app's runs are durable with no database of the author's at all — so the
+ * decision keyed off a signal that no longer meant durability.
+ *
+ * The result, observed on a real sandbox: a deployed agent with no `DATABASE_URL`
+ * got DURABLE RUNS and put their uploads in a directory that recycles. A
+ * transcription workflow filled the guest's filesystem, every write raised
+ * `ENOSPC`, and three layers retried it as though a full disk were transient.
+ *
+ * With this, a deployed guest keeps nothing durable on disk.
+ *
+ * ## `ensure` is local, and that is the interesting difference
+ *
+ * The seam's `ensure` exists because the Postgres backend creates its table lazily
+ * — an agent's first workflow may be its first ever deploy, with no provisioning
+ * pass to hang DDL off. The platform's own schema HAS one, so there is nothing to
+ * ensure and nothing to round-trip: this resolves immediately. Sending a request
+ * that always answers "fine" on every operation would be one wasted round trip per
+ * upload call, and `ensure` is called before all of them.
+ *
+ * ## A CLAIMED id is a 409 and must stay distinguishable
+ *
+ * `claim` refusing an id is this backend working, not failing — it is what makes a
+ * caller-chosen id safe. So a 409 is translated back into `UploadIdTakenError`
+ * rather than becoming a generic error the store would retry. Everything else
+ * non-2xx throws, because the store above has no fallback and a silent failure
+ * would mean an upload whose bytes are in the bucket and whose record says nothing
+ * arrived.
+ */
+
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import pTimeout from "p-timeout";
+import type { UploadPart } from "./_upload-blobs.ts";
+import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
+import { UploadIdTakenError } from "./_upload-store.ts";
+
+/**
+ * How long one record call may take.
+ *
+ * Longer than session state's 10s, and the reason is what is waiting: a session
+ * flush blocks a tool call, while an upload record is written between window
+ * batches on a transfer that already takes as long as it takes. 20s is generous
+ * enough that a slow platform read never fails an upload mid-flight, and short
+ * enough that a wedged socket does not hold a window batch forever.
+ */
+const UPLOAD_RECORD_TIMEOUT_MS = 20_000;
+
+export type PlatformUploadRecordsOptions = {
+  /** The agent's public base URL, slug included — `AAI_PUBLIC_BASE_URL`. */
+  base: string;
+  /** This sandbox's bearer — `AAI_GUEST_TOKEN`. */
+  token: string;
+  /** Test seam — production uses the global. */
+  fetch?: typeof globalThis.fetch | undefined;
+};
+
+/** One call to the platform's upload-records route. */
+async function call(
+  opts: PlatformUploadRecordsOptions,
+  method: string,
+  id: string,
+  body: Record<string, unknown> = {},
+): Promise<unknown> {
+  const fetchFn = opts.fetch ?? globalThis.fetch;
+  const url = `${opts.base.replace(/\/+$/, "")}/upload-records`;
+  const res = await pTimeout(
+    fetchFn(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${opts.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ method, id, ...body }),
+    }),
+    { milliseconds: UPLOAD_RECORD_TIMEOUT_MS, message: `upload-records ${method} timed out` },
+  );
+  const text = await res.text();
+  if (res.status === 409) {
+    // The one non-2xx that is not a failure — see the module doc. Translated back
+    // into the store's own error so `claim`'s contract holds across all three
+    // backends.
+    throw new UploadIdTakenError(id);
+  }
+  if (!res.ok) {
+    throw new Error(`upload-records ${method} answered HTTP ${res.status}: ${text.slice(0, 500)}`);
+  }
+  const parsed: unknown = JSON.parse(text);
+  if (!(isRecord(parsed) && "result" in parsed)) {
+    throw new Error(`upload-records ${method} answered 200 without a result`);
+  }
+  return parsed.result;
+}
+
+/** The boundary list off the wire, dropping anything malformed. */
+function partsOf(value: unknown): UploadPart[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.at !== "number" || typeof entry.bytes !== "number") {
+      // Dropped rather than thrown on, matching the other backends: a corrupt entry
+      // would make an upload unreadable forever, where a MISSING window only makes
+      // the readable prefix shorter and a resumed transfer asks for it again.
+      return [];
+    }
+    return [{ at: entry.at, bytes: entry.bytes }];
+  });
+}
+
+/** One record off the wire, or `undefined` when the platform answered `null`. */
+function recordOf(value: unknown): UploadRecord | undefined {
+  if (!isRecord(value)) return undefined;
+  // `typeof`, never `Number(...)`: `Number(null)` is 0, and a size that reads 0
+  // instead of "unreadable" is an upload the store believes is empty rather than
+  // one it should refuse to answer about.
+  if (typeof value.size !== "number") return undefined;
+  const expected = value.expected;
+  return {
+    name: typeof value.name === "string" ? value.name : "",
+    type: typeof value.type === "string" ? value.type : "",
+    size: value.size,
+    complete: value.complete === true,
+    // ABSENT is a value: it is what says "not a parts upload", which decides how
+    // completion is judged. So the key is omitted rather than set to undefined.
+    ...omitUndefined({ expected: typeof expected === "number" ? expected : undefined }),
+    parts: partsOf(value.parts),
+  };
+}
+
+/**
+ * Upload records on the platform's database, over HTTP.
+ *
+ * @internal
+ */
+export function createPlatformUploadRecords(opts: PlatformUploadRecordsOptions): UploadRecords {
+  return {
+    // Nothing to ensure and nothing to send — see the module doc. Not a no-op by
+    // omission: the seam requires the method, and answering it locally is what
+    // saves a round trip before every other call.
+    ensure: () => Promise.resolve(),
+
+    async read(id) {
+      return recordOf(await call(opts, "read", id));
+    },
+
+    async claim(id, record) {
+      await call(opts, "claim", id, {
+        name: record.name,
+        type: record.type,
+        size: record.size,
+        complete: record.complete,
+        // Only when present: sending `expected: null` would make the platform store
+        // a declared total of nothing, which is a different upload kind.
+        ...omitUndefined({ expected: record.expected }),
+        parts: record.parts,
+      });
+    },
+
+    async insert(id, record) {
+      await call(opts, "insert", id, {
+        name: record.name,
+        type: record.type,
+        size: record.size,
+        complete: record.complete,
+        ...omitUndefined({ expected: record.expected }),
+        parts: record.parts,
+      });
+    },
+
+    async update(id, state) {
+      await call(opts, "update", id, {
+        size: state.size,
+        complete: state.complete,
+        parts: state.parts,
+      });
+    },
+
+    async finish(id, size) {
+      await call(opts, "finish", id, { size });
+    },
+  };
+}

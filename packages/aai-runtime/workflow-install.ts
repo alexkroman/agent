@@ -137,36 +137,38 @@ export function installWorkflowSupport(opts: {
   // bucket when there is not (its own doc carries why each is right).
   const localDir = localWorkflowDataDir();
   const blobs = resolveUploadBlobs(omitUndefined({ env: opts.env, broker: opts.uploadBroker }));
+  // The PLATFORM's record home, when there is one. Resolved from the same two env
+  // keys the workflow world uses, so an upload's record and a run's queue can never
+  // disagree about whether this guest is deployed.
+  const platform = resolvePlatformQueue(opts.env);
   const store = createUploadStore({
     db,
     localDir,
-    ...omitUndefined({ blobs, maxBytes }),
+    ...omitUndefined({ blobs, maxBytes, platform }),
   });
-  if (!db) {
+  if (!(db || platform)) {
     // ANNOUNCED, once, at construction. A store that quietly loses an upload with
     // its container is the shape this repo keeps paying for; a store that says which
     // directory it is using is a documented tradeoff. The local world logs its own
     // line beside this one.
     //
-    // The line DISTINGUISHES the two deployments, because a single sentence about
-    // both is wrong in one of them. It used to say an upload lives "exactly as long
-    // as the runs that read it" and to recommend `aai storage enable` — and both
-    // halves rotted: that command no longer exists (the platform provisions no
-    // tenant database; a `DATABASE_URL` is a secret the author sets), and RUNS are
-    // no longer tied to the author having a database at all. A deployed guest's
-    // durable runs are the platform's, over HTTP. Telling that author their runs
-    // are ephemeral sends them to fix a problem they do not have, by a route that
-    // is gone.
-    const onPlatform = resolvePlatformQueue(opts.env) !== undefined;
+    // Reachable ONLY where nothing is durable: no platform above this guest and no
+    // `DATABASE_URL` of its own, which is `aai dev` on a project that configured
+    // neither. So the sentence can be unconditional again.
+    //
+    // It has been wrong twice, in opposite directions, which is why it is worth
+    // reading before editing. It first said an upload lives "exactly as long as the
+    // runs that read it" and recommended `aai storage enable` — a command that no
+    // longer exists, and a claim that stopped being true when a DEPLOYED app's runs
+    // became the platform's. Then it branched on `resolvePlatformQueue` to say the
+    // right thing in each case. Now a deployed guest's uploads are the platform's
+    // too, so there is no deployed case left to describe: this branch is the truly
+    // local one.
     opts.logger.info(
-      `workflow uploads are LOCAL (${localDir}): no DATABASE_URL, so an upload does ` +
-        "not outlive this container. " +
-        (onPlatform
-          ? "Durable RUNS are unaffected — they live on the platform — so this is " +
-            "about uploads alone. Set a DATABASE_URL secret pointing at a database " +
-            "you own for uploads that survive a redeploy."
-          : "Runs are local here too, so a restart forgets both. Set DATABASE_URL " +
-            "in this project's .env for uploads and runs that survive one."),
+      `workflow uploads are LOCAL (${localDir}): no platform and no DATABASE_URL, so ` +
+        "an upload does not outlive this process — and neither do the runs that read " +
+        "it, since the world is local too. Set DATABASE_URL in this project's .env " +
+        "for both to survive a restart.",
     );
   }
   publishUploadReader(store);

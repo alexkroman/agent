@@ -379,37 +379,37 @@ pane, and the `databaseEnabled` project flag.
 secret — `sandbox-resolve.ts` no longer overlays anything on top, which it did
 LAST, so enabling storage silently beat whatever the author had set.
 
-**What did NOT go is the durable state**, which is the point of the change. Both
-things the app database held are the platform's now, reached over HTTP with the
-sandbox's own bearer: durable workflow runs (the queue, storage and streamer as
-`aai_platform` tables; the guest's world is `workflow-platform-world.ts`) and
-turn-level durability (`aai_platform.session_slots` / `session_events`, behind
-the runtime's third `SessionStateBackend`).
+**What did NOT go is the durable state**, which is the point of the change. All
+three things the app database held are the platform's now, reached over HTTP
+with the sandbox's own bearer: durable workflow runs (the queue, storage and
+streamer as `aai_platform` tables; the guest's world is
+`workflow-platform-world.ts`), turn-level durability (`session_slots` /
+`session_events`, behind the runtime's third `SessionStateBackend`), and
+workflow upload RECORDS (`workflow_uploads`, behind its third `UploadRecords` —
+`platform-uploads.ts`).
+
+**A guest therefore keeps nothing durable on disk** — ephemeral scratch for
+builds and the DevKit's artifact, nothing more. Uploads were the last holdout
+and the interesting one: `createUploadStore` chose an upload's home from whether
+the agent had a `ctx.db`, because "a database means durable runs". Moving the
+queue here falsified that, so a deployed guest with no `DATABASE_URL` got
+DURABLE RUNS with uploads in a directory that recycles — one sandbox filled its
+filesystem and `ENOSPC`'d every write. `platform-uploads.ts` has the account,
+including the write-volume measurement and the tripwire that would change the
+design.
 
 The measurable win is the connection budget: `MAX_PLATFORM_DB_CONNECTIONS`
 carried an allowance for per-app databases — 28 of 40, spoken for by TWO apps at
 the workflow entitlement — so the fleet claim scaled with tenant count, the one
 variable a constant cannot bound. It has one term now.
 
-Four arguments from those modules still apply somewhere:
-
-- **A DATABASE per app, not a schema, because of the Workflow DevKit.**
-  `@workflow/world-postgres` needs `workflow` and `graphile_worker` schemas —
-  DATABASE-level names that cannot nest inside `app_<hex>`, whose creation needs
-  `CREATE ON DATABASE`, which a shared database cannot grant a tenant. The
-  migration failed `42501 permission denied for database postgres` and every
-  durable workflow silently had nowhere to live (PG 17.6). This is why the
-  platform world runs those schemas on the PLATFORM's database.
-- **`revoke connect … from public` is what a Postgres tenant boundary IS** — not
-  `search_path` pinning, and not a role's `statement_timeout`.
-- **A per-tenant cap is only a control if it is not `USERSET`.** The role's
-  `statement_timeout` was, so tenant code could turn it off; the enforceable
-  half was a sweep terminating runaway backends. Never read a role setting as
-  isolation.
-- **Follow a stored LOCATOR, never a recomputed placement.** Every per-app
-  operation read the `url` out of the app's own meta: changing the placement
-  config re-shuffles where a recomputation lands, and the stored value is the
-  only record of where the thing is.
+**Four Postgres-tenancy arguments came out of those modules, and they are
+recorded in `20260827030000_drop_dblink_admin.sql`** rather than here — this
+guide is at its size cap and they are history about code the repo no longer has.
+The one that still explains current behaviour: the DevKit needs `workflow` and
+`graphile_worker` as DATABASE-level schemas, which a shared database cannot
+grant a tenant (`42501`), and that is why the platform world runs them on the
+PLATFORM's database.
 
 **One operational note, not automated.** App databases and their `app-db:<slug>`
 Vault secrets may still exist on a deployed fleet, and nothing here drops

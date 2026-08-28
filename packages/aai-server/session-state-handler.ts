@@ -22,9 +22,8 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { HTTPException } from "hono/http-exception";
-import { constantTimeEquals } from "./_timing-safe.ts";
 import type { AppContext } from "./context.ts";
-import { guestTokenFor } from "./guest-token.ts";
+import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import {
@@ -36,7 +35,6 @@ import {
   type PlatformSessionEvent,
   readEvents,
 } from "./platform-session-state.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
 
 const log = createLogger("session.state");
 
@@ -60,19 +58,6 @@ type Method = (typeof METHODS)[number];
 
 function isMethod(value: unknown): value is Method {
   return typeof value === "string" && (METHODS as readonly string[]).includes(value);
-}
-
-/** The bearer this slug's running guest would hold, compared in constant time. */
-async function assertGuestBearer(c: AppContext, slug: string): Promise<void> {
-  const supplied = c.req.header("authorization")?.replace(/^Bearer /, "");
-  if (supplied === undefined || supplied === "") {
-    throw new HTTPException(401, { message: "unauthorized" });
-  }
-  const version = await c.env.store.getAgentVersion(slug);
-  if (version === null) throw new HTTPException(503, { message: "agent unavailable" });
-  if (!constantTimeEquals(supplied, guestTokenFor(agentSandboxName(slug, version)))) {
-    throw new HTTPException(401, { message: "unauthorized" });
-  }
 }
 
 /** A required non-empty string field. */

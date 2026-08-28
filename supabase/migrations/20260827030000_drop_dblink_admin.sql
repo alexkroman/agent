@@ -38,3 +38,28 @@ drop extension if exists dblink;
 -- the check wanted here. A future admin-only object placed in `aai_admin` should
 -- keep the schema, and this statement will then fail loudly rather than take it.
 drop schema if exists aai_admin restrict;
+
+-- ── POSTGRES-TENANCY ARGUMENTS, MOVED HERE FROM aai-server/CLAUDE.md ─────────
+--
+-- That guide is at its 120,000-char cap, and these are history about code this
+-- repo no longer has — so they live beside the migration that removed it, which
+-- is where a reader who cares about them is looking. They matter if per-tenant
+-- Postgres is ever reintroduced.
+--
+-- Four arguments from those modules are worth keeping, and only the first is about
+-- code that exists:
+--
+-- - **A DATABASE per app, not a schema, because of the Workflow DevKit.**
+-- `@workflow/world-postgres` needs `workflow` and `graphile_worker` schemas —
+-- DATABASE-level names that cannot nest inside `app_<hex>`, needing `CREATE ON
+-- DATABASE`, which a shared database cannot grant a tenant. The migration failed
+-- `42501 permission denied for database postgres` and every durable workflow
+-- silently had nowhere to live (PG 17.6). This is why the platform world runs
+-- those schemas on the PLATFORM's database, where the grant is not in question.
+-- - **If per-tenant Postgres ever returns**, three rules come with it: `revoke
+-- connect … from public` is what a tenant boundary IS (not `search_path`
+-- pinning, not a role's `statement_timeout`); a cap is only a control if it is
+-- not `USERSET`, which that timeout was, so the enforceable half was a sweep
+-- terminating runaway backends; and every per-app operation must follow the
+-- app's STORED locator rather than a recomputed placement, since changing the
+-- config re-shuffles where a recomputation lands.
