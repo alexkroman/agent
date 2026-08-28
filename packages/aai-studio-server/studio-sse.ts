@@ -6,6 +6,7 @@
  */
 
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { registerLiveStream } from "aai-server/live-streams";
 import type { SSEStreamingApi } from "hono/streaming";
 import { type ProjectKind, resolveProjectKind } from "./studio-project-kind.ts";
@@ -66,12 +67,18 @@ export function projectPayload(workspace: StudioWorkspace): ProjectPayload {
     // new-project switcher existed carries no `kind`, and the client should
     // read the same default the prompt composition does, not `undefined`.
     kind: resolveProjectKind(workspace.kind),
-    ...(workspace.deployedSlug && { deployedSlug: workspace.deployedSlug }),
     unpublished: hasUnpublishedChanges(workspace),
-    ...(workspace.previewSlug && { previewSlug: workspace.previewSlug }),
-    ...(workspace.previewHash && { previewVersion: workspace.previewHash }),
     previewStale: hasPreviewChanges(workspace),
-    ...(workspace.previewError && { previewError: workspace.previewError }),
+    // Presence, not truthiness: a slug is validated and a hash is 64 hex
+    // digits, so neither can be falsy-but-present, and the one field that
+    // could — `previewError`, sliced from CLI output — reads the same either
+    // way, since the pane's banner renders nothing for an empty string.
+    ...omitUndefined({
+      deployedSlug: workspace.deployedSlug,
+      previewSlug: workspace.previewSlug,
+      previewVersion: workspace.previewHash,
+      previewError: workspace.previewError,
+    }),
   };
 }
 
