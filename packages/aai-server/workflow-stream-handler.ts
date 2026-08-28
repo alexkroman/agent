@@ -45,8 +45,8 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
+import { guestSlug, notConfigured } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
-import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
 import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
 import { qualifyStreamName } from "./workflow-stream-namespace.ts";
@@ -116,12 +116,12 @@ export function createWorkflowStreamHandler(
   opts: StreamHandlerOptions,
 ): (c: AppContext) => Promise<Response> {
   return async (c) => {
-    const slug = c.var.slug;
-    await assertGuestBearer(c, slug);
+    const slug = await guestSlug(c);
     const storage = opts.storage;
-    if (!storage) {
-      throw new HTTPException(501, { message: "platform run storage not configured" });
-    }
+    // No reservation, unlike the other four: this response stays open for up to
+    // ten minutes, and a pooled connection held that long is the leak. The read
+    // goes through the world's own streamer instead.
+    if (!storage) throw notConfigured("platform run storage");
 
     const name = c.req.query("name");
     if (name === undefined || name === "") {

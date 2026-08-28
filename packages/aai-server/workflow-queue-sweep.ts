@@ -80,9 +80,15 @@ const log = createLogger("workflow.queue.sweep");
  * to; this IS the delivery, so the number a user feels is the sum of it and the
  * guest's own work.
  *
- * The cost of a tick that finds nothing is one indexed query against a partial
- * index — `workflow_queue_due_idx` covers exactly this predicate — so an idle
- * fleet pays close to nothing for the frequency.
+ * The cost of a tick that finds nothing is one indexed query — a BitmapOr of
+ * `workflow_queue_due_idx` and `workflow_queue_claimed_idx`, measured at 0.201 ms
+ * against a 200,000-row queue — so an idle fleet pays close to nothing for the
+ * frequency. That is the IDLE tick, and this comment used to claim the same index
+ * "covers exactly this predicate" full stop: it does not, because the claim's
+ * `(locked_at is null OR locked_at < <stale>)` has an arm that partial index
+ * excludes by construction. A BUSY tick is served by `workflow_queue_run_idx`
+ * instead, which is a whole `explain (analyze)` of its own —
+ * `20260828040000_workflow_queue_run_index.sql` carries it.
  *
  * Override with `WORKFLOW_QUEUE_INTERVAL_MS`; **0 disables delivery entirely**,
  * which is announced, because a durable run then never advances.

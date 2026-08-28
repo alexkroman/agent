@@ -37,11 +37,21 @@
  * because resuming onto state that did not load would silently drop it), while
  * `flush` never rejects and logs instead. So every method here propagates, and the
  * caller keeps its own policy.
+ *
+ * **A 501 is not special, and that is the contract.** The platform answers it when
+ * the deployment has no platform database at all, and this backend does not
+ * downgrade to memory on reading one — `selectBackend` chose it ONCE, from whether
+ * the boot env named a platform, so there is nothing per request to re-decide. A
+ * 501 therefore fails `hydrate`, i.e. the session start. Silently becoming memory
+ * instead would report `durable: true` in the boot line for an agent that is not,
+ * which the module doc above calls the worse failure. `aai-server`'s
+ * `notConfigured` states the same contract from the other end, and names the one
+ * deployment shape where it bites.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import pTimeout from "p-timeout";
-import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
+import { platformResult } from "./platform-rpc.ts";
 import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
 
 /**
@@ -68,28 +78,12 @@ async function call(
   method: string,
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const fetchFn = opts.fetch ?? globalThis.fetch;
-  const url = platformUrl(opts.base, PLATFORM_ROUTES.sessionState);
-  const res = await pTimeout(
-    fetchFn(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${opts.token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ method, ...body }),
-    }),
-    { milliseconds: SESSION_STATE_TIMEOUT_MS, message: `session-state ${method} timed out` },
-  );
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`session-state ${method} answered HTTP ${res.status}: ${text.slice(0, 500)}`);
-  }
-  const parsed: unknown = JSON.parse(text);
-  if (!(isRecord(parsed) && "result" in parsed)) {
-    throw new Error(`session-state ${method} answered 200 without a result`);
-  }
-  return parsed.result;
+  return await platformResult(opts, {
+    route: PLATFORM_ROUTES.sessionState,
+    label: `session-state ${method}`,
+    timeoutMs: SESSION_STATE_TIMEOUT_MS,
+    body: JSON.stringify({ method, ...body }),
+  });
 }
 
 /** A `{slot: value}` map off the wire, ignoring anything that is not a string. */

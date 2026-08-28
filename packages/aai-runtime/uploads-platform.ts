@@ -42,11 +42,11 @@
  */
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import pTimeout from "p-timeout";
 import { partsOf } from "./_upload-blobs.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
 import { UploadIdTakenError } from "./_upload-store.ts";
-import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
+import { platformResult } from "./platform-rpc.ts";
 
 /**
  * How long one record call may take.
@@ -75,34 +75,17 @@ async function call(
   id: string,
   body: Record<string, unknown> = {},
 ): Promise<unknown> {
-  const fetchFn = opts.fetch ?? globalThis.fetch;
-  const url = platformUrl(opts.base, PLATFORM_ROUTES.uploadRecords);
-  const res = await pTimeout(
-    fetchFn(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${opts.token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ method, id, ...body }),
-    }),
-    { milliseconds: UPLOAD_RECORD_TIMEOUT_MS, message: `upload-records ${method} timed out` },
-  );
-  const text = await res.text();
-  if (res.status === 409) {
+  return await platformResult(opts, {
+    route: PLATFORM_ROUTES.uploadRecords,
+    label: `upload-records ${method}`,
+    timeoutMs: UPLOAD_RECORD_TIMEOUT_MS,
+    body: JSON.stringify({ method, id, ...body }),
     // The one non-2xx that is not a failure — see the module doc. Translated back
     // into the store's own error so `claim`'s contract holds across all three
-    // backends.
-    throw new UploadIdTakenError(id);
-  }
-  if (!res.ok) {
-    throw new Error(`upload-records ${method} answered HTTP ${res.status}: ${text.slice(0, 500)}`);
-  }
-  const parsed: unknown = JSON.parse(text);
-  if (!(isRecord(parsed) && "result" in parsed)) {
-    throw new Error(`upload-records ${method} answered 200 without a result`);
-  }
-  return parsed.result;
+    // backends, and decided from the STATUS alone: what the platform said about a
+    // refused id does not change what a refused id means.
+    errorFor: (status) => (status === 409 ? new UploadIdTakenError(id) : undefined),
+  });
 }
 
 /** One record off the wire, or `undefined` when the platform answered `null`. */

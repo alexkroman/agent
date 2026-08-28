@@ -50,13 +50,12 @@
  * redeploy, which was to lose the jobs outright.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { optionalString, requiredString } from "./_body-fields.ts";
+import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
-import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import { enqueue } from "./workflow-queue-store.ts";
@@ -157,45 +156,42 @@ export function createWorkflowEnqueueHandler(
   adminDb: AdminDb | undefined,
 ): (c: AppContext) => Promise<Response> {
   return async (c) => {
-    const slug = c.var.slug;
-    await assertGuestBearer(c, slug);
-    if (!adminDb) {
-      // 501, not 503: there is no queue on this deployment and there will not be
-      // one on a retry. A guest reading this knows to stop rather than back off.
-      throw new HTTPException(501, { message: "platform queue not configured" });
-    }
+    const slug = await guestSlug(c);
+    // 501, not 503: there is no queue on this deployment and there will not be one
+    // on a retry. A guest reading this knows to stop rather than back off.
+    if (!adminDb) throw notConfigured("platform queue");
 
     const body = parseEnqueueRequest(await c.req.json().catch(() => undefined));
     const id = `wfq_${crypto.randomUUID().replaceAll("-", "")}`;
-    const reserved = await adminDb.reserve();
-    try {
-      const result = await enqueue((q, p) => reserved.query(q, p), {
-        id,
-        slug,
-        queueName: body.queueName,
-        // The queue's OWN envelope: `runId` is queryable because the claim
-        // serializes a run's messages on it, and `data` is the DevKit's opaque
-        // body. See `QueueEnvelope`.
-        payload: { runId: body.runId, data: body.data },
-        ...omitUndefined({
-          headers: body.headers,
-          deploymentId: body.deploymentId,
-          idempotencyKey: body.idempotencyKey,
-          delaySeconds: body.delaySeconds,
-        }),
-      });
-      // The MESSAGE ID the queue settled on, which is not always the one minted
-      // above: an idempotency key collapses onto the row already queued, and the
-      // DevKit uses the id it is given here to correlate.
-      return c.json({ messageId: result.id }, 200);
-    } catch (err: unknown) {
-      log.warn("enqueue failed", { slug, error: errorMessage(err) });
-      // 503 rather than 500: every cause here is transient from the guest's point
-      // of view (a connection shortage, a partitioned database), and the DevKit
-      // retries the step that was enqueueing.
-      throw new HTTPException(503, { message: "could not queue the message", cause: err });
-    } finally {
-      reserved.release();
-    }
+    return await withReserved(
+      adminDb,
+      {
+        log,
+        failure: "could not queue the message",
+        logMessage: "enqueue failed",
+        detail: { slug },
+      },
+      async (sql) => {
+        const result = await enqueue(sql, {
+          id,
+          slug,
+          queueName: body.queueName,
+          // The queue's OWN envelope: `runId` is queryable because the claim
+          // serializes a run's messages on it, and `data` is the DevKit's opaque
+          // body. See `QueueEnvelope`.
+          payload: { runId: body.runId, data: body.data },
+          ...omitUndefined({
+            headers: body.headers,
+            deploymentId: body.deploymentId,
+            idempotencyKey: body.idempotencyKey,
+            delaySeconds: body.delaySeconds,
+          }),
+        });
+        // The MESSAGE ID the queue settled on, which is not always the one minted
+        // above: an idempotency key collapses onto the row already queued, and the
+        // DevKit uses the id it is given here to correlate.
+        return c.json({ messageId: result.id }, 200);
+      },
+    );
   };
 }

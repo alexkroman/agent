@@ -36,9 +36,9 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import pTimeout from "p-timeout";
 import { WorkflowRunNotFoundError } from "workflow/errors";
 import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
+import { platformBearer, platformPost } from "./platform-rpc.ts";
 import { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 
 /**
@@ -73,27 +73,22 @@ export async function callPlatformStorage(
   method: string,
   args: readonly unknown[],
 ): Promise<unknown> {
-  const fetchFn = opts.fetch ?? globalThis.fetch;
-  const url = platformUrl(opts.base, PLATFORM_ROUTES.workflowStorage);
-  const res = await pTimeout(
-    fetchFn(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${opts.token}`,
-        "content-type": "application/json",
-      },
-      body: encodeStorageJson({ method, args }),
-    }),
-    { milliseconds: STORAGE_TIMEOUT_MS, message: `storage ${method} timed out` },
-  );
-  const text = await res.text();
-  if (!res.ok) {
+  const text = await platformPost(opts, {
+    route: PLATFORM_ROUTES.workflowStorage,
+    label: `storage ${method}`,
+    timeoutMs: STORAGE_TIMEOUT_MS,
+    // Encoded with the DevKit's own envelope: a run's `input`/`output` are
+    // `Uint8Array` at `specVersion >= 2` and `JSON.stringify` turns one into an
+    // index map without erroring.
+    body: encodeStorageJson({ method, args }),
     // The status is in the message because it is what tells a reader whether to
     // look at this guest or at the platform: a 400 is a call this code built
     // wrongly, a 404 is a run this agent does not own, a 501 is a deployment with
-    // no run storage, and a 503 is worth retrying.
-    throw storageFailure(method, res.status, text, args);
-  }
+    // no run storage, and a 503 is worth retrying. This route ALWAYS builds its
+    // own error rather than falling through to the shared one, because the 404
+    // has to reach its caller as the DevKit's own class — see below.
+    errorFor: (status, detail) => storageFailure(method, status, detail, args),
+  });
   const body = decodeStorageJson(text);
   // `ok` is the discriminator, and `"result" in body` was the bug it replaces.
   // JSON.stringify DROPS an undefined value, so a VOID method — `writeToStream`,
@@ -267,7 +262,7 @@ export function createPlatformStreamReader(
     // NOT wrapped in a timeout, unlike every other call here. This response is meant
     // to stay open — a deadline would cut a healthy live read at its own interval,
     // and the platform already bounds it.
-    const res = await fetchFn(url, { headers: { authorization: `Bearer ${opts.token}` } });
+    const res = await fetchFn(url, { headers: platformBearer(opts.token) });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       throw new Error(`stream read answered HTTP ${res.status}: ${detail.slice(0, 500)}`);

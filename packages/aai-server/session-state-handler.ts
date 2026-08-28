@@ -19,13 +19,12 @@
  * pointed at another agent's rows.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { isOneOf, requiredInt, requiredString } from "./_body-fields.ts";
+import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
-import { assertGuestBearer } from "./guest-bearer.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import {
@@ -105,15 +104,14 @@ export function createSessionStateHandler(
   opts: SessionStateHandlerOptions,
 ): (c: AppContext) => Promise<Response> {
   return async (c) => {
-    const slug = c.var.slug;
-    await assertGuestBearer(c, slug);
+    const slug = await guestSlug(c);
     const adminDb = opts.adminDb;
-    if (!adminDb) {
-      // 501, like the enqueue and storage routes: there is no platform session
-      // state on this deployment and a retry will not make one. A guest reading
-      // this falls back to memory and SAYS so, rather than retrying forever.
-      throw new HTTPException(501, { message: "platform session state not configured" });
-    }
+    // 501, like the enqueue and storage routes: there is no platform session state
+    // on this deployment and a retry will not make one. TERMINAL for the guest —
+    // its backend is chosen once at construction, so this fails the call, which
+    // for session state is `hydrate`. See `notConfigured` for why that is
+    // described rather than fixed with a fallback.
+    if (!adminDb) throw notConfigured("platform session state");
 
     const body: unknown = await c.req.json().catch(() => undefined);
     if (!isRecord(body)) throw new HTTPException(400, { message: "body must be a JSON object" });
@@ -122,25 +120,14 @@ export function createSessionStateHandler(
       // tenant's to read.
       throw new HTTPException(400, { message: "unknown session-state method" });
     }
+    const method = body.method;
     const sessionId = requiredString(body, "sessionId");
 
-    const reserved = await adminDb.reserve();
-    const sql = (q: string, p?: unknown[]) => reserved.query(q, p);
-    try {
-      return c.json({ result: await serve(body.method, { sql, slug, sessionId }, body) }, 200);
-    } catch (err: unknown) {
-      if (err instanceof HTTPException) throw err;
-      log.warn("session-state call failed", {
-        slug,
-        method: body.method,
-        error: errorMessage(err),
-      });
-      // 503: every remaining cause is transient from the guest's point of view, and
-      // the runtime's own flush already logs rather than failing the tool call.
-      throw new HTTPException(503, { message: "session-state call failed", cause: err });
-    } finally {
-      reserved.release();
-    }
+    return await withReserved(
+      adminDb,
+      { log, failure: "session-state call failed", detail: { slug, method } },
+      async (sql) => c.json({ result: await serve(method, { sql, slug, sessionId }, body) }, 200),
+    );
   };
 }
 

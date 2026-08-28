@@ -1,0 +1,71 @@
+-- The queue claim's `distinct on` had no index, and sorted to DISK every pass.
+--
+-- `claimDue` (`workflow-queue-store.ts`) is the platform's delivery query, run on
+-- a RESERVED admin connection every `WORKFLOW_QUEUE_INTERVAL_MS` — one second by
+-- default, out of `ADMIN_POOL_MAX`, which is 4 for a whole replica. It reduces the
+-- due set to one message per run:
+--
+--   select distinct on (q.slug, q.payload->>'runId') q.id, q.available_at
+--   ...
+--   order by q.slug, q.payload->>'runId', q.available_at
+--
+-- Nothing indexed that ordering, and `20260827000000_workflow_world.sql`'s two
+-- indexes could not help: `workflow_queue_due_idx` is partial on
+-- `locked_at is null`, and the claim's second predicate is
+-- `(locked_at is null OR locked_at < now() - <stale>)`, whose second arm is
+-- exactly the rows that index excludes.
+--
+-- ── MEASURED, on PostgreSQL 16.13 ───────────────────────────────────────────
+--
+-- 500 agents, 200,000 queued messages, 180,000 of them due and unclaimed, 4,000
+-- claimed (of which 400 stale) — a fleet, not a stress case. One `claimDue` for
+-- 32 messages, eight runs each across two independent builds of the fixture:
+--
+--                          before                      after
+--   plan       Seq Scan, 180,000 rows       Index Scan on the new index
+--   sort       external merge, 7,504 kB     quicksort, 378 kB (in memory)
+--   time       385-403 ms                   158-171 ms
+--
+-- The disk sort is the interesting half: it is temp I/O on the connection the
+-- rest of the replica is queueing behind, and it grows with the queue rather
+-- than with the 32 rows the pass will actually take.
+--
+-- ── WHY ONE INDEX AND NOT TWO ───────────────────────────────────────────────
+--
+-- The obvious second candidate is a stale-side mirror of `due_idx`
+-- (`on (available_at) where locked_at is not null`) to give the OR's other arm an
+-- index of its own. Measured: the planner never chose it — 165.6 ms against
+-- 165.5 ms with it present — because this index already serves the whole scan in
+-- the order the `distinct on` needs, and a BitmapOr would destroy that order. It
+-- would be write-path cost for nothing, so it is not here.
+--
+-- A covering variant (`include (locked_at, id)`) was measured too and is WORSE:
+-- 198 ms, and no index-only scan, because the wider index costs more to walk than
+-- the heap fetches it saves.
+--
+-- ── `workflow_queue_due_idx` STAYS, and it is not redundant ─────────────────
+--
+-- The two serve opposite regimes, which is why the busy measurement above does
+-- not retire the older index. On an IDLE fleet — nothing due, the state a
+-- once-per-second tick is in almost always — the planner takes a BitmapOr of
+-- `due_idx` and `workflow_queue_claimed_idx` and answers in **0.201 ms**; with
+-- `due_idx` dropped it falls back to a full walk of this index and takes
+-- **3.276 ms**, sixteen times the cost of the tick it is supposed to make free.
+-- `workflow-queue-sweep.ts` claims exactly that about an idle tick and is right
+-- about it; what it also claimed, and this migration disproves, is that the same
+-- index "covers exactly this predicate" for a busy one.
+--
+-- ── COST ────────────────────────────────────────────────────────────────────
+--
+-- 3.2 MB on 200,000 rows, against a 9.5 MB primary key. On the write path, which
+-- is what a step BLOCKS on: 20,000 inserts went 237.8 ms to 302.9 ms, i.e. ~3.3 µs
+-- of index maintenance per row. An enqueue is one row.
+--
+-- The expression is written exactly as `claimDue` writes it — `payload->>'runId'`
+-- — because an expression index is matched by expression equality and nothing
+-- warns when it stops matching. `20260827000000_workflow_world.sql` documents
+-- `payload` as the DevKit's `QueuePayloadSchema`, whose `runId` is what the claim
+-- serializes a run's messages on.
+
+create index if not exists workflow_queue_run_idx
+  on aai_platform.workflow_queue (slug, (payload ->> 'runId'), available_at);
