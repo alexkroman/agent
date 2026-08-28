@@ -392,7 +392,26 @@ describe("guest studio chat surface", () => {
     ]);
     const { url, close } = await serve(session, deps(model));
     try {
-      await post(url, chatBody("update the agent"));
+      // DRAIN the response before polling, and that is the ANCHOR rather than a
+      // tidiness. `post()` hands back a `Response` whose SSE body nobody has
+      // read, so a `vi.waitFor` started here polls its 1s default across the
+      // WHOLE turn — the model steps, the tool call, the response close, the
+      // workspace walk and two host RPCs. `res.text()` resolves when the stream
+      // closes, which is the point this file's afterEach drain names as where
+      // `onFinish` fires; what is left to poll for afterwards is just that walk
+      // and those RPCs.
+      //
+      // Measured by squeezing this `vi.waitFor`'s timeout until it fails:
+      //
+      //   undrained   fails at 50ms; the test body takes 4.28s
+      //   drained     fails at 50ms, PASSES at 100ms; body 353ms
+      //
+      // So draining leaves ~10x headroom under the 1s default where undrained
+      // left the whole turn to fit inside it — which is the race this lost on a
+      // loaded CI runner (`expected false to be true`, studio-chat.test.ts:408)
+      // while passing 11/11 locally, coverage run included. Two sibling tests
+      // below had the same shape and are drained for the same reason.
+      await (await post(url, chatBody("update the agent"))).text();
       // Anchor on THIS turn's settle, then assert synchronously. The mid-turn
       // checkpoint causally PRECEDES the settle, so once the settle has landed
       // both syncs must have — which is what makes this deterministic. Waiting
@@ -432,7 +451,9 @@ describe("guest studio chat surface", () => {
     const session = await makeSession({ "agent.ts": "x" });
     const { url, close } = await serve(session, deps(scriptedModel([textStep("Hi.")])));
     try {
-      await post(url, chatBody("remember this prompt"));
+      // Drained first, for the reason the checkpoint test above spells out: an
+      // unread SSE body leaves the whole turn inside `vi.waitFor`'s 1s default.
+      await (await post(url, chatBody("remember this prompt"))).text();
       await vi.waitFor(() => {
         const persists = host.calls.filter((c) => c.method === "studio/persist-chat");
         // Start-of-turn snapshot plus the settled one.
@@ -450,7 +471,8 @@ describe("guest studio chat surface", () => {
     const session = await makeSession({ "agent.ts": "x" });
     const { url, close } = await serve(session, deps(scriptedModel([textStep("Just talking.")])));
     try {
-      await post(url, chatBody("say hi"));
+      // Drained first — see the checkpoint test above.
+      await (await post(url, chatBody("say hi"))).text();
       // Wait for the SETTLE, not just any persist — the inbound snapshot now
       // fires at turn start, so it lands long before the turn is done.
       await vi.waitFor(() => {
