@@ -94,6 +94,41 @@
  * mistake was made while producing this table; `captureTtsTrace`'s
  * `deltaIntervalMs` in `aai-ui/worklets/_tts-trace-harness.ts` exists because of
  * it.
+ *
+ * **A duration spread is not the service being noisy until the SEGMENTS are
+ * ruled out, and the first time this was measured they were the cause.**
+ * Against `streaming-tts.sandbox025.assemblyai-labs.com` (2026-08-27), one
+ * fixed 223-character snippet at 24 kHz, five runs each, the two boundary
+ * classes INTERLEAVED so server load could not be read as an effect:
+ *
+ * | closer class | segments | first audio | audio | spread |
+ * | --- | --- | --- | --- | --- |
+ * | `["')]` (straight only) | 7 | ~750 ms | 16.70 s | 2.96 s (**18%**) |
+ * | `["'’”)]` (shipped) | 7 | ~750 ms | 18.86 s | 1.04 s (**6%**) |
+ *
+ * Same flush count, same time-to-first-audio, and the spread falls by 3x. The
+ * straight-only class could not see `me.”`, so it cut mid-sentence
+ * (`"uploaded me.”\nThe clock ticks faster. "`) and the model had no cadence
+ * to aim for — a fragment's prosody is unconstrained, so it came out different
+ * every run. Read that as the rule behind {@link SEGMENT_BOUNDARY_RE} rather
+ * than a second knob: a segment that IS a sentence synthesizes consistently.
+ *
+ * The cost is real and is the reason this is a trade rather than a free win:
+ * **+2.16 s, 13% more audio**, because a sentence delivered as a sentence gets
+ * the terminal lengthening and falling cadence the rushed fragment skipped.
+ * That is the right direction — it is the same 4% sentence-vs-clause cost the
+ * table above already accepts — but do not go looking for it as a saving.
+ *
+ * What the residual 6% is: the service. Identical text, identical cuts, 18.40
+ * to 19.44 s, so a neural voice samples a different delivery each generation.
+ * Decomposed against the `WordBoundaries` frames' own offsets over four runs,
+ * the PADDING is the stable part — 17-18% of every run (3.03-3.51 s), lead-in
+ * 130-425 ms and tail 200-760 ms per segment, per-segment spreads of 16-236 ms
+ * — while per-segment SPEECH moved by 239-561 ms. So an A/B on this host wants
+ * five runs minimum, and it wants to compare speech-in-words rather than total
+ * audio when the cut changes. What held across every run of all three
+ * experiments: one ack per flush, a 0.6-1.9 s drain (nowhere near
+ * `PIPELINE_FLUSH_TIMEOUT_MS`), and every byte of audio arriving before `done`.
  */
 
 import { hasMinWords } from "../../transports/pipeline-text.ts";
@@ -109,13 +144,25 @@ export interface Segment {
  * closing quotes/brackets, then whitespace or the end of the buffer. The
  * trailing-whitespace requirement is what keeps "3.5" and "v1.2" from matching.
  *
- * The pipeline coalescer's TERMINAL_BOUNDARY_RE now draws the same line for the
+ * **The closer class carries the CURLY quotes as well as the straight ones**,
+ * and the straight-only version was a real miss rather than a nicety: a model
+ * writes `whispering: “You were the one who uploaded me.”`, and `.”` matched
+ * nothing, so the sentence end was invisible and the cut fell to
+ * {@link MAX_SEGMENT_CHARS} in the middle of the NEXT sentence. Typographic
+ * quotes are what an LLM emits by default, so this was the common case and not
+ * the edge one — measured on the sandbox host, one snippet of three sentences
+ * cut as `"uploaded me.”\nThe clock ticks faster. "` instead of after
+ * `me.”`. `’` doubles as an apostrophe (`isn’t`, `sister’s`), which is
+ * harmless here: the class only applies AFTER a terminal `.!?…`.
+ *
+ * The pipeline coalescer's TERMINAL_BOUNDARY_RE draws the same line for the
  * same reason — a comma is mid-sentence, and flushing there hands the server a
- * fragment to synthesize with a falling final intonation. This one still
+ * fragment to synthesize with a falling final intonation — so the two classes
+ * must be changed together. This one still
  * matches ANYWHERE in the buffer rather than only at its end, and carries the
  * {@link MIN_SEGMENT_WORDS} floor, so the two are not interchangeable.
  */
-const SEGMENT_BOUNDARY_RE = /[.!?…]["')\]]*(?:\s|$)/g;
+const SEGMENT_BOUNDARY_RE = /[.!?…]["'’”)\]]*(?:\s|$)/g;
 
 /**
  * Words a segment needs before sentence-terminal punctuation flushes it — see

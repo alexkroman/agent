@@ -128,7 +128,12 @@ export type TtsTextCoalescer = {
  * while the rest of the sentence buffers, and `boundary()` releases the buffer
  * at every segment end and before every tool call.
  */
-const TERMINAL_BOUNDARY_RE = /[.!?…]["')\]]*\s*$/;
+// The closer class carries the CURLY quotes as well as the straight ones, and
+// must stay in step with `SEGMENT_BOUNDARY_RE` in
+// `providers/tts/assemblyai-segment.ts` — that module's doc argues both, and a
+// straight-only class made `me.”` invisible as a sentence end, which is the
+// spelling an LLM emits by default.
+const TERMINAL_BOUNDARY_RE = /[.!?…]["'’”)\]]*\s*$/;
 
 /**
  * Coalesce word-granularity LLM text into fewer, larger TTS provider sends.
