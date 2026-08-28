@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the confirmation gate actually gate? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly and asserts about the state it

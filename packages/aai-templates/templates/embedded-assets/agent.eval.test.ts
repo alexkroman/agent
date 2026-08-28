@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the FAQ bot actually look things up?
 //
 // `agent.test.ts` scores the search index directly, which settles what

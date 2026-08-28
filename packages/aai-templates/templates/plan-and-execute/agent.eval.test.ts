@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the desk really plan, work one step, and replan? Run it with
 // `aai eval`.
 //

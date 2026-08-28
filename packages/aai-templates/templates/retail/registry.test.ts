@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
 import { createToolContext, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";

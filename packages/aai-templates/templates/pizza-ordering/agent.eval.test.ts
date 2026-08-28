@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { withDiscoveredTools } from "@alexkroman1/aai/testing";
 // An EVAL: does the order-taker actually take the order?

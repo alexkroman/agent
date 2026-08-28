@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { deployedAgent } from "@alexkroman1/aai/testing";
 // An EVAL: does the desk actually behave? Run it with `aai eval`.

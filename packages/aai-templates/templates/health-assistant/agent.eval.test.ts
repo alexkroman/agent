@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the desk read the label, or does it remember?
 //
 // `agent.test.ts` drives both tools against a faked openFDA, which settles the

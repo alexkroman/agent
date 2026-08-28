@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the story machine actually hold? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly against a context it made itself,

@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does this desk actually behave? Run it with `aai eval`.
 //
 // `agent.test.ts` drives the five tools against a STUBBED `ctx.workflows`, the

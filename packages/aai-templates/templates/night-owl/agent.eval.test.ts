@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the companion actually pick from its own shelf?
 //
 // `agent.test.ts` calls `recommend` directly, which settles what the tool does

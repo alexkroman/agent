@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 import { createToolContext, toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";

@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import {
   createToolContext,

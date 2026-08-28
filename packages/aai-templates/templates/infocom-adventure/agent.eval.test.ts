@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the game engine actually keep its world? Run it with `aai eval`.
 //
 // `agent.test.ts` drives the tools directly, one call at a time, against a

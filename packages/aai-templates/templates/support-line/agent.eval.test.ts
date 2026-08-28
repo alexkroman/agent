@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // An EVAL: does the line really refuse to say what it cannot ground? Run it
 // with `aai eval`.
 //
