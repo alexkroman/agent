@@ -42,6 +42,8 @@ const DELAY_MS = Number(arg("delay", "0"));
 const JITTER_MS = Number(arg("jitter", "0"));
 const FAIL_RATE = Number(arg("fail-rate", "0"));
 const RETRY_AFTER = arg("retry-after", "1");
+/** The status a refusal answers with — 503 by default, 401 for a FATAL one. */
+const FAIL_STATUS = Number(arg("fail-status", "503"));
 const BYTES = Number(arg("bytes", "256"));
 
 const BODY = "x".repeat(Math.max(0, BYTES));
@@ -62,7 +64,12 @@ const server = createServer((req, res) => {
     if (refuse) {
       counts.refused += 1;
       // 503 + `retry-after`, which is the pair a step's classification reads.
-      res.writeHead(503, { "content-type": "text/plain", "retry-after": RETRY_AFTER });
+      // `--fail-status=401` is the other side of that decision: a step should
+      // stop on it rather than spend its whole retry budget re-asking.
+      res.writeHead(FAIL_STATUS, {
+        "content-type": "text/plain",
+        "retry-after": RETRY_AFTER,
+      });
       res.end("stub endpoint refusing on purpose");
       return;
     }

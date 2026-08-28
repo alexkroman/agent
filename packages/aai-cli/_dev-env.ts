@@ -42,7 +42,7 @@ export function devBindHost(): string | undefined {
 }
 
 /**
- * File watching is OPT-IN — `AAI_DEV_WATCH=1` turns it on.
+ * File watching is OPT-IN — `aai dev --watch`, or `AAI_DEV_WATCH=1`.
  *
  * A restart rebuilds the bundle and replaces the server, which drops nothing
  * mid-request but does end in-flight voice sessions. That is the right default
@@ -50,8 +50,22 @@ export function devBindHost(): string | undefined {
  * host for twenty minutes: a stray formatter save, a `.env` touch, or a git
  * operation restarts the server underneath the run, and the harness reports it
  * as a provider failure several records deep.
+ *
+ * **The FLAG exists because the variable was undiscoverable**, which made the
+ * default a defect rather than a decision: `aai dev --help` listed nothing about
+ * watching, `AAI_DEV_WATCH` appeared in no document a user reads, and the guide
+ * shipped into every scaffolded project opened with "Iterate in `pnpm dev` —
+ * hot reload". So the promise was false and there was no way to find the switch
+ * that makes it true. The variable stays for a process supervisor, which has an
+ * environment and no argv.
+ *
+ * The flag WINS when passed, in both directions: `--watch` turns it on where the
+ * variable is unset or off, and `--watch=false` turns it off where the variable
+ * says on — an explicit argument that a stale exported variable could override
+ * would be the same discoverability bug wearing the fix's clothes.
  */
-export function devWatchEnabled(): boolean {
+export function devWatchEnabled(flag?: boolean | undefined): boolean {
+  if (flag !== undefined) return flag;
   return /^(1|true|yes|on)$/i.test(process.env.AAI_DEV_WATCH?.trim() ?? "");
 }
 

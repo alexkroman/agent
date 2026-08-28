@@ -90,12 +90,19 @@ const dev = defineExec({
   meta: { name: "dev", description: "Start a local development server" },
   args: {
     port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
+    // No `default`, deliberately: the absence is what leaves `AAI_DEV_WATCH` in
+    // charge, and a `default: false` here would make the flag the only way to
+    // enable watching and break every supervisor setting the variable.
+    watch: {
+      type: "boolean",
+      description: "Restart on file changes (also AAI_DEV_WATCH=1)",
+    },
     json: sharedArgs.json,
   },
   cwd: "agent",
   async run({ args, cwd }) {
     const { executeDev } = await import("./dev.ts");
-    return executeDev({ cwd, port: args.port });
+    return executeDev({ cwd, port: args.port, watch: args.watch });
   },
 });
 

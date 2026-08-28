@@ -243,6 +243,11 @@ export function watchDirectory(dir: string, onChange: () => void): FSWatcher {
 export type DevServerOptions = {
   cwd: string;
   port: number;
+  /**
+   * Restart on a file change. Omitted, `AAI_DEV_WATCH` decides — see
+   * {@link devWatchEnabled} for why watching is opt-in at all.
+   */
+  watch?: boolean | undefined;
 };
 
 /**
@@ -402,7 +407,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   // never fire an event and the dev server would serve stale code until the
   // next save. Undefined unless AAI_DEV_WATCH is set — see devWatchEnabled.
   // The supervisor starts queueing, so an event landing mid-boot is held.
-  watcher = devWatchEnabled() ? watchDirectory(cwd, supervisor.request) : undefined;
+  watcher = devWatchEnabled(opts.watch) ? watchDirectory(cwd, supervisor.request) : undefined;
 
   // Set once the backend has bound but before the supervisor owns it: if Vite
   // then fails to boot, this is the only handle on a server already holding

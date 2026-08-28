@@ -43,12 +43,68 @@ function responseWith(status: number, retryAfter?: string): Response {
   });
 }
 
+/**
+ * A response as it arrives from ANOTHER REALM — the case every step body is in.
+ *
+ * A real cross-realm `Response` cannot be built inside one process: it takes a
+ * second realm with its own undici, which is what a `"use step"` bundle running
+ * in a `node:vm` context has and a test does not. What CAN be reproduced is the
+ * only property that matters — the object answers `status`, `ok` and
+ * `headers.get` and is not an `instanceof Response` — so that is what this
+ * builds, with a real `Headers` inside it because the reading of the header is
+ * not the part under test.
+ *
+ * The real thing was measured inside a step bundle under `aai dev`:
+ * `{ instanceofResponse: false, ctor: "Response", realmTag: "[object Response]",
+ * globalResponseIsSame: true }`. Every response a step is handed looked like
+ * that, so every one of them fell through `toStepError`'s classification.
+ */
+function responseFromAnotherRealm(
+  status: number,
+  retryAfter?: string,
+): {
+  status: number;
+  ok: boolean;
+  headers: Headers;
+} {
+  const headers = new Headers(retryAfter === undefined ? {} : { "Retry-After": retryAfter });
+  // Not a `Response`, and that IS the fixture: `instanceof` must not be what
+  // recognises it. NO cast — `toStepError` takes `unknown`, so the honest type
+  // here is the shape itself, and a cast to `Response` would be the fixture
+  // claiming to be the thing whose identity is under test.
+  return { status, ok: status >= 200 && status < 300, headers };
+}
+
 describe("toStepError, given a Response", () => {
   test("makes a 4xx the DevKit will not retry FATAL", () => {
     const err = toStepError(responseWith(404), "GET /x failed: HTTP 404");
 
     expect(devKitVerdict(err)).toEqual({ fatal: true, retryable: false });
     expect(err.message).toBe("GET /x failed: HTTP 404");
+  });
+
+  test("classifies a response from ANOTHER REALM, which is every step's case", () => {
+    // The regression, and the reason this is the first assertion after the
+    // ordinary 404: `cause instanceof Response` is FALSE for the response a
+    // step body is handed, so every one of them fell through to the plain-Error
+    // arm and the DevKit retried a 401 three times with its own 1s default.
+    const foreign = responseFromAnotherRealm(401);
+    expect(devKitVerdict(toStepError(foreign, "GET /x failed: HTTP 401"))).toEqual({
+      fatal: true,
+      retryable: false,
+    });
+  });
+
+  test("reads a foreign response's Retry-After, so the far side's delay survives", () => {
+    // The other half of the same bug: transient was reachable by luck (an
+    // unclassified error retries too) but the DELAY was not, so a rate limit
+    // asking for 5s got the DevKit's 1s and N siblings all asked again at once.
+    const err = toStepError(responseFromAnotherRealm(503, "5"), "nope");
+    const verdict = devKitVerdict(err);
+    expect(verdict).toMatchObject({ fatal: false, retryable: true });
+    // Within the second: the header is seconds and the error carries a Date.
+    const seconds = Math.round(((verdict.retryAfter?.getTime() ?? 0) - Date.now()) / 1000);
+    expect(seconds).toBe(5);
   });
 
   test.each([408, 429, 500, 503])("makes a transient %i retryable", (status) => {

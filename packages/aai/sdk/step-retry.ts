@@ -46,6 +46,23 @@ export function isTransientStatus(status: number): boolean {
 }
 
 /**
+ * Whether `from` is the headers themselves rather than something carrying them —
+ * STRUCTURAL, never `instanceof Headers`.
+ *
+ * The same cross-realm trap `_step-verdict.ts`'s `isResponseLike` documents, one
+ * function along: a `"use step"` bundle runs in its own realm and is handed
+ * headers built by the host's, so `instanceof` is false there. Here the cost
+ * would have been worse than a missed classification — the fallback reads
+ * `.headers` off a `Headers`, finds `undefined`, and throws on `.get`.
+ *
+ * A type PREDICATE rather than an inline test, because the inline version does
+ * not narrow the union and `from.headers` then fails to compile.
+ */
+function isHeadersLike(from: { headers: Headers } | Headers): from is Headers {
+  return typeof (from as Headers).get === "function";
+}
+
+/**
  * When the far side asked to be called back, as a `Date`.
  *
  * Reads `Retry-After` in both spellings RFC 9110 allows — delta-seconds
@@ -61,7 +78,7 @@ export function isTransientStatus(status: number): boolean {
  * @public
  */
 export function retryAfter(from: { headers: Headers } | Headers): Date | undefined {
-  const headers = from instanceof Headers ? from : from.headers;
+  const headers = isHeadersLike(from) ? from : from.headers;
   const raw = headers.get("retry-after")?.trim();
   if (!raw) return undefined;
   // Seconds first: it is the common form, and `Date.parse("30")` is a date in
