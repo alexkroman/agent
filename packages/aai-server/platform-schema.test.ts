@@ -189,6 +189,37 @@ describe("platform schema migrations", () => {
       }
     });
 
+    /**
+     * The rule covers `aai_platform` because that is the schema this repo
+     * DECLARES — and for a while that was the whole of the check, which is how the
+     * DevKit's `workflow` schema came to hold every tenant's run journal on this
+     * database with RLS off.
+     *
+     * It is created out-of-band by `@workflow/world-postgres`'s own drizzle
+     * migrations, which issue no `enable row level security` anywhere, so no
+     * `create table` statement for it exists in this repo for `declaredTables` to
+     * find. The pattern above is therefore structurally incapable of seeing it,
+     * and so are the other two guards (`realtime-rls.scenario.test.ts` matches
+     * `aai_platform` literally; Supabase's own splinter rules key on `public`).
+     *
+     * `20260828000000_workflow_schema_rls.sql` closes it with a `do` block over
+     * `pg_tables`, and this asserts the block is still there and still
+     * SELF-EXTENDING. A fixed table list is what must not come back: it would go
+     * stale the first time that dependency adds a table, which is this same bug
+     * one version later.
+     */
+    test("the DevKit's own schema is covered too, by a self-extending block", () => {
+      const sql = stripSqlComments(migrationSql());
+      expect(sql).toContain("to_regnamespace('workflow')");
+      // Enumerated at apply time rather than listed.
+      expect(sql).toMatch(/select tablename from pg_tables where schemaname = 'workflow'/);
+      expect(sql).toMatch(/alter table workflow\.%I enable row level security/);
+      // ENABLE, never FORCE — the platform connects as the owner of these tables.
+      expect(sql).not.toMatch(/alter table workflow\.[^\n]*force row level security/);
+      // A hardcoded list is the regression to refuse.
+      expect(sql).not.toMatch(/alter table workflow\.workflow_runs enable row level security/);
+    });
+
     test("nothing is granted to anon, authenticated, or public", () => {
       // Comments are stripped FIRST, and the RLS migration is why: it
       // explains the hazard by writing `grant select … to authenticated` in
