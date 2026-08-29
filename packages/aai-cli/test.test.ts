@@ -13,11 +13,22 @@ vi.mock("execa", async (importOriginal) => {
   return { ...orig, execaSync };
 });
 
+/**
+ * `notify` is the channel the unrun-spec warning goes out on, so a spec that
+ * asserts the warning has to watch it rather than the console `log` writes to.
+ */
+const notify = vi.hoisted(() => vi.fn());
+vi.mock("./_ui.ts", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./_ui.ts")>();
+  return { ...orig, notify };
+});
+
 let tempDir: string;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(tmpdir(), "aai-test-"));
   execaSync.mockReset();
+  notify.mockReset();
 });
 
 afterEach(async () => {
@@ -115,6 +126,30 @@ describe("executeTest", () => {
     const result = await silenced(() => executeTest(tempDir))(tempDir);
     expect(result).toEqual({ ok: true, data: { passed: true, skipped: true } });
     expect(execaSync).not.toHaveBeenCalled();
+  });
+
+  test("a project with ONLY co-located specs is still told they did not run", async () => {
+    // The skip path returned before the warning, and it is the case where the
+    // silence misleads most: `aai test` says "No test file found" while the
+    // project's spec files sit right there, unrun. Measured on a real project
+    // whose only spec was `tools/echo_back.test.ts` — `{"passed":true,
+    // "skipped":true}` and not a word about it.
+    await mkdir(path.join(tempDir, "tools"), { recursive: true });
+    await writeFile(path.join(tempDir, "tools", "echo_back.test.ts"), "");
+    const result = await silenced(() => executeTest(tempDir))(tempDir);
+
+    expect(result).toEqual({ ok: true, data: { passed: true, skipped: true } });
+    expect(execaSync).not.toHaveBeenCalled();
+    const [level, message] = notify.mock.calls.at(-1) as [string, string];
+    expect(level).toBe("warn");
+    expect(message).toContain("tools/echo_back.test.ts");
+  });
+
+  test("a project with no specs at all says nothing extra", async () => {
+    // The complement: the warning names files, so with none to name it must
+    // not fire — "0 other spec file(s)" is noise on an empty project.
+    await silenced(() => executeTest(tempDir))(tempDir);
+    expect(notify).not.toHaveBeenCalled();
   });
 
   test("returns passed result when vitest succeeds", async () => {

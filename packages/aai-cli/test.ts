@@ -187,15 +187,27 @@ function isUnrunSpec(name: string, rel: string, ran: string): boolean {
   return rel !== ran && !name.includes(".eval.test.");
 }
 
-/** Warn, once, naming the spec files this run did not cover. */
-export function warnUnrunSpecs(cwd: string, ran: string): void {
-  const skipped = unrunSpecFiles(cwd, ran);
+/**
+ * Warn, once, naming the spec files this run did not cover.
+ *
+ * `ran` is `false` when there was no `agent.test.ts` to run, and that case
+ * needs the warning MORE rather than less: `aai test` then prints "No test file
+ * found" while the project's spec files sit right there unrun, which reads as
+ * "this project has no tests". Measured on a project whose only spec was
+ * `tools/echo_back.test.ts` — `{"passed":true,"skipped":true}` and not a word
+ * about it. It stays silent when there is nothing to name, in both arms.
+ */
+export function warnUnrunSpecs(cwd: string, ran: string | false): void {
+  const skipped = unrunSpecFiles(cwd, ran === false ? "" : ran);
   if (skipped.length === 0) return;
+  const preamble =
+    ran === false
+      ? `\`aai test\` found no agent.test.ts, so it ran nothing. ${skipped.length} spec file(s) exist and were NOT run:`
+      : `\`aai test\` ran ${ran} only. ${skipped.length} other spec file(s) were NOT run:`;
   notify(
     "warn",
-    `\`aai test\` ran ${ran} only. ${skipped.length} other spec file(s) were NOT run: ` +
-      `${skipped.join(", ")}. Run them with your own vitest (\`npx vitest run\`); ` +
-      "behaviour evals have their own command (`aai eval`).",
+    `${preamble} ${skipped.join(", ")}. Run them with your own vitest ` +
+      "(`npx vitest run`); behaviour evals have their own command (`aai eval`).",
   );
 }
 
@@ -206,6 +218,9 @@ export async function executeTest(cwd: string): Promise<CommandResult<TestData>>
     const ran = runVitest(cwd);
     if (!ran) {
       log.info("No test file found. Create agent.test.ts to add tests.");
+      // AFTER that line for the same reason as below: what ran (nothing) is
+      // stated before what did not.
+      warnUnrunSpecs(cwd, ran);
       return ok({ passed: true, skipped: true });
     }
     log.success("Tests passed");
