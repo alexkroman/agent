@@ -94,6 +94,29 @@ function causeChainHas(err: unknown, pred: (at: unknown) => boolean): boolean {
   return false;
 }
 
+/**
+ * Is this run already `cancelled` — the one terminal status a world accepts a
+ * second time, so the only one {@link isRunOver} cannot report?
+ *
+ * A PROBE, not a gate: a read that cannot answer decides nothing and leaves the
+ * write in charge, because a transient fault here would otherwise report a live
+ * run as already over — the direction `cancel`'s own "an unrelated failure still
+ * propagates" spec exists to protect. A run that is gone likewise falls through,
+ * and `isRunOver` answers it exactly as before.
+ *
+ * `resolveData: "none"`, the same read `getRun` above takes: cancelling is a
+ * human-initiated operation and one extra metadata read is not a path worth
+ * optimizing against a wrong answer.
+ */
+async function isAlreadyCancelled(runId: string): Promise<boolean> {
+  try {
+    const record = await getWorld().runs.get(runId, { resolveData: "none" });
+    return record.status === "cancelled";
+  } catch {
+    return false;
+  }
+}
+
 function toRunRecord(record: {
   runId: string;
   workflowName: string;
@@ -157,6 +180,15 @@ export function wdkAdapter(): WdkAdapter {
     },
 
     async cancel(runId: string): Promise<boolean> {
+      // The one terminal status the catch below CANNOT see, read before the
+      // write instead. `isRunOver`'s doc records why: a world refuses to move a
+      // `completed` or `failed` run and throws, but accepts the same terminal
+      // status again for a `cancelled` one — so the only state this method
+      // itself produces was the one it reported as freshly cancelled forever.
+      // `WorkflowClient.cancel` promises "true when this call is what ended
+      // it", and `recap-workflow`'s `cancel_recap` is what that costs: a caller
+      // who says "forget it" twice is told twice that it stopped their run.
+      if (await isAlreadyCancelled(runId)) return false;
       try {
         await getRun(runId).cancel();
         return true;

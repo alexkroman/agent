@@ -50,7 +50,25 @@ vi.mock("workflow/errors", () => ({
     is: (value: unknown) => value instanceof Error && value.name === "EntityConflictError",
   },
 }));
-vi.mock("workflow/runtime", () => ({ getWorld: vi.fn() }));
+/**
+ * As much of a World as this spec drives: one run read, by id.
+ *
+ * Declared on the mock for the same reason {@link FakeRun} is — and the default
+ * REJECTS, which is what every test written before `cancel` read a status keeps
+ * exercising: a probe that cannot answer leaves the write in charge.
+ */
+type FakeWorld = { runs: { get: (runId: string) => Promise<{ status: string }> } };
+
+const getWorld = vi.fn(
+  (): FakeWorld => ({ runs: { get: () => Promise.reject(new Error("no world here")) } }),
+);
+
+vi.mock("workflow/runtime", () => ({ getWorld: () => getWorld() }));
+
+/** A world whose one run reads back at `status`. */
+function worldReporting(status: string): FakeWorld {
+  return { runs: { get: () => Promise.resolve({ status }) } };
+}
 
 const { wdkAdapter } = await import("./workflow-wdk.ts");
 
@@ -223,5 +241,40 @@ describe("cancelling a run that is already over is an ANSWER, not a 500", () => 
     });
 
     await expect(wdkAdapter().cancel("wrun_x")).rejects.toThrow(/connection terminated/);
+  });
+
+  test("a run that is ALREADY cancelled resolves false — this call did not end it", async () => {
+    // The one terminal status `cancel` itself produces, and the only one a
+    // world accepts a second time without throwing (see `isRunOver`'s doc), so
+    // the catch below cannot tell it from a live cancel. `WorkflowClient.cancel`
+    // promises "true when this call is what ended it", and `completed` and
+    // `failed` already answer false — a caller who clicks Stop twice, or whose
+    // retry redelivers, was told twice that it had stopped the run.
+    getWorld.mockReturnValue(worldReporting("cancelled"));
+    const cancel = vi.fn(() => Promise.resolve(undefined));
+    getRun.mockReturnValue({ getReadable, cancel });
+
+    await expect(wdkAdapter().cancel("wrun_x")).resolves.toBe(false);
+    // And nothing is written: a run that is over needs no second transition.
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  test("a live run reads as live and still cancels", async () => {
+    getWorld.mockReturnValue(worldReporting("running"));
+    getRun.mockReturnValue({ getReadable, cancel: () => Promise.resolve(undefined) });
+
+    await expect(wdkAdapter().cancel("wrun_x")).resolves.toBe(true);
+  });
+
+  test("a status read that FAILS decides nothing — the write still answers", async () => {
+    // The probe is an optimization on one status, not a gate: a read that
+    // cannot answer must leave the existing translation in charge, or a
+    // transient fault on the read would report a live run as already over.
+    getWorld.mockReturnValue({
+      runs: { get: () => Promise.reject(new Error("connection terminated unexpectedly")) },
+    });
+    getRun.mockReturnValue({ getReadable, cancel: () => Promise.resolve(undefined) });
+
+    await expect(wdkAdapter().cancel("wrun_x")).resolves.toBe(true);
   });
 });
