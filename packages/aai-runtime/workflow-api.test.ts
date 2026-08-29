@@ -112,6 +112,15 @@ describe("routing", () => {
     ["GET", "/workflows/runs/%zz/stream"],
     ["POST", "/workflows/runs/%C0%80/wake"],
     ["DELETE", "/workflows/runs/%A"],
+    // A NUL is the one escape that DECODES and is still not a path segment, so
+    // it walked straight past the malformed-escape guard and into the store —
+    // where Postgres refuses a NUL in text and the router's catch answered 500.
+    // Measured under `aai dev`: `GET` and `DELETE /workflows/runs/wrun_%00`
+    // both 500, `GET /session-events/tt%00sess` too, and `…/wrun_%00/events`
+    // burned its whole read-retry budget before reporting `idle`. Every OTHER
+    // control character is ordinary text and 404s correctly.
+    ["GET", "/workflows/runs/wrun_%00"],
+    ["DELETE", "/workflows/runs/wrun_%00"],
   ])("%s %s is a 400, not a 500", async (method, path) => {
     // A path segment that will not percent-decode is the CALLER's mistake, and
     // the module doc's rule is "400, never 500". Before `decodePathSegment` the
