@@ -110,6 +110,30 @@ function resolveStartIndex(raw: string | null, tail: number): number {
 }
 
 /**
+ * The tail a NEGATIVE `startIndex` counts back from.
+ *
+ * `stream.tail` answers from the process's own map, which is right for a
+ * session it is running and `0` for one it has never handled — and on a durable
+ * backend that second case is ordinary, not exotic: the store outlives the
+ * process that wrote to it. Resolving `-50` against `0` clamps to `0`, so "the
+ * last 50 events" silently answered with the whole stream from the beginning.
+ *
+ * `read` is the durable-aware one (see its own comment), so a cold negative
+ * index asks IT for the tail first. Only that path pays the extra query: a warm
+ * cursor short-circuits, and so does every non-negative index, which never
+ * consults the tail at all.
+ */
+async function tailToCountBackFrom(
+  stream: SessionEventStream,
+  sessionId: string,
+  raw: string | null,
+): Promise<number> {
+  const known = stream.tail(sessionId);
+  if (known > 0 || raw === null || !(Number(raw) < 0)) return known;
+  return (await stream.read(sessionId, 0, 1)).tail;
+}
+
+/**
  * Create the session-events request handler.
  *
  * Returns true when it has CLAIMED the request — same contract as
@@ -170,7 +194,8 @@ export function createSessionEventsApi(
       return;
     }
     const query = requestQuery(req.url);
-    const startIndex = resolveStartIndex(query.get("startIndex"), stream.tail(sessionId));
+    const raw = query.get("startIndex");
+    const startIndex = resolveStartIndex(raw, await tailToCountBackFrom(stream, sessionId, raw));
     const page = await stream.read(sessionId, startIndex, SESSION_EVENT_READ_LIMIT);
     // `durable: false` is an ANSWER, not a footnote: on the memory tier a read
     // can only see what this process still holds, so a caller getting an empty

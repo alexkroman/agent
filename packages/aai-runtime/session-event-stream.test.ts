@@ -357,3 +357,44 @@ describe("stampSessionEvent", () => {
     expect(SessionEventSchema.safeParse(event).success).toBe(true);
   });
 });
+
+describe("reading a session this process never handled", () => {
+  /**
+   * A DURABLE backend outlives the process that wrote to it, so a read can
+   * legitimately be the first this process has heard of the session. `events`
+   * comes from the backend and was always right; `tail` came from the
+   * in-process map — `sessions.get(id)?.next ?? 0` — so the two disagreed
+   * exactly in the case a durable store exists for.
+   *
+   * Measured against a real Postgres under `aai dev`: a session written by one
+   * process, read after a restart, answered `tail: 0` beside four events, while
+   * a session created on the reading process answered `tail: 4`.
+   *
+   * It matters because `tail` is a CURSOR. A client resuming from it re-reads
+   * the stream from zero, and a reader treating it as "how much exists"
+   * concludes the session is empty while holding four of its events.
+   */
+  test("reports the STORED tail, not zero", async () => {
+    // Write through one stream, then read through a second over the same
+    // backend — the process boundary, with nothing else changed.
+    const backend = createMemoryStateBackend();
+    const writer = createSessionEventStream({ backend, logger: makeLogger() });
+    for (let i = 0; i < 4; i++) {
+      writer.append(SID, stampSessionEvent({ type: "reply.cancelled" }));
+    }
+    await writer.flush(SID);
+    await expect(backend.countEvents(SID)).resolves.toBe(4);
+
+    const reader = createSessionEventStream({ backend, logger: makeLogger() });
+    const page = await reader.read(SID, 0);
+    expect(page.events).toHaveLength(4);
+    expect(page.tail).toBe(4);
+  });
+
+  test("a session the backend has never heard of still reports zero", async () => {
+    const { stream } = makeStream();
+    const page = await stream.read("never-existed", 0);
+    expect(page.events).toEqual([]);
+    expect(page.tail).toBe(0);
+  });
+});

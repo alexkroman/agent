@@ -266,7 +266,24 @@ export function createSessionEventStream(opts: {
         });
       }
     }
-    return { events, tail: tail(sessionId) };
+    // The tail a READ reports must come from the same place its EVENTS did.
+    // `tail()` answers from the in-process map, which is right for a session
+    // this process is running and WRONG for one it has never heard of: a
+    // durable backend outlives the process that wrote to it, so a cold read —
+    // after a restart, or from a second replica — got `0` beside a full page of
+    // events. Measured on Postgres under `aai dev`: four events, `tail: 0`,
+    // where the same session read on its writing process answered `tail: 4`.
+    //
+    // It is a CURSOR, so the disagreement is not cosmetic: a client resuming
+    // from it re-reads the stream from zero, and one reading it as "how much
+    // exists" calls the session empty while holding four of its events. Only a
+    // durable backend can even reach this — on the memory tier the session dies
+    // with the process — which is why it took a real database to see.
+    //
+    // The count is asked ONLY when this process has no entry, so a warm read
+    // (every read of a live session) still costs no query.
+    const known = sessions.get(sessionId);
+    return { events, tail: known ? known.next : await backend.countEvents(sessionId) };
   }
 
   return {
