@@ -66,8 +66,8 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
     const looksLikeTool = isRecord(given) && typeof given.execute === "function";
     throw new Error(
       looksLikeTool
-        ? `toolOf(def, "${name}") takes the AGENT, not one tool — this is a tool def, which has no name until a file gives it one. Pass the agent from withDiscoveredTools(...) and name the tool there, or call the def's own \`execute\` directly.`
-        : `toolOf(agent, "${name}") was handed ${describe(given)} rather than an agent definition. Pass agent.ts's default export put through withDiscoveredTools(def, import.meta.glob("./tools/*.ts", { eager: true })).`,
+        ? `toolOf(def, "${name}") takes the AGENT, not one tool — this is a tool def, which has no name until a file gives it one. Import the agent from \`virtual:aai/agent\` and name the tool there, or call the def's own \`execute\` directly.`
+        : `toolOf(agent, "${name}") was handed ${describe(given)} rather than an agent definition. Import the agent as DEPLOYED: \`import agentDef from "virtual:aai/agent"\` under vitest, or \`deployedAgent\` from @alexkroman1/aai/testing under any other runner.`,
     );
   }
   const def = agent.tools[name];
@@ -78,7 +78,8 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
         ? `The agent declares no tool named ${name}. It declares: ${declared.join(", ")}.`
         : `The agent declares no tool named ${name}. It declares: (none). ` +
             "A tool is a FILE, so an agent.ts default export carries none of them — " +
-            `wrap it with withDiscoveredTools(def, import.meta.glob("./tools/*.ts", { eager: true })) first.`,
+            'import the agent as DEPLOYED instead: `import agentDef from "virtual:aai/agent"` ' +
+            "under vitest, or `deployedAgent` from @alexkroman1/aai/testing under any other runner.",
     );
   }
   return def;
