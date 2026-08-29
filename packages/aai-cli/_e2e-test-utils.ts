@@ -93,6 +93,29 @@ export function aai(aaiBin: string, args: string[], cwd: string, timeoutMs = 120
 }
 
 /**
+ * {@link aai}, but CAPTURING — for the cases whose subject is what the CLI
+ * SAID rather than that it exited 0.
+ *
+ * Separate rather than a flag, because `stdio: "inherit"` is load-bearing for
+ * every other call: an e2e failure's only diagnosis trail is the child's output
+ * in the run log, and capturing it by default would take that away.
+ */
+export function aaiOutput(
+  aaiBin: string,
+  args: string[],
+  cwd: string,
+  timeoutMs = 120_000,
+): { stdout: string; stderr: string } {
+  const res = execaSync(process.execPath, [aaiBin, ...args], {
+    cwd,
+    extendEnv: false,
+    env: aaiEnv(),
+    timeout: timeoutMs,
+  });
+  return { stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+}
+
+/**
  * Build the CLI and return the path to the built binary.
  *
  * Runs the package's own `build` script rather than bare `tsdown`, because

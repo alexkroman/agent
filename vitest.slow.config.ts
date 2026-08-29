@@ -96,5 +96,27 @@ export default defineConfig({
      */
     setupFiles: [...sharedSetupFiles, ...(process.env.VITEST_SETUP?.split(",") ?? [])],
     pool: process.env.VITEST_POOL === "forks" ? "forks" : "threads",
+    /**
+     * The e2e tier runs its files ONE AT A TIME.
+     *
+     * Its setup mutates state shared across the whole run — it rebuilds
+     * `packages/aai-cli/dist` and rewrites workspace package.json versions
+     * while publishing to a mock registry — so two e2e files running
+     * concurrently race on both. That was true when there was one such file and
+     * it read as a rule against ever adding a second: `e2e.test.ts`'s doc said
+     * the setup "must run exactly once per e2e run — never once per file
+     * (vitest runs files concurrently)".
+     *
+     * Serializing is what makes the second file (`e2e-browser.test.ts`) correct
+     * instead of lucky: each gets its own build and its own registry at its own
+     * unique version, and nothing overlaps. It costs one extra build+publish
+     * cycle and buys a tier that can grow — which it needed, because the
+     * durable-workflow lifecycle had no e2e coverage and no room to add any.
+     *
+     * The cheaper end state is a `globalSetup` doing that work once; until then
+     * this flag is what the two files rest on, so do not lift it for speed.
+     * Scoped to e2e: the other tiers' files are independent and parallel fine.
+     */
+    ...(profileKey === "e2e" ? { fileParallelism: false } : {}),
   },
 });
