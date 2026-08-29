@@ -10,8 +10,8 @@
  */
 
 import { z } from "zod";
-
 import { ToolSchemaSchema } from "./_internal-types.ts";
+import { MAX_AUDIO_SAMPLE_RATE } from "./constants.ts";
 import type { SessionEvent } from "./protocol-events.ts";
 
 // The pre-connection client-config endpoint's wire format is part of the
@@ -229,8 +229,22 @@ export const HostConfigMessageSchema = z.object({
   type: z.literal("config"),
   host: HostConfigSchema,
   audioFormat: z.enum(["pcm16"]).optional(),
-  sampleRate: z.number().int().positive().optional(),
-  ttsSampleRate: z.number().int().positive().optional(),
+  /**
+   * Bounded by `MAX_AUDIO_SAMPLE_RATE`, the same cap `session.configured`
+   * carries — because these two BECOME that frame's fields.
+   *
+   * Unbounded here, the server accepted a rate it would then emit and its own
+   * outbound schema reject. Measured against `aai dev` with host mode on:
+   * `sampleRate: 2 ** 31` was accepted and echoed back in `session.configured`,
+   * a frame that fails `SessionEventSchema`. That schema's own comment gives
+   * the reason for its cap — these numbers feed client-side allocations — and
+   * this is where the number a `?host=1` client supplies enters.
+   *
+   * `assertHostRatesSupported` bounds them too, but only for an AssemblyAI S2S
+   * agent, which must be exactly 16 kHz; a pipeline agent had no bound at all.
+   */
+  sampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE).optional(),
+  ttsSampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE).optional(),
 });
 
 // ─── Ready config builder ───────────────────────────────────────────────────
