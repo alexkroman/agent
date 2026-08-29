@@ -3,13 +3,13 @@
  * `aai test` — run agent tests via vitest.
  */
 
-import { existsSync } from "node:fs";
+import { type Dirent, existsSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { execaSync } from "execa";
 import { type CommandResult, fail, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
+import { log, notify } from "./_ui.ts";
 import { binFromPackageJson, errorCode, errorMessage } from "./_utils.ts";
 
 type TestData = { passed: boolean; skipped?: boolean };
@@ -62,7 +62,7 @@ export type VitestRunOptions = {
 /**
  * Run vitest over one of `candidates` in the given project directory.
  *
- * Returns `true` if it ran, `false` if none of the candidate files exists.
+ * Returns the FILE it ran, or `false` if none of the candidate files exists.
  * Throws on failure.
  *
  * A vitest FILTER, not an include glob: the argument is matched as a substring
@@ -74,7 +74,7 @@ export type VitestRunOptions = {
 export function runVitest(
   cwd: string,
   opts: VitestRunOptions = { candidates: TEST_FILES },
-): boolean {
+): string | false {
   const testFile = opts.candidates.find((name) => existsSync(path.join(cwd, name)));
   if (!testFile) return false;
 
@@ -92,7 +92,9 @@ export function runVitest(
     ...omitUndefined({ env: opts.env ? { ...process.env, ...opts.env } : undefined }),
   });
 
-  return true;
+  // The NAME rather than `true`: the caller reports what ran, and
+  // `warnUnrunSpecs` reports what did not, so the two cannot disagree.
+  return testFile;
 }
 
 /**
@@ -118,6 +120,85 @@ export function classifyVitestError(
   return { code: "test_failed", message: `${label} failed: ${errorMessage(err)}` };
 }
 
+/** Directories a project's own specs never live in. */
+const UNSCANNED_DIRS = new Set(["node_modules", ".aai", ".git", "dist", ".workflow-data"]);
+
+/** What counts as a spec file. */
+const SPEC_FILE_RE = /\.test\.(ts|js|tsx|mts|cts)$/;
+
+/**
+ * Spec files in the project that `aai test` did NOT run.
+ *
+ * `runVitest` passes ONE filename as a vitest FILTER, which is what keeps `test`
+ * and `eval` disjoint without either excluding the other's file — see its doc.
+ * The cost is that every other `*.test.ts` in the project is skipped, and the
+ * skip was SILENT: the shipped `retail` template carries seven of them, so
+ * `aai test` there ran 1 file / 67 tests, printed "Tests passed", and left
+ * 211 of the project's 278 tests unrun with nothing saying so.
+ *
+ * A silent skip is the worst outcome available, so the skip is announced rather
+ * than the filter widened: which files `aai test` runs is a documented contract
+ * (the scaffold guide says "Run agent.test.ts via vitest"), and running a
+ * project's other specs by default could reach ones that are slow or want
+ * credentials. Naming them costs nothing and is what a reader needs.
+ *
+ * Eval files are excluded because they have their OWN command, named in the
+ * message.
+ */
+export function unrunSpecFiles(cwd: string, ran: string): string[] {
+  const found: string[] = [];
+  collectSpecs(cwd, "", ran, found);
+  // Code-unit order, never `localeCompare`: with no explicit locale that answers
+  // to the runtime's ICU, so the same project would warn in a different order on
+  // a different machine.
+  return found.sort(compareCodeUnits);
+}
+
+/** Code-unit comparison — see {@link unrunSpecFiles} for why not `localeCompare`. */
+function compareCodeUnits(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
+
+/** One directory of {@link unrunSpecFiles}, recursing into the ones that count. */
+function collectSpecs(dir: string, prefix: string, ran: string, out: string[]): void {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    // An unreadable directory is not this command's problem to report.
+    return;
+  }
+  for (const e of entries) {
+    const rel = prefix ? `${prefix}/${e.name}` : e.name;
+    if (e.isDirectory()) {
+      if (!(UNSCANNED_DIRS.has(e.name) || e.name.startsWith("."))) {
+        collectSpecs(path.join(dir, e.name), rel, ran, out);
+      }
+    } else if (isUnrunSpec(e.name, rel, ran)) {
+      out.push(rel);
+    }
+  }
+}
+
+/** A spec file this run did not cover. The `.eval.` INFIX is the tier convention. */
+function isUnrunSpec(name: string, rel: string, ran: string): boolean {
+  if (!SPEC_FILE_RE.test(name)) return false;
+  return rel !== ran && !name.includes(".eval.test.");
+}
+
+/** Warn, once, naming the spec files this run did not cover. */
+export function warnUnrunSpecs(cwd: string, ran: string): void {
+  const skipped = unrunSpecFiles(cwd, ran);
+  if (skipped.length === 0) return;
+  notify(
+    "warn",
+    `\`aai test\` ran ${ran} only. ${skipped.length} other spec file(s) were NOT run: ` +
+      `${skipped.join(", ")}. Run them with your own vitest (\`npx vitest run\`); ` +
+      "behaviour evals have their own command (`aai eval`).",
+  );
+}
+
 /** Execute agent tests and return structured result. */
 export async function executeTest(cwd: string): Promise<CommandResult<TestData>> {
   log.step("Running agent tests");
@@ -128,6 +209,8 @@ export async function executeTest(cwd: string): Promise<CommandResult<TestData>>
       return ok({ passed: true, skipped: true });
     }
     log.success("Tests passed");
+    // AFTER the success line, so what ran is stated before what did not.
+    warnUnrunSpecs(cwd, ran);
     return ok({ passed: true });
   } catch (err: unknown) {
     const { code, message } = classifyVitestError(err);
