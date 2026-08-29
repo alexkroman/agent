@@ -154,19 +154,25 @@ test("readStream hands the readable to the caller WITHOUT cancelling it", async 
   expect(getReadable).toHaveBeenCalledWith({ startIndex: -1 });
 });
 
-describe("a run that is gone is an ANSWER, however the DevKit wraps it", () => {
-  /**
-   * `wakeUp` re-throws as `new Error("Failed to wake up run …", { cause })`, so a
-   * predicate reading one error's `name` answered false for the one case it
-   * exists to catch — and the public API turned `{ woken: 0 }` into a 500.
-   * Measured against a deployed agent on a well-formed run id nobody had issued.
-   */
-  const notFound = (): Error => {
-    const err = new Error('Workflow run "wrun_x" not found');
-    err.name = "WorkflowRunNotFoundError";
-    return err;
-  };
+/**
+ * The DevKit's "no such run", as the real predicate recognises it — by `name`.
+ *
+ * Module scope because two describes need it now: the wrapping one below, and
+ * `cancel`'s, where a world that reports a missing run by THROWING is what
+ * separates the two worlds' behaviour.
+ *
+ * `wakeUp` re-throws as `new Error("Failed to wake up run …", { cause })`, so a
+ * predicate reading one error's `name` answered false for the one case it
+ * exists to catch — and the public API turned `{ woken: 0 }` into a 500.
+ * Measured against a deployed agent on a well-formed run id nobody had issued.
+ */
+const notFound = (): Error => {
+  const err = new Error('Workflow run "wrun_x" not found');
+  err.name = "WorkflowRunNotFoundError";
+  return err;
+};
 
+describe("a run that is gone is an ANSWER, however the DevKit wraps it", () => {
   test("sees it through one layer of wrapping", () => {
     const wrapped = new Error("Failed to wake up run wrun_x: nope", { cause: notFound() });
     expect(isRunNotFound(wrapped)).toBe(true);
@@ -256,6 +262,25 @@ describe("cancelling a run that is already over is an ANSWER, not a 500", () => 
 
     await expect(wdkAdapter().cancel("wrun_x")).resolves.toBe(false);
     // And nothing is written: a run that is over needs no second transition.
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  test("a run that does not exist resolves false, even where the world stays quiet", async () => {
+    // The same contract clause — "false when it was already terminal (or NO
+    // SUCH RUN exists)" — and the LOCAL world is where it broke: `getRun(id)
+    // .cancel()` there resolves silently for an id that was never started, so
+    // the catch below has nothing to translate and the answer was `true`.
+    // Measured under `aai dev` with no DATABASE_URL: `DELETE /workflows/runs/
+    // wrun_totally_made_up_id_here` answered `{"cancelled":true}` while `GET`
+    // on the same id answered 404 and `wake` answered `{"woken":0}` — cancel
+    // was the one read of three that disagreed. Postgres hid it by throwing.
+    getWorld.mockReturnValue({
+      runs: { get: () => Promise.reject(notFound()) },
+    });
+    const cancel = vi.fn(() => Promise.resolve(undefined));
+    getRun.mockReturnValue({ getReadable, cancel });
+
+    await expect(wdkAdapter().cancel("wrun_never_started")).resolves.toBe(false);
     expect(cancel).not.toHaveBeenCalled();
   });
 
