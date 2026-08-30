@@ -17,12 +17,13 @@
  */
 
 import { createServer } from "node:net";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { LogPage } from "@alexkroman1/aai-runtime";
 import { readGuestLogs } from "./agent-logs.ts";
 import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";
 import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest-routes.ts";
 import { createLogger } from "./logger.ts";
-import { agentPublicBaseUrl } from "./public-origin.ts";
+import { agentPlatformBaseUrl, agentPublicBaseUrl } from "./public-origin.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
@@ -258,6 +259,7 @@ export function agentBootEnv(
 ): Record<string, string> {
   const idleExitMs = serverEnv.AAI_GUEST_IDLE_EXIT_MS?.trim();
   const publicBaseUrl = agentPublicBaseUrl(opts.slug, serverEnv);
+  const platformBaseUrl = agentPlatformBaseUrl(opts.slug, serverEnv);
   return {
     AAI_GUEST_MODE: "agent",
     AAI_GUEST_TOKEN: opts.token,
@@ -271,16 +273,36 @@ export function agentBootEnv(
     // OMITTED rather than set empty when there is no origin to name: the guest
     // trims and drops a blank anyway, but a key that is present and useless is
     // the shape a `publicUrl: ""` bug takes, and a URL a third party cannot
-    // reach must not be minted from one.
-    // TWO keys at the same value, and the duplication is the point:
-    // `AAI_PUBLIC_BASE_URL` answers "where do third parties reach this agent", which a
-    // self-hosted deployment behind a proxy also answers, while `AAI_UPLOAD_BROKER_URL`
-    // claims "the thing at this URL serves my upload bytes" — which only a managed
-    // platform can say. Reusing the first would put a self-hosted agent on a byte route
-    // nothing serves and 404 every upload. See `aai/host/server.ts`'s `uploadBroker`.
-    ...(publicBaseUrl
-      ? { AAI_PUBLIC_BASE_URL: publicBaseUrl, AAI_UPLOAD_BROKER_URL: publicBaseUrl }
-      : {}),
+    // reach must not be minted from one. Through `omitUndefined` rather than a
+    // truthiness-guarded spread, which is what these three used to be: none of
+    // the builders can return `""` (each is `origin ? `${origin}/${slug}`` or
+    // undefined), so the two are equivalent here and only one of them is the
+    // spelling guard-invariants rule 22 stops the repo re-deriving.
+    //
+    // THREE keys at (usually) the same value, and the duplication is the point —
+    // each is a different CLAIM, and the guest reads them for different jobs:
+    //
+    // - `AAI_PUBLIC_BASE_URL` — "third parties reach this agent here". A
+    //   self-hosted deployment behind a proxy answers this one too. Read as
+    //   `publicUrl`, and minted into a webhook URL somebody else dials.
+    // - `AAI_UPLOAD_BROKER_URL` — "the thing at this URL serves my upload
+    //   bytes", which only a managed platform can say. Reusing the first would
+    //   put a self-hosted agent on a byte route nothing serves and 404 every
+    //   upload. See `aai/host/server.ts`'s `uploadBroker`.
+    // - `AAI_PLATFORM_BASE_URL` — "the platform is DIALABLE here", read by
+    //   `resolvePlatformQueue` for run storage, the queue, session state and
+    //   upload records. It is the only one of the three that has to be
+    //   resolvable from inside the sandbox, which is why it has its own builder
+    //   and its own microVM rewrite — see `agentPlatformBaseUrl`.
+    //
+    // The first two are DELIBERATELY the same value and the third only usually
+    // is: in local dev it is derived from this server's own port instead of an
+    // observed origin, so a preview works with nothing configured.
+    ...omitUndefined({
+      AAI_PUBLIC_BASE_URL: publicBaseUrl,
+      AAI_UPLOAD_BROKER_URL: publicBaseUrl,
+      AAI_PLATFORM_BASE_URL: platformBaseUrl,
+    }),
   };
 }
 
