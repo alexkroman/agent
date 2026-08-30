@@ -1128,6 +1128,51 @@ snapshot image there too), and the same shape as the `dist/` staleness in
 `ensure-guest-harness.mjs`'s own note: an artifact whose freshness is real and
 whose CONSUMER is somewhere else.
 
+## And the SDK in a LOCAL image is this checkout's, not npm's
+
+The harness is only half of what a guest runs. **A guest's agent bundle resolves
+`@alexkroman1/*` from the IMAGE's `node_modules`** — the CLI's worker-bundler
+runs inside the guest and bundles what it finds there — so the image supplies the
+SDK as well, and `SDK_SPECS` in `guest-image.Dockerfile` decides which one:
+
+| Build | `SDK_SPECS` | Installs |
+| --- | --- | --- |
+| local (`pnpm build:guest-image [--msb]`) | paths under `sdk-tarballs/` | **this checkout**, packed |
+| `--registry` / `--push` (what CI runs) | `name@version` | the published versions |
+| local `--published-sdk` | `name@version` | the published versions |
+
+`packWorkspaceSdk` (`scripts/build-guest-image.mjs`) builds the four packages
+through turbo and `pnpm pack`s them into the build context. The sibling versions
+come along for free: `pnpm pack` rewrites `workspace:*` to the exact version, so
+`aai-runtime` requires `aai@<this version>` and npm satisfies it from the tarball
+beside it rather than fetching npm's.
+
+**The polarity is the safety property.** A registry or push build may never
+install unpublished code — a deploy records `harness_image_tag` and a recorded
+pin has to resolve to something that exists on npm forever, which is also why the
+SDK is the one part the toolchain lockfile cannot cover. There is no flag that
+opts a PUSHED image into the workspace SDK; `--published-sdk` only goes the other
+way, for reproducing a report against the SDK a user actually has, and it says so
+out loud when used.
+
+**Why local defaults the other way**, rather than matching prod: `:local` is a
+mutable tag that already promises "whatever this checkout is" — the reason
+`microsandboxHarnessImageTag` refuses to PIN it. Installing published versions
+broke that promise in the direction that hurts, and the two halves report the
+SAME VERSION STRING, so nothing shows it. It cost a full investigation exactly
+once: a guest kept dialling itself for every platform call after the fix was
+already in the tree, because the copy making the call came from npm and was
+thirteen commits behind — while `sessionState: memory` beside it was a SECOND
+unreleased fix missing from the same copy. A version number cannot distinguish a
+released tree from a dirty one.
+
+Two mechanical notes. The tarball `COPY` sits AFTER `npm ci`, so a tarball
+changing on every local build does not invalidate the ~700-package third-party
+layer. And `sdk-tarballs/.gitkeep` is COMMITTED although the `.tgz` files are
+ignored: a Dockerfile cannot branch, so that COPY runs for a published build
+too, and `COPY` of a missing path fails the build —
+`guest-image-dockerfile.test.ts` pins both.
+
 ## Building the harness for a test run
 
 **The aai-server test project auto-builds the guest harness**:

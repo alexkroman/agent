@@ -17,7 +17,7 @@
  * | ---------------- | ------------------------------------------------- |
  * | `BASE_IMAGE`     | `DEFAULT_SANDBOX_IMAGE` (modal-context.ts)         |
  * | `SYSTEM_PACKAGES`| `GUEST_SYSTEM_PACKAGES` (modal-system-packages.ts) |
- * | `SDK_SPECS`      | `SDK_PACKAGES` (modal-harness-image.ts) at the versions this checkout installed |
+ * | `SDK_SPECS`      | `SDK_PACKAGES` (modal-harness-image.ts) — as PACKED TARBALLS for a local build, or `name@version` for a published one; see `packWorkspaceSdk` |
  * | `GUEST_ROOT`     | `GUEST_ROOT` (modal-harness-image.ts)              |
  *
  * A regex read of a source file is a liability wherever it can fail QUIETLY, so
@@ -38,6 +38,7 @@
  * node scripts/build-guest-image.mjs --print                     # resolve args, build nothing
  * node scripts/build-guest-image.mjs                             # local build, this host's arch
  * node scripts/build-guest-image.mjs --msb                       # …and load it into microsandbox
+ * node scripts/build-guest-image.mjs --msb --published-sdk       # …against the SDK on npm instead
  * node scripts/build-guest-image.mjs --print-tag                 # the content-addressed tag
  * node scripts/build-guest-image.mjs --registry ghcr.io/owner \
  *     --platform linux/amd64,linux/arm64 --cache-gha --push      # what CI runs
@@ -64,6 +65,8 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { extractString, extractStringArray } from "./build-guest-image-extract.mjs";
+import { packWorkspaceSdk } from "./build-guest-image-sdk.mjs";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const SERVER_DIR = path.join(REPO_ROOT, "packages", "aai-server");
@@ -82,51 +85,6 @@ const DEFAULT_TAG = "aai-guest-harness:local";
  * holds the two together instead.
  */
 const GUEST_IMAGE_STAMP = ".guest-image-stamp.json";
-
-function read(file) {
-  try {
-    return readFileSync(file, "utf-8");
-  } catch (err) {
-    throw new Error(`cannot read ${path.relative(REPO_ROOT, file)}`, { cause: err });
-  }
-}
-
-/**
- * Pull one `const NAME = "value"` string out of a module (exported or not:
- * SDK_PACKAGES is module-private while the other three are exported).
- *
- * Throws rather than returning a default: a silent miss here builds an image on
- * the wrong base, which is invisible until a guest behaves differently from
- * production.
- */
-function extractString(file, name) {
-  const src = read(file);
-  const match = new RegExp(`(?:export )?const ${name}\\s*=\\s*"([^"]+)"`).exec(src);
-  if (!match) {
-    throw new Error(
-      `${name} is no longer declared as a string literal in ${path.relative(REPO_ROOT, file)} — ` +
-        "update the extractor in scripts/build-guest-image.mjs",
-    );
-  }
-  return match[1];
-}
-
-/** Pull one `export const NAME = [...] as const` string array out of a module. */
-function extractStringArray(file, name) {
-  const src = read(file);
-  const match = new RegExp(`(?:export )?const ${name}\\s*=\\s*\\[([^\\]]*)\\]`).exec(src);
-  if (!match) {
-    throw new Error(
-      `${name} is no longer declared as an array literal in ${path.relative(REPO_ROOT, file)} — ` +
-        "update the extractor in scripts/build-guest-image.mjs",
-    );
-  }
-  const items = [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  if (items.length === 0) {
-    throw new Error(`${name} in ${path.relative(REPO_ROOT, file)} parsed as empty`);
-  }
-  return items;
-}
 
 /** The base image, honouring the same env override the server reads. */
 function resolveBaseImage() {
@@ -164,20 +122,27 @@ function resolveSdkSpecs() {
   });
 }
 
-/** Everything the Dockerfile needs, resolved from the tree. */
-function resolveBuildArgs() {
+/**
+ * Everything the Dockerfile needs, resolved from the tree.
+ *
+ * `workspaceSdk` is the one input that is not read out of the source: it is a
+ * build MODE, and `SDK_SPECS` is where the two forms meet (see the Dockerfile's
+ * layer-1 comment).
+ */
+function resolveBuildArgs({ workspaceSdk }) {
   const harnessImage = path.join(SERVER_DIR, "modal-harness-image.ts");
   const systemPackages = extractStringArray(
     path.join(SERVER_DIR, "modal-system-packages.ts"),
     "GUEST_SYSTEM_PACKAGES",
   );
+  const guestRoot = extractString(harnessImage, "GUEST_ROOT");
   return {
     BASE_IMAGE: resolveBaseImage(),
     // SORTED, so reordering the declaration is not a change — the same
     // canonicalization `systemPackageList()` applies.
     SYSTEM_PACKAGES: [...systemPackages].sort().join(" "),
-    SDK_SPECS: resolveSdkSpecs().join(" "),
-    GUEST_ROOT: extractString(harnessImage, "GUEST_ROOT"),
+    SDK_SPECS: (workspaceSdk ? packWorkspaceSdk(guestRoot) : resolveSdkSpecs()).join(" "),
+    GUEST_ROOT: guestRoot,
   };
 }
 
@@ -239,12 +204,35 @@ const BOOLEAN_FLAGS = {
   "--print-tag": "printTag",
   "--push": "push",
   "--cache-gha": "cacheGha",
+  "--published-sdk": "publishedSdk",
 };
 const VALUE_FLAGS = {
   "--tag": "tag",
   "--registry": "registry",
   "--platform": "platform",
 };
+
+/**
+ * Whether this build installs THIS CHECKOUT's SDK.
+ *
+ * A LOCAL image does by default; a published one may never. The polarity is the
+ * safety property: the dangerous direction is shipping unpublished code into every
+ * tenant's guest, so it takes an explicit registry or push to select the published
+ * SDK, and there is no flag that opts a PUSHED image into the workspace one.
+ *
+ * `--published-sdk` is for the other job this script has — reproducing a report
+ * against the SDK a user actually has — and it announces itself, because a local
+ * image that is not this checkout is the state that cost an investigation once
+ * already.
+ */
+function resolveSdkMode(opts) {
+  if (opts.registry || opts.push) return false;
+  if (opts.publishedSdk) {
+    console.log("Using the PUBLISHED SDK in a local image (--published-sdk)");
+    return false;
+  }
+  return true;
+}
 
 function parseArgv(rawArgv) {
   const opts = {
@@ -256,6 +244,7 @@ function parseArgv(rawArgv) {
     printTag: false,
     cacheGha: false,
     msb: false,
+    publishedSdk: false,
   };
   const argv = rawArgv[Symbol.iterator]();
   for (const arg of argv) {
@@ -275,7 +264,7 @@ function parseArgv(rawArgv) {
   if (opts.platform?.includes(",") && !opts.push) {
     throw new Error("a multi-platform build must be --push (a manifest list cannot be --load'ed)");
   }
-  return opts;
+  return { ...opts, workspaceSdk: resolveSdkMode(opts) };
 }
 
 /**
@@ -313,7 +302,7 @@ function main(argv) {
     return 0;
   }
 
-  const args = resolveBuildArgs();
+  const args = resolveBuildArgs({ workspaceSdk: opts.workspaceSdk });
 
   assertBuildContext();
 

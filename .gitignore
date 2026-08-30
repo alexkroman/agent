@@ -62,3 +62,9 @@ supabase/.branches/
 # package because both bundlers resolve `workflow` by walking up from the
 # project, and removed in the test's `afterAll`. Present only mid-run.
 packages/aai-cli/.dev-workflow-fixture/
+
+# This checkout's packed SDK, staged into the guest image's build context by
+# `scripts/build-guest-image.mjs` for a LOCAL build. Build output, not source —
+# but the DIRECTORY is committed (`.gitkeep`), because the Dockerfile's COPY of
+# it is unconditional and a missing path fails the build.
+packages/aai-guest/sdk-tarballs/*.tgz

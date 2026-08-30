@@ -84,6 +84,16 @@ RUN test -n "${SYSTEM_PACKAGES}" \
 #      entry needs an integrity hash that only exists once the version is
 #      published — after the commit that bumps it.
 #
+# Step 2 has TWO forms, and `SDK_SPECS` is the whole difference. A registry build
+# passes `name@version` and installs from npm. A LOCAL build passes paths under
+# `sdk-tarballs/` — this checkout's own packed SDK — because a `:local` image
+# already promises "whatever this checkout is", and installing the published SDK
+# beside a harness built from source broke that promise in the one direction that
+# matters: a guest's agent BUNDLE resolves the SDK from this node_modules, so an
+# unreleased fix was live in the harness and absent from every bundle it ran.
+# `scripts/build-guest-image.mjs` decides, and REFUSES the local form for a
+# registry or push build so production can never ship unpublished code.
+#
 # `--ignore-scripts` on BOTH. npm 11.19 reports an unreviewed install script and
 # then runs it anyway (the skip in arborist is gated on an explicit deny), so
 # without this the notice describes code that has already executed in the build
@@ -94,6 +104,13 @@ WORKDIR ${GUEST_ROOT}
 COPY toolchain/package.json      ${GUEST_ROOT}/package.json
 COPY toolchain/package-lock.json ${GUEST_ROOT}/package-lock.json
 RUN npm ci --no-audit --no-fund --ignore-scripts
+# AFTER `npm ci`, so a tarball changing on every local build does not invalidate
+# the third-party layer. Almost always an empty directory holding one `.gitkeep`:
+# only a LOCAL build stages tarballs here, and `SDK_SPECS` is what decides
+# whether they are installed. The COPY is unconditional because a Dockerfile
+# cannot branch, and a `COPY` of a path that may not exist fails the build — the
+# `.gitkeep` is committed for exactly that reason.
+COPY sdk-tarballs/ ${GUEST_ROOT}/sdk-tarballs/
 RUN test -n "${SDK_SPECS}" \
       || { echo "SDK_SPECS is empty — see SDK_PACKAGES in modal-harness-image.ts" >&2; exit 1; } \
  && npm install --prefix ${GUEST_ROOT} --no-audit --no-fund --ignore-scripts ${SDK_SPECS}
