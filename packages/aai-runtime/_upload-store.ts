@@ -360,9 +360,25 @@ export type ByteRange = UploadRange;
  * the module doc, which also records that this used to be a storage requirement and
  * why it is kept now that it is not. A client cuts where it likes as long as it cuts
  * on megabytes.
+ *
+ * **A REASON PER CONDITION**, the way {@link assertPartTotal} below already does it.
+ * Three different things are refused here and one message used to report all three
+ * as "not a multiple of `UPLOAD_CHUNK_BYTES`" — which is FALSE for two of them:
+ * `-1048576` and `1e20` are both exact multiples, and `PUT …/parts?offset=-1048576`
+ * is a request anyone can send. A developer told their aligned offset is misaligned
+ * re-checks the arithmetic they got right and has nowhere left to look; the offsets
+ * that really are misaligned are still told so.
  */
 export function assertPartOffset(offset: number): void {
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset % UPLOAD_CHUNK_BYTES !== 0) {
+  if (!Number.isSafeInteger(offset)) {
+    throw new UploadPartError(
+      `A part starts at a whole number of bytes this runtime can count exactly; ${offset} is not one.`,
+    );
+  }
+  if (offset < 0) {
+    throw new UploadPartError(`A part starts at or after byte zero; ${offset} is negative.`);
+  }
+  if (offset % UPLOAD_CHUNK_BYTES !== 0) {
     throw new UploadPartError(
       `A part starts at a multiple of ${UPLOAD_CHUNK_BYTES} bytes; ${offset} does not.`,
     );

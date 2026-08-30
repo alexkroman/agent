@@ -56,6 +56,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import { decodePathSegment } from "./_path-decode.ts";
 import { dispatchQueueMessage, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
 import { resolveImportSpecifier } from "./workflow-resolve.ts";
+import { createWebhookHandler } from "./workflow-webhook.ts";
 
 /** Distinct temp file per load — Node's module registry caches by URL. */
 let moduleSeq = 0;
@@ -276,7 +277,13 @@ export async function createWorkflowSurface(
   // Imported lazily, like the two route modules below: `workflow/api` resolves a
   // World from the environment as it loads, and a guest serving an agent with no
   // workflows must not pay that — nor fail on it when no world is configured.
-  const { resumeWebhook } = await import("workflow/api");
+  // `workflow/errors` rides along in the same lazy step so the webhook route can
+  // classify its one expected failure without this module importing the DevKit
+  // eagerly — see `workflow-wdk.ts`'s module doc for why that matters.
+  const [{ resumeWebhook }, { HookNotFoundError }] = await Promise.all([
+    import("workflow/api"),
+    import("workflow/errors"),
+  ]);
 
   // Steps first: a flow replay can dispatch a step immediately, and an
   // unregistered step id is a hard failure rather than a retry.
@@ -286,7 +293,7 @@ export async function createWorkflowSurface(
   return {
     flow: routeHandler(flows, "flow"),
     step: routeHandler(steps, "step"),
-    webhook: (token: string, req: Request) => resumeWebhook(token, req),
+    webhook: createWebhookHandler(resumeWebhook, (err) => HookNotFoundError.is(err)),
   };
 }
 

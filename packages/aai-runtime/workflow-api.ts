@@ -86,7 +86,7 @@ import type http from "node:http";
 import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/host-internal";
 import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { decodePathSegment } from "./_path-decode.ts";
+import { runIdOr400 } from "./_workflow-run-id.ts";
 import type { Logger } from "./runtime-config.ts";
 import { workflowApiUnauthorized } from "./workflow-api-auth.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
@@ -231,21 +231,6 @@ function requireUploads(res: http.ServerResponse, ctx: RouteContext): UploadStor
 const RUNS_PREFIX = `${WORKFLOW_API_PREFIX}/runs/`;
 
 /**
- * The run id in this path, or `undefined` having ALREADY answered 400.
- *
- * A path segment is percent-decoded, and `decodeURIComponent` throws on a
- * malformed escape — so `GET /workflows/runs/%` used to reach the router's catch
- * and answer 500 for what is plainly a bad request. See `_path-decode.ts`: none
- * of the five decode sites in this package may throw, and each answers the way
- * its own route answers a request it cannot parse.
- */
-function runIdOr400(res: http.ServerResponse, url: string, suffix = ""): string | undefined {
-  const id = decodePathSegment(url.slice(RUNS_PREFIX.length, suffix ? -suffix.length : undefined));
-  if (id === undefined) sendJson(res, 400, { error: "Malformed run id" });
-  return id;
-}
-
-/**
  * The routes, as a table rather than an if/else chain.
  *
  * Fourteen routes × (method, path shape) is well past the lint ceiling for
@@ -352,8 +337,8 @@ const ROUTES: readonly Route[] = [
     method: "GET",
     matches: (url) => url.startsWith(RUNS_PREFIX) && url.endsWith("/events"),
     run: (_req, res, ctx, url) => {
-      const id = runIdOr400(res, url, "/events");
-      if (id !== undefined) streamRunEvents(res, ctx.engine, id);
+      const id = runIdOr400(res, url, RUNS_PREFIX, "/events");
+      if (id !== undefined) streamRunEvents(res, ctx.engine, id, { logger: ctx.logger });
     },
   },
   // Same rule as `/events` above: a longer path that starts with the `/runs/`
@@ -364,7 +349,7 @@ const ROUTES: readonly Route[] = [
     method: "GET",
     matches: (url) => url.startsWith(RUNS_PREFIX) && url.endsWith("/stream"),
     run: (req, res, ctx, url) => {
-      const id = runIdOr400(res, url, "/stream");
+      const id = runIdOr400(res, url, RUNS_PREFIX, "/stream");
       if (id !== undefined) return streamRunOutput(req, res, ctx.engine, id);
     },
   },
@@ -372,7 +357,7 @@ const ROUTES: readonly Route[] = [
     method: "GET",
     matches: (url) => url.startsWith(RUNS_PREFIX),
     run: (req, res, ctx, url) => {
-      const id = runIdOr400(res, url);
+      const id = runIdOr400(res, url, RUNS_PREFIX);
       if (id !== undefined) return readRun(req, res, ctx.engine, id);
     },
   },
@@ -383,7 +368,7 @@ const ROUTES: readonly Route[] = [
     method: "POST",
     matches: (url) => url.startsWith(RUNS_PREFIX) && url.endsWith("/wake"),
     run: (_req, res, ctx, url) => {
-      const id = runIdOr400(res, url, "/wake");
+      const id = runIdOr400(res, url, RUNS_PREFIX, "/wake");
       if (id !== undefined) return wakeRun(res, ctx, id);
     },
   },
@@ -391,7 +376,7 @@ const ROUTES: readonly Route[] = [
     method: "DELETE",
     matches: (url) => url.startsWith(RUNS_PREFIX),
     run: (_req, res, ctx, url) => {
-      const id = runIdOr400(res, url);
+      const id = runIdOr400(res, url, RUNS_PREFIX);
       if (id !== undefined) return cancelRun(res, ctx, id);
     },
   },

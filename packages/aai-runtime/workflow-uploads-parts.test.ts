@@ -148,6 +148,24 @@ describe("a parts upload", () => {
     await expect(store.writePart("abc", 7, body(ramp(4)))).rejects.toBeInstanceOf(UploadPartError);
   });
 
+  test("names the REAL reason a part offset is refused, not always alignment", async () => {
+    const store = open();
+    await store.beginParts("abc", {}, TOTAL);
+    // `assertPartOffset` refuses three different things and used to report all of
+    // them as "not a multiple of 1048576" — which is FALSE for two of them:
+    // -1048576 and 1e20 are both exact multiples. A developer told their aligned
+    // offset is misaligned checks the arithmetic they got right and is left with
+    // nowhere to go. Its own sibling `assertPartTotal` already gives a reason per
+    // condition; this matches it.
+    await expect(store.writePart("abc", -UPLOAD_CHUNK_BYTES, body(ramp(4)))).rejects.toThrow(
+      /negative/i,
+    );
+    await expect(store.writePart("abc", 1e20, body(ramp(4)))).rejects.toThrow(/whole number/i);
+    await expect(store.writePart("abc", 1.5, body(ramp(4)))).rejects.toThrow(/whole number/i);
+    // The genuinely misaligned one still says so.
+    await expect(store.writePart("abc", 7, body(ramp(4)))).rejects.toThrow(/multiple of/);
+  });
+
   test("refuses a part that runs past the declared total", async () => {
     const store = open();
     await store.beginParts("abc", {}, UPLOAD_CHUNK_BYTES);

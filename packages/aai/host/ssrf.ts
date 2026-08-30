@@ -52,7 +52,98 @@ class SsrfBlockedError extends Error {}
 
 /** @internal */
 export function isPrivateIp(ip: string): boolean {
-  return bogon(ip);
+  if (bogon(ip)) return true;
+  // `bogon` screens the address as written, which misses an IPv6 address that
+  // NAMES an IPv4 destination through a translation prefix — see
+  // {@link translatedIpv4}.
+  const embedded = translatedIpv4(ip);
+  return embedded !== undefined && bogon(embedded);
+}
+
+/**
+ * The 16 bytes of an IPv6 literal, or `undefined` when it will not parse.
+ *
+ * Callers reach this only for a string `isIP` has already accepted, so this
+ * handles the valid forms rather than validating: hex groups, one `::`
+ * compression, an optional trailing dotted quad, and a `%zone` suffix. It
+ * exists because Node has no public IPv6-to-bytes API and the prefix checks
+ * below cannot be done on the text — `64:ff9b::7f00:1` and
+ * `0064:ff9b:0000:0000:0000:0000:127.0.0.1` are the same address.
+ */
+function ipv6Bytes(ip: string): Uint8Array | undefined {
+  const bare = ip.split("%", 1)[0] ?? ip;
+  const halves = bare.split("::");
+  if (halves.length > 2) return undefined;
+  const head = ipv6GroupBytes(halves[0] ?? "");
+  const tail = ipv6GroupBytes(halves.length === 2 ? (halves[1] ?? "") : "");
+  if (head === undefined || tail === undefined) return undefined;
+  const gap = 16 - head.length - tail.length;
+  if (halves.length === 2 ? gap < 0 : gap !== 0) return undefined;
+  return Uint8Array.from([...head, ...new Array<number>(gap).fill(0), ...tail]);
+}
+
+/** One `:`-separated run of IPv6 groups, as bytes. Its own function for the line above's complexity. */
+function ipv6GroupBytes(part: string): number[] | undefined {
+  if (part === "") return [];
+  const out: number[] = [];
+  for (const group of part.split(":")) {
+    // A trailing dotted quad occupies the last two groups.
+    const bytes = group.includes(".") ? dottedQuadBytes(group) : hextetBytes(group);
+    if (bytes === undefined) return undefined;
+    out.push(...bytes);
+  }
+  return out;
+}
+
+/** `a.b.c.d` as four bytes. */
+function dottedQuadBytes(group: string): number[] | undefined {
+  const octets = group.split(".");
+  if (octets.length !== 4) return undefined;
+  const bytes = octets.map(Number);
+  return bytes.every((v) => Number.isInteger(v) && v >= 0 && v <= 255) ? bytes : undefined;
+}
+
+/** One hex group as two bytes. */
+function hextetBytes(group: string): number[] | undefined {
+  const value = Number.parseInt(group, 16);
+  if (!Number.isInteger(value) || value < 0 || value > 0xff_ff) return undefined;
+  return [(value >> 8) & 0xff, value & 0xff];
+}
+
+/** The NAT64 well-known prefix, `64:ff9b::/96` (RFC 6052). */
+const NAT64_WELL_KNOWN = [0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0];
+/** The 6to4 prefix, `2002::/16` (RFC 3056). */
+const SIX_TO_FOUR = [0x20, 0x02];
+
+/**
+ * The IPv4 address an IPv6 TRANSLATION address carries, or `undefined`.
+ *
+ * `bogon` catches the IPv4-mapped (`::ffff:0:0/96`) and IPv4-compatible
+ * (`::/96`) forms, and the suite above pins both. It does not catch the two
+ * prefixes that name an IPv4 destination for a translator to reach: measured,
+ * `64:ff9b::a9fe:a9fe` and `2002:a9fe:a9fe::` — the cloud metadata endpoint —
+ * both passed as ordinary global unicast.
+ *
+ * **The embedded address is screened, never the prefix**, because NAT64 is how
+ * an IPv6-only host reaches the IPv4 internet at all: refusing `64:ff9b::/96`
+ * outright would refuse every IPv4 destination on such a network. So
+ * `64:ff9b::808:808` (8.8.8.8) stays allowed and `64:ff9b::7f00:1` (127.0.0.1)
+ * does not.
+ *
+ * Both prefixes are exclusively assigned to their mechanism, so no legitimate
+ * global-unicast address falls in either. Teredo (`2001::/32`) is deliberately
+ * absent: it tunnels IPv6, so its embedded IPv4 names a relay and a client's
+ * NAT, not a destination the caller chose — it is not this class of bypass.
+ */
+function translatedIpv4(ip: string): string | undefined {
+  if (!ip.includes(":")) return undefined;
+  const bytes = ipv6Bytes(ip);
+  if (bytes === undefined) return undefined;
+  const at = (prefix: readonly number[]): boolean => prefix.every((b, i) => bytes[i] === b);
+  const dotted = (start: number): string => Array.from(bytes.subarray(start, start + 4)).join(".");
+  if (at(NAT64_WELL_KNOWN)) return dotted(12);
+  if (at(SIX_TO_FOUR)) return dotted(2);
+  return undefined;
 }
 
 /**

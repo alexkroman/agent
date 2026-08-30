@@ -236,6 +236,28 @@ export function localWorkflowDataDir(env: NodeJS.ProcessEnv = process.env): stri
 }
 
 /**
+ * Is this data directory the PER-PROCESS default, rather than one a host chose?
+ *
+ * The difference decides whether local runs and uploads survive a restart, and
+ * it is not cosmetic: `defaultLocalDataDir` is `tmpdir()/aai-workflow-data-<pid>`
+ * and dies with the process, while `aai dev` passes the project's own
+ * `.workflow-data`, "where a restart is a save rather than a new deployment" —
+ * that function's words. Measured both ways under `aai dev` and under the
+ * scaffold's `server.mjs`: the same upload's bytes came back byte-identical
+ * across a dev-server restart, and the same agent on `server.mjs` got a fresh
+ * `/tmp/aai-workflow-data-<pid>`.
+ *
+ * Derived by comparing against {@link defaultLocalDataDir} rather than by
+ * sniffing for a temp path, for the reason {@link localWorkflowDataDir} gives
+ * about deriving this twice: the two would come to disagree, and silently.
+ *
+ * @internal
+ */
+export function isPerProcessDataDir(dir: string): boolean {
+  return dir === defaultLocalDataDir();
+}
+
+/**
  * Backoff between world-start attempts, and therefore the whole retry budget
  * (~62s across five retries).
  *

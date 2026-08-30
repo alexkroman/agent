@@ -94,6 +94,44 @@ function causeChainHas(err: unknown, pred: (at: unknown) => boolean): boolean {
   return false;
 }
 
+/**
+ * Is cancelling this run MOOT — already cancelled, or not there at all?
+ *
+ * The two cases {@link isRunOver} cannot report, and they are the two halves of
+ * one clause in `WorkflowClient.cancel`'s contract: "false when it was already
+ * terminal (or no such run exists)".
+ *
+ * - **Already `cancelled`** is the one terminal status a world accepts a second
+ *   time, so nothing throws and the catch below has nothing to translate.
+ * - **Gone** behaves differently per WORLD, which is what hid it. Postgres
+ *   throws a not-found from `getRun(id).cancel()` and `isRunOver` answers it;
+ *   the LOCAL world (`aai dev` with no `DATABASE_URL`, and every e2e run)
+ *   resolves that call SILENTLY for an id that was never started, so the answer
+ *   was `true` — "this call ended it", about a run that never existed.
+ *   Measured under `aai dev`: `DELETE /workflows/runs/wrun_totally_made_up_id`
+ *   answered `{"cancelled":true}` while `GET` on the same id answered 404 and
+ *   `wake` answered `{"woken":0}`. Cancel was the one read of three that
+ *   disagreed with the other two.
+ *
+ * A PROBE, not a gate: a read that cannot answer decides nothing and leaves the
+ * write in charge, because a transient fault here would otherwise report a live
+ * run as already over — the direction `cancel`'s own "an unrelated failure still
+ * propagates" spec exists to protect. Only a not-found is conclusive, which is
+ * why the catch asks rather than swallowing.
+ *
+ * `resolveData: "none"`, the same read `getRun` above takes: cancelling is a
+ * human-initiated operation and one extra metadata read is not a path worth
+ * optimizing against a wrong answer.
+ */
+async function cancelIsMoot(runId: string): Promise<boolean> {
+  try {
+    const record = await getWorld().runs.get(runId, { resolveData: "none" });
+    return record.status === "cancelled";
+  } catch (err: unknown) {
+    return isRunNotFound(err);
+  }
+}
+
 function toRunRecord(record: {
   runId: string;
   workflowName: string;
@@ -157,6 +195,14 @@ export function wdkAdapter(): WdkAdapter {
     },
 
     async cancel(runId: string): Promise<boolean> {
+      // The two cases the catch below CANNOT see, read before the write
+      // instead — an already-cancelled run on any world, and a missing one on a
+      // world that stays quiet about it. See {@link cancelIsMoot}, which has
+      // both measurements. `WorkflowClient.cancel` promises "true when this
+      // call is what ended it", and `recap-workflow`'s `cancel_recap` is what
+      // that costs: a caller who says "forget it" twice is told twice that it
+      // stopped their run.
+      if (await cancelIsMoot(runId)) return false;
       try {
         await getRun(runId).cancel();
         return true;

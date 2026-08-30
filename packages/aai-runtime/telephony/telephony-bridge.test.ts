@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import type { SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { SessionErrorCode, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "../_mock-ws.ts";
 import { makeLogger } from "../_test-utils.ts";
@@ -30,6 +30,17 @@ function configFrame(sampleRate = SESSION_RATE, ttsSampleRate = TTS_RATE): strin
     sampleRate,
     ttsSampleRate,
     sessionId: "sess_test",
+  };
+  return JSON.stringify(event);
+}
+
+/** An `error.reported` frame, typed against the protocol like {@link configFrame}. */
+function errorFrame(opts: { fatal: boolean; code: SessionErrorCode }): string {
+  const event: SessionEventBody = {
+    type: "error.reported",
+    code: opts.code,
+    message: "provider connect failed",
+    fatal: opts.fatal,
   };
   return JSON.stringify(event);
 }
@@ -180,6 +191,31 @@ describe("createTelephonyBridge", () => {
     connect(fixture);
     fixture.socket.msg(JSON.stringify({ event: "stop", streamSid: "MZ0" }));
     expect(fixture.socket.readyState).toBe(MockWebSocket.CLOSED);
+  });
+
+  test("ends the call when the session reports a FATAL error", () => {
+    // A phone has no screen, and that is the whole reason this branch exists.
+    // `error.reported` carries `fatal`, documented as "the session is over",
+    // and `aai-ui` answers it by releasing the microphone and ending the call.
+    // The bridge used to sort it with the transcripts and tool calls under
+    // "everything else is for a screen", so a call whose STT and TTS both
+    // failed to connect stayed OPEN. Measured against a real `/phone` socket
+    // on `aai dev`: both providers 403'd, the session emitted two fatal
+    // `error.reported` frames, and the socket was still open 45 seconds later
+    // — dead air on a billed PSTN call, ended only by the caller hanging up.
+    const fixture = setup();
+    connect(fixture);
+    fixture.bridge.send(errorFrame({ fatal: true, code: "tts" }));
+    expect(fixture.socket.readyState).toBe(MockWebSocket.CLOSED);
+  });
+
+  test("a NON-fatal error leaves the call up", () => {
+    // The other half, and the reason the flag is REQUIRED in the protocol:
+    // a turn-level failure the session survives must not drop a live call.
+    const fixture = setup();
+    connect(fixture);
+    fixture.bridge.send(errorFrame({ fatal: false, code: "tool" }));
+    expect(fixture.socket.readyState).toBe(MockWebSocket.OPEN);
   });
 
   test("drops caller audio that arrives before the config frame", () => {

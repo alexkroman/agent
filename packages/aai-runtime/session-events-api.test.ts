@@ -128,6 +128,34 @@ describe("GET /session-events/:id", () => {
     expect(json()).toMatchObject({ startIndex: 0 });
   });
 
+  test("a startIndex past the safe integer range is CLAMPED, not passed on", async () => {
+    // `Number.isFinite` was the only bound, and the index goes to a `bigint`
+    // column: `1e30` reaches the driver as the string "1e+30" (a syntax error)
+    // and anything over ~9.22e18 as out-of-range. Measured on Postgres under
+    // `aai dev`, both answered `500 Internal server error` for what is a
+    // query-string typo. Nothing is lost by clamping — MAX_SAFE_INTEGER is
+    // already past the end of every stream, so the page is empty either way.
+    for (const raw of ["1e30", "9223372036854775808", "99999999999999999999"]) {
+      const { res, json } = await call(
+        { stream: seeded(), bearer: TOKEN },
+        `${SESSION_EVENTS_PATH}/${SID}?startIndex=${raw}`,
+      );
+      expect(res.statusCode, raw).toBe(200);
+      expect(json(), raw).toMatchObject({ startIndex: Number.MAX_SAFE_INTEGER });
+      expect((json().events as unknown[]).length, raw).toBe(0);
+    }
+  });
+
+  test("an index inside the safe range is passed through untouched", async () => {
+    // The clamp is a ceiling, not a rewrite: everything a real cursor can hold
+    // still reaches the backend as itself.
+    const { json } = await call(
+      { stream: seeded(), bearer: TOKEN },
+      `${SESSION_EVENTS_PATH}/${SID}?startIndex=${Number.MAX_SAFE_INTEGER}`,
+    );
+    expect(json()).toMatchObject({ startIndex: Number.MAX_SAFE_INTEGER });
+  });
+
   test("an unknown session is an empty log, not an error", async () => {
     // A session id is unguessable, so "no such session" and "nothing recorded"
     // are not worth distinguishing to a caller — and distinguishing them would

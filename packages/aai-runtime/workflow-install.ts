@@ -40,7 +40,7 @@ import {
   type UploadStore,
   uploadBytesAreRemote,
 } from "./workflow-uploads.ts";
-import { localWorkflowDataDir } from "./workflow-world.ts";
+import { isPerProcessDataDir, localWorkflowDataDir } from "./workflow-world.ts";
 
 /**
  * What one server's workflow support OWNS, so it can give it back.
@@ -155,23 +155,37 @@ export function installWorkflowSupport(opts: {
     // directory it is using is a documented tradeoff. The local world logs its own
     // line beside this one.
     //
-    // Reachable ONLY where nothing is durable: no platform above this guest and no
-    // `DATABASE_URL` of its own, which is `aai dev` on a project that configured
-    // neither. So the sentence can be unconditional again.
+    // It has been wrong THREE times, which is why it is worth reading before
+    // editing. It first said an upload lives "exactly as long as the runs that read
+    // it" and recommended `aai storage enable` — a command that no longer exists,
+    // and a claim that stopped being true when a DEPLOYED app's runs became the
+    // platform's. Then it branched on `resolvePlatformQueue` to say the right thing
+    // in each case. Then, a deployed guest's uploads having become the platform's
+    // too, it was made UNCONDITIONAL on the reasoning that the only branch left was
+    // "`aai dev` on a project that configured neither" — and it asserted, of that
+    // branch, that an upload "does not outlive this process".
     //
-    // It has been wrong twice, in opposite directions, which is why it is worth
-    // reading before editing. It first said an upload lives "exactly as long as the
-    // runs that read it" and recommended `aai storage enable` — a command that no
-    // longer exists, and a claim that stopped being true when a DEPLOYED app's runs
-    // became the platform's. Then it branched on `resolvePlatformQueue` to say the
-    // right thing in each case. Now a deployed guest's uploads are the platform's
-    // too, so there is no deployed case left to describe: this branch is the truly
-    // local one.
+    // Both halves of that were wrong, and measurably. The branch is reachable from
+    // TWO compositions, and they differ in exactly the property the sentence
+    // claimed: `aai dev` passes the PROJECT's `.workflow-data` — "where a restart is
+    // a save rather than a new deployment", `defaultLocalDataDir`'s own words — so
+    // an upload's bytes come back byte-identical across a restart and so does its
+    // run, while the scaffold's `server.mjs` takes the per-process default and gets
+    // a fresh `tmpdir()/aai-workflow-data-<pid>`. Both measured directly.
+    //
+    // So it is conditional again, on the one thing that actually decides it, and
+    // the predicate is DERIVED from the default rather than sniffed — see
+    // `isPerProcessDataDir`. What stays unconditional is the recommendation: a
+    // directory beside the project is a save, not durability.
     opts.logger.info(
-      `workflow uploads are LOCAL (${localDir}): no platform and no DATABASE_URL, so ` +
-        "an upload does not outlive this process — and neither do the runs that read " +
-        "it, since the world is local too. Set DATABASE_URL in this project's .env " +
-        "for both to survive a restart.",
+      `workflow uploads are LOCAL (${localDir}): no platform and no DATABASE_URL. ` +
+        (isPerProcessDataDir(localDir)
+          ? "That directory belongs to this process, so an upload does not outlive it — " +
+            "and neither do the runs that read it, since the world is local too. "
+          : "They live in that directory, so they survive a restart of this process — " +
+            "but nothing replicates or prunes them, and an agent started elsewhere " +
+            "sees none of them. ") +
+        "Set DATABASE_URL in this project's .env for durable runs and uploads.",
     );
   }
   publishUploadReader(store);

@@ -182,7 +182,8 @@ function assertNoInlineTools(def: unknown): void {
     "agent({ tools }) is not how a tool is declared: a tool IS a file. Move each entry to " +
       "tools/<the name the model calls>.ts as `export default tool({ … })` — the build enumerates " +
       "that directory, so nothing lists them anywhere. In a spec, reach the same set with " +
-      "withDiscoveredTools from @alexkroman1/aai/testing.",
+      '`import agentDef from "virtual:aai/agent"` under vitest, or `deployedAgent` from ' +
+      "@alexkroman1/aai/testing under any other runner.",
   );
 }
 

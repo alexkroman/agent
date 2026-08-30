@@ -162,6 +162,20 @@ export function createTelephonyBridge(
     });
   }
 
+  /**
+   * Set both resamplers from a `session.configured` frame.
+   *
+   * Its own function so {@link handleSessionEvent} stays a flat dispatch —
+   * the narrowing costs two conditions, which is what took that function past
+   * the cognitive-complexity ceiling when the fatal-error branch arrived.
+   */
+  function configureFrom(message: Record<string, unknown>): void {
+    const { sampleRate, ttsSampleRate } = message;
+    if (typeof sampleRate === "number" && typeof ttsSampleRate === "number") {
+      configure(sampleRate, ttsSampleRate);
+    }
+  }
+
   /** Session → carrier: a protocol text frame. */
   function handleSessionEvent(text: string): void {
     const message = safeJsonParse(text);
@@ -186,10 +200,7 @@ export function createTelephonyBridge(
     // `configFrame` in the spec, now typed against the protocol so a rename is a
     // compile error rather than a silent dead branch.
     if (type === "session.configured") {
-      const { sampleRate, ttsSampleRate } = message;
-      if (typeof sampleRate === "number" && typeof ttsSampleRate === "number") {
-        configure(sampleRate, ttsSampleRate);
-      }
+      configureFrom(message);
       return;
     }
     // The caller interrupted, or the conversation was reset. Both mean the
@@ -198,8 +209,29 @@ export function createTelephonyBridge(
     // spent its life testing a type no runtime emits, so a `reset` command left
     // the carrier playing out a conversation the session had already discarded.
     // `ws-client-sink.ts` clears the pacer on exactly this pair.
-    if (type === "reply.cancelled" || type === "session.reset")
+    if (type === "reply.cancelled" || type === "session.reset") {
       sendToCarrier(carrier.clear(streamId));
+      return;
+    }
+    // A FATAL error ends the call, and a phone having no screen is exactly why.
+    // `error.reported` carries `fatal`, documented as "the session is over",
+    // and `aai-ui` answers it by releasing the microphone and ending the call —
+    // a person can SEE the banner and hang up. A caller cannot. Sorted with the
+    // transcripts below, a session that could never speak left the carrier
+    // socket open: measured on `aai dev` over a real `/phone` socket with both
+    // providers 403ing, the call was still up 45 seconds after two fatal
+    // frames, which on the PSTN is dead air the caller is paying for.
+    //
+    // Strictly on `fatal === true`. The flag is REQUIRED in the protocol for
+    // this reason: a turn-level failure the session survives must not drop a
+    // live call.
+    if (type === "error.reported" && message.fatal === true) {
+      log.warn("telephony: ending the call after a fatal session error", {
+        carrier: carrier.name,
+        code: typeof message.code === "string" ? message.code : undefined,
+      });
+      closeCarrier("session failed");
+    }
     // Everything else is for a screen: transcripts, tool calls, agent state,
     // reply/turn boundaries. A phone has none, and the audio already carries
     // the conversation.
@@ -237,14 +269,25 @@ export function createTelephonyBridge(
     emit(AUDIO_READY_FRAME);
   }
 
+  /**
+   * End the carrier's stream, whoever decided to.
+   *
+   * One spelling because both callers want the same thing and the same
+   * swallow: a close that throws has nothing left to tell anyone, the socket
+   * being what we were trying to shut.
+   */
+  function closeCarrier(reason: string): void {
+    try {
+      carrierSocket.close?.(WS_CLOSE_NORMAL, reason);
+    } catch (err) {
+      log.debug("telephony: close failed", { reason, error: String(err) });
+    }
+  }
+
   /** The carrier hung up. */
   function handleCarrierStop(): void {
     log.info("telephony: carrier ended the stream", { carrier: carrier.name });
-    try {
-      carrierSocket.close?.(WS_CLOSE_NORMAL, "carrier stopped the stream");
-    } catch (err) {
-      log.debug("telephony: close after stop failed", { error: String(err) });
-    }
+    closeCarrier("carrier stopped the stream");
   }
 
   /** Carrier → session: one decoded carrier frame. */

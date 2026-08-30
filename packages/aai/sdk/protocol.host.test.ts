@@ -8,7 +8,11 @@
  * (a `SessionCommandSchema` member).
  */
 import { describe, expect, test } from "vitest";
-import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
+import {
+  MAX_AUDIO_SAMPLE_RATE,
+  MAX_TOOL_RESULT_CHARS,
+  TOOL_RESULT_TRUNCATION_MARKER,
+} from "./constants.ts";
 import { HostConfigMessageSchema, HostConfigSchema, SessionCommandSchema } from "./protocol.ts";
 
 describe("HostConfigSchema", () => {
@@ -119,6 +123,36 @@ describe("HostConfigMessageSchema", () => {
       host: { systemPrompt: "", tools: [] },
     });
     expect(result.success).toBe(false);
+  });
+
+  test.each(["sampleRate", "ttsSampleRate"] as const)(
+    "rejects a %s above MAX_AUDIO_SAMPLE_RATE",
+    (field) => {
+      // These two feed `session.configured`, whose own schema bounds them at
+      // MAX_AUDIO_SAMPLE_RATE precisely because "an unbounded server value
+      // would be an allocation-size lever against the client". Unbounded HERE,
+      // the server accepted a rate it would then EMIT and reject: measured
+      // against `aai dev` with host mode on, `sampleRate: 2 ** 31` was accepted
+      // and echoed back in `session.configured` — a frame that fails the
+      // protocol's own outbound parse.
+      const result = HostConfigMessageSchema.safeParse({
+        type: "config",
+        host: { systemPrompt: "Hi", tools: [] },
+        [field]: MAX_AUDIO_SAMPLE_RATE + 1,
+      });
+      expect(result.success).toBe(false);
+    },
+  );
+
+  test.each(["sampleRate", "ttsSampleRate"] as const)("accepts a %s at the cap", (field) => {
+    // A bound, not a narrowing: every rate a real device produces is far
+    // below this, and the cap itself has to stay reachable.
+    const result = HostConfigMessageSchema.safeParse({
+      type: "config",
+      host: { systemPrompt: "Hi", tools: [] },
+      [field]: MAX_AUDIO_SAMPLE_RATE,
+    });
+    expect(result.success).toBe(true);
   });
 
   test("rejects wrong type literal", () => {

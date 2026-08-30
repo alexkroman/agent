@@ -44,6 +44,7 @@
  * @internal
  */
 
+import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -80,6 +81,33 @@ function safeSegments(key: string): string[] {
 }
 
 /**
+ * A temp path for ONE write attempt, unique to it.
+ *
+ * Both stores below write to a temp file and rename it over the target, which is
+ * what makes a write atomic to every reader and what makes a re-sent part the
+ * same object rather than a torn one. That is only true while the temp path
+ * belongs to a single writer: both used a fixed `<target>.tmp`, so two writers
+ * on one key shared the file, the first rename moved it out from under the rest,
+ * and every other writer failed `ENOENT` on its own rename.
+ *
+ * It is reachable exactly where this store's own doc says a repeat comes from —
+ * "a part is re-sent whenever a connection dies mid-flight" — because the retry
+ * can land before this process has finished draining the attempt it replaces.
+ * Measured against `aai dev`: six concurrent PUTs of one offset answered five
+ * 500s, each an `ENOENT` renaming the shared `0.tmp`. The bytes were never
+ * corrupted (one writer's window won whole, which is the intended outcome of a
+ * repeat); what was wrong was that five legitimate callers were told the server
+ * had failed.
+ *
+ * `randomUUID` rather than a counter, because the writers can be in different
+ * processes over the same directory — `aai dev` restarts onto the project's
+ * `.workflow-data`, and nothing stops two hosts pointing at one.
+ */
+function tempPathFor(target: string): string {
+  return `${target}.${randomUUID()}.tmp`;
+}
+
+/**
  * Records as one JSON file per upload.
  *
  * The claim is `flag: "wx"`, which is an atomic create-if-absent on every
@@ -107,7 +135,7 @@ export function createFileUploadRecords(opts: { dir: string }): UploadRecords {
   /** Overwrite `id`'s record whole, so no read ever sees part of one. */
   async function write(id: string, record: UploadRecord): Promise<void> {
     const target = path(id);
-    const temp = `${target}.tmp`;
+    const temp = tempPathFor(target);
     await writeFile(temp, JSON.stringify(record), "utf-8");
     await rename(temp, target);
   }
@@ -204,7 +232,7 @@ export function createFileUploadBlobs(opts: { dir: string }): UploadBlobs {
     async put(key, body, options): Promise<number> {
       const target = pathOf(key);
       await mkdir(dirname(target), { recursive: true });
-      const temp = `${target}.tmp`;
+      const temp = tempPathFor(target);
       let size = 0;
       const handle = await open(temp, "w");
       try {

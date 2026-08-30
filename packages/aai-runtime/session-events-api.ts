@@ -100,13 +100,48 @@ export type SessionEventsApiOptions = {
  * A negative value counts back from the end, matching the workflow stream's
  * `startIndex` — the one place a reader's vocabulary is shared between the two
  * surfaces, so "the last 50 events" is spelled the same way in both.
+ *
+ * **And the result is CLAMPED, because this number becomes a `bigint`
+ * parameter.** `Number.isFinite` was the only bound, which let two shapes of
+ * query-string typo reach the driver: anything over ~9.22e18 as a value out of
+ * range for the column, and anything over ~1e21 as the string `"1e+30"`, which
+ * is a syntax error. Measured on a real Postgres backend under `aai dev`, both
+ * answered `500 Internal server error`. The memory backend takes any number at
+ * all, so this is invisible without a database — the failure class the pg tier
+ * exists for. Clamping costs nothing: `MAX_SAFE_INTEGER` is already past the
+ * end of every stream, so the answer is the same empty page it was.
  */
 function resolveStartIndex(raw: string | null, tail: number): number {
   if (raw === null) return 0;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return 0;
   const index = Math.trunc(parsed);
-  return index < 0 ? Math.max(0, tail + index) : index;
+  if (index < 0) return Math.max(0, tail + index);
+  return Math.min(index, Number.MAX_SAFE_INTEGER);
+}
+
+/**
+ * The tail a NEGATIVE `startIndex` counts back from.
+ *
+ * `stream.tail` answers from the process's own map, which is right for a
+ * session it is running and `0` for one it has never handled — and on a durable
+ * backend that second case is ordinary, not exotic: the store outlives the
+ * process that wrote to it. Resolving `-50` against `0` clamps to `0`, so "the
+ * last 50 events" silently answered with the whole stream from the beginning.
+ *
+ * `read` is the durable-aware one (see its own comment), so a cold negative
+ * index asks IT for the tail first. Only that path pays the extra query: a warm
+ * cursor short-circuits, and so does every non-negative index, which never
+ * consults the tail at all.
+ */
+async function tailToCountBackFrom(
+  stream: SessionEventStream,
+  sessionId: string,
+  raw: string | null,
+): Promise<number> {
+  const known = stream.tail(sessionId);
+  if (known > 0 || raw === null || !(Number(raw) < 0)) return known;
+  return (await stream.read(sessionId, 0, 1)).tail;
 }
 
 /**
@@ -170,7 +205,8 @@ export function createSessionEventsApi(
       return;
     }
     const query = requestQuery(req.url);
-    const startIndex = resolveStartIndex(query.get("startIndex"), stream.tail(sessionId));
+    const raw = query.get("startIndex");
+    const startIndex = resolveStartIndex(raw, await tailToCountBackFrom(stream, sessionId, raw));
     const page = await stream.read(sessionId, startIndex, SESSION_EVENT_READ_LIMIT);
     // `durable: false` is an ANSWER, not a footnote: on the memory tier a read
     // can only see what this process still holds, so a caller getting an empty

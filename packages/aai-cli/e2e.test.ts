@@ -1,34 +1,39 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * End-to-end CLI tests (Vite builds, real servers, Playwright browser):
- *   1. Template builds: dev & user workflows for representative templates
- *   2. Browser tests (Playwright): UI render, WebSocket, conversation flow
+ * End-to-end CLI tests: Vite builds, real servers, real durable workflow runs.
  *
- * Both suites share ONE beforeAll (CLI build + mock registry): the setup
- * mutates shared state (packages/aai-cli/dist, workspace package.json
- * versions during registry publish), so it must run exactly once per e2e
- * run — never once per file (vitest runs files concurrently).
- * Shared helpers live in _e2e-test-utils.ts.
+ * The Playwright half moved to `e2e-browser.test.ts` when this file reached the
+ * 700-line test cap, at the seam this doc already drew.
+ *
+ * ## The shared setup runs once PER FILE, and that is now safe
+ *
+ * `buildCli()` and `startRegistry()` mutate state shared across the whole run —
+ * `packages/aai-cli/dist`, and workspace package.json versions during publish.
+ * This doc used to say the setup "must run exactly once per e2e run — never
+ * once per file (vitest runs files concurrently)", which is what made a second
+ * file unsafe. The e2e profile now sets `fileParallelism: false`
+ * (`vitest.slow.config.ts`, which carries the argument), so the files run one
+ * after another and each gets its own build and its own registry at a unique
+ * version. Do not reintroduce concurrency here without replacing this setup
+ * with a `globalSetup`.
+ *
+ * Shared helpers live in `_e2e-test-utils.ts`; the provider-free workflow lab
+ * the durable cases drive is in `_e2e-workflow-test-utils.ts`.
  *
  * Run via: pnpm test:e2e
  */
-import { type ChildProcess, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorDetail } from "@alexkroman1/aai/utils";
 import { ofetch } from "ofetch";
-import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import {
-  hasPlaywrightBrowser,
-  setupEventInjector,
-  startStubClientServer,
-} from "./_e2e-browser-test-utils.ts";
 import {
   aai,
   aaiEnv,
+  aaiOutput,
   buildCli,
   detachedCli,
   installDeps,
@@ -37,6 +42,17 @@ import {
   waitForExit,
   waitForHealth,
 } from "./_e2e-test-utils.ts";
+import {
+  cancelRun,
+  HOSTILE_TARGETS,
+  hookUrlFor,
+  installWorkflowLab,
+  isSleeping,
+  readRun,
+  startRun,
+  waitForRun,
+  wakeRun,
+} from "./_e2e-workflow-test-utils.ts";
 import { startSupervisedDevServer } from "./_fault-mode.ts";
 import type { MockRegistry } from "./_mock-registry.ts";
 import { WORKER_ARTIFACT_REL } from "./build.ts";
@@ -59,11 +75,6 @@ const templates = ["simple", "web-researcher", "research-workflow"];
 let aaiBin: string;
 let tmpDir: string;
 let registry: MockRegistry;
-
-function initProject(template: string, projectDir: string): void {
-  aai(aaiBin, ["init", projectDir, "-t", template, "--skip-deploy"], tmpDir);
-  installDeps(registry, projectDir);
-}
 
 beforeAll(async () => {
   aaiBin = buildCli();
@@ -220,62 +231,184 @@ describe("self-hosted server: npm start", () => {
 
 describe("aai dev: a scaffolded workflow template", () => {
   /**
-   * The question this answers is "can a user `aai init` a workflow template and
-   * `aai dev` it", and nothing else in the repo can: the in-tree integration
-   * test (`dev-workflow.scenario.test.ts`) drives the same code against a
-   * fixture that resolves `workflow` from this workspace, and the `npm start`
-   * leg above runs `server.mjs`, which has no bundler and builds no workflows.
-   * Only here is the project scaffolded, installed from the published manifest,
-   * and served by the real `aai dev` process.
+   * "Can a user `aai init` a workflow template, `aai dev` it, and RUN something
+   * durable" — and nothing else in the repo can ask it: the in-tree scenario
+   * test drives the same code against a fixture resolving `workflow` from this
+   * workspace, and the `npm start` leg above has no bundler. Only here is the
+   * project scaffolded, installed from the published manifest, and served by
+   * the real `aai dev`.
+   *
+   * A provider-free LAB is spliced in beside the template's own workflow —
+   * `_e2e-workflow-test-utils.ts` carries the argument for it, and for what
+   * each case below can and cannot prove without a database. One project and
+   * one server for the whole describe: installing is what costs minutes here.
    */
-  test("boots and mounts the DevKit's queue callbacks", async ({ skip }) => {
+  let server: Awaited<ReturnType<typeof startSupervisedDevServer>> | undefined;
+  let skipReason: string | undefined;
+
+  beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_dev-workflow");
     aai(aaiBin, ["init", projectDir, "-t", "research-workflow", "--skip-deploy"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {
+      // A hook has no `skip`, so the reason is recorded and every case below
+      // skips itself on it — the same environment escape the single test had.
       if (!isRegistryProxyFailure(err)) throw err;
-      skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
+      skipReason = `pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`;
+      return;
     }
-
-    // A fixed port, because `aai dev --port` is how a user picks one and the
-    // JSON line is what a script reads back; the range is chosen high enough to
-    // sit clear of the other servers this suite runs.
-    // Through the supervisor rather than a bare spawn, so this test inherits
-    // FAULT MODE: with `AAI_FAULT_PROFILE` set it runs against a server that is
-    // hard-killed and restarted underneath it, and with the variable unset it is
-    // the same plain spawn it always was. See `_fault-mode.ts`.
-    const server = await startSupervisedDevServer({
+    installWorkflowLab(projectDir);
+    // `.env`, not the process env: that is where an agent's own configuration
+    // is read from, and a value exported in the shell reaches the provider
+    // stages but NOT the workflow / session-state layer.
+    fs.appendFileSync(path.join(projectDir, ".env"), "\nAAI_SESSION_EVENTS_TOKEN=e2e-events\n");
+    server = await startSupervisedDevServer({
       aaiBin,
       cwd: projectDir,
-      // A fixed port, because `aai dev --port` is how a user picks one and the
-      // JSON line is what a script reads back; the range is chosen high enough
-      // to sit clear of the other servers this suite runs. It also has to
-      // survive a restart, which is why the supervisor takes one rather than
-      // asking the OS.
+      // Fixed, because `aai dev --port` is how a user picks one and it has to
+      // survive a restart; high enough to clear the other servers here.
       port: 4820,
       env: { ...aaiEnv(), ASSEMBLYAI_API_KEY: "e2e-not-dialled" },
       args: ["--json"],
     });
-    try {
-      // Booting at all is most of the assertion: `loadWorker` compiles
-      // `workflows/` BEFORE the server listens, so a project whose workflow
-      // build fails never answers /health. Under a profile, every declared kill
-      // has to have happened and the survivor be healthy before the assertion —
-      // otherwise the request below races a restart window.
-      await server.awaitSettled();
+  });
 
-      // Mounted-or-not is the distinction that matters. Unmounted, this falls
-      // through to the server's 404 and every run stalls forever with nothing
-      // logged — which is exactly how it behaved before the routes were wired.
-      const res = await fetch(`${server.url}/.well-known/workflow/v1/flow`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      expect(res.status).not.toBe(404);
-    } finally {
-      await server.stop();
+  afterAll(async () => {
+    await server?.stop();
+  });
+
+  /**
+   * The running server, after every declared fault point has fired — under a
+   * profile the process is killed and replaced, so a request made without this
+   * races the restart window and fails for something that is not a bug.
+   */
+  async function settled(skip: (note?: string) => never): Promise<string> {
+    if (skipReason !== undefined) skip(skipReason);
+    if (!server) skip("dev server did not start");
+    await server.awaitSettled();
+    return server.url;
+  }
+
+  test("boots and mounts the DevKit's queue callbacks", async ({ skip }) => {
+    // Booting at all is most of it: `loadWorker` compiles `workflows/` BEFORE
+    // the server listens. Unmounted, this 404s and every run stalls forever
+    // with nothing logged — exactly how it behaved before the routes existed.
+    const res = await fetch(`${await settled(skip)}/.well-known/workflow/v1/flow`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).not.toBe(404);
+  });
+
+  test("a run reaches a terminal status, and its sleep is REALLY taken", async ({ skip }) => {
+    // A `sleep` recorded rather than taken passes every in-memory harness (the
+    // eval engine records them by design) and answers instantly here.
+    const url = await settled(skip);
+    const run = await waitForRun(url, await startRun(url, "labSleep", { seconds: 3 }));
+    expect(run.status).toBe("completed");
+    // The run's own journaled clock, not the test's. Generous: a queue is involved.
+    expect((run.output as { elapsedMs: number }).elapsedMs).toBeGreaterThanOrEqual(2500);
+  });
+
+  test("wakeUp interrupts a pending sleep and reports that it did", async ({ skip }) => {
+    // Its answer is a COUNT, and the eval engine answers 0 for every call — so
+    // a regression to 0 is invisible in every tier below this one.
+    const url = await settled(skip);
+    const runId = await startRun(url, "labSleep", { seconds: 300 });
+    // Wait for the run to be IN the sleep, not merely picked up: `running` is
+    // true from the moment a worker takes it, which is while it is still in the
+    // step before the sleep — waking then interrupts nothing and answers 0.
+    await vi.waitFor(() => expect(isSleeping(server?.lines() ?? [], 300)).toBe(true), {
+      timeout: 60_000,
+      interval: 250,
+    });
+    expect(await wakeRun(url, runId)).toBeGreaterThan(0);
+    // The half a count cannot say: the 300s sleep really is over.
+    expect((await waitForRun(url, runId)).status).toBe("completed");
+  });
+
+  test("cancel answers TRUE only for the call that ended the run", async ({ skip }) => {
+    // Documented as "true when this call is what ended it, false when it was
+    // already terminal (or no such run exists)". Two of the four shipped wrong:
+    // an already-cancelled run said `true` on every world, and a MISSING one
+    // said `true` on the LOCAL world — which is the world this tier runs, and
+    // the one that hid it while Postgres got it right.
+    const url = await settled(skip);
+    const live = await startRun(url, "labCount", { steps: 60 });
+    await vi.waitFor(async () => expect((await readRun(url, live)).status).toBe("running"), {
+      timeout: 30_000,
+      interval: 250,
+    });
+    expect(await cancelRun(url, live)).toBe(true);
+    expect(await cancelRun(url, live)).toBe(false);
+    expect((await readRun(url, live)).status).toBe("cancelled");
+
+    const done = await startRun(url, "labSleep", { seconds: 1 });
+    expect((await waitForRun(url, done)).status).toBe("completed");
+    expect(await cancelRun(url, done)).toBe(false);
+    expect(await cancelRun(url, "wrun_e2e_never_started")).toBe(false);
+  });
+
+  test("a webhook URL handed OUT resumes the run parked on it", async ({ skip }) => {
+    // The waitpoint whose caller is a third party on the public internet. The
+    // in-tree fixture delivers its callback from INSIDE a step, so the request
+    // never leaves the process; this one is delivered the way a provider would.
+    const url = await settled(skip);
+    const runId = await startRun(url, "labWebhook", { tag: "e2e" });
+    const hookUrl = await vi.waitFor(
+      () => {
+        const found = hookUrlFor(server?.lines() ?? [], "e2e");
+        expect(found).toBeTruthy();
+        return found as string;
+      },
+      { timeout: 30_000, interval: 250 },
+    );
+
+    const delivered = await fetch(hookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "from outside" }),
+    });
+    expect(delivered.ok).toBe(true);
+    const run = await waitForRun(url, runId);
+    expect(run.status).toBe("completed");
+    expect(run.output).toMatchObject({ tag: "e2e", note: "from outside" });
+
+    // A token nothing is listening on is an ANSWER: a 5xx tells a payment
+    // provider to RETRY an expired callback forever.
+    const stale = await fetch(`${url}/.well-known/workflow/v1/webhook/no-such-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(stale.status).toBe(404);
+  });
+
+  test("`aai test` names the spec files it did NOT run", async ({ skip }) => {
+    // The lab leaves a spec `aai test` does not run and no `agent.test.ts`, so
+    // this drives the arm that stayed broken longest: the CLI printed "No test
+    // file found. Create agent.test.ts to add tests." while the project's specs
+    // sat right there unrun. Only a scaffolded project can observe it — the
+    // rule is about a real directory, not about a function's arguments.
+    if (skipReason !== undefined) skip(skipReason);
+    const { stdout, stderr } = aaiOutput(aaiBin, ["test"], path.join(tmpDir, "_dev-workflow"));
+    expect(`${stdout}${stderr}`).toContain("lab.test.ts");
+  });
+
+  test("a caller cannot make a bad request target answer 5xx", async ({ skip }) => {
+    // Two shipped bugs had this shape — a path segment or query value reaching
+    // a store unvalidated and coming back 500 for a plainly bad request. A unit
+    // test BUILDS the id it passes, so only a real server on a real port has a
+    // raw request target at all. `HOSTILE_TARGETS` records which entries were
+    // measured to fail without their fix HERE, and which need a database.
+    // `expect.soft` with the target as its label, so one run names every
+    // offender rather than stopping at the first.
+    const url = await settled(skip);
+    for (const target of HOSTILE_TARGETS) {
+      const res = await fetch(`${url}${target}`);
+      expect.soft(res.status, target).toBeLessThan(500);
     }
   });
 });
@@ -297,382 +430,6 @@ describe("bundled templates", () => {
       expect(fs.existsSync(path.join(projectDir, "tsconfig.json"))).toBe(true);
     } finally {
       fs.rmSync(detachedDir, { recursive: true, force: true });
-    }
-  });
-});
-
-// --- Browser tests (Playwright) ---
-// Page/WebSocket scaffolding lives in _e2e-browser-test-utils.ts.
-
-describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
-  let browser: Browser;
-  let child: ChildProcess;
-  let port: number;
-
-  beforeAll(async () => {
-    const projectDir = path.join(tmpDir, "_browser-dev");
-    initProject("pizza-ordering", projectDir);
-    aai(aaiBin, ["build", "--skip-tests"], projectDir);
-
-    // A stub http+ws server over the built client, not `aai dev` — see the
-    // helper's doc for why, and the last describe in this file for the one test
-    // that does drive the real thing.
-    ({ child, port } = await startStubClientServer(path.join(projectDir, ".aai", "client")));
-    await waitForHealth(`http://localhost:${port}`, child);
-    browser = await chromium.launch();
-  });
-
-  afterAll(async () => {
-    await browser?.close();
-    child?.kill();
-    if (child) await waitForExit(child);
-  });
-
-  test.concurrent("page renders with Start button", async () => {
-    const page = await browser.newPage();
-    await page.goto(`http://localhost:${port}`);
-    await expect(page.getByRole("button", { name: "Start" }).waitFor()).resolves.toBeUndefined();
-    await page.close();
-  });
-
-  test.concurrent("clicking Start opens a WebSocket and receives config", async () => {
-    const page = await browser.newPage();
-    await page.goto(`http://localhost:${port}`);
-
-    const frames: string[] = [];
-    const wsConnected = new Promise<string>((resolve) => {
-      page.on("websocket", (ws) => {
-        resolve(ws.url());
-        ws.on("framereceived", (frame) => {
-          if (typeof frame.payload === "string") frames.push(frame.payload);
-        });
-      });
-    });
-
-    await page.getByRole("button", { name: "Start" }).click();
-    const wsUrl = await wsConnected;
-    expect(wsUrl).toContain("/websocket");
-
-    await vi.waitFor(
-      () => {
-        const found = frames.some((f) => {
-          try {
-            return JSON.parse(f).type === "session.configured";
-          } catch {
-            return false;
-          }
-        });
-        expect(found).toBe(true);
-      },
-      { timeout: 10_000, interval: 50 },
-    );
-
-    await page.close();
-  });
-
-  test("the client RECONNECTS after an abrupt drop and resumes the same session", async () => {
-    // The client half of the disconnect contract, which nothing else covers.
-    // `aai/host/session-resume*.integration.test.ts` proves the SERVER resumes a
-    // session when asked; aai-ui's fuzz harnesses drive its reconnect against a
-    // fake socket. Neither shows the real browser client redialling after a real
-    // drop and carrying the id forward — partysocket's backoff, the
-    // `serverIsBroker` latch and the handshake guard all sit in that path.
-    //
-    // Severed by DESTROYING the socket server-side, so the client sees 1006. A
-    // clean close is the "user hung up" case aai-ui deliberately does not
-    // reconnect from, so a test built on `close()` would prove the opposite of
-    // what it looks like. (The `_fault-socket.ts` proxy does this properly for
-    // in-package tests; it is `_`-internal to `aai`, which this package may not
-    // import — hence the fake server severing its own socket.)
-    const page = await browser.newPage();
-    const urls: string[] = [];
-    page.on("websocket", (ws) => urls.push(ws.url()));
-    try {
-      await page.goto(`http://localhost:${port}`);
-      await page.getByRole("button", { name: "Start" }).click();
-      await vi.waitFor(() => expect(urls.length).toBe(1), { timeout: 15_000, interval: 50 });
-      expect(urls[0]).toContain("/websocket");
-      // No id on the FIRST dial — so the one below can only have come from the
-      // config frame, which is the mechanism under test. A distinctive value for
-      // the same reason: a generic id could in principle be matched by some
-      // client-side default rather than by the id this server issued.
-      expect(urls[0]).not.toContain("sessionId=");
-
-      const severed = await ofetch<{ severed: number }>(`http://localhost:${port}/__sever`);
-      expect(severed.severed).toBeGreaterThanOrEqual(1);
-
-      // The claim: it comes back on its own, and the redial names the session it
-      // was in. A client that reconnected WITHOUT the id would start a fresh
-      // conversation — the caller greeted again mid-call — so the id is the
-      // assertion, not the reconnect count.
-      await vi.waitFor(() => expect(urls.length).toBeGreaterThanOrEqual(2), {
-        timeout: 30_000,
-        interval: 100,
-      });
-      expect(urls[1]).toContain("sessionId=resumed-e2e-7");
-    } finally {
-      await page.close();
-    }
-  });
-
-  // ── Fixture-driven event injection tests ───────────────────────────────
-
-  test.concurrent("greeting session: agent message renders in browser", async () => {
-    const { page, replayFixture } = await setupEventInjector(browser, port);
-
-    await replayFixture("greeting-session.json");
-    await expect(
-      page.getByText("Hello! How can I help you today?").waitFor(),
-    ).resolves.toBeUndefined();
-    await page.close();
-  });
-
-  test.concurrent("simple conversation: user + assistant messages render", async () => {
-    const { page, replayFixture } = await setupEventInjector(browser, port);
-    await replayFixture("simple-conversation.json");
-
-    await expect(page.getByText("Hi there!").waitFor()).resolves.toBeUndefined();
-    await expect(
-      page.getByText("Tell me a fun fact about space.").waitFor(),
-    ).resolves.toBeUndefined();
-    await expect(
-      page.getByText("A day on Venus is longer than its year.").waitFor(),
-    ).resolves.toBeUndefined();
-
-    await page.close();
-  });
-
-  test.concurrent("tool call flow: tool block renders with name, messages appear", async () => {
-    const { page, replayFixture } = await setupEventInjector(browser, port);
-    await replayFixture("tool-call-flow.json");
-
-    await expect(
-      page.getByText("The weather in San Francisco is sunny at 72°F.").waitFor(),
-    ).resolves.toBeUndefined();
-    await expect(page.getByText("get_weather").waitFor()).resolves.toBeUndefined();
-    await expect(
-      page.getByText("What is the weather like in San Francisco?").waitFor(),
-    ).resolves.toBeUndefined();
-
-    await page.close();
-  });
-
-  test.concurrent("error recovery: error banner renders with message", async () => {
-    const { page, replayFixture } = await setupEventInjector(browser, port);
-    await replayFixture("error-recovery.json");
-
-    await expect(page.getByText("Speech recognition failed").waitFor()).resolves.toBeUndefined();
-    await expect(page.getByRole("button", { name: "Resume" }).waitFor()).resolves.toBeUndefined();
-
-    await page.close();
-  });
-
-  test.concurrent("barge-in: interrupted response cleared, new answer renders", async () => {
-    const { page, replayFixture } = await setupEventInjector(browser, port);
-    await replayFixture("barge-in.json");
-
-    await expect(page.getByText("No problem!").waitFor()).resolves.toBeUndefined();
-    await expect(page.getByText("What about").waitFor()).resolves.toBeUndefined();
-    await expect(page.getByText("Actually never mind").waitFor()).resolves.toBeUndefined();
-
-    await page.close();
-  });
-
-  test.concurrent("multi-turn with tools: two tool calls and all messages render", async () => {
-    const { page, replayFixture } = await setupEventInjector(browser, port);
-    await replayFixture("multi-turn-with-tools.json");
-
-    await page.getByText("London is 55°F and rainy.").waitFor();
-    await page.getByText("Weather in NYC?").waitFor();
-    await page.getByText("And in London?").waitFor();
-    const toolBlocks = await page.getByText("get_weather").all();
-    expect(toolBlocks.length).toBe(2);
-    await page.getByText(/65°F/).waitFor();
-    await page.getByText(/55°F/).waitFor();
-
-    await page.close();
-  });
-
-  test.concurrent("the Resume button redials the session after fixture replay", async () => {
-    const { page, replayFixture } = await setupEventInjector(browser, port);
-    await replayFixture("greeting-session.json");
-    await page.getByText("Hello! How can I help you today?").waitFor();
-
-    // The label is DETERMINISTICALLY "Resume", not "non-deterministic" as this
-    // test used to claim: `setupEventInjector` does not return until the session
-    // reaches `data-state="error"`, and the `initAudioCapture` failure that puts
-    // it there (no microphone in headless chromium) clears `running` in the same
-    // update — see session-core-audio-setup.ts. Only `start`/`toggle` set
-    // `running` back, so no injected fixture frame can move it.
-    const toggleBtn = page.getByRole("button", { name: "Resume", exact: true });
-    await toggleBtn.waitFor({ timeout: 30_000 });
-
-    // **Assert the DIAL, not the label**, because the label is a TRANSIENT.
-    // `toggle()` sets `running` synchronously, so the button reads "Stop" — and
-    // then the new socket's `config` frame fails `initAudioCapture` all over
-    // again and it reads "Resume" once more. Its lifetime is one socket round
-    // trip plus a `getUserMedia` rejection, so waiting for "Stop" to be VISIBLE
-    // is a race a locator loses whenever the machine is quick: it lost on
-    // ubuntu CI while passing on macOS, 30s of polling then finding only the
-    // label it started from. Playwright records `websocket` as an EVENT, which
-    // cannot be missed however brief the label was.
-    //
-    // It still covers the regression this test exists for — an unwired
-    // `Controls` onClick dials nothing at all — while the label toggle itself
-    // is pinned deterministically by unit tests (components/controls.test.tsx,
-    // components/integration.test.tsx).
-    //
-    // **`waitForEvent` with a PREDICATE, not an array polled by `expect.poll`.**
-    // The poll was a hard failure in a `test.concurrent` — `guard-invariants`
-    // rule 21 carries that argument and keeps the spelling out of the tree. The
-    // predicate is the second half: this suite's stub attaches its
-    // `WebSocketServer` to the http server, so it upgrades on EVERY path and
-    // `dials.length > 0` never said the click dialed the SESSION.
-    //
-    // Armed BEFORE the click, so a dial that lands during `click()` is caught.
-    const redial = page.waitForEvent("websocket", {
-      predicate: (ws) => new URL(ws.url()).pathname === "/websocket",
-      timeout: 30_000,
-    });
-
-    await toggleBtn.click();
-    const dial = await redial;
-    // The predicate matched the PATH; this pins the ORIGIN, so a dial at some
-    // other server's `/websocket` cannot pass for the dev server's.
-    expect(new URL(dial.url()).port).toBe(String(port));
-
-    await page.close();
-  });
-
-  test.concurrent("new conversation clears messages", async () => {
-    const { page, replayFixture, inject } = await setupEventInjector(browser, port);
-    await replayFixture("simple-conversation.json");
-    await expect(
-      page.getByText("A day on Venus is longer than its year.").waitFor(),
-    ).resolves.toBeUndefined();
-
-    // Inject a reset event as if the server acknowledged the reset
-    await inject({ type: "session.reset" });
-
-    // Messages should be cleared — the assistant message should no longer be visible
-    await expect(
-      page
-        .getByText("A day on Venus is longer than its year.")
-        .waitFor({ state: "hidden", timeout: 30_000 }),
-    ).resolves.toBeUndefined();
-
-    await page.close();
-  });
-
-  test.concurrent("thinking state: user message appears after user_transcript", async () => {
-    const { page, inject } = await setupEventInjector(browser, port);
-
-    await inject({ type: "user-transcript.committed", text: "What is the meaning of life?" });
-    await expect(page.getByText("What is the meaning of life?").waitFor()).resolves.toBeUndefined();
-
-    // State indicator should show "thinking"
-    await expect(
-      page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 }),
-    ).resolves.toBeUndefined();
-
-    await inject({ type: "agent-transcript.updated", text: "42." });
-    await expect(page.getByText("42.").waitFor()).resolves.toBeUndefined();
-
-    await page.close();
-  });
-
-  test.concurrent("state transitions: thinking → listening after reply_done", async () => {
-    const { page, inject } = await setupEventInjector(browser, port);
-
-    await inject({ type: "user-transcript.committed", text: "Hello" });
-    await expect(
-      page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 }),
-    ).resolves.toBeUndefined();
-
-    await inject({ type: "agent-transcript.updated", text: "Hi there!" });
-    await inject({ type: "reply.completed" });
-    await expect(
-      page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 }),
-    ).resolves.toBeUndefined();
-
-    await page.close();
-  });
-
-  test.concurrent("error event shows error banner with message", async () => {
-    const { page, inject } = await setupEventInjector(browser, port);
-
-    // Inject an error event
-    await inject({
-      type: "error.reported",
-      code: "internal",
-      message: "Connection lost",
-      fatal: true,
-    });
-
-    // Error banner should appear with the message
-    await expect(
-      page.getByText("Connection lost").waitFor({ timeout: 30_000 }),
-    ).resolves.toBeUndefined();
-
-    await page.close();
-  });
-});
-
-/**
- * The same client, served by the REAL `aai dev`. One test, deliberately.
- *
- * The stub above is what makes the fifteen fixture tests deterministic — no
- * live session emits frames of its own, and `/__sever` cuts a socket without
- * the server going away — so it stays. The cost is that none of them touches
- * the stack a user runs: delete `viteDevConfig`'s `"/websocket": { ws: true }`
- * proxy entry and all fifteen still pass. This one fails.
- *
- * `session.configured` is the assertion because `ws-handler.ts` sends it the
- * moment the socket opens, before any provider is dialled, and it cannot
- * arrive unless the upgrade really crossed Vite into the backend.
- */
-describe.skipIf(!hasPlaywrightBrowser())("browser: the real aai dev server", () => {
-  test("Vite serves the client and proxies the session upgrade", async () => {
-    const projectDir = path.join(tmpDir, "_browser-vite");
-    initProject("pizza-ordering", projectDir);
-    const server = await startSupervisedDevServer({
-      aaiBin,
-      cwd: projectDir,
-      // Fixed, and clear of the workflow leg's 4820: with a client.tsx present
-      // Vite owns this port and picks the backend's itself.
-      port: 4830,
-      // `localhost`, never `127.0.0.1` — Vite binds the NAME and lands on `::1`
-      // here. The option's doc carries the `lsof` measurement.
-      host: "localhost",
-      env: { ...aaiEnv(), ASSEMBLYAI_API_KEY: "e2e-not-dialled" },
-    });
-    const browser = await chromium.launch();
-    try {
-      // A no-op unless AAI_FAULT_PROFILE is set; under one it is what stops the
-      // navigation below racing a restart window.
-      await server.awaitSettled();
-
-      const page = await browser.newPage();
-      // Armed before `goto`, and PREDICATED because an unpredicated wait here
-      // resolves on the WRONG SOCKET. Measured against a scaffolded project:
-      // Vite's HMR client opens `ws://<host>/?token=…` twice, both BEFORE the
-      // session dial, so "whichever websocket appears first" is the HMR one.
-      // (The stub suite above has no HMR socket, which is why it can be loose.)
-      const dial = page.waitForEvent("websocket", {
-        predicate: (ws) => new URL(ws.url()).pathname === "/websocket",
-        timeout: 30_000,
-      });
-      await page.goto(server.url);
-      await page.getByRole("button", { name: "Start" }).click();
-
-      // Measured: `session.configured` lands first even though this key is
-      // rejected — the provider failures (`AssemblyAI STT: connect failed`)
-      // arrive after it, so nothing here depends on a live credential.
-      const frame = await (await dial).waitForEvent("framereceived", { timeout: 30_000 });
-      expect(JSON.parse(String(frame.payload))).toMatchObject({ type: "session.configured" });
-    } finally {
-      await browser.close();
-      await server.stop();
     }
   });
 });

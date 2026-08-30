@@ -125,3 +125,33 @@ describe("uploads with no database", () => {
     await expect(store.info("../../etc/passwd")).rejects.toThrow(/Invalid upload id/);
   });
 });
+
+describe("a part re-sent while the first attempt is still draining", () => {
+  test("CONCURRENT writes of the same window all succeed, and one of them wins whole", async () => {
+    // The scenario this store's own doc names: "a part is re-sent whenever a
+    // connection dies mid-flight, and the offset in the key is what makes the
+    // repeat addressable." The retry can overlap the original — the server has
+    // not necessarily noticed the first socket die — so two writers land on one
+    // key at once. Both used a FIXED `<offset>.tmp`, so the first rename moved
+    // the shared temp file away and every other writer failed `ENOENT`, which
+    // the route answered 500. Measured against `aai dev`: 6 concurrent PUTs of
+    // one offset -> five 500s, all `ENOENT ... rename '…/0.tmp' -> '…/0'`.
+    //
+    // Bytes were never corrupted (one writer's content won wholesale) and must
+    // stay that way: the assertion is that nobody FAILS, and that the result is
+    // exactly one writer's window rather than a blend of several.
+    const store = localStore();
+    await store.beginParts("abc", {}, UPLOAD_CHUNK_BYTES);
+    const windows = [0, 1, 2, 3, 4, 5].map((n) => new Uint8Array(UPLOAD_CHUNK_BYTES).fill(n));
+    const results = await Promise.allSettled(
+      windows.map((w) => store.writePart("abc", 0, body(w))),
+    );
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(rejected.map((r) => String((r as PromiseRejectedResult).reason))).toEqual([]);
+    const stored = await store.read("abc", 0, UPLOAD_CHUNK_BYTES);
+    const bytes = new Uint8Array(stored);
+    expect(bytes).toHaveLength(UPLOAD_CHUNK_BYTES);
+    // Exactly one writer's window, not a blend.
+    expect(new Set(bytes)).toHaveProperty("size", 1);
+  });
+});
