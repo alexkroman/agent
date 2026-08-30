@@ -74,6 +74,34 @@ describe("SSRF: IP encoding bypass attempts", () => {
     );
   });
 
+  test.each([
+    ["64:ff9b::7f00:1", "127.0.0.1 via the NAT64 well-known prefix"],
+    ["64:ff9b::a9fe:a9fe", "169.254.169.254 via NAT64 — the cloud metadata endpoint"],
+    ["64:ff9b::a00:1", "10.0.0.1 via NAT64"],
+    ["64:ff9b::c0a8:1", "192.168.0.1 via NAT64"],
+    ["2002:7f00:1::", "127.0.0.1 via the 6to4 prefix"],
+    ["2002:a9fe:a9fe::", "169.254.169.254 via 6to4"],
+    ["2002:a00:1::", "10.0.0.1 via 6to4"],
+  ])("blocks %s — %s", async (address) => {
+    // The TRANSLATION prefixes, which name an IPv4 destination the same way
+    // `::ffff:` does and which `bogon` does not flag. On a host with a NAT64
+    // gateway or a 6to4 relay — an IPv6-only network, which is what NAT64
+    // exists for — these reach the IPv4 address they carry. The suite already
+    // defends the mapped and compatible forms above; these were the gap.
+    await expect(resolveAndAssertPublic(`http://[${address}]/`)).rejects.toThrow("Blocked");
+  });
+
+  test.each([
+    ["64:ff9b::808:808", "8.8.8.8 via NAT64"],
+    ["2002:808:808::", "8.8.8.8 via 6to4"],
+  ])("still ALLOWS %s — %s", async (address) => {
+    // The half that must not regress: on an IPv6-only network EVERY IPv4
+    // destination is reached through `64:ff9b::`, so refusing the prefix
+    // outright would refuse the whole IPv4 internet there. The embedded
+    // address is what gets screened, not the wrapper.
+    await expect(resolveAndAssertPublic(`http://[${address}]/`)).resolves.toBeNull();
+  });
+
   test("blocks link-local IPv4 range", async () => {
     await expect(resolveAndAssertPublic("http://169.254.1.1/")).rejects.toThrow(
       "Blocked request to private address",
