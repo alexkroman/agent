@@ -23,7 +23,11 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { pollGuestHealth } from "./guest-readiness.ts";
 import { guestTokenFor } from "./guest-token.ts";
 import { createLogger } from "./logger.ts";
-import { rewriteLoopbackForGuest } from "./microsandbox-network.ts";
+import {
+  assertGuestCanReachItsEnv,
+  rewriteLoopbackForGuest,
+  runtimeMintedHostPorts,
+} from "./microsandbox-network.ts";
 import {
   DEFAULT_GUEST_CPUS,
   DEFAULT_GUEST_MEMORY_MIB,
@@ -137,9 +141,31 @@ export async function spawnMicrosandboxAgentServer(
       }),
     );
 
-    // One port set for the policy, from every value that was rewritten.
-    const hostPorts = [...new Set([...envPorts, ...worker.hostPorts, ...dialed.hostPorts])].sort(
-      (a, b) => a - b,
+    // One port set for the policy: every value that was rewritten, PLUS the ports
+    // of URLs the platform mints at runtime rather than baking in. A signed upload
+    // read is the whole of that second class — the guest follows a 302 onto the
+    // platform's Supabase origin — and it is not derivable from any env value the
+    // guest holds, so the rewrite above cannot see it. Both halves are needed:
+    // with the URL rewritten and the port shut, and with the port open and the URL
+    // loopback, the guest reports the identical bare `fetch failed`.
+    const hostPorts = [
+      ...new Set([
+        ...envPorts,
+        ...worker.hostPorts,
+        ...dialed.hostPorts,
+        ...runtimeMintedHostPorts(),
+      ]),
+    ].sort((a, b) => a - b);
+
+    // BEFORE the sandbox exists, over the exec env AND the tenant env file — the
+    // two halves a guest reads, and the agent env is the one four of the five
+    // historical instances lived in. A throw here is the whole point: the
+    // alternative is the state this family of bugs lives in, a guest that boots,
+    // looks healthy, and dies at the first step that touches the unreachable
+    // thing with an error naming a fetch and nothing naming the key.
+    assertGuestCanReachItsEnv(
+      { ...guestExecBaseEnv(), ...guestBuildEnv(), ...boot, ...dialed.env, ...agentEnv },
+      hostPorts,
     );
 
     const sandbox = await ctx.createSandbox({

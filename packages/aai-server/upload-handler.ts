@@ -81,6 +81,7 @@ import { UPLOAD_TOKEN_RE } from "@alexkroman1/aai-runtime/internal";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "./context.ts";
+import { callerReachableUrl } from "./microsandbox-network.ts";
 import { notFoundMessage } from "./sandbox-broker.ts";
 import { UPLOAD_READ_URL_TTL_SECONDS, type UploadBytes, uploadKey } from "./upload-bytes.ts";
 
@@ -214,7 +215,14 @@ async function serveWindow(
   const signed = await bytes.readUrl(key, UPLOAD_READ_URL_TTL_SECONDS);
   // 302 rather than 307: the follower re-issues a GET either way, and every client that
   // reads this is ours. `Range` survives a redirect, which is what makes it usable.
-  if (signed) return c.redirect(signed, 302);
+  //
+  // Through `callerReachableUrl`, because the follower may be a guest inside a
+  // microVM and this URL is on the platform's Supabase origin — loopback in local
+  // dev, i.e. the VM itself. Unrewritten it killed a durable run four retries
+  // later as a bare `TypeError: fetch failed`, with nothing naming the host; that
+  // function carries the trace and why the decision is the REQUEST's rather than
+  // the backend's (a browser reads through this route too).
+  if (signed) return c.redirect(callerReachableUrl(signed, c.req.header("host")), 302);
 
   // No signing backend — memory, i.e. `aai dev` and the tests. The window is served
   // from here, which is exactly the behaviour that predates signing.
