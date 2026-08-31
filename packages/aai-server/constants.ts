@@ -266,9 +266,10 @@ export const SLUG_LOCK_POOL_MAX = 4;
  * **It was 80 against a provisioned instance that has 60**, which is exactly the
  * unchecked claim the paragraph above warns about — the dashboard reports
  * `max_connections` 60 on the `t3a.micro` this runs on, so the "control-plane
- * outage at peak" above was reachable. 40 leaves 20 for what else needs the
- * instance: Supabase's own Realtime / PostgREST / Storage workers (~17 in use at
- * idle), `supabase db push`, the dashboard, and Supavisor's server side.
+ * outage at peak" above was reachable. 30 leaves 30 for what else needs the
+ * instance: Supabase's own Realtime / PostgREST / Storage workers (23-30 in use
+ * across five measured boots, not the ~17 this once claimed),
+ * `supabase db push`, the dashboard, and Supavisor's server side.
  *
  * **Nothing per-tenant is in this number any more, and the admin pool never was.**
  * So what this bounds is `MAX_CONTAINERS x platformDbConnectionsPerReplica()`,
@@ -289,7 +290,19 @@ export const SLUG_LOCK_POOL_MAX = 4;
  * With tenant databases gone the term is not merely uncounted but ABSENT: the
  * platform opens connections for itself alone, so the fleet claim no longer scales
  * with the number of tenants — the one variable this constant could never bound.
- * What was 28 of the 40 spoken for by two apps is now headroom.
+ *
+ * **And it is the PRODUCT exactly, not a ceiling over it, because
+ * `platformDbBudget()` returns this number verbatim.** It sat at 40 against a
+ * product of 30 (`MAX_CONTAINERS` 3 x 10 per replica) — the residue of the
+ * tenant term, whose removal freed 10 that nobody gave back. Ten connections of
+ * claim that no replica can ever open is not conservatism, because the thing
+ * reading this is the boot capacity CHECK: production announced
+ * `budget OVERRUNS the instance by 17` on an instance whose real overrun was 7,
+ * and a warning that overstates by 10 is one nobody can act on. The paragraph
+ * above already said this number IS the product; `platform-db-budget.test.ts`
+ * asserted only `<=`, which let the two drift, and now asserts EQUALITY — so a
+ * pool bump fails a check rather than silently spending headroom that the
+ * capacity warning has already promised away.
  *
  * The ADMIN pool stays out, and that one IS a routing decision — see
  * {@link platformDbConnectionsPerReplica}. It reaches the instance through
@@ -297,7 +310,7 @@ export const SLUG_LOCK_POOL_MAX = 4;
  * pooler URL unset those connections are DIRECT and this budget understates the
  * fleet, which is why boot announces the reading rather than trusting the constant.
  */
-export const MAX_PLATFORM_DB_CONNECTIONS = 40;
+export const MAX_PLATFORM_DB_CONNECTIONS = 30;
 
 /**
  * Concurrent live SSE streams one caller SCOPE may hold across this replica.

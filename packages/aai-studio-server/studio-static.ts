@@ -201,12 +201,53 @@ export function handleStudioRobots(c: AppContext): Response {
   });
 }
 
-/** `GET /studio-assets/:path{.+}` — hashed Vite build assets. */
-export async function handleStudioClientAsset(c: AppContext): Promise<Response> {
+/**
+ * `GET /studio-assets/:path{.+}` — hashed Vite build assets.
+ *
+ * **A missing asset while this replica is DRAINING is a 503, not a 404.** The
+ * shell doc above explains the race and closes half of it: Modal's rolling
+ * deploy keeps old containers serving next to new ones and load-balances every
+ * request independently, so a browser can take `index.html` from the new build
+ * and have its entry `<script>` land on a replica running the old one. Making
+ * the shell `no-store` stops a browser PINNING itself to a dead build; it
+ * cannot stop that one cross-build request.
+ *
+ * What it left was the wrong STATUS on it. Production served
+ * `GET /studio-assets/assets/index-ByztzOpq.js -> 404` on the same second as
+ * `Shutting down (retiring guests)...`, and the identical URL answered 200
+ * forty-one seconds later — so 404 was false twice over: the asset exists, and
+ * the condition is transient. It also invites an intermediary to CACHE the
+ * negative answer, which turns a self-healing blip into a sticky white page for
+ * whoever is behind that cache.
+ *
+ * Gated on `isDraining` rather than on the path's SHAPE, deliberately: no
+ * heuristic can tell a hashed asset from another build apart from a typo'd
+ * path, and answering 503 to a genuinely nonexistent asset would say "retry"
+ * forever. While draining, "this replica does not have this build" is simply
+ * what is true, and a 404 is still the answer everywhere else.
+ */
+export function studioClientAssetHandler(
+  isDraining?: () => boolean,
+): (c: AppContext) => Promise<Response> {
+  return async function handleStudioClientAsset(c: AppContext): Promise<Response> {
+    return await serveClientAsset(c, isDraining);
+  };
+}
+
+/** @internal The body behind {@link studioClientAssetHandler}. */
+async function serveClientAsset(c: AppContext, isDraining?: () => boolean): Promise<Response> {
   const rawPath = c.req.param("path") ?? "";
   const parsed = SafePathSchema.safeParse(rawPath);
   if (!parsed.success) throw new HTTPException(400, { message: "Invalid asset path" });
   const content = await readClientFile(parsed.data);
+  if (!content && isDraining?.()) {
+    // `Retry-After: 1` because the replacement replica is already serving —
+    // this one is on its way out, not overloaded.
+    return c.json({ error: "Asset not on this replica (draining)" }, 503, {
+      "Retry-After": "1",
+      "Cache-Control": "no-store",
+    });
+  }
   if (!content) throw new HTTPException(404, { message: "Asset not found" });
   return c.body(new Uint8Array(content), 200, {
     "Content-Type": mime.lookup(parsed.data) || "application/octet-stream",

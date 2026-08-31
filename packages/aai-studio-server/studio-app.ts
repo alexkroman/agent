@@ -39,10 +39,10 @@ import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createStudioRoutes } from "./studio-routes.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import {
-  handleStudioClientAsset,
   handleStudioFavicon,
   handleStudioPage,
   handleStudioRobots,
+  studioClientAssetHandler,
 } from "./studio-static.ts";
 
 export type StudioAppOpts = {
@@ -122,7 +122,7 @@ export function createStudioApp(opts: StudioAppOpts): {
   app.get(`/studio/api/:slug{${SLUG_PATTERN_SOURCE}}`, handleStudioPage);
   app.get("/favicon.ico", handleStudioFavicon);
   app.get("/robots.txt", handleStudioRobots);
-  app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
+  app.get("/studio-assets/:path{.+}", studioClientAssetHandler(opts.isDraining));
   const studioRoutes = createStudioRoutes({
     ...omitUndefined({
       rateLimiters: opts.studioRateLimiters,
