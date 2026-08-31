@@ -117,6 +117,12 @@ patchedDependencies:
   '@workflow/world-local@4.2.4':
     hash: adb1aecc5b2367e81d7889576fdf7aa790a87132c832d32efbffc64e2849949c
     path: patches/@workflow__world-local@4.2.4.patch
+  cbor-x@1.6.0:
+    hash: 92a91a1e7002abae343da378cdc5c138125de56d9c14ff0da5b8948e38e8a4c4
+    path: patches/cbor-x@1.6.0.patch
+  cbor-x@1.6.5:
+    hash: b451e63687453af9d201cf8b370ba0551740d99ff0153c777b9e7a6ed863b727
+    path: patches/cbor-x@1.6.5.patch
 
 importers:
 
@@ -10441,7 +10447,7 @@ snapshots:
       '@workflow/utils': 4.1.4
       '@workflow/world': 4.3.1
       '@workflow/world-local': 4.2.4(patch_hash=adb1aecc5b2367e81d7889576fdf7aa790a87132c832d32efbffc64e2849949c)(@opentelemetry/api@1.9.1)
-      cbor-x: 1.6.0
+      cbor-x: 1.6.0(patch_hash=92a91a1e7002abae343da378cdc5c138125de56d9c14ff0da5b8948e38e8a4c4)
       dotenv: 17.3.1
       drizzle-orm: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.20.0)(postgres@3.4.9)
       graphile-worker: 0.16.6(typescript@7.0.2)
@@ -10487,7 +10493,7 @@ snapshots:
       '@vercel/queue': 0.3.1
       '@workflow/errors': 4.2.1
       '@workflow/world': 4.3.1
-      cbor-x: 1.6.0
+      cbor-x: 1.6.0(patch_hash=92a91a1e7002abae343da378cdc5c138125de56d9c14ff0da5b8948e38e8a4c4)
       undici: 7.28.0
       zod: 4.3.6
     optionalDependencies:
@@ -11026,11 +11032,11 @@ snapshots:
       '@cbor-extract/cbor-extract-win32-x64': 2.2.2
     optional: true
 
-  cbor-x@1.6.0:
+  cbor-x@1.6.0(patch_hash=92a91a1e7002abae343da378cdc5c138125de56d9c14ff0da5b8948e38e8a4c4):
     optionalDependencies:
       cbor-extract: 2.2.2
 
-  cbor-x@1.6.5:
+  cbor-x@1.6.5(patch_hash=b451e63687453af9d201cf8b370ba0551740d99ff0153c777b9e7a6ed863b727):
     optionalDependencies:
       cbor-extract: 2.2.2
 
@@ -13162,7 +13168,7 @@ snapshots:
 
   modal@0.9.0:
     dependencies:
-      cbor-x: 1.6.5
+      cbor-x: 1.6.5(patch_hash=b451e63687453af9d201cf8b370ba0551740d99ff0153c777b9e7a6ed863b727)
       long: 5.3.2
       nice-grpc: 2.1.16
       protobufjs: 7.6.5

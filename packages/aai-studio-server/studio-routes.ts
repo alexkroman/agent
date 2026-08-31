@@ -51,6 +51,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { createLogger } from "aai-server/logger";
 import { authMw } from "aai-server/middleware";
 import { TtlCache } from "aai-server/platform-barrel";
 import { userApiKeySecretName } from "aai-server/supabase-auth";
@@ -78,6 +79,8 @@ import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-se
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import { onSettledEdit, previewOrigin } from "./studio-settled-edit.ts";
 import { projectKey, studioScope } from "./studio-workspace.ts";
+
+const log = createLogger("studio.routes");
 
 export type StudioRouteOptions = {
   /**
@@ -253,7 +256,19 @@ export function createStudioRoutes(options: StudioRouteOptions): {
         skipTypecheck,
       },
     );
-    if (!result.ok) return c.json({ error: result.error }, 400);
+    if (!result.ok) {
+      // A failed Publish is the most consequential thing a studio user can do,
+      // and this 400 was invisible server-side: `error-handler.ts` logs 5xx
+      // only — deliberately, since a 4xx is normally the caller's mistake and
+      // logging it is a spam vector — and a route that RETURNS `c.json(…, 400)`
+      // never reaches that handler at all. So production showed
+      // `POST /studio/projects/<p>/deploy -> 400` with no reason anywhere, on
+      // the one path where the reason (the tsc gate, the env floor, an
+      // ownership check) is the whole diagnosis. The reason already goes to the
+      // client; this is the same string, kept.
+      log.warn("deploy refused", { scope, project, reason: result.error });
+      return c.json({ error: result.error }, 400);
+    }
     return c.json(result);
   });
 

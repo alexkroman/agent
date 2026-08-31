@@ -5,7 +5,7 @@
 // lives in studio-routes-contract.test.ts; shared fakes in
 // _studio-routes-test-utils.ts.
 
-import { authFetch, type TestFetch } from "aai-server/test-utils";
+import { authFetch, captureLogs, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
 import { clientDistFile, clientShellHtml } from "./_studio-client-dist-test-utils.ts";
@@ -259,6 +259,7 @@ describe("chat history routes", () => {
 });
 
 describe("deploy + chat endpoints", () => {
+  const logs = captureLogs();
   let fetch: TestFetch;
   beforeEach(async () => {
     deployMock.mockClear();
@@ -295,6 +296,23 @@ describe("deploy + chat endpoints", () => {
     const res = await authFetch(fetch, "/studio/projects/proj/deploy", { body: {} });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toContain("Build failed");
+  });
+
+  /**
+   * A refused Publish has to leave a trace SERVER-side, which for a long time
+   * it did not: `error-handler.ts` logs 5xx only, and a route that RETURNS
+   * `c.json(…, 400)` never reaches that handler, so production showed
+   * `POST /studio/projects/<p>/deploy -> 400` with the reason nowhere. The
+   * assertion is on the LINE, not its wording (see `captureLogs`), plus the
+   * reason riding in the context — the reason is the whole point of the line.
+   */
+  test("a refused deploy is logged with its reason", async () => {
+    await createProject(fetch);
+    deployMock.mockResolvedValueOnce({ ok: false, error: "Build failed: nope" });
+    await authFetch(fetch, "/studio/projects/proj/deploy", { body: {} });
+    expect(logs.warns()).toContainEqual(expect.stringContaining("deploy refused"));
+    const line = logs.all().find((l) => l.msg.includes("deploy refused"));
+    expect(line?.ctx).toMatchObject({ project: "proj", reason: "Build failed: nope" });
   });
 
   test("session 404s for a missing project", async () => {

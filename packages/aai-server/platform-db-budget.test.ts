@@ -47,16 +47,31 @@ function pyInt(name: string): number {
 }
 
 describe("platform database connection budget", () => {
-  test("the autoscaler's ceiling times the per-replica pools fits the budget", () => {
+  /**
+   * EQUALITY, not `<=`, and the loose version cost a misleading production
+   * warning for as long as it stood.
+   *
+   * `platformDbBudget()` returns `MAX_PLATFORM_DB_CONNECTIONS` verbatim, so any
+   * gap between the constant and the product is claim no replica can ever open
+   * — and the boot capacity check spends it anyway. Removing the per-tenant
+   * term left the constant at 40 over a product of 30, and production announced
+   * `budget OVERRUNS the instance by 17` where the real overrun was 7. A `<=`
+   * assertion is what let that gap open silently; it also cannot fail when a
+   * pool SHRINKS, which is the direction that hands back headroom the warning
+   * has already promised away.
+   */
+  test("the autoscaler's ceiling times the per-replica pools IS the budget", () => {
     const maxContainers = pyInt("MAX_CONTAINERS");
     const fleetTotal = maxContainers * platformDbConnectionsPerReplica();
 
     expect(
       fleetTotal,
       `MAX_CONTAINERS (${maxContainers}) x ${platformDbConnectionsPerReplica()} direct connections ` +
-        `per replica = ${fleetTotal}, over the ${MAX_PLATFORM_DB_CONNECTIONS} budget. ` +
+        `per replica = ${fleetTotal}, but the budget is ${MAX_PLATFORM_DB_CONNECTIONS}. ` +
+        "These must be EQUAL: platformDbBudget() returns the constant verbatim, so a gap " +
+        "is claim nothing can open and the boot capacity check overstates the overrun by it. " +
         "Raising either side needs the provisioned instance's max_connections checked first.",
-    ).toBeLessThanOrEqual(MAX_PLATFORM_DB_CONNECTIONS);
+    ).toBe(MAX_PLATFORM_DB_CONNECTIONS);
   });
 
   /**

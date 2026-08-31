@@ -77,6 +77,7 @@
     "./rate-limit": "./rate-limit.ts",
     "./live-streams": "./live-streams.ts",
     "./middleware": "./middleware.ts",
+    "./logger": "./logger.ts",
     "./public-origin": "./public-origin.ts",
     "./serve-lifecycle": "./serve-lifecycle.ts",
     "./service-config": "./service-config.ts",

@@ -208,18 +208,24 @@ describe("studio client handlers", () => {
    */
   const asAppContext = (c: object): AppContext => c as unknown as AppContext;
 
-  /** A Hono app wired to the freshly imported handlers. */
-  async function app() {
-    const { handleStudioPage, handleStudioFavicon, handleStudioClientAsset } = await import(
+  /**
+   * A Hono app wired to the freshly imported handlers.
+   *
+   * `draining` is a per-app switch rather than a module one so the same import
+   * can serve both the steady-state 404 and the drain-time 503.
+   */
+  async function app({ draining = false }: { draining?: boolean } = {}) {
+    const { handleStudioPage, handleStudioFavicon, studioClientAssetHandler } = await import(
       "./studio-static.ts"
     );
+    const asset = studioClientAssetHandler(() => draining);
     const hono = new Hono();
     hono.get("/", (c) => handleStudioPage(asAppContext(c)));
     hono.get("/favicon.ico", (c) => handleStudioFavicon(asAppContext(c)));
-    hono.get("/studio-assets/:path{.+}", (c) => handleStudioClientAsset(asAppContext(c)));
+    hono.get("/studio-assets/:path{.+}", (c) => asset(asAppContext(c)));
     // Same handler with no `path` param — the shape a route change could
     // produce, where the handler must refuse rather than read something.
-    hono.get("/unparameterized", (c) => handleStudioClientAsset(asAppContext(c)));
+    hono.get("/unparameterized", (c) => asset(asAppContext(c)));
     return {
       get: (url: string) => hono.fetch(new Request(`http://studio.test${url}`), BINDINGS),
     };
@@ -356,6 +362,41 @@ describe("studio client handlers", () => {
 
       expect(res.status).toBe(404);
       expect(await res.text()).toContain("Asset not found");
+    });
+
+    /**
+     * The cross-build request a rolling deploy makes unavoidable: the shell
+     * comes from the new replica and its entry script lands on this one, which
+     * is on its way out. Production answered that 404 (and served the same URL
+     * 200 forty-one seconds later), which is false twice over and cacheable by
+     * an intermediary — see the handler's own doc.
+     */
+    it("503s a missing asset while draining, and forbids caching it", async () => {
+      await build("assets/app.js", "console.log(1)");
+      const res = await (await app({ draining: true })).get("/studio-assets/assets/missing.js");
+
+      expect(res.status).toBe(503);
+      expect(res.headers.get("retry-after")).toBe("1");
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    });
+
+    it("still 404s a missing asset when NOT draining", async () => {
+      // The gate is the drain flag, not the path's shape: answering 503 to an
+      // asset that genuinely does not exist would say "retry" forever.
+      await build("assets/app.js", "console.log(1)");
+      const res = await (await app({ draining: false })).get("/studio-assets/assets/missing.js");
+
+      expect(res.status).toBe(404);
+    });
+
+    it("serves a present asset normally while draining", async () => {
+      // Draining changes the answer for a MISSING asset only — this replica is
+      // still serving, and its own build is still correct.
+      await build("assets/app-a1b2c3.js", "console.log(1)");
+      const res = await (await app({ draining: true })).get("/studio-assets/assets/app-a1b2c3.js");
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toContain("immutable");
     });
   });
 });
