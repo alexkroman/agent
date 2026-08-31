@@ -224,6 +224,9 @@ const ABSOLUTE_RULES = [
     remedy:
       "Use the package's real name from its package.json, and one of\n" +
       "`patch` / `minor` / `major`.\n\n" +
+      "It also covers a bump that SHIPS nowhere: aai-studio-client, aai-guest\n" +
+      "and aai-templates are each built into another package's artifact, so\n" +
+      "naming one alone passes every gate and delivers nothing (`SHIPS_VIA`).\n\n" +
       "A changeset whose key is a typo is IGNORED rather than rejected:\n" +
       "`pnpm changeset status --since=origin/main` — the pre-push hook's own\n" +
       "check — prints an empty bump list and exits 0. The release then silently\n" +

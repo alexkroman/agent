@@ -111,24 +111,6 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Validate RELEASE_TOKEN
-        id: release-token
-        env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          ok=false
-          if [ -n "$RELEASE_TOKEN" ]; then
-            status=$(curl -s -o /dev/null -w '%{http_code}' \
-              -H "Authorization: Bearer $RELEASE_TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}")
-            if [ "$status" = "200" ]; then
-              ok=true
-            else
-              echo "::warning title=RELEASE_TOKEN invalid::RELEASE_TOKEN was rejected by the GitHub API (HTTP $status) — it has likely expired. Falling back to GITHUB_TOKEN, so pushes from this workflow will NOT trigger the Check workflow. Rotate the RELEASE_TOKEN secret."
-            fi
-          fi
-          echo "ok=$ok" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # `fetch-depth: 0`, and it is load-bearing. `changeset version`
@@ -145,7 +127,6 @@ jobs:
           # pushes to main at the time it was found.
           fetch-depth: 0
           ref: ${{ inputs.ref || github.ref }}
-          token: ${{ steps.release-token.outputs.ok == 'true' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -160,10 +141,13 @@ jobs:
         with:
           version: pnpm run version
         env:
-          # Use RELEASE_TOKEN (PAT or GitHub App token) so the PR
-          # push/update triggers the Check workflow normally.
-          # GITHUB_TOKEN cannot trigger other workflows.
-          GITHUB_TOKEN: ${{ steps.release-token.outputs.ok == 'true' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # A PR opened by GITHUB_TOKEN does not trigger other workflows, so the
+          # Version Packages PR gets no Check run of its own. That is the state
+          # this repo has been in since 2026-08-07 and it is accepted rather
+          # than worked around: `main` is in `check.yml`'s push list, so the
+          # MERGE gets a verdict. Closing it properly needs an identity that is
+          # not GITHUB_TOKEN — a GitHub App token, not a PAT.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Skip lefthook pre-push hooks: the Check workflow already
           # gated the merge commit, and re-running the full suite here
           # on a single runner is both redundant and flaky. The Version
@@ -186,27 +170,6 @@ jobs:
       # guest-image job below, which otherwise resolves the SDK from npm.
       packed: ${{ steps.pack.outputs.packed }}
     steps:
-      # RELEASE_TOKEN is a PAT and can expire. If it's dead, checkout
-      # fails with a useless "could not read Username" error, so probe
-      # it first and fall back to GITHUB_TOKEN with a clear warning.
-      - name: Validate RELEASE_TOKEN
-        id: release-token
-        env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          ok=false
-          if [ -n "$RELEASE_TOKEN" ]; then
-            status=$(curl -s -o /dev/null -w '%{http_code}' \
-              -H "Authorization: Bearer $RELEASE_TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}")
-            if [ "$status" = "200" ]; then
-              ok=true
-            else
-              echo "::warning title=RELEASE_TOKEN invalid::RELEASE_TOKEN was rejected by the GitHub API (HTTP $status) — it has likely expired. Falling back to GITHUB_TOKEN, so pushes from this workflow will NOT trigger the Check workflow. Rotate the RELEASE_TOKEN secret."
-            fi
-          fi
-          echo "ok=$ok" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # `fetch-depth: 0`, and it is load-bearing. `changeset version`
@@ -223,9 +186,6 @@ jobs:
           # 20 of 30 consecutive pushes to main at the time it was found.
           fetch-depth: 0
           ref: ${{ inputs.ref || github.ref }}
-          # Use RELEASE_TOKEN so git push triggers the Check workflow.
-          # The default GITHUB_TOKEN cannot trigger other workflows.
-          token: ${{ steps.release-token.outputs.ok == 'true' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 

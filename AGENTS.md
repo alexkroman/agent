@@ -532,7 +532,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 17 | no open-coded record guard, in either polarity | `isRecord()` |
   | 18 | no `req.url.split("?")` | `requestPath()` / `requestQuery()` |
   | 19 | no hand-rolled sleep (or `node:timers/promises`), `<T>` included | `sleep()` |
-  | 20 | no changeset naming a package or bump type that does not exist | the real name from its package.json |
+  | 20 | no changeset that cannot bump, or that ships nowhere | a real name, plus a package that carries it |
   | 21 | no `expect.poll` — a `test.concurrent` sibling clears the pointer it reads | `vi.waitFor()` |
   | 22 | no truthiness-guarded conditional spread — `...(x && { x })` | a judgement: see the rule's remedy |
   | 23 | no `async` function handed straight to `.on`/`addEventListener` | a sync listener + `void p.catch(report)` |

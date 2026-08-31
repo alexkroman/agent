@@ -25,9 +25,9 @@ name: Check
 # concurrency groups, and nothing dedupes them — every push to a Version
 # Packages PR ran this whole matrix twice. 97 such runs exist in the history.
 # They stopped on 2026-08-07, when RELEASE_TOKEN went dead: `GITHUB_TOKEN`
-# cannot trigger a workflow, which `ship.yml` warns about itself, so the
-# entry became config that fires nothing and would have silently resumed
-# double-running the moment the token was rotated.
+# cannot trigger a workflow. That PAT has since been removed outright, so the
+# entry can never fire again — but for weeks it was config that fires nothing,
+# invisible in a diff and in the run list alike.
 on:
   push:
     branches: [main]

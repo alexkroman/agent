@@ -186,11 +186,11 @@ describe("the ci gate job", () => {
     // to a Version Packages PR ran this whole matrix twice. 97 such push runs
     // are in the history.
     //
-    // Asserted rather than commented because the entry is INVISIBLE while
-    // RELEASE_TOKEN is dead: `GITHUB_TOKEN` cannot trigger a workflow, so it
-    // fires nothing today and would silently resume double-running the moment
-    // the token is rotated. Same shape as this package's other gates — config
-    // that looks live, checks nothing, and costs on a delay.
+    // Asserted rather than commented because the entry is INVISIBLE: the only
+    // identity the release line has is `GITHUB_TOKEN`, which cannot trigger a
+    // workflow, so it would fire nothing — and the day somebody gives that job
+    // an App token it silently resumes double-running. Same shape as this
+    // package's other gates: config that looks live and checks nothing.
     expect(
       pushBranches(),
       "the version branch is back in the push list — its pull_request arm already covers it, so the whole matrix runs twice",

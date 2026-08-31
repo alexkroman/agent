@@ -265,10 +265,129 @@ export function checkChangesetConsumable(file, source, versionable) {
 }
 
 /**
+ * Packages whose content reaches nobody on their OWN version bump, and what a
+ * changeset must also name for the change to actually ship.
+ *
+ * Each of these is built into another package's artifact, so bumping it alone
+ * writes a version and a CHANGELOG entry and ships nothing. The trap is that
+ * every gate in the repo stays green: the pre-push hook's `changeset status`
+ * only asks whether the changed packages have A changeset, so an author who
+ * changes the studio front-end, is correctly told to write a changeset, and
+ * names the package they changed, has satisfied every check and deployed
+ * nothing.
+ *
+ * `packages/aai-studio-client/CLAUDE.md` states the studio case outright — "This
+ * package ships only as a side effect of a SERVER release" — and it was guarded
+ * by nothing.
+ *
+ * Two packages are deliberately absent. `aai-evals` ships nowhere by design, so
+ * there is no delivery to strand. `docs` has its own path (`docs.yml` publishes
+ * on a push to main, keyed to no version at all).
+ */
+const SHIPS_VIA = [
+  {
+    // The studio front-end's `dist/` is baked into the one Modal app's image,
+    // and the deploy fires on a version bump to the server or the studio
+    // server — never on this package's own.
+    name: "aai-studio-client",
+    carriers: ["aai-server", "aai-studio-server"],
+    via: "its dist/ is baked into the one Modal app's image",
+  },
+  {
+    // The harness is baked into the guest image, whose tag is content-addressed
+    // and PINNED by the server at deploy time. Publishing a new image is not
+    // enough: an already-deployed server keeps asking for the tag it pinned, so
+    // a guest change reaches production only through a deploy.
+    name: "aai-guest",
+    carriers: ["aai-server", "aai-studio-server"],
+    via: "its harness is baked into the guest image, whose tag the server pins at deploy time",
+  },
+  {
+    // `aai-cli/bundle-templates.mjs` copies the templates and the scaffold into
+    // the CLI's dist at build time, so they reach a user when the CLI
+    // publishes. Any of the fixed four bumps all four.
+    name: "aai-templates",
+    carriers: [
+      "@alexkroman1/aai",
+      "@alexkroman1/aai-cli",
+      "@alexkroman1/aai-runtime",
+      "@alexkroman1/aai-ui",
+    ],
+    via: "its templates are copied into the @alexkroman1/aai-cli tarball at build time",
+  },
+];
+
+/**
+ * The floor under {@link SHIPS_VIA}'s own names.
+ *
+ * Every entry is matched by NAME against a changeset, so a table whose packages
+ * had been renamed would silently match nothing and this rule would report `0 ✓`
+ * over the exact hole it exists to close — the shape the whole gate is built
+ * against. Checked against the real workspace rather than trusted.
+ *
+ * @param {Set<string>} known - every workspace package name
+ */
+function assertShipsViaResolves(known) {
+  for (const { name, carriers } of SHIPS_VIA) {
+    for (const entry of [name, ...carriers]) {
+      if (!known.has(entry)) {
+        throw new Error(
+          `guard-invariants: rule 29's SHIPS_VIA names "${entry}", which is not a workspace ` +
+            "package any more. Fix the table — a name that matches nothing makes this rule " +
+            "report zero violations over the hole it exists to close.",
+        );
+      }
+    }
+  }
+}
+
+/**
+ * A changeset that bumps a package with no ship path of its own, and names
+ * nothing that carries it.
+ *
+ * The sibling of {@link checkChangesetConsumable}: that one catches a changeset
+ * `changeset version` cannot CONSUME, and this one catches a changeset it
+ * consumes happily whose content then reaches nothing. Both are release metadata
+ * that looks like a release and is not.
+ *
+ * A changeset naming a carrier ALONGSIDE the built-in package is correct and
+ * passes — that is the ordinary case and the remedy. An empty changeset is
+ * spared for the same reason it is everywhere else: it names nothing, so it
+ * claims nothing.
+ *
+ * @param {string} file
+ * @param {string} source
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+export function checkChangesetShippable(file, source) {
+  const parsed = parseChangesetFrontmatter(source);
+  // A malformed changeset is checkChangeset's finding — not reported twice.
+  if ("error" in parsed || parsed.entries.length === 0) return [];
+  const named = new Set(parsed.entries.map(({ name }) => name));
+
+  const found = [];
+  for (const { name, carriers, via } of SHIPS_VIA) {
+    if (!named.has(name)) continue;
+    if (carriers.some((carrier) => named.has(carrier))) continue;
+    const line = parsed.entries.find((entry) => entry.name === name)?.line ?? 1;
+    found.push({
+      file,
+      line,
+      text:
+        `bumps ${name}, which reaches nobody on its own version: ${via}. ` +
+        `Name one of ${carriers.join(", ")} as well, or make this an \`--empty\` changeset ` +
+        "if the change really is not meant to ship.",
+    });
+  }
+  return found;
+}
+
+/**
  * @returns {{file: string, line: number, text: string}[]}
  */
 export function scanChangesetPackageNames() {
   const known = workspacePackageNames();
+  assertShipsViaResolves(known);
   const versionable = versionablePackageNames();
   const files = git(["ls-files", "--", ".changeset"])
     .split("\n")
@@ -280,6 +399,7 @@ export function scanChangesetPackageNames() {
     if (source === undefined) continue;
     found.push(...checkChangeset(file, source, known));
     found.push(...checkChangesetConsumable(file, source, versionable));
+    found.push(...checkChangesetShippable(file, source));
   }
   return found;
 }
