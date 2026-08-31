@@ -260,7 +260,21 @@ describeWithPg("workflow queue store", () => {
     // The oldest message wins the tick whoever owns it. Ordered by slug, this
     // was three `wfq-t1` messages and `older` was not among them.
     expect(claimed.map((m) => m.id)).toContain("older");
-    expect(claimed[0]?.id).toBe("older");
+
+    // The WHOLE order, not just the head — and that is the assertion that stopped
+    // being luck. `UPDATE … RETURNING` has no defined row order, so oldest-first
+    // was a property of the PLAN: splitting the due set in two changed the plan,
+    // and `claimed[0]` came back `busy0` on both CI Postgres arms while passing
+    // locally. `claimDue` ORDERS what it returns now, so this holds whatever the
+    // planner does. Each `enqueue` is its own statement and so its own `now()`,
+    // which is what makes the two `busy` rows ordered rather than tied.
+    //
+    // Note this assertion does NOT discriminate on every arm: the local Supabase
+    // plan already returned oldest-first, which is exactly why the bug reached CI
+    // — verified by A/B, with the outer `order by` removed all 27 still pass here.
+    // What proves the fix is plan-independent is the plan itself: `explain` reports
+    // a top-level `Sort` on `claimed.available_at, claimed.id`.
+    expect(claimed.map((m) => m.id)).toEqual(["older", "busy0", "busy1"]);
   });
 
   /**
@@ -270,6 +284,17 @@ describeWithPg("workflow queue store", () => {
    */
   test("a continuously busy tenant does not keep a later one unclaimed", async () => {
     await enqueue(sql, msg("waiting", "r-waiting", { slug: SLUGS[1] as string }));
+    // Backdated for the reason the test above backdates its own: `enqueue` stamps
+    // `available_at` with `now()`, and the claim orders by `(available_at, id)`.
+    // Two enqueues can land in the SAME microsecond, and then the tie-break by id
+    // decides fairness — `busy0` sorts before `waiting`, so the row this test is
+    // about loses every tick and the suite fails intermittently under load.
+    // Measured: 2 of 4 full-tier runs. An hour of backdating makes "oldest" a
+    // fact rather than a race.
+    await sql(
+      "update aai_platform.workflow_queue set available_at = now() - interval '1 hour' where id = $1",
+      ["waiting"],
+    );
     let produced = 0;
     const claimedIds: string[] = [];
     for (let tick = 0; tick < 3; tick++) {

@@ -156,6 +156,15 @@ export async function claimDue(
     // name is a syntax error rather than a style question. Nothing in the unit
     // tier would have caught it — the only tests that EXECUTE this SQL are
     // `describeWithPg` ones, which skip without a real database.
+    //
+    // The UPDATE is wrapped in a `claimed` CTE so the outer select can ORDER what
+    // comes back, and that is a fix rather than a flourish: `UPDATE … RETURNING`
+    // has no defined row order, so oldest-first was previously a property of the
+    // PLAN. Splitting the due set in two changed the plan and with it the order,
+    // which failed `a busy early-sorting tenant cannot starve a later one` on both
+    // CI Postgres arms while passing locally — the shape of luck, not of a
+    // guarantee. Stating it costs one column in the `returning` list and makes the
+    // claim's fairness claim true of the RESULT and not just of the selection.
     `with orchestration_due as (
        select distinct on (q.slug, q.payload->>'runId') q.id, q.available_at
        from aai_platform.workflow_queue q
@@ -203,12 +212,18 @@ export async function claimDue(
          union all
          select id, available_at from step_due
        ) due order by available_at, id limit $1
+     ),
+     claimed as (
+       update aai_platform.workflow_queue q
+          set locked_at = now()
+        where q.id in (select id from candidates)
+          and (q.locked_at is null or q.locked_at < now() - ($2 || ' milliseconds')::interval)
+       returning q.id, q.slug, q.queue_name, q.payload, q.headers, q.deployment_id,
+                 q.attempt, q.available_at
      )
-     update aai_platform.workflow_queue q
-        set locked_at = now()
-      where q.id in (select id from candidates)
-        and (q.locked_at is null or q.locked_at < now() - ($2 || ' milliseconds')::interval)
-     returning q.id, q.slug, q.queue_name, q.payload, q.headers, q.deployment_id, q.attempt`,
+     select id, slug, queue_name, payload, headers, deployment_id, attempt
+     from claimed
+     order by available_at, id`,
     [
       limit,
       String(staleMs),
