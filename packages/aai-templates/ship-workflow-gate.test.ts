@@ -117,6 +117,22 @@ describe("the packed release reaches the image", () => {
     expect(source).toContain("--sdk-pack-dir .changeset-pack");
   });
 
+  test("the pack directory is uploaded despite being hidden", () => {
+    const source = workflow ?? "";
+    // The directory those three consumers agree on is DOT-PREFIXED, and since
+    // upload-artifact v4.4 that makes it hidden and excluded by default. The
+    // hand-off then fails in the one way this file exists to catch: the pack
+    // step prints its four tarballs, the upload one line later reports "No
+    // files were found", and `if-no-files-found: error` takes the publish, the
+    // tags, the image and the deploy down with it (run 33410419652). Asserted
+    // against the upload step rather than the file, so a second artifact
+    // elsewhere cannot satisfy it.
+    const upload = source.slice(source.indexOf("name: Upload the packed release"));
+    const step = upload.slice(0, upload.indexOf("      - name:"));
+    expect(step).toContain("path: .changeset-pack");
+    expect(step).toContain("include-hidden-files: true");
+  });
+
   test("pack and publish sit outside the changesets action", () => {
     const source = workflow ?? "";
     // `changesets/action` only invokes its own `publish:` when there are NO

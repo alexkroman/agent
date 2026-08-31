@@ -235,6 +235,15 @@ jobs:
         with:
           name: changeset-pack
           path: .changeset-pack
+          # `.changeset-pack` is DOT-PREFIXED, and since upload-artifact v4.4 a
+          # dot-prefixed path is hidden and excluded by default — so the glob
+          # resolved to nothing, `if-no-files-found: error` failed the job, and
+          # the publish and tag steps behind it were skipped. It happened on the
+          # first release through this path (run 33410419652): the pack step had
+          # just printed all four tarballs, and the upload one line later said
+          # "No files were found with the provided path: .changeset-pack".
+          # Nothing about that is visible in a diff or in a dry run.
+          include-hidden-files: true
           retention-days: 7
           if-no-files-found: error
 
