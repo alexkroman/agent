@@ -71,7 +71,7 @@ const exportsSource: string =
 // The two RUNNERS come from the shared wiring block — the same three sources
 // every gate spec here reads. `?? ""` keeps a source that stopped resolving
 // visible as an empty search, which the assertions below then fail on.
-const checkScript: string = GATE_WIRING["scripts/check.sh"] ?? "";
+const checkScript: string = GATE_WIRING["scripts/check.mjs"] ?? "";
 const ciWorkflow: string = GATE_WIRING[".github/workflows/check.yml"] ?? "";
 
 const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
@@ -319,8 +319,8 @@ describe("capability contracts", () => {
     }
   });
 
-  test("the gate is wired into both check.sh and CI", () => {
-    // It lived only in check.sh for the ratchets, and `git push --no-verify`
+  test("the gate is wired into both check.mjs and CI", () => {
+    // It lived only in the local check script for the ratchets, and `git push --no-verify`
     // skipped every one of them. Both, or neither is enforcement.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");
@@ -331,7 +331,7 @@ describe("capability contracts", () => {
     // Ordering matters: the contracts read the authoring surface out of the
     // committed API reports, so a stale report would be believed.
     for (const [label, source] of [
-      ["scripts/check.sh", checkScript],
+      ["scripts/check.mjs", checkScript],
       [".github/workflows/check.yml", ciWorkflow],
     ] as const) {
       expect(

@@ -50,6 +50,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { parseScriptArgs } from "./_args.mjs";
 import { readJson, repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url);
@@ -91,15 +92,26 @@ const WARN_RATIO = 0.9;
  */
 const MIN_CORPUS = 800;
 
-const args = process.argv.slice(2);
-const flag = (name) => args.includes(name);
-const STAGED = flag("--staged");
-const JSON_OUT = flag("--json");
-const ALL = flag("--all");
+const { values: FLAGS } = parseScriptArgs({
+  script: import.meta.url,
+  options: {
+    staged: { type: "boolean" },
+    json: { type: "boolean" },
+    all: { type: "boolean" },
+    top: { type: "string" },
+  },
+});
+const STAGED = FLAGS.staged === true;
+const JSON_OUT = FLAGS.json === true;
+const ALL = FLAGS.all === true;
+/**
+ * `--top` still falls back rather than failing, and that is deliberate: it only
+ * chooses how many rows the report PRINTS, so a bad value cannot change the
+ * verdict. Every flag that can change a verdict is strict.
+ */
 const TOP = (() => {
-  const at = args.indexOf("--top");
-  if (at === -1) return 10;
-  const n = Number(args[at + 1]);
+  if (FLAGS.top === undefined) return 10;
+  const n = Number(FLAGS.top);
   return Number.isInteger(n) && n > 0 ? n : 10;
 })();
 

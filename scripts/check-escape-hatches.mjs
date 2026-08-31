@@ -60,6 +60,8 @@
 
 import { readFileSync } from "node:fs";
 
+import { parseScriptArgs } from "./_args.mjs";
+
 import {
   assertNotUniversallyEmpty,
   assertScanCorpus,
@@ -72,6 +74,11 @@ import {
 } from "./_ratchet.mjs";
 
 const BASELINE_PATH = new URL("escape-hatch-baseline.json", import.meta.url);
+
+const { values: FLAGS } = parseScriptArgs({
+  script: import.meta.url,
+  options: { update: { type: "boolean" } },
+});
 
 const GATE = "check-hatches";
 const UPDATE_COMMAND = "node scripts/check-escape-hatches.mjs --update";
@@ -248,7 +255,7 @@ const { counts: actual, occurrences } = scanGroups(groups, {
 // --update: lower the baseline to match reality. Never raise it.
 // ---------------------------------------------------------------------------
 
-if (process.argv.includes("--update")) {
+if (FLAGS.update === true) {
   updateBaseline({
     gate: GATE,
     baselinePath: BASELINE_PATH,

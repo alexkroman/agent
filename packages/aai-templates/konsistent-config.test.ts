@@ -20,7 +20,7 @@
  * points at paths that exist — rather than trusting a green run.
  *
  * The wiring test is the other half. The quality ratchets lived only in
- * `scripts/check.sh` for a long time, which CI never invokes, so
+ * `scripts/check.mjs` for a long time, which CI never invokes, so
  * `git push --no-verify` skipped them entirely; a new gate has to be in both
  * places or it is enforced by a hook the author can bypass.
  *

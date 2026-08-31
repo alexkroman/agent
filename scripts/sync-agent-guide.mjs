@@ -42,12 +42,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { parseScriptArgs } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
 const SOURCE = join(ROOT, "packages/aai-templates/scaffold/CLAUDE.md");
 const DESTINATION = join(ROOT, "packages/aai/AGENT_GUIDE.md");
-const CHECK = process.argv.includes("--check");
+const { values: FLAGS } = parseScriptArgs({
+  script: import.meta.url,
+  options: { check: { type: "boolean" } },
+});
+const CHECK = FLAGS.check === true;
 
 /**
  * A banner on the copy, so nobody edits the wrong file.

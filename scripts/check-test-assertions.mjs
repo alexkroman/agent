@@ -37,7 +37,7 @@
  * `file-length-allowlist.json`'s empty state — an escape hatch here would be
  * indistinguishable from the bug.
  *
- * Wired up as `pnpm check:test-assertions`, in `scripts/check.sh` and the CI
+ * Wired up as `pnpm check:test-assertions`, in `scripts/check.mjs` and the CI
  * check job (both — see the root CLAUDE.md on ratchets that lived in only one).
  */
 

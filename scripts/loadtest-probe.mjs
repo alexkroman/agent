@@ -26,11 +26,9 @@
 //
 // Global `WebSocket` (Node 22+), so this has no dependencies and runs anywhere.
 
-const arg = (name, fallback) => {
-  const hit = process.argv.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
-  if (!hit) return fallback;
-  return hit.includes("=") ? hit.slice(name.length + 3) : true;
-};
+import { valueReader } from "./_args.mjs";
+
+const arg = valueReader(process.argv.slice(2));
 
 const PORT = arg("port", "4110");
 const URL_ = arg("url", `ws://127.0.0.1:${PORT}/websocket`);

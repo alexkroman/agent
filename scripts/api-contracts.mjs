@@ -91,13 +91,28 @@ import {
   writeInternalSurface,
   writeTable,
 } from "./_api-contracts-tree.mjs";
+import { parseScriptArgs } from "./_args.mjs";
 
-const argv = process.argv.slice(2);
-const flag = (name) => {
-  const index = argv.indexOf(name);
-  return index === -1 ? undefined : (argv[index + 1] ?? "");
-};
-const has = (name) => argv.includes(name);
+/**
+ * Strict, because every one of these five flags decides what gets WRITTEN.
+ *
+ * The old reader answered `""` for a value flag in final position, so
+ * `--bump` with nothing after it ran `bump("")` and `--drop` with nothing after
+ * it reached the reason check as an empty string. `parseArgs` rejects both at the
+ * parse, which is the same argument as the `--check` family: a classification
+ * recorded against the wrong capability is the failure this gate exists to
+ * prevent, and a mistyped flag is how you get one.
+ */
+const { values: FLAGS } = parseScriptArgs({
+  script: import.meta.url,
+  options: {
+    bump: { type: "string" },
+    drop: { type: "string" },
+    retain: { type: "boolean" },
+    init: { type: "boolean" },
+    "update-internal": { type: "boolean" },
+  },
+});
 
 const CONTRACT_KIND = "aai-authoring-capability-contract";
 
@@ -195,8 +210,8 @@ function bump(target) {
     console.error(`api-contracts: "${id}" has no entry in ${rel(pkg.tablePath)}.`);
     process.exit(1);
   }
-  const retain = has("--retain");
-  const reason = flag("--drop");
+  const retain = FLAGS.retain === true;
+  const reason = FLAGS.drop;
   if (retain === (reason !== undefined)) {
     console.error(
       'api-contracts: pass exactly one of `--retain` or `--drop "<reason>"`.\n' +
@@ -277,12 +292,12 @@ function bumpVerdict({ contract, fixture, retain, reason, retired, suggested }) 
 // Entry
 // ---------------------------------------------------------------------------
 
-if (has("--init")) {
+if (FLAGS.init === true) {
   init();
   process.exit(0);
 }
 
-if (has("--update-internal")) {
+if (FLAGS["update-internal"] === true) {
   for (const pkg of packages) {
     writeInternalSurface(pkg, internalSurfaceSnapshot(authoringSurface(pkg).internalNames));
   }
@@ -290,7 +305,7 @@ if (has("--update-internal")) {
   process.exit(0);
 }
 
-const bumpTarget = flag("--bump");
+const bumpTarget = FLAGS.bump;
 if (bumpTarget !== undefined) {
   bump(bumpTarget);
   process.exit(0);

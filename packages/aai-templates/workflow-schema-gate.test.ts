@@ -155,11 +155,12 @@ describe("the vendored migration covers the installed package", () => {
 describe("the gate is wired where it is enforced", () => {
   test.each([
     ["package.json", "check:workflow-schema"],
-    ["scripts/check.sh", "check:workflow-schema"],
+    ["scripts/check.mjs", "check:workflow-schema"],
     [".github/workflows/check.yml", "check:workflow-schema"],
   ])("%s runs it", (file, needle) => {
-    // Both, always: the gates lived only in check.sh for a long time, which CI
-    // never invokes, so `git push --no-verify` skipped every one of them.
+    // Both, always: the gates lived only in the local check script for a long
+    // time, which CI never invokes, so `git push --no-verify` skipped every one
+    // of them.
     expect(GATE_WIRING[file]).toContain(needle);
   });
 });

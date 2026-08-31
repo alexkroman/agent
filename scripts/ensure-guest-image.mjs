@@ -60,6 +60,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { parseScriptArgs } from "./_args.mjs";
 import { extractString, extractStringArray } from "./build-guest-image-extract.mjs";
 import { sdkSourceDigest } from "./build-guest-image-sdk.mjs";
 
@@ -173,14 +174,13 @@ function stale(inputs) {
 }
 
 function main(argv) {
-  const force = argv.includes("--force");
-  const checkOnly = argv.includes("--check");
-  for (const arg of argv) {
-    if (!["--force", "--check"].includes(arg)) {
-      console.error(`ensure-guest-image: unknown argument ${arg}`);
-      return 1;
-    }
-  }
+  const { values: flags } = parseScriptArgs({
+    script: import.meta.url,
+    options: { force: { type: "boolean" }, check: { type: "boolean" } },
+    argv,
+  });
+  const force = flags.force === true;
+  const checkOnly = flags.check === true;
 
   // The `subprocess` backend runs the guest as a child process on the host's own
   // network stack and reads `dist/harness.mjs` directly — there is no image in

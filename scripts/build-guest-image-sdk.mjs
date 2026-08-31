@@ -20,7 +20,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path, { posix } from "node:path";
 import process from "node:process";
 import { extractStringArray } from "./build-guest-image-extract.mjs";
@@ -170,13 +170,27 @@ export function sdkSourceDigest() {
   return hash.digest("hex");
 }
 
-/** Every file under `dir`, depth-first and SORTED, so the digest is stable. */
+/**
+ * Every file under `dir`, SORTED, so the digest is stable.
+ *
+ * `readdirSync`'s own `recursive` option rather than a hand-rolled recursion —
+ * and specifically NOT `fs.globSync("**\/*")`, which is the obvious-looking
+ * replacement and would be a silent bug: glob does not match a path segment
+ * beginning with a dot, so every dotfile in a `dist/` would drop out of the
+ * digest and a change to one would not rebuild the image. Demonstrated on a
+ * scratch tree — `readdirSync` recursive answers `[".hidden",
+ * "sub/.alsohidden", "sub/plain.txt"]` where `globSync("**\/*")` answers
+ * `["sub", "sub/plain.txt"]`, missing two files and offering a directory.
+ *
+ * The sort is now over whole relative paths rather than per directory level, so
+ * the order differs where a filename sorts around a `/` (`a-b` before `a/z`
+ * instead of after). That changes this digest ONCE — it is a cache key computed
+ * at runtime and committed nowhere, so the cost is a single guest-image rebuild
+ * on the next boot, and every run after it is stable again.
+ */
 function walk(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir).sort()) {
-    const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...walk(full));
-    else out.push(full);
-  }
-  return out;
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath, entry.name))
+    .sort();
 }

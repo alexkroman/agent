@@ -44,9 +44,14 @@ import { execFileSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { parseScriptArgs } from "./_args.mjs";
 import { readJson, repoRoot } from "./_fs.mjs";
 
-const checkOnly = process.argv.includes("--check");
+const { values: flags } = parseScriptArgs({
+  script: import.meta.url,
+  options: { check: { type: "boolean" } },
+});
+const checkOnly = flags.check === true;
 const root = repoRoot(import.meta.url);
 const guestPkgPath = join(root, "packages/aai-guest/package.json");
 const toolchainDir = join(root, "packages/aai-guest/toolchain");

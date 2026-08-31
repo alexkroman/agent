@@ -58,10 +58,9 @@
 //
 // Global `fetch` (Node 22+), so this has no dependencies.
 
-const arg = (name, fallback) => {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit ? hit.slice(name.length + 3) : fallback;
-};
+import { valueReader } from "./_args.mjs";
+
+const arg = valueReader(process.argv.slice(2));
 
 const PORT = arg("port", "4960");
 const BASE = arg("base", `http://127.0.0.1:${PORT}`);

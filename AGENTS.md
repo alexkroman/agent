@@ -139,17 +139,19 @@ push-list rules and the group are specced — see `packages/aai-templates/CLAUDE
 **The test matrix names every package with a `test:coverage` script**, which
 now includes `aai-evals` — absent for a long time, so its seven unit suites and
 its four coverage floors were gated by nothing in CI while passing locally
-(`check.sh` runs `turbo run test:coverage` unfiltered). That is the
+(`check.mjs` runs `turbo run test:coverage` unfiltered). That is the
 green-locally/red-in-CI asymmetry running backwards, and it made a PR that
 breaks those suites fully green. It is NOT the documented eval-tier exemption,
 which is scoped to `check:eval`.
 
 ### Full CI check (`pnpm check`)
 
-Runs via `scripts/check.sh` in a single turbo invocation for maximum
+Runs via `scripts/check.mjs` in a single turbo invocation for maximum
 parallelism. Turbo handles the dependency graph — tasks with no
 dependencies (lint, test, syncpack, sherif) start immediately while
 build-dependent tasks (typecheck, publint, attw) wait for build.
+The gates are a `GATES` **table** there (`phase`, `fatal`, one runner);
+that file's doc carries the argument.
 
 Turbo runs tasks in **strict env mode**, so proxy/CA variables
 (`HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, …) are listed in
@@ -204,7 +206,7 @@ git-tracked file in the package — minus `**/*.md` (no build or test reads it,
 and CHANGELOG.md is rewritten by every release). The two packages that DO read
 markdown re-include it: `aai-cli`, which bundles the templates and scaffold as
 shipped product, and `aai-templates`, whose suites read repo-root files —
-`../../CLAUDE.md`, `../*/CLAUDE.md`, `scripts/check-*.mjs`, `scripts/check.sh`,
+`../../CLAUDE.md`, `../*/CLAUDE.md`, `scripts/check-*.mjs`, `scripts/check.mjs`,
 `.github/workflows/check.yml` — and so had the gates-that-guard-the-gates
 served from cache exactly when the file they check changed. Prove any of this
 the same way: capture `turbo run <task> --filter <pkg> --dry=json`'s hash,
@@ -262,11 +264,11 @@ changed since the default branch (also `test:coverage`, same reason);
 
 ### Quality ratchets
 
-Beyond lint/typecheck/test, `scripts/check.sh` **and the CI check job** run
+Beyond lint/typecheck/test, `scripts/check.mjs` **and the CI check job** run
 ten **gates** (all also runnable standalone) that hold the line on technical
 debt. Two compare against a COMMITTED PER-FILE BASELINE
 (`check:hatches`, `check:invariants`); the rest are absolute. They must stay
-wired into BOTH: for a long time they lived only in `check.sh`, which CI never
+wired into BOTH: for a long time they lived only in `check.mjs`, which CI never
 invokes, so the only thing enforcing them was the pre-push hook — and
 `git push --no-verify` skipped them entirely.
 
@@ -519,11 +521,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 3 | no `Promise.race` against a `setTimeout`, WRAPPED FORM INCLUDED | `p-timeout` |
   | 4 | no inline `new Promise(r => setTimeout(r, 0))`, `setImmediate` and `<T>` included | `flush()` / `tick()` |
   | 5 | no `delete process.env.X` | `vi.stubEnv(name, undefined)` |
-  | ~~6~~ | *retired — `ctx.state` no longer exists* | `sessionSlot()` |
   | 7 | no floating-tag GitHub Action | a 40-char commit SHA |
   | 8 | no `if (m.get(k) === mine) m.delete(k)` | `createOwnedMap()` |
   | 9 | no `tails.get(k) ?? Promise.resolve()` | `createKeyedLock()` / `slot.update` |
-  | ~~10~~ | *retired — `research/` no longer exists* | — |
   | 11 | no hardcoded `/tmp` in shipped source | `join(tmpdir(), …)` |
   | 12 | every guest route literal is in `GUEST_ROUTES` — `aai-guest` AND the `aai/host` modules it bundles | declare it + its exposure |
   | 13 | no template import escaping its template dir | move it in, or publish it |
@@ -540,6 +540,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 25 | no new field on the shared channel message shape | that kind's own options type |
   | 26 | no raw step call in a shipped `workflows/` body | the `*Classified` sibling |
   | 27 | no explicit `[Symbol.dispose]()` call in shipped source | `using` / `await using` |
+  | 28 | no hand-rolled `process.argv` scan in `scripts/` | `parseScriptArgs()` |
 
   Hand-kept, and it HAS gone stale (it stopped at 23); `--rules` is derived.
   Rule IDs are **stable** — they appear in commit messages and in the baseline,
@@ -559,7 +560,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   Rule 22 counts that family instead, the first rule here **seeded as debt** (145
   across 75 files, goal zero) — its entries are lines nobody has read yet.
 
-  **Six scopes, six corpus FLOORS**, and three were missing — the
+  **Seven scopes, seven corpus FLOORS**, and three were missing — the
   shipped-source corpus rules 11 and 27 share (1,224 files, and 11 is the
   Windows-portability rule whose regressions are invisible on every machine
   that runs CI), rule 12's guest HTTP surface, and rule 13's 175 template
@@ -701,13 +702,13 @@ actual nobody had measured. They are DELETED. The measured actuals stay in a
 comment there, which was the informative half.
 
 **And the floors are measured locally now, because for a long time they were
-not.** `scripts/check.sh` ran `test`, CI's matrix runs `test:coverage`, so the
+not.** `scripts/check.mjs` ran `test`, CI's matrix runs `test:coverage`, so the
 one gate a PR could not see coming was its own coverage: every suite green
 locally, `test (<pkg>)` red in CI. It happened — a new 300-line module in
 aai-ui landed at 1.44% line and 0% branch coverage, took the package under all
 four of its floors, and cost a whole follow-up commit to fix. Floors do not
 move to accommodate a PR, so the earlier that is known the cheaper it is. Both
-`check.sh` modes and `check:affected` run `test:coverage` now.
+`check.mjs` modes and `check:affected` run `test:coverage` now.
 
 ## Architecture
 
@@ -1173,7 +1174,7 @@ and the section above admits how it gets made: a judgement from memory, where a
 `patch` that was really a `major` is found by the consumer whose build breaks.
 
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
-`check:api-report` in `scripts/check.sh` and in the CI check job) closes that.
+`check:api-report` in `scripts/check.mjs` and in the CI check job) closes that.
 Forty-nine **capabilities** — named slices of the authoring API, each
 declared by a file under `<package>/contracts/entrypoints/` that may contain
 nothing but
@@ -1302,7 +1303,7 @@ Two mechanical notes. The epoch directory is `epochs/`, not `reports/`, because
 `.gitignore` carries a bare `reports/` rule that would have swallowed it whole.
 And the authoring surface is read out of the **committed** `etc/*.api.md`
 reports rather than re-derived, so this and the thing a reviewer looks at cannot
-disagree — which is why the ordering in `check.sh` and CI is fixed and asserted:
+disagree — which is why the ordering in `check.mjs` and CI is fixed and asserted:
 a stale report would be believed.
 
 `packages/aai-templates/api-contracts-gate.test.ts` is the guard under the gate,

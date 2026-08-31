@@ -78,7 +78,7 @@ const spans = guideCode(guide);
 const code = spans.join("\n");
 
 describe("check:authoring-guide", () => {
-  test("is wired into package.json, check.sh and the CI check job", () => {
+  test("is wired into package.json, check.mjs and the CI check job", () => {
     for (const [file, source] of Object.entries(GATE_WIRING)) {
       expect(source, `${file} did not resolve`).toBeTypeOf("string");
       expect(source, `${file} does not run check:authoring-guide`).toContain(

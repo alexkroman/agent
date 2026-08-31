@@ -102,23 +102,24 @@ const OPTIONS = {
   "baseline-label": { type: "string" },
 };
 
-/** Total bytes and file count of a directory tree. */
+/**
+ * Total bytes and file count of a directory tree.
+ *
+ * `readdirSync`'s `recursive` option, NOT `fs.globSync("**\/*")`: glob skips
+ * any path segment starting with a dot, and a size budget that silently omits
+ * dotfiles is the exact failure this repo keeps finding — a measurement that
+ * looks like a measurement and undercounts. `isFile()` still filters, because
+ * a symlink or a fifo has no size worth adding and `guard-invariants` rule 1
+ * bans the former anyway.
+ */
 function measureTree(dir) {
   let bytes = 0;
   let files = 0;
-  const walk = (current) => {
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      const full = join(current, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      bytes += statSync(full).size;
-      files += 1;
-    }
-  };
-  walk(dir);
+  for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    bytes += statSync(join(entry.parentPath, entry.name)).size;
+    files += 1;
+  }
   return { bytes, files };
 }
 

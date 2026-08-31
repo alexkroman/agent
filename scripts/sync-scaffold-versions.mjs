@@ -28,9 +28,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
+import { parseScriptArgs } from "./_args.mjs";
 import { readJson, repoRoot } from "./_fs.mjs";
 
-const checkOnly = process.argv.includes("--check");
+const { values: flags } = parseScriptArgs({
+  script: import.meta.url,
+  options: { check: { type: "boolean" } },
+});
+const checkOnly = flags.check === true;
 const root = repoRoot(import.meta.url);
 const scaffoldPath = join(root, "packages/aai-templates/scaffold/package.json");
 const workspacePath = join(root, "pnpm-workspace.yaml");

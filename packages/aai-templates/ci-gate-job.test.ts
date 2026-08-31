@@ -361,7 +361,7 @@ describe("the coverage test matrix", () => {
   test("it names EVERY package with a test:coverage script", () => {
     // Twice now a package's whole suite and all four of its coverage floors
     // have been gated by nothing in CI while passing locally, because
-    // `scripts/check.sh` runs `turbo run test:coverage` unfiltered and this
+    // `scripts/check.mjs` runs `turbo run test:coverage` unfiltered and this
     // list does not: `aai-evals`, and then `aai-runtime`, which arrived with
     // the runtime split and was absent for every PR after it — 147 test files
     // and 2143 tests, in the package that runs every agent. The comment above

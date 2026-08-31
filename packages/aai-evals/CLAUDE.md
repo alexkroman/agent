@@ -98,7 +98,7 @@ The instrument is noisy in a measured way: identical code has scored **0.56 and
   harness error would read as agent nondeterminism.
 
 **This tier is not a merge gate and must not become one.** THIS package's
-`check:eval` is absent from `pnpm check`, from `scripts/check.sh` and from CI —
+`check:eval` is absent from `pnpm check`, from `scripts/check.mjs` and from CI —
 each of which runs `check:eval` filtered to `aai-templates`, in scripted-model
 mode, which is a wiring gate and not a live measurement (see
 `packages/aai-runtime/CLAUDE.md`). A flaky required check that

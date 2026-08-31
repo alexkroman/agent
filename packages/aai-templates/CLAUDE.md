@@ -1493,7 +1493,7 @@ could be: it is a real agent doing real work, on the same SDK it builds with.
 
 `_gate-support.ts` holds what every gate spec here reads and none of them owns:
 `GATE_WIRING` (the three files a gate must be NAMED in — `package.json`,
-`scripts/check.sh`, `.github/workflows/check.yml`), `ERE_UNSUPPORTED` (the regex
+`scripts/check.mjs`, `.github/workflows/check.yml`), `ERE_UNSUPPORTED` (the regex
 constructs POSIX ERE has no answer for, banned by both pattern-shipping gates),
 `repoPathOf` (a Vite glob key as a repo-relative path), `sole` (the one value a
 single-file glob resolved to), `byCodeUnit` (the explicit comparator the repo

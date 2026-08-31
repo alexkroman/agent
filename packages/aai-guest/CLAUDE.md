@@ -722,7 +722,7 @@ this package's.
 - **The guest toolchain is LOCKED, and the lock is committed**
   (`packages/aai-guest/toolchain/{package.json,package-lock.json}`, regenerated
   by `pnpm sync:guest-toolchain`, gated by `pnpm check:guest-toolchain` in
-  `scripts/check.sh` AND the CI check job). Without it the resolved tree is a
+  `scripts/check.mjs` AND the CI check job). Without it the resolved tree is a
   function of WHEN the layer was built, while the published tag and Modal's
   layer cache both key on the install command's TEXT — so one
   `harness_image_tag` could mean two different trees, the exact opposite of
