@@ -10,11 +10,16 @@
 
 import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
+import { tick } from "./_test-utils.ts";
+import type { UploadBlobs } from "./_upload-blobs.ts";
 import { body, digest, memoryStore, ramp } from "./_upload-store-test-utils.ts";
 import {
+  createUploadStore,
   UnknownUploadError,
+  UPLOAD_WINDOW_CONCURRENCY,
   UploadIdTakenError,
   UploadPartError,
+  type UploadStore,
   UploadTooLargeError,
 } from "./workflow-uploads.ts";
 
@@ -364,5 +369,111 @@ describe("a parts upload", () => {
   test("refuses a recorded part for an upload nobody began", async () => {
     const store = open();
     await expect(store.recordParts("abc", [0])).rejects.toBeInstanceOf(UnknownUploadError);
+  });
+});
+
+/**
+ * What a claim COSTS, which on the direct path is the whole subject.
+ *
+ * A claim carries no bytes — its entire content is "these windows landed" — so its
+ * wall clock is round trips and nothing else, and in a deployed guest each one
+ * crosses the platform. Measured on a harness at the production log's own latencies
+ * (600 ms per record round trip, 400 ms per probe), one 32-window claim was 5013 ms:
+ * three record round trips and eight sequential probe rounds. These specs pin the
+ * two structural facts that took it to 1605 ms, because neither is visible in any
+ * assertion about the record a claim produces — a slow claim and a fast one leave
+ * byte-identical rows.
+ */
+describe("what a batched claim costs", () => {
+  const TOTAL = UPLOAD_CHUNK_BYTES * 8;
+
+  /** An upload with every window of `total` already in the bucket. */
+  async function landed(store: UploadStore, blobs: UploadBlobs, total: number) {
+    await store.beginParts("abc", {}, total);
+    const offsets = Array.from(
+      { length: total / UPLOAD_CHUNK_BYTES },
+      (_, n) => n * UPLOAD_CHUNK_BYTES,
+    );
+    for (const at of offsets) {
+      await blobs.put(`uploads/abc/${at}`, body(ramp(UPLOAD_CHUNK_BYTES)));
+    }
+    return offsets;
+  }
+
+  test("ONE record read and ONE write, however many windows it names", async () => {
+    // The claim used to read the record twice: once for the declared total it checks
+    // a window against, and again inside the lock for a `parts` list it could trust.
+    // Reading INSIDE the lock answers both, because nothing may write this id's
+    // parts while it is held — and a declared total cannot go stale at all, being
+    // written by `beginParts` and by nothing else ever.
+    const { store, blobs, sql } = memoryStore();
+    const offsets = await landed(store, blobs, TOTAL);
+    const before = sql.length;
+    expect(await store.recordParts("abc", offsets)).toMatchObject({
+      size: TOTAL,
+      complete: true,
+    });
+    const issued = sql.slice(before);
+    expect(issued.filter((text) => text.startsWith("select"))).toHaveLength(1);
+    expect(issued.filter((text) => text.includes("set parts = $2"))).toHaveLength(1);
+    expect(issued).toHaveLength(2);
+  });
+
+  test("and it stays two for a claim of ONE window, which is the unbatched shape", async () => {
+    // The saving is per REQUEST rather than per window, so the narrowest claim gains
+    // the same round trip the widest one does.
+    const { store, blobs, sql } = memoryStore();
+    await landed(store, blobs, TOTAL);
+    const before = sql.length;
+    await store.recordParts("abc", [0]);
+    expect(sql.slice(before)).toHaveLength(2);
+  });
+
+  test("probes the whole batch in ONE round, not the byte path's four at a time", async () => {
+    // `UPLOAD_PROBE_CONCURRENCY`, not `UPLOAD_WINDOW_CONCURRENCY`. The window number
+    // is 4 because a window is 8 MiB held in memory until its write acknowledges; a
+    // probe is a `HEAD` that moves no bytes, so it meets none of that and paid eight
+    // sequential rounds for a limit it does not owe.
+    const { store, blobs } = memoryStore();
+    const offsets = await landed(store, blobs, TOTAL);
+    let live = 0;
+    let peak = 0;
+    const counting: UploadBlobs = {
+      ...blobs,
+      size: async (key) => {
+        live += 1;
+        peak = Math.max(peak, live);
+        try {
+          // A real await, so every probe of one round is in flight together — a
+          // synchronous fake would peak at 1 whatever the width.
+          await tick();
+          return await blobs.size(key);
+        } finally {
+          live -= 1;
+        }
+      },
+    };
+    const store2 = createUploadStore({ db: memoryStore().db, blobs: counting });
+    await store2.beginParts("abc", {}, TOTAL);
+    await store2.recordParts("abc", offsets);
+    expect(peak).toBe(offsets.length);
+    expect(offsets.length).toBeGreaterThan(UPLOAD_WINDOW_CONCURRENCY);
+  });
+
+  test("still serializes two claims on ONE upload, probes included", async () => {
+    // The read moved inside the lock, so the lock is now held across the probes —
+    // which is what makes the single read sound. Two claims naming overlapping
+    // windows can no longer interleave between measuring and merging, and neither
+    // loses the other's windows.
+    const { store, blobs } = memoryStore();
+    const offsets = await landed(store, blobs, TOTAL);
+    const half = offsets.length / 2;
+    const [first, second] = await Promise.all([
+      store.recordParts("abc", offsets.slice(0, half)),
+      store.recordParts("abc", offsets.slice(half)),
+    ]);
+    // Whichever ran second sees every window; neither dropped the other's.
+    expect(Math.max(first.size, second.size)).toBe(TOTAL);
+    expect(await store.info("abc")).toMatchObject({ size: TOTAL, complete: true });
   });
 });

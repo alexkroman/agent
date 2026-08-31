@@ -296,9 +296,10 @@ export async function beginUploadParts(
  * `?offset=0&offset=8388608&…&stored=1`. The claim carries no bytes and measured
  * 1604-1969 ms against a deployed agent — per PART, about half of an upload's wall
  * clock — because it crosses the platform into the sandbox and then costs the guest
- * a record read, a bucket probe and a locked read-modify-write of the whole part
- * list. Naming several windows in one request collapses every one of those to one,
- * and `UPLOAD_CLAIM_BATCH` carries the measurement.
+ * a read of the record and a probe of the bucket per window. Naming several windows
+ * in one request collapses the record half to one read and one write however many
+ * landed, and `UPLOAD_CLAIM_BATCH` carries the measurement; what the probes then
+ * cost is `UPLOAD_PROBE_CONCURRENCY`'s.
  *
  * Repeated query parameters rather than a JSON body, because the request that has
  * always been body-less staying body-less is what lets this be the same route: a

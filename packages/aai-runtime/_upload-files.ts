@@ -54,8 +54,9 @@ import { assertUploadToken } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { ensureOnce } from "./_ensure-once.ts";
 import { partsOf, type UploadBlobs } from "./_upload-blobs.ts";
+import { concat } from "./_upload-byte-util.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
-import { concat, UploadIdTakenError, UploadTooLargeError } from "./_upload-store.ts";
+import { UploadIdTakenError, UploadTooLargeError } from "./_upload-store.ts";
 
 /** Where the records go, under the caller's directory. */
 const RECORDS_DIR = "records";
