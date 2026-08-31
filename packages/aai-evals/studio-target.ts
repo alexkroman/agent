@@ -17,7 +17,16 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
-import { createParser } from "eventsource-parser";
+import {
+  getToolName,
+  isDynamicToolUIPart,
+  isToolUIPart,
+  readUIMessageStream,
+  type UIMessage,
+  type UIMessageChunk,
+} from "ai";
+import type { EventSourceMessage } from "eventsource-parser";
+import { EventSourceParserStream } from "eventsource-parser/stream";
 import { Agent, fetch as undiciFetch } from "undici";
 
 /**
@@ -135,26 +144,128 @@ function recordToolOutput(turn: MutableTurn, name: string | undefined, out: stri
   }
 }
 
-/** Fold one AI SDK UI-message-stream part into the turn. */
-function applyPart(turn: MutableTurn, pending: Map<string, string>, part: unknown): void {
-  if (!isRecord(part)) return;
-  const type = typeof part.type === "string" ? part.type : "";
-  if (type === "text-delta" && typeof part.delta === "string") {
-    turn.text += part.delta;
-    return;
-  }
-  const callId = typeof part.toolCallId === "string" ? part.toolCallId : "";
-  if (type.startsWith("tool-input-available") && typeof part.toolName === "string") {
-    pending.set(callId, part.toolName);
-    turn.toolCalls.push(part.toolName);
-    return;
-  }
-  if (type.startsWith("tool-output-available")) {
+/**
+ * The response body as the chunk stream {@link readUIMessageStream} wants.
+ *
+ * `EventSourceParserStream` is the framing the AI SDK's own transport uses, and
+ * it handles what a split-on-newline loop gets subtly wrong: `\r\n` and lone-`\r`
+ * delimiters, multi-line `data:` fields, keep-alive comments, a BOM, and a field
+ * value with no space after the colon.
+ *
+ * A non-JSON frame is SKIPPED rather than thrown on: one malformed message is
+ * not worth losing a turn that may already have run for minutes. `safeJsonParse`
+ * rather than a `try`/`catch` around `JSON.parse` — an unparsable frame becomes
+ * `undefined`, which the `isRecord` guard drops, without a catch block wide
+ * enough to also swallow a real fault downstream.
+ *
+ * The cast is where an untyped wire meets a typed reader, and it is exactly as
+ * permissive as the hand-rolled fold it replaces: `processUIMessageStream`
+ * switches on `chunk.type` with a `default` that ignores what it does not
+ * recognise, so a chunk kind this SDK version has never heard of is dropped
+ * there rather than being mis-read here.
+ */
+function chunkStream(body: ReadableStream<Uint8Array>): ReadableStream<UIMessageChunk> {
+  const decoder = new TextDecoder();
+  return body
+    .pipeThrough(
+      // Hand-written rather than `TextDecoderStream`, whose `writable` is typed
+      // `WritableStream<BufferSource>` — a name this package's node-only lib set
+      // does not carry, so `pipeThrough` from a `ReadableStream<Uint8Array>`
+      // will not accept it. `{ stream: true }` is the load-bearing part either
+      // way: it holds back a multi-byte character split across two chunks.
+      new TransformStream<Uint8Array, string>({
+        transform(bytes, controller) {
+          controller.enqueue(decoder.decode(bytes, { stream: true }));
+        },
+        flush(controller) {
+          controller.enqueue(decoder.decode());
+        },
+      }),
+    )
+    .pipeThrough(new EventSourceParserStream())
+    .pipeThrough(
+      new TransformStream<EventSourceMessage, UIMessageChunk>({
+        transform(event, controller) {
+          if (event.data === "" || event.data === "[DONE]") return;
+          const parsed = safeJsonParse(event.data);
+          if (isRecord(parsed)) controller.enqueue(parsed as UIMessageChunk);
+        },
+      }),
+    );
+}
+
+/**
+ * Fold the FINAL message snapshot into the turn.
+ *
+ * {@link readUIMessageStream} accumulates the chunk stream into successive
+ * snapshots of one `UIMessage`, so the last one carries every part in call order
+ * — and the SDK has already done the `toolCallId` → tool-name correlation this
+ * file used to keep in a `Map`. That map was the bookkeeping most likely to rot
+ * when the wire format moves, and the string-prefix tests around it
+ * (`type.startsWith("tool-output-available")`) encoded a part-naming scheme that
+ * is the SDK's to change. What is left here is only the grading-specific read.
+ */
+function foldMessage(turn: MutableTurn, message: UIMessage | undefined): void {
+  for (const part of message?.parts ?? []) {
+    if (part.type === "text") {
+      turn.text += part.text;
+      continue;
+    }
+    if (!(isToolUIPart(part) || isDynamicToolUIPart(part))) continue;
+    // A call still streaming its input has not been MADE yet; every later state
+    // means the model committed to it, which is what the `tool-input-available`
+    // frame marked when this was read chunk by chunk.
+    if (part.state === "input-streaming") continue;
+    const name = getToolName(part);
+    turn.toolCalls.push(name);
+    if (part.state !== "output-available") continue;
     const out = typeof part.output === "string" ? part.output : JSON.stringify(part.output ?? "");
-    recordToolOutput(turn, pending.get(callId), out);
-    return;
+    recordToolOutput(turn, name, out);
   }
-  if (type === "error") turn.errors.push(String(part.errorText ?? "error"));
+}
+
+/**
+ * Read one chat turn off a response body.
+ *
+ * Exported as a SEAM, and it is the only part of this file a unit test can
+ * reach: everything around it needs a live studio, a real sandbox and a model,
+ * which is why this module is excluded from the package's coverage floors. The
+ * stream reading is also the half most likely to break silently — a part-shape
+ * the SDK renamed folds to an empty turn, and an empty turn grades as a coding
+ * agent that did nothing rather than as a broken harness. `studio-target.test.ts`
+ * drives it with canned SSE for exactly that reason.
+ */
+export async function readTurn(body: ReadableStream<Uint8Array>): Promise<StudioTurn> {
+  const started = Date.now();
+  const turn: MutableTurn = {
+    toolCalls: [],
+    testAgentRuns: [],
+    redChecks: [],
+    redExcerpts: [],
+    lastTestAgentOutput: "",
+    text: "",
+    errors: [],
+    ms: 0,
+  };
+  let last: UIMessage | undefined;
+  for await (const message of readUIMessageStream({
+    stream: chunkStream(body),
+    // Errors are RECORDED and the turn runs on. This is also the option's
+    // default, stated rather than relied on: a turn cut short at its first
+    // error loses every tool call after it, and a partial transcript grades as
+    // an agent that stopped working.
+    terminateOnError: false,
+    onError: (error) => {
+      // `processUIMessageStream` wraps an `error` chunk as `new
+      // Error(errorText)`, so the message is the wire's own text.
+      turn.errors.push(error instanceof Error ? error.message : String(error));
+    },
+  })) {
+    last = message;
+  }
+  foldMessage(turn, last);
+  turn.ms = Date.now() - started;
+  return turn;
 }
 
 /** One studio project, from creation to a synced workspace. */
@@ -201,7 +312,6 @@ export function createStudioClient(origin: string, key: string): StudioClient {
     sandboxToken: string,
     prompt: string,
   ): Promise<StudioTurn> => {
-    const started = Date.now();
     const res = await undiciFetch(url, {
       method: "POST",
       headers: {
@@ -222,39 +332,7 @@ export function createStudioClient(origin: string, key: string): StudioClient {
     if (!(res.ok && res.body)) {
       throw new Error(`chat -> ${res.status}: ${(await res.text()).slice(0, 300)}`);
     }
-    const turn: MutableTurn = {
-      toolCalls: [],
-      testAgentRuns: [],
-      redChecks: [],
-      redExcerpts: [],
-      lastTestAgentOutput: "",
-      text: "",
-      errors: [],
-      ms: 0,
-    };
-    const pending = new Map<string, string>();
-    // Framing is `eventsource-parser`'s job: it handles the parts a
-    // split-on-newline loop gets subtly wrong — `\r\n` and lone-`\r`
-    // delimiters, multi-line `data:` fields, keep-alive comments, a BOM, and a
-    // field value with no space after the colon. A non-JSON frame is SKIPPED
-    // rather than thrown on: one malformed message is not worth losing a turn
-    // that may already have run for minutes.
-    const parser = createParser({
-      onEvent(event) {
-        if (event.data === "" || event.data === "[DONE]") return;
-        // `safeJsonParse` rather than a `try`/`catch` around `JSON.parse`: an
-        // unparsable frame becomes `undefined`, which `applyPart` drops on its
-        // `isRecord` guard — same skip, without a catch block wide enough to
-        // also swallow a real fault in `applyPart`.
-        applyPart(turn, pending, safeJsonParse(event.data));
-      },
-    });
-    const decoder = new TextDecoder();
-    for await (const chunk of res.body) {
-      parser.feed(decoder.decode(chunk as Uint8Array, { stream: true }));
-    }
-    turn.ms = Date.now() - started;
-    return turn;
+    return readTurn(res.body);
   };
 
   return {

@@ -28,9 +28,13 @@ export default defineConfig({
     ],
     coverage: {
       // The studio TARGET is excluded, and this is the one exclusion in the repo
-      // that is not "test infrastructure": it only runs when a live API key and
-      // a live studio are present, i.e. never in the unit run, so left in it
-      // counts ~270 lines at 0% and drags the floors below what they measure.
+      // that is not "test infrastructure": all but one of its functions need a
+      // live API key and a live studio, i.e. never run in the unit run, so left
+      // in it counts ~250 lines at near 0% and drags the floors below what they
+      // measure. The exception is `readTurn`, the stream-reading seam, which
+      // `studio-target.test.ts` drives with canned SSE — a file staying out of
+      // the coverage NUMBERS is not the same as it going untested, and that
+      // half is where a break would be silent.
       // What the floors do cover is everything a unit test CAN reach — the
       // runner, the assertion vocabulary, and the report — which is where a
       // silent regression would actually hide. (The level-1 SESSION target is no
