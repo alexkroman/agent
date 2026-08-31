@@ -158,11 +158,17 @@ const listAll = () =>
     // A git pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so `*` already crosses
     // `/` and `scripts/**/*.mjs` parses as "scripts/", anything, "/", anything,
     // ".mjs" — the literal slash makes it require a subdirectory. So it matched
-    // the six files under `scripts/starter-eval/` and NOT ONE of the 29 at the
-    // top level, which is exactly where this gate's own comment says the risk
-    // is. Verify with `git ls-files "scripts/**/*.mjs"`, which lists only the
-    // nested ones. `packages/**/*.ts` is unaffected because every source file
-    // there is at least one directory deep.
+    // only the files under `scripts/starter-eval/` and NOT ONE of the ~29 then
+    // at the top level, which is exactly where this gate's own comment says the
+    // risk is. `packages/**/*.ts` is unaffected because every source file there
+    // is at least one directory deep.
+    //
+    // The nested `.mjs` glob resolves ZERO today — that corpus moved into
+    // `packages/aai-evals`, and `scripts/*.mjs` crosses `/` in any case, so it
+    // was never the only thing matching those files. Both spellings stay as the
+    // guard for the next nested script; `file-length-gate.test.ts` records the
+    // empty one in `EMPTY_BY_CONSTRUCTION` so it cannot rot into a silent hole.
+    // Verify any of this with `git ls-files "<glob>"`, never by reading it.
     "scripts/*.mjs",
     "scripts/*.ts",
     "scripts/**/*.mjs",

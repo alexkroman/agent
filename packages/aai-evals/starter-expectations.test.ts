@@ -15,7 +15,15 @@
 
 import { STARTERS } from "aai-studio-client/starters";
 import { describe, expect, test } from "vitest";
-import { checkCapabilities, EXPECTATIONS } from "../../scripts/starter-eval/expectations.mjs";
+import {
+  checkCapabilities,
+  checkMode,
+  checkUi,
+  checkWorkflowShape,
+  EXPECTATIONS,
+  type Expectation,
+  parseLoadedConfig,
+} from "./starter-expectations.ts";
 
 /** Every starter, flattened across the hero's two switcher positions. */
 const starters = Object.values(STARTERS).flat();
@@ -105,5 +113,266 @@ describe("starter expectations", () => {
       "no expectation pairs `builtinDelegation` with `capabilities`, so the " +
         "prose-alone test checks nothing",
     ).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * The half of the grader only the EVAL tier used to reach.
+ *
+ * `parseLoadedConfig`, `checkMode`, `checkWorkflowShape` and `checkUi` are
+ * called from `starter.eval.test.ts` and nowhere else, so for as long as this
+ * corpus lived under `scripts/` — outside any package's coverage report — they
+ * were exercised only by a run that needs a live key and a live studio. They are
+ * pure string functions; every case below is a behaviour the file's own comments
+ * record having been WRONG about, which is the useful thing to pin.
+ */
+describe("reading a built agent", () => {
+  describe("parseLoadedConfig", () => {
+    test("reads the name, mode and tools out of test_agent's prose", () => {
+      const config = parseLoadedConfig(
+        'Bundle loaded. Agent "Pizza Line" (pipeline mode), tools: add_pizza, remove_pizza.',
+      );
+      expect(config).toEqual({
+        name: "Pizza Line",
+        mode: "pipeline",
+        tools: ["add_pizza", "remove_pizza"],
+      });
+    });
+
+    test("a run that never loaded a config parses to undefined", () => {
+      // The distinction `checkMode` leans on: undefined means "nothing to
+      // check", not "checked and fine".
+      expect(parseLoadedConfig("Tests: FAILED")).toBeUndefined();
+      expect(parseLoadedConfig(undefined)).toBeUndefined();
+    });
+
+    test('a tool-less agent yields an empty list, not ["(none)"]', () => {
+      expect(parseLoadedConfig('Agent "Bare" (s2s mode), tools: (none).')?.tools).toEqual([]);
+      expect(parseLoadedConfig('Agent "Bare" (s2s mode), tools: .')?.tools).toEqual([]);
+    });
+  });
+
+  describe("checkMode", () => {
+    test("no loaded config is not a failure, and says why", () => {
+      const result = checkMode(undefined, "");
+      expect(result.ok).toBe(true);
+      expect(result.note).toMatch(/no loaded config/);
+    });
+
+    test("a non-pipeline agent fails and the note names the mode it built", () => {
+      const result = checkMode({ name: "X", mode: "s2s", tools: [] }, "stt: deepgram()");
+      expect(result.ok).toBe(false);
+      expect(result.note).toMatch(/mode=s2s/);
+    });
+
+    test("a pipeline agent with declared stages passes with no note", () => {
+      const result = checkMode(
+        { name: "X", mode: "pipeline", tools: [] },
+        "stt: assemblyai(), llm: gateway(), tts: assemblyai()",
+      );
+      expect(result).toEqual({ ok: true });
+    });
+
+    test("a provider-less pipeline agent passes, since defaults fill the stages", () => {
+      // The documented rule: unset stages are filled at parse time, so a
+      // pipeline-mode config always carries all three and an agent that
+      // declares none is legitimate rather than incomplete.
+      const result = checkMode({ name: "X", mode: "pipeline", tools: [] }, "systemPrompt: 'hi'");
+      expect(result.ok).toBe(true);
+      expect(result.note).toMatch(/provider-less/);
+    });
+  });
+
+  describe("checkWorkflowShape", () => {
+    const complete = {
+      "agent.ts": "export default workflowApp({ name: 'W' })",
+      "workflows/main.ts": "export default async function run() {}",
+      "client.tsx": "export default page(() => null)",
+    };
+
+    test("all four pieces present is the passing shape", () => {
+      expect(checkWorkflowShape(complete)).toEqual({ ok: true });
+    });
+
+    test("each missing piece is named in the note", () => {
+      const cases: [Record<string, string>, RegExp][] = [
+        [{ ...complete, "agent.ts": "export default agent({})" }, /no workflowApp\(\)/],
+        [{ "agent.ts": complete["agent.ts"], "client.tsx": complete["client.tsx"] }, /workflows\//],
+        [
+          { "agent.ts": complete["agent.ts"], "workflows/main.ts": "x" },
+          /no client\.tsx \(the front door\)/,
+        ],
+        [{ ...complete, "client.tsx": "export default client(() => null)" }, /mount with page\(\)/],
+      ];
+      for (const [files, pattern] of cases) {
+        const result = checkWorkflowShape(files);
+        expect(result.ok, `expected a failure matching ${pattern}`).toBe(false);
+        expect(result.note).toMatch(pattern);
+      }
+    });
+
+    test("an empty workspace fails rather than throwing", () => {
+      expect(checkWorkflowShape(undefined).ok).toBe(false);
+    });
+  });
+
+  describe("checkUi", () => {
+    const wantsUi: Expectation = { label: "x", capabilities: [], ui: true };
+
+    test("a starter that never asked for a UI passes without one", () => {
+      // The check the port deliberately did NOT widen: most starters ship no
+      // client, and asserting one failed the math-tutor template for shipping
+      // exactly what it should.
+      expect(checkUi({ label: "x", capabilities: [] }, {})).toEqual({ ok: true });
+      expect(checkUi(undefined, {})).toEqual({ ok: true });
+    });
+
+    test("a starter that asked for a UI fails without a client.tsx", () => {
+      const result = checkUi(wantsUi, { "agent.ts": "" });
+      expect(result.ok).toBe(false);
+      expect(result.note).toMatch(/no client\.tsx/);
+    });
+
+    test("a client that reads no live data is decoration, not a UI", () => {
+      const result = checkUi(wantsUi, { "client.tsx": "export default () => <h1>Cart</h1>" });
+      expect(result.ok).toBe(false);
+      expect(result.note).toMatch(/no live state/);
+    });
+
+    test("any of the four state hooks counts as live", () => {
+      // `useAgentState` is listed first in the source because omitting it once
+      // marked a correct Infocom client as stateless; all four must count.
+      for (const hook of ["useAgentState", "useToolResult", "useEvent", "useSession"]) {
+        expect(checkUi(wantsUi, { "client.tsx": `const s = ${hook}()` }), hook).toEqual({
+          ok: true,
+        });
+      }
+    });
+  });
+
+  describe("checkCapabilities reads the agent, not the agent's tests", () => {
+    const expectation: Expectation = {
+      label: "x",
+      capabilities: [["add"], ["remove"]],
+      minTools: 2,
+    };
+
+    test("a tools: { } block is brace-matched, so a nested object cannot truncate it", () => {
+      // The regexed version stopped at the first `}` and lost every tool after
+      // one with an inline object in it — `remove_item` here.
+      const source = "agent({ tools: { add_item: tool({ schema: { a: 1 } }), remove_item: t } })";
+      const report = checkCapabilities(expectation, { config: null, source });
+      expect(report.missing).toEqual([]);
+    });
+
+    test("nested keys inside the block are counted as tools — known over-count", () => {
+      // Pinned as behaviour, not endorsed: the key regex runs over the whole
+      // brace-matched block, so `schema:` and `a:` below score as tools and
+      // `toolCount` reads 4 for a two-tool agent. It only ever makes `minTools`
+      // MORE permissive, which is why it has never failed a starter, and
+      // narrowing it is a grading change rather than part of moving the file.
+      const source = "agent({ tools: { add_item: tool({ schema: { a: 1 } }), remove_item: t } })";
+      expect(checkCapabilities(expectation, { config: null, source }).toolCount).toBe(4);
+    });
+
+    test("`const x = tool(...)` declarations count too", () => {
+      const report = checkCapabilities(expectation, {
+        config: null,
+        source: "const addThing = tool({}); const removeThing = tool({});",
+      });
+      expect(report.covered).toBe(true);
+    });
+
+    test("a tool DESCRIPTION carries a capability its identifier does not", () => {
+      // The documented false negative: `use_item` described as owning puzzle
+      // flags was marked `missing:puzzle` because the word was not in a name.
+      const report = checkCapabilities(
+        { label: "x", capabilities: [["puzzle"]] },
+        {
+          config: null,
+          source: `tools: { use_item: tool({ description: "Use an item. This owns puzzle flags" }) }`,
+        },
+      );
+      expect(report.missing).toEqual([]);
+    });
+
+    test("descriptions in single and template quotes are read as well", () => {
+      // Apostrophes in prose are why each quote style has its own class.
+      for (const src of [
+        `tools: { a: tool({ description: 'sets the puzzle flag' }) }`,
+        "tools: { a: tool({ description: `sets the puzzle flag` }) }",
+      ]) {
+        expect(
+          checkCapabilities(
+            { label: "x", capabilities: [["puzzle"]] },
+            {
+              config: null,
+              source: src,
+            },
+          ).missing,
+        ).toEqual([]);
+      }
+    });
+
+    test("the loaded config's tools count alongside the source's", () => {
+      const report = checkCapabilities(expectation, {
+        config: { name: "x", mode: "pipeline", tools: ["add_pizza", "remove_pizza"] },
+        source: "",
+      });
+      expect(report.covered).toBe(true);
+      expect(report.tooFewTools).toBe(false);
+    });
+
+    test("a missing capability is reported by its first synonym", () => {
+      const report = checkCapabilities(expectation, {
+        config: null,
+        source: "tools: { add_item: t }",
+      });
+      expect(report.missing).toEqual(["remove"]);
+      expect(report.covered).toBe(false);
+    });
+
+    test("minTools is counted over DISTINCT names", () => {
+      const report = checkCapabilities(expectation, {
+        config: { name: "x", mode: "pipeline", tools: ["add_item"] },
+        source: "tools: { add_item: t, remove_item: t }",
+      });
+      expect(report.toolCount).toBe(2);
+      expect(report.tooFewTools).toBe(false);
+    });
+
+    test("a named builtin the agent never declared is reported", () => {
+      const report = checkCapabilities(
+        { label: "x", capabilities: [], builtins: ["run_code", "web_search"] },
+        { config: null, source: `builtinTools: ["run_code"]` },
+      );
+      expect(report.missingBuiltins).toEqual(["web_search"]);
+      expect(report.covered).toBe(false);
+    });
+
+    test("builtinDelegation needs BOTH the builtins and the prose", () => {
+      const delegating: Expectation = {
+        label: "x",
+        capabilities: [["convert"]],
+        builtinDelegation: ["fetch_json"],
+      };
+      // Prose alone: no builtins declared, so the prose is not consulted.
+      expect(
+        checkCapabilities(delegating, { config: null, source: "greeting: 'I convert currency'" })
+          .missing,
+      ).toEqual(["convert"]);
+      // Builtins alone: nothing tells the model what to reach for them for.
+      expect(
+        checkCapabilities(delegating, { config: null, source: `builtinTools: ["fetch_json"]` })
+          .missing,
+      ).toEqual(["convert"]);
+      // Both halves.
+      expect(
+        checkCapabilities(delegating, {
+          config: null,
+          source: `builtinTools: ["fetch_json"]; greeting: 'I convert currency'`,
+        }).missing,
+      ).toEqual([]);
+    });
   });
 });

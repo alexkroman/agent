@@ -365,9 +365,9 @@ const SCAN_CORPORA = [
     pathspecs: WORKFLOW_BODY_PATHSPECS,
     minFiles: 15,
   }, // 24
-  // Both pathspec shapes, because `scripts/**/*.mjs` alone resolves SIX files
-  // and misses every gate at the top level — see SCRIPT_PATHSPECS.
-  { what: "rule 28's gate-script scan", pathspecs: SCRIPT_PATHSPECS, minFiles: 50 }, // 67
+  // Both pathspec shapes: the nested one resolves ZERO now and `scripts/*.mjs`
+  // carries the whole corpus — see SCRIPT_PATHSPECS for why the pair stays.
+  { what: "rule 28's gate-script scan", pathspecs: SCRIPT_PATHSPECS, minFiles: 50 }, // 69
 ];
 
 for (const corpus of SCAN_CORPORA) assertScanCorpus({ gate: GATE, ...corpus });

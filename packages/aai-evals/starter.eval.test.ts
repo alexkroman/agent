@@ -5,9 +5,10 @@
  * This is `scripts/starter-eval/run.mjs`'s case loop, verdict and reporter —
  * `run.mjs` (485 lines), `report.mjs` (175) and `regrade.mjs` (85) — replaced by
  * the tier's own machinery. What did NOT move is the grading: those checks read
- * generated SOURCE rather than behaviour, which is a different job, and they
- * stay in `scripts/starter-eval/expectations.mjs`, which this suite imports —
- * and which is also why this package's tsconfig sets `allowJs`.
+ * generated SOURCE rather than behaviour, which is a different job, so they were
+ * kept when the runner was not. They are `./starter-expectations.ts`, which this
+ * suite imports; they were `scripts/starter-eval/expectations.mjs` for as long
+ * as that directory had anything left in it.
  *
  * Three properties survive the move intact, each of which was learned the hard
  * way there:
@@ -34,6 +35,9 @@
  */
 
 import { STARTERS } from "aai-studio-client/starters";
+import { describeEvalTierWhen, evalApiKey, evalOrigin } from "./_gate.ts";
+import { registerEvalCases } from "./_register.ts";
+import type { EvalRecorder } from "./runner.ts";
 import {
   checkCapabilities,
   checkMode,
@@ -41,10 +45,7 @@ import {
   checkWorkflowShape,
   EXPECTATIONS,
   parseLoadedConfig,
-} from "../../scripts/starter-eval/expectations.mjs";
-import { describeEvalTierWhen, evalApiKey, evalOrigin } from "./_gate.ts";
-import { registerEvalCases } from "./_register.ts";
-import type { EvalRecorder } from "./runner.ts";
+} from "./starter-expectations.ts";
 import { createStudioClient, type StudioTurn } from "./studio-target.ts";
 
 /** Roughly the studio's `MAX_CHAT_STEPS`; only used to flag a long run. */

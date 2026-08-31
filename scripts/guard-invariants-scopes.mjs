@@ -152,10 +152,14 @@ export const SHIPPED_SOURCE_PATHSPECS = [
  * and this repo has now paid for three times: a git pathspec is fnmatch WITHOUT
  * `FNM_PATHNAME`, so `*` already crosses `/` and the literal slash in
  * `scripts/**` + `/` + `*.mjs` makes a subdirectory MANDATORY. On its own that
- * glob matches `scripts/starter-eval/` and not one of the ~60 files at the top
- * level of `scripts/` — which is every gate this rule is about. Verified with
- * `git ls-files`: `scripts/**\/*.mjs` alone resolves 6 files, both together
- * resolve 67.
+ * glob matched only `scripts/starter-eval/` and not one of the ~60 files at the
+ * top level of `scripts/` — which is every gate this rule is about.
+ *
+ * That subdirectory is gone (its corpus is `packages/aai-evals` now), so the
+ * nested spelling resolves ZERO and `scripts/*.mjs` alone resolves all 69 —
+ * it crosses `/`, so it always covered the nested file too. Both stay: the
+ * corpus floor below is on the COMBINED set, and the pair is what stops the
+ * next nested script from being invisible. Verify with `git ls-files`.
  *
  * `.sh` is deliberately absent. A shell script has no `process.argv` and its own
  * `$1`-shaped hazards are a different rule; `check.sh` was the one that mattered

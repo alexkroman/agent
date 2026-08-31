@@ -169,9 +169,12 @@ inputs and the fix for a replayed green run is to hash more; here two runs of th
 same tree legitimately differ, so a cache hit would REPLAY a measurement rather
 than take one — the second `pnpm test:eval` of a variance check would print FULL
 TURBO and the first run's number. No `inputs` are declared rather than declaring
-a set nothing reads; if this ever becomes cacheable, note the corpus lives
-OUTSIDE the package (`scripts/starter-eval/**`), where a package-relative
-`$TURBO_DEFAULT$` cannot see it.
+a set nothing reads; if this ever becomes cacheable, a package-relative
+`$TURBO_DEFAULT$` is now enough. It was not always: the starter corpus lived
+OUTSIDE the package at `scripts/starter-eval/expectations.mjs`, which a
+package-relative glob cannot see, and the cached UNIT tier had to name it in a
+`turbo.json` override to avoid replaying a green run over an edited grader.
+Moving the corpus in retired both the override and the hazard.
 
 ## The gate ANNOUNCES its skip
 
@@ -265,12 +268,21 @@ failing agent orphaned five pairs. The runtime is shut down on that path too.
 
 `starter.eval.test.ts` + `studio-target.ts` are `scripts/starter-eval/run.mjs`'s
 case loop, verdict and reporter (485 + 175 + 85 = 745 lines, deleted) on the
-shared runner. The GRADING did not move: those checks read generated source
-rather than behaviour, which is a different job, and they stay in
-`scripts/starter-eval/expectations.mjs`, which this suite imports — which is
-also why this package's tsconfig sets `allowJs`. See "Studio starter
+shared runner. The GRADING is a different job — those checks read generated
+source rather than behaviour — so it was kept when the runner was not, and it is
+`starter-expectations.ts` in this package. See "Studio starter
 evals" in `packages/aai-studio-server/CLAUDE.md` for what it measures and why
 single runs cannot adjudicate a prompt change.
+
+**It was `scripts/starter-eval/expectations.mjs` until it was the last file
+there.** Its two neighbours were deleted as dead chains; it survived as the one
+thing in that directory nothing had outgrown, reached by both starter suites
+through a `../../scripts/` specifier. That cost a package `allowJs`, two
+`turbo.json` input overrides to hash a corpus living outside the package that
+reads it, and a grader whose eval-only half — `parseLoadedConfig`, `checkMode`,
+`checkWorkflowShape`, `checkUi` — was in no coverage report at all, so it was
+exercised only by a run needing a live key and a live studio. Moving it in
+retired all three; the four functions have unit tests now.
 
 **`run.mjs` could not have run, and porting it is what found that out.** The
 chat request belongs to the GUEST and is authenticated by the per-sandbox token

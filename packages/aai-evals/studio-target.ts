@@ -5,9 +5,9 @@
  * This is the machinery that used to be `scripts/starter-eval/run.mjs` — a
  * second, non-vitest test runner with its own case loop, verdict aggregation and
  * reporter. Its ASSERTIONS were and are a different job from behaviour (they
- * grade generated SOURCE, and still live in
- * `scripts/starter-eval/expectations.mjs`); what is here is only the driving of
- * the studio's real HTTP surface, which the eval tier now owns for both targets.
+ * grade generated SOURCE, and live in `./starter-expectations.ts`); what is here
+ * is only the driving of the studio's real HTTP surface, which the eval tier now
+ * owns for both targets.
  *
  * It drives create-project → broker a sandbox session → stream one chat turn, so
  * it exercises the same server and guest path a browser does.

@@ -294,7 +294,9 @@ describe("escape-hatch ratchet scope", () => {
   test("the top-level scripts/*.md exclusion is not lost", () => {
     // A git pathspec is fnmatch WITHOUT FNM_PATHNAME, so the literal slash in
     // `scripts/**/*.md` makes a subdirectory MANDATORY — it matched the files
-    // under scripts/starter-eval/ and not one of the ~29 at the top level.
+    // under scripts/starter-eval/ and not one of the ~29 then at the top level.
+    // (No subdirectory under scripts/ holds a .md today, so the nested spelling
+    // matches nothing; both stay, for the next one that does.)
     // Both spellings are needed; deleting either silently re-opens the
     // CHANGELOG.md release-blocker this exclusion exists to prevent.
     expect(script).toContain(':!scripts/**/*.md"');
