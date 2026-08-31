@@ -146,6 +146,25 @@ describe("toolResultIn", () => {
     expect(toolResultIn(calls, "look_up")).toEqual({ status: "shipped" });
   });
 
+  test("a PLAIN TEXT result comes back as text, not a SyntaxError", () => {
+    // `run_code` prints whatever the snippet printed, so "Saturday" and
+    // "3.106855" are ordinary results. An unguarded `JSON.parse` turned the
+    // first into `SyntaxError: Unexpected token 'S'` thrown from inside the
+    // reader, naming neither the tool nor the case — and it failed a real
+    // template eval whose assertion was `toolResultsIn(...).join("\n")`.
+    const text = toolCallsIn([called("c1", "run_code", {}), completed("c1", "Saturday")]);
+    expect(toolResultIn(text, "run_code")).toBe("Saturday");
+  });
+
+  test("text WITH a schema throws, naming the tool and the text", () => {
+    // A schema is a declaration that the result has a shape, so text there is a
+    // real mismatch — and the message has to say which tool and what it said.
+    const text = toolCallsIn([called("c1", "run_code", {}), completed("c1", "Saturday")]);
+    expect(() => toolResultIn(text, "run_code", z.object({ a: z.string() }))).toThrow(
+      /"run_code" answered text, not JSON.*Saturday/s,
+    );
+  });
+
   test("THROWS naming what ran instead — a miss must not read as undefined", () => {
     expect(() => toolResultIn(calls, "cancel")).toThrow(/no call to "cancel".*look_up/s);
     expect(() => toolResultIn([], "cancel")).toThrow(/no tools/);
