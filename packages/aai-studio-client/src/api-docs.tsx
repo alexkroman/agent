@@ -56,6 +56,7 @@ import {
   WORKFLOW_ENDPOINTS,
 } from "./docs-content.ts";
 import { Examples, FollowUp } from "./docs-examples.tsx";
+import { FormFieldsApi } from "./docs-forms.tsx";
 import {
   cliCommands,
   curlConfig,
@@ -103,6 +104,20 @@ function Endpoints({ base, rows }: { base: string; rows: readonly DocEndpoint[] 
       ))}
     </ul>
   );
+}
+
+/**
+ * Whether the workflow API is open, and what to do about it.
+ *
+ * Its own function because it belongs to WHICHEVER card is on screen: it is the
+ * one sentence on this half that only the studio can say — the bearer
+ * requirement is a fact about the project's secrets — so it follows the reader
+ * when the route table it normally sits on is hidden.
+ */
+function workflowBlurb(token: boolean): string {
+  return token
+    ? "This agent sets AAI_WORKFLOW_API_TOKEN, so every call needs that bearer — the snippets below carry it."
+    : "The API is open by default — set AAI_WORKFLOW_API_TOKEN in the Secrets pane to require a bearer.";
 }
 
 /** One declared workflow: what it is, and the call that runs it. */
@@ -159,12 +174,15 @@ function WorkflowDocs({
 function WorkflowApi({
   base,
   token,
+  routes,
   declared,
   pending,
   error,
 }: {
   base: string;
   token: boolean;
+  /** Show the `/workflows/*` route table. See {@link AgentApiDocsProps.workflowRoutes}. */
+  routes: boolean;
   /** The agent's own listing. `undefined` until it answers, and if it cannot. */
   declared: readonly WorkflowSummary[] | undefined;
   /** Still reading — the listing may be waiting out a sandbox boot. */
@@ -175,20 +193,28 @@ function WorkflowApi({
   if (declared !== undefined && declared.length > 0) {
     return (
       <>
-        <Card
-          title="Workflows"
-          blurb={
-            token
-              ? "Durable runs over HTTP. This agent sets AAI_WORKFLOW_API_TOKEN, so every call needs that bearer — the snippets below carry it."
-              : "Durable runs over HTTP: start one, then read it back by id from anywhere, minutes or days later. Open by default — set AAI_WORKFLOW_API_TOKEN in the Secrets pane to require a bearer."
-          }
-        >
-          <Endpoints base={base} rows={WORKFLOW_ENDPOINTS} />
-        </Card>
+        {routes && (
+          <Card
+            title="Workflows"
+            blurb={`Durable runs over HTTP: start one, then read it back by id from anywhere, minutes or days later. ${workflowBlurb(token)}`}
+          >
+            <Endpoints base={base} rows={WORKFLOW_ENDPOINTS} />
+          </Card>
+        )}
 
         <Card
           title="Running a workflow"
-          blurb="Generated from this agent's own GET /workflows — the field names below are the ones it declared, at the version that is deployed right now."
+          blurb={
+            <>
+              Generated from this agent's own GET /workflows — the field names below are the ones it
+              declared, at the version that is deployed right now.
+              {/* The route table carries the openness sentence when it is on
+                  screen. It is the one thing on this half only the STUDIO can
+                  say (it reads the project's secrets), so hiding the table has
+                  to keep it rather than drop it with the rows. */}
+              {!routes && <> {workflowBlurb(token)}</>}
+            </>
+          }
         >
           <div className="flex flex-col gap-4">
             {declared.map((workflow) => (
@@ -215,8 +241,13 @@ function WorkflowApi({
           </div>
         </Card>
 
-        {/* After the run examples, not before: the run body is where a reader
-            meets an upload id, and the card is the answer to the question that
+        {/* After the run examples: a reader has now met one generated body, and
+            this is the card that says what each half of it IS — which control
+            on the page, and which of them is a handle rather than a value. */}
+        <FormFieldsApi base={base} token={token} declared={declared} />
+
+        {/* After the form card, not before: its file row is where a reader
+            meets an upload id, and this is the answer to the question that
             raises. It renders only for an agent some workflow of which declares
             one — see docs-uploads.tsx. */}
         <UploadApi base={base} token={token} declared={declared} />
@@ -276,6 +307,26 @@ export type AgentApiDocsProps = {
    * answers and hangs up).
    */
   voiceOnly?: ReactNode;
+  /**
+   * List the twelve `/workflows/*` routes. Defaults to true.
+   *
+   * **The studio pane passes `false`, and it is the only caller that may.** The
+   * studio has a Workflows PANE of its own beside this one, so a reader there
+   * arrives at the workflow API through a tab about it rather than through a
+   * table of URLs on the way past — and the table is the least useful thing on
+   * this pane for them: a route list is a reference for somebody writing a
+   * client, where a studio user is being shown what their own agent answers.
+   * What they need instead is the correspondence between the form on their page
+   * and the JSON a caller sends, which is `FormFieldsApi` below.
+   *
+   * The PUBLIC page keeps them, and the asymmetry is the point rather than an
+   * oversight: its reader has no panes, no tabs and no project — they have a
+   * slug and an integration to write, and the route table is the reference they
+   * came for. Nothing is hidden either way, since the openness sentence follows
+   * the reader (see {@link workflowBlurb}) and every route is still shown being
+   * CALLED in the snippets below the table.
+   */
+  workflowRoutes?: boolean;
 };
 
 /**
@@ -286,7 +337,13 @@ export type AgentApiDocsProps = {
  * the project's secrets and its carrier webhook; the public page knows the
  * link it is at), and everything else is a function of what the agent answers.
  */
-export function AgentApiDocs({ slug, token, baseBlurb, voiceOnly }: AgentApiDocsProps) {
+export function AgentApiDocs({
+  slug,
+  token,
+  baseBlurb,
+  voiceOnly,
+  workflowRoutes = true,
+}: AgentApiDocsProps) {
   const base = agentBase(platformOrigin(), slug);
   // The page's own reads go through the SAME client every snippet on it shows —
   // `createAgentClient` covers the listing and the front-door config, so this
@@ -380,6 +437,7 @@ export function AgentApiDocs({ slug, token, baseBlurb, voiceOnly }: AgentApiDocs
       <WorkflowApi
         base={base}
         token={token}
+        routes={workflowRoutes}
         declared={workflows.data}
         pending={workflows.isPending}
         error={workflows.isError ? workflows.error.message : undefined}
