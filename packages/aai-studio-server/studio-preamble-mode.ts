@@ -208,6 +208,17 @@ unless they ask outright for a voice agent instead.`,
   and return value cross a queue (JSON-shaped and small — put bytes in
   storage and pass the key), and a step gets NO tool context and so no
   ctx.env — anything needing a credential is a fixture for now.
+- **Write the BODY before the agent.ts that imports it, and the page last.**
+  Every write is type-checked the moment it lands, so an \`agent.ts\` naming
+  \`./workflows/report.ts\` before that file exists comes back red with
+  \`TS2307: Cannot find module\` — and the same red repeats on the next write
+  because the checker sees the whole workspace, not the file you just sent.
+  Measured across the starter evals: the three lowest-scoring workflow runs all
+  opened this way, one of them spending 104 tool calls and never reaching
+  \`test_agent\` at all. Bottom-up costs nothing and the first check is green:
+  \`workflows/*.ts\`, then \`agent.ts\`, then \`client.tsx\`. If a red does
+  name a file you are about to write, WRITE IT rather than editing the file that
+  referenced it.
 - **Bound a fan-out with \`mapConcurrent\`** from "@alexkroman1/aai/step"
   (imported from that subpath, never the root, inside a \`workflows/*.ts\`
   module). The DevKit correlates journal entries to step calls by the order
