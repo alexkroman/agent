@@ -38,9 +38,17 @@
  * pulls the window from Storage directly. `size` is answered by the platform itself
  * — it holds the credential, a HEAD moves nothing, and a redirect would cost a
  * second round trip to learn one number.
+ *
+ * ## Every operation here is RE-ISSUED, because this is a network
+ *
+ * It reads as an in-process call and it is a request out of a microVM, through the
+ * platform's proxy, to a bucket — and it was the one leg of an upload that did not
+ * retry. See {@link BYTE_OP_ATTEMPTS} for the production failure that cost, and
+ * {@link isTransient} for what is an answer rather than a hiccup.
  */
 
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { RETRYABLE_STATUS, sleep } from "@alexkroman1/aai/host-internal";
+import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import type { UploadBlobs } from "./_upload-blobs.ts";
 import { contentLength, IDENTITY_ENCODING } from "./_upload-blobs.ts";
@@ -55,6 +63,44 @@ import { collectCapped } from "./_upload-store.ts";
  * bound, a run holds its worker slot until graphile-worker's four-hour job expiry.
  */
 const BYTE_OP_TIMEOUT_MS = 120_000;
+
+/**
+ * How many times one byte operation is issued before it gives up.
+ *
+ * **This hop is a network, and it was the only leg of an upload that did not know
+ * it.** Every other one retries — the browser's part `PUT` and its claim run on
+ * `withRetries` (`sdk/_upload-retry.ts`), the platform's own store client retries
+ * Storage — while a `fetch` from here rejecting with `TypeError: fetch failed`
+ * reached the route as an unnamed rejection and became a 500. Observed in
+ * production: two `PUT …/workflows/uploads/<id>/parts -> 500` on one upload, each
+ * preceded by `Workflow API request failed { error: 'fetch failed' }`, and both
+ * for a HEAD that measures a window already sitting in the bucket.
+ *
+ * What made that expensive is `UPLOAD_CLAIM_BATCH`: a claim names up to 32 windows
+ * and `recordParts` probes every one of them, all-or-nothing, so ONE transient
+ * probe failed a request that had already cost 5-16 seconds and the browser
+ * re-sent the whole batch. Three attempts and a sub-second budget buy that back —
+ * see {@link BYTE_OP_RETRY_BASE_MS} — against operations that are idempotent by
+ * construction: the OFFSET is the object's name, so a re-sent `put` overwrites
+ * itself and a re-issued `size` or `read` asks the same question.
+ *
+ * Bounded at three rather than the browser's four because a claim's probes are
+ * concurrent and the caller above this has its own budget: the retry that matters
+ * is the one that rides out a reset, and a guest still failing on the third is
+ * reporting something the platform has to answer for.
+ */
+const BYTE_OP_ATTEMPTS = 3;
+
+/**
+ * The first backoff between attempts, doubling from there, jittered over the lower
+ * half of the window so a claim's concurrent probes do not come back in unison.
+ *
+ * A quarter of the SDK's own `UPLOAD_RETRY_BASE_MS` because this is the INNER
+ * budget: a claim that spends its own waits here also holds the browser's request
+ * open, and the whole point is to be cheaper than failing the batch. Worst case
+ * over three attempts is ~750 ms against a claim that measured 5-16 s.
+ */
+const BYTE_OP_RETRY_BASE_MS = 250;
 
 export type BrokeredUploadBlobsOptions = {
   /**
@@ -89,56 +135,134 @@ export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): Upl
     return res;
   };
 
+  /**
+   * Run one byte operation, re-issuing it while the far side is transiently unable
+   * to answer — see {@link BYTE_OP_ATTEMPTS}.
+   *
+   * It wraps the WHOLE operation rather than just the request, because a body that
+   * dies halfway through `arrayBuffer()` is the same failure as a socket that never
+   * opened, and only `read` would be covered by the narrower seam.
+   */
+  const attempt = async <T>(run: () => Promise<T>): Promise<T> => {
+    for (let n = 1; ; n += 1) {
+      try {
+        return await run();
+      } catch (err: unknown) {
+        if (n >= BYTE_OP_ATTEMPTS || !isTransient(err)) throw err;
+        await sleep(retryDelay(n));
+      }
+    }
+  };
+
   return {
     async put(key, body, options): Promise<number> {
       // Buffered for the reason `_upload-blobs-http.ts` gives — the far side stores
       // one object and needs its length — and bounded by the window, not the file.
+      // OUTSIDE `attempt`, and it has to be: this drains the caller's stream, so a
+      // second pass over it would send an empty body. The collected array is what
+      // makes the re-send below possible at all.
       const bytes = await collectCapped(body, options?.limit);
-      const res = await send(
-        key,
-        {
-          method: "PUT",
-          headers: { "Content-Type": options?.type || "application/octet-stream" },
-          body: bytes,
-        },
-        "write",
-      );
-      if (!res.ok) throw await brokerError("write", key, res);
+      await attempt(async () => {
+        const res = await send(
+          key,
+          {
+            method: "PUT",
+            headers: { "Content-Type": options?.type || "application/octet-stream" },
+            body: bytes,
+          },
+          "write",
+        );
+        if (!res.ok) throw await brokerError("write", key, res);
+      });
       return bytes.length;
     },
 
     async read(key, start, end): Promise<Uint8Array> {
       if (end <= start) return new Uint8Array(0);
-      const res = await send(
-        key,
-        // `redirect` is left at its default: following the 302 to Storage IS the
-        // mechanism — see the module doc.
-        { method: "GET", headers: { Range: `bytes=${start}-${end - 1}` } },
-        "read",
-      );
-      // Clamped rather than refused — see `UploadBlobs.read`.
-      if (res.status === 404 || res.status === 416) return new Uint8Array(0);
-      if (!res.ok) throw await brokerError("read", key, res);
-      return new Uint8Array(await res.arrayBuffer());
+      return await attempt(async () => {
+        const res = await send(
+          key,
+          // `redirect` is left at its default: following the 302 to Storage IS the
+          // mechanism — see the module doc.
+          { method: "GET", headers: { Range: `bytes=${start}-${end - 1}` } },
+          "read",
+        );
+        // Clamped rather than refused — see `UploadBlobs.read`.
+        if (res.status === 404 || res.status === 416) return new Uint8Array(0);
+        if (!res.ok) throw await brokerError("read", key, res);
+        // Inside the retry, so a body that dies mid-stream is re-read rather than
+        // reported — the window is a range request and asking again is free.
+        return new Uint8Array(await res.arrayBuffer());
+      });
     },
 
     async size(key): Promise<number | undefined> {
       // `identity`, because the answer IS a header and a proxy that re-encodes the
       // response drops it — see {@link IDENTITY_ENCODING} for the one that did.
-      const res = await send(key, { method: "HEAD", headers: { ...IDENTITY_ENCODING } }, "head");
-      if (res.status === 404) return undefined;
-      if (!res.ok) throw await brokerError("head", key, res);
-      // Never guessed: `UploadBlobs.size` is what stops a part nobody uploaded being
-      // recorded as present, so an unmeasurable answer has to read as absent — which
-      // includes a response that stated no length at all. `contentLength` owns that
-      // distinction, and carries what conflating the two cost.
-      return contentLength(res);
+      return await attempt(async () => {
+        const res = await send(key, { method: "HEAD", headers: { ...IDENTITY_ENCODING } }, "head");
+        if (res.status === 404) return;
+        if (!res.ok) throw await brokerError("head", key, res);
+        // Never guessed: `UploadBlobs.size` is what stops a part nobody uploaded being
+        // recorded as present, so an unmeasurable answer has to read as absent — which
+        // includes a response that stated no length at all. `contentLength` owns that
+        // distinction, and carries what conflating the two cost.
+        return contentLength(res);
+      });
     },
   };
 }
 
-/** One failure shape, carrying the status and whatever the platform said. */
+/**
+ * A refusal the far side MEANT — re-issuing the request gets the same answer.
+ *
+ * The marker {@link isTransient} reads, and the polarity is deliberate: anything
+ * NOT named as an answer is worth asking again. A transport failure carries no
+ * status at all (`TypeError: fetch failed` is the whole error), so a list of
+ * retryable conditions would have to guess at Node's wording, while the set of
+ * definite answers is exactly what this module produces itself.
+ */
+class BrokerRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = BrokerRefusal.name;
+  }
+}
+
+/**
+ * Is this failure worth issuing the same request for again?
+ *
+ * Three things say no. A {@link BrokerRefusal} is the platform's answer. A
+ * `TimeoutError` is {@link BYTE_OP_TIMEOUT_MS} already spent, and retrying it
+ * would make the bound it exists to enforce three times what it says. An
+ * `AbortError` is the caller having stopped asking, which is an answer of its own.
+ *
+ * Everything else — a reset, a refused connection, a DNS blip, a body that died
+ * mid-stream — is the network, and this hop crosses a microVM boundary and the
+ * platform's proxy to reach a bucket.
+ */
+function isTransient(err: unknown): boolean {
+  if (err instanceof BrokerRefusal) return false;
+  if (!isRecord(err)) return true;
+  return err.name !== "TimeoutError" && err.name !== "AbortError";
+}
+
+/** How long to wait before re-issuing — see {@link BYTE_OP_RETRY_BASE_MS}. */
+function retryDelay(attempt: number): number {
+  const window = BYTE_OP_RETRY_BASE_MS * 2 ** (attempt - 1);
+  return window / 2 + Math.random() * (window / 2);
+}
+
+/**
+ * One failure shape, carrying the status and whatever the platform said.
+ *
+ * A {@link RETRYABLE_STATUS} — the SDK's own set, so the two ends of this upload
+ * cannot disagree about what "come back" means — stays a plain `Error` and is
+ * re-issued; anything else is a {@link BrokerRefusal} this operation reports as
+ * its answer.
+ */
 async function brokerError(op: string, key: string, res: Response): Promise<Error> {
   const detail = await res.text().catch((err: unknown) => errorMessage(err));
-  return new Error(`upload blob ${op} failed for ${key}: ${res.status} ${detail.slice(0, 200)}`);
+  const message = `upload blob ${op} failed for ${key}: ${res.status} ${detail.slice(0, 200)}`;
+  return RETRYABLE_STATUS.has(res.status) ? new Error(message) : new BrokerRefusal(message);
 }

@@ -13,7 +13,7 @@
  * and that split is the security boundary (`_upload-blobs.ts`, "Signing is NOT here").
  */
 
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createBrokeredUploadBlobs } from "./_upload-blobs-brokered.ts";
 import { createHttpUploadBlobs, storageEndpoint } from "./_upload-blobs-http.ts";
 import { UploadTooLargeError } from "./_upload-store.ts";
@@ -180,6 +180,25 @@ describe("Storage over its REST API", () => {
 });
 
 describe("brokered through the platform", () => {
+  // VIRTUAL time, because this half retries and a spec that waits out a backoff is
+  // both slow and a race — see `useVirtualTime` in `transports/`. Nothing else here
+  // observes a clock, so the only cost is that a retrying spec has to advance one.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Past every backoff `BYTE_OP_ATTEMPTS` can spend, with room to spare. */
+  const drainBackoff = async (): Promise<void> => {
+    await vi.advanceTimersByTimeAsync(5000);
+  };
+
+  /** The one answer a `size` spec wants: a measured window. */
+  const okHead = (): Response =>
+    new Response(null, { status: 200, headers: { "content-length": "64" } });
+
   const open = (answer: (call: Call) => Response) => {
     const script = scripted(answer);
     return {
@@ -189,6 +208,23 @@ describe("brokered through the platform", () => {
         fetch: script.fetch,
       }),
     };
+  };
+
+  /**
+   * Like {@link open}, but the first `n` requests reject the way the network does.
+   *
+   * `TypeError: fetch failed` is undici's whole error for a reset, a refused
+   * connection or a DNS blip — no status, no code on the value that is thrown —
+   * which is why the classifier names the definite ANSWERS and treats the rest as
+   * worth asking again.
+   */
+  const failing = (n: number, answer: (call: Call) => Response) => {
+    let failed = 0;
+    return open((call) => {
+      if (failed >= n) return answer(call);
+      failed += 1;
+      throw new TypeError("fetch failed");
+    });
   };
 
   test("sends only the LAST TWO segments of a key, and no credential", async () => {
@@ -248,8 +284,13 @@ describe("brokered through the platform", () => {
       const { blobs } = open(() => new Response("", { status }));
       expect([...(await blobs.read("uploads/upl_a/0", 0, 8))]).toEqual([]);
     }
+    // A 503 is on `RETRYABLE_STATUS`, so it is re-issued before it is reported —
+    // `settled` is awaited AFTER the clock so the rejection has a handler while the
+    // backoff runs, and the assertion is still that the caller sees the status.
     const { blobs } = open(() => new Response("busy", { status: 503 }));
-    await expect(blobs.read("uploads/upl_a/0", 0, 8)).rejects.toThrow(/503/);
+    const settled = expect(blobs.read("uploads/upl_a/0", 0, 8)).rejects.toThrow(/503/);
+    await drainBackoff();
+    await settled;
   });
 
   test("measures a window with a HEAD, and reads absence as undefined", async () => {
@@ -282,5 +323,81 @@ describe("brokered through the platform", () => {
     });
     await blobs.put("uploads/upl_a/0", body(ramp(1)));
     expect(script.calls[0]?.url).toBe("https://platform.test/desk/uploads/upl_a/0");
+  });
+
+  describe("re-issues what the network lost", () => {
+    // The production failure this covers: `PUT …/workflows/uploads/<id>/parts -> 500`
+    // twice on one upload, each preceded by `Workflow API request failed { error:
+    // 'fetch failed' }`. A claim names up to `UPLOAD_CLAIM_BATCH` windows and
+    // `recordParts` probes every one, all-or-nothing, so a single transient HEAD
+    // failed a request that had already cost 5-16s.
+    test("asks a failed HEAD again, which is what a claim's probes ride on", async () => {
+      const { blobs, calls } = failing(1, okHead);
+      const measured = blobs.size("uploads/upl_a/0");
+      await drainBackoff();
+      expect(await measured).toBe(64);
+      expect(calls).toHaveLength(2);
+    });
+
+    test("re-sends a part, whose OFFSET is its name and so overwrites itself", async () => {
+      // What makes the re-send legal rather than merely convenient: the key names the
+      // byte the window starts at, so a second `PUT` of the same window is the same
+      // object. The BODY is collected before the first attempt for the same reason it
+      // has to be — a caller's stream drains once.
+      const { blobs, calls } = failing(1, () => new Response("{}", { status: 201 }));
+      const sent = blobs.put("uploads/upl_a/8388608", body(ramp(16)));
+      await drainBackoff();
+      expect(await sent).toBe(16);
+      expect(calls).toHaveLength(2);
+      expect(calls.every((call) => call.bytes === 16)).toBe(true);
+    });
+
+    test("gives up after three, reporting what the transport said", async () => {
+      const { blobs, calls } = failing(Number.POSITIVE_INFINITY, () => okHead());
+      const settled = expect(blobs.size("uploads/upl_a/0")).rejects.toThrow(/fetch failed/);
+      await drainBackoff();
+      await settled;
+      expect(calls).toHaveLength(3);
+    });
+
+    test("re-issues a transient STATUS, and reports a refusal at once", async () => {
+      // `RETRYABLE_STATUS` is the SDK's own set, so the two ends of an upload cannot
+      // disagree about which answers mean "come back".
+      let answered = 0;
+      const { blobs, calls } = open(() => {
+        answered += 1;
+        return answered <= 2 ? new Response("busy", { status: 503 }) : okHead();
+      });
+      const measured = blobs.size("uploads/upl_a/0");
+      await drainBackoff();
+      expect(await measured).toBe(64);
+      expect(calls).toHaveLength(3);
+
+      // A 403 is the platform's ANSWER — a `BrokerRefusal` — so it costs one request.
+      const refused = open(() => new Response("nope", { status: 403 }));
+      await expect(refused.blobs.size("uploads/upl_a/0")).rejects.toThrow(/403/);
+      expect(refused.calls).toHaveLength(1);
+    });
+
+    test("never re-issues a TIMEOUT, which is the whole budget already spent", async () => {
+      // Retrying one would make `BYTE_OP_TIMEOUT_MS` three times the bound it states,
+      // and the bound exists to stop a hung socket parking a step.
+      let issued = 0;
+      const blobs = createBrokeredUploadBlobs({
+        base: "https://platform.test/digest-desk/",
+        fetch: () => {
+          issued += 1;
+          // Never settles: the timeout is the only thing that can end this.
+          return new Promise<Response>(() => {
+            // Deliberately nothing — a socket that opened and then went quiet.
+          });
+        },
+      });
+      const settled = expect(blobs.size("uploads/upl_a/0")).rejects.toThrow(/timed out/);
+      await vi.advanceTimersByTimeAsync(120_001);
+      await drainBackoff();
+      await settled;
+      expect(issued).toBe(1);
+    });
   });
 });
