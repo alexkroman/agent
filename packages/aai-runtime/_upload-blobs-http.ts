@@ -37,8 +37,8 @@
 
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { contentLength, IDENTITY_ENCODING, type UploadBlobs } from "./_upload-blobs.ts";
+import { collectCapped } from "./_upload-byte-util.ts";
 import { UPLOAD_STORAGE_BUCKET_ENV, UPLOAD_STORAGE_URL_ENV } from "./_upload-env.ts";
-import { collectCapped } from "./_upload-store.ts";
 
 export type HttpUploadBlobsOptions = {
   /** Project URL (`https://<ref>.supabase.co`), or any Storage-compatible origin. */

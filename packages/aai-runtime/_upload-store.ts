@@ -122,7 +122,11 @@
  */
 
 import type { UploadReader } from "@alexkroman1/aai/host-internal";
-import { UPLOAD_CHUNK_BYTES, UPLOAD_ID_PREFIX } from "@alexkroman1/aai/host-internal";
+import {
+  UPLOAD_CHUNK_BYTES,
+  UPLOAD_CLAIM_BATCH,
+  UPLOAD_ID_PREFIX,
+} from "@alexkroman1/aai/host-internal";
 import type { UploadInfo, UploadRange } from "@alexkroman1/aai/step";
 
 /** The table one row per upload lives in. Prefixed so it cannot collide with an app's own. */
@@ -144,8 +148,48 @@ export const UPLOADS_TABLE = "aai_workflow_uploads";
  * large file cuts it into parts itself, and each of those arrives as its own
  * request carrying a single window; this is what a `POST`, a `curl --data-binary`,
  * or a client the parts path declined for gets instead.
+ *
+ * **It is not what bounds a claim's PROBES** — see
+ * {@link UPLOAD_PROBE_CONCURRENCY}, which this used to be spent on as well.
  */
 export const UPLOAD_WINDOW_CONCURRENCY = 4;
+
+/**
+ * Bucket probes a `recordParts` claim keeps in flight at once.
+ *
+ * **Its own number because a probe carries NO BYTES, and every cost that sized
+ * {@link UPLOAD_WINDOW_CONCURRENCY} is a cost per byte.** That one is memory — a
+ * window is buffered whole before its write starts, so four of them is 32 MiB
+ * held — and the browser's `UPLOAD_PART_CONCURRENCY` answers to the same shape
+ * from the other side, where the measured limit is BYTES IN FLIGHT (32 MiB clean,
+ * 64 MiB slower, 128 MiB resetting). A `HEAD` asking how big an object is puts a
+ * request header on the wire and nothing else, so it meets none of those limits.
+ *
+ * Spending the window number on it was costing a claim its ROUND COUNT, which is
+ * the only thing a batch of probes has: `UPLOAD_CLAIM_BATCH` is 32, so 32 probes
+ * at four wide is EIGHT sequential rounds of a request that moves no data.
+ * Measured on a harness at the production log's own latencies — 600 ms per record
+ * round trip, 400 ms per probe — over the three changes that landed together:
+ *
+ * | claim | 3 reads, 4 wide | 1 read, 4 wide | 1 read, 32 wide, overlapped |
+ * | --- | --- | --- | --- |
+ * | 1 window | 2202 ms | 1602 ms | **1202 ms** |
+ * | 8 windows | 2605 ms | 1602 ms | **1202 ms** |
+ * | 32 windows | 5013 ms | 1605 ms | **1203 ms** |
+ *
+ * So it is {@link UPLOAD_CLAIM_BATCH}: the batch is already bounded, and matching
+ * it is what makes a claim's probe cost ONE round by construction rather than a
+ * number that grows as the cap does. Deriving it rather than writing 32 twice is
+ * the point — a later change to the batch cap cannot silently reintroduce rounds.
+ *
+ * **The last column is flat, and that is the finding**: the probes now run
+ * alongside the record read that `recordParts` was waiting for anyway, so a claim
+ * costs what its record round trips cost and its width is free. What is left is
+ * one read and one write, strictly ordered because the write is of the merge —
+ * collapsing those needs the merge to happen where the record lives, which is a
+ * change to the `UploadRecords` seam and all three of its homes.
+ */
+export const UPLOAD_PROBE_CONCURRENCY = UPLOAD_CLAIM_BATCH;
 
 /** Raised by an upload store's `create` when the body ran past its cap. */
 export class UploadTooLargeError extends Error {
@@ -408,77 +452,4 @@ export function contiguousBytes(ranges: readonly ByteRange[]): number {
 /** A fresh upload id. Prefixed so a stray value in a log reads as what it is. */
 export function newUploadId(): string {
   return `${UPLOAD_ID_PREFIX}${crypto.randomUUID().replaceAll("-", "")}`;
-}
-
-/**
- * Read a body into `UPLOAD_CHUNK_BYTES` pieces, refusing anything past `limit`.
- *
- * The piece size a body is assembled from before it is grouped into window objects,
- * and the unit `readUploadRoute` writes to a socket in. Counted as it arrives rather
- * than from a declared length, the same rule
- * `readBody` follows and for the same reason: a client controls that header
- * independently of what it sends.
- */
-export async function* chunked(
-  body: AsyncIterable<Uint8Array>,
-  limit: number,
-): AsyncGenerator<Uint8Array> {
-  let held: Uint8Array[] = [];
-  let heldBytes = 0;
-  let total = 0;
-  for await (const piece of body) {
-    total += piece.length;
-    if (total > limit) throw new UploadTooLargeError(limit);
-    held.push(piece);
-    heldBytes += piece.length;
-    while (heldBytes >= UPLOAD_CHUNK_BYTES) {
-      const joined = concat(held, heldBytes);
-      yield joined.subarray(0, UPLOAD_CHUNK_BYTES);
-      const rest = joined.subarray(UPLOAD_CHUNK_BYTES);
-      held = rest.length > 0 ? [rest] : [];
-      heldBytes = rest.length;
-    }
-  }
-  if (heldBytes > 0) yield concat(held, heldBytes);
-}
-
-/**
- * One buffer from several.
- *
- * `Buffer.concat` does the copy — it is the native one, and this is the upload
- * hot path (a chunk per megabyte, in and out). The one thing it does NOT do is
- * skip the copy for a single part that is already the right length, which here
- * is the ordinary case: `chunked` yields whole `UPLOAD_CHUNK_BYTES` pieces.
- */
-export function concat(parts: readonly Uint8Array[], size: number): Uint8Array {
-  if (parts.length === 1 && parts[0]?.length === size) return parts[0];
-  return Buffer.concat(parts, size);
-}
-
-/**
- * Drain a body into one buffer, refusing it the moment it passes `limit`.
- *
- * The three {@link UploadBlobs} implementations each open an object write by
- * buffering — Storage has no append and no streaming PUT of unknown length, so
- * an object's bytes have to be in hand to write them — and each had written the
- * same accumulate-count-and-cap loop. The cap is what makes it safe: the size is
- * counted AS IT ARRIVES rather than read off a declared length a client controls
- * independently of what it really sends, so an oversized body is refused while
- * streaming instead of buffered and then measured.
- *
- * @throws {UploadTooLargeError} once more than `limit` bytes have arrived.
- * @internal
- */
-export async function collectCapped(
-  body: AsyncIterable<Uint8Array>,
-  limit: number | undefined,
-): Promise<Uint8Array> {
-  const held: Uint8Array[] = [];
-  let size = 0;
-  for await (const piece of body) {
-    size += piece.length;
-    if (limit !== undefined && size > limit) throw new UploadTooLargeError(limit);
-    held.push(piece);
-  }
-  return concat(held, size);
 }

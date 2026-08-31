@@ -56,15 +56,16 @@ import {
   type UploadBlobs,
   type UploadPart,
 } from "./_upload-blobs.ts";
+import { chunked, concat } from "./_upload-byte-util.ts";
+import { declaredTotal, measuredPart } from "./_upload-parts-checks.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
 import {
   assertPartOffset,
   assertPartTotal,
-  chunked,
-  concat,
   contiguousBytes,
   newUploadId,
   UnknownUploadError,
+  UPLOAD_PROBE_CONCURRENCY,
   UPLOAD_WINDOW_CONCURRENCY,
   UploadPartError,
   type UploadStore,
@@ -73,6 +74,20 @@ import {
 
 /** One cut window and the byte it starts at — see {@link windows}. */
 type PlacedWindow = { at: number; bytes: Uint8Array };
+
+/**
+ * What a merge produces: the row to write, and the answer to give the caller.
+ *
+ * `state` is EXACTLY {@link UploadRecords.update}'s parameter and nothing more,
+ * which is load-bearing rather than tidy: the file home writes `{ ...held,
+ * ...state }`, so any extra key on the object handed to `update` is persisted into
+ * the record verbatim. Returning one object with `info` alongside the three
+ * columns would put a whole `UploadInfo` in a dev deployment's upload JSON.
+ */
+type MergedParts = {
+  state: { parts: UploadPart[]; size: number; complete: boolean };
+  info: UploadInfo;
+};
 
 /**
  * Build the store.
@@ -123,24 +138,47 @@ export function createBlobUploadStore(opts: {
    * {@link UploadStore.recordParts} worth batching over the wire. Adding one
    * window is the same call with one element, so there is one merge rule rather
    * than two.
+   *
+   * **`held` is the record READ UNDER THIS LOCK, and the parameter is what stops
+   * it being read twice.** A caller that already has to inspect the record before
+   * it can measure anything — {@link UploadStore.recordParts}, which needs the
+   * declared total to check a window against — used to read it, and then this
+   * read it again inside the lock, so a claim carrying no bytes cost THREE
+   * round trips to the record's home. That second read exists for staleness, and
+   * a caller holding the lock across its own read cannot be stale: nothing else
+   * may write `parts` for this id while the lock is held. So the read moves to
+   * whoever takes the lock, and this merges what it is given.
+   */
+  function mergeParts(id: string, held: UploadRecord, added: readonly UploadPart[]): MergedParts {
+    const replaced = new Set(added.map((one) => one.at));
+    const parts = [...held.parts.filter((one) => !replaced.has(one.at)), ...added];
+    const size = contiguousBytes(rangesOf(parts));
+    // A declared total is the ONLY thing that can make an upload complete here. A
+    // streamed one declares none, and its prefix reaching its own length says
+    // nothing — every window satisfies that — so its `complete` is left alone and
+    // `stream` sets it when the BODY ends, which is the only moment anything knows
+    // there is no more coming.
+    const complete = held.expected === undefined ? held.complete : size >= held.expected;
+    return { state: { parts, size, complete }, info: info(id, { ...held, parts, complete }, size) };
+  }
+
+  /**
+   * {@link mergeParts} for a caller that holds no record: take the lock, read,
+   * merge, write.
+   *
+   * The shape every path except {@link UploadStore.recordParts} wants — a window
+   * whose bytes this process just wrote, with nothing about the record inspected
+   * beforehand. The re-read is INSIDE the lock because the copy a caller read
+   * before the bytes went is stale by exactly the parts that landed while they
+   * did.
    */
   async function addParts(id: string, added: readonly UploadPart[]): Promise<UploadInfo> {
     return await withLock(boundaries, id, async () => {
-      // Re-read INSIDE the lock: the copy read before the bytes went is stale by
-      // exactly the parts that landed while they did.
       const held = await records.read(id);
       if (!held) throw new UnknownUploadError(id);
-      const replaced = new Set(added.map((one) => one.at));
-      const parts = [...held.parts.filter((one) => !replaced.has(one.at)), ...added];
-      const size = contiguousBytes(rangesOf(parts));
-      // A declared total is the ONLY thing that can make an upload complete here. A
-      // streamed one declares none, and its prefix reaching its own length says
-      // nothing — every window satisfies that — so its `complete` is left alone and
-      // `stream` sets it when the BODY ends, which is the only moment anything knows
-      // there is no more coming.
-      const complete = held.expected === undefined ? held.complete : size >= held.expected;
-      await records.update(id, { parts, size, complete });
-      return info(id, { ...held, parts, complete }, size);
+      const merged = mergeParts(id, held, added);
+      await records.update(id, merged.state);
+      return merged.info;
     });
   }
 
@@ -289,50 +327,68 @@ export function createBlobUploadStore(opts: {
         throw new UploadPartError(`A claim on upload ${id} named the same part twice.`);
       }
       for (const offset of offsets) assertPartOffset(offset);
-      // ONE read of the record for the whole batch: the declared total and type are
-      // properties of the UPLOAD, not of a window, so re-reading them per part is
-      // exactly the cost this route exists to stop paying. It is asked about the
-      // largest offset because that is the one its own past-the-total check can fail
-      // on; every smaller offset in the batch is covered by the same answer.
-      const held = await declared(id, Math.max(...offsets));
-      // Asked of the BUCKET, never taken from the caller — see the module doc. A
-      // part nobody uploaded is a 400 rather than a hole that reads as silence.
-      // Concurrent because these are independent probes of independent objects, and
-      // bounded because one claim may name `UPLOAD_CLAIM_BATCH` of them.
-      const measured = await mapConcurrent(offsets, UPLOAD_WINDOW_CONCURRENCY, async (offset) => {
-        const bytes = await blobs.size(key(id, offset));
-        if (bytes === undefined) {
-          throw new UploadPartError(
-            `No bytes are stored for the part at ${offset} of upload ${id}. Upload the part to ` +
-              "its signed URL before recording it.",
-          );
-        }
-        // A window of NO bytes, where the upload declares some. Refused rather than
-        // recorded, and this is not hypothetical: `UploadBlobs.size` read a missing
-        // `Content-Length` as `0` for a while (see `contentLength`), so every part of
-        // every parts upload on the platform was recorded as an empty window. Nothing
-        // below could see it — a zero-length range is well formed and `contiguousBytes`
-        // sums it happily to 0 — so the only symptom was a stored file nothing could
-        // read. The refusal above exists to keep a hole out of the record; a
-        // zero-length window IS a hole, so it belongs under the same rule.
-        if (bytes === 0 && held.total > 0) {
-          throw new UploadPartError(
-            `The part at ${offset} of upload ${id} measured 0 bytes, but the upload declares ` +
-              `${held.total}. Recording it would leave a hole that reads as silence.`,
-          );
-        }
-        if (offset + bytes > held.total) {
-          throw new UploadPartError(
-            `The part at ${offset} holds ${bytes} bytes, which runs past this upload's ` +
-              `${held.total}.`,
-          );
-        }
-        return { at: offset, bytes };
+      // THE WHOLE CLAIM IS ONE LOCKED SECTION, and that is what makes it ONE read.
+      //
+      // This used to be a read for the declared total, then the probes, then
+      // `addParts` taking the lock and reading AGAIN for a list it could trust —
+      // three round trips to the record's home for a request carrying no bytes, on
+      // the path whose entire purpose is to carry no bytes. Reading inside the lock
+      // collapses the two, because the second one only ever existed to answer
+      // staleness and nothing may write this id's `parts` while the lock is held.
+      //
+      // What it costs is that a second claim on the SAME upload waits out this
+      // one's probes rather than overlapping them. That is not a path any client
+      // takes — `createClaimer` keeps at most one claim in flight and coalesces the
+      // rest — and where it does happen (two tabs resuming one caller-named id) it
+      // is the more correct answer: measuring and recording become atomic per
+      // upload, where before two claims naming overlapping windows could interleave
+      // between their probes and their merge.
+      return await withLock(boundaries, id, async () => {
+        // THE READ AND THE PROBES OVERLAP, because neither needs the other. The
+        // record answers "what did this upload declare"; the bucket answers "how big
+        // is the object at this key" — and a key is composed from the id and the
+        // offset, both of which the request carried. Run in sequence they were
+        // 600 ms then 400 ms on the harness; run together they are 600 ms, and the
+        // probes are free.
+        //
+        // What it costs is one wasted round of `HEAD`s when the record turns out not
+        // to exist, or not to be a parts upload. Both are client errors, both are
+        // bounded by `UPLOAD_CLAIM_BATCH`, and a `HEAD` for an absent object is the
+        // cheapest request the bucket serves — against which the alternative is
+        // paying the serialization on every SUCCESSFUL claim.
+        const [held, sizes] = await Promise.all([
+          records.read(id),
+          // Asked of the BUCKET, never taken from the caller — see the module doc. A
+          // part nobody uploaded is a 400 rather than a hole that reads as silence.
+          // Concurrent because these are independent probes of independent objects
+          // that carry no bytes at all, which is why the width is
+          // `UPLOAD_PROBE_CONCURRENCY` and not the byte path's — that constant's doc
+          // has the round-count measurement.
+          mapConcurrent(
+            offsets,
+            UPLOAD_PROBE_CONCURRENCY,
+            async (offset) => await blobs.size(key(id, offset)),
+          ),
+        ]);
+        // The RECORD's refusals first, so an upload nobody began is still a 404 and
+        // not whichever probe happened to come back empty. `size` answers
+        // `undefined` for an absent object rather than throwing, so this ordering is
+        // a choice about which error to report and never a race.
+        if (!held) throw new UnknownUploadError(id);
+        // Asked about the largest offset because that is the one its own
+        // past-the-total check can fail on; every smaller offset in the batch is
+        // covered by the same answer.
+        const total = declaredTotal(id, held, Math.max(...offsets));
+        // Every window is checked before ANY is written — see the interface's "all or
+        // nothing". A batch holding one bad offset throws here and records none of
+        // itself, which is the same guarantee the concurrent callback used to give by
+        // rejecting early; the checks moved out of it so they can see a total the
+        // probes did not have to wait for.
+        const measured = offsets.map((offset, n) => measuredPart(id, offset, sizes[n], total));
+        const merged = mergeParts(id, held, measured);
+        await records.update(id, merged.state);
+        return merged.info;
       });
-      // Every window is measured before ANY is written — see the interface's "all or
-      // nothing". `mapConcurrent` rejects on the first failure, so a batch holding one
-      // bad offset never reaches here and records none of itself.
-      return await addParts(id, measured);
     },
 
     async info(id): Promise<UploadInfo | undefined> {
@@ -363,17 +419,19 @@ export function createBlobUploadStore(opts: {
   async function declared(id: string, offset: number): Promise<{ type: string; total: number }> {
     const held = await records.read(id);
     if (!held) throw new UnknownUploadError(id);
-    if (held.expected === undefined) {
-      throw new UploadPartError(`Upload ${id} was not begun as a parts upload.`);
-    }
-    const total = held.expected;
-    if (offset > total) {
-      throw new UploadPartError(`A part at ${offset} starts past this upload's ${total} bytes.`);
-    }
-    return { type: held.type, total };
+    return { type: held.type, total: declaredTotal(id, held, offset) };
   }
 }
 
+/**
+ * The total a parts upload declared, checked against one offset.
+ *
+ * Split out of `declared` so a caller that already holds the record does not have
+ * to read it again for these two refusals — see {@link UploadStore.recordParts},
+ * which reads once inside its lock. It takes the record rather than fetching one
+ * because a declared total is IMMUTABLE: `beginParts` writes `expected` and
+ * nothing else ever does, so a copy of it cannot go stale the way `parts` can.
+ */
 /**
  * A body as `UPLOAD_PART_BYTES` windows, refusing anything past `limit`.
  *

@@ -87,6 +87,7 @@ export {
   type ByteRange,
   contiguousBytes,
   UnknownUploadError,
+  UPLOAD_WINDOW_CONCURRENCY,
   UPLOADS_TABLE,
   UploadIdTakenError,
   type UploadMeta,

@@ -52,7 +52,7 @@ import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import type { UploadBlobs } from "./_upload-blobs.ts";
 import { contentLength, IDENTITY_ENCODING } from "./_upload-blobs.ts";
-import { collectCapped } from "./_upload-store.ts";
+import { collectCapped } from "./_upload-byte-util.ts";
 
 /**
  * How long one byte operation may take.

@@ -62,7 +62,8 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { type ByteRange, collectCapped } from "./_upload-store.ts";
+import { collectCapped } from "./_upload-byte-util.ts";
+import type { ByteRange } from "./_upload-store.ts";
 
 /** One window of an upload, and the object holding it. */
 export type UploadPart = {

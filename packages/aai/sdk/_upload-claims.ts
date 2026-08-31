@@ -6,9 +6,16 @@
  * to the platform and a body-less `PUT …/parts?offset=…&stored=1` tells the agent
  * which window arrived — a request carrying nothing that measured 1604-1969 ms
  * against a deployed agent, per PART, roughly half of a part's wall clock. It is
- * slow because of where it goes rather than what it carries: across the platform,
- * into the sandbox, then a record read, a bucket probe and a locked
- * read-modify-write of the whole part list.
+ * slow because of where it goes rather than what it carries: across the platform
+ * and into the sandbox, where the guest then has to reach the record's home and the
+ * bucket.
+ *
+ * Two things have been done about that, and this module is the FIRST: batching, so
+ * the toll is paid per claim rather than per part (`UPLOAD_CLAIM_BATCH`). The
+ * second is on the guest side, where one claim used to cost three round trips to
+ * the record's home plus eight sequential rounds of bucket probes — see
+ * `aai-runtime/_upload-store.ts`, `UPLOAD_PROBE_CONCURRENCY`, which carries the
+ * measurement (5013 ms to 1203 ms on a harness at these latencies).
  *
  * Its own module because `workflow-upload-parts.ts` is at the file-length cap and
  * this is the seam that was already there — the fan-out owns the BYTES and this owns
@@ -52,8 +59,8 @@ export type Claimer = {
  * **The claim is what an upload spent its time on.** It carries no bytes and
  * measured 1604-1969 ms against a deployed agent — roughly half of a part's wall
  * clock, paid per PART — because it crosses the platform into the sandbox and then
- * costs the guest a record read, a bucket probe and a locked read-modify-write of
- * the part list. So it is no longer on the critical path of a fan-out slot: a part
+ * costs the guest a read of the record and a probe of the bucket for every window
+ * it names. So it is no longer on the critical path of a fan-out slot: a part
  * hands its offset here and the slot goes straight to the next window's bytes,
  * which is what puts the width back into the BYTES it was meant to be about.
  *
