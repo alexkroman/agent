@@ -977,8 +977,8 @@ fixable from the client:
   its assets answered by the other.
 - **This package ships only as a side effect of a SERVER release.** Its
   `dist/` is baked into the one Modal app's image (`aai-server-web`, running
-  `AAI_SERVICE=combined`), and `.github/workflows/deploy.yml` fires on a
-  version bump to `aai-server` **or** `aai-studio-server` — never on this
+  `AAI_SERVICE=combined`), and `.github/workflows/ship.yml`'s deploy job fires
+  on a version bump to `aai-server` **or** `aai-studio-server` — never on this
   package's own version. So a studio-client change needs a changeset naming
   one of those two, or it ships to nothing.
 

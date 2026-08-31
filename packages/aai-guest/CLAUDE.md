@@ -804,7 +804,8 @@ every Modal spawn resolves `<registry>/aai-guest-harness:<sha16>` through
 server builds and publishes its own Modal snapshot exactly as before. The policy,
 both sources and the argument live in `aai-server/guest-image-source.ts`. Opt-in
 rather than default because nothing has published those images until
-`.github/workflows/guest-image.yml` has run, and a default that pulls a tag which
+`.github/workflows/ship.yml`'s guest-image job has run, and a default that pulls
+a tag which
 does not exist yet turns a deploy into a total sandbox outage. Flipping it — and
 deleting the snapshot half, which is most of `modal-harness-image.ts` — is the
 follow-up.
@@ -821,10 +822,13 @@ image am I pulling, and from where" has to be answerable from one line rather
 than inferred from the shape of a later pull error, the same reason
 `describeSandboxBackend` carries a reason string.
 
-**The publish workflow has the same npm race the DEPLOY job documents.** The
-image installs the SDK at exact published versions, so a run racing an
-unfinished release 404s; it waits on `scripts/wait-for-npm-versions.mjs` for
-that reason. It also runs on every push to main with no `paths` filter, because
+**The publish job no longer races the release, because it is ORDERED after
+it.** The image used to install the SDK at exact published versions while the
+release published them in a parallel workflow, so a run that got there first
+404s — approximated for a while by a 320-line poll on npm's install view. Both
+are now jobs of `.github/workflows/ship.yml` joined by `needs:`, and on a
+release the image installs the packed tarballs rather than consulting the
+registry at all. It runs on every push to main with no `paths` filter, because
 the tag hashes the harness BUNDLE — which bundles the SDK, the runtime, the UI
 and the CLI, so almost any change to `packages/` mints a new tag and a filter
 would silently stop publishing once it went stale.
@@ -1138,7 +1142,8 @@ SDK as well, and `SDK_SPECS` in `guest-image.Dockerfile` decides which one:
 | Build | `SDK_SPECS` | Installs |
 | --- | --- | --- |
 | local (`pnpm build:guest-image [--msb]`) | paths under `sdk-tarballs/` | **this checkout**, packed |
-| `--registry` / `--push` (what CI runs) | `name@version` | the published versions |
+| `--sdk-pack-dir <dir>` (CI, on a release) | paths under `sdk-tarballs/` | **the release being published**, from its `changeset pack` tarballs |
+| `--registry` / `--push` (CI, otherwise) | `name@version` | the published versions |
 | local `--published-sdk` | `name@version` | the published versions |
 
 `packWorkspaceSdk` (`scripts/build-guest-image.mjs`) builds the four packages
@@ -1154,6 +1159,25 @@ SDK is the one part the toolchain lockfile cannot cover. There is no flag that
 opts a PUSHED image into the workspace SDK; `--published-sdk` only goes the other
 way, for reproducing a report against the SDK a user actually has, and it says so
 out loud when used.
+
+**`--sdk-pack-dir` is the THIRD way to satisfy that rule, and it exists to take
+npm off the deploy's critical path.** Installing `name@version` kept the rule by
+proxy — if the install resolved, the version was published — and the proxy cost
+the whole ordering: the image could not be built until the release was not just
+published but READABLE by an installer, which is a property of npm's caches
+rather than of anything CI can see, and it took a 320-line poller to approximate.
+A `changeset pack` directory discharges the rule directly instead, because its
+tarballs ARE the artifacts `changeset publish --from-pack-dir` uploads. Two
+assertions in `stageSdkPackDir` are what make that a check rather than an
+intention: the plan's version must equal the version this checkout declares (the
+image tag is hashed from the declared versions, so a stale pack directory would
+make the tag promise one release while node_modules held another — "a version
+number cannot distinguish a released tree from a dirty one", by a new route), and
+each tarball must match the sha256 the publish plan recorded. Both are fatal.
+
+The TAG is unaffected either way: `localHarnessImageTag` hashes
+`resolveSdkSpecs()`, which reads the DECLARED versions and never sees a tarball
+path, so switching a push build to tarballs orphans no recorded pin.
 
 **Why local defaults the other way**, rather than matching prod: `:local` is a
 mutable tag that already promises "whatever this checkout is" — the reason

@@ -12,7 +12,7 @@
  * scope. Wired up as `pnpm check:publish-names` in CI.
  *
  * It also checks `repository`, which is a SECOND way the same publish dies —
- * and one that only the release job can see. `release.yml` sets
+ * and one that only the release job can see. `ship.yml` sets
  * `NPM_CONFIG_PROVENANCE: true`, so npm signs the source repo via OIDC and
  * then requires the manifest to agree with it; an absent `repository` reads as
  * the empty string and the publish fails
@@ -99,7 +99,7 @@ for (const { dir, path, pkg } of manifests) {
   const repo = pkg.repository;
   if (typeof repo?.url !== "string" || repo.url === "") {
     errors.push(
-      `${path}: missing "repository.url". release.yml publishes with ` +
+      `${path}: missing "repository.url". ship.yml publishes with ` +
         "NPM_CONFIG_PROVENANCE=true, which requires the manifest to name the " +
         "repo it was built from; without it the publish fails E422 " +
         '(`"repository.url" is ""`) AFTER sibling packages in the fixed ' +

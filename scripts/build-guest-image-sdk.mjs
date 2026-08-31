@@ -20,7 +20,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path, { posix } from "node:path";
 import process from "node:process";
 import { extractStringArray } from "./build-guest-image-extract.mjs";
@@ -132,6 +132,154 @@ export function run(cmd, args, { cwd = REPO_ROOT, quiet = false } = {}) {
   if (status !== 0) {
     if (quiet) process.stderr.write(`${stdout ?? ""}${stderr ?? ""}`);
     throw new Error(`${cmd} ${args.join(" ")} exited ${status}`);
+  }
+}
+
+/**
+ * The version of each SDK package as THIS CHECKOUT has it installed.
+ *
+ * The one reading of "which versions is this tree's image made of", shared by
+ * `resolveSdkSpecs` (which turns it into `name@version` install specs, and is
+ * also what the image TAG is hashed from) and {@link stageSdkPackDir} (which
+ * uses it to refuse a pack directory that holds some other release). Two
+ * readings would let the tag and the installed bytes disagree, which is
+ * precisely the state no gate downstream can see.
+ *
+ * @returns {Map<string, string>} package name -> installed version
+ */
+export function sdkInstalledVersions() {
+  const guestPkg = JSON.parse(readFileSync(path.join(GUEST_DIR, "package.json"), "utf-8"));
+  return new Map(
+    sdkPackageNames().map((name) => {
+      const declared = guestPkg.dependencies?.[name] ?? guestPkg.devDependencies?.[name];
+      if (!declared) {
+        throw new Error(`aai-guest package.json no longer declares SDK package ${name}`);
+      }
+      const installedPath = path.join(GUEST_DIR, "node_modules", name, "package.json");
+      if (!existsSync(installedPath)) {
+        throw new Error(
+          `SDK package ${name} is declared by aai-guest but not installed at ${installedPath} — ` +
+            "run pnpm install before building a guest image",
+        );
+      }
+      const { version } = JSON.parse(readFileSync(installedPath, "utf-8"));
+      if (typeof version !== "string") {
+        throw new Error(`SDK package ${name} has no version in ${installedPath}`);
+      }
+      return [name, version];
+    }),
+  );
+}
+
+/**
+ * Stage the tarballs `changeset pack` produced, and return install specs for
+ * them — the form a PUSHED image uses on a release.
+ *
+ * ## Why a pushed image may install a tarball at all
+ *
+ * The standing rule is that a registry or push build may never install
+ * unpublished code, and it used to be kept by installing `name@version` from
+ * npm: if the install resolved, the version was published. That works, and it
+ * costs the whole ordering this pipeline was built around — the image cannot be
+ * built until the release is not just published but READABLE by an installer,
+ * which is a property of npm's caches rather than of anything CI can see.
+ *
+ * A `changeset pack` directory discharges the same rule directly. Its tarballs
+ * are the artifacts `changeset publish --from-pack-dir` uploads, so installing
+ * them is installing the release itself — the same bytes, before the registry
+ * has finished agreeing that it has them. "Unpublished code" is ruled out by
+ * construction rather than by a lookup.
+ *
+ * Two assertions are what make that true rather than merely intended, and both
+ * are fatal:
+ *
+ * 1. **The plan's version must equal the version this checkout declares.** The
+ *    image TAG is hashed from the declared versions ({@link sdkInstalledVersions}
+ *    by way of `resolveSdkSpecs`), so a pack directory left over from an earlier
+ *    release would produce an image whose tag promises one release and whose
+ *    node_modules holds another — the exact "a version number cannot distinguish
+ *    a released tree from a dirty one" failure, arriving by a new route.
+ * 2. **The tarball must match the integrity `changeset pack` recorded.** Cheap,
+ *    and it is the difference between "these are the published bytes" as a claim
+ *    and as a check.
+ *
+ * @param {string} guestRoot - `GUEST_ROOT`, the image-side path the specs resolve under
+ * @param {string} packDir - a `changeset pack --out-dir` directory
+ * @returns {string[]} image-side tarball paths, one per SDK package
+ */
+export function stageSdkPackDir(guestRoot, packDir) {
+  const planPath = path.join(packDir, "publish-plan.json");
+  if (!existsSync(planPath)) {
+    throw new Error(
+      `${planPath} does not exist — --sdk-pack-dir wants a directory written by ` +
+        "`changeset pack --out-dir`",
+    );
+  }
+  const { plan } = JSON.parse(readFileSync(planPath, "utf-8"));
+  const packed = new Map(
+    (plan ?? [])
+      .flat()
+      .filter((release) => release.kind === "publish" && release.tarball)
+      .map((release) => [release.name, release]),
+  );
+
+  const dest = path.join(GUEST_DIR, SDK_TARBALL_DIR);
+  mkdirSync(dest, { recursive: true });
+  for (const file of readdirSync(dest)) {
+    if (file.endsWith(".tgz")) rmSync(path.join(dest, file));
+  }
+
+  const specs = [];
+  for (const [name, version] of sdkInstalledVersions()) {
+    const release = packed.get(name);
+    if (!release) {
+      throw new Error(
+        `${planPath} publishes no ${name} — a pushed image may not mix a packed release with ` +
+          "versions resolved from npm. Re-run `changeset pack` against this commit.",
+      );
+    }
+    if (release.version !== version) {
+      throw new Error(
+        `${planPath} publishes ${name}@${release.version} but this checkout declares ` +
+          `${version} — the image tag is hashed from the declared version, so this pack ` +
+          "directory belongs to a different release.",
+      );
+    }
+    const tarball = path.join(packDir, release.tarball.path);
+    assertIntegrity(tarball, release.tarball.integrity);
+    const filename = path.basename(tarball);
+    copyFileSync(tarball, path.join(dest, filename));
+    // POSIX join for the same reason `packWorkspaceSdk` uses one: this path is
+    // consumed inside the LINUX image.
+    specs.push(posix.join(guestRoot, SDK_TARBALL_DIR, filename));
+  }
+  return specs;
+}
+
+/**
+ * Fail unless `file` hashes to the `sha256-<base64>` integrity string recorded
+ * beside it. Only sha256 is accepted — `changeset pack` writes nothing else, and
+ * silently skipping an algorithm we do not recognise would turn this check off
+ * exactly when the format changed under it.
+ *
+ * @param {string} file
+ * @param {string} integrity
+ */
+function assertIntegrity(file, integrity) {
+  if (!existsSync(file)) {
+    throw new Error(`${file} is named by the publish plan but is not in the pack directory`);
+  }
+  const [algorithm, expected] = String(integrity).split("-", 2);
+  if (algorithm !== "sha256" || !expected) {
+    throw new Error(`unsupported tarball integrity ${JSON.stringify(integrity)} for ${file}`);
+  }
+  const actual = createHash("sha256").update(readFileSync(file)).digest("base64");
+  if (actual !== expected) {
+    throw new Error(
+      `${file} does not match the integrity the publish plan recorded ` +
+        `(expected sha256-${expected}, got sha256-${actual}) — these are not the bytes that ` +
+        "will be published.",
+    );
   }
 }
 

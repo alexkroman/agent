@@ -1401,7 +1401,7 @@ served for the next two hours by a container that predated the deploy, and the
 only trace was a `Function modal_deploy.server is crash-looping` line in an app
 log nobody was reading. Hence two guards, at different distances:
 `modal-image-inputs.test.ts` pins the `is_local` short-circuit statically (a
-gate that fails in the ordinary test run), and **`deploy.yml`'s verify step**
+gate that fails in the ordinary test run), and **`ship.yml`'s verify step**
 (`scripts/verify_modal_deploy.py`) asserts after every deploy that a container
 started AFTER the deploy began and that the service answers — the general net,
 since it catches any startup failure rather than this one. Checking health
@@ -1410,7 +1410,7 @@ alone would not have caught it; the stale container was answering fine.
 **The manifests are NORMALIZED, and without that the split would be pure
 ceremony.** A layer's cache key is the bytes that go into it, and a
 package.json's `version` moves on every changeset release — which is exactly
-and only when a deploy happens (`deploy.yml` fires on a version bump). Copied
+and only when a deploy happens (`ship.yml` fires on a version bump). Copied
 verbatim, the install layer would therefore miss on every production deploy.
 `INSTALL_MANIFEST_FIELDS` is a whitelist of the fields install actually reads;
 `version` and `scripts` are dropped, so the layer survives a release and

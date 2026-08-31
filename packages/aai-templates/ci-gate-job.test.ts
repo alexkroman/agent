@@ -169,9 +169,8 @@ describe("the ci gate job", () => {
     // The gate above is about a run REACHING a verdict. This is about a run
     // happening at all: with `main` absent from the push list every run of this
     // workflow was a `pull_request` evaluating a MERGE REF, so nothing anywhere
-    // evaluated main — and `release.yml` / `deploy.yml` / `docs.yml`, which no
-    // pull request runs, broke unreported (Release: 20 of 30 consecutive
-    // pushes). Same silent-absence shape as the rest of this package's gates:
+    // evaluated main — and `ship.yml` / `docs.yml`, which no pull request
+    // runs, broke unreported (the release line: 20 of 30 consecutive pushes). Same silent-absence shape as the rest of this package's gates:
     // a green PR history that says nothing about the branch it merged into.
     expect(
       pushBranches(),

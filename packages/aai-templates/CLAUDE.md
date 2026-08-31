@@ -1638,7 +1638,7 @@ it and was a straight duplicate: a Version Packages PR targets main, so the
 concurrency groups (`check-<number>` vs `check-<sha>`), and nothing dedupes
 them — every push to a version PR ran the whole matrix twice. 97 such push runs
 are in the history, and they stopped on 2026-08-07 when `RELEASE_TOKEN` went
-dead: `GITHUB_TOKEN` cannot trigger a workflow, which `release.yml` warns about
+dead: `GITHUB_TOKEN` cannot trigger a workflow, which `ship.yml` warns about
 itself. So the entry fired nothing, was invisible in a diff AND in the run list,
 and would have silently resumed double-running the moment the token was rotated.
 

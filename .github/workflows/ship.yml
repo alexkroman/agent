@@ -1,0 +1,584 @@
+# Everything that ships when a commit lands on `main`: publish to npm, publish
+# the guest image, migrate the schema, deploy the platform — in that order,
+# because each stage needs the one before it.
+#
+# ## Why this is ONE workflow
+#
+# It used to be three (`release.yml`, `guest-image.yml`, `deploy.yml`), all
+# triggered by the same push, running in PARALLEL, with a strict ordering
+# between them that GitHub Actions cannot express: a workflow cannot `needs:`
+# another workflow. So the ordering was emulated by polling — two scripts and
+# four separately-chosen deadlines, each waiting on a stage the platform could
+# have simply sequenced:
+#
+#   * `wait-for-npm-versions.mjs` (320 lines) polled the registry until the SDK
+#     versions this checkout declares were readable BY AN INSTALLER, because the
+#     image build installed them from npm.
+#   * `wait-for-guest-image.mjs` (138 lines) polled GHCR until the image tag
+#     existed, because the deploy needs it and nothing ordered the two.
+#
+# Both are deleted. The ordering is `needs:` now, which is exact rather than
+# approximate, and free rather than metered.
+#
+# What the approximation cost, measured over the 25 runs before this change:
+# the deploy allowed the image 15 minutes (a waiter deadline) while the
+# publisher allowed itself 60 (`timeout-minutes` plus its own npm wait), and
+# guest-image runs took 320s to 954s — the slowest clearing the deploy's cliff
+# by 53 seconds. Guest-image runs also SERIALIZE, so a burst of merges pushes a
+# healthy publish past a deadline it has no idea exists. Worse, a FAILED image
+# build could not stop a deploy at all: on 2026-08-31 the publisher failed on
+# four of those 25 pushes, and the Version Packages push at 04:21 shipped a real
+# 665s rollout beside a red image build, leaving every sandbox spawn to 404 on
+# the pull. `needs:` makes that unrepresentable.
+#
+# ## The npm race is gone rather than waited out
+#
+# The image no longer resolves the SDK from the registry on a release. The
+# release PACKS once (`changeset pack`), the image installs those exact
+# tarballs, and `changeset publish --from-pack-dir` uploads the same files — so
+# "the image contains what npm serves" is true by construction instead of by
+# inference, and there is no cache-propagation window to wait out. The standing
+# rule that a pushed image may never carry unpublished code is kept, and kept
+# more tightly: `stageSdkPackDir` refuses a pack directory whose versions differ
+# from this checkout's, and verifies each tarball against the integrity the
+# publish plan recorded.
+#
+# On an ordinary push (no version bump, nothing to pack) the image installs
+# `name@version` from npm exactly as before — those versions were published on
+# some earlier release, so nothing is being waited for there either.
+#
+# ## Pack and publish run UNCONDITIONALLY
+#
+# `changesets/action` only invokes its `publish:` when there are NO pending
+# changesets; with any pending it takes the version path instead. So a version
+# bump that landed on main while new changesets were already queued was never
+# published by the normal flow — which is what happened on 6.1.0, and it left
+# every guest image build 404ing on a version that did not exist.
+#
+# The pack and publish steps below sit OUTSIDE the action and always run.
+# `changeset pack` computes its plan against the registry, so with everything
+# published it packs nothing and both steps are quiet no-ops; when a version is
+# missing it packs and publishes it, whatever branch the action took. That also
+# restores the property the old `workflow_dispatch: publish_only` input existed
+# to provide by hand, so that input is gone.
+#
+# ## ONE-TIME MANUAL STEP
+#
+# A GHCR package is PRIVATE on first push. The `aai-guest-harness` package must
+# be set to public in the repo's Packages settings — otherwise Modal cannot pull
+# it without a registry Secret, which `guest-image-source.ts` deliberately does
+# not thread through.
+name: Ship
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit SHA, tag or branch to ship (blank = this branch's head)
+        type: string
+        default: ""
+      deploy:
+        description: Deploy the platform to Modal
+        type: boolean
+        default: false
+
+concurrency:
+  # One group for the whole line, and NOT cancel-in-progress: a superseded
+  # commit's image may still be the one a deploy in flight is about to ask for,
+  # and two deploys racing each other is worse than one waiting.
+  group: ship-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── 0. the Version Packages PR ──────────────────────────────────────────────
+  #
+  # Its own job, depended on by NOTHING, and that isolation is the point. This
+  # step has wedged the pipeline before: six changesets naming only private
+  # packages left `changeset version` with nothing to commit, so the action
+  # force-pushed an empty `changeset-release/main` and died on "No commits
+  # between main and changeset-release/main" (#1131). While it was failing it
+  # was the whole Release workflow, so nothing else in the line ran either.
+  #
+  # Opening a PR for humans and shipping the code are different jobs with
+  # different failure modes, so a broken PR step now costs a PR and nothing
+  # else. `guard-invariants` rule 20 covers the specific cause; this covers the
+  # class.
+  version-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Validate RELEASE_TOKEN
+        id: release-token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          ok=false
+          if [ -n "$RELEASE_TOKEN" ]; then
+            status=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $RELEASE_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}")
+            if [ "$status" = "200" ]; then
+              ok=true
+            else
+              echo "::warning title=RELEASE_TOKEN invalid::RELEASE_TOKEN was rejected by the GitHub API (HTTP $status) — it has likely expired. Falling back to GITHUB_TOKEN, so pushes from this workflow will NOT trigger the Check workflow. Rotate the RELEASE_TOKEN secret."
+            fi
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `fetch-depth: 0`, and it is load-bearing. `changeset version`
+          # writes each CHANGELOG entry by finding the commit that ADDED the
+          # changeset file (`getCommitsThatAddChangesets` →
+          # `getCommitsThatAddFiles`), which walks history backwards and calls
+          # `deepenCloneBy` to extend a shallow clone as it goes. Against a
+          # `fetch-depth: 2` that deepening races itself and the job dies on
+          #
+          #     Error: fatal: shallow file has changed since we read it
+          #         at deepenCloneBy (@changesets/git/dist/index.mjs:101:32)
+          #
+          # before a Version Packages PR can be opened — 20 of 30 consecutive
+          # pushes to main at the time it was found.
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+          token: ${{ steps.release-token.outputs.ok == 'true' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create or update the Version Packages PR
+        # `version:` only — publishing belongs to the job below, which runs
+        # whatever branch this action takes. See "Pack and publish run
+        # UNCONDITIONALLY".
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          version: pnpm run version
+        env:
+          # Use RELEASE_TOKEN (PAT or GitHub App token) so the PR
+          # push/update triggers the Check workflow normally.
+          # GITHUB_TOKEN cannot trigger other workflows.
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.ok == 'true' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # Skip lefthook pre-push hooks: the Check workflow already
+          # gated the merge commit, and re-running the full suite here
+          # on a single runner is both redundant and flaky. The Version
+          # Packages PR this push opens is checked by the Check workflow's
+          # `pull_request` arm — which is why `changeset-release/main` is NOT
+          # in that workflow's `push` list.
+          LEFTHOOK: "0"
+
+  # ── 1. npm ──────────────────────────────────────────────────────────────────
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      # `contents: write` for the tag push, `id-token: write` for npm
+      # provenance. The PR scopes moved to `version-pr` with the action that
+      # needed them — this job opens nothing.
+      contents: write
+      id-token: write
+    outputs:
+      # Whether this run packed a release the image should install. Read by the
+      # guest-image job below, which otherwise resolves the SDK from npm.
+      packed: ${{ steps.pack.outputs.packed }}
+    steps:
+      # RELEASE_TOKEN is a PAT and can expire. If it's dead, checkout
+      # fails with a useless "could not read Username" error, so probe
+      # it first and fall back to GITHUB_TOKEN with a clear warning.
+      - name: Validate RELEASE_TOKEN
+        id: release-token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          ok=false
+          if [ -n "$RELEASE_TOKEN" ]; then
+            status=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $RELEASE_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}")
+            if [ "$status" = "200" ]; then
+              ok=true
+            else
+              echo "::warning title=RELEASE_TOKEN invalid::RELEASE_TOKEN was rejected by the GitHub API (HTTP $status) — it has likely expired. Falling back to GITHUB_TOKEN, so pushes from this workflow will NOT trigger the Check workflow. Rotate the RELEASE_TOKEN secret."
+            fi
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `fetch-depth: 0`, and it is load-bearing. `changeset version`
+          # writes each CHANGELOG entry by finding the commit that ADDED the
+          # changeset file (`getCommitsThatAddChangesets` →
+          # `getCommitsThatAddFiles`), which walks history backwards and calls
+          # `deepenCloneBy` to extend a shallow clone as it goes. Against a
+          # `fetch-depth: 2` that deepening races itself and the job dies on
+          #
+          #     Error: fatal: shallow file has changed since we read it
+          #         at deepenCloneBy (@changesets/git/dist/index.mjs:101:32)
+          #
+          # before a Version Packages PR can be opened or anything published —
+          # 20 of 30 consecutive pushes to main at the time it was found.
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+          # Use RELEASE_TOKEN so git push triggers the Check workflow.
+          # The default GITHUB_TOKEN cannot trigger other workflows.
+          token: ${{ steps.release-token.outputs.ok == 'true' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Cache TypeScript incremental build info
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tsbuildinfo/
+          key: tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-
+            tsbuildinfo-build-${{ runner.os }}-
+
+      # `files` on all four publishable packages is `dist`, so an unbuilt
+      # package packs an EMPTY tarball and publishes a package with no entry
+      # points. Build before packing, never after.
+      - run: pnpm exec turbo run build
+
+      - name: Pack the release
+        id: pack
+        run: |
+          set -euo pipefail
+          pnpm exec changeset pack --out-dir .changeset-pack
+          # A directory with no tarballs means every version is already on npm,
+          # which is the ordinary push. Recorded as an OUTPUT rather than
+          # inferred downstream from the artifact's existence: a download that
+          # finds nothing is indistinguishable from one that failed.
+          if compgen -G '.changeset-pack/packages/*.tgz' > /dev/null; then
+            echo "packed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "packed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # BEFORE the publish, so the tarballs the guest image installs are
+      # available even if the upload to npm then fails. The image job still
+      # runs only after this job SUCCEEDS, so a failed publish stops the line.
+      - name: Upload the packed release
+        if: steps.pack.outputs.packed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: changeset-pack
+          path: .changeset-pack
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Publish the packed release
+        run: pnpm exec changeset publish --from-pack-dir .changeset-pack
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # VERIFY THIS ON THE FIRST RELEASE THROUGH THIS PATH: provenance in
+          # artifact mode is `npm publish <tarball> --provenance`, which npm
+          # accepts, but whether it still mints an attestation from the CI OIDC
+          # context is not something a dry run can answer. If it does not, the
+          # remedy is `--provenance-file`, not dropping the flag.
+          NPM_CONFIG_PROVENANCE: true
+
+      # `changeset publish` creates the release tags LOCALLY — `createGitTags`
+      # calls `git tag` and nothing else — and pushing them was the changesets
+      # action's job, which no longer runs the publish. Without this the
+      # versions reach npm and `@alexkroman1/aai@9.1.0` names no commit, which
+      # is invisible until somebody goes looking for one.
+      #
+      # No `--force`: a tag that already exists means an earlier run published
+      # that version, and overwriting it would move a released tag.
+      - name: Push the release tags
+        if: steps.pack.outputs.packed == 'true'
+        run: git push --tags
+
+  # ── 2. the guest sandbox image ──────────────────────────────────────────────
+  #
+  # Runs on EVERY push, with no `paths` filter, and that is deliberate: the tag
+  # hashes the harness BUNDLE, and the harness bundles the SDK, the host runtime,
+  # the UI and the CLI — so almost any change to packages/ produces a new tag. A
+  # filter that tried to name them would silently stop publishing the moment it
+  # went stale, and the symptom is a tag the server asks for and no registry has.
+  #
+  # A run that changes nothing is cheap rather than skipped: the tag is
+  # content-addressed, so an unchanged tree resolves to a tag that already exists
+  # and every layer is a cache hit. That is also what makes a rollback dispatch
+  # to an older `ref` safe here — it rebuilds the identical tag.
+  guest-image:
+    needs: release
+    runs-on: ubuntu-latest
+    # The arm64 leg builds under QEMU emulation (the runner is amd64), and its
+    # slow part is two npm installs of ~750 packages. Bounded so a pathological
+    # run cannot burn an hour; if this becomes the norm, split the build across a
+    # native amd64 + native arm64 matrix and merge the manifests.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The tarballs the release just packed and published. Present only on a
+      # release push; on any other push the SDK resolves from npm at versions
+      # published by some earlier release, so there is nothing to fetch and
+      # nothing to wait for.
+      - name: Download the packed release
+        if: needs.release.outputs.packed == 'true'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: changeset-pack
+          path: .changeset-pack
+
+      # Builds the harness bundle the image COPYs, plus everything it bundles.
+      - run: pnpm exec turbo run build --filter aai-guest...
+
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The registry is the OWNER, not the repo: the tag already carries the
+      # image name (`aai-guest-harness:<sha16>`), and `guestImageRef` joins the
+      # two with one slash — the same join the server does when it resolves a
+      # pinned tag.
+      - name: Build and push
+        id: push
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          PACKED: ${{ needs.release.outputs.packed }}
+        run: |
+          set -euo pipefail
+          # Printed first so a failed build still tells you which tag it wanted.
+          ref="$(node scripts/build-guest-image.mjs --print-tag --registry "$REGISTRY")"
+          echo "Publishing $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          # The pack directory is passed only when a release produced one. It is
+          # not defaulted: `--sdk-pack-dir` against an absent or stale directory
+          # is a hard failure by design, which is the right answer for a typo
+          # and the wrong one for an ordinary push.
+          pack_args=()
+          if [ "$PACKED" = "true" ]; then
+            pack_args=(--sdk-pack-dir .changeset-pack)
+          fi
+          node scripts/build-guest-image.mjs \
+            --registry "$REGISTRY" \
+            --platform linux/amd64,linux/arm64 \
+            --cache-gha \
+            "${pack_args[@]}" \
+            --push
+
+      - name: Summary
+        run: |
+          {
+            echo "### Guest image published"
+            echo
+            echo '```'
+            echo "${{ steps.push.outputs.ref }}"
+            echo '```'
+            echo
+            echo "Pull it in a dev server with:"
+            echo
+            echo '```sh'
+            echo "GUEST_IMAGE_REGISTRY=ghcr.io/${{ github.repository_owner }} pnpm dev:aai-server"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── 3. does this push ship anything? ────────────────────────────────────────
+  #
+  # Versions only move via changesets (the merged "Version Packages" PR), so a
+  # docs-only merge ships nothing. workflow_dispatch is the manual escape hatch
+  # to ship outside a changeset release — and, with `ref`, to ROLL BACK to a
+  # known-good commit without a revert-and-release cycle.
+  #
+  # There is ONE Modal app (`aai-server-web`, from packages/aai-server/
+  # modal_deploy.py) and it serves both surfaces from the aai-studio-server entry
+  # — see "One app, both surfaces" in that file. So a bump to EITHER package is a
+  # reason to deploy: aai-server is the platform core the app is built from, and
+  # aai-studio-server is the entry it actually runs. Gating on aai-server alone
+  # would silently strand every studio-only release.
+  changed:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.diff.outputs.deploy }}
+      migrate: ${{ steps.diff.outputs.migrate }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job wants precisely `HEAD^..HEAD`; every other checkout in the
+          # repo is depth 0.
+          fetch-depth: 2
+          ref: ${{ inputs.ref || github.ref }}
+      - id: diff
+        name: Detect changeset version bumps and schema changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "deploy=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
+            # A manual deploy still needs its migrations applied first.
+            echo "migrate=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bumped() {
+            # True when the package's version field changed in this push —
+            # the changesets release commit is the only thing that moves it.
+            git diff HEAD^ HEAD -- "packages/$1/package.json" | grep -q '^+.*"version":'
+          }
+          deploy=false
+          migrate=false
+          if bumped aai-server || bumped aai-studio-server; then
+            deploy=true
+            # Deploying implies migrating: the code being shipped is entitled to
+            # assume the schema it was written against. This is why the deploy job
+            # can simply `needs: migrate` — when it runs at all, migrate ran too.
+            migrate=true
+          fi
+          # ...and a migration merged WITHOUT a version bump still has to be
+          # applied. Otherwise a schema-only PR lands, deploys nothing, migrates
+          # nothing, and the next unrelated release is what discovers it.
+          if git diff --name-only HEAD^ HEAD -- 'supabase/migrations/**' | grep -q .; then
+            migrate=true
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          echo "migrate=$migrate" >> "$GITHUB_OUTPUT"
+
+  # ── 4. the schema ───────────────────────────────────────────────────────────
+  #
+  # Applied with `--db-url` rather than `--linked`, which is what keeps this to ONE
+  # secret: linking needs a SUPABASE_ACCESS_TOKEN plus a project ref plus the db
+  # password, and a connection string carries all three facts.
+  #
+  # WHICH string, though, is not simply "the one the Modal secret holds" — a
+  # RUNNER is not a Modal container:
+  #
+  # - A GitHub-hosted runner is IPv4-ONLY, and `supabase/README.md` records that a
+  #   Supabase direct connection is IPv6-only without the IPv4 add-on. So a direct
+  #   `db.<ref>.supabase.co:5432` URL works from Modal and can fail here with a
+  #   bare connection error that names nothing about IP families.
+  # - The sanctioned fallback is the one that README already names: **Supavisor
+  #   SESSION mode, port 5432** (`postgres.<ref>@…pooler.supabase.com:5432`),
+  #   which is IPv4-reachable and still a real session.
+  #
+  # NEVER the transaction pooler (6543 / `pgbouncer=true`) for this: migrations run
+  # DDL in transactions and take locks, which is exactly what transaction pooling
+  # will not hold. Either of the other two is fine — set whichever actually
+  # connects from a runner.
+  migrate:
+    needs: changed
+    if: needs.changed.outputs.migrate == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          # Pinned, not `latest`: the CLI decides how migrations are applied and
+          # what counts as pending, so letting it float means the schema step
+          # changes without a commit. This is the version the migrations in this
+          # repo were applied with locally.
+          version: 2.109.1
+      - name: Apply Supabase migrations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "::error::SUPABASE_DB_URL is not set on the production environment." \
+                 "Add it as an environment secret — the DIRECT session-mode" \
+                 "connection string, percent-encoded. Without it the deploy would" \
+                 "ship code against an unmigrated schema."
+            exit 1
+          fi
+          # `--yes` because there is no TTY to confirm at; the CLI otherwise
+          # prompts before applying and would hang the job.
+          supabase db push --db-url "$SUPABASE_DB_URL" --yes
+
+  # ── 5. the platform ─────────────────────────────────────────────────────────
+  deploy:
+    # Every stage this ships on top of. `guest-image` is the one that used to be
+    # missing, and its absence is what let four green deploys ride over a red
+    # image build: the deploy succeeds, then every sandbox spawn 404s on the
+    # pull, because the image is fetched at SPAWN time and not at deploy time.
+    # `migrate` for the same reason one layer down — a failed or skipped
+    # migration must stop the deploy rather than let it ship against a schema
+    # that was never applied.
+    needs: [changed, migrate, guest-image, release]
+    if: needs.changed.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: pip install modal
+      - name: Deploy platform
+        id: deploy
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          set -o pipefail
+          # Stamped BEFORE the deploy: the verify step below asserts a
+          # container started after this instant, which is what separates a
+          # real rollout from the previous deploy's containers still serving.
+          echo "started=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" >> "$GITHUB_OUTPUT"
+          modal deploy packages/aai-server/modal_deploy.py 2>&1 | tee /tmp/modal-deploy.log
+          # Self-configuring rather than a hardcoded workspace hostname —
+          # `modal deploy` prints the app's URL on success.
+          url="$(grep -oE 'https://[a-z0-9.-]+\.modal\.run' /tmp/modal-deploy.log | head -1)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # `modal deploy` exiting 0 means the image built and the app is
+      # registered — NOT that a container can start. Under Modal's rolling
+      # strategy the old containers keep serving a broken rollout, so this job
+      # reported success for a deploy whose every container died at startup.
+      - name: Verify the rollout
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          # Via env rather than inline `${{ }}`, so neither value can reach the
+          # shell as syntax. Both are ours (a `date`, and a URL matched by a
+          # character-restricted grep), which is why this is a habit and not a
+          # fix — the habit is what holds when a value later isn't.
+          DEPLOY_STARTED: ${{ steps.deploy.outputs.started }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          python scripts/verify_modal_deploy.py \
+            --app aai-server-web \
+            --since "$DEPLOY_STARTED" \
+            --health-url "$DEPLOY_URL/health"
+
+      # Everything above this line PREDICTS that a sandbox could spawn. This
+      # observes one. See the script's module doc for why the prediction is not
+      # enough — chiefly that `GUEST_IMAGE_REGISTRY` lives in a Modal secret CI
+      # cannot read, so nothing else in this workflow can tell whether the
+      # registry production pulls from is the registry we published to.
+      #
+      # Node builtins only, so it needs no `pnpm install`.
+      - name: Smoke-spawn a sandbox
+        env:
+          AAI_PLATFORM_URL: ${{ steps.deploy.outputs.url }}
+          AAI_API_KEY: ${{ secrets.AAI_SMOKE_API_KEY }}
+        run: node scripts/smoke-spawn.mjs
