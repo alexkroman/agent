@@ -142,6 +142,15 @@ describe("POST /:slug/workflow-enqueue", () => {
       ["a non-string data", { data: 7 }],
       ["a non-numeric delaySeconds", { delaySeconds: "soon" }],
       ["headers that are not a string map", { headers: { a: 7 } }],
+      // A name the DELIVERY CLAIM cannot classify is refused here rather than
+      // stored. `claimDue` matches orchestration and steps with a pattern each and
+      // neither is a catch-all, so such a row would never be claimed at all — and
+      // the catch-all it replaced turned a renamed DevKit topic into the whole
+      // fleet silently serializing again. This boundary is what makes those two
+      // patterns exhaustive over the table.
+      ["a queueName of neither kind", { queueName: "__wkf_something_r1" }],
+      ["a queueName with no id after the kind", { queueName: "__wkf_step_" }],
+      ["a queueName that is not the DevKit's at all", { queueName: "my-queue" }],
     ])("answers 400 naming the field for %s", async (_label, over) => {
       const p = await platform();
       const bearer = await bearerFor(p.store, SLUG);
@@ -151,6 +160,24 @@ describe("POST /:slug/workflow-enqueue", () => {
       const res = await enqueue(p.fetch, SLUG, { bearer, json });
       expect(res.status).toBe(400);
       expect(p.statements.some((s) => s.startsWith("insert"))).toBe(false);
+    });
+
+    test.each([
+      ["an orchestration name", "__wkf_workflow_r1"],
+      ["a step name", "__wkf_step_r1"],
+      // `WORKFLOW_QUEUE_NAMESPACE` is a DevKit setting, so the longer form is real.
+      // It is also where the grammar is easiest to get wrong: the namespace group
+      // is CAPTURING because the same pattern has to run under Postgres's `~`,
+      // which has no `(?:`. Refusing these would 400 every message on a
+      // deployment that sets a namespace.
+      ["a namespaced orchestration name", "__aai_wkf_workflow_r1"],
+      ["a namespaced step name", "__aai_wkf_step_r1"],
+    ])("accepts %s", async (_label, queueName) => {
+      const p = await platform();
+      const bearer = await bearerFor(p.store, SLUG);
+      const res = await enqueue(p.fetch, SLUG, { bearer, json: body({ queueName }) });
+      expect(res.status).toBe(200);
+      expect(p.statements.some((s) => s.startsWith("insert"))).toBe(true);
     });
 
     test("accepts an EMPTY data string, which is a legal empty payload", async () => {

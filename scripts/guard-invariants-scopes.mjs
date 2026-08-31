@@ -145,6 +145,24 @@ export const SHIPPED_SOURCE_PATHSPECS = [
  * `templates/` therefore left the scanner walking zero of 175 files and
  * printing `rule 13  template import escaping its template  0 ✓`.
  */
+/**
+ * Rule 28's scope: the gate scripts themselves.
+ *
+ * BOTH spellings, and the reason is the trap `check-file-length.mjs` documents
+ * and this repo has now paid for three times: a git pathspec is fnmatch WITHOUT
+ * `FNM_PATHNAME`, so `*` already crosses `/` and the literal slash in
+ * `scripts/**` + `/` + `*.mjs` makes a subdirectory MANDATORY. On its own that
+ * glob matches `scripts/starter-eval/` and not one of the ~60 files at the top
+ * level of `scripts/` — which is every gate this rule is about. Verified with
+ * `git ls-files`: `scripts/**\/*.mjs` alone resolves 6 files, both together
+ * resolve 67.
+ *
+ * `.sh` is deliberately absent. A shell script has no `process.argv` and its own
+ * `$1`-shaped hazards are a different rule; `check.sh` was the one that mattered
+ * and it is `check.mjs` now.
+ */
+export const SCRIPT_PATHSPECS = ["scripts/*.mjs", "scripts/**/*.mjs"];
+
 export const TEMPLATE_PATHSPECS = ["packages/aai-templates/templates"];
 
 /**

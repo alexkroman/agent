@@ -71,7 +71,11 @@
       // precisely the finding this glob was suppressing. Add a name here only
       // when a pipeline runs it — that makes the exception a reviewable line.
       "entry": [
-        "scripts/check.sh",
+        // `scripts/check.sh` used to be listed here and MUST NOT be: it is
+        // `scripts/check.mjs` now, and the root `check` script names it, so knip
+        // discovers it itself and reports a repeat as a redundant pattern. The
+        // `.sh` needed the entry precisely because knip does not look inside a
+        // `bash x.sh` invocation.
         "scripts/create-changeset.sh",
         // Everything a root `package.json` script or a vitest `globalSetup`
         // names is discovered by knip itself and must NOT be repeated here —

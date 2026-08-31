@@ -84,9 +84,14 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
+import { parseScriptArgs } from "./_args.mjs";
 import { readJson, repoRoot } from "./_fs.mjs";
 
-const checkOnly = process.argv.includes("--check");
+const { values: flags } = parseScriptArgs({
+  script: import.meta.url,
+  options: { check: { type: "boolean" } },
+});
+const checkOnly = flags.check === true;
 const root = repoRoot(import.meta.url);
 const migrationsDir = join(root, "supabase/migrations");
 

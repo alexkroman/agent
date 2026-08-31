@@ -47,7 +47,7 @@
  *
  * The scope test reads the committed `API-EXPORTS.json`, which is what makes
  * this a pure fs check with no build behind it. `check:api-report --check`
- * separately guarantees that file is current, and `check.sh` and the CI check
+ * separately guarantees that file is current, and `check.mjs` and the CI check
  * job both run this after it for that reason.
  */
 

@@ -9,7 +9,7 @@
     // `../../CLAUDE.md` and `../*/CLAUDE.md` (the 120k cap, the assertion that
     // the root still links every package guide, and the pin on the root shim); `test-assertion-gate.test.ts` and
     // `escape-hatch-scope.test.ts` spec `scripts/check-*.mjs` and assert the
-    // script, `scripts/check.sh`, root `package.json` and the CI check job
+    // script, `scripts/check.mjs`, root `package.json` and the CI check job
     // still agree with each other; `konsistent-config.test.ts` reads
     // `konsistent.json` the same way; `api-surface-file.test.ts` reads
     // `../../API.md` and every `../*/etc/*.api.md`; `api-contracts-gate.test.ts`

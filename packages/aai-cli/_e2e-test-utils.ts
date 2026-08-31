@@ -4,7 +4,7 @@
  * registry setup, dependency installation, and process/server utilities.
  * Each e2e suite performs its own setup/teardown using these helpers.
  */
-import type { ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -185,6 +185,63 @@ export async function waitForExit(child: ChildProcess, timeoutMs = 5000): Promis
     await once(child, "exit", { signal: AbortSignal.timeout(timeoutMs) });
   } catch {
     /* timed out — teardown proceeds anyway (matches previous behavior) */
+  }
+}
+
+/**
+ * Run a scaffolded project the way a self-hoster does — `npm start`, which runs
+ * the project's own `prestart` (`aai build`) and then `server.mjs`.
+ *
+ * Extracted because there are two legs now and the spawn is the fiddly half: the
+ * port has to be read off stdout, and every way this can fail — a build error, a
+ * missing artifact, a throwing agent — reports on STDERR, so both streams are
+ * buffered and both go into the failure. Discarding stderr leaves a bare
+ * "exited with code 1" naming none of them, which cost a full diagnosis cycle
+ * once already.
+ *
+ * `PORT=0` lets the OS assign one: this suite runs servers concurrently and a
+ * fixed port is an EADDRINUSE flake waiting to happen.
+ */
+export async function startSelfHostedServer(
+  projectDir: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): Promise<{ url: string; port: number; stop: () => Promise<void>; output: () => string }> {
+  const child = spawn("npm", ["start"], {
+    cwd: projectDir,
+    env: { ...aaiEnv(), PORT: "0", ...extraEnv },
+    stdio: "pipe",
+  });
+  let buf = "";
+  const collect = (chunk: Buffer) => {
+    buf += chunk.toString();
+  };
+  child.stdout?.on("data", collect);
+  child.stderr?.on("data", collect);
+  const stop = async () => {
+    child.kill();
+    await waitForExit(child);
+  };
+  try {
+    const port = await new Promise<number>((resolve, reject) => {
+      const check = () => {
+        // The line server.mjs prints on listen: "<name> listening on <url>".
+        const match = buf.match(/listening on http:\/\/[^:]+:(\d+)/);
+        if (match) resolve(Number(match[1]));
+      };
+      child.stdout?.on("data", check);
+      child.on("error", reject);
+      child.on("exit", (code) =>
+        reject(
+          new Error(`npm start exited with code ${code} before listening:\n${buf.slice(-4000)}`),
+        ),
+      );
+    });
+    const url = `http://127.0.0.1:${port}`;
+    await waitForHealth(`${url}/health`, child);
+    return { url, port, stop, output: () => buf };
+  } catch (err) {
+    await stop();
+    throw err;
   }
 }
 

@@ -55,9 +55,9 @@ import { envCount, envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
+import { claimDue } from "./workflow-queue-claim.ts";
 import {
   ack,
-  claimDue,
   fail,
   type QueuedMessage,
   reschedule,

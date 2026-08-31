@@ -41,7 +41,7 @@ export const sole = <T>(module: Record<string, T>): T | undefined => Object.valu
  * The files that decide whether a gate is enforced.
  *
  * A gate named in `package.json` but in neither runner is a script nobody runs;
- * one named only in `scripts/check.sh` is enforced by the pre-push hook alone,
+ * one named only in `scripts/check.mjs` is enforced by the pre-push hook alone,
  * which `git push --no-verify` skips — the repo has been there, for every
  * ratchet at once. So a spec asserts its gate's name appears in all three.
  *
@@ -57,8 +57,8 @@ export const GATE_WIRING: Record<string, string | undefined> = {
       eager: true,
     }),
   ),
-  "scripts/check.sh": sole(
-    import.meta.glob<string>("../../scripts/check.sh", {
+  "scripts/check.mjs": sole(
+    import.meta.glob<string>("../../scripts/check.mjs", {
       query: "?raw",
       import: "default",
       eager: true,

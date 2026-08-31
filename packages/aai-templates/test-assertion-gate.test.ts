@@ -200,7 +200,8 @@ describe("check-test-assertions parser", () => {
 
   test("the gate is wired into both the local check and CI", () => {
     // The repo has been here before: the quality ratchets lived only in
-    // check.sh, which CI never invokes, so `git push --no-verify` skipped them.
+    // the local check script, which CI never invokes, so `git push --no-verify`
+    // skipped them.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");
       expect(text, `${path} no longer references check:test-assertions`).toContain(
@@ -211,7 +212,7 @@ describe("check-test-assertions parser", () => {
 
   test("the gate fails the process rather than only reporting", () => {
     // A gate that printed its findings and exited 0 would be decorative, and
-    // nothing downstream would notice — `check.sh` and the CI step both key
+    // nothing downstream would notice — `check.mjs` and the CI step both key
     // on the exit status alone.
     expect(script).toContain("process.exit(1)");
   });

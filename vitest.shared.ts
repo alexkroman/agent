@@ -31,11 +31,11 @@ export const sharedSetupFiles = [
  * Turbo's concurrency caps how many TASKS run at once; it says nothing about
  * how many processes each one spawns, and vitest's own default is
  * `max(cpus - 1, 1)` per run. The product is what the machine actually feels,
- * and nothing bounded it: on a 4-core box `scripts/check.sh` computes
+ * and nothing bounded it: on a 4-core box `scripts/check.mjs` computes
  * TURBO_CONCURRENCY=2 (`max(2, cores / 2)`), so `pnpm check` ran 2 test tasks x
  * 3 workers + 2 vitest mains = 8 processes on 4 cores.
  *
- * That is not a slowness bug, it is a CORRECTNESS one, and check.sh's own
+ * That is not a slowness bug, it is a CORRECTNESS one, and check.mjs's own
  * comment says so — aai-server's credential tests run PBKDF2 at 600k
  * iterations, which stretches from ~300ms to ~750ms per hash under contention
  * and pushes whole tests past their timeout. It was measured costing a push:

@@ -22,7 +22,6 @@
  *
  * Run via: pnpm test:e2e
  */
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -39,8 +38,7 @@ import {
   installDeps,
   isRegistryProxyFailure,
   startRegistry,
-  waitForExit,
-  waitForHealth,
+  startSelfHostedServer,
 } from "./_e2e-test-utils.ts";
 import {
   cancelRun,
@@ -70,7 +68,13 @@ import { WORKER_ARTIFACT_REL } from "./build.ts";
 // the package resolves in every repo test and in nothing a user runs — the
 // build dies on `Could not resolve "workflow"` in the one place no CI job
 // looks.
-const templates = ["simple", "web-researcher", "research-workflow"];
+//
+// `link-digest` is the WORKFLOW APP — `workflowApp()` + `page()`, no
+// stt/llm/tts, `page: "static"`. It is a different front door with different
+// wiring (telephony defaults off, `/websocket` is declined with a reason), and
+// until it was added no workflow app was built or booted anywhere in this tier;
+// the shipped set has six of them.
+const templates = ["simple", "web-researcher", "research-workflow", "link-digest"];
 
 let aaiBin: string;
 let tmpDir: string;
@@ -92,7 +96,7 @@ afterAll(async () => {
 
 // --- Pack + build: representative templates ---
 
-describe("pack + build: template workflows", () => {
+describe("pack + build + boot: template workflows", () => {
   test.concurrent.for(templates)("template %s", async (template, ctx) => {
     const projectDir = path.join(tmpDir, template);
 
@@ -121,11 +125,32 @@ describe("pack + build: template workflows", () => {
     aai(aaiBin, ["test"], projectDir);
     aai(aaiBin, ["build", "--skip-tests"], projectDir);
 
-    // The claim in the name is that the template BUILDS, and `aai` only signals
-    // that by not throwing — so name the artifact instead. `WORKER_ARTIFACT_REL`
-    // is what the scaffold's `server.mjs` loads, which is the difference between
-    // a build that exited 0 and a project that runs.
+    // `aai` only signals a successful build by not throwing — so name the
+    // artifact instead. `WORKER_ARTIFACT_REL` is what the scaffold's `server.mjs`
+    // loads, which is the difference between a build that exited 0 and a project
+    // that runs.
     expect(fs.existsSync(path.join(projectDir, WORKER_ARTIFACT_REL))).toBe(true);
+
+    // And then BOOT it, which is the step this test used to stop one short of —
+    // the comment above gestured at `server.mjs` loading that artifact and
+    // nothing checked that it could. Cheap here because the install is already
+    // paid for, and it takes self-hosted boot coverage from the two templates the
+    // dedicated legs below use to every template in this subset. `/health` is the
+    // whole assertion: a workflow app and a voice agent answer it identically, so
+    // it is the one claim that holds across the front doors without asserting a
+    // shape that differs by template.
+    const server = await startSelfHostedServer(projectDir);
+    try {
+      const health = await ofetch<{ status: string }>(`${server.url}/health`);
+      expect(health.status).toBe("ok");
+    } catch (err) {
+      throw new Error(
+        `${errorDetail(err)}\n--- npm start output ---\n${server.output().slice(-4000)}`,
+        { cause: err },
+      );
+    } finally {
+      await server.stop();
+    }
   });
 });
 
@@ -153,40 +178,13 @@ describe("self-hosted server: npm start", () => {
       skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
     }
 
-    // PORT=0 lets the OS assign one — the suite runs concurrently with other
-    // servers, and a fixed port is an EADDRINUSE flake waiting to happen.
-    // No --skip-* anything: `npm start` runs the project's own `prestart`,
-    // which is the half of self-hosting under test.
-    const child = spawn("npm", ["start"], {
-      cwd: projectDir,
-      env: { ...aaiEnv(), PORT: "0" },
-      stdio: "pipe",
-    });
+    // No --skip-* anything: `npm start` runs the project's own `prestart`, which
+    // is the half of self-hosting under test. The spawn itself is
+    // `startSelfHostedServer` — shared with the durable-workflow leg below, so the
+    // two cannot drift on how a port is read or how a boot failure is reported.
+    const server = await startSelfHostedServer(projectDir);
+    const port = server.port;
     try {
-      const port = await new Promise<number>((resolve, reject) => {
-        let buf = "";
-        // stderr too, and it goes IN the failure: every way this can fail — a
-        // build error, a missing artifact, a throwing agent — reports there,
-        // and discarding it leaves a bare "exited with code 1" naming none of
-        // them. That cost a full diagnosis cycle once already.
-        child.stderr?.on("data", (chunk: Buffer) => {
-          buf += chunk.toString();
-        });
-        child.stdout?.on("data", (chunk: Buffer) => {
-          buf += chunk.toString();
-          // The line server.mjs prints on listen: "<name> listening on <url>".
-          const match = buf.match(/listening on http:\/\/[^:]+:(\d+)/);
-          if (match) resolve(Number(match[1]));
-        });
-        child.on("error", reject);
-        child.on("exit", (code) =>
-          reject(
-            new Error(`npm start exited with code ${code} before listening:\n${buf.slice(-4000)}`),
-          ),
-        );
-      });
-
-      await waitForHealth(`http://127.0.0.1:${port}/health`, child);
       const health = await ofetch<{ status: string; name: string }>(
         `http://127.0.0.1:${port}/health`,
       );
@@ -223,8 +221,74 @@ describe("self-hosted server: npm start", () => {
         "view_order",
       ]);
     } finally {
-      child.kill();
-      await waitForExit(child);
+      await server.stop();
+    }
+  });
+});
+
+describe("self-hosted server: durable workflows", () => {
+  /**
+   * "Can a user `aai init` a workflow template and run something DURABLE under
+   * `npm start`" — and until this test existed, no.
+   *
+   * The gap it closes was structural rather than a bug in one line. Running a
+   * durable workflow takes two things the self-hosted door never did: a WORLD
+   * (`configureWorkflowWorld` + `startWorkflowWorldIfDeclared`, which nothing but
+   * `aai dev` and the guest harness called) and the DevKit's `flow`/`step`
+   * callback routes, which the world dispatches every hop to. `createAgentServer`
+   * now does both, off the compiled `workflowCode`/`stepCode` the scaffold reads
+   * off its own built worker.
+   *
+   * Nothing else can ask this. The `aai dev` leg below drives the same lab
+   * through a different front door, and the "boots and serves it" leg above uses
+   * `pizza-ordering`, which declares no workflows at all — so a self-hosted
+   * server that accepted a run and then stalled forever passed every test in the
+   * repo.
+   */
+  test("runs a durable workflow end to end under npm start", async ({ skip }) => {
+    const projectDir = path.join(tmpDir, "_self-hosted-workflow");
+    aai(aaiBin, ["init", projectDir, "-t", "research-workflow", "--skip-deploy"], tmpDir);
+    try {
+      installDeps(registry, projectDir);
+    } catch (err) {
+      if (!isRegistryProxyFailure(err)) throw err;
+      skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
+    }
+    // The same provider-free lab the `aai dev` leg uses: `labCount` is steps and
+    // arithmetic, so a completed run says the queue and the step callbacks work
+    // without any provider being reachable.
+    installWorkflowLab(projectDir);
+
+    const server = await startSelfHostedServer(projectDir);
+    try {
+      // The callback route the world dispatches to. Unmounted it 404s, and every
+      // run then stalls forever with nothing logged — which is exactly how this
+      // door behaved before. A 404 here is the assertion that matters; the body
+      // is nonsense, so anything BUT 404 means the route is mounted.
+      const flow = await fetch(`${server.url}/.well-known/workflow/v1/flow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(flow.status).not.toBe(404);
+
+      // And the run itself, which is the whole point: started through the public
+      // API and polled to a terminal status, the way a `curl` script would.
+      const runId = await startRun(server.url, "labCount", { steps: 3 });
+      const done = await waitForRun(server.url, runId);
+      // `{ total }`, which is what `labCountFlow` returns — the shape matters:
+      // the output travelled back through the journal, so asserting it (rather
+      // than only the status) is what says the run's RESULT survived the hops.
+      expect(done).toMatchObject({ status: "completed", output: { total: 3 } });
+    } catch (err) {
+      // The server's own stdout/stderr carries the reason a run stalled — a world
+      // that would not start reports there and nowhere else.
+      throw new Error(
+        `${errorDetail(err)}\n--- npm start output ---\n${server.output().slice(-4000)}`,
+        { cause: err },
+      );
+    } finally {
+      await server.stop();
     }
   });
 });

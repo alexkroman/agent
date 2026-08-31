@@ -41,26 +41,11 @@
  * @module
  */
 
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 const log = createLogger("workflow.queue");
-
-/**
- * How long a claim may go unfinished before the sweep may take it again.
- *
- * A replica that dies mid-delivery leaves `locked_at` set, and nothing else would
- * ever release it — the partial index the sweep reads excludes claimed rows by
- * design. Two minutes is well past a delivery (a POST into a guest, with the
- * broker's own 20s readiness cap in front of it) and well under the interval a
- * human would notice a stalled run over.
- *
- * The alternative — a heartbeat on the claim — buys precision this does not need:
- * a redelivery is safe, because the DevKit's journal is what makes a step
- * idempotent, and it is exactly what a crashed replica's messages need.
- */
-export const QUEUE_CLAIM_STALE_MS = 120_000;
 
 /** Backoff for a delivery that failed, indexed by the attempt just made. */
 const RETRY_BACKOFF_MS = [1000, 5000, 15_000, 60_000, 300_000] as const;
@@ -261,85 +246,12 @@ export async function enqueue(sql: SqlExec, params: EnqueueParams): Promise<{ id
   return enqueue(sql, withoutKey);
 }
 
-/**
- * Claim up to `limit` due messages, at most ONE PER RUN.
- *
- * Four properties, and each is a way this goes wrong:
- *
- * - **One per run, counting what is already IN FLIGHT.** A run's journal is
- *   replayed on every delivery, so two messages for one run in flight together
- *   interleave two replays of the same log — measured as a bounded fan-out
- *   returning `failed` instead of `completed`. `distinct on` picks one candidate
- *   per run, and the `not exists` is the half that is easy to miss: without it a
- *   run whose earlier message is still being delivered hands out a second one.
- * - **Disjoint under concurrency, WITHOUT `for update`.** Postgres refuses
- *   `FOR UPDATE … DISTINCT` outright (`FOR UPDATE is not allowed with DISTINCT
- *   clause`), so the claim is the UPDATE itself: the trailing unclaimed
- *   predicate is re-evaluated under the row lock the UPDATE takes, so a second
- *   sweep blocked on the first re-checks after it commits, fails the predicate,
- *   and simply does not appear in its own `returning`. Two sweeps therefore take
- *   disjoint sets with no explicit locking at all.
- * - **A stale claim is reclaimable** ({@link QUEUE_CLAIM_STALE_MS}), or a replica
- *   that died mid-delivery holds its messages forever — the due index excludes
- *   claimed rows, so nothing else would ever look at them.
- * - **Scoped by tenant AND run.** Run ids are ULIDs and collision is not the
- *   worry; sharing the key across tenants would be, because one tenant's traffic
- *   would then gate another's.
- * - **OLDEST-DUE wins, which is why this is two CTEs rather than one.**
- *   `distinct on` obliges an `order by` that STARTS with its own expressions, so
- *   the single-CTE version truncated to `limit` in `(slug, runId)` order — i.e.
- *   lexicographically by tenant. A tenant whose slug sorts early with more due
- *   runs than one tick's width filled the candidate set every tick, and since
- *   claimed rows are excluded by the `not exists` the next tick simply took its
- *   NEXT batch: an `aaa-*` agent under steady load kept a `zzz-*` agent's
- *   messages unclaimed on that replica indefinitely. `due` therefore keeps the
- *   ordering `distinct on` requires and `candidates` re-orders the whole due set
- *   by `available_at` before the limit, so the width is spent on the work that
- *   has waited longest whoever owns it. `id` is the tiebreaker, so two rows due
- *   in the same microsecond claim in a stable order rather than an arbitrary one.
- */
-export async function claimDue(
-  sql: SqlExec,
-  limit: number,
-  staleMs = QUEUE_CLAIM_STALE_MS,
-): Promise<QueuedMessage[]> {
-  const rows = await sql(
-    `with due as (
-       select distinct on (q.slug, q.payload->>'runId') q.id, q.available_at
-       from aai_platform.workflow_queue q
-       where q.available_at <= now()
-         and (q.locked_at is null or q.locked_at < now() - ($2 || ' milliseconds')::interval)
-         and not exists (
-           select 1 from aai_platform.workflow_queue o
-           where o.slug = q.slug
-             and o.payload->>'runId' is not distinct from q.payload->>'runId'
-             and o.locked_at is not null
-             and o.locked_at >= now() - ($2 || ' milliseconds')::interval
-         )
-       order by q.slug, q.payload->>'runId', q.available_at
-     ),
-     candidates as (
-       select id from due order by available_at, id limit $1
-     )
-     update aai_platform.workflow_queue q
-        set locked_at = now()
-      where q.id in (select id from candidates)
-        and (q.locked_at is null or q.locked_at < now() - ($2 || ' milliseconds')::interval)
-     returning q.id, q.slug, q.queue_name, q.payload, q.headers, q.deployment_id, q.attempt`,
-    [limit, String(staleMs)],
-  );
-  return rows.map((r) => ({
-    id: String(r.id),
-    slug: String(r.slug),
-    queueName: String(r.queue_name),
-    payload: r.payload,
-    attempt: Number(r.attempt),
-    ...omitUndefined({
-      headers: (r.headers ?? undefined) as Record<string, string> | undefined,
-      deploymentId: (r.deployment_id ?? undefined) as string | undefined,
-    }),
-  }));
-}
+// The DELIVERY CLAIM — `claimDue`, `QUEUE_CLAIM_STALE_MS` and
+// `WORKFLOW_QUEUE_STEPS_PER_RUN` — is `workflow-queue-claim.ts`. It came out at the
+// 500-line cap, on the seam this module already had: everything here is one
+// message's own lifecycle (enqueue, envelope, ack, reschedule, fail), where the
+// claim is a question asked of the whole TABLE and is the only part of the queue
+// that has an opinion about how a run's messages are allowed to overlap.
 
 /** A message that was delivered. Removed, not marked — a delivered row is done. */
 export async function ack(sql: SqlExec, id: string): Promise<void> {

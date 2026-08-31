@@ -13,6 +13,7 @@
 
 import {
   AND,
+  ARGV_SCAN,
   IS_NULL,
   NOT_NULL,
   NOT_TYPEOF_OBJECT,
@@ -22,7 +23,7 @@ import {
   SPREAD_TRUTHY,
   TYPEOF_OBJECT,
 } from "./guard-invariants-ere.mjs";
-import { SOURCE_PATHSPECS } from "./guard-invariants-scopes.mjs";
+import { SCRIPT_PATHSPECS, SOURCE_PATHSPECS } from "./guard-invariants-scopes.mjs";
 
 /** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
 export const SHAPE_RULES = [
@@ -237,5 +238,68 @@ export const SHAPE_RULES = [
       "Splitting a string that is NOT a request target is legitimate and\n" +
       "baselined: `aai-cli/workflow-bundler.ts` strips a Vite module id's query\n" +
       "suffix, where there is no request and no path to answer with.",
+  },
+  {
+    id: 28,
+    key: "rule28_argvScan",
+    label: "argv scanned by hand (parse it strictly)",
+    re: ARGV_SCAN,
+    paths: SCRIPT_PATHSPECS,
+    // The pattern is the METHOD, not the flag, so a mention in prose reads as a
+    // hit — and half this file's job is describing what it bans. Every module in
+    // the rule set is also in the gate's SELF_REFERENTIAL list.
+    skipComments: true,
+    samples: {
+      matches: [
+        'const CHECK = process.argv.includes("--check");',
+        '  const i = process.argv.indexOf("--package");',
+        // The six loadtest harnesses' reader, with its template literal
+        // flattened to a plain comparison. Verbatim it read
+        // a.startsWith(BACKTICK --DOLLAR{name}= BACKTICK), which biome's
+        // noTemplateCurlyInString reads as a placeholder somebody forgot to
+        // make a template — and the repo is otherwise warning-clean. Nothing is
+        // lost: what these samples prove is that the pattern keys on
+        // process.argv plus the METHOD, and the argument is not part of it.
+        'const hit = process.argv.find((a) => a === "--speak");',
+      ],
+      ignores: [
+        // The remedy: hand the arguments to a parser.
+        "    args: [...(argv ?? process.argv.slice(2))],",
+        "const arg = valueReader(process.argv.slice(2));",
+        // A main-module guard, which is not argument parsing at all.
+        "if (process.argv[1] === import.meta.filename) {",
+        // A method on a LOCAL argv — what `_args.mjs` is built out of, and the
+        // one shape a pattern keyed on the method alone would wrongly ban.
+        '    const hit = argv.find((arg) => arg === "--speak");',
+        '  const force = argv.includes("--force");',
+      ],
+    },
+    remedy:
+      "Use parseScriptArgs from scripts/_args.mjs, which is node:util's\n" +
+      "parseArgs with strict: true and a usage error that names the script.\n\n" +
+      "The point is not tidiness. An argv SCAN cannot fail: includes, indexOf\n" +
+      "and find all answer the same thing for a flag that is absent and for a\n" +
+      "flag that is misspelled, so a typo is indistinguishable from a default.\n" +
+      "Six gates in this directory decided whether to VERIFY or to WRITE THE\n" +
+      "TREE on exactly that read — sync-agent-guide, sync-scaffold-versions,\n" +
+      "sync-guest-toolchain, sync-workflow-schema, docs-markdown and\n" +
+      'api-report, each a `const CHECK = process.argv.includes("--check")`\n' +
+      "followed by `if (!CHECK) { write }`. So `--chekc`, or `--check=1`, or a\n" +
+      "wrapper that swallowed the argument, rewrote the committed copy the gate\n" +
+      "exists to compare against and exited 0. That is this repo's standing\n" +
+      "failure shape — a gate whose success output is indistinguishable from a\n" +
+      "gate that checked nothing — reached by a new route.\n\n" +
+      "indexOf plus argv[i + 1] has a second mode: it answers undefined for a\n" +
+      "value flag in final position, which the caller then reads as 'not\n" +
+      "given'. requiredValue covers the one parseArgs cannot see, an EMPTY\n" +
+      "string, which is what a quoted CI matrix variable sends to --package\n" +
+      "when it does not expand.\n\n" +
+      "Two legitimate shapes, neither matched: process.argv[1] in a\n" +
+      "main-module guard, and a wrapper that forwards a whole command\n" +
+      "(dev-server.mjs, with-test-pg.mjs) — those take parseLeadingFlags,\n" +
+      "which is strict about its OWN flags and passes the rest through.\n\n" +
+      "The rule is ABSOLUTE: there are no occurrences left, and no baseline.\n" +
+      "A script whose knobs are genuinely open-ended (the loadtest harnesses)\n" +
+      "uses valueReader, which reads a LOCAL argv and so does not match.",
   },
 ];

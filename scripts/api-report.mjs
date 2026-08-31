@@ -93,13 +93,18 @@ import {
   stripPackageDocumentationMarker,
   typedEntryPoints,
 } from "./_api-surface.mjs";
+import { parseScriptArgs } from "./_args.mjs";
 import { publishablePackages, readJson, repoRoot } from "./_fs.mjs";
 
 const require = createRequire(import.meta.url);
 const { Extractor, ExtractorConfig } = require("@microsoft/api-extractor");
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
-const CHECK = process.argv.includes("--check");
+const { values: FLAGS } = parseScriptArgs({
+  script: import.meta.url,
+  options: { check: { type: "boolean" } },
+});
+const CHECK = FLAGS.check === true;
 
 /** The combined file: every entry point's report, in reading order. */
 const COMBINED_FILE = "API.md";

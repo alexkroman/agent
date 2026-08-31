@@ -85,13 +85,15 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   long ago and forwards one request to the guest's own webhook endpoint. The
   DevKit route the platform serves — the tenant-facing `/:slug/workflows/*`
   API is `workflow-handler.ts`
-- `workflow-queue-store.ts` / `workflow-queue-sweep.ts` /
-  `workflow-queue-deliver.ts` — the platform's OWN durable-run queue: enqueue,
-  claim-due, ack/fail/reschedule, and the leader-elected pass that DELIVERS a
-  due message to the guest owning the run. The one thing here that boots a
+- `workflow-queue-store.ts` / `workflow-queue-claim.ts` /
+  `workflow-queue-sweep.ts` / `workflow-queue-deliver.ts` — the platform's OWN
+  durable-run queue: enqueue, ack/fail/reschedule, the claim, and the
+  leader-elected pass that DELIVERS a due message to the guest owning the run.
+  The CLAIM is its own module; `claimDue`'s doc has the argument. It is also the
+  one thing here that boots a
   sandbox on a SCHEDULE rather than for a caller, and it brokers through
-  `brokerSessionUrl` like every other caller. It replaced `workflow-wake.ts` —
-  see "The platform owns the queue" below
+  `brokerSessionUrl` like every other caller — see "The platform owns the
+  queue" below
 - `phone-handler.ts` / `phone-signature.ts` — `GET/POST /:slug/phone`: the
   carrier call-answering webhook (see "Telephony" below) and its webhook
   authenticity checks
@@ -151,11 +153,9 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   pg_cron's own run log), installed idempotently at boot.
 
   **The orphan-preview reap IS one of them, again**, and its own doc in that
-  module carries why the round trip is safe. The short version: it left because
-  deprovisioning a per-app database needed `DROP DATABASE`, which pg_cron cannot
-  run inside its transaction (`25001`) and which needed a `dblink` bridge, and
-  because once create/drop moved to the Management API a SQL sweep was a second
-  implementation of a step SQL could not perform. Neither holds now.
+  module carries why the round trip is safe — the two reasons it left
+  (`DROP DATABASE` inside pg_cron's transaction, `25001`; and a SQL sweep
+  duplicating a Management API step) both stopped holding.
 
   Three properties make the move safe rather than merely possible, and each is
   asserted in `pg-cron.scenario.test.ts` against a real database:

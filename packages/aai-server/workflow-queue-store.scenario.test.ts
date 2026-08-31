@@ -8,25 +8,39 @@
  * statement text we wrote, which is the thing under test. What matters here —
  * that two concurrent sweeps take disjoint sets, that one run yields one message,
  * that a stale claim comes back — is only observable against a server.
+ *
+ * ## It is ONE file on purpose, and the 700-line cap does not change that
+ *
+ * The shared setup is `_workflow-queue-test-utils.ts`, which is what keeps this
+ * under the cap. Splitting the TESTS was tried instead — a `workflow-queue-claim`
+ * suite mirroring the source split — and it must not be: `claimDue` and
+ * `WORKFLOW_QUEUE_CHANNEL` are both GLOBAL. The claim takes due messages for ANY
+ * slug and the NOTIFY channel carries every tenant's enqueue, so two files over
+ * one database cannot run concurrently, and vitest runs files in parallel. Each
+ * suite passed alone and 20-odd tests failed with both present: a foreign slug's
+ * rows arriving in an `toEqual([ids])`, and a sibling's `enqueue` incrementing the
+ * notification count that "a DELAYED message does not notify" asserts is zero.
+ * Per-suite slugs do not help — that isolates the ROWS a test writes, not the
+ * claim that reads them.
+ *
+ * So the seam here is the HARNESS, not the subject. If this file has to shrink
+ * again, extract more setup or move a group whose tests touch neither `claimDue`
+ * nor the channel; do not create a second suite that shares this database.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { createPlatformQueueSend } from "@alexkroman1/aai-runtime/internal";
-import { Hono } from "hono";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import type { HonoEnv } from "./context.ts";
+import { useQueueFixture } from "./_workflow-queue-test-utils.ts";
 import { guestTokenFor } from "./guest-token.ts";
-import { slugMw } from "./middleware.ts";
-import type { AdminDb } from "./platform-lock.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { createTestStore, ensurePlatformTables, type TestFetch } from "./test-utils.ts";
-import { createWorkflowEnqueueHandler } from "./workflow-enqueue-handler.ts";
+import type { TestFetch } from "./test-utils.ts";
+import { claimDue, WORKFLOW_QUEUE_STEPS_PER_RUN } from "./workflow-queue-claim.ts";
 import {
   ack,
-  claimDue,
   enqueue,
   envelopeBody,
   fail,
@@ -36,113 +50,22 @@ import {
 } from "./workflow-queue-store.ts";
 import { runQueuePass } from "./workflow-queue-sweep.ts";
 
+/**
+ * Code-unit order, the repo's standing rule for anything an assertion reads —
+ * `localeCompare` with no explicit locale answers to the runtime's ICU default,
+ * so the same rows would sort differently on another machine.
+ */
+const byCodeUnit = (a: string, b: string) => Number(a > b) - Number(a < b);
+
 describeWithPg("workflow queue store", () => {
-  let close: () => Promise<void>;
-  let sql: SqlExec;
-  /** The same database as `sql`, as the reserving handle a pass needs. */
-  let adminDb: () => AdminDb;
-  /**
-   * A real platform over that same database, so the loop test can go through the
-   * HTTP route rather than calling `enqueue` directly. The agents live in
-   * Postgres; only the BUNDLE store is in memory, which this suite never reads.
-   */
-  let platformFetch: TestFetch;
-
-  /** Every tenant this suite creates, so `afterAll` can remove exactly those. */
+  /** This suite's OWN tenants — see the fixture's doc for why they are not shared. */
   const SLUGS = ["wfq-t1", "wfq-t2", "wfq-gone"];
-
-  /**
-   * The columns the shipped `agents` table really requires — every NOT NULL
-   * without a default. Listed rather than derived, so a new required column
-   * fails HERE, loudly, instead of this suite silently testing a table shape the
-   * migration does not have.
-   */
-  const seedAgent = (slug: string) =>
-    sql(
-      `insert into aai_platform.agents
-         (slug, credential_hashes, worker_hash, client_files, version)
-       values ($1, '{}'::jsonb, '', '{}'::jsonb, 1) on conflict do nothing`,
-      [slug],
-    );
-
-  beforeAll(async () => {
-    // `pgUrl()` inside the hook: vitest executes a skipped `describe` body to
-    // enumerate it, so reading at the top would throw on a machine with no PG.
-    const db = createPostgresDb({ url: pgUrl(), max: 4 });
-    sql = (q, p) => db.query(q, p);
-    adminDb = () => ({ reserve: () => db.reserve(), listen: (c, f) => db.listen(c, f) });
-    close = () => db.close();
-
-    // The SCHEMA comes from the repo's own helper, never from this file.
-    // `ensurePlatformTables` verifies a CLI-built stack against its ledger and
-    // otherwise applies the migrations to a database that lacks them — which is
-    // what makes this suite run on BOTH arms: a plain Postgres (CI's
-    // `AAI_TEST_PG_URL` is the runner's own cluster) and the local Supabase
-    // stack. An earlier draft asserted the table was already there, which passed
-    // locally against a migrated stack and failed every CI run.
-    //
-    // It also replaced a `create table if not exists` of this suite's own, which
-    // was worse than useless: it invented a shape the migration might not have,
-    // and a matching `drop` in `afterAll` destroyed the real table for every
-    // later suite (`realtime-rls.scenario.test.ts` reported it missing). A
-    // scenario test may own its ROWS; it may not own the schema.
-    await ensurePlatformTables(sql);
-    for (const slug of SLUGS) await seedAgent(slug);
-
-    // JUST the enqueue route over that same database — deliberately NOT
-    // `createTestOrchestrator`.
-    //
-    // A full orchestrator starts this surface's background sweeps and keeps no
-    // handle to stop them (`agent-sweeps.ts`), so with a real `adminDb` this suite
-    // left a 1-SECOND queue sweep running against the shared scenario database
-    // after it finished. That is exactly what it did on the first run: every test
-    // here passed and `workflow-world.scenario.test.ts` failed beside it, which is
-    // the most expensive shape of test failure available — a suite breaking a
-    // sibling.
-    //
-    // The route needs a store for its `getAgentVersion` check and a slug from the
-    // path, and nothing else, so that is all this mounts.
-    const store = createTestStore();
-    await store.putAgent({
-      slug: SLUGS[0] as string,
-      env: {},
-      worker:
-        'export default { name: "a", systemPrompt: "p", greeting: "", maxSteps: 1, tools: {} };',
-      clientFiles: {},
-      credential_hashes: [],
-    });
-    const app = new Hono<HonoEnv>();
-    app.use("*", async (c, next) => {
-      c.env = { store } as HonoEnv["Bindings"];
-      await next();
-    });
-    app.post("/:slug/workflow-enqueue", slugMw, createWorkflowEnqueueHandler(adminDb()));
-    // `app.request` is sync-or-async depending on the route; `TestFetch` is the
-    // async half, which is what every caller here awaits anyway.
-    platformFetch = async (input, init) => app.request(input, init);
-  });
-
-  afterAll(async () => {
-    // Only what this suite created. Deleting the agents cascades to their
-    // messages, which is the FK doing the cleanup rather than a second delete
-    // that could drift from it.
-    for (const slug of SLUGS) {
-      await sql("delete from aai_platform.agents where slug = $1", [slug]).catch(() => undefined);
-    }
-    await close?.();
-  });
-
-  beforeEach(async () => {
-    await sql("delete from aai_platform.workflow_queue where slug = any($1::text[])", [SLUGS]);
-  });
-
-  const msg = (id: string, runId: string, over: Record<string, unknown> = {}) => ({
-    id,
-    slug: SLUGS[0] as string,
-    queueName: `__wkf_workflow_${runId}`,
-    payload: { runId },
-    ...over,
-  });
+  const fx = useQueueFixture(SLUGS);
+  // Thin locals so every test body below reads exactly as it did before the split.
+  const sql: SqlExec = (q, params) => fx.sql()(q, params);
+  const msg = fx.msg;
+  const adminDb = fx.adminDb;
+  const platformFetch: TestFetch = (input, init) => fx.platformFetch()(input, init);
 
   test("an enqueued message is claimable, and claiming removes it from the due set", async () => {
     await enqueue(sql, msg("m1", "r1"));
@@ -173,7 +96,7 @@ describeWithPg("workflow queue store", () => {
    * a stand-in without this rule turned into a bounded fan-out returning `failed`
    * instead of `completed`.
    */
-  test("one run yields one message, while other runs go in parallel", async () => {
+  test("one run yields one ORCHESTRATION message, while other runs go in parallel", async () => {
     await enqueue(sql, msg("a1", "r1"));
     await enqueue(sql, msg("a2", "r1"));
     await enqueue(sql, msg("b1", "r2"));
@@ -191,12 +114,105 @@ describeWithPg("workflow queue store", () => {
   });
 
   /**
+   * STEP messages of one run FAN OUT, and this is the half the one-per-run rule
+   * used to swallow.
+   *
+   * The DevKit has two topics: `__wkf_workflow_*` replays the run's journal on
+   * every delivery, and `__wkf_step_*` executes one step. Serializing both — which
+   * is what a single `(slug, runId)` key does — made a template asking for 32
+   * segments in flight transcribe them strictly end to end, one queue hop apart,
+   * on a deployed agent. Nothing failed, which is why it took a stopwatch to find.
+   */
+  test("a run's STEP messages fan out in one pass", async () => {
+    const step = (id: string, runId: string) => ({
+      ...msg(id, runId),
+      queueName: `__wkf_step_${runId}:${id}`,
+    });
+    for (const id of ["s1", "s2", "s3", "s4"]) await enqueue(sql, step(id, "r1"));
+    const claimed = await claimDue(sql, 10);
+    // All four, from ONE run — the assertion the old claim could not satisfy.
+    expect(claimed.map((m) => m.id).sort(byCodeUnit)).toEqual(["s1", "s2", "s3", "s4"]);
+  });
+
+  test("the fan-out is CAPPED per run, so one busy run cannot take the tick", async () => {
+    // Fairness is really the `order by available_at` in `candidates` — an older
+    // message from a quiet run outranks a busy run's newest step — but the cap is
+    // what bounds how wide ONE run's claim gets, and it counts in-flight rows.
+    //
+    // The width is read from {@link WORKFLOW_QUEUE_STEPS_PER_RUN} rather than
+    // injected: it stopped being a parameter, because an override set to `1`
+    // silently restores the serial behaviour this whole split removes. So the
+    // fixture is one message WIDER than the real cap, and the assertion is the
+    // constant.
+    const over = WORKFLOW_QUEUE_STEPS_PER_RUN + 1;
+    for (let i = 0; i < over; i++) {
+      await enqueue(sql, { ...msg(`s${i}`, "r1"), queueName: `__wkf_step_r1:s${i}` });
+    }
+    expect(await claimDue(sql, 20)).toHaveLength(WORKFLOW_QUEUE_STEPS_PER_RUN);
+    // The cap is now spent by rows IN FLIGHT, so the remaining one is not claimable
+    // — the same reasoning as orchestration's `not exists`, counting rather than
+    // testing existence.
+    expect(await claimDue(sql, 20)).toHaveLength(0);
+  });
+
+  /**
+   * The two domains are INDEPENDENT, in both directions.
+   *
+   * A replay observing a step that has not finished is ordinary DevKit behaviour —
+   * the body suspends again — so an in-flight step must not hold up orchestration,
+   * and an in-flight orchestration must not hold up steps. Coupling them is what
+   * turned a 32-wide fan-out into a queue of one.
+   */
+  test("an in-flight STEP does not block that run's orchestration, or the reverse", async () => {
+    await enqueue(sql, { ...msg("s1", "r1"), queueName: "__wkf_step_r1:s1" });
+    const steps = await claimDue(sql, 10);
+    expect(steps.map((m) => m.id)).toEqual(["s1"]);
+
+    // Orchestration for the SAME run, with that step still locked.
+    await enqueue(sql, msg("w1", "r1"));
+    expect((await claimDue(sql, 10)).map((m) => m.id)).toEqual(["w1"]);
+
+    // And now both are in flight, so a further step is still claimable.
+    await enqueue(sql, { ...msg("s2", "r1"), queueName: "__wkf_step_r1:s2" });
+    expect((await claimDue(sql, 10)).map((m) => m.id)).toEqual(["s2"]);
+  });
+
+  /**
+   * An unrecognized queue name is claimed by NOBODY, which is the point.
+   *
+   * The claim matches the two kinds explicitly and neither pattern is the other's
+   * complement, so there is no case a renamed DevKit topic can fall into. It used
+   * to fall into orchestration, and that catch-all is how a rename would take the
+   * whole fleet back to one-step-at-a-time without failing anything.
+   *
+   * Such a row is unreachable through the real route — the enqueue handler refuses
+   * the name with a 400 (`workflow-enqueue-handler.test.ts`) — so this writes one
+   * with the store directly, which is the only way to get it into the table, and
+   * asserts it is inert rather than quietly serialized.
+   */
+  test("an unknown queue name is claimed by neither half", async () => {
+    await enqueue(sql, { ...msg("x1", "r1"), queueName: "__wkf_something_r1" });
+    await enqueue(sql, { ...msg("x2", "r1"), queueName: "__wkf_something_r1" });
+    expect(await claimDue(sql, 10)).toHaveLength(0);
+  });
+
+  test("a NAMESPACED step queue name still fans out", async () => {
+    // The grammar admits `__<ns>_wkf_step_…`, and the pattern is POSIX-ERE for
+    // Postgres's `~`. A capturing group where the JS original had `(?:` is what
+    // makes one pattern serve both engines — and getting it wrong classifies
+    // every step as unknown, i.e. silently back to one at a time.
+    await enqueue(sql, { ...msg("n1", "r1"), queueName: "__aai_wkf_step_r1:n1" });
+    await enqueue(sql, { ...msg("n2", "r1"), queueName: "__aai_wkf_step_r1:n2" });
+    expect((await claimDue(sql, 10)).map((m) => m.id).sort(byCodeUnit)).toEqual(["n1", "n2"]);
+  });
+
+  /**
    * The half of one-per-run that is easy to miss: a run whose earlier message is
    * still IN FLIGHT must not hand out a second one. Without the `not exists`
    * guard the sibling becomes claimable the moment the first is claimed, which is
    * two concurrent replays of one journal.
    */
-  test("a run with an in-flight message yields nothing until it settles", async () => {
+  test("a run with an in-flight ORCHESTRATION message yields nothing until it settles", async () => {
     await enqueue(sql, msg("a1", "r1"));
     await enqueue(sql, msg("a2", "r1"));
     const first = await claimDue(sql, 10);
@@ -227,7 +243,7 @@ describeWithPg("workflow queue store", () => {
    * order: it is the message that has waited longest, and it loses on a name.
    */
   test("a busy early-sorting tenant cannot starve a later one", async () => {
-    await enqueue(sql, msg("older", "r-older", { slug: SLUGS[1] }));
+    await enqueue(sql, msg("older", "r-older", { slug: SLUGS[1] as string }));
     // Backdate it rather than sleeping: the claim compares `available_at`, and
     // every message enqueued in this test is otherwise due within one tick of
     // the others.
@@ -244,7 +260,21 @@ describeWithPg("workflow queue store", () => {
     // The oldest message wins the tick whoever owns it. Ordered by slug, this
     // was three `wfq-t1` messages and `older` was not among them.
     expect(claimed.map((m) => m.id)).toContain("older");
-    expect(claimed[0]?.id).toBe("older");
+
+    // The WHOLE order, not just the head — and that is the assertion that stopped
+    // being luck. `UPDATE … RETURNING` has no defined row order, so oldest-first
+    // was a property of the PLAN: splitting the due set in two changed the plan,
+    // and `claimed[0]` came back `busy0` on both CI Postgres arms while passing
+    // locally. `claimDue` ORDERS what it returns now, so this holds whatever the
+    // planner does. Each `enqueue` is its own statement and so its own `now()`,
+    // which is what makes the two `busy` rows ordered rather than tied.
+    //
+    // Note this assertion does NOT discriminate on every arm: the local Supabase
+    // plan already returned oldest-first, which is exactly why the bug reached CI
+    // — verified by A/B, with the outer `order by` removed all 27 still pass here.
+    // What proves the fix is plan-independent is the plan itself: `explain` reports
+    // a top-level `Sort` on `claimed.available_at, claimed.id`.
+    expect(claimed.map((m) => m.id)).toEqual(["older", "busy0", "busy1"]);
   });
 
   /**
@@ -253,7 +283,18 @@ describeWithPg("workflow queue store", () => {
    * the earlier one keeps producing.
    */
   test("a continuously busy tenant does not keep a later one unclaimed", async () => {
-    await enqueue(sql, msg("waiting", "r-waiting", { slug: SLUGS[1] }));
+    await enqueue(sql, msg("waiting", "r-waiting", { slug: SLUGS[1] as string }));
+    // Backdated for the reason the test above backdates its own: `enqueue` stamps
+    // `available_at` with `now()`, and the claim orders by `(available_at, id)`.
+    // Two enqueues can land in the SAME microsecond, and then the tie-break by id
+    // decides fairness — `busy0` sorts before `waiting`, so the row this test is
+    // about loses every tick and the suite fails intermittently under load.
+    // Measured: 2 of 4 full-tier runs. An hour of backdating makes "oldest" a
+    // fact rather than a race.
+    await sql(
+      "update aai_platform.workflow_queue set available_at = now() - interval '1 hour' where id = $1",
+      ["waiting"],
+    );
     let produced = 0;
     const claimedIds: string[] = [];
     for (let tick = 0; tick < 3; tick++) {
@@ -486,13 +527,21 @@ describeWithPg("workflow queue store", () => {
   });
 
   /**
-   * The per-run ordering the envelope exists to make possible, end to end.
+   * The per-run KEY the envelope exists to make readable, end to end.
    *
-   * Three messages for one run, enqueued through the real route, must yield ONE
-   * claim — and a double-encoded payload makes `payload->>'runId'` null for every
-   * row, which collapses `distinct on` and hands back all three.
+   * A double-encoded payload makes `payload->>'runId'` null for every row, and
+   * every per-run rule in {@link claimDue} — the orchestration `distinct on`, the
+   * step fan-out's `partition by` — is written on that expression. So the
+   * assertion is the expression itself, read back out of SQL.
+   *
+   * It used to be `toHaveLength(1)`, which no longer discriminates and is worth a
+   * note because the obvious repair does not either. These are `__wkf_step_*`
+   * messages, so three of them now legitimately claim together; but under the
+   * double-encode bug a null `runId` puts all three in ONE partition and claims
+   * all three as well. Both the old expectation and a naive `toHaveLength(3)` are
+   * satisfied by the bug this test is here to catch — hence reading the key.
    */
-  test("three messages for one run are claimed one at a time", async () => {
+  test("the envelope keeps a run's key readable to SQL", async () => {
     const bearer = guestTokenFor(agentSandboxName(SLUGS[0] as string, 1));
     const send = createPlatformQueueSend({
       base: `http://platform.test/${SLUGS[0]}`,
@@ -509,8 +558,18 @@ describeWithPg("workflow queue store", () => {
     for (const n of [1, 2, 3]) {
       await send("__wkf_step_r-one", { workflowRunId: "r-one", stepId: `s${n}` });
     }
+    // The envelope's whole job: `runId` at the TOP level of `payload`, reachable
+    // by the `->>` every per-run rule is written on. Double-encoded, these are
+    // three nulls.
+    const keys = await sql(
+      `select payload->>'runId' as run_id from aai_platform.workflow_queue
+        order by id`,
+    );
+    expect(keys.map((r) => r.run_id)).toEqual(["r-one", "r-one", "r-one"]);
+
+    // And the end-to-end consequence for STEP messages, which is the fan-out.
     const claimed = await claimDue((q, p) => sql(q, p), 10);
-    expect(claimed).toHaveLength(1);
+    expect(claimed).toHaveLength(3);
   });
 
   test("acking removes the message", async () => {

@@ -23,7 +23,7 @@
  * | module | holds |
  * | --- | --- |
  * | `guard-invariants-ere.mjs`          | the regex vocabulary |
- * | `guard-invariants-scopes.mjs`       | the six corpora, each of which a floor must count |
+ * | `guard-invariants-scopes.mjs`       | the seven corpora, each of which a floor must count |
  * | `guard-invariants-rules-timing.mjs` | rules 3, 4, 19, 21 — how code waits |
  * | `guard-invariants-rules-shape.mjs`  | rules 2, 17, 18 — a value's shape, re-derived |
  * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16 — state someone else owns |
@@ -53,6 +53,7 @@ import { TIMING_RULES } from "./guard-invariants-rules-timing.mjs";
 
 export {
   GUEST_SURFACE_PATHSPECS,
+  SCRIPT_PATHSPECS,
   SESSION_SURFACE_PATHS,
   SHIPPED_SOURCE_PATHSPECS,
   SOURCE_PATHSPECS,

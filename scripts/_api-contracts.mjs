@@ -255,7 +255,7 @@ export function generateCapabilityReports(pkg, names = capabilities(pkg)) {
  * Reports rather than source, so this and the thing a reviewer looks at cannot
  * disagree. It does mean `check:api-report` has to pass first — a stale report
  * would be answered here as though it were current — which is why the gate
- * runs immediately after it in `check.sh` and says so if the reports are
+ * runs immediately after it in `check.mjs` and says so if the reports are
  * missing entirely.
  *
  * A name tagged `@internal` ANYWHERE wins over a `@public` tag elsewhere: two

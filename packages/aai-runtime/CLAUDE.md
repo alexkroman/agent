@@ -302,6 +302,55 @@ TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
 `upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
 bag. Do not narrow them back.
 
+### Self-hosted durable workflows: the door has to START a world
+
+`createAgentServer` configures the workflow world and mounts the DevKit's
+`flow`/`step` callback routes, off `workflowCode`/`stepCode` — the two strings
+`aai build` leaves on the worker bundle, which the scaffold's `server.mjs` reads
+and passes.
+
+**It did neither, and the result was that self-hosting could not run a durable
+workflow at all.** `configureWorkflowWorld` and `startWorkflowWorldIfDeclared`
+had exactly two callers, `aai dev` and the guest harness; `createWorkflowSurface`
+the same. So a self-hosted server accepted a run through `/workflows/runs` and
+nothing ever executed it — no world was started, and the callback routes 404'd —
+which presents as a run sitting `pending` forever with nothing logged. Every
+signal said healthy: the build succeeded, the page rendered, the API answered.
+
+Two things made it survivable for so long, and both are worth knowing:
+
+- **No test booted a workflow through this door.** The e2e suite's `npm start`
+  leg used `pizza-ordering`, which declares no workflows, and the one durable
+  leg ran under `aai dev`. `aai-cli`'s `e2e.test.ts` now covers both — see
+  "self-hosted server: durable workflows" — and the `pack + build + boot`
+  subset boots every template it builds, a workflow app among them.
+- **The scaffold PROMISED it.** `server.mjs` documents `PUBLIC_URL` as what to
+  set "whenever a durable workflow has to hand a URL to somebody else", and
+  `AgentServerOptions.env`'s own doc treats a dropped `DATABASE_URL` as a bug
+  because a workflow upload's record would otherwise vanish before a resumed run
+  read it. Both described a feature the door did not wire.
+
+Three mechanics, each a way to get this wrong:
+
+- **The ORDER is `configureWorkflowWorld` → `publishStepEnv` → surface →
+  start.** `createWorkflowSurface` imports `workflow/runtime`, which resolves a
+  world from the env as it loads; backwards, a project with a `DATABASE_URL`
+  silently takes the LOCAL world and writes its runs to a directory that dies
+  with the process.
+- **The world is configured BEFORE the bind whenever the port is known**, so no
+  request can reach a `getWorld()` that would resolve — and memoize — an
+  unconfigured world. `listen(0)` cannot do that (the loopback callback base is
+  unknowable until bound) and configures immediately after; `PORT=0` is a test
+  convenience.
+- **An agent with no `workflows/` directory is left alone entirely.** The setup
+  returns early when either string is absent, because `configureWorkflowWorld`
+  WRITES `WORKFLOW_TARGET_WORLD` and two more keys into `process.env` — doing
+  that for every `listen()` would pick a world nobody asked for and leak those
+  keys across a test file.
+
+**What is still NOT wired is host mode** (`createHostServer`): its sessions run
+caller-supplied agents, which declare no workflows.
+
 ### `createAgentServer` forwards what only it can
 
 A front door has a failure mode the pair underneath does not: an option it does

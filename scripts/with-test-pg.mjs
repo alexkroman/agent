@@ -57,11 +57,16 @@
  */
 
 import net from "node:net";
+
+import { parseLeadingFlags } from "./_args.mjs";
 import { runChild } from "./_run-child.mjs";
 import { readSupabaseStack } from "./_supabase-stack.mjs";
 
-const args = process.argv.slice(2);
-const PRINT_ONLY = args.includes("--print");
+const { values: FLAGS, rest: command } = parseLeadingFlags({
+  script: import.meta.url,
+  options: { print: { type: "boolean" }, "require-stack": { type: "boolean" } },
+});
+const PRINT_ONLY = FLAGS.print === true;
 /**
  * `--require-stack`: a stack that was EXPECTED and not resolved is exit 1.
  *
@@ -81,9 +86,7 @@ const PRINT_ONLY = args.includes("--print");
  * to the narrow arm with a printed reason; a job whose whole purpose is the
  * stack is not.
  */
-const REQUIRE_STACK = args.includes("--require-stack");
-const FLAGS = new Set(["--print", "--require-stack"]);
-const command = (args[0] === "--" ? args.slice(1) : args).filter((a) => !FLAGS.has(a));
+const REQUIRE_STACK = FLAGS["require-stack"] === true;
 
 /** The default superuser every candidate below is reached as. */
 const ROLE = "postgres";

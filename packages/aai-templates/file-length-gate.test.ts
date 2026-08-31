@@ -275,7 +275,8 @@ describe("check-file-length", () => {
 
   test("the cap is still enforced by the local check and CI", () => {
     // Same reasoning as claude-md-limit.test.ts: the ratchets once lived only
-    // in check.sh, which CI never invokes, so `git push --no-verify` skipped
+    // in the local check script, which CI never invokes, so `git push
+    // --no-verify` skipped
     // them entirely.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");

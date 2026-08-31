@@ -56,6 +56,8 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { parseScriptArgs, requiredValue } from "./_args.mjs";
+
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const BASELINE_PATH = path.join(REPO_ROOT, "scripts/coverage-per-file-baseline.json");
 
@@ -72,20 +74,35 @@ const MIN_STATEMENTS = 10;
  */
 const MIN_FILES = 350;
 
-const update = process.argv.includes("--update");
-const seed = process.argv.includes("--seed");
 /**
  * `--package <name>` narrows the run to one package, because CI runs
  * `test:coverage` in a MATRIX — one job per package — so a job only ever holds
  * its own coverage output. Without this the gate could run only in
- * `scripts/check.sh`, which CI never invokes, and it would be enforced by the
+ * `scripts/check.mjs`, which CI never invokes, and it would be enforced by the
  * pre-push hook alone; `git push --no-verify` then skips it entirely. That is the
  * exact gap the quality-ratchet section of AGENTS.md documents.
+ *
+ * It goes through {@link requiredValue} when present, which is not ceremony: the
+ * CI step is `--package "${{ matrix.package }}"`, and an unexpanded matrix
+ * variable sends `--package ""` — a legal parse answering the empty string,
+ * which selected zero packages, measured nothing, and printed this gate's
+ * success line. The old `argv.indexOf` + `argv[i + 1]` reader could not see it,
+ * and neither can `parseArgs` alone.
  */
-const packageArg = (() => {
-  const i = process.argv.indexOf("--package");
-  return i === -1 ? undefined : process.argv[i + 1];
-})();
+const { values: flags } = parseScriptArgs({
+  script: import.meta.url,
+  options: {
+    update: { type: "boolean" },
+    seed: { type: "boolean" },
+    package: { type: "string" },
+  },
+});
+const update = flags.update === true;
+const seed = flags.seed === true;
+const packageArg =
+  flags.package === undefined
+    ? undefined
+    : requiredValue(flags.package, "package", import.meta.url);
 
 /** Packages that produce coverage — derived, never listed. */
 function coveragePackages() {
@@ -161,7 +178,7 @@ for (const pkg of packages) {
 // A filtered run cannot carry the repo-wide corpus floor — `aai-evals` has an
 // order of magnitude fewer files than `aai`. It still must not measure NOTHING,
 // which is the failure the floor exists to catch; the strong floor applies to the
-// unfiltered run that `scripts/check.sh` makes.
+// unfiltered run that `scripts/check.mjs` makes.
 const corpusFloor = packageArg === undefined ? MIN_FILES : 1;
 if (measured.length < corpusFloor) {
   console.error(

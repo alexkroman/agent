@@ -53,12 +53,16 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+
+import { parseLeadingFlags } from "./_args.mjs";
 import { runChild } from "./_run-child.mjs";
 import { readSupabaseStack } from "./_supabase-stack.mjs";
 
-const args = process.argv.slice(2);
-const PRINT_ONLY = args.includes("--print");
-const command = args.filter((arg) => arg !== "--print");
+const { values: FLAGS, rest: command } = parseLeadingFlags({
+  script: import.meta.url,
+  options: { print: { type: "boolean" } },
+});
+const PRINT_ONLY = FLAGS.print === true;
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 

@@ -28,7 +28,13 @@
 import { writeFileSync } from "node:fs";
 
 import { apiKey } from "./_api-key.mjs";
+import { parseScriptArgs } from "./_args.mjs";
 import { compareNames } from "./_fs.mjs";
+
+const { values: FLAGS } = parseScriptArgs({
+  script: import.meta.url,
+  options: { write: { type: "boolean" } },
+});
 
 const US = "https://llm-gateway.assemblyai.com/v1/models";
 const EU = "https://llm-gateway.eu.assemblyai.com/v1/models";
@@ -180,7 +186,7 @@ export function gatewayModelIds(opts: { eu?: boolean } = {}): AssemblyAIGatewayM
 }
 `;
 
-if (process.argv.includes("--write")) {
+if (FLAGS.write === true) {
   writeFileSync(TARGET, file);
   console.error(`wrote ${entries.length} models (${eu.length} EU) to ${TARGET.pathname}`);
 } else {

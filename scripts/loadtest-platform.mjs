@@ -37,10 +37,9 @@
 //
 // Global `fetch` and `WebSocket` (Node 22+), so this has no dependencies.
 
-const arg = (name, fallback) => {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit ? hit.slice(name.length + 3) : fallback;
-};
+import { valueReader } from "./_args.mjs";
+
+const arg = valueReader(process.argv.slice(2));
 
 const PLATFORM = arg("platform", "http://127.0.0.1:8080");
 const SLUG = arg("slug", "bench");

@@ -35,7 +35,7 @@
  * shipped to users (the scaffold guide above), and because raw imports reach
  * the sibling guides with no node types — this package's tsconfig has none.
  * `pnpm check:claude-md` runs the same cap over `git ls-files` in
- * `scripts/check.sh`, the pre-push hook, and the CI check job; the last test
+ * `scripts/check.mjs`, the pre-push hook, and the CI check job; the last test
  * here is what keeps the two from drifting apart.
  */
 
@@ -165,7 +165,8 @@ describe("agent guide size", () => {
 
   test("the gate is wired into both the local check and CI", () => {
     // The repo has been here before: the quality ratchets lived only in
-    // check.sh, which CI never invokes, so `git push --no-verify` was enough
+    // the local check script, which CI never invokes, so `git push --no-verify`
+    // was enough
     // to skip them entirely.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");

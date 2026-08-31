@@ -103,7 +103,7 @@ carries that one and what would change the answer.
 
 `pnpm docs:md` (`scripts/docs-markdown.mjs`) writes `docs/api/`, and
 `pnpm check:docs-md` fails when that tree is stale. It runs in
-`scripts/check.sh` (both modes) and in the CI check job, straight after
+`scripts/check.mjs` (both modes) and in the CI check job, straight after
 `check:api-report` — it reads the same emitted `dist/*.d.ts`, so it belongs
 after the build.
 

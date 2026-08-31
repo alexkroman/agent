@@ -60,24 +60,83 @@ export const WORKFLOW_QUEUE_PATH = "/workflow-queue";
 export const QUEUE_NAME_HEADER = "x-vqs-queue-name";
 
 /**
+ * The DevKit's queue-name prefix, up to the kind — `__[<namespace>_]wkf_`.
+ *
+ * Exported as a PATTERN STRING rather than a `RegExp` because the platform's
+ * delivery claim applies the same grammar inside Postgres
+ * (`claimDue` in `aai-server/workflow-queue-store.ts`, which serializes a run's
+ * ORCHESTRATION messages while letting its STEP messages fan out). A second
+ * spelling of a third-party grammar on the side that does not depend on the
+ * DevKit is exactly what this module's own doc refuses, so the one source of
+ * truth is here and the SQL takes it as a parameter.
+ *
+ * Deliberately POSIX-ERE compatible — a capturing group, never `(?:` — because
+ * Postgres's `~` operator does not accept the non-capturing form and the failure
+ * would be a runtime error inside the claim rather than a build error here.
+ *
+ * @internal
+ */
+export const QUEUE_NAME_GRAMMAR = "^__([a-z][a-z0-9]*_)?wkf_";
+
+/**
+ * The grammar narrowed to ORCHESTRATION messages — the run's journal replay.
+ *
+ * @internal
+ */
+export const WORKFLOW_QUEUE_NAME_PATTERN = `${QUEUE_NAME_GRAMMAR}workflow_.+$`;
+
+/**
+ * The grammar narrowed to STEP messages — one step's execution.
+ *
+ * **The two patterns are EXHAUSTIVE, and nothing falls back to either.** The
+ * platform's claim splits the due set with one apiece — orchestration serialized
+ * per run, steps fanned out — and a name matching neither is refused rather than
+ * classified: {@link queueNameKind} answers `undefined`, this module's dispatch
+ * answers 400, and the platform's enqueue handler answers 400 before the row is
+ * ever stored. So the claim has no third case to have an opinion about.
+ *
+ * It briefly had one — an unmatched name was treated as orchestration, on the
+ * argument that serializing an unknown kind is the safe error. It is not a safe
+ * error, it is a SILENT one: the reason a name would stop matching is a DevKit
+ * that renamed a topic, and the whole fleet's step concurrency quietly returning
+ * to one is exactly the regression this split exists to undo (#1284 + #1297),
+ * found with a stopwatch because nothing failed. Refusing at the boundary is the
+ * loud version of the same caution.
+ *
+ * Both require an id after the kind (`.+$`), so this and {@link queueNameKind}
+ * cannot disagree about the bare prefix.
+ *
+ * @internal
+ */
+export const STEP_QUEUE_NAME_PATTERN = `${QUEUE_NAME_GRAMMAR}step_.+$`;
+
+/** Compiled once; the exported strings are what Postgres takes as a parameter. */
+const WORKFLOW_QUEUE_NAME_RE = new RegExp(WORKFLOW_QUEUE_NAME_PATTERN);
+const STEP_QUEUE_NAME_RE = new RegExp(STEP_QUEUE_NAME_PATTERN);
+
+/**
  * Which handler a queue name belongs to, or undefined when it is not one.
  *
  * The grammar is the DevKit's — `__[<namespace>_]wkf_(workflow|step)_<id>`, from
  * `parseQueueName` in `@workflow/world`. It is matched here rather than imported
  * because `@workflow/world` is a transitive dependency this package does not
  * declare and `workflow` does not re-export it; the shape is one line, and the
- * cost of it drifting is bounded by the caller answering 400 rather than picking
- * a route.
+ * cost of it drifting is bounded by every caller REFUSING rather than picking a
+ * route or a serialization domain.
+ *
+ * Written as two tests over the two exported patterns rather than one regex with
+ * an alternation, so the classifier and the platform's SQL cannot drift: there is
+ * no second spelling to keep in step. The alternation version also had a real
+ * bug — the namespace group is capturing (POSIX ERE has no `(?:`), so reading
+ * `match[1]` classified every name as unroutable and answered 400 to the whole
+ * queue.
  *
  * @internal
  */
 export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined {
   if (queueName === null) return;
-  const match = /^__(?:[a-z][a-z0-9]*_)?wkf_(workflow|step)_.+$/.exec(queueName);
-  // `match[1]` is one of the two alternatives by construction; the cast-free
-  // check keeps that true for a reader rather than asserting it.
-  if (match?.[1] === "workflow") return "workflow";
-  if (match?.[1] === "step") return "step";
+  if (WORKFLOW_QUEUE_NAME_RE.test(queueName)) return "workflow";
+  if (STEP_QUEUE_NAME_RE.test(queueName)) return "step";
 }
 
 /**

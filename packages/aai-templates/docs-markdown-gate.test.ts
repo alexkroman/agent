@@ -224,7 +224,7 @@ describe("the markdown config", () => {
 
 describe("the gate is enforced", () => {
   test("check:docs-md is named by the local check and CI", () => {
-    // Same reasoning as every other gate spec here: living only in check.sh
+    // Same reasoning as every other gate spec here: living only in check.mjs
     // means enforcement by the pre-push hook alone, which `--no-verify` skips.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");

@@ -31,11 +31,9 @@
 // `node:http` only, so it has no dependencies.
 
 import { createServer } from "node:http";
+import { valueReader } from "./_args.mjs";
 
-const arg = (name, fallback) => {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit ? hit.slice(name.length + 3) : fallback;
-};
+const arg = valueReader(process.argv.slice(2));
 
 const PORT = Number(arg("port", "4950"));
 const DELAY_MS = Number(arg("delay", "0"));

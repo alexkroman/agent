@@ -29,10 +29,9 @@
 // Uses the global WebSocket and fetch, so it has no dependencies and can run
 // from anywhere.
 
-const arg = (name, fallback) => {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit ? hit.slice(name.length + 3) : fallback;
-};
+import { valueReader } from "./_args.mjs";
+
+const arg = valueReader(process.argv.slice(2));
 
 const SCENARIO = arg("scenario", "http");
 const CONCURRENCY = Number(arg("concurrency", "20"));

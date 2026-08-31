@@ -38,11 +38,13 @@
  * the same contract as `check-escape-hatches.mjs`, whose machinery this shares
  * (`_ratchet.mjs`, which also carries the corpus floor both gates were missing).
  *
- * Wired up as `pnpm check:invariants`, in `scripts/check.sh` and the CI check
+ * Wired up as `pnpm check:invariants`, in `scripts/check.mjs` and the CI check
  * job (both — see AGENTS.md on ratchets that lived in only one).
  */
 
 import { readFileSync } from "node:fs";
+
+import { parseScriptArgs } from "./_args.mjs";
 
 import {
   assertNotUniversallyEmpty,
@@ -58,6 +60,7 @@ import { scanChangesetPackageNames } from "./guard-invariants-changesets.mjs";
 import {
   GUEST_SURFACE_PATHSPECS,
   LINE_RULES,
+  SCRIPT_PATHSPECS,
   SESSION_SURFACE_PATHS,
   SHIPPED_SOURCE_PATHSPECS,
   SOURCE_PATHSPECS,
@@ -258,6 +261,11 @@ const ABSOLUTE_RULES = [
   },
 ];
 
+const { values: FLAGS } = parseScriptArgs({
+  script: import.meta.url,
+  options: { rules: { type: "boolean" }, update: { type: "boolean" } },
+});
+
 const GATE = "guard-invariants";
 const UPDATE_COMMAND = "node scripts/guard-invariants.mjs --update";
 
@@ -286,7 +294,7 @@ function ruleCatalogue() {
   return lines.join("\n");
 }
 
-if (process.argv.includes("--rules")) {
+if (FLAGS.rules === true) {
   console.log(ruleCatalogue());
   process.exit(0);
 }
@@ -354,6 +362,9 @@ const SCAN_CORPORA = [
     pathspecs: WORKFLOW_BODY_PATHSPECS,
     minFiles: 15,
   }, // 24
+  // Both pathspec shapes, because `scripts/**/*.mjs` alone resolves SIX files
+  // and misses every gate at the top level — see SCRIPT_PATHSPECS.
+  { what: "rule 28's gate-script scan", pathspecs: SCRIPT_PATHSPECS, minFiles: 50 }, // 67
 ];
 
 for (const corpus of SCAN_CORPORA) assertScanCorpus({ gate: GATE, ...corpus });
@@ -365,7 +376,7 @@ const { counts: actual, occurrences } = scanGroups(LINE_RULES, { filter: countsA
 // --update
 // ---------------------------------------------------------------------------
 
-if (process.argv.includes("--update")) {
+if (FLAGS.update === true) {
   updateBaseline({
     gate: GATE,
     baselinePath: BASELINE_PATH,

@@ -59,6 +59,7 @@
 import { join } from "node:path";
 import { scheduler } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
+import { parseScriptArgs } from "./_args.mjs";
 import { publishablePackages, readJson, repoRoot } from "./_fs.mjs";
 
 const REGISTRY = "https://registry.npmjs.org";
@@ -254,15 +255,13 @@ export async function waitForVersions({
 }
 
 /**
- * @param {string[]} argv
+ * @param {string | undefined} raw
  * @param {string} flag
  * @param {number} fallback
  * @returns {number}
  */
-function secondsFlag(argv, flag, fallback) {
-  const at = argv.indexOf(flag);
-  if (at === -1) return fallback;
-  const raw = argv[at + 1];
+function seconds(raw, flag, fallback) {
+  if (raw === undefined) return fallback;
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(`${flag} expects a positive number of seconds, got ${JSON.stringify(raw)}`);
@@ -275,9 +274,25 @@ function secondsFlag(argv, flag, fallback) {
  * @returns {Promise<number>} process exit code
  */
 export async function main(argv) {
+  const { values: flags } = parseScriptArgs({
+    script: import.meta.url,
+    options: {
+      "timeout-seconds": { type: "string" },
+      "interval-seconds": { type: "string" },
+    },
+    argv,
+  });
   const specs = publishedSpecs(repoRoot(import.meta.url));
-  const timeoutSeconds = secondsFlag(argv, "--timeout-seconds", DEFAULT_TIMEOUT_SECONDS);
-  const intervalSeconds = secondsFlag(argv, "--interval-seconds", DEFAULT_INTERVAL_SECONDS);
+  const timeoutSeconds = seconds(
+    flags["timeout-seconds"],
+    "--timeout-seconds",
+    DEFAULT_TIMEOUT_SECONDS,
+  );
+  const intervalSeconds = seconds(
+    flags["interval-seconds"],
+    "--interval-seconds",
+    DEFAULT_INTERVAL_SECONDS,
+  );
   console.log(
     `Waiting up to ${timeoutSeconds}s for ${specs.length} version(s) to be readable from npm:`,
   );

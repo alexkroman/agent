@@ -172,13 +172,13 @@ jobs:
           # rendered site.
           pnpm run check:docs-md
           pnpm run check:doc-examples
-          # In scripts/check.sh since it was written, but missing here — the
-          # same CI-never-invokes-check.sh gap the ratchets below document.
+          # In the local check script since it was written, but missing here —
+          # the same CI-never-invokes-it gap the ratchets below document.
           # It type-checks the templates under the SCAFFOLD's tsconfig, which
           # is looser than the repo's, so `turbo run typecheck` passing above
           # says nothing about it.
           pnpm run check:template-types
-      # The quality ratchets. They lived only in scripts/check.sh, which CI
+      # The quality ratchets. They lived only in scripts/check.mjs, which CI
       # never invokes, so they were enforced solely by the pre-push hook — and
       # `git push --no-verify` skipped them entirely. All are pure git/fs
       # checks needing no build, and check-escape-hatches degrades to a skip
@@ -212,7 +212,7 @@ jobs:
       matrix:
         # Every workspace package with a `test:coverage` script. `aai-evals`
         # was absent, so its seven unit suites and its four coverage floors
-        # were gated by nothing in CI while passing locally (`scripts/check.sh`
+        # were gated by nothing in CI while passing locally (`scripts/check.mjs`
         # runs `turbo run test:coverage` unfiltered) — the "green locally, red
         # in CI" asymmetry running backwards, and fully green for a PR that
         # breaks them. This is NOT the documented eval-tier exemption: that is
@@ -250,9 +250,18 @@ jobs:
       # untested — a ~300-line aai-ui module once came in at 1.44% line coverage
       # and was caught only because it happened to drag the whole package under
       # its floor. `--package` exists for this step: a matrix job holds only its
-      # own coverage output, and running the gate solely from scripts/check.sh
+      # own coverage output, and running the gate solely from scripts/check.mjs
       # would leave it enforced by the pre-push hook alone, which
       # `git push --no-verify` skips.
+      #
+      # The quoting here is the reason `requiredValue` exists in
+      # `scripts/_args.mjs`. A matrix variable that does not expand sends
+      # `--package ""` — a legal parse answering the empty string, which the old
+      # `argv.indexOf` + `argv[i + 1]` reader and `parseArgs` alike accept. That
+      # selected zero packages, measured nothing, and printed the gate's success
+      # line: the per-file coverage floor for every package in this matrix,
+      # green over a measurement of nothing. It is now exit 2 with the reason
+      # named, so a broken matrix reddens the job instead.
       - run: node scripts/check-coverage-per-file.mjs --package "${{ matrix.package }}"
 
   # Both middle tiers. Named for both because it runs both: the integration tier
@@ -483,7 +492,7 @@ jobs:
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
       # --concurrency=1: the e2e run republishes every publishable package from
       # the live workspace, truncating shared dist/ directories while it does.
-      # Nothing may run beside it. Matches `pnpm test:e2e` and scripts/check.sh.
+      # Nothing may run beside it. Matches `pnpm test:e2e` and scripts/check.mjs.
       #
       # AAI_REQUIRE_REGISTRY makes a failed install a FAILURE here rather than a
       # visible skip. Three of the four tests can excuse an install failure as a
