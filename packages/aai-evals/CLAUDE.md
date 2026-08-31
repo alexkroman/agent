@@ -308,6 +308,64 @@ an expectation demanding a tool its prompt never asks for, and a
 `builtinDelegation` that passes on prose alone, both fail in the ordinary test
 run with no key, no studio and no model.
 
+## The template behaviour contract (opt-in)
+
+`template-contract.ts`. The starter eval grades generated SOURCE — does a tool
+whose name or description carries "cancel" exist, is the mode pipeline, is there
+a client that reads live state. Every one of those is a question about
+STRUCTURE, and a generated retail desk can answer all of them while
+authenticating nobody. The other half of this package grades BEHAVIOUR, and for
+a long time nothing ran it against generated code: the two halves sat disjoint,
+and the starter eval's verdict stopped exactly where the interesting question
+started.
+
+```sh
+AAI_EVAL_CONTRACTS=1 AAI_EVAL_ONLY=retail pnpm test:eval
+```
+
+**The contract is the TEMPLATE'S OWN `agent.eval.test.ts`, and three facts make
+that work.** Twelve of the eighteen starter prompts say "use the `<name>`
+template", which makes the template the ask rather than an illustration —
+`checkCapabilities` already special-cases them for it. Twenty-five of the
+twenty-six templates ship an eval. And those files were written to drive a
+DEPLOYED agent rather than their own directory: they import `virtual:aai/agent`,
+which `aaiAgentPlugin` resolves against the IMPORTER's directory, so dropping one
+into a materialized workspace drives that workspace's agent. They also assert
+MECHANISMS — a refusal sentence, a tool result, the projection sent to the
+browser — never the words the model chose, which is what lets a
+different-but-valid implementation pass.
+
+**The canonical copy always wins.** `use_template` copies template files verbatim,
+eval file included, so a workspace can arrive holding a contract the coding agent
+was then free to edit. `contractWorkspace` overwrites it with the copy read from
+`packages/aai-templates/`. That is the whole non-gameability argument, and it is
+the same one `starter-expectations.ts` rests on: the prompt is ours, the contract
+is ours, and the only thing the agent controls is the agent.
+
+**Why the scratch directory is inside this package.** A contract imports
+`@alexkroman1/aai/protocol`, `@alexkroman1/aai-runtime/eval`, `vitest` and `zod`,
+and Node resolution walks UPWARD — a directory under `packages/aai-evals/`
+resolves all four with nothing installed, where one in `tmpdir()` resolves none.
+It is `.eval-workspaces/`, gitignored, and removed in a `finally`: a leak here is
+a tree that `git status`, `biome check` and `tsc` all walk into.
+
+**Off by default, and that is a cost decision rather than a doubt.** A contract
+run is a live model session on top of a codegen turn that already takes minutes,
+so making it unconditional would roughly double the tier's wall clock and spend
+to answer a question most runs are not asking. A starter naming no template, or
+naming one that ships no eval, records NOTHING rather than a passing check — a
+check that cannot fail is one more line saying "green" for no reason.
+
+**What is NOT verified: the live path.** The selection, the overwrite, the
+materialization, the cleanup and the subprocess plumbing all have unit tests
+(`template-contract.test.ts`, 23 of them, with the vitest spawn faked and
+`spawnCommand` driven through `node -e`). What no test here reaches is one real
+`npx vitest run` against a real generated workspace, because that needs a live
+studio, a key and a model. Treat the first `AAI_EVAL_CONTRACTS=1` run as the
+validation it has not had — and note that a contract failing for want of the
+template's DATA files, rather than for behaviour, is the failure mode to watch:
+`use_template` copies them, but only if the agent asked for them.
+
 ## Adding a case
 
 1. Put it in an existing `*.eval.test.ts`, in the array `registerEvalCases`

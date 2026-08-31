@@ -24,6 +24,7 @@ import {
   type Expectation,
   parseLoadedConfig,
 } from "./starter-expectations.ts";
+import { templateNamed } from "./template-contract.ts";
 
 /** Every starter, flattened across the hero's two switcher positions. */
 const starters = Object.values(STARTERS).flat();
@@ -32,8 +33,13 @@ const starters = Object.values(STARTERS).flat();
  * A prompt naming a template makes the TEMPLATE the ask — its files carry the
  * tools, builtins and `client.tsx` the expectation describes — so the
  * prose-consistency rules below do not apply to one.
+ *
+ * Reads {@link templateNamed} rather than restating its pattern: the same
+ * question decides which starters this suite exempts AND which ones
+ * `template-contract.ts` holds to a behaviour contract, so two copies that drift
+ * grade one starter twice and another not at all.
  */
-const referencesTemplate = (prompt: string): boolean => /\buse the \S+ template\b/i.test(prompt);
+const referencesTemplate = (prompt: string): boolean => templateNamed(prompt) !== undefined;
 
 describe("starter expectations", () => {
   test("every expectation names a starter that exists", () => {

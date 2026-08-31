@@ -409,6 +409,7 @@
         "build"
       ],
       "env": [
+        "AAI_EVAL_CONTRACTS",
         "AAI_REQUIRE_EVAL",
         // Forces the SCRIPTED model even where a key is present — how CI runs
         // the template evals as a wiring gate. In `env` rather than
