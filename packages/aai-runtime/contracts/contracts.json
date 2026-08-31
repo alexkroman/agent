@@ -38,11 +38,12 @@
     }
   },
   "server": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
+      "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
+      "3": "Additive only: AgentServerOptions gained two OPTIONAL fields (workflowCode, stepCode) so that the self-hosted door can configure a workflow world and mount the DevKit's flow/step callback routes — durable workflows did not run through this door at all before. Nothing in epoch 3 stops compiling. It is dropped rather than retained on the same pre-release grounds as epoch 1: this package has no external consumers, so no superseded authoring style is owed a frozen compiling example."
     }
   },
   "session": {

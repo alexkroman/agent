@@ -299,7 +299,8 @@ export const NOT_IDENT_BEFORE = "(^|[^A-Za-z])";
  * Composed from two fragments rather than written out, for the reason this whole
  * module exists: spelled end to end it is a long enough literal that biome's
  * `noSecrets` entropy heuristic scores it as a credential, and the remedy for
- * that is composition, not a `biome-ignore` — which `check:hatches` counts.
+ * that is composition rather than a lint suppression — which `check:hatches`
+ * counts as an escape hatch even when, as here, it appears only in prose.
  */
 const ARGV = "process\\.argv\\.";
 /**

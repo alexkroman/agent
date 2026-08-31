@@ -51,7 +51,7 @@
  */
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
+import { PLATFORM_ROUTES, queueNameKind } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { optionalString, requiredString } from "./_body-fields.ts";
 import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
@@ -129,8 +129,21 @@ function parseEnqueueRequest(raw: unknown): EnqueueRequest {
   if (typeof raw.data !== "string") {
     throw new HTTPException(400, { message: "data must be a base64 string" });
   }
+  // The queue name decides how the DELIVERY CLAIM serializes this message —
+  // orchestration one-per-run, steps fanned out — so a name it cannot classify is
+  // refused here rather than stored. `claimDue` matches the two kinds explicitly
+  // and neither pattern is a catch-all, so an unclassifiable row would simply
+  // never be claimed; and the catch-all it replaced turned a renamed DevKit topic
+  // into the whole fleet silently serializing again. This is the boundary that
+  // makes those two patterns exhaustive over the table.
+  const queueName = requiredString(raw, "queueName");
+  if (queueNameKind(queueName) === undefined) {
+    throw new HTTPException(400, {
+      message: `queueName is not a workflow queue name: ${queueName}`,
+    });
+  }
   return {
-    queueName: requiredString(raw, "queueName"),
+    queueName,
     runId: requiredString(raw, "runId"),
     data: raw.data,
     ...omitUndefined({

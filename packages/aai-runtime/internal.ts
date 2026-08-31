@@ -172,6 +172,24 @@ export {
   createPlatformStreamReader,
   type PlatformStorageOptions,
 } from "./workflow-platform-storage.ts";
+// The DevKit's queue-name grammar, and the classifier over it. The grammar is a
+// third-party one — `parseQueueName` in `@workflow/world` — and the DevKit is a
+// declared dependency of THIS package and not of `aai-server`, so a second
+// spelling on that side is exactly the copy this subpath exists to prevent.
+//
+// The PLATFORM needs all three. The two PATTERNS cross as strings because its
+// delivery claim applies them inside Postgres, splitting the due set into the
+// orchestration messages it serializes per run and the step messages it fans out
+// (`claimDue` in `aai-server/workflow-queue-store.ts`) — a `RegExp` would not
+// survive the trip into SQL. `queueNameKind` is the same grammar for the enqueue
+// HANDLER, which refuses a name it cannot classify before the row is stored; that
+// refusal is what makes the claim's two patterns exhaustive over the table and so
+// is the reason it needs no third, fall-back case.
+export {
+  queueNameKind,
+  STEP_QUEUE_NAME_PATTERN,
+  WORKFLOW_QUEUE_NAME_PATTERN,
+} from "./workflow-queue-dispatch.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
 export {

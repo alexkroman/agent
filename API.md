@@ -7302,8 +7302,10 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
+    stepCode?: string | undefined;
     telephony?: boolean | undefined;
     uploadBroker?: string | undefined;
+    workflowCode?: string | undefined;
 }
 
 // @public
@@ -8287,6 +8289,9 @@ export const PRESENCE_LOCK_OBJECT = 1;
 
 export { publishStepEnv }
 
+// @internal
+export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined;
+
 // @public
 type ReservedDb = Db & {
     release(): void;
@@ -8461,6 +8466,9 @@ type StateSyncSession = {
     recordPush(json: string): void;
 };
 
+// @internal
+export const STEP_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_step_.+$";
+
 // @public
 type StorageFn = (...args: unknown[]) => Promise<unknown>;
 
@@ -8598,6 +8606,9 @@ export const WORKFLOW_CALLBACK_ROUTES: {
 
 // @internal
 export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
+
+// @internal
+export const WORKFLOW_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_workflow_.+$";
 
 // @internal
 export type WorkflowSurface = {

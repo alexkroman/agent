@@ -83,8 +83,10 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
+    stepCode?: string | undefined;
     telephony?: boolean | undefined;
     uploadBroker?: string | undefined;
+    workflowCode?: string | undefined;
 }
 
 // @public

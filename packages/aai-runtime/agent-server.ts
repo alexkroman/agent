@@ -40,11 +40,27 @@
  */
 
 import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
+import { publishStepEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
 import { type AgentServer, createServer, type PassthroughServerOptions } from "./server.ts";
 import { agentServerEnv } from "./server-env.ts";
+import {
+  createWorkflowSurface,
+  handleWorkflowRequest,
+  type WorkflowSurface,
+} from "./workflow-serve.ts";
+import { configureWorkflowWorld, startWorkflowWorldIfDeclared } from "./workflow-world.ts";
+
+/**
+ * What `createServer().listen()` binds when given no port.
+ *
+ * Read here only to decide whether the workflow world can be configured BEFORE
+ * the bind — see {@link createAgentServer}'s `listen`. It is deliberately not a
+ * second default: the arguments are forwarded untouched.
+ */
+const DEFAULT_LISTEN_PORT = 3000;
 
 /** Configuration for {@link createAgentServer}. */
 // An interface rather than an intersection: TypeDoc documents inherited
@@ -101,6 +117,30 @@ export interface AgentServerOptions extends PassthroughServerOptions {
    * field that quietly does nothing.
    */
   publicUrl?: string | undefined;
+  /**
+   * The compiled workflow surface, as the two strings `aai build` leaves on the
+   * worker bundle — `__aaiWorkflowCode` and `__aaiStepCode`.
+   *
+   * **Durable workflows do not work self-hosted without these**, and until they
+   * existed nothing self-hosted passed them, so nothing self-hosted ran a
+   * workflow. A `"use workflow"` body has to go through the DevKit compiler; the
+   * CLI does that at build time and carries the result as DATA on the bundle
+   * (`aai-cli/worker-bundler.ts`), because a deployed guest is handed one ESM
+   * string and cannot compile anything. `aai dev` and the guest harness both read
+   * the pair off the bundle and hand it to `createWorkflowSurface`; this door is
+   * the third, and the scaffold's `server.mjs` is what passes them.
+   *
+   * Absent — a project with no `workflows/` directory, which is most of them —
+   * and no surface is mounted and no world is started, which is the same
+   * behaviour as before this option existed.
+   *
+   * Both or neither: `createWorkflowSurface` treats one without the other as "no
+   * workflows", since the flow bundle and the step registrations are two halves
+   * of one artifact.
+   */
+  workflowCode?: string | undefined;
+  /** See {@link AgentServerOptions.workflowCode} — the step half of the pair. */
+  stepCode?: string | undefined;
   /**
    * What this server's front door IS — see `ServerOptions.page`. Defaults to
    * the agent's own `page`, so declaring `page: "static"` on the agent is
@@ -171,6 +211,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     page,
     telephony,
     uploadBroker,
+    workflowCode,
+    stepCode,
     ...hooks
   } = options;
   const runtime = createRuntime({
@@ -178,7 +220,19 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     env,
     ...omitUndefined({ providerEnv, db, publicUrl, logger: hooks.logger }),
   });
-  return createServer({
+
+  /**
+   * The compiled surface, once {@link AgentServer.listen} has built it.
+   *
+   * Read through the closure rather than captured, because the `request` hook
+   * below is installed while this is still undefined: the surface cannot be built
+   * until the world is configured, and the world cannot be configured until the
+   * port is known. Same reason `createServer` reads its workflow engine through a
+   * getter.
+   */
+  let surface: WorkflowSurface | undefined;
+
+  const server = createServer({
     runtime,
     // The agent's env, MINUS the host-mode gate: `createServer` reads the two
     // route tokens and `DATABASE_URL` out of it, and `agentServerEnv` carries
@@ -200,5 +254,76 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // instead is how a fourth one added to that bag reaches the other front
     // door and silently not this one.
     ...hooks,
+    // The DevKit's `flow` and `step` callback routes, mounted exactly as
+    // `aai dev` mounts them. This is what EXECUTES a durable run: the world
+    // dispatches each hop by dialling back into this server, so without the hook
+    // a run is accepted and then sits `pending` forever.
+    //
+    // Composed with the caller's own hook rather than replacing it — a
+    // self-hoster adding an HTTP surface of their own must not silently turn
+    // workflows off. The workflow handler goes FIRST because its paths are the
+    // DevKit's reserved `/.well-known/workflow/v1/*` prefix, which no embedder
+    // has a claim on; it returns false for everything else, so an unclaimed
+    // request still reaches the caller's hook.
+    request: (req, res, url, method) =>
+      handleWorkflowRequest(surface, req, res, url, method) ||
+      (hooks.request?.(req, res, url, method) ?? false),
   });
+
+  /**
+   * Configure the world, build the surface, and start the world — the sequence
+   * `aai dev` and the guest harness each run, and which this door ran none of.
+   *
+   * The ORDER is the whole content of it, and it is `_dev-server.ts`'s:
+   * `configureWorkflowWorld` writes the env the DevKit resolves a world from, and
+   * `createWorkflowSurface` imports `workflow/runtime`, which reads it. Backwards,
+   * a project with a `DATABASE_URL` silently takes the local world and writes its
+   * runs to a directory that dies with the process.
+   *
+   * `publishStepEnv(env)` in between publishes what a `"use step"` body reads
+   * with `stepEnv()` — the AGENT env, not `providerEnv`, so a step sees exactly
+   * what `.env` declares and cannot come to depend on a shell-exported key that
+   * will not exist after a deploy.
+   */
+  async function startWorkflows(port: number): Promise<void> {
+    // Nothing to serve, so nothing to configure. `createWorkflowSurface` applies
+    // the same both-or-neither rule, but returning EARLY is what keeps this door
+    // inert for the agents that declare no workflows — which is most of them:
+    // `configureWorkflowWorld` writes `WORKFLOW_TARGET_WORLD`,
+    // `WORKFLOW_LOCAL_BASE_URL` and the data dir into `process.env`, and doing
+    // that for every `listen()` would both pick a world nobody asked for and leak
+    // those keys across a test file (`unstubEnvs` only undoes `vi.stubEnv`).
+    if (!(workflowCode && stepCode)) return;
+    const world = configureWorkflowWorld({ databaseUrl: env.DATABASE_URL, port });
+    publishStepEnv(env);
+    surface = await createWorkflowSurface(workflowCode, stepCode);
+    await startWorkflowWorldIfDeclared(surface !== undefined, world);
+  }
+
+  return {
+    ...server,
+    get port() {
+      return server.port;
+    },
+    // The arguments are FORWARDED rather than re-defaulted, so this door and the
+    // one underneath cannot disagree about what `listen()` with no port means —
+    // `createServer` owns that default (3000), and restating it here is the kind
+    // of second copy that drifts. Reading `port` out of the tuple is only for the
+    // ordering decision below.
+    async listen(...args: Parameters<AgentServer["listen"]>) {
+      const [port = DEFAULT_LISTEN_PORT] = args;
+      // BEFORE binding whenever the port is known, so no request can reach a
+      // `getWorld()` that would resolve — and memoize — an unconfigured world.
+      //
+      // Port 0 is the exception and cannot be otherwise: the caller is asking the
+      // OS to choose, so the loopback base URL the local world dispatches its
+      // callbacks to is unknowable until the socket is bound. That case binds
+      // first and configures immediately after, which leaves a window no real
+      // deployment is in — `PORT=0` is a test convenience, and the e2e suite uses
+      // it precisely so concurrent servers cannot collide on a fixed port.
+      if (port !== 0) await startWorkflows(port);
+      await server.listen(...args);
+      if (port === 0) await startWorkflows(server.port ?? port);
+    },
+  };
 }
