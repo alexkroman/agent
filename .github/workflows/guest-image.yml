@@ -12,10 +12,20 @@
 # content-addressed, so an unchanged tree resolves to a tag that already exists
 # and every layer is a cache hit.
 #
-# NOT a dependency of Deploy yet, because `GUEST_IMAGE_REGISTRY` is unset in
-# production and the server still builds its own Modal snapshot image (see
-# guest-image-source.ts). When that default flips, Deploy must `needs:` this —
-# otherwise a deploy can ship a server asking for an image this never pushed.
+# Actions cannot `needs:` across workflows, so Deploy does not depend on this
+# run — it WAITS for the image instead (`scripts/wait-for-guest-image.mjs`,
+# which polls for the tag this checkout's spawns will ask for and fails the
+# deploy at its deadline). That waiter is the ordering, and it is only as good
+# as its `GUEST_IMAGE_REGISTRY`: the variable lives in the Modal secret
+# `aai-server` in production and is DECLARED in `deploy.yml`'s step, because the
+# script no-ops when it is unset and CI cannot read a Modal secret. Keep the
+# registry expression in the two workflows identical.
+#
+# This comment used to say `GUEST_IMAGE_REGISTRY` was unset in production and
+# that Deploy must `needs:` this workflow "when that default flips". The flip
+# happened; the waiter was written and left unarmed. The comment then read as a
+# hazard already handled, which is why three deploys shipped over an image this
+# workflow had failed to push.
 #
 # ONE-TIME MANUAL STEP: a GHCR package is PRIVATE on first push. After the first
 # successful run, set the `aai-guest-harness` package to public in the repo's

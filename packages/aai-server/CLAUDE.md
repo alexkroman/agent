@@ -781,16 +781,18 @@ Two rules from it that a reader of THIS package needs in front of them:
   which Node 26 features may be used where — a rule `tsc` cannot enforce.** See
   "The guest image's Node major, and the split floor it creates" in
   `packages/aai-guest/CLAUDE.md`.
-- **A pinned harness image resolves from EITHER source, and for one release it
-  did not.** `guest-image-source.ts` concluded from the TAG being
-  source-independent that "a pin recorded under one source resolves under the
-  other". The tag is; the IMAGE is not — each source publishes to one place only
-  — so setting `GUEST_IMAGE_REGISTRY` orphaned every `harness_image_tag` that
-  predated it, and every agent deployed before the flip answered
-  `503 agent unavailable`. Modal reports a `skopeo` manifest miss as
-  `Image build for im-<id> failed with the exception:` and then NOTHING, so the
-  log named no tag and no remedy. `resolvePinAcrossSources` (which carries the
-  account, and an END CONDITION) probes Modal first and logs the reference.
+- **Modal reports a `skopeo` manifest miss as `Image build for im-<id> failed
+  with the exception:` and then NOTHING** — no tag, no registry, no remedy — one
+  outage per image path so far. PINNED: the TAG is source-independent, the IMAGE
+  is not (each source publishes one place only), so setting
+  `GUEST_IMAGE_REGISTRY` orphaned every earlier `harness_image_tag`;
+  `resolvePinAcrossSources` probes Modal first and logs the ref. CURRENT — a
+  studio session, a first-ever spawn — logged nothing, that promise having been
+  kept on the pinned half alone, and its create escaped
+  `SandboxUnavailableError`, both spawners calling `createGuestSandbox` OUTSIDE
+  the terminating `try`: a 500 where the taxonomy owes a 503. See
+  `translateSpawnFailure`, and `guest-image-wait-gate.test.ts` for the gate that
+  no-op'd over a broken publisher for three green deploys.
 - **The harness, the build toolchain, and the V8 compile cache are baked into
   a snapshot image**, not written per spawn — with the toolchain LOCKED by a
   committed lockfile so one `harness_image_tag` can only ever mean one tree.

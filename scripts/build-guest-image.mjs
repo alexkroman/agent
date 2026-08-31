@@ -65,7 +65,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { extractString, extractStringArray } from "./build-guest-image-extract.mjs";
+import { extractString, extractStringArray, read } from "./build-guest-image-extract.mjs";
 import { packWorkspaceSdk } from "./build-guest-image-sdk.mjs";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
