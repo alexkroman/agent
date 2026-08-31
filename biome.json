@@ -32,6 +32,7 @@
         "useImportExtensions": "error",
         "noGlobalDirnameFilename": "error",
         "noPrivateImports": "error",
+        "noUndeclaredVariables": "error",
         "noUnresolvedImports": "off"
       },
       "style": {

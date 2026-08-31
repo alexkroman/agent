@@ -268,11 +268,36 @@ export function registryImageSource<TImage>(deps: {
 }): GuestImageSource<TImage> {
   const { client, baseTag, registry } = deps;
   const tagOf = createHarnessTagger(baseTag);
+  /**
+   * Tags whose reference has already been logged.
+   *
+   * The reference is logged for the CURRENT image too, not only for a pin. The
+   * module doc's promise — "every pull reference is therefore logged where it is
+   * still known" — was kept by `resolvePinAcrossSources` alone, so it held only
+   * on the PINNED path. A studio session carries no pin and neither does a
+   * first-ever agent spawn, so the commonest miss of all was the one that logged
+   * nothing: `manifest unknown` arrives from Modal with no tag attached, as an
+   * `Image build for im-<id> failed with the exception:` and then an EMPTY
+   * exception, and the operator got that one line naming neither the tag, the
+   * registry, nor `SANDBOX_IGNORE_IMAGE_PINS`. The reference had to be read out
+   * of Modal's own build log instead.
+   *
+   * Once per distinct tag rather than once per spawn: the tag changes only with
+   * the harness build, so this is a line per harness version per process, and a
+   * per-spawn line on the hot cold-start path would be noise that buries itself.
+   */
+  const logged = new Set<string>();
   // `fromRegistry` is synchronous and lazy; a public registry needs no Secret,
   // which is why none is threaded through. Do not add the parameter until a
   // private registry actually uses it.
-  const pull = (tag: string): Promise<TImage> =>
-    Promise.resolve(client.images.fromRegistry(guestImageRef(registry, tag)));
+  const pull = (tag: string): Promise<TImage> => {
+    const ref = guestImageRef(registry, tag);
+    if (!logged.has(tag)) {
+      logged.add(tag);
+      log.info("pulling the current guest image from the registry", { tag, ref });
+    }
+    return Promise.resolve(client.images.fromRegistry(ref));
+  };
   return {
     kind: "registry",
     reason: `${GUEST_IMAGE_REGISTRY_ENV}=${registry}`,

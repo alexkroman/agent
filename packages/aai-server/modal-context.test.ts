@@ -9,8 +9,9 @@
 
 import { AlreadyExistsError, type Image } from "modal";
 import { describe, expect, it, vi } from "vitest";
-import { resolveSpawnImage, translateCreateError } from "./modal-context.ts";
+import { resolveSpawnImage, translateCreateError, translateSpawnFailure } from "./modal-context.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
+import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { captureLogs } from "./test-utils.ts";
 
 /** A stand-in for a Modal `Image`, identified only by tag. */
@@ -38,6 +39,46 @@ describe("translateCreateError", () => {
   it("does not translate an UNNAMED create — it has no race to lose", () => {
     const dup = new AlreadyExistsError("taken");
     expect(translateCreateError(dup, undefined)).toBe(dup);
+  });
+});
+
+describe("translateSpawnFailure", () => {
+  // Only the TRANSLATION is covered here, not its wiring: `createGuestSandbox`
+  // is built inside `buildContext`, which constructs a real Modal client and
+  // takes no injection seam, so the `catch` that calls this is unreachable from
+  // a unit test. Same limitation as `translateCreateError` above and for the
+  // same reason — worth knowing rather than assuming, since a call site that
+  // stopped calling this would restore the 500 with every test still green.
+  it("turns an image-pull failure into the retryable 503 taxonomy", () => {
+    // The production shape: Modal answers a skopeo manifest miss with
+    // `Image build for im-<id> failed with the exception:` and no exception
+    // text. Untranslated it reached the studio route as a bare Error and was
+    // answered `500 Internal server error`, which the client cannot tell from
+    // "this project is broken".
+    const err = translateSpawnFailure(
+      new Error("Image build for im-1QEtdKQbUNtElIneTbMDj6 failed with the exception:"),
+    );
+
+    expect(err).toBeInstanceOf(SandboxUnavailableError);
+    // The technical message survives for the log; only the WIRE body is
+    // authored elsewhere.
+    expect((err as Error).message).toContain("Image build for im-");
+    expect(((err as Error).cause as Error).message).toContain("failed with the exception");
+  });
+
+  it("passes a name-taken error through — it is a routing signal, not an answer", () => {
+    // `awaitBrokeredUrl` catches this to return to the sandbox directory and
+    // route to the peer that won. Wrapped, it would become a 503 and
+    // reintroduce the duplicate spawn the name exists to prevent.
+    const taken = new SandboxNameTakenError("agent-abc-v1");
+
+    expect(translateSpawnFailure(taken)).toBe(taken);
+  });
+
+  it("does not double-wrap one it already produced", () => {
+    const already = new SandboxUnavailableError("Modal sandbox spawn failed: nope");
+
+    expect(translateSpawnFailure(already)).toBe(already);
   });
 });
 

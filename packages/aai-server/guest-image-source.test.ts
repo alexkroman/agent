@@ -209,6 +209,40 @@ describe("registryImageSource", () => {
     expect(fromRegistry).toHaveLength(2);
   });
 
+  test("logs the CURRENT pull reference — the miss that named nothing", async () => {
+    // `fromRegistry` is lazy, so an unpublished image fails two layers down at
+    // sandbox CREATE, and Modal reports a skopeo manifest miss as
+    // `Image build for im-<id> failed with the exception:` with an EMPTY
+    // exception. The module doc promised "every pull reference is logged where
+    // it is still known"; `resolvePinAcrossSources` kept that for PINS only, so
+    // a studio session — which carries no pin — logged nothing at all, and the
+    // reference had to be read out of Modal's own build log.
+    const { client } = fakeClient();
+    const source = registryImageSource({ client, baseTag: BASE_TAG, registry: "ghcr.io/owner" });
+    const code = "export const harness = 1;\n";
+
+    await source.current(code);
+
+    const line = logs.all().find((l) => l.msg.includes("current guest image"));
+    expect(line?.level).toBe("info");
+    // The REFERENCE, not just the tag: the registry half is what tells an
+    // operator which of the two sources they are looking at.
+    expect(line?.ctx?.ref).toBe(`ghcr.io/owner/${localHarnessImageTag(BASE_TAG, code)}`);
+  });
+
+  test("logs it once per harness build, not once per spawn", async () => {
+    // A line per cold spawn on the hot path buries itself. The tag changes only
+    // with the harness build, so once per distinct tag is the whole signal.
+    const { client } = fakeClient();
+    const source = registryImageSource({ client, baseTag: BASE_TAG, registry: "ghcr.io/owner" });
+
+    await source.current("a");
+    await source.current("a");
+    await source.current("b");
+
+    expect(logs.all().filter((l) => l.msg.includes("current guest image"))).toHaveLength(2);
+  });
+
   test("prepare is a declared no-op — there is nothing to prewarm", async () => {
     const { client, fromRegistry, fromName } = fakeClient();
     const source = registryImageSource({ client, baseTag: BASE_TAG, registry: "r" });

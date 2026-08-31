@@ -35,6 +35,7 @@ import {
   guestSandboxResources,
 } from "./modal-sandbox-env.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
+import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { type SandboxRole, sandboxTags } from "./sandbox-role.ts";
 
 const log = createLogger("modal");
@@ -287,6 +288,45 @@ export function translateCreateError(err: unknown, name: string | undefined): un
 }
 
 /**
+ * Turn any spawn-path failure into the taxonomy this platform answers with.
+ *
+ * Every spawn failure is a {@link SandboxUnavailableError} — a marker class, not
+ * a message: `createErrorHandler` turns it into a **retryable 503** carrying one
+ * authored sentence, and logs the technical message at `warn` with the whole
+ * `cause` chain. Keeping the two apart is what lets the log stay specific while
+ * the wire body leaks nothing.
+ *
+ * ## What escaped, and what it cost
+ *
+ * Both spawners wrap their own bodies that way, and NEITHER could wrap the image
+ * resolution or the create: their `catch` calls `sb.terminate()`, so those two
+ * steps have to sit outside it — and a failure there escaped untranslated. On
+ * 2026-08-31 an unpublished registry image reached the studio session route as a
+ * bare `Error`: `http unhandled error`, `500 Internal server error`. The studio
+ * client retries 5xx and then shows that sentence, so the one distinction a user
+ * needs — "try again in a minute" versus "this project is broken" — was exactly
+ * the one destroyed. It is the same gap the studio path had before it was given
+ * the agent path's taxonomy; it had survived one layer down.
+ *
+ * ## `SandboxNameTakenError` passes THROUGH
+ *
+ * It is a routing signal `awaitBrokeredUrl` catches to return to the sandbox
+ * directory — never an answer to a client. Wrapping it would turn the peer route
+ * into a 503 and reintroduce the duplicate-sandbox spawn the name exists to
+ * prevent.
+ *
+ * Returns the error to throw rather than throwing, so the call site reads as a
+ * plain rethrow — same shape as {@link translateCreateError} above.
+ */
+export function translateSpawnFailure(err: unknown): unknown {
+  if (err instanceof SandboxNameTakenError) return err;
+  if (err instanceof SandboxUnavailableError) return err;
+  return new SandboxUnavailableError(`Modal guest sandbox create failed: ${errorMessage(err)}`, {
+    cause: err,
+  });
+}
+
+/**
  * Which image a spawn starts from: the deploy's PIN when it has one, else the
  * current harness image.
  *
@@ -358,12 +398,19 @@ async function buildContext(): Promise<ModalSpawnContext> {
 
   return {
     async createGuestSandbox(code, params, imageTag) {
-      const image = await resolveSpawnImage({
-        imageTag,
-        fromName: images.byTag,
-        current: () => images.current(code),
-      });
-      return create(image, params);
+      // Image resolution and create are the two steps NEITHER spawner can wrap:
+      // their `catch` calls `sb.terminate()`, so the create has to sit outside
+      // it. See translateSpawnFailure for what escaped and what it cost.
+      try {
+        const image = await resolveSpawnImage({
+          imageTag,
+          fromName: images.byTag,
+          current: () => images.current(code),
+        });
+        return await create(image, params);
+      } catch (err) {
+        throw translateSpawnFailure(err);
+      }
     },
     async prepareGuestImage(code) {
       await images.prepare(code);

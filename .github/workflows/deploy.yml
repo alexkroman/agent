@@ -166,10 +166,32 @@ jobs:
       # `guest-image.yml` workflow that triggers on this same push — and Actions
       # cannot `needs:` across workflows, so nothing orders the two. A deploy
       # that wins the race ships a server whose every sandbox spawn 404s on the
-      # pull. A no-op (loudly) while the variable is unset, because production
-      # then builds its own Modal snapshot image and there is nothing to wait for.
+      # pull.
+      #
+      # `GUEST_IMAGE_REGISTRY` is DECLARED here rather than read from the
+      # ambient environment, and that is the whole reason this step gates
+      # anything. The script no-ops (loudly) when the variable is unset, and it
+      # was set nowhere in this repository — production reads it from the Modal
+      # secret `aai-server`, which CI cannot see. So the gate asked "is the
+      # registry path in use?" of a different environment than the one that
+      # answers it at spawn time, and returned 0 every time. Three deploys
+      # shipped green over an image the publisher had never pushed (its
+      # `resolveSdkSpecs` threw `read is not defined`), and every studio session
+      # and cold agent spawn 404'd on the pull for four hours.
+      #
+      # It must keep naming the SAME registry as `guest-image.yml`'s publish
+      # step, hence the identical `github.repository_owner` expression: this
+      # waits for a reference the other workflow pushes, and two different
+      # owners would wait forever on an image that exists.
+      #
+      # Deliberately NOT conditional on production's value being set: the point
+      # is to fail a deploy whose image is missing, and a gate that can only run
+      # when some other system is configured a particular way is the shape that
+      # failed here.
       - name: Wait for the guest image to be readable from the registry
         timeout-minutes: 20
+        env:
+          GUEST_IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: node scripts/wait-for-guest-image.mjs
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
