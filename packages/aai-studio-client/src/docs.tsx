@@ -112,6 +112,13 @@ function DeployedDocs({ bearer, project, deployedSlug, slug }: DocsPaneProps & {
       <AgentApiDocs
         slug={slug}
         token={secretNames.includes(WORKFLOW_API_TOKEN_SECRET)}
+        // No `/workflows/*` route table HERE. The studio has a Workflows pane
+        // of its own beside this one, and a table of twelve URLs is a reference
+        // for somebody writing a client rather than an answer to what a studio
+        // user is asking of their own agent — see `AgentApiDocsProps`. The
+        // public page, whose reader has a slug and an integration to write,
+        // keeps them.
+        workflowRoutes={false}
         baseBlurb={
           deployedSlug === undefined
             ? "Your preview agent — it has its own runs and its own database, separate from production. Publish to get a stable URL."

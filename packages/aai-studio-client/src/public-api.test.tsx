@@ -44,8 +44,10 @@ describe("PublicApiPage", () => {
 
     await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
     // Generated, so the field name is this deployment's — the same guarantee
-    // the studio pane makes, which is the point of sharing the body.
-    expect(screen.getAllByText(/"topic":"<topic>"/).length).toBe(2);
+    // the studio pane makes, which is the point of sharing the body. Three
+    // copies: the run card's SDK call and its `curl` alternate, plus the form
+    // card's shell alternate, which re-emits the whole pastable command.
+    expect(screen.getAllByText(/"topic":"<topic>"/).length).toBe(3);
     // The slug is the heading: it is known without a fetch, where the agent's
     // own name arrives with `client-config` and would leave the page titleless
     // for as long as a sandbox takes to boot.
@@ -80,6 +82,27 @@ describe("PublicApiPage", () => {
     expect(screen.getByText(`${window.location.origin}/demo/phone`)).toBeTruthy();
     expect(screen.queryByText("Twilio")).toBeNull();
     expect(screen.queryByText("Telnyx")).toBeNull();
+  });
+
+  test("and DOES carry the /workflows route table, which the studio pane drops", async () => {
+    // The one asymmetry that runs the other way, and it is a decision rather
+    // than an oversight. A studio reader has a Workflows tab beside the API
+    // pane and is asking what their own agent answers; this page's reader has a
+    // slug and an integration to write, so the twelve-row reference is what
+    // they came for. See `AgentApiDocsProps.workflowRoutes`.
+    stubFetch(agent());
+    renderWithClient(<PublicApiPage slug="demo" />);
+
+    const origin = window.location.origin;
+    await waitFor(() => expect(screen.getByText(`${origin}/demo/workflows`)).toBeTruthy());
+    // Rows nothing else on the page spells. `/workflows/runs` is deliberately
+    // NOT one to assert (two rows: the POST that starts a run and the GET that
+    // lists recent ones), nor `/runs/:runId` (the GET and the DELETE).
+    expect(screen.getByText(`${origin}/demo/workflows/runs/:runId/events`)).toBeTruthy();
+    expect(screen.getByText(`${origin}/demo/workflows/uploads/:id/info`)).toBeTruthy();
+    // Each row indexes into the client the page is written against, rather
+    // than only naming a URL.
+    expect(screen.getByText("agent.list()")).toBeTruthy();
   });
 
   test("names the agent's own sentence when the workflow listing is refused", async () => {

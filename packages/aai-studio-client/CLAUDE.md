@@ -430,6 +430,61 @@ so every piece of per-project state resets on a switch with no effect to do it.
       bracket is a shell redirect; and the bearer reaches the upload command as
       well as the start, since closing the workflow API closes the upload
       routes with it.
+  - **And it maps every FORM CONTROL to the JSON that sets it**
+    (`docs-forms.tsx`, the "Every form field, over HTTP" card, over
+    `docs-form-fields.ts` and `docs-field-snippets.ts`). A workflow app's front
+    door is a form, and the pane documented the form's DESTINATION while leaving
+    the correspondence to inference: that one control is one property of the run
+    `input`, which control a declared property renders as, and that exactly one
+    of them is not a value at all. A reader could work most of it out; the place
+    inference reliably fails is the file, because an upload property is a plain
+    `string` in the schema — so the generated body reads as "type the recording
+    here" for the one field where the caller has two calls to make.
+    - **The classification is `<WorkflowFields>`'s, not a second opinion.**
+      `classify()` mirrors `SchemaField` in
+      aai-ui/components/workflow-fields.tsx, ORDER included — a declared upload
+      beats everything, then `enum`, then `boolean`, then `number`/`integer`,
+      then `string`, and anything else gets no control. A copy that drifted
+      would name a control the reader cannot find on their own page, so
+      `docs-form-fields.test.ts` pins the order rather than only the cases.
+    - **Every control is listed, even the ones this agent declares nothing
+      of** — deliberately the opposite of the rule the rest of the pane follows.
+      The vocabulary IS the answer to "what can I send this thing", and a table
+      that dropped `<CheckboxField>` because today's schema has no boolean would
+      teach that the API cannot take one. What is GENERATED is the example on
+      each row (this agent's own property and its own sampled value, from the
+      same `sampleInput` the run bodies use), and each row says which of the two
+      it is showing — a placeholder read as a real field name is how somebody
+      pastes a 400. `<TextAreaField>` is never matched on purpose: it is a
+      string like a text field, so one property would appear on two rows
+      claiming to be two controls, and only one is what the generated form
+      renders.
+    - **The annotated snippet is written against ONE REAL workflow** — the one
+      declaring the most fields (`fieldsWorkflow`). A synthesized every-kind
+      body would be the more complete table and an unpastable command: the
+      properties would come from two workflows and the run would 400 on the
+      first one the schema does not know. It is one entry point
+      (`fieldSnippets`) rather than two exported builders, because both halves
+      are present together or not at all and two `string | undefined`s would
+      leave the caller narrowing a pair that cannot disagree.
+    - Why it is not the run card's own snippet: `sdkStart`/`curlStart` send the
+      same body and are right for their card — the shortest runnable thing, one
+      line — and a compact literal has nowhere to put the correspondence. So the
+      body is expanded one property per line with the control it is, the
+      comment column ALIGNED (it is a two-column table that happens to compile;
+      a ragged edge reads as trailing remarks), and the upload rendered as the
+      expression reading the id off the upload above it.
+  - **The STUDIO pane carries no `/workflows/*` route table; the public page
+    does** (`AgentApiDocsProps.workflowRoutes`, `false` from `docs.tsx`). A
+    twelve-row route list is a reference for somebody writing a client, and a
+    studio reader is being shown what their own agent answers — with a Workflows
+    tab beside this pane for the subsystem itself. The public page's reader has
+    a slug and an integration to write, so the table is what they came for. The
+    asymmetry is the feature, and nothing is hidden by it: every route is still
+    shown being CALLED in the snippets, and the openness sentence (whether
+    `AAI_WORKFLOW_API_TOKEN` closes the API — the one thing on this half only
+    the studio can say, since it reads the project's secrets) FOLLOWS the
+    reader into the "Running a workflow" blurb rather than going with the rows.
   - The builders are a separate module from the pane for the reason every
     extracted-logic module here is one: a snippet whose field is spelled
     differently than the workflow declared it renders perfectly and 400s when

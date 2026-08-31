@@ -112,7 +112,7 @@ export function curlConfig(base: string): string {
  * the point of showing it is that the bytes go in ONCE and the run carries the
  * handle — two properties fed by one file is the shape that makes that visible.
  */
-function uploadVar(property: string): string {
+export function uploadVar(property: string): string {
   const camel = property.replace(/[-_\s]+(.)/g, (_, c: string) => c.toUpperCase());
   return `${camel.replace(/^(.)/, (c) => c.toLowerCase())}Upload`;
 }
@@ -158,7 +158,7 @@ function uploadIdVar(property: string): string {
 }
 
 /** The `agent.upload(...)` lines a workflow's declared uploads need, if any. */
-function uploadLines(workflow: WorkflowSummary): string[] {
+export function uploadLines(workflow: WorkflowSummary): string[] {
   const uploads = workflow.uploads ?? [];
   if (uploads.length === 0) return [];
   return [
