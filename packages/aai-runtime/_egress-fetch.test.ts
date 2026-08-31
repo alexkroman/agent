@@ -1,0 +1,175 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The runtime's own egress must NOT be `globalThis.fetch`, and nothing observable
+ * says so.
+ *
+ * That is the whole reason this file exists, and it is the same argument
+ * `step-fetch.test.ts` makes one layer over: dropping the pool leaves a `fetch`
+ * that works perfectly, over HTTP/2, and fails only as a fan-out against a live
+ * platform under concurrency. It shipped that way — the upload broker's byte
+ * operations, the operator-bucket ones beside them, and every platform RPC were on
+ * the global while the flag that fixes exactly this sat one module away — so the
+ * DEFAULT each of those three picks is asserted directly, not just the pool's
+ * options.
+ */
+
+import { describe, expect, test, vi } from "vitest";
+
+const agentOptions: unknown[] = [];
+/** One entry per pool `close()` — a drain is DRAINED, never destroyed. */
+const closes: number[] = [];
+const requests: { url: unknown; init: Record<string, unknown> }[] = [];
+
+vi.mock("undici", () => ({
+  Agent: class {
+    constructor(options: unknown) {
+      agentOptions.push(options);
+    }
+    async close(): Promise<void> {
+      closes.push(agentOptions.length);
+    }
+  },
+  fetch: vi.fn(async (url: unknown, init: Record<string, unknown>) => {
+    requests.push({ url, init });
+    return new Response("ok", { headers: { "content-length": "2" } });
+  }),
+}));
+
+const { closeEgressFetch, egressFetch } = await import("./_egress-fetch.ts");
+const { createBrokeredUploadBlobs } = await import("./_upload-blobs-brokered.ts");
+const { createHttpUploadBlobs } = await import("./_upload-blobs-http.ts");
+const { platformPost } = await import("./platform-rpc.ts");
+const { createPlatformStreamReader } = await import("./workflow-platform-storage.ts");
+
+/** Forget any pool a previous test built, so `agentOptions` counts this test's. */
+async function fresh(): Promise<void> {
+  await closeEgressFetch();
+  agentOptions.length = 0;
+  requests.length = 0;
+  closes.length = 0;
+}
+
+describe("egressFetch", () => {
+  test("pins HTTP/1.1 — the one option the whole module exists for", async () => {
+    await fresh();
+    await egressFetch("https://platform.test/a");
+    expect(agentOptions).toHaveLength(1);
+    expect(agentOptions[0]).toMatchObject({ allowH2: false });
+  });
+
+  test("LEAVES undici's timeouts alone, unlike the step pool", async () => {
+    await fresh();
+    await egressFetch("https://platform.test/a");
+    // The step pool sets both to 0 because a step owns its own deadline. Here the
+    // callers bound the REQUEST and nothing bounds draining the body afterwards,
+    // which is exactly what a window `read` does — so undici's body-inactivity
+    // timeout is the only limit that path has, and turning it off would remove it.
+    expect(agentOptions[0]).not.toHaveProperty("headersTimeout");
+    expect(agentOptions[0]).not.toHaveProperty("bodyTimeout");
+  });
+
+  test("builds ONE pool for the process, so bursts seconds apart share it", async () => {
+    await fresh();
+    await egressFetch("https://platform.test/a");
+    await egressFetch("https://platform.test/b");
+    await egressFetch("https://bucket.test/c");
+    expect(agentOptions).toHaveLength(1);
+  });
+
+  test("attaches that pool's dispatcher to every request", async () => {
+    await fresh();
+    await egressFetch("https://platform.test/x", { method: "HEAD" });
+    expect(requests[0]?.init.dispatcher).toBeDefined();
+    expect(requests[0]?.init.method).toBe("HEAD");
+  });
+
+  test("a close RESETS rather than poisons, so a held reference keeps working", async () => {
+    await fresh();
+    await egressFetch("https://platform.test/a");
+    await closeEgressFetch();
+    // The same function object, used again after the pool it had was closed.
+    await egressFetch("https://platform.test/b");
+    expect(agentOptions).toHaveLength(2);
+    expect(requests).toHaveLength(2);
+    // Drained, not destroyed — a request already in flight is somebody's.
+    expect(closes).toEqual([1]);
+  });
+
+  test("closing without ever fetching is a no-op, not a pool", async () => {
+    await fresh();
+    await expect(closeEgressFetch()).resolves.toBeUndefined();
+    expect(agentOptions).toHaveLength(0);
+    expect(closes).toEqual([]);
+  });
+});
+
+/**
+ * The three callers, and the assertion that matters: the DEFAULT is the pool.
+ *
+ * `globalThis.fetch` is spied rather than merely absent from the expectation,
+ * because "did not use the pool" and "used the global" are the same observation
+ * from the outside and only one of them is the bug.
+ */
+describe("the runtime's own callers default to it", () => {
+  /** Fail the test if anything reaches the global. */
+  function forbidGlobalFetch(): ReturnType<typeof vi.spyOn> {
+    return vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      throw new Error("reached globalThis.fetch — see _egress-fetch.ts");
+    });
+  }
+
+  test("the upload broker's byte operations — the ones that failed in production", async () => {
+    await fresh();
+    const global = forbidGlobalFetch();
+    const blobs = createBrokeredUploadBlobs({ base: "https://platform.test/slug" });
+    await blobs.size("prefix/upl_1/0");
+    expect(global).not.toHaveBeenCalled();
+    expect(agentOptions[0]).toMatchObject({ allowH2: false });
+    expect(requests[0]?.init.method).toBe("HEAD");
+  });
+
+  test("the operator's own bucket, reached the same way", async () => {
+    await fresh();
+    const global = forbidGlobalFetch();
+    const blobs = createHttpUploadBlobs({
+      url: "https://ref.supabase.test",
+      serviceKey: "k",
+      bucket: "b",
+    });
+    await blobs.size("prefix/upl_1/0");
+    expect(global).not.toHaveBeenCalled();
+    expect(agentOptions[0]).toMatchObject({ allowH2: false });
+  });
+
+  test("every platform RPC, which shared the broker's origin and its reset", async () => {
+    await fresh();
+    const global = forbidGlobalFetch();
+    await platformPost(
+      { base: "https://platform.test/slug", token: "t" },
+      { route: "/workflow-storage", body: "{}", label: "storage", timeoutMs: 1000 },
+    );
+    expect(global).not.toHaveBeenCalled();
+    expect(agentOptions[0]).toMatchObject({ allowH2: false });
+  });
+
+  test("the run-event STREAM read, which holds the connection open across all of it", async () => {
+    await fresh();
+    const global = forbidGlobalFetch();
+    const read = createPlatformStreamReader({ base: "https://platform.test/slug", token: "t" });
+    await read("runs/wrun_1/events");
+    expect(global).not.toHaveBeenCalled();
+    expect(agentOptions[0]).toMatchObject({ allowH2: false });
+    // The one the report showed failing beside the claim's 500s: a long-lived
+    // stream and a burst of byte probes on ONE multiplexed connection.
+    expect(String(requests[0]?.url)).toContain("name=runs%2Fwrun_1%2Fevents");
+  });
+
+  test("an explicit fetch still wins, so a spec can fake one", async () => {
+    await fresh();
+    const fake = vi.fn(async () => new Response(null, { status: 404 }));
+    const blobs = createBrokeredUploadBlobs({ base: "https://platform.test/slug", fetch: fake });
+    expect(await blobs.size("prefix/upl_1/0")).toBeUndefined();
+    expect(fake).toHaveBeenCalledTimes(1);
+    expect(agentOptions).toHaveLength(0);
+  });
+});

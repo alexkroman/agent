@@ -91,5 +91,8 @@
   "rule27_explicitDisposeCall": {
     "packages/aai-studio-server/studio-session-idle.ts": 1,
     "packages/aai-ui/define-client.tsx": 1
+  },
+  "rule29_globalFetchInRuntime": {
+    "packages/aai-runtime/providers/_openai-stream-repair.ts": 1
   }
 }

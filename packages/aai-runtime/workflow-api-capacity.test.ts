@@ -11,8 +11,10 @@
 
 import { describe, expect, test } from "vitest";
 import {
+  isCallerGone,
   isDiskFull,
   isInsufficientResources,
+  isTransportFailure,
   workflowApiErrorStatus,
 } from "./workflow-api-http.ts";
 
@@ -135,5 +137,104 @@ describe("workflowApiErrorStatus on a full disk", () => {
     // the disk's answer is the one that must not be retried.
     const both = Object.assign(new Error("write", { cause: enospc }), { code: "53300" });
     expect(workflowApiErrorStatus(both)).toMatchObject({ status: 507 });
+  });
+});
+
+/**
+ * A hop OUT of this agent failing is a 503, and it used to be an opaque 500.
+ *
+ * The production shape: a deployed guest's part claim probes the bucket through
+ * the platform, `fetch` rejected with `TypeError: fetch failed`, and the router
+ * answered `500 Internal server error` — six times, ~40 s each, the browser
+ * re-sending 8 MB windows it had already stored into the same fault.
+ */
+describe("workflowApiErrorStatus on a transport failure", () => {
+  /** What `fetch` really throws: a bare TypeError with the code two hops down. */
+  const fetchFailed = new TypeError("fetch failed", {
+    cause: new Error("other side closed", {
+      cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+    }),
+  });
+
+  test("finds the code down the cause chain, where fetch leaves it", () => {
+    // The top-level value carries no code at all — which is exactly why this
+    // reached the router as an unnamed rejection.
+    expect(fetchFailed).not.toHaveProperty("code");
+    expect(isTransportFailure(fetchFailed)).toBe(true);
+  });
+
+  test.each([
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "EPIPE",
+    "EAI_AGAIN",
+    "UND_ERR_SOCKET",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "ERR_HTTP2_STREAM_ERROR",
+    "ERR_HTTP2_GOAWAY_SESSION",
+  ])("names %s", (code) => {
+    expect(isTransportFailure(Object.assign(new Error("x"), { code }))).toBe(true);
+  });
+
+  test("ENOTFOUND is NOT one, because a bad hostname does not clear", () => {
+    // Advising a retry on a misconfiguration hides a permanent fault behind a
+    // client's loop forever. `EAI_AGAIN` above is the temporary twin.
+    const err = Object.assign(new Error("getaddrinfo"), { code: "ENOTFOUND" });
+    expect(isTransportFailure(err)).toBe(false);
+    expect(workflowApiErrorStatus(err)).toBe(false);
+  });
+
+  test("answers 503 with a Retry-After, which the 500 could not carry", () => {
+    const mapped = workflowApiErrorStatus(fetchFailed);
+    expect(mapped).toMatchObject({ status: 503, retryAfter: "1" });
+    if (mapped === false) expect.fail("a transport failure must map to a status");
+    // Names the hop rather than the agent: the request was fine.
+    expect(mapped.error).toContain("could not reach");
+  });
+
+  test("does not shadow the two entries with better advice", () => {
+    // Both a full disk and an exhausted pool surface transport-shaped codes on
+    // their way out, and each has a specific answer this one cannot give.
+    const enospc = Object.assign(new Error("write"), { code: "ENOSPC" });
+    const disk = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("reset", { cause: enospc }), { code: "ECONNRESET" }),
+    });
+    expect(workflowApiErrorStatus(disk)).toMatchObject({ status: 507 });
+    const pool = new TypeError("fetch failed", {
+      cause: Object.assign(
+        new Error("too many connections", {
+          cause: Object.assign(new Error("reset"), { code: "ECONNRESET" }),
+        }),
+        { code: "53300" },
+      ),
+    });
+    expect(workflowApiErrorStatus(pool)).toMatchObject({ status: 503 });
+  });
+
+  test("a CALLER hanging up is still the caller, not a transport failure", () => {
+    // `isCallerGone` reads the TOP-level value and is checked first; this reads a
+    // wrapped cause. An ECONNRESET on the inbound socket must not become a 503
+    // written to a socket that has closed.
+    const aborted = Object.assign(new Error("aborted"), { code: "ECONNRESET" });
+    expect(isCallerGone(aborted)).toBe(true);
+    expect(isCallerGone(fetchFailed)).toBe(false);
+    // The one that matters, and the A/B that found it: `claimUnder` runs the
+    // status table BEFORE its own caller-gone branch, so an unguarded entry
+    // answered 503 into a closed socket and swallowed the debug line that keeps
+    // navigations-away out of the error log.
+    expect(workflowApiErrorStatus(aborted)).toBe(false);
+  });
+
+  test("survives a cause CYCLE rather than hanging", () => {
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    Object.defineProperty(a, "cause", { value: b });
+    expect(isTransportFailure(a)).toBe(false);
+  });
+
+  test("declines anything it cannot name, so a real fault stays a 500", () => {
+    expect(isTransportFailure(new Error("something broke"))).toBe(false);
+    expect(isTransportFailure(undefined)).toBe(false);
+    expect(workflowApiErrorStatus(new Error("something broke"))).toBe(false);
   });
 });

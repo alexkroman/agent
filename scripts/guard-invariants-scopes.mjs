@@ -243,3 +243,91 @@ export const GUEST_SURFACE_PATHSPECS = [
   ...RUNTIME_ROUTE_SOURCES,
   "packages/aai/sdk/workflow-api-client.ts",
 ];
+
+/**
+ * Rule 29's scope: the RUNTIME's own shipped source.
+ *
+ * `packages/aai-runtime` and nothing else, and the narrowness is the rule being
+ * honest rather than the rule being weak. The remedy — `egressFetch`, the pooled
+ * HTTP/1.1 fetch in `_egress-fetch.ts` — is a module of THIS package, so a
+ * `globalThis.fetch` fallback in `aai-cli`, `aai-server` or `aai-studio-server`
+ * (there are five, all single small JSON calls made outside a guest) has no
+ * remedy to point at, and a baselined occurrence with no fix available is a
+ * rule that trains readers to ignore it.
+ *
+ * Widen it the day one of those packages grows a pool of its own. What makes
+ * this the right corpus TODAY is that the fan-out shape lives here: a part
+ * claim's 32 concurrent bucket probes, a workflow's window reads, and a
+ * long-lived run-event stream, all to one origin.
+ *
+ * Both pathspec shapes for the trap this file opens with — a git pathspec is
+ * fnmatch WITHOUT `FNM_PATHNAME`, so the literal slash in `**` + `/` + `*.ts`
+ * makes a subdirectory mandatory, and most of this package's modules sit at the
+ * top level. `git ls-files` it rather than reading it.
+ */
+export const RUNTIME_EGRESS_PATHSPECS = [
+  "packages/aai-runtime/*.ts",
+  "packages/aai-runtime/**/*.ts",
+  ":!packages/aai-runtime/dist/**",
+  ":!packages/aai-runtime/*.test.ts",
+  ":!packages/aai-runtime/**/*.test.ts",
+  ":!packages/aai-runtime/_*test-utils.ts",
+  ":!packages/aai-runtime/contracts/**",
+];
+
+/**
+ * The floors under every scan — see `_ratchet.mjs` on why they measure the
+ * CORPUS.
+ *
+ * SEVEN of them, because the rules walk seven different scopes and only two
+ * were floored. Each number is set well below the measured actual, recorded beside
+ * it, so ordinary movement in the tree does not trip a floor while a scan that
+ * has gone blind does.
+ *
+ * The three that were missing are the interesting ones. Rule 11's is a THIRD
+ * source corpus (shipped source only) that neither existing call covered, and
+ * it is the Windows-portability rule — the one whose regressions are invisible
+ * on every machine that runs CI. Rules 12 and 13 derive their corpus from
+ * `git ls-files`, which exits **0** on a pathspec matching nothing where
+ * `git grep` exits 1: that asymmetry is exactly why the grep-based rules
+ * announced their own blindness and these two could not.
+ *
+ * A TABLE rather than seven near-identical calls, so a new scope is one row and
+ * cannot be added without a floor — which is how three of these came to be
+ * missing: they were spelled inline on a rule, where nobody counting floors
+ * would see them.
+ *
+ * **It lives HERE rather than in the gate, beside the corpora it floors**, which
+ * is the same argument one level up: the gate reached the 500-line cap and this
+ * was the seam the file already had, and a floor spelled in a different module
+ * from the pathspecs it measures is how three of them went missing in the first
+ * place. Data only — this module stays side-effect-free so the gate's own spec
+ * can import it without running a scan.
+ */
+export const SCAN_CORPORA = [
+  { what: "the line-rule source scan", pathspecs: SOURCE_PATHSPECS, minFiles: 800 }, // ~1,530
+  { what: "rules 11+27's shipped-source scan", pathspecs: SHIPPED_SOURCE_PATHSPECS, minFiles: 600 }, // 1,224
+  // An explicit file list, so every entry must resolve — the floor IS its length.
+  {
+    what: "rule 16's session-surface file list",
+    pathspecs: SESSION_SURFACE_PATHS,
+    minFiles: SESSION_SURFACE_PATHS.length,
+  },
+  { what: "rule 12's guest HTTP-surface scan", pathspecs: GUEST_SURFACE_PATHSPECS, minFiles: 20 }, // 32
+  { what: "rule 13's template scan", pathspecs: TEMPLATE_PATHSPECS, minFiles: 100 }, // 175
+  {
+    what: "rule 26's shipped workflow-body scan",
+    pathspecs: WORKFLOW_BODY_PATHSPECS,
+    minFiles: 15,
+  }, // 24
+  // Both pathspec shapes, because `scripts/**/*.mjs` alone resolves SIX files
+  // and misses every gate at the top level — see SCRIPT_PATHSPECS.
+  { what: "rule 28's gate-script scan", pathspecs: SCRIPT_PATHSPECS, minFiles: 50 }, // 67
+  // Both pathspec shapes again — most of this package's modules sit at the top
+  // level, so the doublestar form alone misses them.
+  {
+    what: "rule 29's runtime-egress scan",
+    pathspecs: RUNTIME_EGRESS_PATHSPECS,
+    minFiles: 120,
+  }, // 208
+];

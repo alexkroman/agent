@@ -27,6 +27,7 @@ import {
   publishUploadReader,
 } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { closeEgressFetch } from "./_egress-fetch.ts";
 import { openAppDb } from "./app-db.ts";
 import type { CloseableDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -210,7 +211,7 @@ export function installWorkflowSupport(opts: {
       // Settled rather than awaited in sequence, and never rejecting: this runs
       // inside `AgentServer.close()`, where one pool refusing to drain must not
       // leave the other one open — nor turn an orderly shutdown into a throw.
-      await Promise.allSettled([db?.close(), stepFetch.close()]);
+      await Promise.allSettled([db?.close(), stepFetch.close(), closeEgressFetch()]);
     },
   };
 }

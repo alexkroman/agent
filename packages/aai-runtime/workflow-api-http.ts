@@ -333,10 +333,78 @@ export function isDiskFull(err: unknown): boolean {
 }
 
 /**
+ * Codes that mean this agent could not REACH something, rather than being asked
+ * something it cannot do.
+ *
+ * A closed vocabulary, matched exactly, for the reason {@link isDiskFull} matches
+ * `ENOSPC` exactly. `ENOTFOUND` is deliberately ABSENT: a hostname that does not
+ * resolve is a misconfiguration, and answering "retry shortly" to it would hide a
+ * permanent fault behind a client's retry loop forever. `EAI_AGAIN` — the
+ * temporary DNS failure — is here for the mirror-image reason.
+ */
+const TRANSPORT_FAILURE_CODES: ReadonlySet<string> = new Set([
+  // libuv, i.e. the socket
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ECONNABORTED",
+  "EPIPE",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENETRESET",
+  "EAI_AGAIN",
+  // undici
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  // an HTTP/2 stream or connection error, which is what `_egress-fetch.ts` exists
+  // to stop this runtime meeting — kept because the guest's own egress is not the
+  // only hop between here and a bucket.
+  "ERR_HTTP2_STREAM_ERROR",
+  "ERR_HTTP2_STREAM_CANCEL",
+  "ERR_HTTP2_GOAWAY_SESSION",
+  "ERR_HTTP2_SESSION_ERROR",
+]);
+
+/**
+ * Did this request fail because a hop OUT of this agent failed?
+ *
+ * **The failure this exists for reached a client as `500 Internal server
+ * error`.** A deployed guest's every byte operation and every platform call is a
+ * request out of a sandbox (`_upload-blobs-brokered.ts`, `platform-rpc.ts`), and
+ * `fetch` rejecting with `TypeError: fetch failed` — no status, the real code two
+ * `cause` hops down — arrived at the router as an unnamed rejection. Observed in
+ * production on a part claim: six consecutive
+ * `PUT …/workflows/uploads/<id>/parts -> 500`, each ~40 s, each one making the
+ * browser re-send 8 MB windows it had already stored, into the same fault.
+ *
+ * A 500 is the wrong answer to that on all three counts the table above is about.
+ * It says the agent is broken when the agent is fine; it tells an operator
+ * nothing, which is the whole finding of the `isInsufficientResources` entry; and
+ * it carries no `Retry-After`, so a whole fan-out comes back at once. Same
+ * `cause` walk as its two neighbours, and for the same reason — the code is
+ * almost never on the value that was thrown.
+ *
+ * NOT the caller hanging up: {@link isCallerGone} reads that off the TOP-level
+ * value and is checked first, where this reads a wrapped cause.
+ */
+export function isTransportFailure(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (isRecord(cur) && !seen.has(cur)) {
+    seen.add(cur);
+    if (typeof cur.code === "string" && TRANSPORT_FAILURE_CODES.has(cur.code)) return true;
+    cur = cur.cause;
+  }
+  return false;
+}
+
+/**
  * Map a thrown value to a workflow-API status, or `false` to let it be a 500.
  *
  * Here rather than inline in `createWorkflowApi`'s `onError` because it is a
- * TABLE — three entries now — and because they are about one distinction: a
+ * TABLE — four entries now — and because they are about one distinction: a
  * caller has to tell "my request was wrong", "come back shortly", "come back
  * when someone has freed space" and "the agent is broken" apart, and only the
  * last is worth paging anyone about.
@@ -382,6 +450,31 @@ export function workflowApiErrorStatus(
     return {
       status: 503,
       error: "the agent's database is at capacity, retry shortly",
+      retryAfter: "1",
+    };
+  }
+  if (!isCallerGone(err) && isTransportFailure(err)) {
+    // 503, not 500: a hop out of this agent failed, and the request itself was
+    // fine. See `isTransportFailure` for the production 500s this replaces.
+    //
+    // Checked LAST of the 5xx entries: a full disk and an exhausted connection
+    // pool both surface transport-shaped codes on their way out, and each of those
+    // has advice this one cannot give.
+    //
+    // And it DECLINES a caller that hung up, which is not politeness: `claimUnder`
+    // runs this before its own `isCallerGone` branch, so without the guard an
+    // inbound `ECONNRESET` would be answered 503 — into the socket that closed —
+    // and the debug line that keeps 30 navigations-away out of the error log would
+    // never run. `isCallerGone` reads the TOP-level value where this walks a
+    // wrapped cause; the guard is what keeps that distinction true at the seam.
+    //
+    // `Retry-After` is short for the reason the capacity entry's is — a reset
+    // clears on the next connection, not on a human timescale — and it is the half
+    // a 500 could not carry, so a claim's concurrent probes back off together
+    // instead of re-issuing into the same fault.
+    return {
+      status: 503,
+      error: "the agent could not reach the platform, retry shortly",
       retryAfter: "1",
     };
   }
