@@ -22,7 +22,7 @@
  * agent editing either side sees it without knowing the gate exists.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { DEFAULT_SANDBOX_IMAGE } from "./modal-context.ts";
@@ -101,15 +101,54 @@ describe("guest-image.Dockerfile agrees with the recipe constants", () => {
   test("the layers are ordered cheapest-to-invalidate last", () => {
     const apt = at(/apt-get install/);
     const npmCi = at(/npm ci/);
+    const tarballs = at(/^COPY sdk-tarballs\//);
     const sdk = at(/npm install --prefix/);
     const harness = at(/^COPY dist\/harness\.mjs/);
     const warmup = at(/AAI_GUEST_WARMUP=1/);
     expect(apt).toBeGreaterThanOrEqual(0);
     // Every step must come after the one whose cache it must not invalidate.
     expect(npmCi).toBeGreaterThan(apt);
-    expect(sdk).toBeGreaterThan(npmCi);
+    // The tarballs change on every LOCAL build, so they must land after the
+    // committed-lockfile install and before the SDK install that reads them.
+    expect(tarballs).toBeGreaterThan(npmCi);
+    expect(sdk).toBeGreaterThan(tarballs);
     expect(harness).toBeGreaterThan(sdk);
     expect(warmup).toBeGreaterThan(harness);
+  });
+
+  test("the tarball directory the COPY needs is COMMITTED, not just gitignored", () => {
+    // A Dockerfile cannot branch, so that COPY runs for a published build too —
+    // and `COPY` of a path outside the context fails the build. The `.tgz` files
+    // are build output and ignored; the directory has to survive a clean clone,
+    // which is what the `.gitkeep` is for. Deleting it breaks every image build
+    // including production's, with an error naming a context-relative path.
+    const keep = path.join(import.meta.dirname, "..", "aai-guest", "sdk-tarballs", ".gitkeep");
+    expect(existsSync(keep)).toBe(true);
+  });
+
+  test("`predev` rebuilds the image, so a dev server cannot serve a stale microVM", () => {
+    // The wiring, not the logic. A microVM boots a BAKED image, so a stale one
+    // serves code nobody in the tree wrote — and it is invisible from every
+    // angle a developer checks: `ensure-guest-harness.mjs` reports a fresh
+    // `dist/harness.mjs`, the bundle contains the change, and the guest runs
+    // neither. That cost two investigations, the second on an image two days
+    // old. A wiring line silently dropped from a package script is exactly the
+    // failure this repo keeps finding, so it is asserted rather than trusted.
+    const studio = JSON.parse(
+      readFileSync(
+        path.join(import.meta.dirname, "..", "aai-studio-server", "package.json"),
+        "utf-8",
+      ),
+    ) as { scripts?: Record<string, string> };
+    const predev = studio.scripts?.predev ?? "";
+    expect(predev).toContain("ensure-guest-image.mjs");
+    // AFTER the harness build, which produces the input it fingerprints.
+    expect(predev.indexOf("ensure-guest-image.mjs")).toBeGreaterThan(
+      predev.indexOf("ensure-guest-harness.mjs"),
+    );
+    expect(
+      existsSync(path.join(import.meta.dirname, "..", "..", "scripts", "ensure-guest-image.mjs")),
+    ).toBe(true);
   });
 
   test("the compile-cache warm-up is best-effort", () => {

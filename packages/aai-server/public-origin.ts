@@ -45,7 +45,7 @@
  * is what a deployment that mints durable URLs owes.
  */
 
-import { isLocalDev } from "./_boot.ts";
+import { isLocalDev, platformOwnPort } from "./_boot.ts";
 import { HOST_ALIAS } from "./microsandbox-network.ts";
 
 /** Strip the port. IPv6 hosts keep their brackets (`[::1]:8080`). */
@@ -243,6 +243,63 @@ export function agentPublicBaseUrl(
   const configured = env.AAI_PUBLIC_ORIGIN?.trim().replace(/\/+$/, "");
   const origin = configured || observedOrigin;
   return origin ? `${origin}/${slug}` : undefined;
+}
+
+/**
+ * The base URL a GUEST dials this platform on — the origin plus its slug.
+ *
+ * The twin of {@link agentPublicBaseUrl} and deliberately a different function,
+ * because the two answer opposite questions about the same value:
+ *
+ * | | {@link agentPublicBaseUrl} | this |
+ * | --- | --- | --- |
+ * | Claim | "a third party reaches the agent here" | "the guest reaches the platform here" |
+ * | Reader | `ctx.workflows.publicWebhookUrl` | `resolvePlatformQueue` |
+ * | Must be | resolvable from the internet | resolvable from inside the sandbox |
+ *
+ * One key served both, and under the `microsandbox` backend the two requirements
+ * point in OPPOSITE directions — which is the bug this split closes. The public
+ * one must not be rewritten to `HOST_ALIAS` (a webhook URL minted from it is
+ * unreachable for exactly the caller it is for), so it was not, so the guest
+ * dialled the loopback origin it was handed — and `GUEST_PORT` and
+ * `DEFAULT_PORT` are BOTH 8080, so `127.0.0.1:8080` inside the microVM is the
+ * guest's own harness. Every platform call looped back to its caller and the
+ * guest's own 404 handler answered it:
+ *
+ *     guest stderr: POST /<slug>/workflow-storage 404
+ *     guest stderr: POST /<slug>/workflow-enqueue 404
+ *     Workflow API request failed { error: 'storage runs.list answered HTTP 404 }
+ *
+ * That is the same 404-to-itself `platformHostPort` in microsandbox-sandbox.ts
+ * documents for an in-guest `aai deploy`, and the same one the retired
+ * local-container backend was retired over — third occurrence, and the first
+ * where the dial side has a name of its own. `guestReachableUrl` is what
+ * rewrites it.
+ *
+ * **In local dev it is DERIVED, so nothing has to be configured.** A dial base
+ * does not need to be publicly correct, only reachable — so this server's OWN
+ * port is both a better source than an observed `Host` header and an
+ * authoritative one where the header is a caller's guess. That is why
+ * `pnpm dev:aai-server` and a studio preview need no `AAI_PUBLIC_ORIGIN` for
+ * durable runs to work, and it takes this value off
+ * {@link rememberPublicOrigin} entirely: a preview's platform calls no longer
+ * depend on which request happened to be observed last.
+ *
+ * Outside local dev it is {@link agentPublicBaseUrl} unchanged — a Modal guest
+ * reaches the platform over the internet on the very origin a third party uses,
+ * so there is nothing to derive and `AAI_PUBLIC_ORIGIN` stays the one source.
+ */
+export function agentPlatformBaseUrl(
+  slug: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  // Operator config still wins, for the reason it wins everywhere else: a local
+  // run pointed at a tunnel has SAID where this platform is, and deriving over
+  // the top of that would be this function guessing against an explicit answer.
+  if (!env.AAI_PUBLIC_ORIGIN?.trim() && isLocalDev(env)) {
+    return `http://127.0.0.1:${platformOwnPort(env)}/${slug}`;
+  }
+  return agentPublicBaseUrl(slug, env);
 }
 
 /**

@@ -90,8 +90,10 @@ export async function guestSlug(c: AppContext): Promise<string> {
  * called `durable: true` and make it memory, which is the failure that guide
  * calls worse than admitting memory up front. What it leaves open is one
  * REACHABLE configuration — a memory-tier platform (no `SUPABASE_DB_URL`) in
- * local dev, where `rememberPublicOrigin` supplies the origin that puts
- * `AAI_PUBLIC_BASE_URL` in a guest's boot env — where every deployed agent picks
+ * local dev, where `agentPlatformBaseUrl` derives an origin from this server's own
+ * port and so ALWAYS puts `AAI_PLATFORM_BASE_URL` in a guest's boot env (it used
+ * to need `rememberPublicOrigin` to have observed one, which made this
+ * order-dependent rather than absent) — where every deployed agent picks
  * these backends and every session start then fails on a 501. The fix is a
  * deployment refusing to spawn a guest it cannot serve, or a boot env that omits
  * the platform keys on that tier; it is not a fallback, and it is not this

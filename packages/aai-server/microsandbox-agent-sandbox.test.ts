@@ -152,15 +152,32 @@ describe("spawnMicrosandboxAgentServer", () => {
     await handle.shutdown();
   });
 
-  it("rewrites the UPLOAD BROKER url but not the public base, and opens the platform's port", async () => {
-    // The two boot keys carry the SAME value under different names because
+  it("rewrites both DIALED urls but not the public base, and opens the platform's port", async () => {
+    // The three boot keys carry the same value under different names because
     // their claims differ (see `agentBootEnv`), and under a microVM those
     // claims point OPPOSITE ways: the guest DIALS the broker (`writeUpload`
-    // PUTs byte windows to `<broker>/uploads/<id>/<offset>`), while the public
-    // base is what a third party is handed by `publicWebhookUrl`. Unrewritten,
-    // the broker was the guest's own harness — every workflow upload failed,
-    // measured in a real guest as `TypeError: fetch failed`, and slowly: a
-    // guest dialing itself hangs out the 120s byte-op timeout.
+    // PUTs byte windows to `<broker>/uploads/<id>/<offset>`) and DIALS the
+    // platform base (every `resolvePlatformQueue` call — run storage, the
+    // queue, session state, upload records), while the public base is what a
+    // third party is handed by `publicWebhookUrl`.
+    //
+    // Unrewritten, each pointed at the guest's own harness, and the two failed
+    // differently. The broker failed SLOWLY — no `/uploads` route there, so
+    // every workflow upload hung out the 120s byte-op timeout rather than
+    // refusing, measured in a real guest as `TypeError: fetch failed`. The
+    // platform base failed INSTANTLY and looked like a platform bug: the
+    // guest's own 404 handler answered its own request, so a studio preview
+    // logged `POST /<slug>/workflow-storage 404` beside
+    // `storage runs.list answered HTTP 404: {"error":"Not found"}` and every
+    // durable run died at its first `events.create`.
+    //
+    // Asserted HERE rather than only in the scenario tier, and the difference
+    // is worth stating: that suite argues the three loopback bugs before this
+    // one were "invisible to the unit suite BY CONSTRUCTION… the params were
+    // correct — the defect was in what they meant to a real VM". This one is
+    // not in that class. The param itself was wrong, so it is catchable on
+    // every PR — where `AAI_REQUIRE_MICROSANDBOX` is set nowhere and that tier
+    // skips.
     vi.stubEnv("AAI_PUBLIC_ORIGIN", "http://127.0.0.1:8080");
     const fake = makeCtx();
     const handle = await spawnMicrosandboxAgentServer(
@@ -177,8 +194,12 @@ describe("spawnMicrosandboxAgentServer", () => {
 
     const env = fake.created[0]?.env ?? {};
     expect(env.AAI_UPLOAD_BROKER_URL).toBe(`http://${HOST_ALIAS}:8080/demo`);
+    expect(env.AAI_PLATFORM_BASE_URL).toBe(`http://${HOST_ALIAS}:8080/demo`);
     // NOT rewritten: the alias resolves nowhere outside a microVM, so a webhook
-    // URL minted from it is unreachable for exactly the caller it is for.
+    // URL minted from it is unreachable for exactly the caller it is for. This
+    // assertion was once the ONLY check on this key, which is how the bug
+    // above survived review — it is true about the third-party claim and says
+    // nothing about the dial claim that used to share the key.
     expect(env.AAI_PUBLIC_BASE_URL).toBe("http://127.0.0.1:8080/demo");
     // 8080 is the platform's own port, and it arrives via the rewrite rather
     // than a maintained list — the studio spawner adds `platformHostPort()` by

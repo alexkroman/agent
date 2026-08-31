@@ -5,6 +5,8 @@
  * starting a server.
  */
 
+import { DEFAULT_PORT } from "./constants.ts";
+
 export function requireEnv<const K extends string>(
   env: NodeJS.ProcessEnv,
   keys: readonly K[],
@@ -29,9 +31,12 @@ export function requireEnv<const K extends string>(
  *   studio SSE, and both failures are quiet.
  * - **`AAI_PUBLIC_ORIGIN`** — the newest, and the one whose requirement changed
  *   under it. It was needed for durable webhook URLs and nothing else, so it was
- *   optional; it is now the only source of `agentPublicBaseUrl`, which a guest
- *   receives as `AAI_PUBLIC_BASE_URL`, which is half of what
- *   `resolvePlatformQueue` needs to install the PLATFORM workflow world. Unset,
+ *   optional; it is now the only source of `agentPlatformBaseUrl`, which a guest
+ *   receives as `AAI_PLATFORM_BASE_URL`, which is half of what
+ *   `resolvePlatformQueue` needs to install the PLATFORM workflow world. Required
+ *   only on a PLATFORM tier: local dev derives that one value from this server's
+ *   own port, because a dial base has to be reachable rather than publicly
+ *   correct. Unset,
  *   every durable run falls back to the DevKit's LOCAL world — queue in the
  *   guest's memory, state in a directory, both gone with the sandbox — while the
  *   platform's own queue table is never read. The trace is one `console.error` in
@@ -179,4 +184,24 @@ export function resolvePort(raw: string | undefined, fallback: number): number {
     throw new Error(`Invalid PORT "${raw}" — expected an integer between 0 and 65535`);
   }
   return port;
+}
+
+/**
+ * The port THIS platform process listens on — the same answer its entry point
+ * gave `listen`.
+ *
+ * A function rather than a value read at each site because it is asked twice
+ * for reasons that have nothing to do with booting: the microsandbox network
+ * policy has to OPEN this port for a guest, and `agentPlatformBaseUrl`
+ * has to build the URL that guest DIALS on it. Both used to parse `PORT`
+ * themselves, and they disagreed — the policy fell back to
+ * {@link DEFAULT_PORT} on garbage while the entry point threw, so a
+ * mis-injected `PORT` opened 8080 for a server that never bound it.
+ *
+ * Unreachable in practice for the spawn-time callers: the entry point resolved
+ * the same value before it could accept the request that spawns anything, so a
+ * throw here means a `PORT` that changed under a running process.
+ */
+export function platformOwnPort(env: NodeJS.ProcessEnv = process.env): number {
+  return resolvePort(env.PORT, DEFAULT_PORT);
 }

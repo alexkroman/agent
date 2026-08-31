@@ -54,7 +54,7 @@
 import { access } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
-import { DEFAULT_PORT } from "./constants.ts";
+import { platformOwnPort } from "./_boot.ts";
 import { guestImageRef, guestImageRegistry } from "./guest-image-source.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { guestTokenFor } from "./guest-token.ts";
@@ -180,10 +180,17 @@ export function guestBuildEnv(): Record<string, string> {
  * the dev server, so Publish 404s against itself". Opening the port is half the
  * answer; the other half is rewriting the origin the guest is TOLD to use, which
  * is `guestReachableUrl` in sandbox-vm.ts.
+ *
+ * The parse itself is `platformOwnPort` now, shared with `agentPlatformBaseUrl`:
+ * one of them opened this port and the other builds the URL a guest dials on it,
+ * and they used to disagree on a mis-injected `PORT` — this one fell back to
+ * `DEFAULT_PORT` where the entry point threw, so the policy opened 8080 for
+ * a server that never bound it. This wrapper stays because the NAME is the
+ * argument at this call site: the port being opened is the platform's, not the
+ * guest's.
  */
 function platformHostPort(env: NodeJS.ProcessEnv = process.env): number {
-  const parsed = Number(env.PORT);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_PORT;
+  return platformOwnPort(env);
 }
 
 // ── Structural sandbox types (injectable — unit tests boot no microVM) ───────

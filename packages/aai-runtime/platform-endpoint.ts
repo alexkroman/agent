@@ -69,12 +69,18 @@ export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTE
  */
 export type PlatformEndpoint = {
   /**
-   * The agent's public base URL, slug included — `AAI_PUBLIC_BASE_URL`.
+   * Where the platform is dialable, slug included — `AAI_PLATFORM_BASE_URL`.
    *
    * The same value `_upload-blobs-brokered.ts` takes, and for the same reason: the
    * guest does not COMPOSE this URL, so it cannot name another app's slug even in
    * principle. The platform derives the tenant from the slug in the path and
    * verifies this sandbox's bearer against it.
+   *
+   * NOT `AAI_PUBLIC_BASE_URL`, which used to fill this slot and is a different
+   * claim — that one is what a third party is handed, so it must resolve from the
+   * INTERNET where this must resolve from inside the sandbox. Under a microVM
+   * backend the two are different strings and the public one is the guest itself;
+   * `workflow-platform-world.ts`'s `dialBase` is the reader and carries the rest.
    */
   base: string;
   /**

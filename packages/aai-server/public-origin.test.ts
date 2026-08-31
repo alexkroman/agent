@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, test } from "vitest";
 import {
+  agentPlatformBaseUrl,
   agentPublicBaseUrl,
   forgetObservedPublicOrigin,
   publicForwardedHeaders,
@@ -101,6 +102,52 @@ describe("publicForwardedHeaders", () => {
       host: "localhost:8080",
       proto: "http",
     });
+  });
+});
+
+describe("agentPlatformBaseUrl — the DIAL base, which is a different claim", () => {
+  beforeEach(() => {
+    forgetObservedPublicOrigin();
+  });
+
+  test("in LOCAL DEV it is derived from this server's OWN port, with nothing configured", () => {
+    // The regression. `agentPublicBaseUrl` is undefined here (no config, no
+    // observed request), so a guest used to boot with no platform base at all
+    // and fall silently onto the DevKit's LOCAL world; and once a request HAD
+    // been observed it got a value whose correctness depended on which request
+    // that was. Neither is a dial base. This server knows its own port, so it
+    // can simply say — which is what makes a studio preview work unconfigured.
+    expect(agentPublicBaseUrl("digest-desk", LOCAL)).toBeUndefined();
+    expect(agentPlatformBaseUrl("digest-desk", LOCAL)).toBe("http://127.0.0.1:8080/digest-desk");
+  });
+
+  test("it honours PORT, because the dial base has to name the port we BOUND", () => {
+    expect(agentPlatformBaseUrl("x", { ...LOCAL, PORT: "3000" })).toBe("http://127.0.0.1:3000/x");
+  });
+
+  test("it does NOT depend on an observed origin, forged or honest", () => {
+    // The whole reason to derive rather than observe: `rememberPublicOrigin` is
+    // fed by a caller-supplied Host on every request before any auth, and a
+    // guest is a caller too — the in-guest `aai deploy` POSTs back with
+    // `Host: host.microsandbox.internal:8080`, an alias resolvable only inside
+    // a microVM. Deriving takes this value out of that path entirely.
+    rememberPublicOrigin(onLoopback("/x/client-config"), LOCAL);
+    expect(agentPlatformBaseUrl("x", LOCAL)).toBe("http://127.0.0.1:8080/x");
+  });
+
+  test("configuration still wins, so a tunnel is not overridden by a guess", () => {
+    expect(agentPlatformBaseUrl("x", { ...LOCAL, AAI_PUBLIC_ORIGIN: "https://aai.example" })).toBe(
+      "https://aai.example/x",
+    );
+  });
+
+  test("outside local dev it IS the public base — a Modal guest dials the internet", () => {
+    // Nothing to derive there: the guest reaches the platform on the very
+    // origin a third party uses, so the two claims coincide and
+    // `AAI_PUBLIC_ORIGIN` stays the one source.
+    const prod = { AAI_PUBLIC_ORIGIN: "https://aai.example" };
+    expect(agentPlatformBaseUrl("x", prod)).toBe(agentPublicBaseUrl("x", prod));
+    expect(agentPlatformBaseUrl("x", {})).toBeUndefined();
   });
 });
 

@@ -48,7 +48,8 @@ export const HARNESS_ORPHAN_POLL_MS = 30_000;
 /**
  * Version of the AGENT-MODE guest contract: the exec-env boot convention
  * (AAI_GUEST_MODE / AAI_BUNDLE_PATH | AAI_BUNDLE_URL / AAI_BUNDLE_SHA256 /
- * AAI_AGENT_ENV_PATH / AAI_PUBLIC_BASE_URL) plus the token-gated `/manage/*`
+ * AAI_AGENT_ENV_PATH / AAI_PUBLIC_BASE_URL / AAI_PLATFORM_BASE_URL) plus the
+ * token-gated `/manage/*`
  * HTTP surface. Reported
  * by `GET /manage/status`. Agent sandboxes run the harness image PINNED at
  * deploy time, so the host may be newer than this harness — bump this on any
@@ -74,8 +75,26 @@ export const HARNESS_ORPHAN_POLL_MS = 30_000;
  * behaviour on an older pinned guest is that `ctx.workflows.publicWebhookUrl`
  * throws naming the option — the same answer as an unconfigured deployment, and
  * cured by a redeploy.
+ *
+ * v4 added `AAI_PLATFORM_BASE_URL` — where the PLATFORM is dialable, which v3
+ * had made `AAI_PUBLIC_BASE_URL` do as a second job. The two claims can require
+ * opposite values: the public one is handed to a third party so it must resolve
+ * from the internet, and this one is dialled from inside the sandbox so it must
+ * resolve from there. Under the `microsandbox` backend they are different
+ * strings, and the guest's own port is the platform's port — so a guest dialling
+ * the public value POSTed every platform call to ITSELF and its own 404 handler
+ * answered (`POST /<slug>/workflow-storage 404`, and every durable run dead at
+ * its first `events.create`). `aai-server/public-origin.ts`'s
+ * `agentPlatformBaseUrl` is the derivation and the argument.
+ *
+ * Additive, and needing no image comparison for the v3 reason: an older pinned
+ * harness ignores the new key, and `resolvePlatformQueue` falls back to
+ * `AAI_PUBLIC_BASE_URL` — which on every backend but microsandbox carries the
+ * identical value, so that guest keeps exactly the behaviour it had. What it
+ * does NOT get is the microVM fix, which is local-dev-only and cured by a
+ * redeploy.
  */
-export const GUEST_CONTRACT_VERSION = 3;
+export const GUEST_CONTRACT_VERSION = 4;
 
 /**
  * Wall-clock cap on fetching the worker bundle from `AAI_BUNDLE_URL`. Bounded

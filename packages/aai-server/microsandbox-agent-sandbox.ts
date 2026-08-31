@@ -19,10 +19,15 @@
 import { access } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { pollGuestHealth } from "./guest-readiness.ts";
 import { guestTokenFor } from "./guest-token.ts";
 import { createLogger } from "./logger.ts";
-import { rewriteLoopbackForGuest } from "./microsandbox-network.ts";
+import {
+  assertGuestCanReachItsEnv,
+  rewriteLoopbackForGuest,
+  runtimeMintedHostPorts,
+} from "./microsandbox-network.ts";
 import {
   DEFAULT_GUEST_CPUS,
   DEFAULT_GUEST_MEMORY_MIB,
@@ -100,29 +105,67 @@ export async function spawnMicrosandboxAgentServer(
       envPath: AGENT_ENV_REMOTE_PATH,
     });
 
-    // And `AAI_UPLOAD_BROKER_URL` is the THIRD URL in this boot env the guest
-    // DIALS: `writeUpload` PUTs every byte window to
-    // `<broker>/uploads/<id>/<offset>`. Its twin `AAI_PUBLIC_BASE_URL` carries
-    // the SAME value and is deliberately NOT rewritten — that one is what a
-    // third party is handed (`ctx.workflows.publicWebhookUrl`), so the alias
-    // would be unreachable for precisely the caller it exists for. Same value,
-    // opposite requirement; `agentBootEnv` argues why one key cannot serve both.
+    // The boot env holds TWO more URLs the guest DIALS, and both need the
+    // rewrite for the same reason the DSNs above do — `127.0.0.1` in a microVM
+    // is the VM:
     //
-    // Unrewritten, this pointed at the guest's own harness, which serves no
-    // `/uploads` route — so EVERY workflow upload failed, and failed slowly: a
-    // guest dialing itself hangs out `BYTE_OP_TIMEOUT_MS` (120s) per byte op
-    // rather than refusing. The port comes along with the rewrite, which is
-    // what opens the platform's own port for an agent guest at all — the studio
-    // spawner adds `platformHostPort()` by hand because a warm guest holds no
-    // DSN to derive one from; here the derivation covers it.
-    const broker =
-      boot.AAI_UPLOAD_BROKER_URL === undefined
-        ? { env: {}, hostPorts: [] }
-        : rewriteLoopbackForGuest({ AAI_UPLOAD_BROKER_URL: boot.AAI_UPLOAD_BROKER_URL });
+    // - `AAI_UPLOAD_BROKER_URL`: `writeUpload` PUTs every byte window to
+    //   `<broker>/uploads/<id>/<offset>`.
+    // - `AAI_PLATFORM_BASE_URL`: every platform RPC — run storage, the queue,
+    //   session state, upload records (`resolvePlatformQueue`).
+    //
+    // Their twin `AAI_PUBLIC_BASE_URL` is deliberately NOT rewritten: that one
+    // is what a third party is handed (`ctx.workflows.publicWebhookUrl`), so
+    // the alias would be unreachable for precisely the caller it exists for.
+    // Same value, opposite requirement — `agentBootEnv` argues why one key
+    // cannot serve all three, and `agentPlatformBaseUrl` carries what the
+    // missing third one cost.
+    //
+    // Unrewritten, each pointed at the guest's own harness. The broker's
+    // symptom was slow — no `/uploads` route there, so EVERY workflow upload
+    // hung out `BYTE_OP_TIMEOUT_MS` (120s) per byte op rather than refusing.
+    // The platform base's was instant and looked like a platform bug: the
+    // guest's own 404 handler answered its own request, so a preview logged
+    // `POST /<slug>/workflow-storage 404` beside
+    // `storage runs.list answered HTTP 404: {"error":"Not found"}` and every
+    // durable run died at its first `events.create`.
+    //
+    // The port comes along with the rewrite, which is what opens the platform's
+    // own port for an agent guest at all — the studio spawner adds
+    // `platformHostPort()` by hand because a warm guest holds no DSN to derive
+    // one from; here the derivation covers it.
+    const dialed = rewriteLoopbackForGuest(
+      omitUndefined({
+        AAI_UPLOAD_BROKER_URL: boot.AAI_UPLOAD_BROKER_URL,
+        AAI_PLATFORM_BASE_URL: boot.AAI_PLATFORM_BASE_URL,
+      }),
+    );
 
-    // One port set for the policy, from every value that was rewritten.
-    const hostPorts = [...new Set([...envPorts, ...worker.hostPorts, ...broker.hostPorts])].sort(
-      (a, b) => a - b,
+    // One port set for the policy: every value that was rewritten, PLUS the ports
+    // of URLs the platform mints at runtime rather than baking in. A signed upload
+    // read is the whole of that second class — the guest follows a 302 onto the
+    // platform's Supabase origin — and it is not derivable from any env value the
+    // guest holds, so the rewrite above cannot see it. Both halves are needed:
+    // with the URL rewritten and the port shut, and with the port open and the URL
+    // loopback, the guest reports the identical bare `fetch failed`.
+    const hostPorts = [
+      ...new Set([
+        ...envPorts,
+        ...worker.hostPorts,
+        ...dialed.hostPorts,
+        ...runtimeMintedHostPorts(),
+      ]),
+    ].sort((a, b) => a - b);
+
+    // BEFORE the sandbox exists, over the exec env AND the tenant env file — the
+    // two halves a guest reads, and the agent env is the one four of the five
+    // historical instances lived in. A throw here is the whole point: the
+    // alternative is the state this family of bugs lives in, a guest that boots,
+    // looks healthy, and dies at the first step that touches the unreachable
+    // thing with an error naming a fetch and nothing naming the key.
+    assertGuestCanReachItsEnv(
+      { ...guestExecBaseEnv(), ...guestBuildEnv(), ...boot, ...dialed.env, ...agentEnv },
+      hostPorts,
     );
 
     const sandbox = await ctx.createSandbox({
@@ -133,7 +176,7 @@ export async function spawnMicrosandboxAgentServer(
         ...guestExecBaseEnv(),
         ...guestBuildEnv(),
         ...boot,
-        ...broker.env,
+        ...dialed.env,
       },
       hostPorts,
       memoryLimitMiB: limits.memoryLimitMiB ?? DEFAULT_GUEST_MEMORY_MIB,

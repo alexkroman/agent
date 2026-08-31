@@ -775,6 +775,56 @@ have no `ToolContext` and so no way to reach `publicUrl` — a run that must EMA
 its own callback URL still composes it from a value the author supplies.
 `stepEnv`'s `Symbol.for` slot is the shape that would close it.
 
+## `AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials, not what the guest dials
+
+`resolvePlatformQueue` (`workflow-platform-world.ts`) resolves the base every
+platform client in this package POSTs to — run storage, the queue, session state,
+upload records — and it reads **`AAI_PLATFORM_BASE_URL`**, falling back to
+`AAI_PUBLIC_BASE_URL`. Those were one key, and the two claims can require
+OPPOSITE values:
+
+| | `AAI_PUBLIC_BASE_URL` | `AAI_PLATFORM_BASE_URL` |
+| --- | --- | --- |
+| Claim | "a third party reaches this agent here" | "the platform is dialable here" |
+| Reader | `publicUrl` → `publicWebhookUrl` (above) | `resolvePlatformQueue` |
+| Must resolve from | the internet | **inside the sandbox** |
+
+Under the platform's `microsandbox` backend they are different strings, and the
+collision was total rather than partial: the guest's port and the platform's are
+both 8080, so `127.0.0.1:8080` inside a microVM is the guest's own harness rather
+than a closed port. Every platform call was POSTed to the caller itself and
+answered by `server.ts`'s own 404 handler —
+
+```text
+guest [microsandbox:64953] stderr: POST /<slug>/workflow-storage 404
+Workflow API request failed { error: 'storage runs.list answered HTTP 404' }
+```
+
+— so every durable run in a studio preview died at its first `events.create`, and
+session state fell to memory beside it. The public key must NOT be rewritten to
+the microVM's host alias (a webhook URL minted from it is unreachable for exactly
+the caller it is for), which is why one key could not serve both and why the
+platform derives the second one separately (`agentPlatformBaseUrl` in
+`aai-server/public-origin.ts`, from the server's OWN port in local dev, so a
+preview needs nothing configured).
+
+**The fallback is not politeness.** An agent sandbox runs the harness image PINNED
+at deploy time, so a guest older than this key receives only the public one and
+would otherwise lose its platform world entirely — durable runs silently onto the
+DevKit's local world, session state silently onto memory, which are the two
+failures `platformGuestOptions` exists to stop being silent. On every backend but
+`microsandbox` the two values are identical, which is what makes the fallback
+restore that guest's exact prior behaviour rather than merely quiet it.
+
+**What let it ship is worth more than the fix, and all three are still debt.** A
+unit test PINNED the bug (`expect(x).toBe(unrewritten)` is sound only while `x`
+has one reader, and the comment beside it named the one it knew about); the
+platform's real-microVM scenario tier names this bug class three times in its own
+doc and regression-tests one of them, the bundle URL; and
+`AAI_REQUIRE_MICROSANDBOX` is declared in `turbo.json` and exported by
+nothing, so the only tier that sees real microVM behaviour has never gated a
+merge.
+
 ## S2S property test
 
 **A fast-check PROPERTY TEST covers the S2S stack**
