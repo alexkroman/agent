@@ -299,7 +299,11 @@ describe("the deploy job runs it", () => {
     const waitAt = deployWorkflow?.indexOf("node scripts/wait-for-npm-versions.mjs") ?? -1;
     expect(waitAt).toBeGreaterThan(-1);
     expect(waitAt).toBeGreaterThan(deployWorkflow?.indexOf("actions/setup-node@") ?? -1);
-    expect(waitAt).toBeLessThan(deployWorkflow?.indexOf("modal deploy") ?? -1);
+    // `modal deploy packages/`, not a bare `modal deploy`: the surrounding YAML
+    // comments legitimately NAME the command in prose, and matching the short
+    // form found one of those instead — an ordering assertion that failed on a
+    // comment while the steps were in the right order.
+    expect(waitAt).toBeLessThan(deployWorkflow?.indexOf("modal deploy packages/") ?? -1);
   });
 
   test("and no longer refuses the window it now waits out", () => {

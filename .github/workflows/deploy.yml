@@ -124,9 +124,11 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
+          cache: pnpm
       # The guest snapshot image installs the three SDK packages from npm at the
       # EXACT versions this checkout declares (`resolveSdkSpecs` in
       # modal-harness-image.ts — they cannot be lockfile-pinned, because an
@@ -188,6 +190,31 @@ jobs:
       # is to fail a deploy whose image is missing, and a gate that can only run
       # when some other system is configured a particular way is the shape that
       # failed here.
+      #
+      # The two steps below are what the waiter NEEDS, and it needs them because
+      # it refuses to reimplement the hash: it shells out to
+      # `build-guest-image.mjs --print-tag`, which imports the real
+      # `localHarnessImageTag` and hashes the real harness bundle. So it wants
+      # `node_modules` (to resolve `@alexkroman1/aai` — under
+      # `--conditions=@dev/source`, so SOURCE, and no SDK build is required) and
+      # `packages/aai-guest/dist/harness.mjs` on disk. This job had neither, by
+      # design: the npm waiter above is builtins-only and the Modal image builds
+      # itself. Arming the waiter without them made it fail CLOSED with
+      # `Cannot find package '@alexkroman1/aai'` — right polarity, wrong reason,
+      # every deploy blocked.
+      #
+      # They come AFTER the npm wait so a timed-out wait still costs nothing
+      # further, which is that step's own stated property.
+      #
+      # `ensure-guest-harness.mjs` is also the fail-fast its own doc describes
+      # for `predeploy:modal` — catching a guest package that does not build
+      # before paying for the remote image build. That hook never fired here,
+      # because this job runs `modal deploy` directly rather than through the
+      # package script.
+      - run: pnpm install --frozen-lockfile
+      - name: Build the guest harness the tag is hashed from
+        run: node scripts/ensure-guest-harness.mjs
+
       - name: Wait for the guest image to be readable from the registry
         timeout-minutes: 20
         env:

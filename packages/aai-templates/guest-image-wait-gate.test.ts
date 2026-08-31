@@ -93,7 +93,36 @@ describe("the deploy job waits for the guest image", () => {
     const waitAt = deployWorkflow?.indexOf("node scripts/wait-for-guest-image.mjs") ?? -1;
     expect(waitAt).toBeGreaterThan(-1);
     expect(waitAt).toBeGreaterThan(deployWorkflow?.indexOf("actions/setup-node@") ?? -1);
-    expect(waitAt).toBeLessThan(deployWorkflow?.indexOf("modal deploy") ?? -1);
+    // `modal deploy packages/`, not a bare `modal deploy`: the surrounding YAML
+    // comments legitimately NAME the command in prose, and matching the short
+    // form found one of those instead — an ordering assertion that failed on a
+    // comment while the steps were in the right order.
+    expect(waitAt).toBeLessThan(deployWorkflow?.indexOf("modal deploy packages/") ?? -1);
+  });
+
+  test("with the two things the waiter needs in the job before it", () => {
+    // Arming the step was not enough to make it RUN. It refuses to reimplement
+    // the hash, so it shells out to `--print-tag`, which imports the real
+    // `localHarnessImageTag` and hashes the real harness bundle — and this job
+    // had neither `node_modules` nor `dist/harness.mjs`, by design (the npm
+    // waiter above it is builtins-only, and the Modal image builds itself). The
+    // armed step therefore failed closed on
+    // `Cannot find package '@alexkroman1/aai'` and blocked every deploy: right
+    // polarity, wrong reason. Order is the assertion — either step after the
+    // waiter is the same outage.
+    const waitAt = deployWorkflow?.indexOf("node scripts/wait-for-guest-image.mjs") ?? -1;
+    const installAt = deployWorkflow?.indexOf("pnpm install --frozen-lockfile") ?? -1;
+    const harnessAt = deployWorkflow?.indexOf("node scripts/ensure-guest-harness.mjs") ?? -1;
+
+    expect(installAt).toBeGreaterThan(-1);
+    expect(harnessAt).toBeGreaterThan(-1);
+    expect(installAt).toBeLessThan(waitAt);
+    expect(harnessAt).toBeLessThan(waitAt);
+    // And the npm wait stays FIRST, so a timed-out wait still costs nothing
+    // further — that step's own stated property.
+    expect(deployWorkflow?.indexOf("node scripts/wait-for-npm-versions.mjs")).toBeLessThan(
+      installAt,
+    );
   });
 
   test("and DECLARES the registry, so the waiter is armed rather than skipping", () => {
