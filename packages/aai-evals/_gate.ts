@@ -133,6 +133,20 @@ export function evalOrigin(): string {
 }
 
 /** Case-name filter, so one case can be iterated on without the rest. */
+/**
+ * Is the template behaviour contract on?
+ *
+ * OFF by default, and the default is the point: a contract run is a live model
+ * session on top of a codegen turn that already takes minutes, so turning it on
+ * for everyone would roughly double the tier's cost and wall clock to answer a
+ * question most runs are not asking. `AAI_EVAL_CONTRACTS=1` opts in — see
+ * `template-contract.ts` for what it then grades.
+ */
+export function evalContracts(): boolean {
+  const raw = process.env.AAI_EVAL_CONTRACTS;
+  return raw !== undefined && raw !== "" && raw !== "0";
+}
+
 export function evalOnly(): string | undefined {
   const raw = process.env.AAI_EVAL_ONLY;
   return raw === undefined || raw.trim() === "" ? undefined : raw;

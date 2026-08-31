@@ -68,3 +68,4 @@ packages/aai-cli/.dev-workflow-fixture/
 # but the DIRECTORY is committed (`.gitkeep`), because the Dockerfile's COPY of
 # it is unconditional and a missing path fails the build.
 packages/aai-guest/sdk-tarballs/*.tgz
+packages/aai-evals/.eval-workspaces/

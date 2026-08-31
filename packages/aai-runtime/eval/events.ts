@@ -152,6 +152,39 @@ export function lastStateIn<T>(
 }
 
 /**
+ * A tool result, parsed as JSON when it IS JSON and handed back raw when it is
+ * not.
+ *
+ * `call.result` is a string on the wire and a tool is under no obligation to put
+ * JSON in it — `run_code` prints whatever the snippet printed, so "Saturday" and
+ * "3.106855" are ordinary results. Both readers used to call `JSON.parse`
+ * unguarded, which turned one into
+ * `SyntaxError: Unexpected token 'S', "Saturday" is not valid JSON` thrown from
+ * inside this file, naming neither the tool, nor the case, nor the value. It
+ * failed a real template eval whose own assertion was
+ * `toolResultsIn(...).join("\n")` — a caller that had asked for no schema and
+ * therefore wanted exactly that text.
+ *
+ * So: no schema means the caller will read whatever came back, and a string is
+ * what came back. A SCHEMA is different — it is a declaration that the result
+ * has a shape, so non-JSON there is a real mismatch and throws with the tool,
+ * the position and the offending text in the message, which is what the bare
+ * `SyntaxError` failed to say.
+ */
+function parseToolResult(raw: string, name: string, at: number, hasSchema: boolean): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch (cause) {
+    if (!hasSchema) return raw;
+    throw new Error(
+      `the ${ordinal(at)} call to "${name}" answered text, not JSON, but a schema was ` +
+        `supplied: ${JSON.stringify(raw.slice(0, 200))}`,
+      { cause },
+    );
+  }
+}
+
+/**
  * The result of the ONE call to `name` in `calls`, parsed.
  *
  * `EvalToolCall.result` is the serialized string the model was handed, so every
@@ -175,7 +208,7 @@ export function toolResultIn<T = unknown>(
   }
   const call = matching[0];
   if (call?.result === undefined) throw new Error(`the call to "${name}" never completed`);
-  const parsed: unknown = JSON.parse(call.result);
+  const parsed = parseToolResult(call.result, name, 0, schema !== undefined);
   if (schema === undefined) return parsed as T;
   const result = schema["~standard"].validate(parsed);
   if (result instanceof Promise) {
@@ -254,7 +287,7 @@ export function toolResultsIn<T = unknown>(
     if (call.result === undefined) {
       throw new Error(`the ${ordinal(at)} call to "${name}" never completed`);
     }
-    const parsed: unknown = JSON.parse(call.result);
+    const parsed = parseToolResult(call.result, name, at, schema !== undefined);
     return schema === undefined
       ? (parsed as T)
       : validate(schema, parsed, `"${name}" result ${at}`);

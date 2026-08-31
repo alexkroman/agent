@@ -5,9 +5,10 @@
  * This is `scripts/starter-eval/run.mjs`'s case loop, verdict and reporter —
  * `run.mjs` (485 lines), `report.mjs` (175) and `regrade.mjs` (85) — replaced by
  * the tier's own machinery. What did NOT move is the grading: those checks read
- * generated SOURCE rather than behaviour, which is a different job, and they
- * stay in `scripts/starter-eval/expectations.mjs`, which this suite imports —
- * and which is also why this package's tsconfig sets `allowJs`.
+ * generated SOURCE rather than behaviour, which is a different job, so they were
+ * kept when the runner was not. They are `./starter-expectations.ts`, which this
+ * suite imports; they were `scripts/starter-eval/expectations.mjs` for as long
+ * as that directory had anything left in it.
  *
  * Three properties survive the move intact, each of which was learned the hard
  * way there:
@@ -33,7 +34,12 @@
  * @module
  */
 
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { STARTERS } from "aai-studio-client/starters";
+import { describeEvalTierWhen, evalApiKey, evalContracts, evalOrigin } from "./_gate.ts";
+import { registerEvalCases } from "./_register.ts";
+import type { EvalRecorder } from "./runner.ts";
 import {
   checkCapabilities,
   checkMode,
@@ -41,11 +47,22 @@ import {
   checkWorkflowShape,
   EXPECTATIONS,
   parseLoadedConfig,
-} from "../../scripts/starter-eval/expectations.mjs";
-import { describeEvalTierWhen, evalApiKey, evalOrigin } from "./_gate.ts";
-import { registerEvalCases } from "./_register.ts";
-import type { EvalRecorder } from "./runner.ts";
+} from "./starter-expectations.ts";
 import { createStudioClient, type StudioTurn } from "./studio-target.ts";
+import { runTemplateContract, spawnVitest } from "./template-contract.ts";
+
+/** The shipped templates, whose `agent.eval.test.ts` files are the contracts. */
+const TEMPLATES_DIR = fileURLToPath(new URL("../aai-templates/templates/", import.meta.url));
+
+/**
+ * Where a contract run materializes a workspace.
+ *
+ * INSIDE this package, because a template contract imports
+ * `@alexkroman1/aai/protocol`, `@alexkroman1/aai-runtime/eval`, `vitest` and
+ * `zod`, and Node resolution walks upward — a directory here resolves all four
+ * with nothing installed, where one in `tmpdir()` resolves none.
+ */
+const SCRATCH_ROOT = fileURLToPath(new URL("./.eval-workspaces/", import.meta.url));
 
 /** Roughly the studio's `MAX_CHAT_STEPS`; only used to flag a long run. */
 const STEP_CAP_HINT = Number(process.env.AAI_STEP_CAP_HINT ?? 80);
@@ -157,6 +174,23 @@ describeStarters("starter eval — studio codegen", () => {
           const turn = await client.runTurn(project, starter.kind, starter.prompt);
           const files = await client.workspace(project);
           gradeStarter(t, starter.label, starter.kind, turn, files);
+          // The BEHAVIOUR half, opt-in — see `evalContracts` for the cost
+          // argument and `template-contract.ts` for why the template's own eval
+          // is the contract. A starter naming no template, or naming one that
+          // ships no eval, records NOTHING rather than a passing check: a check
+          // that cannot fail is one more line saying "green" for no reason.
+          if (evalContracts()) {
+            const contract = await runTemplateContract({
+              files: files ?? {},
+              prompt: starter.prompt,
+              templatesDir: TEMPLATES_DIR,
+              scratchDir: path.join(SCRATCH_ROOT, project),
+              run: spawnVitest({ ASSEMBLYAI_API_KEY: evalApiKey() }),
+            });
+            if (contract.ran) {
+              t.check(contract.passed, "passes the template's behaviour contract", contract.note);
+            }
+          }
         } finally {
           // A case REMOVES what it wrote. This target drives a REAL studio, so
           // the project, its workspace and its `*-preview` agent are durable —

@@ -169,9 +169,12 @@ inputs and the fix for a replayed green run is to hash more; here two runs of th
 same tree legitimately differ, so a cache hit would REPLAY a measurement rather
 than take one — the second `pnpm test:eval` of a variance check would print FULL
 TURBO and the first run's number. No `inputs` are declared rather than declaring
-a set nothing reads; if this ever becomes cacheable, note the corpus lives
-OUTSIDE the package (`scripts/starter-eval/**`), where a package-relative
-`$TURBO_DEFAULT$` cannot see it.
+a set nothing reads; if this ever becomes cacheable, a package-relative
+`$TURBO_DEFAULT$` is now enough. It was not always: the starter corpus lived
+OUTSIDE the package at `scripts/starter-eval/expectations.mjs`, which a
+package-relative glob cannot see, and the cached UNIT tier had to name it in a
+`turbo.json` override to avoid replaying a green run over an edited grader.
+Moving the corpus in retired both the override and the hazard.
 
 ## The gate ANNOUNCES its skip
 
@@ -265,12 +268,21 @@ failing agent orphaned five pairs. The runtime is shut down on that path too.
 
 `starter.eval.test.ts` + `studio-target.ts` are `scripts/starter-eval/run.mjs`'s
 case loop, verdict and reporter (485 + 175 + 85 = 745 lines, deleted) on the
-shared runner. The GRADING did not move: those checks read generated source
-rather than behaviour, which is a different job, and they stay in
-`scripts/starter-eval/expectations.mjs`, which this suite imports — which is
-also why this package's tsconfig sets `allowJs`. See "Studio starter
+shared runner. The GRADING is a different job — those checks read generated
+source rather than behaviour — so it was kept when the runner was not, and it is
+`starter-expectations.ts` in this package. See "Studio starter
 evals" in `packages/aai-studio-server/CLAUDE.md` for what it measures and why
 single runs cannot adjudicate a prompt change.
+
+**It was `scripts/starter-eval/expectations.mjs` until it was the last file
+there.** Its two neighbours were deleted as dead chains; it survived as the one
+thing in that directory nothing had outgrown, reached by both starter suites
+through a `../../scripts/` specifier. That cost a package `allowJs`, two
+`turbo.json` input overrides to hash a corpus living outside the package that
+reads it, and a grader whose eval-only half — `parseLoadedConfig`, `checkMode`,
+`checkWorkflowShape`, `checkUi` — was in no coverage report at all, so it was
+exercised only by a run needing a live key and a live studio. Moving it in
+retired all three; the four functions have unit tests now.
 
 **`run.mjs` could not have run, and porting it is what found that out.** The
 chat request belongs to the GUEST and is authenticated by the per-sandbox token
@@ -295,6 +307,64 @@ the runs it should have applied to. The cheap version of that is
 an expectation demanding a tool its prompt never asks for, and a
 `builtinDelegation` that passes on prose alone, both fail in the ordinary test
 run with no key, no studio and no model.
+
+## The template behaviour contract (opt-in)
+
+`template-contract.ts`. The starter eval grades generated SOURCE — does a tool
+whose name or description carries "cancel" exist, is the mode pipeline, is there
+a client that reads live state. Every one of those is a question about
+STRUCTURE, and a generated retail desk can answer all of them while
+authenticating nobody. The other half of this package grades BEHAVIOUR, and for
+a long time nothing ran it against generated code: the two halves sat disjoint,
+and the starter eval's verdict stopped exactly where the interesting question
+started.
+
+```sh
+AAI_EVAL_CONTRACTS=1 AAI_EVAL_ONLY=retail pnpm test:eval
+```
+
+**The contract is the TEMPLATE'S OWN `agent.eval.test.ts`, and three facts make
+that work.** Twelve of the eighteen starter prompts say "use the `<name>`
+template", which makes the template the ask rather than an illustration —
+`checkCapabilities` already special-cases them for it. Twenty-five of the
+twenty-six templates ship an eval. And those files were written to drive a
+DEPLOYED agent rather than their own directory: they import `virtual:aai/agent`,
+which `aaiAgentPlugin` resolves against the IMPORTER's directory, so dropping one
+into a materialized workspace drives that workspace's agent. They also assert
+MECHANISMS — a refusal sentence, a tool result, the projection sent to the
+browser — never the words the model chose, which is what lets a
+different-but-valid implementation pass.
+
+**The canonical copy always wins.** `use_template` copies template files verbatim,
+eval file included, so a workspace can arrive holding a contract the coding agent
+was then free to edit. `contractWorkspace` overwrites it with the copy read from
+`packages/aai-templates/`. That is the whole non-gameability argument, and it is
+the same one `starter-expectations.ts` rests on: the prompt is ours, the contract
+is ours, and the only thing the agent controls is the agent.
+
+**Why the scratch directory is inside this package.** A contract imports
+`@alexkroman1/aai/protocol`, `@alexkroman1/aai-runtime/eval`, `vitest` and `zod`,
+and Node resolution walks UPWARD — a directory under `packages/aai-evals/`
+resolves all four with nothing installed, where one in `tmpdir()` resolves none.
+It is `.eval-workspaces/`, gitignored, and removed in a `finally`: a leak here is
+a tree that `git status`, `biome check` and `tsc` all walk into.
+
+**Off by default, and that is a cost decision rather than a doubt.** A contract
+run is a live model session on top of a codegen turn that already takes minutes,
+so making it unconditional would roughly double the tier's wall clock and spend
+to answer a question most runs are not asking. A starter naming no template, or
+naming one that ships no eval, records NOTHING rather than a passing check — a
+check that cannot fail is one more line saying "green" for no reason.
+
+**What is NOT verified: the live path.** The selection, the overwrite, the
+materialization, the cleanup and the subprocess plumbing all have unit tests
+(`template-contract.test.ts`, 23 of them, with the vitest spawn faked and
+`spawnCommand` driven through `node -e`). What no test here reaches is one real
+`npx vitest run` against a real generated workspace, because that needs a live
+studio, a key and a model. Treat the first `AAI_EVAL_CONTRACTS=1` run as the
+validation it has not had — and note that a contract failing for want of the
+template's DATA files, rather than for behaviour, is the failure mode to watch:
+`use_template` copies them, but only if the agent asked for them.
 
 ## Adding a case
 

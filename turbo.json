@@ -398,16 +398,18 @@
     // take one, so the second `pnpm test:eval` of a variance check would print
     // FULL TURBO and the number from the first. There is consequently no input
     // set to get right, and none is declared rather than declaring one that
-    // nothing reads. If this ever becomes cacheable, note the corpus lives
-    // OUTSIDE the package (`scripts/starter-eval/**`), where a package-relative
-    // `$TURBO_DEFAULT$` cannot see it — the same miss the root `tsconfig.json`
-    // sat in.
+    // nothing reads. If this ever becomes cacheable, a package-relative
+    // `$TURBO_DEFAULT$` is now enough: the starter corpus used to live OUTSIDE
+    // the package (`scripts/starter-eval/expectations.mjs`, hashed by a
+    // per-package `inputs` override) and is `packages/aai-evals/
+    // starter-expectations.ts` today.
     "check:eval": {
       "cache": false,
       "dependsOn": [
         "build"
       ],
       "env": [
+        "AAI_EVAL_CONTRACTS",
         "AAI_REQUIRE_EVAL",
         // Forces the SCRIPTED model even where a key is present — how CI runs
         // the template evals as a wiring gate. In `env` rather than

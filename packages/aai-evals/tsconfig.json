@@ -3,13 +3,6 @@
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "../../.tsbuildinfo/aai-evals.tsbuildinfo",
-    // The starter eval imports `scripts/starter-eval/expectations.mjs`, which
-    // stays JavaScript and stays in `scripts/`: it is the ASSERTION half of the
-    // runner this package replaced, `scripts/starter-eval/builtins.mjs` still
-    // imports it, and rewriting 416 lines of working grader in TypeScript is a
-    // different change from deleting a second test runner. `checkJs` stays off —
-    // the file is linted by `lint:root` and typed by its own JSDoc.
-    "allowJs": true,
     "types": ["node"]
   },
   "include": ["."]

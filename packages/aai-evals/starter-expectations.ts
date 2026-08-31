@@ -17,9 +17,22 @@
  * `builtins` are exact: the prompt named them, and the SDK spells them one
  * way. `mode` follows the studio's own default rule (all-AssemblyAI
  * pipeline unless the user asked for the S2S voice-agent API).
+ *
+ * This was `scripts/starter-eval/expectations.mjs`, the last surviving file of
+ * the second test runner the eval tier replaced — JavaScript, outside
+ * `packages/`, and reached by both of this package's starter suites through a
+ * `../../scripts/` specifier. Its neighbours were deleted as dead chains; it was
+ * kept because it is the ASSERTION half, which is a different job from the case
+ * loop. Moving it in is what retires the last nested `.mjs` under `scripts/`,
+ * the package's `allowJs`, and the two `turbo.json` input overrides that existed
+ * to hash a corpus living outside the package that reads it.
+ *
+ * @module
  */
 
 /**
+ * One starter's ask, as facts about the agent it should produce.
+ *
  * `ui: true` means the starter should produce a custom client.tsx. Set it
  * where the agent has state a person would want to watch — a cart, a
  * dashboard, an inventory. The default UI hides all of it, so an agent that
@@ -28,14 +41,43 @@
  * `builtinDelegation` names the builtins a prompt PRESCRIBES. For those
  * starters a capability also counts as covered when the agent declared the
  * builtins and its prose tells the model to use them for that task — see
- * `checkCapabilities`, which is where the two-halves rule lives.
- *
- * @typedef {{ label: string, capabilities: string[][], builtins?: string[],
- *   builtinDelegation?: string[], minTools?: number, ui?: boolean }} Expectation
+ * {@link checkCapabilities}, which is where the two-halves rule lives.
  */
+export type Expectation = {
+  /** The starter's label, which must match one in `STARTERS`. */
+  readonly label: string;
+  /** Synonym groups: each group is one capability, any member satisfies it. */
+  readonly capabilities: readonly (readonly string[])[];
+  readonly builtins?: readonly string[];
+  readonly builtinDelegation?: readonly string[];
+  readonly minTools?: number;
+  readonly ui?: boolean;
+};
 
-/** @type {Expectation[]} */
-export const EXPECTATIONS = [
+/** The agent the runtime actually built, as {@link parseLoadedConfig} read it. */
+export type LoadedConfig = {
+  readonly name: string;
+  readonly mode: string;
+  readonly tools: readonly string[];
+};
+
+/** A structural verdict, with the reason attached when it is a failure. */
+export type CheckResult = {
+  readonly ok: boolean;
+  readonly note?: string;
+};
+
+/** What {@link checkCapabilities} found. */
+export type CapabilityReport = {
+  /** The first synonym of each capability the agent shows no sign of. */
+  readonly missing: readonly string[];
+  readonly missingBuiltins: readonly string[];
+  readonly toolCount: number;
+  readonly tooFewTools: boolean;
+  readonly covered: boolean;
+};
+
+export const EXPECTATIONS: readonly Expectation[] = [
   {
     label: "A pizza-ordering agent with a real cart",
     capabilities: [
@@ -203,25 +245,38 @@ export const EXPECTATIONS = [
 ];
 
 /**
+ * A capture group's text.
+ *
+ * Every group read through this helper is MANDATORY in its pattern, so the
+ * fallback is unreachable. It exists because `noUncheckedIndexedAccess` types
+ * an index into a match as possibly-undefined, and the alternative at a dozen
+ * call sites is a non-null assertion each — a suppression per line, for a
+ * condition the regex already rules out. Genuinely OPTIONAL groups (the
+ * quote-style alternation in {@link toolDescriptionsFromSource}) coalesce at
+ * their call site instead, where the choice is the point.
+ */
+const group = (m: RegExpMatchArray, i: number): string => m[i] ?? "";
+
+/**
  * `test_agent` reports the loaded config as prose. Parsing it is how the
  * check reads the agent the runtime ACTUALLY built, rather than trusting
  * source that may not be what compiled.
  *
  * Shape: `Agent "Name" (pipeline mode), tools: a, b, c.`
  */
-export function parseLoadedConfig(text) {
+export function parseLoadedConfig(text: string | undefined): LoadedConfig | undefined {
   const m = /Agent "([^"]*)" \(([a-z0-9]+) mode\), tools: ([^\n.]*)/i.exec(text ?? "");
   if (!m) return;
-  const raw = (m[3] ?? "").trim();
+  const raw = group(m, 3).trim();
   return {
-    name: m[1],
-    mode: m[2],
+    name: group(m, 1),
+    mode: group(m, 2),
     tools: raw === "" || /^\(none\)$/i.test(raw) ? [] : raw.split(/\s*,\s*/).filter(Boolean),
   };
 }
 
 /** Body of the `tools: { ... }` object literal, brace-matched. */
-function toolsBlock(source) {
+function toolsBlock(source: string): string | undefined {
   const at = source.search(/\btools\s*:\s*\{/);
   if (at === -1) return;
   const open = source.indexOf("{", at);
@@ -233,18 +288,18 @@ function toolsBlock(source) {
 }
 
 /** Tool keys declared in agent.ts — the fallback when nothing ever loaded. */
-function toolNamesFromSource(source) {
+function toolNamesFromSource(source: string | undefined): string[] {
   if (!source) return [];
-  const names = new Set();
+  const names = new Set<string>();
   // `tools: { add_pizza: ..., remove_pizza: ... }` — brace-matched rather
   // than regexed, so a nested object or an inline map is not truncated.
   const block = toolsBlock(source);
   if (block) {
-    for (const m of block.matchAll(/(?:^|[\s,{])([A-Za-z_$][\w$]*)\s*:/g)) names.add(m[1]);
+    for (const m of block.matchAll(/(?:^|[\s,{])([A-Za-z_$][\w$]*)\s*:/g)) names.add(group(m, 1));
   }
   // `const addPizza = tool({ ... })`
   for (const m of source.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*tool\s*\(/g)) {
-    names.add(m[1]);
+    names.add(group(m, 1));
   }
   return [...names];
 }
@@ -264,10 +319,12 @@ function toolNamesFromSource(source) {
  * Not more gameable than matching names: both are agent-authored, while the
  * capability list comes from the prompt, which the agent cannot edit.
  */
-function toolDescriptionsFromSource(source) {
-  const out = [];
+function toolDescriptionsFromSource(source: string | undefined): string[] {
+  const out: string[] = [];
   // Single, double and template quotes; descriptions routinely contain
-  // apostrophes, so the character class per quote style matters.
+  // apostrophes, so the character class per quote style matters. The three
+  // groups are ALTERNATIVES, so exactly one is set and the coalescing chain is
+  // the read — not `group`, whose contract is a mandatory match.
   for (const m of (source ?? "").matchAll(/description\s*:\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/g)) {
     out.push(m[1] ?? m[2] ?? m[3] ?? "");
   }
@@ -275,13 +332,13 @@ function toolDescriptionsFromSource(source) {
 }
 
 /** Builtins the agent declared, e.g. `builtinTools: ["run_code"]`. */
-function builtinsFromSource(source) {
+function builtinsFromSource(source: string | undefined): string[] {
   const m = /builtinTools\s*:\s*\[([^\]]*)\]/.exec(source ?? "");
   if (!m) return [];
-  return [...m[1].matchAll(/["'`]([\w-]+)["'`]/g)].map((x) => x[1]);
+  return [...group(m, 1).matchAll(/["'`]([\w-]+)["'`]/g)].map((x) => group(x, 1));
 }
 
-const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /**
  * The studio's own default: an all-AssemblyAI cascaded pipeline unless the
@@ -290,7 +347,10 @@ const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
  * rule — ASSEMBLYAI_API_KEY is the only key publishing seeds, so an agent
  * that reaches for another provider unbidden cannot start.
  */
-export function checkMode(config, source) {
+export function checkMode(
+  config: LoadedConfig | null | undefined,
+  source: string | undefined,
+): CheckResult {
   if (!config) return { ok: true, note: "no loaded config to check" };
   if (config.mode !== "pipeline") {
     return { ok: false, note: `mode=${config.mode}, expected pipeline (studio default)` };
@@ -309,7 +369,7 @@ export function checkMode(config, source) {
 }
 
 /**
- * A WORKFLOW project's shape, which is what `checkMode` cannot ask about.
+ * A WORKFLOW project's shape, which is what {@link checkMode} cannot ask about.
  *
  * The hero's Workflow position creates the project under a system prompt whose
  * default is a STATIC workflow app, so "pipeline mode with all three stages on
@@ -327,10 +387,10 @@ export function checkMode(config, source) {
  * the capability check reads agent.ts: these are structural facts the agent
  * cannot edit a test to satisfy.
  */
-export function checkWorkflowShape(files) {
+export function checkWorkflowShape(files: Record<string, string> | undefined): CheckResult {
   const source = files?.["agent.ts"] ?? "";
   const client = files?.["client.tsx"];
-  const problems = [];
+  const problems: string[] = [];
   if (!/\bworkflowApp\s*\(/.test(source)) problems.push("no workflowApp() declaration");
   if (!Object.keys(files ?? {}).some((p) => p.startsWith("workflows/"))) {
     problems.push("no workflows/ body");
@@ -342,15 +402,11 @@ export function checkWorkflowShape(files) {
     : { ok: false, note: `workflow-shape: ${problems.join("; ")}` };
 }
 
-/**
- * Did the built agent cover what the prompt enumerated?
- *
- * Deliberately generous on naming and strict on presence: the failure this
- * exists to catch is a capability that is simply absent, not one spelled
- * differently than expected.
- */
 /** Did the run produce a custom client, when the starter wanted one? */
-export function checkUi(expectation, files) {
+export function checkUi(
+  expectation: Expectation | undefined,
+  files: Record<string, string> | undefined,
+): CheckResult {
   if (!expectation?.ui) return { ok: true };
   const client = files?.["client.tsx"];
   if (client === undefined) return { ok: false, note: "no client.tsx (custom UI expected)" };
@@ -369,11 +425,24 @@ export function checkUi(expectation, files) {
  * written as a tool: there is no tool name to match, only the instruction
  * that tells the model to use `fetch_json` for a currency lookup.
  */
-function agentProse(source) {
+function agentProse(source: string | undefined): string {
   return String(source ?? "").toLowerCase();
 }
 
-export function checkCapabilities(expectation, { config, source }) {
+/**
+ * Did the built agent cover what the prompt enumerated?
+ *
+ * Deliberately generous on naming and strict on presence: the failure this
+ * exists to catch is a capability that is simply absent, not one spelled
+ * differently than expected.
+ *
+ * (This doc comment sat above {@link checkUi} in the `.mjs` original, orphaned
+ * by an edit that inserted a function between it and the one it describes.)
+ */
+export function checkCapabilities(
+  expectation: Expectation,
+  { config, source }: { config: LoadedConfig | null | undefined; source: string | undefined },
+): CapabilityReport {
   const declared = [...(config?.tools ?? []), ...toolNamesFromSource(source)].map(norm);
   // Tool descriptions count as evidence too — see toolDescriptionsFromSource.
   const described = toolDescriptionsFromSource(source).map((d) => d.toLowerCase());
@@ -392,17 +461,16 @@ export function checkCapabilities(expectation, { config, source }) {
    * pass anything, and the builtins by themselves say nothing about what the
    * agent was told to do with them.
    */
-  const delegable =
-    (expectation.builtinDelegation ?? []).length > 0 &&
-    expectation.builtinDelegation.every((b) => builtins.has(b));
+  const delegation = expectation.builtinDelegation ?? [];
+  const delegable = delegation.length > 0 && delegation.every((b) => builtins.has(b));
   const prose = delegable ? agentProse(source) : "";
-  const missing = [];
+  const missing: string[] = [];
   for (const synonyms of expectation.capabilities ?? []) {
     const hit =
       synonyms.some((s) => declared.some((d) => d.includes(norm(s)))) ||
       synonyms.some((s) => described.some((d) => d.includes(s.toLowerCase()))) ||
       (delegable && synonyms.some((s) => prose.includes(s.toLowerCase())));
-    if (!hit) missing.push(synonyms[0]);
+    if (!hit && synonyms[0] !== undefined) missing.push(synonyms[0]);
   }
   const missingBuiltins = (expectation.builtins ?? []).filter((b) => !builtins.has(b));
   const toolCount = new Set(declared).size;

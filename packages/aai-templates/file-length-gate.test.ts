@@ -82,6 +82,13 @@ const EMPTY_BY_CONSTRUCTION: Record<string, string> = {
   // like a top-level/nested split and is not one — which is the whole reason
   // this suite converts a pathspec to a regex rather than trusting how it
   // looks. Entries only ever leave this record; that is the direction it moves.
+  "scripts/**/*.mjs":
+    "every .mjs under scripts/ is at the top level since the starter-eval " +
+    "corpus moved into packages/aai-evals — and `scripts/*.mjs` crosses `/` " +
+    "anyway, so this glob has never added a file the other one missed. Kept " +
+    "rather than deleted because the pair is what the assertions above pin; " +
+    "the day a nested .mjs reappears this entry fails as 'now matches N' and " +
+    "gets dropped, which is the self-correcting direction.",
 };
 
 /**
@@ -169,10 +176,12 @@ describe("check-file-length", () => {
     // A git pathspec is fnmatch without FNM_PATHNAME, so `*` already crosses
     // `/` and `scripts/**/*.mjs` parses as "scripts/" + anything + "/" +
     // anything + ".mjs" — the literal slash makes a subdirectory mandatory. The
-    // gate shipped with only that glob, so it measured the six files under
-    // scripts/starter-eval/ and none of the ~25 at the top level, which is
-    // where its own comment says an unreviewed 900-line harness hides. It
-    // printed "all files within caps ✓" throughout.
+    // gate shipped with only that glob, so it measured the handful of files
+    // under scripts/starter-eval/ and none of the ~25 then at the top level,
+    // which is where its own comment says an unreviewed 900-line harness hides.
+    // It printed "all files within caps ✓" throughout. (That subdirectory is
+    // gone now — see EMPTY_BY_CONSTRUCTION above — which is why the top-level
+    // spelling is the one carrying the corpus.)
     // Matched with the quotes, so the prose in the gate's own comment (which
     // names the broken glob in backticks) cannot satisfy these.
     for (const pattern of ['"scripts/*.mjs"', '"scripts/*.ts"']) {
