@@ -171,10 +171,10 @@ create that runs on whichever connection first noticed.
 the store suites assert that no store issues DDL.
 
 **`supabase db push` is MANUAL, and nothing tells you when you have forgotten
-it.** No workflow runs it — `.github/workflows/deploy.yml` is checkout →
-`modal deploy`, and there is no migration script in `package.json`. So "the
-trade is deploy ORDERING" is a trade a human has to make on every release that
-adds a migration, and the failure lands in production rather than in CI. It has
+it.** This is no longer true: `.github/workflows/ship.yml` has a `migrate` job
+that runs `supabase db push --db-url` ahead of the deploy, on a version bump or
+on any push touching `supabase/migrations/**`. The account below is why that job
+exists, and it stands as the reason not to remove it. It has
 already happened once: `20260808120000_agents_config_default.sql` stopped
 `agents.config` being written but was never pushed, so **every** `POST /deploy`
 died on `null value in column "config" violates not-null constraint` — Publish

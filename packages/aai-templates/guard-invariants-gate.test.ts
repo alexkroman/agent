@@ -528,6 +528,10 @@ const changesets = sole(
       source: string,
       versionable: Set<string>,
     ) => { file: string; line: number; text: string }[];
+    checkChangesetShippable: (
+      file: string,
+      source: string,
+    ) => { file: string; line: number; text: string }[];
     workspacePackageNames: () => Set<string>;
     versionablePackageNames: () => Set<string>;
   }>("../../scripts/guard-invariants-changesets.mjs", { eager: true }),
@@ -608,6 +612,75 @@ describe("guard-invariants rule 20 (changeset package names)", () => {
       ["malformed frontmatter", "no frontmatter here\n"],
     ])("spares a changeset naming %s", (_label, source) => {
       expect(consumable(source), "a legitimate changeset was flagged").toEqual([]);
+    });
+
+    describe("a bump that ships nowhere", () => {
+      /**
+       * The THIRD flavour of inert release metadata, and the one every other
+       * gate passes. `aai-studio-client`, `aai-guest` and `aai-templates` are
+       * each built into another package's artifact, so bumping one alone writes
+       * a version and a CHANGELOG entry and delivers nothing — while the
+       * pre-push `changeset status` is satisfied, because it only asks whether
+       * the changed packages have A changeset. An author who changes the studio
+       * front-end, is correctly told to write a changeset, and names the package
+       * they changed has cleared every check and deployed nothing.
+       */
+      const shippable = (source: string) =>
+        changesets?.checkChangesetShippable("c.md", source) ?? [];
+
+      test.each([
+        ["aai-studio-client alone", '---\n"aai-studio-client": patch\n---\n\nx\n'],
+        ["aai-guest alone", '---\n"aai-guest": patch\n---\n\nx\n'],
+        ["aai-templates alone", '---\n"aai-templates": patch\n---\n\nx\n'],
+        [
+          "a built-in package beside a NON-carrier",
+          '---\n"aai-studio-client": patch\n"aai-evals": patch\n---\n\nx\n',
+        ],
+      ])("flags a changeset naming %s", (_label, source) => {
+        expect(
+          shippable(source).length,
+          "a bump that ships nowhere was not flagged",
+        ).toBeGreaterThan(0);
+      });
+
+      test.each([
+        [
+          "aai-studio-client with the studio server",
+          '---\n"aai-studio-client": patch\n"aai-studio-server": patch\n---\n\nx\n',
+        ],
+        [
+          "aai-guest with the platform server",
+          '---\n"aai-guest": patch\n"aai-server": patch\n---\n\nx\n',
+        ],
+        [
+          "aai-templates with a fixed-group member",
+          '---\n"aai-templates": patch\n"@alexkroman1/aai-cli": patch\n---\n\nx\n',
+        ],
+        // A package with its own ship path is not this rule's business.
+        ["only the platform server", '---\n"aai-server": patch\n---\n\nx\n'],
+        ["nothing at all (--empty)", "---\n---\n\n"],
+        ["malformed frontmatter", "no frontmatter here\n"],
+      ])("spares a changeset naming %s", (_label, source) => {
+        expect(shippable(source), "a legitimate changeset was flagged").toEqual([]);
+      });
+
+      test("every package the table names still exists in the workspace", () => {
+        // The table matches by NAME, so a rename would make it match nothing and
+        // report `0 ✓` over the hole it exists to close. The scan asserts this
+        // too; pinning it here is what makes a rename fail in the ordinary test
+        // run rather than only under `pnpm check`.
+        const known = changesets?.workspacePackageNames() ?? new Set<string>();
+        for (const name of [
+          "aai-studio-client",
+          "aai-guest",
+          "aai-templates",
+          "aai-server",
+          "aai-studio-server",
+          "@alexkroman1/aai-cli",
+        ]) {
+          expect(known, `${name} is no longer a workspace package`).toContain(name);
+        }
+      });
     });
 
     test("the real config versions private packages, so nothing in the tree is inert", () => {

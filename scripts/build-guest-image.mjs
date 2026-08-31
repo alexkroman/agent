@@ -17,7 +17,7 @@
  * | ---------------- | ------------------------------------------------- |
  * | `BASE_IMAGE`     | `DEFAULT_SANDBOX_IMAGE` (modal-context.ts)         |
  * | `SYSTEM_PACKAGES`| `GUEST_SYSTEM_PACKAGES` (modal-system-packages.ts) |
- * | `SDK_SPECS`      | `SDK_PACKAGES` (modal-harness-image.ts) — as PACKED TARBALLS for a local build, or `name@version` for a published one; see `packWorkspaceSdk` |
+ * | `SDK_SPECS`      | `SDK_PACKAGES` (modal-harness-image.ts) — as PACKED TARBALLS (the workspace's, or a release's `changeset pack` output) or `name@version`; see `resolveSdkSource` |
  * | `GUEST_ROOT`     | `GUEST_ROOT` (modal-harness-image.ts)              |
  *
  * A regex read of a source file is a liability wherever it can fail QUIETLY, so
@@ -41,7 +41,9 @@
  * node scripts/build-guest-image.mjs --msb --published-sdk       # …against the SDK on npm instead
  * node scripts/build-guest-image.mjs --print-tag                 # the content-addressed tag
  * node scripts/build-guest-image.mjs --registry ghcr.io/owner \
- *     --platform linux/amd64,linux/arm64 --cache-gha --push      # what CI runs
+ *     --platform linux/amd64,linux/arm64 --cache-gha --push      # what CI runs (no release)
+ * node scripts/build-guest-image.mjs --registry ghcr.io/owner \
+ *     --sdk-pack-dir .changeset-pack --push                      # …on a release push
  * ```
  *
  * ## The tag is computed by the TypeScript that owns the algorithm
@@ -65,8 +67,12 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { extractString, extractStringArray, read } from "./build-guest-image-extract.mjs";
-import { packWorkspaceSdk } from "./build-guest-image-sdk.mjs";
+import { extractString, extractStringArray } from "./build-guest-image-extract.mjs";
+import {
+  packWorkspaceSdk,
+  sdkInstalledVersions,
+  stageSdkPackDir,
+} from "./build-guest-image-sdk.mjs";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const SERVER_DIR = path.join(REPO_ROOT, "packages", "aai-server");
@@ -98,38 +104,36 @@ function resolveBaseImage() {
 /**
  * `name@version` for each SDK package — EXACT versions, read from what this
  * checkout installed. Mirrors `resolveSdkSpecs()`; see the module doc.
+ *
+ * The version reading itself is `sdkInstalledVersions()`, shared with the pack
+ * -directory path: the image TAG is hashed from these strings, so a second
+ * reading is a way for the tag and the installed bytes to disagree.
  */
 function resolveSdkSpecs() {
-  const names = extractStringArray(path.join(SERVER_DIR, "modal-harness-image.ts"), "SDK_PACKAGES");
-  const guestPkg = JSON.parse(read(path.join(GUEST_DIR, "package.json")));
-  return names.map((name) => {
-    const declared = guestPkg.dependencies?.[name] ?? guestPkg.devDependencies?.[name];
-    if (!declared) {
-      throw new Error(`aai-guest package.json no longer declares SDK package ${name}`);
-    }
-    const installedPath = path.join(GUEST_DIR, "node_modules", name, "package.json");
-    if (!existsSync(installedPath)) {
-      throw new Error(
-        `SDK package ${name} is declared by aai-guest but not installed at ${installedPath} — ` +
-          "run pnpm install before building a guest image",
-      );
-    }
-    const { version } = JSON.parse(read(installedPath));
-    if (typeof version !== "string") {
-      throw new Error(`SDK package ${name} has no version in ${installedPath}`);
-    }
-    return `${name}@${version}`;
-  });
+  return [...sdkInstalledVersions()].map(([name, version]) => `${name}@${version}`);
+}
+
+/**
+ * `SDK_SPECS` for one of the three sources — the single place they meet.
+ *
+ * @param {"workspace" | "packdir" | "registry"} source
+ * @param {string} guestRoot
+ * @param {string | undefined} packDir
+ */
+function sdkSpecsFor(source, guestRoot, packDir) {
+  if (source === "workspace") return packWorkspaceSdk(guestRoot);
+  if (source === "packdir") return stageSdkPackDir(guestRoot, packDir);
+  return resolveSdkSpecs();
 }
 
 /**
  * Everything the Dockerfile needs, resolved from the tree.
  *
- * `workspaceSdk` is the one input that is not read out of the source: it is a
- * build MODE, and `SDK_SPECS` is where the two forms meet (see the Dockerfile's
- * layer-1 comment).
+ * `sdkSource` is the one input that is not read out of the source: it is a
+ * build MODE, and `SDK_SPECS` is where its three forms meet (see the
+ * Dockerfile's layer-1 comment).
  */
-function resolveBuildArgs({ workspaceSdk }) {
+function resolveBuildArgs({ sdkSource, sdkPackDir }) {
   const harnessImage = path.join(SERVER_DIR, "modal-harness-image.ts");
   const systemPackages = extractStringArray(
     path.join(SERVER_DIR, "modal-system-packages.ts"),
@@ -141,7 +145,7 @@ function resolveBuildArgs({ workspaceSdk }) {
     // SORTED, so reordering the declaration is not a change — the same
     // canonicalization `systemPackageList()` applies.
     SYSTEM_PACKAGES: [...systemPackages].sort().join(" "),
-    SDK_SPECS: (workspaceSdk ? packWorkspaceSdk(guestRoot) : resolveSdkSpecs()).join(" "),
+    SDK_SPECS: sdkSpecsFor(sdkSource, guestRoot, sdkPackDir).join(" "),
     GUEST_ROOT: guestRoot,
   };
 }
@@ -210,28 +214,46 @@ const VALUE_FLAGS = {
   "--tag": "tag",
   "--registry": "registry",
   "--platform": "platform",
+  "--sdk-pack-dir": "sdkPackDir",
 };
 
 /**
- * Whether this build installs THIS CHECKOUT's SDK.
+ * Where this build's SDK comes from — one of three sources.
  *
- * A LOCAL image does by default; a published one may never. The polarity is the
- * safety property: the dangerous direction is shipping unpublished code into every
- * tenant's guest, so it takes an explicit registry or push to select the published
- * SDK, and there is no flag that opts a PUSHED image into the workspace one.
+ * | Source      | Installs                                  | Selected by                    |
+ * | ----------- | ----------------------------------------- | ------------------------------ |
+ * | `workspace` | this checkout, packed on the spot         | the default for a LOCAL build  |
+ * | `packdir`   | the tarballs a release is publishing      | `--sdk-pack-dir`               |
+ * | `registry`  | the published versions, from npm          | `--registry`/`--push`, or `--published-sdk` |
+ *
+ * The polarity is the safety property, and it is unchanged: the dangerous
+ * direction is shipping unpublished code into every tenant's guest, so a pushed
+ * image still cannot select `workspace` and no flag opts it in. What
+ * `--sdk-pack-dir` adds is a THIRD way to satisfy the same rule — those tarballs
+ * are the artifacts the release publishes, asserted against this checkout's
+ * declared versions and against the integrity the publish plan recorded (see
+ * `stageSdkPackDir`) — so a pushed image can carry the release before npm has
+ * finished making it readable. That is what lets the image build stop waiting on
+ * the registry.
  *
  * `--published-sdk` is for the other job this script has — reproducing a report
  * against the SDK a user actually has — and it announces itself, because a local
  * image that is not this checkout is the state that cost an investigation once
  * already.
  */
-function resolveSdkMode(opts) {
-  if (opts.registry || opts.push) return false;
+function resolveSdkSource(opts) {
+  if (opts.sdkPackDir) {
+    if (opts.publishedSdk) {
+      throw new Error("pass --sdk-pack-dir or --published-sdk, not both");
+    }
+    return "packdir";
+  }
+  if (opts.registry || opts.push) return "registry";
   if (opts.publishedSdk) {
     console.log("Using the PUBLISHED SDK in a local image (--published-sdk)");
-    return false;
+    return "registry";
   }
-  return true;
+  return "workspace";
 }
 
 function parseArgv(rawArgv) {
@@ -245,6 +267,7 @@ function parseArgv(rawArgv) {
     cacheGha: false,
     msb: false,
     publishedSdk: false,
+    sdkPackDir: undefined,
   };
   const argv = rawArgv[Symbol.iterator]();
   for (const arg of argv) {
@@ -264,7 +287,7 @@ function parseArgv(rawArgv) {
   if (opts.platform?.includes(",") && !opts.push) {
     throw new Error("a multi-platform build must be --push (a manifest list cannot be --load'ed)");
   }
-  return { ...opts, workspaceSdk: resolveSdkMode(opts) };
+  return { ...opts, sdkSource: resolveSdkSource(opts) };
 }
 
 /**
@@ -302,7 +325,7 @@ function main(argv) {
     return 0;
   }
 
-  const args = resolveBuildArgs({ workspaceSdk: opts.workspaceSdk });
+  const args = resolveBuildArgs({ sdkSource: opts.sdkSource, sdkPackDir: opts.sdkPackDir });
 
   assertBuildContext();
 

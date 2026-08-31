@@ -977,10 +977,19 @@ fixable from the client:
   its assets answered by the other.
 - **This package ships only as a side effect of a SERVER release.** Its
   `dist/` is baked into the one Modal app's image (`aai-server-web`, running
-  `AAI_SERVICE=combined`), and `.github/workflows/deploy.yml` fires on a
-  version bump to `aai-server` **or** `aai-studio-server` — never on this
+  `AAI_SERVICE=combined`), and `.github/workflows/ship.yml`'s deploy job fires
+  on a version bump to `aai-server` **or** `aai-studio-server` — never on this
   package's own version. So a studio-client change needs a changeset naming
   one of those two, or it ships to nothing.
+
+  **That is `guard-invariants` rule 20 now, not advice.** It used to be guarded
+  by nothing, and the trap is that every other gate stays green: the pre-push
+  `changeset status` only asks whether the changed packages have A changeset, so
+  an author who changes this package, is correctly told to write one, and names
+  the package they changed has satisfied every check and deployed nothing. The
+  rule's table (`SHIPS_VIA` in `scripts/guard-invariants-changesets.mjs`) carries
+  `aai-guest` and `aai-templates` for the same reason — each is built into
+  another package's artifact, so its own version reaches nobody.
 
 The fix is in two halves, and the client half is deliberately just "reload":
 

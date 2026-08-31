@@ -5,9 +5,9 @@ name: Check
 # dispatch) evaluating a MERGE REF, so nothing anywhere ever evaluated main
 # itself. "PRs are green" was therefore a statement about candidate merges and
 # said nothing about the branch — and the workflows that DO run on a push to
-# main (`release.yml`, `deploy.yml`, `docs.yml`) are run by no pull request, so
+# main (`ship.yml`, `docs.yml`) are run by no pull request, so
 # a break in one of them was reported to nobody. #1112 is the worked example:
-# Release had failed on every push to main since #1057 and its own description
+# the release line had failed on every push to main since #1057 and its description
 # names the cause — "the only surface that reports it is a red workflow on
 # `main` that no PR author is looking at".
 #
@@ -25,9 +25,9 @@ name: Check
 # concurrency groups, and nothing dedupes them — every push to a Version
 # Packages PR ran this whole matrix twice. 97 such runs exist in the history.
 # They stopped on 2026-08-07, when RELEASE_TOKEN went dead: `GITHUB_TOKEN`
-# cannot trigger a workflow, which `release.yml` warns about itself, so the
-# entry became config that fires nothing and would have silently resumed
-# double-running the moment the token was rotated.
+# cannot trigger a workflow. That PAT has since been removed outright, so the
+# entry can never fire again — but for weeks it was config that fires nothing,
+# invisible in a diff and in the run list alike.
 on:
   push:
     branches: [main]
