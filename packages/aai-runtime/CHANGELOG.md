@@ -1,5 +1,13 @@
 # @alexkroman1/aai-runtime
 
+## 9.0.1
+
+### Patch Changes
+
+- 533e217: Cut a batched upload part claim from three record round trips and eight probe rounds to one read, one write, and probes that run alongside them.
+- 533e217: Retry a transient guest-to-platform upload byte operation instead of failing a whole batched part claim with a 500.
+- @alexkroman1/aai@9.0.1
+
 ## 9.0.0
 
 ### Major Changes
