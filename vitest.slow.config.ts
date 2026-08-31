@@ -115,8 +115,27 @@ export default defineConfig({
      *
      * The cheaper end state is a `globalSetup` doing that work once; until then
      * this flag is what the two files rest on, so do not lift it for speed.
-     * Scoped to e2e: the other tiers' files are independent and parallel fine.
+     *
+     * ## The EVAL tier serializes for a different reason: one shared key
+     *
+     * Its files are independent of each other and would parallelise fine on
+     * that count. What they are NOT independent of is the LLM gateway, which
+     * they all reach through one account — so running them concurrently is the
+     * tier rate-limiting itself. Measured on the first live run of all 25
+     * template evals: 14 files failed, and the gateway answered
+     * `HTTP 429 — too many requests for this action`.
+     *
+     * That is the worst possible failure for this tier specifically. An eval
+     * reports a behaviour verdict, a 429 is an instrument fault, and the two are
+     * indistinguishable in the output — a rate-limited run reads as a fleet of
+     * agent regressions and sends somebody to debug a prompt. The tier is
+     * already slow by construction (one model turn per utterance) and already
+     * declines to gate, so wall clock is the cheapest thing it has to trade.
+     *
+     * The other two profiles keep parallel files: `integration` touches no
+     * network, and `scenario`'s external resource is a database with its own
+     * per-suite isolation.
      */
-    ...(profileKey === "e2e" ? { fileParallelism: false } : {}),
+    ...(profileKey === "e2e" || profileKey === "eval" ? { fileParallelism: false } : {}),
   },
 });

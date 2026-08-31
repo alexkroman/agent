@@ -1175,10 +1175,11 @@ AAI_EVAL_ONLY=pizza AAI_EVAL_REPEAT=3 pnpm test:eval
 ```
 
 Its own second runner — `run.mjs`/`report.mjs`/`regrade.mjs`, 745 lines of case
-loop, verdict and reporter — is deleted; what stays in `scripts/starter-eval/` is
-the GRADING (`expectations.mjs`, plus `builtins.mjs` and `tsconfig-ab.mjs`, which
-read a run's JSON). See `packages/aai-evals/CLAUDE.md` for the runner and why the
-tier does not gate.
+loop, verdict and reporter — is deleted, and so is the rest of
+`scripts/starter-eval/`. What survived is the GRADING, which is a different job
+from a case loop: it is
+`packages/aai-evals/starter-expectations.ts` today. See
+`packages/aai-evals/CLAUDE.md` for the runner and why the tier does not gate.
 
 It spends real tokens on the caller's own key, so it is not in CI. Three
 things it measures that the judge suite did not:
@@ -1186,7 +1187,7 @@ things it measures that the judge suite did not:
 - **Shippable, not just green.** The agent writes its own tests, so "the
   tests passed" is a measure it can satisfy by weakening an assertion. The
   primary verdict is instead whether the built agent covers the capabilities
-  the PROMPT enumerated (`scripts/starter-eval/expectations.mjs`), checked
+  the PROMPT enumerated (`packages/aai-evals/starter-expectations.ts`), checked
   against the loaded config and agent.ts — neither of which the agent can
   edit to make the check pass.
 - **Cost**: tool calls, repair rounds (failed `test_agent` runs), wall

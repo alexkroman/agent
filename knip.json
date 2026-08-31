@@ -62,8 +62,10 @@
       // The old comment justified the recursion with "standalone tools live in
       // their own subdirectory (scripts/starter-eval/), and each file there is
       // run directly rather than imported" — which was true of the two files
-      // that turned out to be dead, and false of the survivor
-      // (`expectations.mjs`, imported by `packages/aai-evals`).
+      // that turned out to be dead, and false of the third, `expectations.mjs`,
+      // which was IMPORTED by `packages/aai-evals` and is now a source file
+      // inside it (`starter-expectations.ts`). `scripts/` has no subdirectory
+      // of `.mjs` left, which is the end state that reasoning pointed at.
       //
       // A script that is a MODULE (`_*.mjs`, `guard-invariants-rules.mjs`,
       // `artifact-size-format.mjs`) is deliberately absent: knip reaches it
