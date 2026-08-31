@@ -1,5 +1,86 @@
 # @alexkroman1/aai-cli
 
+## 9.0.0
+
+### Minor Changes
+
+- af284a7: Add `aai dev --watch`. File watching was reachable only through an undocumented AAI_DEV_WATCH variable, while the guide shipped into every scaffolded project promised hot reload.
+- b386453: Add `aai storage enable --tier <storage|workflow>`, so an agent with no durable workflows is provisioned with a smaller per-role Postgres connection entitlement (4 rather than 10). Re-running with a different tier reconciles an existing database's limit without rotating the credential the resident guest is holding.
+
+### Patch Changes
+
+- 98be232: Pay down escape-hatch and conditional-spread debt: a typed fake session socket in the guest harness replaces eight `as never` casts and lets `lazyRuntime` drop its `as unknown as WebSocket`, `handleNotification` now takes the unvalidated frame shape it actually defends against, and nineteen truthiness-guarded conditional spreads over optional identifiers become `omitUndefined` — which also makes a session resume pass `resumeFrom` on the same test the runtime logs `resumed` with.
+- 841f460: `aai test` now names the project spec files it did not run, instead of skipping them silently — a scaffolded `retail` project reported 67 passing tests while 211 of its 278 never ran.
+- 044236f: Make a deployed agent's session state durable, and stop reporting an absent run as a server error. The runtime read the platform pair (`AAI_PUBLIC_BASE_URL`/`AAI_GUEST_TOKEN`) out of the AGENT's env, where the platform never puts it, so every deployed agent fell back to the memory backend and a session did not survive its sandbox restarting; uploads fell back to local for the same reason. A 404 from platform run storage now becomes the DevKit's own `WorkflowRunNotFoundError`, so GET/DELETE/wake on an unknown run answer 404/`cancelled:false`/`woken:0` instead of 500. The browser client reports a refusal close's own reason instead of discarding it, and a dev-mode `aai init` pins the third-party deps it shares with the linked workspace so two copies of xstate cannot fail the typecheck gate.
+- af284a7: Pin `reporters: ["default"]` in the scaffolded project's vitest config, so a coding agent running `aai test` still sees a passing test's console output.
+- 841f460: aai test now names unrun spec files even when there is no agent.test.ts
+- Updated dependencies [444e209]
+- Updated dependencies [65ad531]
+- Updated dependencies [841f460]
+- Updated dependencies [841f460]
+- Updated dependencies [044236f]
+- Updated dependencies [af284a7]
+- Updated dependencies [444e209]
+- Updated dependencies [9d5e2a2]
+- Updated dependencies [e888216]
+- Updated dependencies [af284a7]
+- Updated dependencies [444e209]
+- Updated dependencies [841f460]
+- Updated dependencies [841f460]
+- Updated dependencies [006cc1e]
+- Updated dependencies [444e209]
+- Updated dependencies [bccae5a]
+- Updated dependencies [86398d7]
+- Updated dependencies [fcb113c]
+- Updated dependencies [e8bc7d9]
+- Updated dependencies [1f21e37]
+- Updated dependencies [444e209]
+- Updated dependencies [f6be741]
+- Updated dependencies [af284a7]
+- Updated dependencies [af284a7]
+- Updated dependencies [e20a992]
+- Updated dependencies [9115625]
+- Updated dependencies [4e2f9f3]
+- Updated dependencies [841f460]
+- Updated dependencies [841f460]
+- Updated dependencies [bca2d99]
+- Updated dependencies [444e209]
+- Updated dependencies [7dd348f]
+- Updated dependencies [01046b6]
+- Updated dependencies [841f460]
+- Updated dependencies [b238ba0]
+- Updated dependencies [6796ae3]
+- Updated dependencies [5bac92d]
+- Updated dependencies [841f460]
+- Updated dependencies [9e41442]
+- Updated dependencies [841f460]
+- Updated dependencies [18dfb1c]
+- Updated dependencies [13b610f]
+- Updated dependencies [044236f]
+- Updated dependencies [841f460]
+- Updated dependencies [841f460]
+- Updated dependencies [95be1ca]
+- Updated dependencies [c871232]
+- Updated dependencies [857c3d9]
+- Updated dependencies [6796ae3]
+- Updated dependencies [6d360a7]
+- Updated dependencies [841f460]
+- Updated dependencies [af284a7]
+- Updated dependencies [4743746]
+- Updated dependencies [444e209]
+- Updated dependencies [841f460]
+- Updated dependencies [444e209]
+- Updated dependencies [af284a7]
+- Updated dependencies [444e209]
+- Updated dependencies [9690f28]
+- Updated dependencies [af284a7]
+- Updated dependencies [777d0eb]
+- Updated dependencies [35a57fb]
+- Updated dependencies [841f460]
+  - @alexkroman1/aai@9.0.0
+  - @alexkroman1/aai-runtime@9.0.0
+  - @alexkroman1/aai-ui@9.0.0
+
 ## 8.2.1
 
 ### Patch Changes

@@ -1,5 +1,93 @@
 # @alexkroman1/aai-runtime
 
+## 9.0.0
+
+### Major Changes
+
+- 1f21e37: Retire the durable-workflow wake hint. The platform's delivery sweep IS the wake now: it claims due messages from a table with a slug and an available_at and brokers a sandbox to deliver them, which is the query the DevKit's own schema could not answer and the whole reason a per-app hint table existed. Removes createWakeHintPublisher, WakeHintOptions, WakeHintPublisher and WORKFLOW_WAKE_TABLE from /internal — a removal from a published subpath, hence major, though that subpath carries no capability contract by construction.
+
+### Minor Changes
+
+- 006cc1e: Add the guest's HTTP Storage client and the JSON-with-binary wire codec both sides of platform-owned run storage use. The codec reads a value's raw form before toJSON, which is what carries a Buffer across the wire as bytes instead of {type:"Buffer"} — the Postgres world returns Buffers for every bytea column.
+- bccae5a: Add the guest-side platform queue client: `queue()` becomes one authenticated POST to the agent's own `/:slug/workflow-enqueue` instead of a graphile-worker job against the tenant's database. No new credential — the per-sandbox bearer the guest already holds to verify inbound platform requests proves the reverse outbound, and it is bound to one sandbox name so it authorizes exactly one slug.
+- fcb113c: Add the live stream read: GET /:slug/workflow-stream on the platform and the guest client for readFromStream. The HTTP body IS the stream; the response is bounded so a stream whose run died cannot hold a connection forever, and the guest resumes with startIndex.
+- 9115625: Add the platform's queue-delivery door: a host-only `POST /workflow-queue` that dispatches a delivered message to the flow or step entrypoint by the DevKit's queue-name grammar. One door rather than widening the loopback gate on the two callbacks, so that grammar is parsed on the side that depends on the DevKit; refused unless the composition vouches for the caller, which `aai dev`, host mode and a self-hosted server do not.
+- 7dd348f: A deployed guest's durable-workflow world is now the platform's: journal, streams and queue all reached over HTTP, with only the DevKit's createQueueHandler kept locally. The platform world wins over a DATABASE_URL, so a workflow agent opens no database of its own for runs.
+- 9e41442: Self-hosted agents run durable workflows. `createAgentServer` now configures a workflow world and mounts the DevKit's flow/step callback routes, off two new optional options (`workflowCode`/`stepCode`) that the scaffold's `server.mjs` reads from its built worker. Before this, only `aai dev` and the platform guest ever called `configureWorkflowWorld`/`startWorkflowWorldIfDeclared`, so a self-hosted server accepted a run and no world was ever started to execute it — it sat pending with nothing logged. Also splits the DevKit queue-name grammar into two exhaustive patterns (`WORKFLOW_QUEUE_NAME_PATTERN`, `STEP_QUEUE_NAME_PATTERN`) on `@alexkroman1/aai-runtime/internal`, so a name matching neither is refused rather than silently classified.
+- 95be1ca: Bound platform-facing Postgres access so a network partition sheds load instead of hanging: createPostgresDb gains optional connectTimeoutSeconds and queryTimeoutMs (a client-side per-pooled-query deadline — the only bound that survives a silent partition, where a server statement_timeout's cancellation notice is blackholed too; reserved/advisory-lock connections are exempt). The self-hosting createServer also sets an explicit headers timeout and keep-alive timeout to reap slowloris connections on its public surface.
+- c871232: Compose the platform-owned queue into the DevKit's Postgres world: a deployed guest now enqueues through the platform and never subscribes graphile-worker. Storage and the streamer stay in the tenant's own database, so this gives back graphile's held LISTEN connection and its worker concurrency rather than the whole workflow surcharge.
+- 857c3d9: Move workflow upload records to the platform's own database, so a deployed guest keeps nothing durable on local disk. createUploadStore chose an upload's home from whether the agent had a ctx.db, on the premise that a database meant durable runs — which the platform workflow world falsified. A deployed guest with no DATABASE_URL therefore got durable runs with their uploads in a directory that recycles, which is how one sandbox filled its filesystem and ENOSPC'd every write. The platform arm is now checked first, ahead of a DATABASE_URL, the same way the workflow world is.
+- 6d360a7: Preserve turn-level durability without a tenant database: a third SessionStateBackend that keeps a session's slots and event log on the platform, reached over HTTP. It wins over a DATABASE_URL, so a deployed agent's durability no longer depends on whether it provisioned a database. SessionStateBackend.name gains "platform" (epoch 1 retained — widening a field an implementor supplies is not breaking).
+- 4743746: Durable-workflow delivery is NOTIFY-driven. enqueue announces on a Postgres channel when a message is due now and a replica listens, so a step-to-step hop no longer pays the poll interval — the same thing graphile-worker does with jobs:insert. The interval stays as the timer for PARKED messages, which a notification cannot express, and as the mechanism that makes delivery eventual when a listener is reconnecting. CloseableDb gains a required listen() member; aai-runtime:db epoch 2 is RETAINED, since adding a member to a type a caller receives is not breaking for a consumer, and a frozen example proves it.
+- 9690f28: Add the guest's Streamer client (six of seven members; readFromStream's live stream needs its own route) and per-tenant stream names on the platform. Their readFromStream looks a stream up by name alone with no run filter, so in one shared schema two agents sharing a name would share a stream — the platform qualifies the name on the way in and strips it on the way out.
+- af284a7: Publish ensureSessionStateSchema and call it from the scaffold's server.mjs, so a self-hosted agent with a DATABASE_URL creates its own session-state tables instead of failing every session at start.
+
+### Patch Changes
+
+- 65ad531: Refuse boot without AAI_PUBLIC_ORIGIN on a platform tier, and stop treating a full disk as transient. The origin was optional on the reading that only durable webhook URLs needed it; it is now the only source of the base URL a guest needs to install the platform workflow world, so unset meant every durable run silently ran on the DevKit's local world and died with its sandbox. ENOSPC now maps to 507 with no Retry-After, instead of falling through to a 500 that three layers retried.
+- 841f460: The local-storage boot announcement tells the truth in both compositions it is reachable from: under `aai dev` a run and its upload survive a restart, under a per-process data directory they do not.
+- 841f460: Clamp the session-events startIndex so a huge value is a page, not a 500
+- 044236f: Fix durable workflow runs on the platform: carry Dates across the storage RPC (a Date arrived as an ISO string, so the DevKit computed `workflowStartedAt` as NaN, the step payload carried null, and every run stalled at `step_created`), and give the storage reply an explicit `ok` so a VOID method — every `report()` line — is not read as a protocol error. The queue path keeps the DevKit's own format, which is what its own reviver reads.
+- 9d5e2a2: Serve every route from a table, and let the platform's guest-route map import it instead of re-typing it. `SERVER_ROUTES` and `WORKFLOW_CALLBACK_ROUTES` (on `/internal`) name every path this package serves; `createServer` dispatches off them, and `aai-server`'s `GUEST_ROUTES` composes ten of its seventeen entries from them rather than transcribing the strings. A renamed path is a compile error, and a new one fails a test instead of only a grep.
+- af284a7: Answer `cancelled: false` rather than a 500 when a workflow run is already over, and print the eval mode on a green `aai eval` run.
+- 841f460: Fix `GET /workflows/runs/:id/events` holding a silent stream for five minutes on an empty run id, and bound the stream's retry so a persistently failing read hands the client back to its poll instead of looking idle.
+- 841f460: An unsafe run id in a path is a 400 rather than a 500
+- 86398d7: Fix a Buffer nested in an array being serialized as Node's own `toJSON` shape instead of a binary envelope on the workflow storage wire. The replacer guarded its holder read with `isRecord`, which excludes arrays, so `{ chunks: [buf] }` crossed as `{type:"Buffer",data:[...]}` and the peer decoded a plain object rather than bytes.
+- e8bc7d9: AssemblyAI streaming TTS: keep the final segment's word timings, and recognize a sentence closed by a curly quote. A `WordBoundaries` frame trails its own flush's `FlushDone` (~20 ms, measured against the sandbox host), so guarding on `turn.inFlight()` dropped the last segment's timings on every reply — the tail then degraded to the proportional heard-cursor estimate over exactly the span where per-flush padding makes it worst. The sentence-boundary and coalescer closer classes now carry `’` and `”`, which is what an LLM emits by default; a straight-only class cut mid-sentence and tripled the run-to-run duration spread (18% -> 6%) at identical time-to-first-audio.
+- 4e2f9f3: Fix a guest dialling itself for every platform call under the local microVM backend: split the URL a third party dials (AAI_PUBLIC_BASE_URL) from the URL the guest dials (AAI_PLATFORM_BASE_URL), which resolvePlatformQueue now reads.
+- 841f460: cancel() on a run that does not exist resolves false on every world, not just Postgres
+- 841f460: A NUL in a request path segment is a 400, not a 500
+- bca2d99: Answer 503 with a short `Retry-After` when a workflow request cannot get an app-database connection, instead of a generic 500 — a caller can back off on the first and not the second. A workflow app whose durable-run world cannot start now fails its boot rather than serving a guest that reports healthy and 500s forever; a voice agent keeps today's behaviour, since a broken world does not stop it answering the phone.
+- 01046b6: Template evals now use the published createVmRunCode() executor instead of four byte-identical hand-rolled copies.
+- 841f460: A part re-sent while its first attempt is still draining no longer fails with a 500: the local blob and record stores give each write attempt its own temp path instead of sharing a fixed one.
+- 18dfb1c: Platform RPC clients share one HTTP body: a non-2xx whose reply cannot be read now still names the status, and every timeout names the deadline that elapsed.
+- 13b610f: No SDK change. Platform groundwork for running the durable-workflow world on the platform's own database: a run-ownership table (the tenant boundary the DevKit's schema has no column for) and the world constructed against the platform's connection string with its pool pinned.
+- 044236f: Make a deployed agent's session state durable, and stop reporting an absent run as a server error. The runtime read the platform pair (`AAI_PUBLIC_BASE_URL`/`AAI_GUEST_TOKEN`) out of the AGENT's env, where the platform never puts it, so every deployed agent fell back to the memory backend and a session did not survive its sandbox restarting; uploads fell back to local for the same reason. A 404 from platform run storage now becomes the DevKit's own `WorkflowRunNotFoundError`, so GET/DELETE/wake on an unknown run answer 404/`cancelled:false`/`woken:0` instead of 500. The browser client reports a refusal close's own reason instead of discarding it, and a dev-mode `aai init` pins the third-party deps it shares with the linked workspace so two copies of xstate cannot fail the typecheck gate.
+- 841f460: The session-event stream reported `tail: 0` for a session this process never handled, so a cold read of a DURABLE stream answered with a full page of events beside a cursor of zero — and `startIndex=-N` counted back from that zero and returned the whole stream.
+- 6796ae3: Complete the workflow HTTP API's stated auth posture, and pin it on the routes that
+  matter. The module doc reasoned only about the COST of failing open — which is the one
+  exposure the platform's per-IP limits already bound — and said nothing about the two
+  that nothing bounds: the unkeyed arm of `GET /workflows/runs`, which converts knowing a
+  slug into knowing run ids, and `DELETE /runs/:id` / `POST /runs/:id/wake`, which change
+  a run somebody else started and rest on those ids being unguessable. The posture and the
+  argument now live in `workflow-api-auth.ts`, and the token gate is covered on the run
+  listing, cancel and wake rather than only on `GET /workflows` — a check that moved
+  inside a route would have left the destructive verbs open with the suite green. No
+  behaviour change: open-by-default is unchanged, and closing the enumeration arm
+  independently is recorded as the open question rather than taken.
+  
+  Also corrects `WorkflowApiOptions.engine`'s doc, which still argued that an undefined
+  client has two causes and that naming one would be "a confident false statement".
+  `buildWorkflowClient` returns undefined on exactly one condition, and the message it
+  answers with was corrected to say so; this doc was the holdout arguing that was a
+  mistake.
+- 841f460: cancel() on an already-cancelled run now resolves false, matching its documented contract
+- 841f460: A fatal session error now ends a phone call instead of leaving dead air
+- af284a7: Fix telephony: the bridge configured itself on a `config` frame the runtime never emits (it sends `session.configured`), so both resamplers stayed null and a phone call connected with neither end able to hear the other.
+- 777d0eb: No SDK change. The platform's run-storage route: one bearer-gated POST that scopes every DevKit Storage call to the calling agent, with the five methods whose lookup key is not a run id each handled by name.
+- 35a57fb: Refuse the durable-workflow queue callbacks from any peer that is not loopback. `POST /.well-known/workflow/v1/flow` and `/step` were declared `guest-internal` on the argument that "loopback is the whole gate", and nothing checked: a deployed guest binds every interface behind a public Modal tunnel whose origin the public `/:slug/client-config` hands to any browser, so `step` would execute one of the tenant's registered step functions with a caller-supplied payload. The gate lives in `handleWorkflowRequest`, so it covers `aai dev`, host mode, studio mode and a self-hosted `createAgentServer` alike. The webhook route is deliberately untouched — its URL is handed to third parties and the DevKit's path token is its authorization.
+- 841f460: An expired workflow webhook token answers 404 instead of 500, so a third party stops retrying a dead callback; and a refused upload part offset names its real reason instead of always reporting misalignment.
+- Updated dependencies [444e209]
+- Updated dependencies [af284a7]
+- Updated dependencies [444e209]
+- Updated dependencies [e888216]
+- Updated dependencies [444e209]
+- Updated dependencies [444e209]
+- Updated dependencies [444e209]
+- Updated dependencies [f6be741]
+- Updated dependencies [af284a7]
+- Updated dependencies [e20a992]
+- Updated dependencies [444e209]
+- Updated dependencies [841f460]
+- Updated dependencies [b238ba0]
+- Updated dependencies [6796ae3]
+- Updated dependencies [5bac92d]
+- Updated dependencies [841f460]
+- Updated dependencies [841f460]
+- Updated dependencies [af284a7]
+- Updated dependencies [444e209]
+  - @alexkroman1/aai@9.0.0
+
 ## 8.2.1
 
 ### Patch Changes

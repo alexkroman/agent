@@ -1,5 +1,35 @@
 # aai-studio-client
 
+## 0.6.10
+
+### Patch Changes
+
+- Updated dependencies [444e209]
+- Updated dependencies [af284a7]
+- Updated dependencies [444e209]
+- Updated dependencies [e888216]
+- Updated dependencies [444e209]
+- Updated dependencies [444e209]
+- Updated dependencies [444e209]
+- Updated dependencies [f6be741]
+- Updated dependencies [af284a7]
+- Updated dependencies [af284a7]
+- Updated dependencies [e20a992]
+- Updated dependencies [444e209]
+- Updated dependencies [841f460]
+- Updated dependencies [b238ba0]
+- Updated dependencies [6796ae3]
+- Updated dependencies [5bac92d]
+- Updated dependencies [841f460]
+- Updated dependencies [044236f]
+- Updated dependencies [841f460]
+- Updated dependencies [af284a7]
+- Updated dependencies [444e209]
+- Updated dependencies [444e209]
+- Updated dependencies [444e209]
+  - @alexkroman1/aai@9.0.0
+  - @alexkroman1/aai-ui@9.0.0
+
 ## 0.6.9
 
 ### Patch Changes
