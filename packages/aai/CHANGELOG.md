@@ -1,5 +1,100 @@
 # @alexkroman1/aai
 
+## 9.0.0
+
+### Major Changes
+
+- 444e209: One name per concept: `agent({ system })` and `SubagentDef.instructions` are both `systemPrompt`; `TextTurnOptions.system` too. `webSearch` takes `maxResults` in the options bag and nowhere else. The workflow hooks' def type parameter is required.
+- e888216: Remove per-app databases from the platform entirely. The platform provisions no database for a tenant: `aai storage enable/disable/status`, the studio's Database card and pane, the `/:slug/storage` routes and the eleven app-db modules behind them are gone. An author who wants a database puts a DATABASE_URL in their own secrets, pointing at their own provider, and it now reaches the guest untouched — it used to be overlaid LAST, so enabling storage silently beat whatever the author had set. Durable state did not go with it: durable workflow runs and turn-level durability (session slots, the session event log) are on the platform's own database, reached over HTTP with the sandbox's bearer. The connection budget loses its only tenant-scaled term, which was 28 of 40 spoken for by two apps.
+- 444e209: `@alexkroman1/aai/testing/vite` serves `virtual:aai/agent` — the agent lowered the way `aai build` lowers it, so a spec imports one module instead of rebuilding it from a glob, a `?raw` read and `deployedAgent`. `withDiscoveredTools` is no longer exported.
+- f6be741: Remove ctx.db. The platform provisions no database and no longer hands tool code one either: a tool or an event hook that wants SQL brings its own client and its own credential. Db survives as an @internal type — the shape the runtime's own Postgres consumers take — and createUnusedDb goes with it. Ten capability epochs were dropped, and solo-rpg loses save_game/load_game: a shipped template cannot reach a database, so no template demonstrates cross-session persistence.
+
+### Minor Changes
+
+- 444e209: Reject unknown fields in `agent()` instead of silently dropping them, and type `ctx.env` as `Partial` so an undeclared credential is `string | undefined`. Adds `requireEnv(ctx, name)`, the `ToolContext` twin of `requireStepEnv`.
+- 444e209: `agent({ temperature })` tunes the main conversational loop, in pipeline and text modes. S2S rejects it rather than dropping it.
+- 444e209: A throwing tool now emits a non-fatal `tool` error frame; `aai dev` typechecks in the background; and the workflow-app compile-error messages no longer appear in a voice agent's diagnostics.
+
+### Patch Changes
+
+- 444e209: Warn at build time when `region: "eu"` sits beside a TTS stage that has no EU endpoint.
+- af284a7: Fix a two-second stall on every `aai dev` session handshake behind a `client.tsx`.
+  
+  `viteDevConfig`'s proxy targets named `localhost`, and Vite opens a FRESH
+  upstream connection for every WebSocket upgrade — an HTTP request reuses a
+  pooled keep-alive socket and so resolves rarely. That made a hostname one
+  `getaddrinfo` per session handshake, on libuv's four-thread pool, shared with
+  every other fs and DNS call in a process that is also serving the agent. Under
+  load that lookup intermittently stalls for almost exactly two seconds.
+  
+  Measured on the `retail` template, handshakes to `session.configured`:
+  
+  | Target | conc | rps | p50 | p99 |
+  | --- | --- | --- | --- | --- |
+  | `localhost` | 1 | 12-18 | 8-11 ms | 2.0 s |
+  | `localhost` | 10 | 0.6 | 16.7 s | 16.7 s |
+  | `127.0.0.1` | 1 | 89-207 | 4-9 ms | 23-49 ms |
+  | `127.0.0.1` | 20 | 260 | 73 ms | 166 ms |
+  
+  The `localhost` rows are a queue rather than a slow proxy: one handshake in
+  thirty stalled on its own, and at concurrency 10 the stalls piled up until a
+  sustained burst left the proxy refusing upgrades entirely until the dev server
+  was restarted. With the literal it recovers from a burst and sits within ~1.5x
+  of the backend port.
+  
+  Localized by timing the handshake phases separately — TCP connect and the first
+  frame were always fast, the 101 was not — and then by comparing the instant the
+  client sent its upgrade against the backend's own log line for it: 23.808 out,
+  25.796 in, answered in 5 ms, so the two seconds were spent before Vite dialled.
+  
+  Not a behaviour change: `localhost` resolved to loopback anyway, so this removes
+  the lookup and nothing else. A test now asserts every target in the table is an
+  IP literal, so a route added later cannot reintroduce it.
+- af284a7: Classify a step's Response failures again: `toStepError` recognised a `Response` with `instanceof`, which is false inside a step bundle's own realm, so every fatal status was retried to exhaustion and every `Retry-After` ignored.
+- e20a992: Cleanup pass over the platform-workflow change: skip binary fields in the storage egress run-id walk (a 1 MiB Buffer cost 716ms of synchronous event loop, now 0.2ms), pre-swap Buffers for zero-copy views before typed-JSON encoding (1.7-2.8x on every binary-carrying call), batch the per-page ownership lookups behind one `ownsRuns`, and single-source the five platform route paths and the guest credential pair in `platform-endpoint.ts`. Removes dead code the change left behind (`APP_DB_WORLD_LISTEN`, `BundleStore.listSlugs`, `ToolSetupDeps.resolvedDb`) and corrects the studio prompt, which still taught the deleted `ctx.db` and a Database pane that no longer exists.
+- 841f460: Four runtime error messages told you to import `withDiscoveredTools` from `@alexkroman1/aai/testing`, which does not export it. They now name what a spec actually uses: `virtual:aai/agent` under vitest, or `deployedAgent` under any other runner.
+- b238ba0: Move the orphan-preview reap back into pg_cron and delete the connection-pressure sweep. With no per-app database to drop, a reap is a Vault row and an agents row — both plain SQL — so the two reasons it left pg_cron are gone. It takes the same advisory lock a deploy takes, verified against a real Postgres from a second connection, and a parity test fails if deleteAgent grows a step the SQL body lacks. platform-db-pressure.ts is deleted: its whole argument was the tenant-scaled budget term, which no longer exists.
+- 6796ae3: Drop two dangling `db` references from `ToolContext`'s published docs. `ctx.generate`
+  and `ctx.delegate` described themselves as executing "on the host, like `db`" — a field
+  removed outright, so the comparison pointed at nothing.
+- 5bac92d: Fix the user-facing copy that still told people to run 'aai storage enable' or click Settings → Database. Neither exists: the platform provisions no tenant database, so ctx.db is a DATABASE_URL an author points at their own Postgres. Two messages were wrong about more than the command — the workflows-unavailable error blamed missing storage when the only cause is an app declaring no workflows, and the local-uploads notice claimed runs were ephemeral without a database when a deployed app's runs are the platform's.
+- 841f460: SSRF: screen the IPv4 address a NAT64 or 6to4 IPv6 address carries
+- 841f460: Bound the host-mode config frame's sample rates at MAX_AUDIO_SAMPLE_RATE
+- af284a7: Fix three failures found while load-testing the template agents.
+  
+  **`aai dev` with a `DATABASE_URL` could not start a session.** Session state
+  resolved to Postgres and reported `durable: true`, but nothing created
+  `aai_session_state` / `aai_session_events` — the tables come with whoever owns
+  the database, and under `aai dev` that is the developer, with no migration step
+  to hang the DDL off. Every session died at start with a fatal 1011 the client
+  reads as "Session failed to start", the real cause
+  (`relation "aai_session_events" does not exist`) reaching only the dev log —
+  while the workflow world migrated itself on the same boot and said so. `aai dev`
+  now applies the SDK's own `sessionStateDdl` once at boot, before the runtime
+  opens its pool. Best-effort: a role that may not CREATE because a real migration
+  already ran gets one warning, not a refused boot.
+  
+  **A platform with no upload records answered every upload with a bare 500.** The
+  platform returns `501 platform upload records not configured`, which is a named
+  configuration condition, but the guest's records client let it fall to its
+  generic throw — so the upload routes discarded it as
+  `500 {"error":"Internal server error"}` and the actionable sentence stayed in the
+  platform's log. It is classified as `UploadsUnavailableError` now, which those
+  routes already answer as a 501 carrying its message. (`uploads-handler.ts` also
+  claimed the guest "falls back to its local store"; no such path exists, and the
+  comment said so for longer than it was true.)
+  
+  **Guest readiness polled every 250 ms.** That interval is pure added latency on
+  every non-Modal cold spawn — the guest becomes ready between two attempts, so
+  measured boot time is the real one rounded up to a multiple of it. At 25 ms the
+  harness floor drops from 1021 ms to 884 ms (median 1025 → 915) in a back-to-back
+  A/B, and the same bundle stops timing 1310 ms or 1580 ms run to run.
+  
+  Also documents, in `viteDevConfig`, that a session benchmarked through the Vite
+  dev port carries a multi-second tail that belongs to the proxy rather than the
+  agent, with the measurement and the port to use instead.
+- 444e209: `StaticAgentParams` is derived from the arm `AgentParams` names rather than sharing a third base with it. The shape is identical; what it removes is the second undocumented type on a public signature, which `treatWarningsAsErrors` refuses.
+
 ## 8.2.1
 
 ## 8.2.0

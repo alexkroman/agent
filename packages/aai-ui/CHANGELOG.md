@@ -1,5 +1,40 @@
 # @alexkroman1/aai-ui
 
+## 9.0.0
+
+### Major Changes
+
+- 444e209: The workflow hooks take the workflow DEFINITION as their type parameter, not its output type — which types `submit(input)` as well. Migration is one token per call site: `useWorkflowSubmit<Digest>("digest")` becomes `useWorkflowSubmit<typeof digest>("digest")`. `submitForm` is the door for a `<Form>`'s DOM-scraped values.
+
+### Minor Changes
+
+- 444e209: Name what `submit()` takes. `SubmitInputOf<D>` and `WorkflowInputOf` are on the barrel: the first is in both submit hooks' return type and had nowhere to click, the second was the missing half of a pair whose `WorkflowOutputOf` was already re-exported here — so a page typing a form value reached past this package for one name. `SubmitOutputOf` came off in the same change; it was `WorkflowOutputOf` spelled a second way.
+
+### Patch Changes
+
+- af284a7: Stop reconnecting after a fatal session error, so the server's message reaches the page immediately.
+- 044236f: Make a deployed agent's session state durable, and stop reporting an absent run as a server error. The runtime read the platform pair (`AAI_PUBLIC_BASE_URL`/`AAI_GUEST_TOKEN`) out of the AGENT's env, where the platform never puts it, so every deployed agent fell back to the memory backend and a session did not survive its sandbox restarting; uploads fell back to local for the same reason. A 404 from platform run storage now becomes the DevKit's own `WorkflowRunNotFoundError`, so GET/DELETE/wake on an unknown run answer 404/`cancelled:false`/`woken:0` instead of 500. The browser client reports a refusal close's own reason instead of discarding it, and a dev-mode `aai init` pins the third-party deps it shares with the linked workspace so two copies of xstate cannot fail the typecheck gate.
+- Updated dependencies [444e209]
+- Updated dependencies [af284a7]
+- Updated dependencies [444e209]
+- Updated dependencies [e888216]
+- Updated dependencies [444e209]
+- Updated dependencies [444e209]
+- Updated dependencies [444e209]
+- Updated dependencies [f6be741]
+- Updated dependencies [af284a7]
+- Updated dependencies [e20a992]
+- Updated dependencies [444e209]
+- Updated dependencies [841f460]
+- Updated dependencies [b238ba0]
+- Updated dependencies [6796ae3]
+- Updated dependencies [5bac92d]
+- Updated dependencies [841f460]
+- Updated dependencies [841f460]
+- Updated dependencies [af284a7]
+- Updated dependencies [444e209]
+  - @alexkroman1/aai@9.0.0
+
 ## 8.2.1
 
 ### Patch Changes
