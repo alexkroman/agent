@@ -145,6 +145,20 @@ export { executeToolCall } from "./tool-executor.ts";
 // has to agree with. The HANDLER is not here: `createServer` mounts the route
 // itself, so nothing outside this package wires one by hand.
 export { WORKFLOW_API_METHODS } from "./workflow-api.ts";
+/**
+ * The durable JOURNAL and its schema.
+ *
+ * On `/internal` rather than the root barrel because a name is here when
+ * something IMPORTS it and it is not authoring API: the two consumers are
+ * `workflow-runtime.ts`, which picks a backend, and the scenario suite in
+ * `aai-server` that drives the real arm. A host embedding this runtime is handed
+ * a journal by `createAgentServer`; it does not build one.
+ */
+export {
+  applyWorkflowJournalDdl,
+  createPostgresJournal,
+  workflowJournalDdl,
+} from "./workflow-journal-postgres.ts";
 // The startup sweep that clears queue locks no live pool owns, and the advisory
 // lock it contends for. Exported for a SPEC: what a fake cannot check is that
 // `graphile_worker.force_unlock_workers` exists and does what its name says, and

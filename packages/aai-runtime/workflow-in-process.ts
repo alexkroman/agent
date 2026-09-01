@@ -58,10 +58,16 @@ const MAX_TIMER_MS = 2_147_483_647;
 export type InProcessWorkflowEngineOptions = {
   workflows: Readonly<Record<string, WorkflowDef>>;
   logger: Logger;
-  /** Defaults to a fresh in-memory journal. Injected so a spec can inspect one. */
-  journal?: JournalStore;
+  /**
+   * Where runs live. Defaults to a fresh in-memory journal.
+   *
+   * `workflow-runtime.ts` passes a Postgres one when the deployment has a
+   * `DATABASE_URL`, which is what makes a run outlive its process. A spec passes
+   * a memory one it can inspect.
+   */
+  journal?: JournalStore | undefined;
   /** Defaults to a fresh in-memory progress store. */
-  streams?: StreamStore;
+  streams?: StreamStore | undefined;
 };
 
 /** The engine plus the one thing a host must do on the way down. */

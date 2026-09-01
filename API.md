@@ -8298,9 +8298,16 @@ import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
 import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @internal
 export function agentServerEnv(env: Record<string, string>): Record<string, string>;
+
+// @internal
+export function applyWorkflowJournalDdl(opts: {
+    db: Db;
+    logger: Logger;
+}): Promise<boolean>;
 
 // @internal
 export function callPlatformStorage(opts: PlatformStorageOptions, method: string, args: readonly unknown[]): Promise<unknown>;
@@ -8373,6 +8380,11 @@ export function createPlatformStreamer(opts: PlatformStorageOptions): {
 
 // @internal
 export function createPlatformStreamReader(opts: PlatformStorageOptions): (name: string, startIndex?: number) => Promise<ReadableStream<Uint8Array>>;
+
+// @internal
+export function createPostgresJournal(opts: {
+    db: Db;
+}): JournalStore;
 
 // @internal
 export function createPostgresStateBackend(opts: {
@@ -8457,6 +8469,14 @@ export function handleWorkflowRequest(surface: WorkflowSurface | null | undefine
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
 }): boolean;
 
+// @public
+type HookRecord = {
+    token: string;
+    delivered: boolean;
+    payload?: unknown;
+    closed?: boolean;
+};
+
 // @internal
 type HostGenerateFn = (options: GenerateOptions, callOpts?: {
     signal?: AbortSignal | undefined;
@@ -8464,6 +8484,27 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 
 // @internal
 export function isPathInside(dir: string, target: string): boolean;
+
+// @public
+type JournalStore = {
+    createRun(record: RunRecord): Promise<void>;
+    getRun(runId: string): Promise<RunRecord | undefined>;
+    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
+    setStatus(runId: string, next: RunStatus, patch?: {
+        output?: unknown;
+        error?: {
+            message: string;
+        };
+    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    readSteps(runId: string): Promise<StepEntry[]>;
+    claimAttempt(runId: string, key: string): Promise<number>;
+    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
+    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+    closeHook(runId: string, key: string): Promise<void>;
+    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
+};
 
 // @public
 type LogContext = Record<string, unknown>;
@@ -8539,6 +8580,22 @@ export { resolveAllBuiltins }
 
 // @internal
 export function routeMatches(route: ServerRoute, url: string, method?: string): boolean;
+
+// @public
+type RunRecord = {
+    runId: string;
+    workflow: string;
+    status: RunStatus;
+    createdAt: number;
+    input: unknown;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+type RunStatus = WorkflowRunStatus;
 
 export { safeFetch }
 
@@ -8688,6 +8745,14 @@ type SessionWebSocket = {
     }) => void): void;
 };
 
+// @public
+type SleepRecord = {
+    wakeAt: number;
+    woken: boolean;
+    correlationId?: string | undefined;
+    kind: "sleep" | "hookTimeout";
+};
+
 // @internal
 export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
 
@@ -8706,6 +8771,19 @@ type StateSyncSession = {
 
 // @internal
 export const STEP_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_step_.+$";
+
+// @public
+type StepEntry = {
+    key: string;
+    name: string;
+    status: "ok" | "failed";
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    attempts: number;
+    finishedAt: number;
+};
 
 // @public
 const STORAGE_CONFLICT_STATUS = 409;
@@ -8859,6 +8937,9 @@ export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
 
 // @internal
 export const WORKFLOW_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_workflow_.+$";
+
+// @internal
+export function workflowJournalDdl(schema?: string): string[];
 
 // @internal
 export type WorkflowSurface = {

@@ -1,0 +1,317 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * What a RECORDER can see about the Postgres journal — and it is one thing above
+ * all others.
+ *
+ * `workflow-journal.scenario.test.ts` (in `aai-server`) drives this against a
+ * real server and is where the behaviour lives: whether `claimAttempt` really
+ * increments atomically, whether `appendStep`'s `on conflict` rests on a key that
+ * exists. None of that is representable here, because a recording `Db` returns
+ * whatever it is told to.
+ *
+ * What IS worth pinning in the fast tier is the SHAPE of two decisions that were
+ * wrong when written and whose failure is silent:
+ *
+ * - **Every jsonb binding is `::text::jsonb`.** postgres.js JSON-serializes a
+ *   parameter bound to a `jsonb` position, so handing it the codec's
+ *   already-encoded text stores a JSON *string* containing the JSON — after which
+ *   a run's `input` reads back as text and a `Uint8Array` envelope never revives.
+ *   It shipped, and only a real server found it. A recorder can see the cast, so
+ *   the cheap tier can keep it.
+ * - **The compare-and-set really passes its `expect` list.** `setStatus`'s whole
+ *   contract is that a worker which had not noticed a cancel cannot mark the run
+ *   completed, and that is a `where` clause a recorder CAN read.
+ */
+
+import type { Db } from "@alexkroman1/aai/internal";
+import { describe, expect, test, vi } from "vitest";
+import { type IssuedStatement, recordingDb } from "./_test-utils.ts";
+import {
+  applyWorkflowJournalDdl,
+  createPostgresJournal,
+  workflowJournalDdl,
+} from "./workflow-journal-postgres.ts";
+
+/** `recordingDb` under this file's older name, returning the two halves apart. */
+function recorder(rows: readonly Record<string, unknown>[][] = []) {
+  const db = recordingDb(rows);
+  return { db, issued: db.issued };
+}
+
+/** Every statement that binds a value into a `jsonb` column. */
+const JSONB_BINDINGS = /\$\d+::(text::)?jsonb/g;
+
+describe("every jsonb binding casts through text", () => {
+  test("createRun, setStatus, appendStep and deliverHook all use `::text::jsonb`", async () => {
+    // createRun, setStatus, appendStep's insert, appendStep's read-back,
+    // deliverHook — the read-back is the only one whose answer is load-bearing
+    // (an empty result is a thrown "step vanished").
+    const { db, issued } = recorder([
+      [],
+      [{ run_id: "wrun_1" }],
+      [],
+      [
+        {
+          key: "a#0",
+          name: "a",
+          status: "ok",
+          output: '"value"',
+          error: null,
+          attempts: 1,
+          finished_at: 2,
+        },
+      ],
+      [],
+    ]);
+    const journal = createPostgresJournal({ db });
+
+    await journal.createRun({
+      runId: "wrun_1",
+      workflow: "digest",
+      status: "pending",
+      createdAt: 1,
+      input: { topic: "otters" },
+    });
+    await journal.setStatus("wrun_1", "completed", { output: "done" }, ["running"]);
+    await journal.appendStep("wrun_1", {
+      key: "a#0",
+      name: "a",
+      status: "ok",
+      output: "value",
+      attempts: 1,
+      finishedAt: 2,
+    });
+    await journal.deliverHook("tok", { ok: true });
+
+    const casts = issued.flatMap((stmt: IssuedStatement) => stmt.sql.match(JSONB_BINDINGS) ?? []);
+    // Four writes carry an encoded value, and every one of them must name `text`
+    // first — a bare `$n::jsonb` is the double-encode.
+    expect(casts.length).toBeGreaterThanOrEqual(4);
+    expect(casts.filter((cast: string) => !cast.includes("::text::jsonb"))).toEqual([]);
+  });
+
+  test("binds the codec's TEXT, not an object", async () => {
+    // The other half of the same decision: if a caller ever "fixed" the cast by
+    // parsing the value instead, the parameter would stop being a string and the
+    // envelope would be re-serialized by the driver rather than by the codec.
+    const { db, issued } = recorder();
+    await createPostgresJournal({ db }).createRun({
+      runId: "wrun_1",
+      workflow: "digest",
+      status: "pending",
+      createdAt: 1,
+      input: { topic: "otters" },
+    });
+    expect(issued[0]?.params.at(-1)).toBe('{"topic":"otters"}');
+  });
+});
+
+describe("setStatus", () => {
+  test("passes its `expect` list, which IS the compare-and-set", async () => {
+    const { db, issued } = recorder([[{ run_id: "wrun_1" }]]);
+    const moved = await journalOf(db).setStatus("wrun_1", "completed", undefined, ["running"]);
+    expect(moved).toBe(true);
+    expect(issued[0]?.params).toContainEqual(["running"]);
+  });
+
+  test("answers false when the update matched no row", async () => {
+    // The row count is the answer — a worker that had not noticed a cancel must
+    // not be told it moved the run.
+    const { db } = recorder([[]]);
+    expect(await journalOf(db).setStatus("wrun_1", "completed", undefined, ["running"])).toBe(
+      false,
+    );
+  });
+
+  test("passes null for an ABSENT expect, so the predicate matches any status", async () => {
+    const { db, issued } = recorder([[{ run_id: "wrun_1" }]]);
+    await journalOf(db).setStatus("wrun_1", "cancelled");
+    expect(issued[0]?.params).toContain(null);
+  });
+});
+
+describe("claimHook", () => {
+  test("refuses a token another run holds, naming the holder", async () => {
+    const { db } = recorder([[{ run_id: "wrun_other", key: "hook!0" }]]);
+    await expect(journalOf(db).claimHook("wrun_1", "hook!0", "tok")).rejects.toThrow(
+      /already held by run wrun_other/,
+    );
+  });
+
+  test("accepts a re-claim by the SAME run and key, which is what a replay does", async () => {
+    const { db } = recorder([
+      [{ run_id: "wrun_1", key: "hook!0" }],
+      [],
+      [{ token: "tok", delivered: false, payload: null, closed: false }],
+    ]);
+    await expect(journalOf(db).claimHook("wrun_1", "hook!0", "tok")).resolves.toMatchObject({
+      token: "tok",
+      delivered: false,
+    });
+  });
+});
+
+/** A `Logger` that records rather than prints. */
+function quietLogger() {
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
+
+/** The journal over a recorder, for the cases that do not read `issued`. */
+function journalOf(db: Db) {
+  return createPostgresJournal({ db });
+}
+
+describe("claimAttempt", () => {
+  test("is ONE statement, which IS the atomicity claim", async () => {
+    // Read-then-increment would let two concurrent deliveries of the same run
+    // read the same number and take a step past its ceiling. Nothing a recorder
+    // can do proves the database is atomic — but a SECOND query here would prove
+    // it is not, and that is the regression worth catching in the fast tier.
+    const { db, issued } = recorder([[{ n: 3 }]]);
+    expect(await journalOf(db).claimAttempt("wrun_1", "a#0")).toBe(3);
+    expect(issued).toHaveLength(1);
+    expect(issued[0]?.sql).toMatch(/on conflict .* do update set/s);
+  });
+
+  test("refuses an empty result rather than inventing an attempt number", async () => {
+    const { db } = recorder([[]]);
+    await expect(journalOf(db).claimAttempt("wrun_1", "a#0")).rejects.toThrow(/returned nothing/);
+  });
+});
+
+describe("wakeSleeps", () => {
+  test("a BARE wake reaches ordinary sleeps only, never a hook deadline", async () => {
+    // The bug this pins: a hook's timeout was journaled as an ordinary sleep, so
+    // a "send it now" tool calling `wakeUp()` with no correlation id also closed
+    // every open approval window on the run.
+    const { db, issued } = recorder([[{ key: "sleep!0" }]]);
+    expect(await journalOf(db).wakeSleeps("wrun_1", undefined)).toBe(1);
+    expect(issued[0]?.sql).toContain("kind = 'sleep'");
+    expect(issued[0]?.params).toContain(null);
+  });
+
+  test("a CORRELATED wake passes its ids, and reaches any kind", async () => {
+    const { db, issued } = recorder([[{ key: "hookTimeout!0" }]]);
+    await journalOf(db).wakeSleeps("wrun_1", ["order-7"]);
+    expect(issued[0]?.params).toContainEqual(["order-7"]);
+  });
+
+  test("counts the rows it moved, so a caller can tell nothing-waiting from woke-one", async () => {
+    const { db } = recorder([[]]);
+    expect(await journalOf(db).wakeSleeps("wrun_1", undefined)).toBe(0);
+  });
+});
+
+describe("claimSleep", () => {
+  test("writes with `do nothing` then READS, so a replay cannot push the deadline out", async () => {
+    const { db, issued } = recorder([
+      [],
+      [{ wake_at: "1700000000000", woken: false, correlation_id: null, kind: "sleep" }],
+    ]);
+    const slept = await journalOf(db).claimSleep("wrun_1", "sleep!0", 42, undefined);
+    expect(issued[0]?.sql).toMatch(/on conflict .* do nothing/s);
+    // 42 went in; what comes back is the FIRST claim's deadline, not this one's.
+    expect(slept.wakeAt).toBe(1_700_000_000_000);
+  });
+
+  test("defaults the kind to `sleep`, so only an explicit hook deadline is one", async () => {
+    const { db, issued } = recorder([
+      [],
+      [{ wake_at: 1, woken: false, correlation_id: "c", kind: "sleep" }],
+    ]);
+    await journalOf(db).claimSleep("wrun_1", "sleep!0", 1, "c");
+    expect(issued[0]?.params).toContain("sleep");
+  });
+});
+
+describe("a bigint column arrives as a STRING", () => {
+  test('getRun and readSteps convert it, so a timestamp is never `"17…" < 42`', async () => {
+    // postgres.js hands back `bigint` as a string to avoid the 2^53 cliff. Left
+    // alone, every comparison against a deadline is lexicographic and every
+    // arithmetic one is concatenation.
+    const { db } = recorder([
+      [
+        {
+          run_id: "wrun_1",
+          workflow: "digest",
+          status: "completed",
+          created_at: "1700000000000",
+          input: '{"topic":"otters"}',
+          output: '"done"',
+          error: null,
+        },
+      ],
+      [
+        {
+          key: "a#0",
+          name: "a",
+          status: "ok",
+          output: "1",
+          error: null,
+          attempts: 1,
+          finished_at: "1700000000001",
+        },
+      ],
+    ]);
+    const journal = journalOf(db);
+    const run = await journal.getRun("wrun_1");
+    expect(run?.createdAt).toBe(1_700_000_000_000);
+    expect(run?.input).toEqual({ topic: "otters" });
+
+    const [step] = await journal.readSteps("wrun_1");
+    expect(step?.finishedAt).toBe(1_700_000_000_001);
+  });
+
+  test("getRun answers undefined for a run nothing stored", async () => {
+    const { db } = recorder([[]]);
+    expect(await journalOf(db).getRun("wrun_missing")).toBeUndefined();
+  });
+
+  test("listRuns passes its limit and maps every row", async () => {
+    const row = {
+      run_id: "wrun_1",
+      workflow: "digest",
+      status: "pending" as const,
+      created_at: 7,
+      input: "null",
+      output: null,
+      error: null,
+    };
+    const { db, issued } = recorder([[row, { ...row, run_id: "wrun_2" }]]);
+    const runs = await journalOf(db).listRuns("digest", 25);
+    expect(runs.map((r) => r.runId)).toEqual(["wrun_1", "wrun_2"]);
+    expect(issued[0]?.params).toContain(25);
+  });
+});
+
+describe("the DDL", () => {
+  test("declares all five tables, and qualifies them when given a schema", () => {
+    const bare = workflowJournalDdl().join("\n");
+    for (const table of ["runs", "steps", "attempts", "sleeps", "hooks"]) {
+      expect(bare).toContain(`aai_workflow_${table}`);
+    }
+    expect(workflowJournalDdl("aai_platform").join("\n")).toContain('"aai_platform".aai_workflow');
+  });
+
+  test("applying it is NEVER fatal — a role that may not CREATE keeps booting", async () => {
+    // A real migration may already own these tables, in which case the backend's
+    // own error is the better diagnostic than a refused boot.
+    const logger = quietLogger();
+    const db = {
+      query: vi.fn(async () => {
+        throw new Error("permission denied for schema public");
+      }),
+    };
+    await expect(applyWorkflowJournalDdl({ db, logger })).resolves.toBe(false);
+    const warn = logger.warn;
+    expect(warn).toHaveBeenCalledWith(
+      "Workflow journal schema not applied",
+      expect.objectContaining({ error: expect.stringContaining("permission denied") }),
+    );
+  });
+
+  test("reports true when every statement lands", async () => {
+    const { db } = recorder();
+    expect(await applyWorkflowJournalDdl({ db, logger: quietLogger() })).toBe(true);
+  });
+});

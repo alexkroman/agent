@@ -1030,6 +1030,7 @@
     "WorkflowSurface",
     "WorldKind",
     "agentServerEnv",
+    "applyWorkflowJournalDdl",
     "callPlatformStorage",
     "claimPoolPresenceAndSweep",
     "configureWorkflowWorld",
@@ -1038,6 +1039,7 @@
     "createPlatformStorage",
     "createPlatformStreamReader",
     "createPlatformStreamer",
+    "createPostgresJournal",
     "createPostgresStateBackend",
     "createSessionEventStream",
     "createSessionStateStore",
@@ -1061,7 +1063,8 @@
     "startWorkflowWorldIfDeclared",
     "storageStatusFor",
     "wdkAdapter",
-    "wireSessionSocket"
+    "wireSessionSocket",
+    "workflowJournalDdl"
   ],
   "@alexkroman1/aai-ui/client-dir": [
     "defaultClientDir"

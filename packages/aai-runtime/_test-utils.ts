@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import type { AgentDef, ToolContext, ToolDef } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { createDetachedSlotStore, rejectingWorkflows } from "@alexkroman1/aai/host-internal";
+import type { Db } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
@@ -490,6 +491,50 @@ export function createFixtureSession(agent: AgentDef, opts?: { env?: Record<stri
       for (const msg of loadFixture(fixtureName)) {
         fireFixtureMessage(cbs, msg as Record<string, unknown>);
       }
+    },
+  };
+}
+
+/** One statement a fake `Db` was asked to run. */
+export type IssuedStatement = { sql: string; params: unknown[] };
+
+/** A fake `Db` that records every statement and answers reads from a queue. */
+export type RecordingDb = Db & {
+  /** Every statement issued, in order, with the parameters it was bound to. */
+  readonly issued: IssuedStatement[];
+  /** The same statements as bare SQL, for a caller that asserts on shape only. */
+  readonly sql: string[];
+};
+
+/**
+ * A `Db` that records what it was asked and answers from a queue of rows.
+ *
+ * The narrowing below is the ONE unavoidable cast in this shape, and it is here
+ * so there is exactly one of it. `Db.query<T>` lets the CALLER name the row
+ * type, so no runtime queue can satisfy an arbitrary `T` — a fake for a generic
+ * read is a cast by construction. What is avoidable is a copy of it per suite:
+ * `workflow-keys.test.ts` and `workflow-journal-postgres.test.ts` had written
+ * the same eight lines, each laundering through its own `as never`, which is
+ * the pattern this repo counts precisely because it multiplies.
+ *
+ * `rows` is consumed IN ORDER, so a method that writes and then reads back —
+ * `appendStep`, `claimSleep`, `claimHook` all have that shape — gets its read
+ * answered by the next entry.
+ */
+export function recordingDb(rows: readonly Record<string, unknown>[][] = []): RecordingDb {
+  const issued: IssuedStatement[] = [];
+  const queue = [...rows];
+  return {
+    issued,
+    get sql() {
+      return issued.map((statement) => statement.sql);
+    },
+    // A plain function rather than `vi.fn`: the mock wrapper erases the generic
+    // (`Mock` fixes `T` at declaration), and `issued` is already the recording
+    // a spy would have provided.
+    async query<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
+      issued.push({ sql, params });
+      return (queue.shift() ?? []) as T[];
     },
   };
 }

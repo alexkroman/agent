@@ -10,8 +10,8 @@
  * integration tier.
  */
 
-import type { Db } from "@alexkroman1/aai/internal";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
+import { recordingDb } from "./_test-utils.ts";
 import {
   createMemoryKeyStore,
   createPostgresKeyStore,
@@ -20,19 +20,6 @@ import {
   resolveFindLimit,
   WORKFLOW_KEYS_TABLE,
 } from "./workflow-keys.ts";
-
-/** A `Db` that records every statement and answers lookups from a queue. */
-function recordingDb(rows: Record<string, unknown>[][] = []): Db & { sql: string[] } {
-  const sql: string[] = [];
-  const queue = [...rows];
-  return {
-    sql,
-    query: vi.fn(async (statement: string) => {
-      sql.push(statement);
-      return (queue.shift() ?? []) as never;
-    }),
-  };
-}
 
 describe("resolveFindLimit", () => {
   test("defaults when the caller names no limit", () => {
@@ -104,8 +91,8 @@ describe("the Postgres key store", () => {
       store.record("digest", "b", "wrun_2"),
       store.lookup("digest", "a", 10),
     ]);
-    expect(db.sql.filter((s) => s.includes("create table"))).toHaveLength(1);
-    expect(db.sql.filter((s) => s.includes("create index"))).toHaveLength(1);
+    expect(db.sql.filter((s: string) => s.includes("create table"))).toHaveLength(1);
+    expect(db.sql.filter((s: string) => s.includes("create index"))).toHaveLength(1);
   });
 
   test("re-recording one run is a no-op rather than an error", async () => {
@@ -127,7 +114,7 @@ describe("the Postgres key store", () => {
     const db = recordingDb();
     const store = createPostgresKeyStore(db);
     await store.lookup("digest", "caller'; drop table users; --", 5);
-    const [statement, params] = vi.mocked(db.query).mock.calls.at(-1) ?? [];
+    const { sql: statement, params } = db.issued.at(-1) ?? { sql: "", params: [] };
     expect(statement).toContain("where workflow = $1 and key = $2");
     expect(params).toEqual(["digest", "caller'; drop table users; --", 5]);
   });

@@ -102,12 +102,14 @@ describe("the store conformance registry", () => {
     const noTwin = ["createMemorySandboxDirectory", "createMemoryPlatformEvents"];
     // A SEPARATE list, because "has no twin" and "its twin is not written yet"
     // are different claims and collapsing them would let the first one absorb
-    // unfinished work indefinitely. Both of these are the workflow engine that
-    // replaced the Workflow DevKit: the memory arms are what `aai dev` and every
-    // engine spec run on, and their Postgres and platform arms are the remaining
-    // half of that removal. An entry here is a DEBT — when the twin lands it
-    // moves into `STORE_CONTRACTS`, and this list should be empty again.
-    const pendingTwin = ["createMemoryJournal", "createMemoryStreams"];
+    // unfinished work indefinitely. An entry here is a DEBT — when the twin lands
+    // it moves into `STORE_CONTRACTS`, and this list should be empty again.
+    //
+    // `createMemoryJournal` was here and has MOVED: `createPostgresJournal` is
+    // its twin, registered above and driven by `workflow-journal.scenario.test.ts`.
+    // The progress channel is what is left — a run's narration is still memory-only
+    // on every deployment, which is the smaller half of the same gap.
+    const pendingTwin = ["createMemoryStreams"];
     const unregistered = declared.filter(
       (n) => !(registered.has(n) || noTwin.includes(n) || pendingTwin.includes(n)),
     );

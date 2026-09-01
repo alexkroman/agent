@@ -52,9 +52,10 @@ describe("buildWorkflowClient", () => {
       workflows: ["digest"],
       keyStore: "postgres",
       // The RUN store is its own line, and asserting it is the point: it is the
-      // question an operator asks after a restart, and it currently has an
-      // unflattering answer that a boot line is the right place to be honest in.
-      runStore: expect.stringContaining("memory"),
+      // question an operator asks after a restart. It follows the SAME
+      // `DATABASE_URL` as the key index deliberately — an asymmetry is a trap
+      // either way, a key pointing at a run that is gone or the reverse.
+      runStore: "postgres",
       publicUrl: PUBLIC_URL,
     });
   });

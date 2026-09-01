@@ -136,6 +136,25 @@ export const STORE_CONTRACTS = [
     why: "SDK tier: one case list cannot span the boundary; real arm is workflow-keys.scenario.test.ts",
   },
   {
+    // The durable JOURNAL — what makes a run outlive its process. Same
+    // structural exemption as the two above and the same remedy: the memory
+    // arm's unit specs live in `aai-runtime` beside the engine that reads them,
+    // and the real arm is driven from here.
+    //
+    // The exemption costs less than it looks. Almost everything interesting
+    // about the Postgres arm is a claim about the DATABASE rather than about the
+    // code — `claimAttempt` incrementing atomically under concurrency,
+    // `setStatus`'s `where` really constraining, `appendStep`'s `on conflict`
+    // resting on a primary key that exists, a hook token unique across RUNS —
+    // and a shared case list run against a Map could assert none of them.
+    // `workflow-journal.scenario.test.ts` runs the DDL and every one of those.
+    contract: "workflow-journal",
+    memory: "createMemoryJournal",
+    pg: "createPostgresJournal",
+    conformance: false,
+    why: "SDK tier: one case list cannot span the boundary; real arm is workflow-journal.scenario.test.ts",
+  },
+  {
     contract: "upload-bytes",
     memory: "createMemoryUploadBytes",
     pg: "createSupabaseUploadBytes",

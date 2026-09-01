@@ -16,14 +16,15 @@
  *   so it is whoever set the secret.
  * - **Without** — the index is in memory and forgotten on restart.
  *
- * **The RUNS are a separate question, and right now they are in memory too.**
- * That used to be the interesting asymmetry here: a deployed app's runs were
- * durable on the platform's own database while this index was not, so `find()`
- * by key stopped resolving across a restart while the runs themselves survived.
- * With the engine in-house and only its memory journal written, the asymmetry is
- * gone in the unhelpful direction — nothing survives a restart. The platform and
- * Postgres journals are the remaining half of the DevKit removal, and the boot
- * line below reports which store is in play so this is answerable from outside.
+ * **The RUNS follow the same `DATABASE_URL`, and that is deliberate.** An
+ * asymmetry here is a trap either way: durable runs beside a forgotten
+ * correlation index means `find()` by key stops resolving across a restart while
+ * the runs survive, and the reverse means a key pointing at a run that is gone.
+ * One decision, one boot line, both reported.
+ *
+ * What is still missing is the PLATFORM journal: a deployed guest holds no
+ * database of its own, so unless the author set a `DATABASE_URL` its runs are in
+ * sandbox memory. That is the remaining half of the DevKit removal.
  *
  * A missing database is therefore NOT a reason to withhold the client. It was
  * tempting to make storage a hard requirement and have `ctx.workflows` reject
@@ -38,6 +39,7 @@ import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";
 import { createWorkflowClient, resolveKeyStore } from "./workflow-client.ts";
 import { createInProcessWorkflowEngine } from "./workflow-in-process.ts";
+import { createPostgresJournal } from "./workflow-journal-postgres.ts";
 import { createRunNotifier, type RunNotifier } from "./workflow-notify.ts";
 
 /**
@@ -85,12 +87,10 @@ export function buildWorkflowClient(
     // than being inferred from whether storage happens to be on.
     keyStore: db ? "postgres" : "memory",
     // The RUN store, which is a different question from the key store and the
-    // one an operator actually asks after a restart. In-process for now: the
-    // platform and Postgres journals are the remaining half of the DevKit
-    // removal, so a deployed run survives an idle sandbox no better than a
-    // `aai dev` one does. Reported rather than assumed, because a durability
-    // tradeoff absent from the log reads as a bug.
-    runStore: "memory (in-process — runs do not survive a restart)",
+    // one an operator actually asks after a restart. Reported rather than
+    // assumed, because a durability tradeoff absent from the log reads as a bug —
+    // and because there is now a case where the answer is good.
+    runStore: db ? "postgres" : "memory (in-process — runs do not survive a restart)",
     // Reported at boot for the same reason the key store is: whether a run can
     // hand out a reachable callback URL is a property of the DEPLOYMENT, and the
     // alternative to one boot line is discovering it from a throw inside a tool
@@ -100,7 +100,19 @@ export function buildWorkflowClient(
   });
   // Held so `stop` can reach it: the CLIENT is what the runtime hands to tools,
   // and the engine's timers are what a rebuild has to cancel.
-  const engine = createInProcessWorkflowEngine({ workflows, logger });
+  const engine = createInProcessWorkflowEngine({
+    workflows,
+    logger,
+    // A `DATABASE_URL` is what makes a run outlive its process. Absent, the
+    // in-memory default stands and the boot line below says so — the honest trade
+    // for trying a workflow out before provisioning anything.
+    //
+    // An explicit `undefined` rather than a conditional spread: `db` is an object
+    // or absent, so the truthiness guard and a presence test agree, and
+    // `guard-invariants` rule 22 is right that the spread hides which of the
+    // three situations this is.
+    journal: db ? createPostgresJournal({ db }) : undefined,
+  });
   const client = createWorkflowClient({
     workflows,
     keys: resolveKeyStore(db),
