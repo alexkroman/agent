@@ -474,9 +474,6 @@ importers:
       '@elevenlabs/elevenlabs-js':
         specifier: ^2.63.0
         version: 2.63.0
-      '@workflow/world-postgres':
-        specifier: 4.3.3
-        version: 4.3.3(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(postgres@3.4.9)(typescript@7.0.2)
       ai:
         specifier: 'catalog:'
         version: 7.0.65(zod@4.4.3)

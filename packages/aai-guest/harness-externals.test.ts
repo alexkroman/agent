@@ -13,15 +13,19 @@
  *    (`toolchain/package.json`), or `modal-harness-image.ts`'s separate
  *    `@alexkroman1/*` install.
  *
- * **This is the test that was missing when the durable workflow world shipped
- * broken.** `@workflow/world-postgres` was on neither side of that: bundled, and
- * its Drizzle migrator reads `drizzle/migrations/meta/_journal.json` off disk
- * relative to its own module location — which a bundle does not carry. So a guest
- * holding a `DATABASE_URL` died on `Can't find meta/_journal.json` before running
- * a single migration, and the workflow API's own runtime `require` of the package
- * failed from the temp dir it dispatches steps in. It went unnoticed for as long
- * as it did because the prerequisite — an agent with storage enabled — had never
- * been met anywhere, so the whole feature was dark.
+ * **The case that made this file necessary is gone, and it is worth keeping the
+ * reason.** `@workflow/world-postgres` was on neither side of the rule: bundled,
+ * while its Drizzle migrator reads `drizzle/migrations/meta/_journal.json` off
+ * disk relative to its own module location — which a bundle does not carry. A
+ * guest holding a `DATABASE_URL` died on `Can't find meta/_journal.json` before
+ * running a single migration. It went unnoticed for as long as it did because
+ * the prerequisite — an agent with storage enabled — had never been met
+ * anywhere, so the whole feature was dark.
+ *
+ * That package left with the Workflow DevKit, so its three cases went too. The
+ * RULE outlives it and is what the remaining cases hold: the next entry added to
+ * `neverBundle` for a package that reads its own files off disk has the identical
+ * failure waiting for it.
  *
  * These run in the UNIT tier deliberately: they are filesystem READS (legal
  * here) over the real built artifact and the committed manifests, so they cost
@@ -30,8 +34,7 @@
  * scenario tier and a Postgres, and is noted at the bottom.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import config from "./tsdown.config.ts";
@@ -40,12 +43,7 @@ const HERE = import.meta.dirname;
 const HARNESS = join(HERE, "dist/harness.mjs");
 
 /** The `neverBundle` patterns, as the source strings they match. */
-const NEVER_BUNDLE = [
-  "@alexkroman1/aai-cli",
-  "@vitejs/plugin-react",
-  "@tailwindcss/vite",
-  "@workflow/world-postgres",
-] as const;
+const NEVER_BUNDLE = ["@alexkroman1/aai-cli", "@vitejs/plugin-react", "@tailwindcss/vite"] as const;
 
 /**
  * The declared list, read off the real config rather than re-typed.
@@ -103,64 +101,6 @@ describe("the built harness", () => {
   // to prevent: the check between a shipped guest and a dead workflow world,
   // quietly not running. A missing file fails loudly here instead.
   const bundle = readFileSync(HARNESS, "utf-8");
-
-  test("imports @workflow/world-postgres rather than inlining it", () => {
-    // The artifact, not the config: `neverBundle` is a request, and this is the
-    // answer. A static `from"…"` or a dynamic `import("…")` both count — what
-    // must not happen is the package's BODY being copied in, which is what
-    // separates its migrator from the migration files beside it.
-    expect(bundle).toMatch(/(?:from|import\()\s*"@workflow\/world-postgres/);
-  });
-
-  test("resolves the Drizzle migrations it reads off disk", () => {
-    // A DIFFERENT regression from the one above, and the A/B says so: with the
-    // `neverBundle` entry removed this test still PASSES, because the package is
-    // installed either way — the bug was that the bundled copy did not USE it.
-    // So the import assertion above is what caught the shipped bug, and this one
-    // guards the other direction: a version of the package that stops shipping
-    // its migrations, or an install that prunes them, leaves the migrator
-    // resolvable and still unable to read a journal.
-    //
-    // `readMigrationFiles` wants a real directory, resolved relative to the
-    // package's own location — so the assertion is that resolving from the
-    // HARNESS reaches a tree that still has the journal in it.
-    const resolved = createRequire(HARNESS).resolve("@workflow/world-postgres");
-    const marker = `${join("node_modules", "@workflow", "world-postgres")}`;
-    const root = resolved.slice(0, resolved.indexOf(marker) + marker.length);
-    expect(root, `unexpected resolution shape: ${resolved}`).not.toBe("");
-    expect(
-      existsSync(join(root, "src/drizzle/migrations/meta/_journal.json")),
-      "the migrator's journal is not on disk beside the resolved package",
-    ).toBe(true);
-  });
-
-  test("carries a PARSEABLE version for the bundled local workflow world", () => {
-    // The other half of the bundling hazard, and the one a `neverBundle` entry
-    // would be the wrong fix for. `@workflow/world-local` reads its OWN
-    // `package.json` at `<its module dir>/../package.json` to version the data
-    // directory — so bundled it reads whatever sits beside `harness.mjs`
-    // instead: `packages/aai-guest/package.json` under the subprocess backend
-    // (wrong, but parseable), and NOTHING at `/opt/package.json` in the baked
-    // image. The unreadable case fell back to the literal string `"bundled"`,
-    // which the package's own `parseVersion` rejects — so every databaseless
-    // deployed agent that declared a workflow logged
-    // `Workflow world (local) failed to start: Invalid version string:
-    // "bundled"` and had no workflows at all.
-    //
-    // Externalizing it is not the remedy: `@workflow/core` imports it
-    // STATICALLY, so the harness would evaluate it (and undici, zod, ulid,
-    // async-sema) on every spawn, including the voice agents that declare no
-    // workflow. The fix is the pnpm patch in `patches/`, which returns the
-    // package's real version from a constant and never touches the disk. This
-    // asserts on the artifact that actually ships.
-    expect(bundle, "world-local is not in the bundle — has it become external?").toContain(
-      '"@workflow/world-local"',
-    );
-    expect(
-      bundle,
-      "the unparseable version sentinel is back — is the pnpm patch applied?",
-    ).not.toMatch(/version:\s*"bundled"/);
-  });
 
   test("keeps the build toolchain external too", () => {
     // The older half of the list, asserted the same way — it is the precedent

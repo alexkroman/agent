@@ -101,13 +101,13 @@ describe("guest route exposure", () => {
     }
   });
 
-  test("the queue's own callbacks stay off the platform", () => {
-    // Named rather than left to the generic reverse check below: `flow` and
-    // `step` are unauthenticated BECAUSE only the guest's own worker dials
-    // them on loopback, so a platform route for either is not a routing
-    // decision — it is an unauthenticated way to drive another tenant's run.
-    expect(GUEST_ROUTE_EXPOSURE.workflowFlow.via).toBe("guest-internal");
-    expect(GUEST_ROUTE_EXPOSURE.workflowStep.via).toBe("guest-internal");
+  test("the platform's delivery door is HOST-ONLY, not proxied", () => {
+    // It replaced the DevKit's two `guest-internal` callbacks, which were
+    // unauthenticated BECAUSE only the guest's own worker dialled them on
+    // loopback. This one comes from outside the container, so its gate is the
+    // per-sandbox bearer — and it must not become `proxied`, which would be an
+    // unauthenticated way for a client to drive another tenant's run.
+    expect(GUEST_ROUTE_EXPOSURE.workflowQueue.via).toBe("host-only");
   });
 
   test("a direct-dial or host-only route is not silently proxied instead", () => {
@@ -262,7 +262,10 @@ describe("the platform accounts for every runtime-served route", () => {
   test("the tables are populated", () => {
     // The floor: an empty import would make the assertion below pass over
     // nothing, which is the shape of failure this whole file exists to catch.
-    expect(runtimeRoutes.length).toBeGreaterThanOrEqual(10);
+    // Eight, down from ten: the DevKit's `flow` and `step` callbacks went with
+    // it. The floor MOVES with the table rather than being relaxed — its job is
+    // to catch an import that found nothing, not to permit any number.
+    expect(runtimeRoutes.length).toBeGreaterThanOrEqual(8);
   });
 
   test("each one appears in GUEST_ROUTES", () => {

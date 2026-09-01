@@ -63,23 +63,6 @@ const sharedDepSources = {
   "@vitejs/plugin-react": "packages/aai-ui/package.json",
   vite: "packages/aai-cli/package.json",
   zod: "packages/aai/package.json",
-  // The DevKit and the durable world. `@workflow/world-postgres` is what
-  // `getWorld()` imports for a project with a `DATABASE_URL`, and it is NOT a
-  // dependency of `workflow` — it reaches a project only through
-  // `@alexkroman1/aai-runtime`, which npm hoists and pnpm does not. So a
-  // scaffolded project has to declare it or its first run fails with
-  // `Cannot find module '@workflow/world-postgres'`.
-  //
-  // Both are sourced from `aai-runtime` now. `workflow` used to come from the
-  // SDK, on the ground that it was "the DevKit an `agent.ts` authors against" —
-  // which stopped being true when the engine moved in-house: the SDK owns
-  // `ctx.step` and its two error classes and declares no DevKit dependency at
-  // all. What still needs the package is the HOST — `aai-runtime` for the world
-  // and the queue, and a scaffolded project for the `sleep` and `createHook` a
-  // body still imports until durable sleep and hooks land here too. When that
-  // last import goes, this entry and the scaffold's dependency go with it.
-  workflow: "packages/aai-runtime/package.json",
-  "@workflow/world-postgres": "packages/aai-runtime/package.json",
   // Same shape as the two above, for the same reason: a template's `agent.ts`
   // imports `setup` from `xstate` DIRECTLY (a machine is authored, not wrapped),
   // and xstate reaches a project only through `@alexkroman1/aai` — which npm

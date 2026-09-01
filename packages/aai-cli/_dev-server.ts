@@ -24,13 +24,7 @@ import {
   requiredProviderEnvVars,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
-import {
-  configureWorkflowWorld,
-  createWorkflowSurface,
-  handleWorkflowRequest,
-  publishStepEnv,
-  startWorkflowWorldIfDeclared,
-} from "@alexkroman1/aai-runtime/internal";
+import { handleWorkflowRequest, publishStepEnv } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
@@ -276,12 +270,6 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   const devLogger: Logger = createDevLogger(outputSilenced());
 
-  // The world is process-wide (`getWorld()` memoizes on first resolve) and its
-  // queue is a long-lived subscription, so it is started once for the lifetime
-  // of the dev server rather than per restart — a rebuild replaces the routes,
-  // not the storage behind them.
-  let workflowWorldStarted = false;
-
   /**
    * Whether the session-state tables have been ensured this process.
    *
@@ -309,25 +297,11 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: devLogger });
     }
 
-    // BEFORE `createWorkflowSurface`, which imports `workflow/runtime` and
-    // resolves a world from the environment as it loads — configured after, a
-    // project with a `DATABASE_URL` would silently take the local world and
-    // write its runs to `.workflow-data/` instead.
-    const world = configureWorkflowWorld({
-      databaseUrl: env.DATABASE_URL,
-      port: backendPort,
-      dataDir: path.join(cwd, ".workflow-data"),
-    });
     // What a `"use step"` body reads with `stepEnv()`. The AGENT env, not
     // `providerEnv` below: a step must see exactly what `.env` and
     // `aai secret put` declare, or a shell-exported key would make a workflow
     // work here and fail after a deploy with nothing having said so.
     publishStepEnv(env);
-    const workflows = await createWorkflowSurface(worker.workflowCode, worker.stepCode);
-    if (workflows && !workflowWorldStarted) {
-      workflowWorldStarted = true;
-      await startWorkflowWorldIfDeclared(true, world);
-    }
 
     // Self-hosted only: let provider credentials exported in the shell reach
     // the resolvers without entering `ctx.env`. Keeping them out of `ctx.env`
@@ -373,11 +347,16 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // page mounted with `client()` by mistake fails identically in both places
       // instead of only after a deploy.
       ...omitUndefined({ page: agentDef.page }),
-      // The DevKit's queue calls these back to replay a run and to execute a
-      // step; unclaimed they fall through to the 404 and every run stalls with
-      // nothing saying why. Returns false with no workflows, so an ordinary
-      // agent mounts nothing.
-      request: (req, res, url, method) => handleWorkflowRequest(workflows, req, res, url, method),
+      // The PLATFORM's delivery door, and `aai dev` deliberately supplies no
+      // `allowRemote`, so it answers 401. That is correct rather than an
+      // omission: there is no queue outside this process — the engine's
+      // dispatcher is a `setTimeout` here — so a delivery arriving from anywhere
+      // would be a caller this composition cannot vouch for.
+      //
+      // Mounted anyway, rather than skipped, so the route ANSWERS on the same
+      // door it answers on when deployed. A path that 404s in dev and 401s in
+      // production is the kind of difference a feature is developed against.
+      request: (req, res, url, method) => handleWorkflowRequest(req, res, url, method),
       ...clientDirOpt,
     });
   }

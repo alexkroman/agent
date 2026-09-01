@@ -33,6 +33,7 @@ import type { CloseableDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { speakOverWebSocket } from "./step-speak.ts";
+import { isPerProcessDataDir, localWorkflowDataDir } from "./workflow-data-dir.ts";
 import { platformGuestOptions } from "./workflow-platform-world.ts";
 import { createStepReporter } from "./workflow-report.ts";
 import {
@@ -41,7 +42,6 @@ import {
   type UploadStore,
   uploadBytesAreRemote,
 } from "./workflow-uploads.ts";
-import { isPerProcessDataDir, localWorkflowDataDir } from "./workflow-world.ts";
 
 /**
  * What one server's workflow support OWNS, so it can give it back.

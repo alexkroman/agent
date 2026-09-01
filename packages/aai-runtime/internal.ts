@@ -165,14 +165,6 @@ export {
 // the constants' own doc says they exist "so a test or a verification script can
 // contend for the SAME lock without restating the number" — which nothing outside
 // this package could do while they stopped here. See
-// `aai-server/workflow-lock-sweep.scenario.test.ts`. What the sweep reports when
-// it declines (`SweepSkip`) is contracted, on the root barrel.
-export {
-  claimPoolPresenceAndSweep,
-  type PoolPresence,
-  PRESENCE_LOCK_CLASS,
-  PRESENCE_LOCK_OBJECT,
-} from "./workflow-lock-sweep.ts";
 export {
   createPlatformQueueSend,
   enqueueToPlatform,
@@ -203,15 +195,11 @@ export {
   queueNameKind,
   STEP_QUEUE_NAME_PATTERN,
   WORKFLOW_QUEUE_NAME_PATTERN,
+  WORKFLOW_QUEUE_PATH,
 } from "./workflow-queue-dispatch.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
-export {
-  createWorkflowSurface,
-  handleWorkflowRequest,
-  WORKFLOW_FLOW_PATH,
-  type WorkflowSurface,
-} from "./workflow-serve.ts";
+export { handleWorkflowRequest } from "./workflow-serve.ts";
 // The STORAGE half of the codec only, which is the half `aai-server`'s storage
 // handler is the other end of. The queue half (`encodeTypedJson`) has one
 // intra-package caller and the two raw replacer/reviver pairs have none, so by
@@ -224,13 +212,6 @@ export { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 // the part addressing are contracted, on the root barrel; this is what JOINS
 // them, which is a host's job.
 export { createUploadStore } from "./workflow-uploads.ts";
-// Choosing the world a workflow lives in, and starting it when the agent
-// declares one. `WorldKind` is what the first hands the second.
-export {
-  configureWorkflowWorld,
-  startWorkflowWorldIfDeclared,
-  type WorldKind,
-} from "./workflow-world.ts";
 // Wiring a socket up under a session. `SessionWebSocket` — the minimal socket
 // shape a host supplies — is contracted, on the root barrel.
 export { wireSessionSocket } from "./ws-handler.ts";

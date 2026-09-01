@@ -280,7 +280,6 @@ export {
 // What the startup sweep reports when it declines to run. The sweep itself and
 // the advisory-lock constants it contends for are on
 // `@alexkroman1/aai-runtime/internal`.
-export type { SweepSkip } from "./workflow-lock-sweep.ts";
 export {
   createHttpUploadBlobs,
   createMemoryUploadBlobs,

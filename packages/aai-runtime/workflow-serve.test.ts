@@ -1,11 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Specs for the guest's workflow loading.
+ * Specs for the PLATFORM's delivery door.
  *
- * The rewriting is what these are really about. It is the one piece here that
- * fails SILENTLY when it is subtly wrong — a specifier rewritten to a path that
- * does not exist, or one left bare that needed rewriting, both surface as
- * `ERR_MODULE_NOT_FOUND` from `/tmp` with nothing pointing back at this file.
+ * This file used to be mostly about the DevKit's module loading — rewriting bare
+ * specifiers so a bundle written to `/tmp` could resolve them — and that went with
+ * the DevKit. What is left is one route and its gate, driven through a REAL http
+ * server for the reason `serving` gives.
  */
 
 import { createServer, type IncomingMessage } from "node:http";
@@ -15,148 +15,10 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import type { Logger } from "./runtime-config.ts";
 import { WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
-import {
-  createWorkflowSurface,
-  handleWorkflowRequest,
-  isLoopbackAddress,
-  loadWorkflowModule,
-  rewriteWorkflowImports,
-  WORKFLOW_FLOW_PATH,
-  WORKFLOW_STEP_PATH,
-  type WorkflowSurface,
-} from "./workflow-serve.ts";
-
-describe("rewriteWorkflowImports", () => {
-  test("rewrites a bare DevKit import to an absolute file URL", () => {
-    const out = rewriteWorkflowImports(`import { sleep } from "workflow";\n`);
-    expect(out).toMatch(/^import \{ sleep \} from "file:\/\/\//);
-    expect(out).toContain("/workflow/");
-  });
-
-  test("rewrites every specifier the builder actually emits", () => {
-    // Measured against real artifacts: the step bundle imports exactly
-    // `workflow`, `workflow/internal/private` and `workflow/runtime`, and the
-    // flow bundle only `workflow/runtime`. Everything else is inlined.
-    for (const spec of ["workflow", "workflow/internal/private", "workflow/runtime"]) {
-      const out = rewriteWorkflowImports(`import x from "${spec}";`);
-      expect(out, spec).toMatch(/from "file:\/\/\//);
-    }
-  });
-
-  test("rewrites a side-effect import, which is the shape the step bundle uses", () => {
-    // `import "workflow/internal/private"` has no `from`, so a rewrite keyed
-    // only on `from` would miss the one form that matters most here.
-    const out = rewriteWorkflowImports(`import "workflow/internal/builtins";`);
-    expect(out).toMatch(/^import "file:\/\/\//);
-  });
-
-  test("leaves the agent's own bundled imports alone", () => {
-    // Everything but the DevKit is inlined by the builder, so a bare specifier
-    // that is NOT the DevKit means a bundling bug — rewriting it would hide one.
-    const code = `import a from "node:fs";\nimport b from "./local.js";\nimport c from "zod";`;
-    expect(rewriteWorkflowImports(code)).toBe(code);
-  });
-
-  test("leaves a matching string that is not an import specifier alone", () => {
-    // The transform emits step ids as string literals, and they contain the
-    // word. A blunter replace would corrupt the registry keys.
-    const code = `registerStepFunction("step//./workflows/x//go", go);`;
-    expect(rewriteWorkflowImports(code)).toBe(code);
-  });
-
-  test("leaves an unresolvable specifier as-is rather than mangling it", () => {
-    // `@workflow/*` is in the rewritable set defensively — the builder does not
-    // emit one today, and those packages are not direct dependencies here. If it
-    // ever starts, this is the behaviour that makes it diagnosable: the import
-    // survives and fails at load with Node's own error naming the module, rather
-    // than being rewritten to a path that resolves to nothing.
-    const code = `import x from "@workflow/not-installed-here";`;
-    expect(rewriteWorkflowImports(code)).toBe(code);
-  });
-
-  test("resolves the root entry the way an IMPORT does, not a require", async () => {
-    // `workflow`'s root maps `require` to its TypeScript plugin, so resolving
-    // with require semantics rewrites to a CJS module that dies on
-    // `typescript/lib/tsserverlibrary`. Importing the rewritten URL is the only
-    // assertion that catches it.
-    const out = rewriteWorkflowImports(`import x from "workflow";`);
-    const url = /"(file:\/\/[^"]+)"/.exec(out)?.[1];
-    expect(url).toBeDefined();
-    expect(url).not.toContain("typescript-plugin");
-    await expect(import(url as string)).resolves.toBeDefined();
-  });
-
-  test("handles single quotes and irregular spacing", () => {
-    const out = rewriteWorkflowImports(`import {a} from  'workflow/api'`);
-    expect(out).toMatch(/from {2}'file:\/\/\//);
-  });
-});
-
-describe("loadWorkflowModule", () => {
-  test("evaluates the bundle, which is what registers its steps", async () => {
-    // Registration is a top-level side effect and the module's exports are
-    // never read, so evaluation IS the contract.
-    const marker = `aai-step-load-${Date.now()}`;
-    await loadWorkflowModule(`globalThis[${JSON.stringify(marker)}] = true;`, "steps");
-    expect((globalThis as Record<string, unknown>)[marker]).toBe(true);
-    delete (globalThis as Record<string, unknown>)[marker];
-  });
-
-  test("loads a bundle whose DevKit import had to be rewritten", async () => {
-    // The end-to-end shape: a bare import that would fail from /tmp untouched.
-    const marker = `aai-step-wdk-${Date.now()}`;
-    await loadWorkflowModule(
-      `import { sleep } from "workflow";\n` +
-        `globalThis[${JSON.stringify(marker)}] = typeof sleep;`,
-      "steps",
-    );
-    expect((globalThis as Record<string, unknown>)[marker]).toBe("function");
-    delete (globalThis as Record<string, unknown>)[marker];
-  });
-
-  test("a second load of different code is not served from the module cache", async () => {
-    const a = `aai-step-a-${Date.now()}`;
-    const b = `aai-step-b-${Date.now()}`;
-    await loadWorkflowModule(`globalThis[${JSON.stringify(a)}] = 1;`, "steps");
-    await loadWorkflowModule(`globalThis[${JSON.stringify(b)}] = 2;`, "steps");
-    // Node caches by URL, so a fixed temp path would silently serve the first
-    // bundle for the rest of the process — which in the studio's build→load
-    // loop means testing the code you just replaced.
-    expect((globalThis as Record<string, unknown>)[b]).toBe(2);
-    delete (globalThis as Record<string, unknown>)[a];
-    delete (globalThis as Record<string, unknown>)[b];
-  });
-
-  test("returns the module's exports, which is where the route handler is", async () => {
-    // Both builder outputs are ROUTE MODULES exporting POST — see the module
-    // doc. Handing the flow module's own source to `workflowEntrypoint` instead
-    // compiles it in a `node:vm` Script and every run dies at replay on
-    // "Cannot use import statement outside a module".
-    const mod = await loadWorkflowModule(`export const POST = () => "ok";`, "flows");
-    expect(typeof mod.POST).toBe("function");
-  });
-});
-
-describe("createWorkflowSurface", () => {
-  test("mounts nothing when the agent declares no workflows", async () => {
-    // Both halves are required: a project with no `workflows/` directory gets
-    // neither export, and half of one would be a bundling bug rather than an
-    // agent that should serve routes answering 500.
-    await expect(createWorkflowSurface(undefined, undefined)).resolves.toBeUndefined();
-    await expect(
-      createWorkflowSurface("export const POST = () => 1;", undefined),
-    ).resolves.toBeUndefined();
-  });
-
-  test("fails naming the bundle when a route module exports no POST", async () => {
-    await expect(
-      createWorkflowSurface("export const NOPE = 1;", "export const POST = () => 1;"),
-    ).rejects.toThrow(/flow bundle exported no POST/);
-  });
-});
+import { handleWorkflowRequest, isLoopbackAddress } from "./workflow-serve.ts";
 
 /**
- * Serve `surface` from a REAL http server and return its base URL.
+ * Serve the door from a REAL http server and return its base URL.
  *
  * A real server rather than fakes for node's `IncomingMessage`/`ServerResponse`:
  * the adapter's whole job is turning those into a `Request` and a `Response`
@@ -165,7 +27,9 @@ describe("createWorkflowSurface", () => {
  * signal that the fake is the wrong tool.
  */
 async function serving(
-  surface: WorkflowSurface | null | undefined,
+  // Re-walk one run. Absent is an agent that declares no workflows, and the door
+  // then DECLINES rather than answering.
+  deliver: ((runId: string) => Promise<unknown>) | undefined,
   // Every interface, for the one spec that has to arrive from off-box. Loopback
   // otherwise, which is what the rest of these are about.
   host = "127.0.0.1",
@@ -182,12 +46,11 @@ async function serving(
     const url = requestPath(req.url);
     if (
       !handleWorkflowRequest(
-        surface,
         req,
         res,
         url,
         req.method ?? "GET",
-        omitUndefined({ allowRemote, logger }),
+        omitUndefined({ allowRemote, logger, deliver }),
       )
     ) {
       res.writeHead(404);
@@ -222,88 +85,81 @@ function firstExternalIpv4(): string | undefined {
   return undefined;
 }
 
-function surfaceOf(over: Partial<WorkflowSurface> = {}): WorkflowSurface {
-  return {
-    flow: vi.fn(async () => new Response("flow", { status: 200 })),
-    step: vi.fn(async () => new Response("step", { status: 200 })),
-    ...over,
-  };
-}
-
 describe("handleWorkflowRequest", () => {
-  // Mounting routes that answer 500 would be worse than not mounting them:
-  // the queue retries a 5xx, so it would retry forever.
-  test.each([
-    ["undefined", undefined],
-    ["null", null],
-  ])(
-    "declines every request when the agent declares no workflows (%s)",
-    async (_label, surface) => {
-      const s = await serving(surface);
-      const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST" });
-      expect(res.status).toBe(404);
-      await s.close();
-    },
-  );
+  /** A door with a platform vouching for its caller — the deployed shape. */
+  const vouched = () => true;
 
-  test("routes POST /flow to the flow handler and writes its response back", async () => {
-    const surface = surfaceOf();
-    const s = await serving(surface);
-    const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST", body: "{}" });
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("flow");
-    expect(surface.flow).toHaveBeenCalled();
+  test("declines when the agent declares no workflows, rather than answering", async () => {
+    // DECLINED and not answered: no engine here is indistinguishable from an
+    // agent with no workflows, and claiming the request would shadow whatever
+    // else the host serves on that path.
+    const s = await serving(undefined, undefined, vouched);
+    expect((await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, { method: "POST" })).status).toBe(404);
     await s.close();
   });
 
-  test("passes the request body through to the handler", async () => {
-    // The queue's payload is the whole message — a dropped body is a run that
-    // never advances, with a 200 saying it did.
-    let seen: string | undefined;
+  test("re-walks the run the delivery names, and answers 200", async () => {
+    const walked: string[] = [];
     const s = await serving(
-      surfaceOf({
-        flow: async (req: Request) => {
-          seen = await req.text();
-          return new Response("ok");
-        },
-      }),
+      async (runId) => {
+        walked.push(runId);
+      },
+      undefined,
+      vouched,
     );
-    await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST", body: `{"runId":"abc"}` });
-    expect(seen).toBe(`{"runId":"abc"}`);
+    const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+      method: "POST",
+      headers: { "x-vqs-queue-name": "__wkf_workflow_wrun_7" },
+      body: `{"runId":"wrun_7"}`,
+    });
+    expect(res.status).toBe(200);
+    expect(walked).toEqual(["wrun_7"]);
     await s.close();
   });
 
-  test("declines flow and step on a non-POST", async () => {
-    // They are queue callbacks, not a browsable surface.
-    const s = await serving(surfaceOf());
-    expect((await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`)).status).toBe(404);
+  test("REFUSES a delivery when the composition vouches for nobody", async () => {
+    // Fails closed, which is every composition with no platform: `aai dev`, host
+    // mode and a self-hosted server all have their queue inside the process, so a
+    // delivery arriving from outside is a caller none of them can vouch for.
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver);
+    expect((await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, { method: "POST" })).status).toBe(401);
+    expect(deliver).not.toHaveBeenCalled();
+    await s.close();
+  });
+
+  test("declines a non-POST, which is not a browsable surface", async () => {
+    const s = await serving(async () => undefined, undefined, vouched);
+    expect((await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`)).status).toBe(404);
     await s.close();
   });
 
   test("declines an unrelated path so it falls through to the rest of the server", async () => {
-    const s = await serving(surfaceOf());
+    const s = await serving(async () => undefined, undefined, vouched);
     expect((await fetch(`${s.url}/health`)).status).toBe(404);
     await s.close();
   });
 
-  test("answers 500 when a handler throws, rather than taking the guest down", async () => {
-    // These run off a node request event, so an unhandled rejection would kill
-    // the process mid-run. A 5xx is also what makes the world retry.
+  test("answers 500 when a replay throws, rather than taking the guest down", async () => {
+    // This runs off a node request event, so an unhandled rejection would kill
+    // the process mid-run. 500 is also what makes the platform retry — which is
+    // right here: a guest that was up and could not finish is what a retry is for.
     const error = vi.fn();
     const s = await serving(
-      surfaceOf({
-        flow: async () => {
-          throw new Error("boom");
-        },
-      }),
+      async () => {
+        throw new Error("boom");
+      },
       undefined,
-      undefined,
+      vouched,
       { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error },
     );
-    const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST" });
+    const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+      method: "POST",
+      headers: { "x-vqs-queue-name": "__wkf_workflow_r1" },
+    });
     expect(res.status).toBe(500);
     expect(error).toHaveBeenCalledWith(
-      "Workflow route failed",
+      "Workflow delivery failed",
       expect.objectContaining({ error: "boom" }),
     );
     await s.close();
@@ -342,70 +198,29 @@ describe("isLoopbackAddress", () => {
   });
 });
 
-describe("the queue callbacks are guest-internal", () => {
-  // Both were reachable UNAUTHENTICATED on every deployed agent's public Modal
-  // tunnel, which `GET /:slug/client-config` hands to any browser that asks:
-  // `step` executes one of the tenant's registered step functions with the
-  // caller's own arguments. See the block comment on `handleWorkflowRequest`.
-  test.each([
-    ["flow", WORKFLOW_FLOW_PATH],
-    ["step", WORKFLOW_STEP_PATH],
-  ])("refuses %s from an off-box peer, and does not invoke the handler", async (_l, path) => {
-    const external = firstExternalIpv4();
-    if (!external) {
-      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
-    }
-    const surface = surfaceOf();
-    // Bound to every interface, exactly as a deployed guest is.
-    const s = await serving(surface, "0.0.0.0");
-    try {
-      const res = await fetch(`http://${external}:${s.port}${path}`, { method: "POST" });
-      expect(res.status).toBe(403);
-      // The gate CLAIMED the request — a 404 here would mean it merely fell
-      // through, and the next handler to match the path would serve it.
-      expect(await res.json()).toEqual({ error: "workflow queue callbacks are guest-internal" });
-      expect(surface.flow).not.toHaveBeenCalled();
-      expect(surface.step).not.toHaveBeenCalled();
-    } finally {
-      await s.close();
-    }
-  });
-
-  test.each([
-    ["flow", WORKFLOW_FLOW_PATH],
-    ["step", WORKFLOW_STEP_PATH],
-  ])("still serves %s to the guest's own queue on loopback", async (_l, path) => {
-    const surface = surfaceOf();
-    // Same `0.0.0.0` bind as above, so the only difference is the peer.
-    const s = await serving(surface, "0.0.0.0");
-    try {
-      const res = await fetch(`${s.url}${path}`, { method: "POST" });
-      expect(res.status).toBe(200);
-    } finally {
-      await s.close();
-    }
-  });
-});
-
 describe("the platform's delivery door", () => {
   const BEARER = "sandbox-token";
   const vouched = (req: IncomingMessage) => req.headers.authorization === `Bearer ${BEARER}`;
+  const QUEUE_NAME = "__wkf_workflow_wrun_7";
 
   test("serves a vouched-for caller from OFF-BOX, which is the whole point", async () => {
+    // The door exists for a caller OUTSIDE the container — the platform's queue,
+    // holding the schedule of a run whose guest self-exited. A gate on network
+    // position would refuse the only legitimate caller there is.
     const external = firstExternalIpv4();
     if (!external) {
       expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
     }
-    const surface = surfaceOf();
-    const s = await serving(surface, "0.0.0.0", vouched);
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver, "0.0.0.0", vouched);
     try {
       const res = await fetch(`http://${external}:${s.port}${WORKFLOW_QUEUE_PATH}`, {
         method: "POST",
-        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": "__wkf_step_r1" },
-        body: "bytes",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": QUEUE_NAME },
+        body: `{"runId":"wrun_7"}`,
       });
       expect(res.status).toBe(200);
-      expect(surface.step).toHaveBeenCalledTimes(1);
+      expect(deliver).toHaveBeenCalledWith("wrun_7");
     } finally {
       await s.close();
     }
@@ -414,20 +229,20 @@ describe("the platform's delivery door", () => {
   test.each([
     ["no bearer", undefined],
     ["the wrong bearer", "Bearer nope"],
-  ])("answers 401 for %s, and runs nothing", async (_label, authorization) => {
-    const surface = surfaceOf();
-    const s = await serving(surface, "0.0.0.0", vouched);
+  ])("answers 401 for %s, and re-walks nothing", async (_label, authorization) => {
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver, "0.0.0.0", vouched);
     try {
       const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
         method: "POST",
         headers: {
-          "x-vqs-queue-name": "__wkf_step_r1",
+          "x-vqs-queue-name": QUEUE_NAME,
           ...omitUndefined({ authorization }),
         },
-        body: "bytes",
+        body: `{"runId":"wrun_7"}`,
       });
       expect(res.status).toBe(401);
-      expect(surface.step).not.toHaveBeenCalled();
+      expect(deliver).not.toHaveBeenCalled();
     } finally {
       await s.close();
     }
@@ -436,50 +251,28 @@ describe("the platform's delivery door", () => {
   /**
    * FAILS CLOSED with no predicate, and LOOPBACK IS NOT ENOUGH.
    *
-   * This is the door's difference from `flow`/`step`: those are guest-internal
-   * and loopback is their whole gate, while this one exists for a caller outside
-   * the container and is therefore refused unless the composition vouches for it.
    * `aai dev`, host mode and a self-hosted server supply no predicate and have no
-   * queue outside the process, so a door that opened on loopback there would be
-   * an unauthenticated way to drive a run — reachable by any local process, and
-   * on a self-hosted server bound to `0.0.0.0`, by the network.
+   * queue outside the process — their dispatcher is a `setTimeout` in it — so a
+   * door that opened on loopback there would be an unauthenticated way to drive a
+   * run: reachable by any local process, and on a self-hosted server bound to
+   * `0.0.0.0`, by the network.
+   *
+   * This used to be stated against `flow`/`step`, which were guest-internal and
+   * for which loopback WAS the whole gate. They are gone, so the contrast is now
+   * with nothing — which makes the property easier to lose, not harder, and is
+   * why it keeps its own case.
    */
   test("is refused when the composition vouches for nobody, even on loopback", async () => {
-    const surface = surfaceOf();
-    const s = await serving(surface);
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver);
     try {
       const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
         method: "POST",
-        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": "__wkf_step_r1" },
-        body: "bytes",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": QUEUE_NAME },
+        body: `{"runId":"wrun_7"}`,
       });
       expect(res.status).toBe(401);
-      expect(surface.step).not.toHaveBeenCalled();
-    } finally {
-      await s.close();
-    }
-  });
-
-  test("vouching for a caller does NOT open the loopback-only callbacks", async () => {
-    // The door and the two callbacks are separate gates. A predicate that also
-    // admitted `flow`/`step` from off-box would reopen the hole the door exists
-    // to avoid reopening.
-    const external = firstExternalIpv4();
-    if (!external) {
-      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
-    }
-    const surface = surfaceOf();
-    const s = await serving(surface, "0.0.0.0", () => true);
-    try {
-      for (const path of [WORKFLOW_FLOW_PATH, WORKFLOW_STEP_PATH]) {
-        const res = await fetch(`http://${external}:${s.port}${path}`, {
-          method: "POST",
-          headers: { authorization: `Bearer ${BEARER}` },
-        });
-        expect(res.status).toBe(403);
-      }
-      expect(surface.flow).not.toHaveBeenCalled();
-      expect(surface.step).not.toHaveBeenCalled();
+      expect(deliver).not.toHaveBeenCalled();
     } finally {
       await s.close();
     }

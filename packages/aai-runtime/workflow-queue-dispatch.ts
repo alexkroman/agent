@@ -33,8 +33,6 @@
  * which have a platform-owned queue.
  */
 
-import type { WorkflowSurface } from "./workflow-serve.ts";
-
 /**
  * The platform's delivery door.
  *
@@ -140,48 +138,9 @@ export function queueNameKind(queueName: string | null): "workflow" | "step" | u
 }
 
 /**
- * Hand one platform-delivered message to the handler its queue name names.
- *
- * The `Request` is forwarded whole rather than rebuilt: the body is the DevKit's
- * own opaque payload and the `x-vqs-*` headers are what the entrypoint reads, so
- * anything this function reconstructed would be a second place for that contract
- * to be wrong. Only the URL changes, to the path the handler expects.
- *
- * @internal
- */
-export async function dispatchQueueMessage(
-  surface: WorkflowSurface,
-  request: Request,
-): Promise<Response> {
-  const queueName = request.headers.get(QUEUE_NAME_HEADER);
-  const kind = queueNameKind(queueName);
-  if (kind === undefined) {
-    // 400, not 500: the queue sent something this guest cannot route, and the
-    // platform must not retry it into the abandonment budget as if the guest
-    // were down. Naming the value is the whole diagnostic — a DevKit that
-    // changed its grammar looks exactly like a corrupt header otherwise.
-    return Response.json(
-      { error: `unroutable queue name: ${queueName ?? "(absent)"}` },
-      { status: 400 },
-    );
-  }
-  // The request goes through UNCHANGED, URL included. A DevKit entrypoint routes
-  // on the payload and the `x-vqs-*` headers, never on the path — which is the
-  // same fact `toFetchRequest` records when it invents `http://guest.local` for
-  // a `Request` that requires an absolute URL and does nothing with it. So
-  // rewriting the URL to the flow/step path would look tidier, add an
-  // ALLOCATION and a second copy of the routing contract, and change nothing.
-  //
-  // It also keeps this module's only import type-only, which is what stops it
-  // and `workflow-serve.ts` forming a cycle.
-  return kind === "workflow" ? surface.flow(request) : surface.step(request);
-}
-
-/**
  * Serve one delivery from the platform's queue by re-walking the run.
  *
- * The engine's half of this door, beside {@link dispatchQueueMessage}, which is
- * the DevKit's. What arrives is a message the platform held on this run's behalf
+ * What arrives is a message the platform held on this run's behalf
  * — because a deployed guest's own timers die with the sandbox — and all it
  * carries that matters is WHICH run.
  *

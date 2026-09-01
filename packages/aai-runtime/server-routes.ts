@@ -38,7 +38,7 @@ import { SESSION_EVENTS_PATH } from "./session-events-api.ts";
 import { TELEPHONY_PATH } from "./telephony/telephony-server.ts";
 import { WORKFLOW_API_METHODS, WORKFLOW_API_PREFIX } from "./workflow-api.ts";
 import { WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
-import { WORKFLOW_FLOW_PATH, WORKFLOW_STEP_PATH, WORKFLOW_WEBHOOK_PATH } from "./workflow-serve.ts";
+import { WORKFLOW_WEBHOOK_PATH } from "./workflow-serve.ts";
 
 /**
  * Readiness. The one route with no constant of its own before this module,
@@ -143,10 +143,11 @@ export const SERVER_ROUTES = {
  * @internal
  */
 export const WORKFLOW_CALLBACK_ROUTES = {
-  // POST only, and loopback only — `pickWorkflowHandler` gates the verb and
-  // `handleWorkflowRequest` gates the peer.
-  flow: { transport: "http", path: WORKFLOW_FLOW_PATH, match: "exact", methods: ["POST"] },
-  step: { transport: "http", path: WORKFLOW_STEP_PATH, match: "exact", methods: ["POST"] },
+  // `flow` and `step` were here — the DevKit's own per-run and per-step queue
+  // callbacks, POST and loopback-only. They went with it: the replay engine runs
+  // a step INLINE during the walk rather than as its own message, so there is
+  // nothing for a per-step callback to serve.
+  //
   // The platform's delivery door: POST, and refused unless the composition
   // supplies an `allowRemote` predicate that vouches for the caller.
   queue: { transport: "http", path: WORKFLOW_QUEUE_PATH, match: "exact", methods: ["POST"] },

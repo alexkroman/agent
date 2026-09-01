@@ -84,10 +84,8 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
-    stepCode?: string | undefined;
     telephony?: boolean | undefined;
     uploadBroker?: string | undefined;
-    workflowCode?: string | undefined;
 }
 
 // @public
@@ -603,13 +601,6 @@ export { SttOpenOptions }
 export { SttSession }
 
 export { SttTurnMeta }
-
-// @public
-export type SweepSkip =
-/** Another pool holds presence, so its locks are live and not ours to clear. */
-"another-pool-is-live"
-/** Presence is ours and there was nothing locked. The healthy case. */
-| "no-orphaned-locks";
 
 // @public
 export const TELEPHONY_PATH = "/phone";

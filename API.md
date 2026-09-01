@@ -7541,10 +7541,8 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
-    stepCode?: string | undefined;
     telephony?: boolean | undefined;
     uploadBroker?: string | undefined;
-    workflowCode?: string | undefined;
 }
 
 // @public
@@ -8062,13 +8060,6 @@ export { SttSession }
 export { SttTurnMeta }
 
 // @public
-export type SweepSkip =
-/** Another pool holds presence, so its locks are live and not ours to clear. */
-"another-pool-is-live"
-/** Presence is ours and there was nothing locked. The healthy case. */
-| "no-orphaned-locks";
-
-// @public
 export const TELEPHONY_PATH = "/phone";
 
 // @public
@@ -8314,24 +8305,6 @@ export function applyWorkflowJournalDdl(opts: {
 export function callPlatformStorage(opts: PlatformStorageOptions, method: string, args: readonly unknown[]): Promise<unknown>;
 
 // @internal
-export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;
-
-// @public
-type CloseableDb = Db & {
-    reserve(): Promise<ReservedDb>;
-    listen(channel: string, onNotify: () => void): Promise<() => void>;
-    close(): Promise<void>;
-};
-
-// @internal
-export function configureWorkflowWorld(opts: {
-    databaseUrl: string | undefined;
-    port: number;
-    dataDir?: string;
-    env?: NodeJS.ProcessEnv;
-}): WorldKind;
-
-// @internal
 export const consoleLogger: Logger;
 
 export { CONTAINED_ENV }
@@ -8415,9 +8388,6 @@ export function createUploadStore(opts: {
 }): UploadStore;
 
 // @internal
-export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
-
-// @internal
 export function decodeStorageJson(text: string): unknown;
 
 // @internal
@@ -8463,10 +8433,7 @@ type ExecuteToolCallOptions = {
 };
 
 // @internal
-type FetchHandler = (req: Request) => Promise<Response>;
-
-// @internal
-export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
+export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
     logger?: Logger | undefined;
     deliver?: ((runId: string) => Promise<unknown>) | undefined;
@@ -8556,29 +8523,10 @@ type PlatformUploadRecordsOptions = PlatformEndpoint;
 // @internal
 export function platformUrl(base: string, route: PlatformRoute): string;
 
-// @internal
-export type PoolPresence = {
-    swept: readonly string[];
-    skipped: SweepSkip | undefined;
-    held: boolean;
-    release: () => Promise<void>;
-};
-
-// @internal
-export const PRESENCE_LOCK_CLASS = 1094797655;
-
-// @internal (undocumented)
-export const PRESENCE_LOCK_OBJECT = 1;
-
 export { publishStepEnv }
 
 // @internal
 export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined;
-
-// @public
-type ReservedDb = Db & {
-    release(): void;
-};
 
 export { resolveAllBuiltins }
 
@@ -8760,12 +8708,6 @@ type SleepRecord = {
 // @internal
 export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
 
-// @internal
-export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind, opts?: {
-    page?: string | undefined;
-    waitMs?: ((attempt: number) => Promise<void>) | undefined;
-}): Promise<void>;
-
 // @public
 type StateSyncSession = {
     read(key: string): unknown;
@@ -8812,19 +8754,6 @@ type StoredSessionEvent = {
 
 // @internal
 type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: ToolCallDefaults) => Promise<DelegateResult>;
-
-// @public
-type SweepDeps = {
-    createDb?: (url: string) => CloseableDb;
-    log?: (message: string) => void;
-};
-
-// @public
-type SweepSkip =
-/** Another pool holds presence, so its locks are live and not ours to clear. */
-"another-pool-is-live"
-/** Presence is ours and there was nothing locked. The healthy case. */
-| "no-orphaned-locks";
 
 // @internal
 type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
@@ -8877,18 +8806,6 @@ export const WORKFLOW_API_METHODS: readonly string[];
 
 // @internal
 export const WORKFLOW_CALLBACK_ROUTES: {
-    readonly flow: {
-        readonly transport: "http";
-        readonly path: "/.well-known/workflow/v1/flow";
-        readonly match: "exact";
-        readonly methods: readonly ["POST"];
-    };
-    readonly step: {
-        readonly transport: "http";
-        readonly path: "/.well-known/workflow/v1/step";
-        readonly match: "exact";
-        readonly methods: readonly ["POST"];
-    };
     readonly queue: {
         readonly transport: "http";
         readonly path: "/workflow-queue";
@@ -8904,22 +8821,13 @@ export const WORKFLOW_CALLBACK_ROUTES: {
 };
 
 // @internal
-export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
-
-// @internal
 export const WORKFLOW_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_workflow_.+$";
 
 // @internal
+export const WORKFLOW_QUEUE_PATH = "/workflow-queue";
+
+// @internal
 export function workflowJournalDdl(schema?: string): string[];
-
-// @internal
-export type WorkflowSurface = {
-    flow: FetchHandler;
-    step: FetchHandler;
-};
-
-// @internal
-export type WorldKind = "platform" | "postgres" | "local";
 
 // @public
 type WsSessionOptions = {

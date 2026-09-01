@@ -16,7 +16,7 @@
 
 import type http from "node:http";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { WORKFLOW_FLOW_PATH } from "@alexkroman1/aai-runtime/internal";
+import { WORKFLOW_QUEUE_PATH } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test, vi } from "vitest";
 import {
   createAgentRequestHandler,
@@ -218,11 +218,17 @@ describe("createWorkflowActivity", () => {
 });
 
 describe("createAgentRequestHandler", () => {
-  const surface = {
-    flow: () => Promise.resolve(new Response("{}", { status: 200 })),
-    step: () => Promise.resolve(new Response("{}", { status: 200 })),
-    webhook: () => Promise.resolve(new Response("{}", { status: 200 })),
-  };
+  /**
+   * The engine's delivery hook, which is what the platform's door calls now.
+   *
+   * It replaced a fake `WorkflowSurface` with three handlers on it — `flow`,
+   * `step` and `webhook`. Two went with the DevKit and the third moved to
+   * `createServer`, so one door is left and it takes a run id.
+   */
+  const deliverWorkflow = () => async () => undefined;
+
+  /** The queue door's own gate is the manage bearer — see `handleWorkflowRequest`. */
+  const QUEUE_BEARER = "Bearer secret-token";
 
   const manage = {
     token: "secret-token",
@@ -233,14 +239,14 @@ describe("createAgentRequestHandler", () => {
 
   test("tracks a claimed workflow callback as in-flight work", async () => {
     const activity = createWorkflowActivity();
-    const handler = createAgentRequestHandler({ manage, workflows: () => surface, activity });
+    const handler = createAgentRequestHandler({ manage, deliverWorkflow, activity });
     const out = fakeRes();
 
     expect(
       handler(
-        fakeReq(undefined, WORKFLOW_FLOW_PATH, { method: "POST" }),
+        fakeReq(QUEUE_BEARER, WORKFLOW_QUEUE_PATH, { method: "POST" }),
         out.res,
-        WORKFLOW_FLOW_PATH,
+        WORKFLOW_QUEUE_PATH,
         "POST",
       ),
     ).toBe(true);
@@ -253,7 +259,7 @@ describe("createAgentRequestHandler", () => {
 
   test("does not count manage or unclaimed requests", () => {
     const activity = createWorkflowActivity();
-    const handler = createAgentRequestHandler({ manage, workflows: () => surface, activity });
+    const handler = createAgentRequestHandler({ manage, deliverWorkflow, activity });
 
     expect(handler(fakeReq("Bearer secret-token"), fakeRes().res, MANAGE_STATUS_PATH, "GET")).toBe(
       true,
@@ -263,7 +269,7 @@ describe("createAgentRequestHandler", () => {
   });
 
   describe("workflow-API proxy gate", () => {
-    const handler = () => createAgentRequestHandler({ manage, workflows: () => surface });
+    const handler = () => createAgentRequestHandler({ manage, deliverWorkflow });
     const withProxyToken = (token: string, url: string, method = "POST") =>
       fakeReq(undefined, url, { method, headers: { [GUEST_PROXY_TOKEN_HEADER]: token } });
 
@@ -295,37 +301,44 @@ describe("createAgentRequestHandler", () => {
       expect(out.statusCode).toBeUndefined();
     });
 
-    test("does not gate the loopback queue callbacks (different prefix)", () => {
+    test("does not gate the platform's delivery door (different prefix)", () => {
       const out = fakeRes();
-      // `/.well-known/workflow/v1/flow` is claimed by handleWorkflowRequest before
-      // the gate, and carries no proxy token — this gate must never touch it.
+      // `/workflow-queue` is claimed by `handleWorkflowRequest` before this gate
+      // and carries no proxy token — the proxy gate must never touch it.
       expect(
         handler()(
-          fakeReq(undefined, WORKFLOW_FLOW_PATH, { method: "POST" }),
+          fakeReq(QUEUE_BEARER, WORKFLOW_QUEUE_PATH, { method: "POST" }),
           out.res,
-          WORKFLOW_FLOW_PATH,
+          WORKFLOW_QUEUE_PATH,
           "POST",
         ),
       ).toBe(true);
       expect(out.statusCode).toBeUndefined();
     });
 
-    // The proxy-token gate does not cover the callbacks and must not — but they
-    // are not therefore OPEN on this hook. `handleWorkflowRequest` claims them
-    // first and refuses an off-box peer, and asserting that here is what says
-    // the deployed guest's own request hook inherits it: this handler is what a
-    // request off the public Modal tunnel actually meets.
-    test("refuses a queue callback dialled off-box, before the proxy gate", () => {
+    // The proxy-token gate does not cover the delivery door and must not — but
+    // the door is not therefore OPEN on this hook. `handleWorkflowRequest` claims
+    // it first and refuses a caller the composition cannot vouch for, and
+    // asserting that here is what says the deployed guest's own request hook
+    // inherits it: this handler is what a request off the public Modal tunnel
+    // actually meets.
+    //
+    // The gate is now the BEARER rather than the peer's network position. The
+    // DevKit's two callbacks were unauthenticated and loopback-gated because
+    // their caller was the guest's own in-container worker; this door's caller is
+    // the platform, outside the container, so a position check would refuse the
+    // only legitimate caller there is.
+    test("refuses a delivery with no bearer, before the proxy gate", () => {
       const out = fakeRes();
       expect(
         handler()(
-          fakeReq(undefined, WORKFLOW_FLOW_PATH, { method: "POST", remoteAddress: "10.0.0.4" }),
+          fakeReq(undefined, WORKFLOW_QUEUE_PATH, { method: "POST", remoteAddress: "10.0.0.4" }),
           out.res,
-          WORKFLOW_FLOW_PATH,
+          WORKFLOW_QUEUE_PATH,
           "POST",
         ),
       ).toBe(true);
-      expect(out.statusCode).toBe(403);
+      expect(out.statusCode).toBe(401);
     });
   });
 });

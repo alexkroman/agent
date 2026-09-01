@@ -23,7 +23,7 @@
 import type http from "node:http";
 import { requestQuery } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { handleWorkflowRequest, type WorkflowSurface } from "@alexkroman1/aai-runtime/internal";
+import { handleWorkflowRequest } from "@alexkroman1/aai-runtime/internal";
 import { verifyBearer } from "./harness-auth.ts";
 import { guestLogBuffer, parseLogQuery } from "./harness-logs.ts";
 import { gateDirectWorkflowDial } from "./harness-workflow-gate.ts";
@@ -175,7 +175,6 @@ export function createWorkflowActivity(): WorkflowActivity {
  */
 export function createAgentRequestHandler(deps: {
   manage: ManageDeps;
-  workflows: () => WorkflowSurface | null;
   /**
    * `AgentRuntime.deliverWorkflow` — re-walk one run for a platform delivery.
    *
@@ -195,7 +194,7 @@ export function createAgentRequestHandler(deps: {
   const manage = createManageHandler(deps.manage);
   return (req, res, url, method) => {
     if (
-      handleWorkflowRequest(deps.workflows(), req, res, url, method, {
+      handleWorkflowRequest(req, res, url, method, {
         // The platform's queue-delivery door, vouched for by the same bearer the
         // rest of the manage surface uses — this IS a management operation the
         // platform performs on a guest, and `AAI_GUEST_TOKEN` is an HMAC over

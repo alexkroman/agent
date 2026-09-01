@@ -15,11 +15,7 @@ import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { SessionRuntime } from "@alexkroman1/aai-runtime";
-import {
-  createWorkflowSurface,
-  publishStepEnv,
-  type WorkflowSurface,
-} from "@alexkroman1/aai-runtime/internal";
+import { publishStepEnv } from "@alexkroman1/aai-runtime/internal";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
 import type { StudioSession } from "./studio-session.ts";
 import { runCode } from "./trial.ts";
@@ -134,14 +130,6 @@ export type HarnessState = {
   /** Live client-session connections (host idle eviction asks). */
   activeSessions: number;
   /**
-   * The bundle's durable-workflow surface, or null when it declares none.
-   *
-   * Built at LOAD rather than lazily like the runtime: the DevKit's queue can
-   * call back the moment a run starts, and a route that 404s because the surface
-   * had not been built yet would look to the world like a lost message.
-   */
-  workflows: WorkflowSurface | null;
-  /**
    * The studio coding-agent session, installed by `studio/session-init` —
    * workspace dir, the caller's key (chat bearer + LLM credential), and
    * turn config. Null on non-studio sandboxes; `/studio/chat` answers 409.
@@ -157,7 +145,6 @@ export function emptyHarnessState(): HarnessState {
     env: Object.freeze({}),
     runtime: null,
     activeSessions: 0,
-    workflows: null,
     studio: null,
   };
 }
@@ -221,17 +208,6 @@ export async function loadBundle(
   // and here rather than in agent mode so the studio's `test_agent` load gets
   // the identical wiring.
   publishStepEnv(params.env);
-
-  // The compiled workflow surface rides the bundle as two string exports (see
-  // `aai-cli/workflow-bundler.ts`). Absent for a project with no `workflows/`
-  // directory, which is most of them.
-  const workflowCode = (mod as { __aaiWorkflowCode?: unknown }).__aaiWorkflowCode;
-  const stepCode = (mod as { __aaiStepCode?: unknown }).__aaiStepCode;
-  state.workflows =
-    (await createWorkflowSurface(
-      typeof workflowCode === "string" ? workflowCode : undefined,
-      typeof stepCode === "string" ? stepCode : undefined,
-    )) ?? null;
 
   const config = (mod as { __aaiConfig?: unknown }).__aaiConfig;
   return config === undefined ? {} : { config };

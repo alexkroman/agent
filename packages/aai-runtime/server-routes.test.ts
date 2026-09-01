@@ -31,7 +31,11 @@ describe("the route tables", () => {
     // The floor. An extraction that stopped finding routes would make every
     // other test here pass over an empty list.
     expect(Object.keys(SERVER_ROUTES).length).toBeGreaterThanOrEqual(7);
-    expect(Object.keys(WORKFLOW_CALLBACK_ROUTES).length).toBeGreaterThanOrEqual(4);
+    // Two, down from four: the DevKit's `flow` and `step` callbacks went with it.
+    // The floor moves with the table rather than being relaxed to zero — its job
+    // is to stop an extraction that found NOTHING from making every other case
+    // here pass over an empty list.
+    expect(Object.keys(WORKFLOW_CALLBACK_ROUTES).length).toBeGreaterThanOrEqual(2);
   });
 
   test("every path is absolute and carries no query or trailing slash", () => {
@@ -82,7 +86,7 @@ describe("routeMatches", () => {
   test("a method the route does not answer does not match", () => {
     expect(routeMatches(SERVER_ROUTES.health, HEALTH_PATH, "POST")).toBe(false);
     expect(
-      routeMatches(WORKFLOW_CALLBACK_ROUTES.flow, WORKFLOW_CALLBACK_ROUTES.flow.path, "GET"),
+      routeMatches(WORKFLOW_CALLBACK_ROUTES.queue, WORKFLOW_CALLBACK_ROUTES.queue.path, "GET"),
     ).toBe(false);
   });
 

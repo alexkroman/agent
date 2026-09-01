@@ -28,11 +28,7 @@
 import { readFile, rm } from "node:fs/promises";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { createServer } from "@alexkroman1/aai-runtime";
-import {
-  agentServerEnv,
-  configureWorkflowWorld,
-  startWorkflowWorldIfDeclared,
-} from "@alexkroman1/aai-runtime/internal";
+import { agentServerEnv } from "@alexkroman1/aai-runtime/internal";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { bundleSourceOf, readVerifiedBundle } from "./harness-bundle-source.ts";
 import { createAgentRequestHandler, createWorkflowActivity } from "./harness-manage.ts";
@@ -206,12 +202,6 @@ export async function mainAgent(port: number, host: string, token: string): Prom
 
   const boot = await readAgentBoot();
 
-  // BEFORE the bundle loads: `loadBundle` builds the workflow surface, which
-  // imports `workflow/runtime`, which resolves and CACHES a world from the
-  // environment. Configured after, a production guest would silently take the
-  // local world and write runs into a container about to be destroyed.
-  const world = configureWorkflowWorld({ databaseUrl: boot.env.DATABASE_URL, port });
-
   await loadBundle(state, { code: boot.code, env: boot.env });
 
   // A draining guest is detached from the broker, but a client holding its
@@ -277,7 +267,6 @@ export async function mainAgent(port: number, host: string, token: string): Prom
         isDraining: idle.isDraining,
         startDrain: idle.startDrain,
       },
-      workflows: () => state.workflows,
       // The platform's delivery door reaches the ENGINE through this. A getter,
       // because reading it is what builds the runtime — see `lazyRuntime`.
       deliverWorkflow: () => runtime.deliverWorkflow,
@@ -289,28 +278,17 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   // which is the one this agent's own runtime came from.
   console.error(`agent-mode harness listening on ${host}:${port} (aai ${guestSdkVersion()})`);
 
-  // AFTER listen, and that ordering is the whole point. `flow` and `step` are
-  // `guest-internal` routes — the world's own graphile-worker dials them on THIS
-  // server's loopback — and `start()` re-enqueues every active run, so a world
-  // started earlier claims jobs the server cannot yet answer. Each such claim
-  // BURNS AN ATTEMPT: measured on a real guest, `Failed task 47
-  // (workflow_steps, 92.36ms, attempt 2 of 3) with error 'Unable to resolve base
-  // URL for workflow queue.'` — logged 8ms before `harness listening`. At
-  // `max_attempts` 3, three boots are enough to fail a step permanently, and a
-  // durable run on ephemeral sandboxes boots many times: the run then sits
-  // `running` forever with its job past its attempt cap and `is_available`
-  // false, which is the exact wedge `workflow-lock-sweep.ts` exists to prevent
-  // and cannot cure (it restores availability, never attempts).
+  // The world start that used to follow this line is gone with the DevKit, and
+  // the ordering it needed is worth recording because it was subtle: `start()`
+  // re-enqueued every active run, so a world started before `listen` claimed
+  // jobs this server could not yet answer — and each such claim BURNED AN
+  // ATTEMPT, measured on a real guest as `Failed task 47 (workflow_steps,
+  // 92.36ms, attempt 2 of 3) with error 'Unable to resolve base URL for workflow
+  // queue.'` logged 8ms before `harness listening`. At `max_attempts` 3, three
+  // boots failed a step permanently.
   //
-  // Nothing needs it earlier. `configureWorkflowWorld` above is what must
-  // precede `loadBundle` (it caches the world off the environment); STARTING the
-  // queue is a separate step, and the bundle is loaded before listen either way,
-  // so a 200 from /health still means "ready".
-  //
-  // Gated on the bundle declaring workflows: both halves are expensive and most
-  // agents have none. An exhausted retry budget is logged for a VOICE agent and
-  // THROWN for a workflow app, which has no phone to answer (see `giveUp`).
-  await startWorkflowWorldIfDeclared(state.workflows !== null, world, {
-    page: state.agent?.page,
-  });
+  // The replay engine has no such step. It re-walks a run only when a delivery
+  // arrives on `POST /workflow-queue`, which this server is listening for by the
+  // time the platform can reach it, and `claimAttempt` is taken inside the walk
+  // rather than by a queue racing the bind.
 }

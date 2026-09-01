@@ -46,21 +46,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
 import { type AgentServer, createServer, type PassthroughServerOptions } from "./server.ts";
 import { agentServerEnv } from "./server-env.ts";
-import {
-  createWorkflowSurface,
-  handleWorkflowRequest,
-  type WorkflowSurface,
-} from "./workflow-serve.ts";
-import { configureWorkflowWorld, startWorkflowWorldIfDeclared } from "./workflow-world.ts";
-
-/**
- * What `createServer().listen()` binds when given no port.
- *
- * Read here only to decide whether the workflow world can be configured BEFORE
- * the bind — see {@link createAgentServer}'s `listen`. It is deliberately not a
- * second default: the arguments are forwarded untouched.
- */
-const DEFAULT_LISTEN_PORT = 3000;
+import { handleWorkflowRequest } from "./workflow-serve.ts";
 
 /** Configuration for {@link createAgentServer}. */
 // An interface rather than an intersection: TypeDoc documents inherited
@@ -117,30 +103,6 @@ export interface AgentServerOptions extends PassthroughServerOptions {
    * field that quietly does nothing.
    */
   publicUrl?: string | undefined;
-  /**
-   * The compiled workflow surface, as the two strings `aai build` leaves on the
-   * worker bundle — `__aaiWorkflowCode` and `__aaiStepCode`.
-   *
-   * **Durable workflows do not work self-hosted without these**, and until they
-   * existed nothing self-hosted passed them, so nothing self-hosted ran a
-   * workflow. A `"use workflow"` body has to go through the DevKit compiler; the
-   * CLI does that at build time and carries the result as DATA on the bundle
-   * (`aai-cli/worker-bundler.ts`), because a deployed guest is handed one ESM
-   * string and cannot compile anything. `aai dev` and the guest harness both read
-   * the pair off the bundle and hand it to `createWorkflowSurface`; this door is
-   * the third, and the scaffold's `server.mjs` is what passes them.
-   *
-   * Absent — a project with no `workflows/` directory, which is most of them —
-   * and no surface is mounted and no world is started, which is the same
-   * behaviour as before this option existed.
-   *
-   * Both or neither: `createWorkflowSurface` treats one without the other as "no
-   * workflows", since the flow bundle and the step registrations are two halves
-   * of one artifact.
-   */
-  workflowCode?: string | undefined;
-  /** See {@link AgentServerOptions.workflowCode} — the step half of the pair. */
-  stepCode?: string | undefined;
   /**
    * What this server's front door IS — see `ServerOptions.page`. Defaults to
    * the agent's own `page`, so declaring `page: "static"` on the agent is
@@ -211,8 +173,6 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     page,
     telephony,
     uploadBroker,
-    workflowCode,
-    stepCode,
     ...hooks
   } = options;
   const runtime = createRuntime({
@@ -220,17 +180,6 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     env,
     ...omitUndefined({ providerEnv, db, publicUrl, logger: hooks.logger }),
   });
-
-  /**
-   * The compiled surface, once {@link AgentServer.listen} has built it.
-   *
-   * Read through the closure rather than captured, because the `request` hook
-   * below is installed while this is still undefined: the surface cannot be built
-   * until the world is configured, and the world cannot be configured until the
-   * port is known. Same reason `createServer` reads its workflow engine through a
-   * getter.
-   */
-  let surface: WorkflowSurface | undefined;
 
   const server = createServer({
     runtime,
@@ -267,7 +216,6 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // request still reaches the caller's hook.
     request: (req, res, url, method) =>
       handleWorkflowRequest(
-        surface,
         req,
         res,
         url,
@@ -284,33 +232,27 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   });
 
   /**
-   * Configure the world, build the surface, and start the world — the sequence
-   * `aai dev` and the guest harness each run, and which this door ran none of.
+   * Publish what a STEP body reads with `stepEnv()`.
    *
-   * The ORDER is the whole content of it, and it is `_dev-server.ts`'s:
-   * `configureWorkflowWorld` writes the env the DevKit resolves a world from, and
-   * `createWorkflowSurface` imports `workflow/runtime`, which reads it. Backwards,
-   * a project with a `DATABASE_URL` silently takes the local world and writes its
-   * runs to a directory that dies with the process.
+   * All that is left of a sequence that used to configure the DevKit's world,
+   * build a compiled surface out of two strings on the bundle, and start a
+   * queue. The replay engine needs none of it: it executes a run in this process
+   * off the agent's own `workflows` declaration, so there is no artifact to load
+   * and no world to resolve — which is also why this no longer has to happen
+   * before the port is bound.
    *
-   * `publishStepEnv(env)` in between publishes what a `"use step"` body reads
-   * with `stepEnv()` — the AGENT env, not `providerEnv`, so a step sees exactly
+   * It publishes the AGENT env rather than `providerEnv`, so a step sees exactly
    * what `.env` declares and cannot come to depend on a shell-exported key that
    * will not exist after a deploy.
+   *
+   * GUARDED on the agent declaring workflows, and the guard is not frugality:
+   * this writes a module-global, so publishing for every `createAgentServer`
+   * would leak one test's env into the next (`unstubEnvs` only undoes
+   * `vi.stubEnv`).
    */
-  async function startWorkflows(port: number): Promise<void> {
-    // Nothing to serve, so nothing to configure. `createWorkflowSurface` applies
-    // the same both-or-neither rule, but returning EARLY is what keeps this door
-    // inert for the agents that declare no workflows — which is most of them:
-    // `configureWorkflowWorld` writes `WORKFLOW_TARGET_WORLD`,
-    // `WORKFLOW_LOCAL_BASE_URL` and the data dir into `process.env`, and doing
-    // that for every `listen()` would both pick a world nobody asked for and leak
-    // those keys across a test file (`unstubEnvs` only undoes `vi.stubEnv`).
-    if (!(workflowCode && stepCode)) return;
-    const world = configureWorkflowWorld({ databaseUrl: env.DATABASE_URL, port });
+  function publishWorkflowStepEnv(): void {
+    if (!agent.workflows || Object.keys(agent.workflows).length === 0) return;
     publishStepEnv(env);
-    surface = await createWorkflowSurface(workflowCode, stepCode);
-    await startWorkflowWorldIfDeclared(surface !== undefined, world);
   }
 
   return {
@@ -324,19 +266,14 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // of second copy that drifts. Reading `port` out of the tuple is only for the
     // ordering decision below.
     async listen(...args: Parameters<AgentServer["listen"]>) {
-      const [port = DEFAULT_LISTEN_PORT] = args;
-      // BEFORE binding whenever the port is known, so no request can reach a
-      // `getWorld()` that would resolve — and memoize — an unconfigured world.
-      //
-      // Port 0 is the exception and cannot be otherwise: the caller is asking the
-      // OS to choose, so the loopback base URL the local world dispatches its
-      // callbacks to is unknowable until the socket is bound. That case binds
-      // first and configures immediately after, which leaves a window no real
-      // deployment is in — `PORT=0` is a test convenience, and the e2e suite uses
-      // it precisely so concurrent servers cannot collide on a fixed port.
-      if (port !== 0) await startWorkflows(port);
+      // The step env is published BEFORE the bind, which is all that is left of
+      // an ordering that used to matter a great deal: the world had to be
+      // configured before anything could reach a `getWorld()` that would resolve
+      // and memoize an unconfigured one, and `listen(0)` could not do that
+      // because the loopback callback base was unknowable until bound. The engine
+      // resolves no world, so there is no window and no port-0 special case.
+      publishWorkflowStepEnv();
       await server.listen(...args);
-      if (port === 0) await startWorkflows(server.port ?? port);
     },
   };
 }

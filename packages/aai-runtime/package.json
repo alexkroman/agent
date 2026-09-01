@@ -52,7 +52,6 @@
     "@cartesia/cartesia-js": "^3.5.1",
     "@deepgram/sdk": "^5.8.0",
     "@elevenlabs/elevenlabs-js": "^2.63.0",
-    "@workflow/world-postgres": "4.3.3",
     "ai": "catalog:",
     "assemblyai": "^4.36.7",
     "escape-html": "^1.0.3",

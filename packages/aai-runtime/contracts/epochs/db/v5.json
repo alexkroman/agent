@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "db",
+  "epoch": 5,
+  "sha256": "2de8c1bef1cc32e0cf5bbbb9a56b0913cad27a738b555669ffa684866a08389a",
+  "exports": ["CloseableDb", "CreatePostgresDbOptions", "ReservedDb", "createPostgresDb"]
+}
