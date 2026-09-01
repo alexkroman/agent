@@ -68,10 +68,6 @@ export async function executeBuild(opts: {
 
   // `aai build` previews the deploy artifact, so build it exactly like deploy.
   const bundle = await buildAgentBundle(cwd, { minify: true });
-  // Replay-safety findings from the workflow build. Printed rather than fatal —
-  // see `replayWarnings` — and printed HERE because a build that says nothing
-  // is exactly how a body reading the clock reaches production.
-  for (const warning of bundle.workflows?.warnings ?? []) notify("warn", warning);
   // Evaluate locally to validate the agent export and report its name.
   // `aai deploy` imports its bundle too (for the credential preflight), so
   // both commands run the developer's own project code — see the note in

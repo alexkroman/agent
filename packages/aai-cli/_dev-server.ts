@@ -30,7 +30,7 @@ import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
 import type { ViteDevServer } from "vite";
-import { createWorkerEvaluator, type EvaluatedWorker } from "./_bundler.ts";
+import { createWorkerEvaluator } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
@@ -40,7 +40,6 @@ import { resolveServerEnv } from "./_server-common.ts";
 import { notify, outputSilenced } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
-import { buildWorkflows } from "./workflow-bundler.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
@@ -148,27 +147,15 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
  * keeps the old server. Evaluation goes through the memoizing evaluator so
  * a no-op save doesn't leak another module into the ESM registry.
  *
- * The project's `workflows/` directory is compiled by the same pass deploy
- * runs (`buildWorkflows`) and rides the bundle as two string exports, which is
- * how `aai dev` serves a workflow at all: nothing here hands the bundle to a
- * guest, so the CLI is both ends of that contract locally. A project with no
- * `workflows/` directory pays nothing — `buildWorkflows` resolves `undefined`
- * without starting a builder.
  */
 export async function loadWorker(
   cwd: string,
-  evaluate: (code: string) => Promise<EvaluatedWorker>,
-): Promise<EvaluatedWorker> {
-  const workflows = await buildWorkflows(cwd);
-  // Replay-safety findings, printed on every reload that produces one: `aai dev`
-  // is where a workflow body is written, and the failure they name — a body
-  // that reads the clock, so a resume sees a different value than the first
-  // pass did — does not show up in a dev run at all. See `replayWarnings`.
-  for (const warning of workflows?.warnings ?? []) notify("warn", warning);
+  evaluate: (code: string) => Promise<AgentDef>,
+): Promise<AgentDef> {
   // `runtime: false`: the dev server builds its runtime in-process from the
   // same installed SDK the wrapper would bundle, and inlining the runtime +
   // provider SDKs on every file-watch rebuild would make reloads multi-second.
-  return evaluate(await buildWorker(cwd, { runtime: false, workflows }));
+  return evaluate(await buildWorker(cwd, { runtime: false }));
 }
 
 // ─── File watching ──────────────────────────────────────────────────────────
@@ -273,16 +260,15 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   /**
    * Whether the session-state tables have been ensured this process.
    *
-   * Once, like the workflow world above and for the same reason: a rebuild
-   * replaces the routes, not the storage behind them, and re-running the DDL on
-   * every file save would be two round trips per keystroke burst.
+   * Once per dev server rather than per restart: a rebuild replaces the routes,
+   * not the storage behind them, and re-running the DDL on every file save would
+   * be two round trips per keystroke burst.
    */
   let sessionSchemaEnsured = false;
 
   /** Full build sequence, shared by initial startup and every restart. */
   async function buildServer(): Promise<AgentServer> {
-    const worker = await loadWorker(cwd, evaluateWorker);
-    const agentDef = worker.agent;
+    const agentDef = await loadWorker(cwd, evaluateWorker);
     const env = await resolveAgentEnv(cwd, agentDef);
 
     // A project with a `DATABASE_URL` puts session state in Postgres, and the

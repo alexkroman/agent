@@ -581,11 +581,11 @@ describe("dev server host mode gate", () => {
 });
 
 describe("loadWorker", () => {
-  const fakeWorker = (name: string) => ({
-    agent: { name, tools: {} } as AgentDef,
-    workflowCode: undefined,
-    stepCode: undefined,
-  });
+  const fakeWorker = (name: string) =>
+    ({
+      name,
+      tools: {},
+    }) as AgentDef;
 
   test("hands the Vite-built worker to the evaluator", async () => {
     await withTempDir(async (dir) => {
@@ -595,7 +595,7 @@ describe("loadWorker", () => {
         evaluated.push(code);
         return fakeWorker("built-agent");
       });
-      expect(worker.agent.name).toBe("built-agent");
+      expect(worker.name).toBe("built-agent");
       expect(evaluated[0]).toContain("built-agent");
     });
   });
@@ -610,17 +610,18 @@ describe("loadWorker", () => {
     });
   });
 
-  test("a project with no workflows/ directory carries no workflow code", async () => {
+  test("emits no workflow exports, the DevKit's two strings being gone", async () => {
+    // The wrapper entry used to carry `__aaiWorkflowCode`/`__aaiStepCode` — the
+    // DevKit's per-tenant compiled surface, which the guest read back off the
+    // bundle. The replay engine reads the agent's own `workflows` declaration,
+    // so nothing is embedded and the guest has nothing to read.
     await withTempDir(async (dir) => {
       await writeAgentTs(dir, "no-workflows");
-      const worker = await loadWorker(dir, async (code) => {
-        // The wrapper entry only emits the two exports when the build produced
-        // them, so their absence from the SOURCE is what the guest-side
-        // "declares no workflows" check reads.
+      await loadWorker(dir, async (code) => {
         expect(code).not.toContain("__aaiWorkflowCode");
+        expect(code).not.toContain("__aaiStepCode");
         return fakeWorker("no-workflows");
       });
-      expect(worker.workflowCode).toBeUndefined();
     });
   });
 });
