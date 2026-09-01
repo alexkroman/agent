@@ -56,6 +56,7 @@ import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { claimDue } from "./workflow-queue-claim.ts";
+import { reconcileStalledRuns, STALL_GRACE_MS } from "./workflow-queue-reconcile.ts";
 import {
   ack,
   fail,
@@ -184,15 +185,43 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   // shortage. The claim is one statement, so the reservation is brief.
   const reserved = await adminDb.reserve();
   let claimed: QueuedMessage[];
+  let repaired = { stalled: 0, enqueued: 0 };
   try {
     claimed = await claimDue(
       (q, p) => reserved.query(q, p),
       opts.maxPerTick ?? WORKFLOW_QUEUE_MAX_PER_TICK,
     );
+    // NOTHING DUE is exactly when a stalled run should be looked for, and it
+    // rides the connection the claim already holds rather than taking a second:
+    // an idle tick must stay free of the pool, which is 4 for the whole replica.
+    // Both statements are brief, so the reservation stays as short as the claim's
+    // own doc promises.
+    //
+    // Under the same leader election, deliberately: two replicas reconciling one
+    // run would each write a message, and only the derived id stops that being
+    // two deliveries.
+    if (claimed.length === 0) {
+      repaired = await reconcileStalledRuns((q, p) => reserved.query(q, p));
+    }
   } finally {
     reserved.release();
   }
-  if (claimed.length === 0) return empty;
+  // NOTHING DUE is exactly when a stalled run should be looked for: the queue is
+  // idle, the admin pool is free, and a run that is unfinished with no message is
+  // invisible to every other pass. Doing it here rather than on its own timer
+  // keeps it under the same leader election — two replicas reconciling the same
+  // run would each write a message, and only the id derivation stops that being
+  // two deliveries.
+  if (claimed.length === 0) {
+    if (repaired.enqueued > 0) {
+      log.warn(
+        `re-enqueued ${repaired.enqueued} stalled run(s) — unfinished with nothing scheduled, ` +
+          "which is what an abandoned message or a failed enqueue leaves behind",
+        repaired,
+      );
+    }
+    return empty;
+  }
 
   // The settle statements take a connection PER STATEMENT, not one for the pass.
   // This used to reserve once around the whole fan-out below, which is the exact
@@ -207,14 +236,7 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   // spans them, so per-statement is not merely cheaper — it is all they need. A
   // burst of concurrent settles simply queues on the pool, holding it for one
   // round trip each rather than for a delivery each.
-  const settle = async <T>(run: (sql: SqlExec) => Promise<T>): Promise<T> => {
-    const conn = await adminDb.reserve();
-    try {
-      return await run((q, p) => conn.query(q, p));
-    } finally {
-      conn.release();
-    }
-  };
+  const settle = <T>(run: (sql: SqlExec) => Promise<T>): Promise<T> => settleOn(adminDb, run);
   // Bounded fan-out over a fixed list, in ITEM order — `_pool.ts`'s own doc
   // argues why a worker pool rather than a semaphore: a lapsed acquire in a
   // background pass is work silently not done.
@@ -256,8 +278,8 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   // run and worth a line an operator sees.
   if (pass.dropped > 0) {
     log.warn(
-      `abandoned ${pass.dropped} message(s) after the retry budget — those runs are stalled ` +
-        "until something else boots their agent",
+      `abandoned ${pass.dropped} message(s) after the retry budget — the reconcile pass will ` +
+        `re-enqueue them once they have been idle for ${STALL_GRACE_MS / 60_000} minutes`,
       pass,
     );
   } else {
@@ -349,4 +371,20 @@ export function startWorkflowQueueSweep(
     stopListening?.();
     stopInterval();
   };
+}
+
+/**
+ * Run one statement on its own reserved connection.
+ *
+ * Per STATEMENT, never one reservation around a fan-out — see the argument at
+ * the settle call site: a delivery can hold a connection for minutes out of an
+ * `ADMIN_POOL_MAX` of 4.
+ */
+async function settleOn<T>(adminDb: AdminDb, run: (sql: SqlExec) => Promise<T>): Promise<T> {
+  const conn = await adminDb.reserve();
+  try {
+    return await run((q, p) => conn.query(q, p));
+  } finally {
+    conn.release();
+  }
 }
