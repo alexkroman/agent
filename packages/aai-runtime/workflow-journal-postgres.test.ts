@@ -24,13 +24,9 @@
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { type IssuedStatement, recordingDb } from "./_test-utils.ts";
-import {
-  applyWorkflowJournalDdl,
-  createPostgresJournal,
-  workflowJournalDdl,
-} from "./workflow-journal-postgres.ts";
+import { createPostgresJournal } from "./workflow-journal-postgres.ts";
 
 /** `recordingDb` under this file's older name, returning the two halves apart. */
 function recorder(rows: readonly Record<string, unknown>[][] = []) {
@@ -150,11 +146,6 @@ describe("claimHook", () => {
     });
   });
 });
-
-/** A `Logger` that records rather than prints. */
-function quietLogger() {
-  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-}
 
 /** The journal over a recorder, for the cases that do not read `issued`. */
 function journalOf(db: Db) {
@@ -281,37 +272,5 @@ describe("a bigint column arrives as a STRING", () => {
     const runs = await journalOf(db).listRuns("digest", 25);
     expect(runs.map((r) => r.runId)).toEqual(["wrun_1", "wrun_2"]);
     expect(issued[0]?.params).toContain(25);
-  });
-});
-
-describe("the DDL", () => {
-  test("declares all five tables, and qualifies them when given a schema", () => {
-    const bare = workflowJournalDdl().join("\n");
-    for (const table of ["runs", "steps", "attempts", "sleeps", "hooks"]) {
-      expect(bare).toContain(`aai_workflow_${table}`);
-    }
-    expect(workflowJournalDdl("aai_platform").join("\n")).toContain('"aai_platform".aai_workflow');
-  });
-
-  test("applying it is NEVER fatal — a role that may not CREATE keeps booting", async () => {
-    // A real migration may already own these tables, in which case the backend's
-    // own error is the better diagnostic than a refused boot.
-    const logger = quietLogger();
-    const db = {
-      query: vi.fn(async () => {
-        throw new Error("permission denied for schema public");
-      }),
-    };
-    await expect(applyWorkflowJournalDdl({ db, logger })).resolves.toBe(false);
-    const warn = logger.warn;
-    expect(warn).toHaveBeenCalledWith(
-      "Workflow journal schema not applied",
-      expect.objectContaining({ error: expect.stringContaining("permission denied") }),
-    );
-  });
-
-  test("reports true when every statement lands", async () => {
-    const { db } = recorder();
-    expect(await applyWorkflowJournalDdl({ db, logger: quietLogger() })).toBe(true);
   });
 });

@@ -154,11 +154,11 @@ export { WORKFLOW_API_METHODS } from "./workflow-api.ts";
  * `aai-server` that drives the real arm. A host embedding this runtime is handed
  * a journal by `createAgentServer`; it does not build one.
  */
+export { createPostgresJournal } from "./workflow-journal-postgres.ts";
 export {
   applyWorkflowJournalDdl,
-  createPostgresJournal,
   workflowJournalDdl,
-} from "./workflow-journal-postgres.ts";
+} from "./workflow-journal-schema.ts";
 // The startup sweep that clears queue locks no live pool owns, and the advisory
 // lock it contends for. Exported for a SPEC: what a fake cannot check is that
 // `graphile_worker.force_unlock_workers` exists and does what its name says, and
