@@ -1226,3 +1226,79 @@ UNPROMPTED, interruptible turn when it lands — the promise `research-workflow`
 to make ("I'll let you know") and had no way to keep. `Transport.injectTurn` is
 the primitive (pipeline only; S2S has no such verb, so there it is a logged
 no-op). **See `workflow-notify.ts`'s module doc** for the rest.
+
+## An envelope is only the codec's if the codec WROTE it
+
+`workflow-typed-json.ts` tags binary as `{ __type: "Uint8Array", data }` and a
+date as `{ __type: "Date", iso }`, and both revivers recognise one
+**structurally** — nothing in the shape says who wrote it. So an author's own
+object of that shape went in one end and a `Uint8Array` came out the other, at
+any nesting depth, with nothing raised. A run's `input` arrives from
+`POST /workflows/runs`, which is public HTTP, so that was type confusion across
+a trust boundary: a step declaring `z.object({ __type: z.string() })` received
+bytes instead.
+
+**The fix is round-trip TOTALITY, not a guard per shape.**
+`workflow-typed-json-escape.ts` renames an author's reserved keys on encode
+(`__type` → `___type`, `___type` → `____type`) and back on decode. That map is
+injective and nothing maps onto `__type`, so decode inverts it exactly. Three
+things about it are load-bearing and easy to undo by accident:
+
+- **A key rename, never a wrapper.** `{ __type: "escape", value: v }` does not
+  terminate — `v` still carries the tag, and the reviver runs bottom-up, so it
+  would revive the inner envelope before the wrapper could stop it.
+- **The pattern is `/^__+type$/`, the whole family.** Escaping only the bare
+  `__type` collides an author's own `___type` with somebody else's escape.
+- **The rebuild is `Object.fromEntries`, never `out[key] = …`.** `JSON.parse`
+  makes `__proto__` a real own property and assignment invokes the prototype
+  SETTER: the key vanishes from the copy and the copy's prototype becomes
+  author-controlled. Measured on all three spellings; only the assignment loop
+  lost it.
+
+Decode still accepts a **bare** `__type` envelope, so `@workflow/world-local`'s
+own transport and every row already written are unaffected — which is why the
+deployment order is decoder-first.
+
+Two related strictnesses came with it, both replacing an invented value with a
+throw, and both classified at the callers that already existed for them
+(`decodeBody` catches into a 400; the guest fails the step). `Buffer.from(s,
+"base64")` DROPS characters outside the alphabet, so a malformed payload decoded
+to arbitrary bytes; it is `Uint8Array.fromBase64(…, { lastChunkHandling:
+"strict" })` now. And an `iso` that will not parse throws rather than reviving
+the `NaN` that stalled every durable run. `iso: null` still revives an invalid
+`Date`, because that is the ENCODER's own spelling of one.
+
+**The date asymmetry that remains is deliberate**: the storage RPC emits the date
+envelope because both ends are ours, the queue path never does because the
+DevKit's `createQueueHandler` is the far end and has no date envelope to read.
+After escaping, neither codec REVIVES an author's date-shaped object, so the two
+agree on the shape and differ only on what they emit.
+
+### The suite is the point as much as the fix
+
+`workflow-typed-json-property.test.ts` states the round trip over a **generated**
+domain, and it is the pattern to copy for the other codecs in this repo. Its
+object keys are drawn from a pool containing the reserved family and
+`__proto__`, and its strings from one containing `"Uint8Array"`, `"Date"` and
+both valid and invalid base64 — so a generated value is an envelope-shaped object
+a measured ~300 times per run, which is the case a hand-listed domain cannot
+reach: author data that looks exactly like the codec's own output. The 27 named
+cases stay beside it as regression pins; a pin says "this value still works", a
+property says "no value breaks it".
+
+**A coverage floor earned its place on the first run.** The first draft reached
+ZERO complete forged envelopes across 8,000 generated values — a full envelope
+needs two particular keys carrying two particular values in one record, which is
+too rare to hit by chance — while every round-trip property passed green. Without
+the floor the suite would have read as a proof of exactly the property it was not
+testing. `envelopeShape` constructs them deliberately; the floors sit at roughly
+half the observed minimum over 12 runs, with the ranges recorded in place.
+
+**A/B every mutation, including the test's own inputs.** Five reverts of the fix
+are each caught, and two of them — the `__proto__` rebuild and the one-level
+escape — are caught by the generated properties rather than by any named case.
+Two of the test's own inputs were wrong in ways that would have made them pass
+vacuously: `{ __proto__: … }` written as an object LITERAL is the
+prototype-setter syntax and creates no own property, and a server-side case using
+`runs.get` answered 400 whether or not the fix was in, because a `Uint8Array` is
+not a run id. Both are noted where they sit.

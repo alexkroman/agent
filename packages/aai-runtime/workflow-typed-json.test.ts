@@ -365,3 +365,104 @@ describe("the queue codec is the DevKit's, and stays theirs", () => {
     expect(back.at).not.toBeInstanceOf(Date);
   });
 });
+
+/**
+ * What only a HOSTILE or corrupt wire can produce.
+ *
+ * These cannot be reached through a round trip — that is the point of the escape
+ * scheme — so they are named cases against raw JSON text, which is what a peer
+ * actually sends.
+ */
+describe("a forged or corrupt envelope on the wire", () => {
+  /**
+   * The reported bug, pinned in the exact shape it was reported in.
+   *
+   * A run's `input` arrives at `POST /workflows/runs`, which is public HTTP, so
+   * an author's plain object becoming a `Uint8Array` is type confusion across a
+   * trust boundary — a step that declared `z.object({ __type: z.string() })`
+   * received bytes.
+   */
+  test.each([
+    ["at the top level", { __type: "Uint8Array", data: "aGVsbG8=" }],
+    ["nested in a record", { run: { __type: "Uint8Array", data: "aGVsbG8=" } }],
+    ["at depth in an array", { chunks: [{ __type: "Uint8Array", data: "AAA=" }] }],
+    ["a date envelope", { __type: "Date", iso: "2020-01-01T00:00:00.000Z" }],
+    ["already-escaped, written by the author", { __type: "x", ___type: "y", ____type: "z" }],
+  ])("an author's own envelope-shaped object survives as DATA %s", (_label, value) => {
+    expect(roundTrip(value)).toEqual(value);
+    expect(storageRoundTrip(value)).toEqual(value);
+  });
+
+  /**
+   * `Buffer.from(s, "base64")` DROPS characters outside the alphabet and returns
+   * whatever the survivors decode to, so the codec used to answer ten arbitrary
+   * bytes for `"not base64 at all!!"` with nothing raised. That is the same
+   * silent-garbage failure the module exists to prevent, one layer in.
+   */
+  test.each([
+    ["not base64 at all", '{"x":{"__type":"Uint8Array","data":"not base64 at all!!"}}'],
+    ["an unpadded final chunk", '{"x":{"__type":"Uint8Array","data":"aGVsbG8"}}'],
+    ["non-zero trailing bits", '{"x":{"__type":"Uint8Array","data":"AAB="}}'],
+    ["the url-safe alphabet, which is not ours", '{"x":{"__type":"Uint8Array","data":"-_A="}}'],
+  ])("throws on %s rather than inventing bytes", (_label, text) => {
+    expect(() => decodeTypedJson(text)).toThrow(/malformed base64/);
+  });
+
+  test("still accepts the canonical base64 it writes itself", () => {
+    const back = decodeTypedJson('{"x":{"__type":"Uint8Array","data":"aGVsbG8="}}') as {
+      x: Uint8Array;
+    };
+    expect(Buffer.from(back.x).toString()).toBe("hello");
+  });
+
+  /**
+   * `iso: null` is the ENCODER's own spelling of an invalid date, so it revives as
+   * one. A non-null string that will not parse is corruption, and reviving it
+   * would hand the guest the `NaN` that stalled every durable run.
+   */
+  test("throws on a date envelope whose iso will not parse", () => {
+    expect(() => decodeStorageJson('{"x":{"__type":"Date","iso":"garbage"}}')).toThrow(
+      /unparsable iso/,
+    );
+  });
+
+  /**
+   * `JSON.parse` makes `__proto__` a real own property, and `out[key] = …` on an
+   * object literal invokes the prototype SETTER — so a rebuild by assignment
+   * drops the key AND repoints the copy's prototype at author-controlled data.
+   * The escape rebuild is the only place in this codec that rebuilds a parsed
+   * object, and it uses `Object.fromEntries`, which defines instead of assigns.
+   */
+  test("carries __proto__ as ordinary data, without polluting a prototype", () => {
+    // Built with `JSON.parse` rather than as a literal, because `__proto__:` in an
+    // object LITERAL is the prototype-setter syntax and creates no own property at
+    // all — the first draft of this test asserted against an input that had
+    // already lost the key. A request body is parsed, which is the real shape.
+    // The reserved key is what forces the escape rebuild; `__proto__` rides along.
+    const value = JSON.parse(
+      '{"__type":"tenant","__proto__":{"polluted":true},"keep":1}',
+    ) as Record<string, unknown>;
+    const back = roundTrip(value) as Record<string, unknown>;
+    expect(Object.keys(back)).toEqual(["__type", "__proto__", "keep"]);
+    // The OWN property, read without going through the deprecated accessor —
+    // which is also the only way to see it if a rebuild had repointed the
+    // prototype, since the accessor would then answer the polluted object.
+    expect(Object.getOwnPropertyDescriptor(back, "__proto__")?.value).toEqual({
+      polluted: true,
+    });
+    expect(Object.getPrototypeOf(back)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  /**
+   * The compatibility direction, and the reason the deployment order is
+   * decoder-first: escaping only ever adds a key spelling no previous encoder
+   * produced, so everything already on the wire decodes exactly as it did.
+   */
+  test("a BARE envelope from the DevKit's own transport still decodes to bytes", () => {
+    const back = decodeTypedJson('{"input":{"__type":"Uint8Array","data":"AQI="}}') as {
+      input: unknown;
+    };
+    expect(back.input).toEqual(new Uint8Array([1, 2]));
+  });
+});
