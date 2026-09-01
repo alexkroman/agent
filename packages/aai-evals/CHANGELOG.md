@@ -1,5 +1,12 @@
 # aai-evals
 
+## 0.1.24
+
+### Patch Changes
+
+- cc317e4: Move the starter-eval grading corpus into aai-evals and port it to TypeScript
+- @alexkroman1/aai@9.0.2
+
 ## 0.1.23
 
 ### Patch Changes

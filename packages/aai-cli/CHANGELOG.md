@@ -1,5 +1,15 @@
 # @alexkroman1/aai-cli
 
+## 9.0.2
+
+### Patch Changes
+
+- Updated dependencies [dcb2050]
+- Updated dependencies [cc317e4]
+  - @alexkroman1/aai-runtime@9.0.2
+  - @alexkroman1/aai@9.0.2
+  - @alexkroman1/aai-ui@9.0.2
+
 ## 9.0.1
 
 ### Patch Changes
