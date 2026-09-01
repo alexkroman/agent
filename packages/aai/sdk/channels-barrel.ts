@@ -14,7 +14,6 @@
  * import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
  *
  * export async function postSummary(webhookUrl: string, points: string[]): Promise<string> {
- *   "use step";
  *   return await sendToChannelClassified(slackChannel({ webhookUrl }), {
  *     text: `Weekly summary: ${points.length} items`,
  *     heading: "Weekly summary",

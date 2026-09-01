@@ -53,7 +53,7 @@
  *
  * A body is REPLAYED from the top on every resume, so it may hold no live handle
  * and may do nothing non-deterministic outside a step. That was true of the
- * DevKit's `"use step"` and is true of `ctx.step`: the mechanism changed, the
+ * DevKit's a step and is true of `ctx.step`: the mechanism changed, the
  * constraint did not. `ctx.db` and `ctx.generate` are absent from a body for
  * exactly that reason — both belong inside a step, which runs at most once per
  * successful execution and has the whole Node runtime.
@@ -251,8 +251,7 @@ export type WorkflowOutputOf<D> =
  * import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
  * import type { digest } from "../agent.ts";
  *
- * export async function digestFlow(input: WorkflowInputOf<typeof digest>) {
- *   "use workflow";
+ * export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowCtx) {
  *   // `limit` is `number`, not `number | undefined` — the default already ran.
  *   return await research(input.topic, input.limit);
  * }

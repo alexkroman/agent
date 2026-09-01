@@ -405,6 +405,9 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
         `hookTimeout!${occurrence}`,
         Date.now() + waitOptions.timeoutMs,
         undefined,
+        // Not an ordinary sleep: a bare `wakeUp(runId)` cuts a SCHEDULE short and
+        // must not also close an approval window. See `SleepRecord.kind`.
+        "hookTimeout",
       );
       // Closed unanswered. The hook is CLOSED before the body continues, so a
       // signal arriving a moment later cannot make the next replay read a

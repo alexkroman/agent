@@ -38,7 +38,7 @@
  * | --- | --- |
  * | `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
  * | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
- * | `@alexkroman1/aai/step`, `/step-errors` | writing a `"use step"` body inside a workflow |
+ * | `@alexkroman1/aai/step`, `/step-errors` | writing a step inside a workflow |
  * | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |
  * | `@alexkroman1/aai/tools` | calling `fetchJson`/`webSearch`/`visitWebpage` from your own tool code |
  * | `@alexkroman1/aai/utils` | small helpers written inside a tool body |

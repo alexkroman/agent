@@ -12,6 +12,7 @@
 
 import { type WorkflowCtx, workflow } from "@alexkroman1/aai";
 import { publishStepReporter } from "@alexkroman1/aai/host-internal";
+import { sleep } from "@alexkroman1/aai/internal";
 import { report } from "@alexkroman1/aai/step";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
@@ -379,7 +380,39 @@ describe("hooks", () => {
     expect(await engine.signal("tok_review", { approved: true })).toBe(false);
   });
 
-  test("fails a run whose token another run already holds", async () => {
+  test("frees a DERIVED token when its run ends, so the next run can reuse it", async () => {
+    // The SDK tells authors to derive a hook token from the run's own input, and
+    // `recap-workflow` derives `retention:<sessionId>` — so a token that outlived
+    // its run could serve exactly ONE run ever. A caller asking for a second
+    // recap in one session hit `claimHook`'s conflict, which is NOT a suspend, so
+    // the saga's catch compensated and deleted that transcript too.
+    const { engine } = harness(parking);
+    const first = await engine.start("digest", [{}]);
+    await engine.execute(first);
+    await engine.signal("tok_review", { approved: true });
+    await engine.execute(first);
+    expect(await engine.getRun(first)).toMatchObject({ status: "completed" });
+
+    // Same token, second run — the ordinary shape, not an edge case.
+    const second = await engine.start("digest", [{}]);
+    expect(await engine.execute(second)).toBe("running");
+    expect(await engine.signal("tok_review", { approved: false })).toBe(true);
+    await engine.execute(second);
+    expect(await engine.readOutput(second)).toEqual({ approved: false });
+  });
+
+  test("frees the token on a run that FAILED too, not only one that completed", async () => {
+    const { engine, journal } = harness(parking);
+    const first = await engine.start("digest", [{}]);
+    await engine.execute(first);
+    await journal.setStatus(first, "failed", { error: { message: "gave up" } }, ["running"]);
+
+    const second = await engine.start("digest", [{}]);
+    expect(await engine.execute(second)).toBe("running");
+    expect(await engine.signal("tok_review", { approved: true })).toBe(true);
+  });
+
+  test("fails a run whose token another LIVE run already holds", async () => {
     // One signal would resolve whichever wait the store found first and the
     // other would never end, so it is a bug worth failing the run over.
     const { engine } = harness({ ...parking, second: parking.digest });
@@ -463,6 +496,14 @@ describe("a hook with a deadline", () => {
     },
   };
 
+  /** The same gate with a window short enough for a spec to outlive. */
+  const briefly = {
+    digest: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      const answer = await ctx.waitFor<{ keep: boolean }>("tok_gate", { timeoutMs: 1 });
+      return { kept: answer?.keep ?? false, answered: answer !== undefined };
+    },
+  };
+
   test("suspends with the deadline scheduled, so an unanswered window still ends", async () => {
     // The difference from an unbounded wait: THIS one schedules a delivery,
     // because the window closing is an event the engine owns.
@@ -487,39 +528,43 @@ describe("a hook with a deadline", () => {
 
   test("a closed window resolves undefined, so the body takes its safe default", async () => {
     // `undefined` rather than a throw: a window closing is an outcome a body
-    // branches on. The deadline is forced past by waking the companion sleep,
-    // which is how a `wake` cuts the window short too.
-    const journal = createMemoryJournal();
-    const engine = createWorkflowEngine({
-      workflows: { digest: workflow({ description: "d", run: gated.digest }) },
-      journal,
-      streams: createMemoryStreams(),
-      dispatch: () => undefined,
-      newRunId: () => "wrun_1",
-      logger: silentLogger,
-    });
+    // branches on. The deadline is let ELAPSE rather than woken, because a bare
+    // wake deliberately no longer reaches a hook's deadline — see below.
+    const { engine } = harness(briefly);
     const runId = await engine.start("digest", [{}]);
     await engine.execute(runId);
+    await sleep(5);
 
-    expect(await journal.wakeSleeps(runId, undefined)).toBe(1);
     expect(await engine.execute(runId)).toBe("completed");
     expect(await engine.readOutput(runId)).toEqual({ kept: false, answered: false });
   });
 
-  test("a signal that arrives after the window closed is refused", async () => {
-    // So a caller cannot be told their answer was taken when it was not.
-    const journal = createMemoryJournal();
-    const engine = createWorkflowEngine({
-      workflows: { digest: workflow({ description: "d", run: gated.digest }) },
-      journal,
-      streams: createMemoryStreams(),
-      dispatch: () => undefined,
-      newRunId: () => "wrun_1",
-      logger: silentLogger,
-    });
+  test("a bare wakeUp does NOT close the window — it is for schedules, not approvals", async () => {
+    // The hook's deadline is journaled through the same primitive as a
+    // `ctx.sleep`, and without a `kind` on the record the two were
+    // indistinguishable: a "send it now" tool calling `wakeUp(runId)` to cut a
+    // SCHEDULE short also closed any pending approval window on that run — a
+    // body cancelling a human approval it never asked to cancel.
+    const { engine } = harness(gated);
     const runId = await engine.start("digest", [{}]);
     await engine.execute(runId);
-    await journal.wakeSleeps(runId, undefined);
+
+    expect(await engine.wakeUp(runId, undefined)).toBe(0);
+    // Still parked, so the answer can still arrive.
+    expect(await engine.getRun(runId)).toMatchObject({ status: "running" });
+    expect(await engine.signal("tok_gate", { keep: true })).toBe(true);
+    await engine.execute(runId);
+    expect(await engine.readOutput(runId)).toEqual({ kept: true, answered: true });
+  });
+
+  test("a signal that arrives after the window closed is refused", async () => {
+    // So a caller cannot be told their answer was taken when it was not — and,
+    // more to the point, so the next replay cannot read a payload and take the
+    // answered branch after the body already took the other one.
+    const { engine } = harness(briefly);
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    await sleep(5);
     await engine.execute(runId);
 
     expect(await engine.signal("tok_gate", { keep: true })).toBe(false);

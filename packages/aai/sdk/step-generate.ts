@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * One model call, from inside a `"use step"` function.
+ * One model call, from inside a step.
  *
  * `ctx.generate` is the SDK's answer for tool code, and a step cannot use it: a
  * step is bundled and dispatched separately from the agent bundle and is handed
@@ -137,7 +137,7 @@ export class StepGenerateError extends Error {
 /**
  * Ask the AssemblyAI LLM Gateway one question and return its reply.
  *
- * **From a `"use step"` body, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
+ * **From a step, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
  * It is this call plus `throwStepError`, and the DevKit decides its retry policy
  * from WHICH error a step throws: raw, a terminal failure burns every remaining
  * attempt and a rate limit backs off for one second while the delay the far side
@@ -150,7 +150,6 @@ export class StepGenerateError extends Error {
  * import { FatalError } from "@alexkroman1/aai/step-errors";
  *
  * export async function summarize(text: string): Promise<string> {
- *   "use step";
  *   try {
  *     return await stepGenerate(text, { system: "Summarize in two sentences." });
  *   } catch (err) {

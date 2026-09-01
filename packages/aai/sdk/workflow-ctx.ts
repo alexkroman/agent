@@ -3,7 +3,7 @@
  * What a workflow BODY is handed: the journal and the clock, as two methods.
  *
  * This is the half of the authoring surface that replaced the Workflow DevKit's
- * `"use workflow"` / `"use step"` directives. The directives were a compile-time
+ * `"use workflow"` / `"use step"` directives. Those were a compile-time
  * rewrite performed by a 921 KB WASM SWC plugin, and carrying it meant a
  * per-tenant, three-transform bundling pipeline — this image is baked once and
  * serves every tenant, so there is no `workflows/` directory in existence when
@@ -148,9 +148,15 @@ export type WorkflowCtx = {
    *
    * **This is not `setTimeout`, and the difference is the whole point.** The run
    * SUSPENDS: the body stops, the process is free, and the engine re-delivers the
-   * run when the time comes. So a wait may be days long and survives a redeploy,
-   * an idle sandbox reclaim and a crash — which is what makes "check back
-   * tomorrow" a thing a workflow can express at all.
+   * run when the time comes — which is what makes "check back tomorrow" a thing a
+   * workflow can express at all.
+   *
+   * **How long it really survives is a property of the JOURNAL, and today that is
+   * memory.** A wait outlives the body and the worker; it does NOT yet outlive
+   * the process, on any deployment. The platform and Postgres journals are the
+   * remaining half of the DevKit removal, and the runtime's boot line reports
+   * which store is in play. A multi-day schedule is expressible now and durable
+   * when they land.
    *
    * A sleep is journaled the first time it is reached, so its wake time is
    * decided ONCE. That matters because the body is replayed: computing the
@@ -168,19 +174,28 @@ export type WorkflowCtx = {
    *   that has passed HAS been reached, and a run resuming after a long outage
    *   meets that case legitimately.
    * @param options - `correlationId` names this wait so
-   *   `ctx.workflows.wake(runId, [id])` can end it early, which is how a "send
-   *   it now" tool cuts a scheduled wait short. Waits with no id are woken by a
-   *   `wake` that names none.
+   *   `ctx.workflows.wakeUp(runId, { correlationIds: [id] })` can end it early,
+   *   which is how a "send it now" tool cuts a scheduled wait short. A `wakeUp`
+   *   naming no ids wakes every outstanding SLEEP on the run — and deliberately
+   *   not a `waitFor`'s deadline, so cutting a schedule short cannot also close
+   *   an approval window.
    */
   sleep(until: number | Date, options?: SleepOptions): Promise<void>;
   /**
    * Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
    *
    * Suspends like {@link WorkflowCtx.sleep} and with no deadline at all: the run
-   * waits until `ctx.workflows.signal(token, payload)` is called, or a webhook
-   * arrives at the URL `ctx.workflows.publicWebhookUrl(token)` mints for the same
-   * token. That is how a run parks on a human approval, a payment provider's
-   * callback, or a review that may take a week.
+   * waits until `ctx.workflows.signal(token, payload)` is called. That is how a
+   * run parks on a human approval, a review that may take a week, or anything
+   * else somebody else decides.
+   *
+   * **The WEBHOOK route does not reach this yet.**
+   * `ctx.workflows.publicWebhookUrl(token)` still mints a URL served by the
+   * Workflow DevKit's own hook table, which knows nothing about this wait and
+   * answers a delivery with `HookNotFound`. Until that route is rewired, a run
+   * parked here is ended by `signal` — reachable from a tool, which is where a
+   * human approval arrives from anyway. Do not build a payment-callback flow on
+   * it yet.
    *
    * ```ts no-check
    * // The token is the AUTHOR's, derived so the body and the tool that hands it

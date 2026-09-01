@@ -30,7 +30,7 @@
  *   SUBAGENT concluded, without running one.
  * - `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
  *   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
- *   slots a `"use step"` body reaches through, each answered in memory.
+ *   slots a step reaches through, each answered in memory.
  * - `testing-workflows.ts` — run snapshots and progress streams, for a page.
  *
  * @module testing
@@ -149,7 +149,7 @@ export type StubReporter = {
 };
 
 /**
- * Capture what a `"use step"` function narrates and emits.
+ * Capture what a step narrates and emits.
  *
  * `report()` and `emit()` both go through a published slot, and with nothing
  * published they fall back to the console — which is right for a step under test

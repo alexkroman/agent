@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * A fake LLM gateway, for testing a `"use step"` function that calls one.
+ * A fake LLM gateway, for testing a step that calls one.
  *
  * `stepGenerate` is one `fetch` to an OpenAI-compatible endpoint, which makes it
  * trivially testable — and made every workflow template write the same fake:

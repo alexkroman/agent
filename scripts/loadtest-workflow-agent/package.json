@@ -5,7 +5,6 @@
   "//": "NOT a workspace member and never installed. Same job as the one in loadtest-stub-agent/: it declares what the sources beside it import, which `loadtest-boot.sh workflow` copies over a scaffolded project that already has all four. Without it Biome's noUndeclaredDependencies resolves these imports against the repo ROOT manifest and reports every one.",
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
-    "workflow": "catalog:",
     "zod": "catalog:"
   }
 }

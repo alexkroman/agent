@@ -1,6 +1,6 @@
 # step-errors
 
-The failure a `"use step"` body should throw (the
+The failure a step should throw (the
 `@alexkroman1/aai/step-errors` subpath).
 
 The Workflow DevKit retries a step that throws, gives up on a `FatalError`,
@@ -125,7 +125,6 @@ import { slackChannel } from "@alexkroman1/aai/channels";
 import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
 
 export async function announce(webhookUrl: string, headline: string): Promise<string> {
-  "use step";
   return await sendToChannelClassified(slackChannel({ webhookUrl }), { text: headline });
 }
 ```
@@ -190,7 +189,6 @@ that second case.
 import { stepFetchOk } from "@alexkroman1/aai/step-errors";
 
 export async function readFeed(url: string): Promise<string> {
-  "use step";
   return await (await stepFetchOk(url, { signal: AbortSignal.timeout(30_000) })).text();
 }
 ```
@@ -241,7 +239,6 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
 
 export async function summarize(text: string): Promise<string> {
-  "use step";
   return await stepGenerateClassified(text, { system: "Summarize in two sentences." });
 }
 ```
@@ -548,7 +545,6 @@ import { transcodeToWav } from "@alexkroman1/aai/ffmpeg";
 import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 
 export async function toPcm(bytes: Uint8Array): Promise<Uint8Array> {
-  "use step";
   return await transcodeToWav(bytes, { sampleRate: 16_000 }).catch(throwFfmpegStepError);
 }
 ```
@@ -594,7 +590,6 @@ import { stepGenerate } from "@alexkroman1/aai/step";
 import { throwStepError } from "@alexkroman1/aai/step-errors";
 
 export async function summarize(text: string): Promise<string> {
-  "use step";
   return await stepGenerate(text, { system: "Summarize in two sentences." }).catch(
     throwStepError,
   );
@@ -659,7 +654,6 @@ The sentence to report. Defaults to the response's status
 import { toStepError } from "@alexkroman1/aai/step-errors";
 
 export async function fetchOrder(id: string): Promise<unknown> {
-  "use step";
   const response = await fetch(`https://api.example.com/orders/${id}`);
   if (!response.ok) throw toStepError(response, `Order ${id}: HTTP ${response.status}`);
   return await response.json();

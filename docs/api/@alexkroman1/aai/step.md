@@ -1,6 +1,6 @@
 # step
 
-`@alexkroman1/aai/step` — the surface a `"use step"` body is written
+`@alexkroman1/aai/step` — the surface a step body is written
 against.
 
 This is the half of `/utils` that has an AUDIENCE rather than a build
@@ -14,7 +14,7 @@ vocabulary was a list you had to filter by hand.
 
 **That reader is a `workflows/*.ts` module in an agent project.** The
 Workflow Development Kit's builder scans exactly that directory and rewrites
-the `"use step"` and `"use workflow"` bodies it finds there — a body written
+the bodies it finds there — a body written
 anywhere else is transformed by nothing and runs inline, with no journal and
 no retry. So the loop is: `workflow` on the root DECLARES the run and
 types its input, a `workflows/*.ts` module holds the body, this subpath is
@@ -84,7 +84,6 @@ the answer growing instead of a spinner:
 import { emit } from "@alexkroman1/aai/step";
 
 export async function transcribeSegment(index: number) {
-  "use step";
   const text = await transcribe(index);
   await emit("transcript", { index, text });
   return { index, text };
@@ -266,7 +265,7 @@ Most calls in flight at once. Rounded down, and floored at 1.
 (`item`: `T`, `index`: `number`) => `R` \| `Promise`\<`R`\>
 
 Called once per item, with the item and its index in `items`.
-  Inside a workflow body this is where a `"use step"` call goes, and it must
+  Inside a workflow body this is where a `ctx.step` call goes, and it must
   be the only one — see the remarks below.
 
 #### Returns
@@ -298,7 +297,7 @@ directly.
 #### Example
 
 ```ts no-check
-// In a "use workflow" body: one step per segment, four in flight.
+// In a workflow body: one step per segment, four in flight.
 const cleaned = await mapConcurrent(segments, 4, (text) => postProcess(text));
 ```
 
@@ -427,13 +426,11 @@ bytes never do.
 import { readUpload, writeUpload } from "@alexkroman1/aai/step";
 
 export async function store(bytes: Uint8Array): Promise<string> {
-  "use step";
   const { id } = await writeUpload(bytes, { name: "summary.wav" });
   return id;
 }
 
 export async function firstSecond(uploadId: string): Promise<Uint8Array> {
-  "use step";
   const { bytes } = await readUpload(uploadId, { start: 44, end: 44 + 32_000 });
   return bytes;
 }
@@ -560,7 +557,7 @@ A `Response`, or its headers. Both spellings are accepted
 function stepEnv(name: string): string | undefined;
 ```
 
-Read one key of the agent's env from inside a `"use step"` function.
+Read one key of the agent's env from inside a step.
 
 #### Parameters
 
@@ -584,7 +581,6 @@ The value, or `undefined` when the agent env does not declare it.
 import { stepEnv } from "@alexkroman1/aai/step";
 
 export async function fetchReport(id: string): Promise<string> {
-  "use step";
   const base = stepEnv("REPORT_BASE_URL") ?? "https://reports.example.com";
   return await (await fetch(`${base}/${id}`)).text();
 }
@@ -600,7 +596,7 @@ function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
 
 Make one HTTP request from inside a step.
 
-Prefer this to `fetch` in any `"use step"` function, and especially in a
+Prefer this to `fetch` in any step, and especially in a
 fan-out: it pins HTTP/1.1 (so a concurrent batch gets a socket each rather
 than N streams on one connection), reuses connections across a fan-out's
 calls, and reports a connection failure with its whole `cause` chain instead
@@ -652,7 +648,7 @@ when the request never got an answer — a reset
   status, which is returned like any other: only the caller knows whether a
   `404` is fatal.
 
-**From a `"use step"` body, prefer `stepFetchOk`
+**From a step, prefer `stepFetchOk`
 (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
@@ -667,7 +663,7 @@ function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<strin
 
 Ask the AssemblyAI LLM Gateway one question and return its reply.
 
-**From a `"use step"` body, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
+**From a step, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
 It is this call plus `throwStepError`, and the DevKit decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
@@ -702,7 +698,6 @@ import { stepGenerate, StepGenerateError } from "@alexkroman1/aai/step";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 
 export async function summarize(text: string): Promise<string> {
-  "use step";
   try {
     return await stepGenerate(text, { system: "Summarize in two sentences." });
   } catch (err) {
@@ -733,7 +728,7 @@ Ask the model for JSON and return it validated.
 The reply is unfenced, parsed, and checked against `schema`; the validated
 value is what comes back, typed as the schema's output.
 
-**From a `"use step"` body, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
+**From a step, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
 It is this call plus `throwStepError`, and the DevKit decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
@@ -787,7 +782,6 @@ import { z } from "zod";
 const Digest = z.object({ headline: z.string(), points: z.array(z.string()) });
 
 export async function summarize(article: string): Promise<{ headline: string }> {
-  "use step";
   return await stepGenerateJson(article, {
     schema: Digest,
     system: 'Reply with JSON only: {"headline": string, "points": string[]}.',
@@ -843,7 +837,6 @@ this in two would carry the audio across the queue on every resume.
 import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(summary: string): Promise<string> {
-  "use step";
   const spoken = await stepSpeak(summary, { voice: "jane" });
   const stored = await writeUpload(spoken.audio, {
     name: "summary.wav",
@@ -897,7 +890,7 @@ forever.
   and the one that reads least like a failure: everything downstream would
   otherwise be handed no words and asked to work anyway.
 
-**From a `"use step"` body, prefer `stepTranscribePollClassified`
+**From a step, prefer `stepTranscribePollClassified`
 (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
@@ -960,21 +953,19 @@ import {
 } from "@alexkroman1/aai/step";
 
 export async function startJob(uploadId: string): Promise<string> {
-  "use step";
   const { audioUrl } = await stepTranscribeUpload(uploadId);
   const { id } = await stepTranscribeSubmit(audioUrl);
   return id;
 }
 
 export async function checkJob(id: string): Promise<string | undefined> {
-  "use step";
   const progress = await stepTranscribePoll(id);
   // Branch on `done`, never on a provider status string.
   return progress.done ? progress.transcript.text : undefined;
 }
 ```
 
-**From a `"use step"` body, prefer `stepTranscribeSubmitClassified`
+**From a step, prefer `stepTranscribeSubmitClassified`
 (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
@@ -991,7 +982,7 @@ function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Pr
 
 Transcribe one complete audio file.
 
-**From a `"use step"` body, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
+**From a step, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
 It is this call plus `throwStepError`, and the DevKit decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
@@ -1055,7 +1046,6 @@ that cannot fit in one.
 import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
 
 export async function transcribeClip(uploadId: string): Promise<string> {
-  "use step";
   const clip = await readUpload(uploadId);
   const { text } = await stepTranscribeSync(clip.bytes);
   return text;
@@ -1105,7 +1095,7 @@ on a refusal, carrying the verdict `toStepError`
   reads. Give this step extra retries: it is the one call here worth another
   attempt, and the only one whose cost is the file.
 
-**From a `"use step"` body, prefer `stepTranscribeUploadClassified`
+**From a step, prefer `stepTranscribeUploadClassified`
 (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
@@ -1194,7 +1184,6 @@ which a page turns back into a file with `api.download(id)`.
 import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(summary: string) {
-  "use step";
   const spoken = await stepSpeak(summary);
   const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
   return { audio: stored.id, durationMs: spoken.durationMs };

@@ -2,7 +2,7 @@
 /**
  * Capability contract: `transcribe`.
  *
- * How a `"use step"` body turns a recording into text — the other direction of
+ * How a step turns a recording into text — the other direction of
  * `stepSpeak`, and the leg every workflow that handles audio starts with.
  *
  * Its own capability rather than part of `utils`, for the reason `uploads` is:

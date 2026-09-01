@@ -39,13 +39,10 @@ describe("buildWorkflowClient", () => {
   });
 
   test("returns a client that lists the declared workflows", () => {
-    const client = buildWorkflowClient(
-      { workflows: { digest } },
-      unusedDb,
-      undefined,
-      makeLogger(),
-    );
-    expect(client?.listing().map((w) => w.name)).toEqual(["digest"]);
+    const built = buildWorkflowClient({ workflows: { digest } }, unusedDb, undefined, makeLogger());
+    expect(built?.client.listing().map((w) => w.name)).toEqual(["digest"]);
+    // The engine's timers are the runtime's to cancel — see `BuiltWorkflowClient`.
+    built?.stop();
   });
 
   test("uses the app database for the key index when storage is enabled", () => {

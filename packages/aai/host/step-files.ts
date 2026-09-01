@@ -24,7 +24,6 @@
  * import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
  *
  * export async function toWav(uploadId: string): Promise<string> {
- *   "use step";
  *   return await withTempDir(async (dir) => {
  *     const source = join(dir, "source");
  *     const converted = join(dir, "converted.wav");
@@ -44,7 +43,7 @@
  * Same rule as `@alexkroman1/aai/ffmpeg`, and it is the reason this is a subpath
  * of its own rather than three more names on `@alexkroman1/aai/step`.
  *
- * The Workflow Development Kit's builder rewrites the `"use step"` bodies in a
+ * The Workflow Development Kit's builder rewrites the step bodies in a
  * `workflows/*.ts` module and leaves everything else at MODULE scope — the whole
  * point of the transform is to leave a stub that enqueues. An import a surviving
  * function still names therefore rides into the workflow bundle, which is
@@ -57,7 +56,7 @@
  * misplaced import. It is also invisible until the workflow runs: the bundle
  * builds, the types check, and `aai dev` may well serve the route.
  *
- * So: name these three inside a `"use step"` function, or from a module only a
+ * So: name these three inside a step, or from a module only a
  * step body reaches. `@alexkroman1/aai/step` stays free of `node:` imports for
  * exactly this reason, and `step-files.import-graph.test.ts` holds it there.
  *

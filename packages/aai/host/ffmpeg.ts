@@ -23,7 +23,6 @@
  * import { probeMedia, transcodeToWav } from "@alexkroman1/aai/ffmpeg";
  *
  * export async function toPcm(uploadId: string) {
- *   "use step";
  *   const { bytes } = await readUpload(uploadId);
  *   const info = await probeMedia(bytes);
  *   if (info.audio?.codec === "pcm_s16le") return bytes;

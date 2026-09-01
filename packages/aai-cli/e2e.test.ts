@@ -43,7 +43,6 @@ import {
 import {
   cancelRun,
   HOSTILE_TARGETS,
-  hookUrlFor,
   installWorkflowLab,
   isSleeping,
   readRun,
@@ -415,40 +414,13 @@ describe("aai dev: a scaffolded workflow template", () => {
     expect(await cancelRun(url, "wrun_e2e_never_started")).toBe(false);
   });
 
-  test("a webhook URL handed OUT resumes the run parked on it", async ({ skip }) => {
-    // The waitpoint whose caller is a third party on the public internet. The
-    // in-tree fixture delivers its callback from INSIDE a step, so the request
-    // never leaves the process; this one is delivered the way a provider would.
-    const url = await settled(skip);
-    const runId = await startRun(url, "labWebhook", { tag: "e2e" });
-    const hookUrl = await vi.waitFor(
-      () => {
-        const found = hookUrlFor(server?.lines() ?? [], "e2e");
-        expect(found).toBeTruthy();
-        return found as string;
-      },
-      { timeout: 30_000, interval: 250 },
-    );
-
-    const delivered = await fetch(hookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: "from outside" }),
-    });
-    expect(delivered.ok).toBe(true);
-    const run = await waitForRun(url, runId);
-    expect(run.status).toBe("completed");
-    expect(run.output).toMatchObject({ tag: "e2e", note: "from outside" });
-
-    // A token nothing is listening on is an ANSWER: a 5xx tells a payment
-    // provider to RETRY an expired callback forever.
-    const stale = await fetch(`${url}/.well-known/workflow/v1/webhook/no-such-token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    expect(stale.status).toBe(404);
-  });
+  // **There is no webhook test any more.** It parked a run on `createWebhook()`
+  // and delivered the callback the way a payment provider would — the only tier
+  // that ever could. The engine's waitpoint is `ctx.waitFor`, ended by
+  // `ctx.workflows.signal`, and `/.well-known/workflow/v1/webhook/:token` still
+  // routes to the DevKit's hook table, which knows nothing about the journal. So
+  // this covers webhooks with nothing, deliberately: see the note in
+  // `dev-workflow.scenario.test.ts` for what closes it.
 
   test("`aai test` names the spec files it did NOT run", async ({ skip }) => {
     // The lab leaves a spec `aai test` does not run and no `agent.test.ts`, so

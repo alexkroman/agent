@@ -50,7 +50,7 @@ export function isTransientStatus(status: number): boolean {
  * STRUCTURAL, never `instanceof Headers`.
  *
  * The same cross-realm trap `_step-verdict.ts`'s `isResponseLike` documents, one
- * function along: a `"use step"` bundle runs in its own realm and is handed
+ * function along: a step bundle runs in its own realm and is handed
  * headers built by the host's, so `instanceof` is false there. Here the cost
  * would have been worse than a missed classification — the fallback reads
  * `.headers` off a `Headers`, finds `undefined`, and throws on `.get`.

@@ -2,7 +2,7 @@
 /**
  * Capability contract: `uploads`.
  *
- * How a `"use step"` body reads a file the run did not carry. A workflow's
+ * How a step reads a file the run did not carry. A workflow's
  * input is journaled and replayed on every resume, so bytes travel to
  * `POST /workflows/uploads` instead and the input carries the id — which makes
  * these the whole of what an author writes against.

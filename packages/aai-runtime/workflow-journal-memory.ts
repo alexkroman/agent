@@ -59,6 +59,25 @@ type Slot = {
  * runtime's ICU default, so the same two runs would order differently on two
  * machines.
  */
+/**
+ * Does this wake reach that wait?
+ *
+ * Three refusals, and the middle one is the interesting one: a BARE wake is the
+ * "send it now" call a tool makes to cut a SCHEDULE short, and a hook's deadline
+ * is journaled through the same primitive — so without the `kind` test it also
+ * closed any pending approval window on the run.
+ */
+function wakeReaches(
+  record: SleepRecord,
+  correlationIds: readonly string[] | undefined,
+  now: number,
+): boolean {
+  // An elapsed or already-woken wait is not one THIS call stopped.
+  if (record.woken || record.wakeAt <= now) return false;
+  if (!correlationIds) return record.kind === "sleep";
+  return correlationIds.includes(record.correlationId ?? "");
+}
+
 function newestFirst(a: RunRecord, b: RunRecord): number {
   if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
   if (a.runId === b.runId) return 0;
@@ -107,6 +126,21 @@ export function createMemoryJournal(): JournalStore {
    */
   function slotOf(runId: string): Slot | undefined {
     return runs.get(runId);
+  }
+
+  /**
+   * Everything a run owes the store the moment it becomes terminal.
+   *
+   * Its hook tokens go back FIRST: a token is held for as long as its run might
+   * still be answered, and no longer. Waiting for the sweep below meant a DERIVED
+   * token — which is what the SDK tells authors to use — could serve exactly one
+   * run ever: `recap-workflow` derives `retention:<sessionId>`, so a caller asking
+   * for a second recap in one session hit `claimHook`'s conflict, which is not a
+   * suspend, so the saga compensated and deleted that transcript too.
+   */
+  function onRunSettled(slot: Slot): void {
+    for (const hook of slot.hooks.values()) byToken.delete(hook.token);
+    forgetOldTerminalRuns();
   }
 
   /**
@@ -181,7 +215,7 @@ export function createMemoryJournal(): JournalStore {
       // The one moment a run becomes a candidate for forgetting, so it is where
       // the sweep belongs — cheaper than a timer, and it cannot run while a
       // delivery is in flight.
-      if (!wasTerminal && isTerminalStatus(next)) forgetOldTerminalRuns();
+      if (!wasTerminal && isTerminalStatus(next)) onRunSettled(slot);
       return true;
     },
 
@@ -202,6 +236,7 @@ export function createMemoryJournal(): JournalStore {
       key: string,
       wakeAt: number,
       correlationId: string | undefined,
+      kind: SleepRecord["kind"] = "sleep",
     ): Promise<SleepRecord> {
       const slot = slotOf(runId);
       if (!slot) throw new Error(`workflow run ${runId} not found`);
@@ -209,7 +244,7 @@ export function createMemoryJournal(): JournalStore {
       // otherwise store a deadline 60s further out on every delivery.
       const existing = slot.sleeps.get(key);
       if (existing) return { ...existing };
-      const record: SleepRecord = { wakeAt, woken: false, correlationId };
+      const record: SleepRecord = { wakeAt, woken: false, correlationId, kind };
       slot.sleeps.set(key, record);
       return { ...record };
     },
@@ -223,10 +258,7 @@ export function createMemoryJournal(): JournalStore {
       const now = Date.now();
       let stopped = 0;
       for (const record of slot.sleeps.values()) {
-        // Counted only when this call CHANGED something: an elapsed or
-        // already-woken wait is not one this call stopped.
-        if (record.woken || record.wakeAt <= now) continue;
-        if (correlationIds && !correlationIds.includes(record.correlationId ?? "")) continue;
+        if (!wakeReaches(record, correlationIds, now)) continue;
         record.woken = true;
         stopped++;
       }

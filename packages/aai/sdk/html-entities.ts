@@ -31,7 +31,7 @@
  * and only one template does it, so that half stays in the template that
  * decides it.
  *
- * On `@alexkroman1/aai/utils`: this runs from a `"use step"` body, and `/utils`
+ * On `@alexkroman1/aai/utils`: this runs from a step, and `/utils`
  * is the subpath a step and a `client.tsx` can both import without pulling
  * zod's module graph.
  */

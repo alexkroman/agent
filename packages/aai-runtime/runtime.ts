@@ -182,8 +182,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // makes the executor's rejecting stub name the right reason.
   // A caller-supplied client wins, and exactly one has one: an eval, whose
   // bodies were never through the WDK compiler. See `RuntimeOptions.workflows`.
-  const workflows =
-    opts.workflows ?? buildWorkflowClient(agent, resolvedDb, opts.publicUrl, logger);
+  const builtWorkflows = opts.workflows
+    ? undefined
+    : buildWorkflowClient(agent, resolvedDb, opts.publicUrl, logger);
+  const workflows = opts.workflows ?? builtWorkflows?.client;
 
   // Watches runs a tool asked to be told about (`start(…, { notify })`) and
   // makes the agent say so — see `workflow-notify.ts`. The session map is the
@@ -415,6 +417,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // Watches outlive nothing: every session they could announce to is gone,
     // and a poll loop left running would hold the process past shutdown.
     notifier?.stop();
+    // The workflow engine's pending deliveries, for the same reason: a rebuilt
+    // runtime would otherwise leave the previous engine's timers executing
+    // bodies from a build that is gone. Only an engine THIS runtime built —
+    // a caller-supplied `opts.workflows` is the caller's to stop.
+    builtWorkflows?.stop();
     // Force-close on timeout skips the per-session stop wrapper's state cleanup
     // (its sink-identity check fails against the cleared map), so clear the cache
     // here too or timed-out sessions leak their slot values permanently. Only the

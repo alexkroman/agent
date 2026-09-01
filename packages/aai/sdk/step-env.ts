@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The agent's env, reachable from inside a `"use step"` function.
+ * The agent's env, reachable from inside a step.
  *
  * This is the one thing a durable workflow could not do. A step is bundled and
  * dispatched separately from the agent bundle and is handed no `ToolContext`, so
@@ -63,7 +63,7 @@ function processEnv(): Record<string, string | undefined> {
 }
 
 /**
- * Publish the agent env for this process's `"use step"` functions.
+ * Publish the agent env for this process's steps.
  *
  * Called by whatever assembled the env and is about to serve workflows — the
  * guest harness at bundle load, `aai dev` on every rebuild. Publishing again
@@ -104,14 +104,13 @@ export function publishStepEnv(
 }
 
 /**
- * Read one key of the agent's env from inside a `"use step"` function.
+ * Read one key of the agent's env from inside a step.
  *
  * @example
  * ```ts
  * import { stepEnv } from "@alexkroman1/aai/step";
  *
  * export async function fetchReport(id: string): Promise<string> {
- *   "use step";
  *   const base = stepEnv("REPORT_BASE_URL") ?? "https://reports.example.com";
  *   return await (await fetch(`${base}/${id}`)).text();
  * }

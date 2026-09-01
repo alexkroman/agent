@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * One model call that has to come back as a SHAPE, from inside a `"use step"`
- * function.
+ * One model call that has to come back as a SHAPE, from inside a step.
  *
  * {@link stepGenerate} is `ctx.generate`'s counterpart for a step, and it stops
  * one step short of where `ctx.generate` gets to: that one takes a
@@ -62,7 +61,7 @@ export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOp
  * The reply is unfenced, parsed, and checked against `schema`; the validated
  * value is what comes back, typed as the schema's output.
  *
- * **From a `"use step"` body, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
+ * **From a step, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
  * It is this call plus `throwStepError`, and the DevKit decides its retry policy
  * from WHICH error a step throws: raw, a terminal failure burns every remaining
  * attempt and a rate limit backs off for one second while the delay the far side
@@ -88,7 +87,6 @@ export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOp
  * const Digest = z.object({ headline: z.string(), points: z.array(z.string()) });
  *
  * export async function summarize(article: string): Promise<{ headline: string }> {
- *   "use step";
  *   return await stepGenerateJson(article, {
  *     schema: Digest,
  *     system: 'Reply with JSON only: {"headline": string, "points": string[]}.',

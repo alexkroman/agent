@@ -41,6 +41,20 @@ import { createInProcessWorkflowEngine } from "./workflow-in-process.ts";
 import { createRunNotifier, type RunNotifier } from "./workflow-notify.ts";
 
 /**
+ * The client a runtime hands to tools, and the handle its teardown owes.
+ *
+ * A PAIR rather than the client alone, because the engine's timers are not
+ * reachable from a `WorkflowClient` and `aai dev` rebuilds its runtime on every
+ * file save — so a discarded `stop` means each save leaves the previous engine
+ * still executing bodies from a build that is gone. The runtime's
+ * `releaseResources` already owns exactly this class of leak.
+ */
+export type BuiltWorkflowClient = {
+  client: WorkflowClient;
+  stop: () => void;
+};
+
+/**
  * Build `ctx.workflows` for one runtime, or `undefined` when the agent declares
  * no workflows.
  *
@@ -61,7 +75,7 @@ export function buildWorkflowClient(
    */
   publicUrl: string | undefined,
   logger: Logger,
-): WorkflowClient | undefined {
+): BuiltWorkflowClient | undefined {
   const workflows = agent.workflows;
   if (!workflows || Object.keys(workflows).length === 0) return;
   logger.info?.("Workflows resolved", {
@@ -84,7 +98,10 @@ export function buildWorkflowClient(
     // half of the failure and a boolean cannot show it.
     publicUrl: publicUrl ?? "(unset — publicWebhookUrl will throw)",
   });
-  return createWorkflowClient({
+  // Held so `stop` can reach it: the CLIENT is what the runtime hands to tools,
+  // and the engine's timers are what a rebuild has to cancel.
+  const engine = createInProcessWorkflowEngine({ workflows, logger });
+  const client = createWorkflowClient({
     workflows,
     keys: resolveKeyStore(db),
     // The engine this repo owns, executing its own deliveries in this process.
@@ -92,13 +109,14 @@ export function buildWorkflowClient(
     // later: `createWorkflowClient` hands `start` the DECLARED KEY, which the
     // DevKit cannot resolve to a body at all — so the two halves had stopped
     // agreeing about what identifies a workflow.
-    wdk: createInProcessWorkflowEngine({ workflows, logger }),
+    wdk: engine,
     // Declared `string | undefined` rather than optional on the options type, so
     // the absent case passes straight through — no `omitUndefined`, and no
     // spread-ternary for rule 2 to catch.
     publicUrl,
     logger,
   });
+  return { client, stop: () => engine.stop() };
 }
 
 /**

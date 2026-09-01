@@ -364,7 +364,7 @@ test("a workflow app accepts only the fields a workflow app has", () => {
   type Workflows = NonNullable<AgentDef["workflows"]>;
 
   // The whole legal surface: what a page renders, what it starts, what a
-  // `"use step"` body reads.
+  // a step reads.
   expectTypeOf<{ name: string; page: "static"; workflows: Workflows }>().toExtend<AgentParams>();
   expectTypeOf<{
     name: string;

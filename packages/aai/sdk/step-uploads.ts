@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Reading — and writing — a file from inside a `"use step"` function.
+ * Reading — and writing — a file from inside a step.
  *
  * A workflow's input is journaled and replayed on every resume, so a file's
  * BYTES cannot live in it: they would be re-read for the life of the run, and
@@ -16,7 +16,6 @@
  * import { readUpload } from "@alexkroman1/aai/step";
  *
  * export async function readHeader(uploadId: string) {
- *   "use step";
  *   const { bytes, info } = await readUpload(uploadId, { end: 64 * 1024 });
  *   return parseHeader(bytes, info.size);
  * }
@@ -57,13 +56,11 @@
  * import { sleep } from "workflow";
  *
  * async function arrived(id: string) {
- *   "use step";
  *   const { size, complete } = await uploadInfo(id);
  *   return { size, complete };
  * }
  *
  * export async function transcribeStream(input: { recording: string }) {
- *   "use workflow";
  *   for (;;) {
  *     const { size, complete } = await arrived(input.recording);
  *     // … work on every segment whose `end` is inside `size` …
@@ -279,7 +276,7 @@ const UPLOAD_READER_SLOT = Symbol.for("@alexkroman1/aai.uploadReader");
 type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadAccess };
 
 /**
- * Publish the upload store for this process's `"use step"` functions.
+ * Publish the upload store for this process's steps.
  *
  * `createServer` does this, which is what makes uploads work identically under
  * `aai dev`, on a self-hosted server and in a deployed guest. Pass `undefined`
@@ -366,13 +363,11 @@ export async function uploadInfo(id: string): Promise<UploadInfo> {
  * import { readUpload, writeUpload } from "@alexkroman1/aai/step";
  *
  * export async function store(bytes: Uint8Array): Promise<string> {
- *   "use step";
  *   const { id } = await writeUpload(bytes, { name: "summary.wav" });
  *   return id;
  * }
  *
  * export async function firstSecond(uploadId: string): Promise<Uint8Array> {
- *   "use step";
  *   const { bytes } = await readUpload(uploadId, { start: 44, end: 44 + 32_000 });
  *   return bytes;
  * }

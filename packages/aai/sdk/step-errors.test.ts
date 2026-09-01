@@ -53,7 +53,7 @@ function responseWith(status: number, retryAfter?: string): Response {
  * A response as it arrives from ANOTHER REALM — the case every step body is in.
  *
  * A real cross-realm `Response` cannot be built inside one process: it takes a
- * second realm with its own undici, which is what a `"use step"` bundle running
+ * second realm with its own undici, which is what a step bundle running
  * in a `node:vm` context has and a test does not. What CAN be reproduced is the
  * only property that matters — the object answers `status`, `ok` and
  * `headers.get` and is not an `instanceof Response` — so that is what this
@@ -191,7 +191,7 @@ describe("toStepError, given a TranscribeError", () => {
 
   test("reads a verdict off an error REHYDRATED from the journal", () => {
     // The case `instanceof` cannot reach, and the reason the check is
-    // structural. `toStepError` runs inside `"use step"` bodies, where a
+    // structural. `toStepError` runs inside step bodies, where a
     // failure can come back through the durable journal as a plain object with
     // no prototype — under an `instanceof` chain this fell through to "no
     // verdict available" and a terminal refusal came back out RETRYABLE, so the

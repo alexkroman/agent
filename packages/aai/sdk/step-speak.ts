@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `stepSpeak()` — turning text into audio from inside a `"use step"` function.
+ * `stepSpeak()` — turning text into audio from inside a step.
  *
  * The counterpart of {@link stepGenerate}, and it exists for the same reason:
  * a step is handed no `ToolContext`, so the session's whole provider stack —
@@ -12,7 +12,6 @@
  * import { requireStepEnv, stepSpeak } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string) {
- *   "use step";
  *   const spoken = await stepSpeak(summary, { voice: "jane" });
  *   return { wav: spoken.audio, seconds: spoken.durationMs / 1000 };
  * }
@@ -162,7 +161,7 @@ const STEP_SPEAK_SLOT = Symbol.for("@alexkroman1/aai.speechSynthesizer");
 type StepSpeakSlot = { [STEP_SPEAK_SLOT]?: SpeechSynthesizer };
 
 /**
- * Publish the speech synthesizer for this process's `"use step"` functions.
+ * Publish the speech synthesizer for this process's steps.
  *
  * `createServer` does this, which is what makes {@link stepSpeak} behave
  * identically under `aai dev`, on a self-hosted server and in a deployed
@@ -211,7 +210,6 @@ export const SPEECH_UNAVAILABLE_MESSAGE =
  * import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string): Promise<string> {
- *   "use step";
  *   const spoken = await stepSpeak(summary, { voice: "jane" });
  *   const stored = await writeUpload(spoken.audio, {
  *     name: "summary.wav",

@@ -154,7 +154,7 @@ column describes what you are doing.
 | --- | --- |
 | `/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `withDiscoveredTools`, `runTool` |
 | `/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage (the table above) |
-| `/step`, `/step-errors` | writing a `"use step"` body inside a workflow — `stepFetch`, `stepEnv`, `mapConcurrent`, `stepGenerate` |
+| `/step`, `/step-errors` | writing a step inside a workflow — `stepFetch`, `stepEnv`, `mapConcurrent`, `stepGenerate` |
 | `/workflow-api` | calling a deployed agent from a page, a script or a cron job — `createAgentClient` |
 | `/tools` | calling `fetchJson`, `visitWebpage` or `webSearch` from your own tool code |
 | `/utils` | small helpers written inside a tool body — `toolFailure`, `errorMessage`, `pushCapped`, `withLock` |

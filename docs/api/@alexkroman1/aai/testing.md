@@ -30,7 +30,7 @@ order, roughly by what a spec reaches for first:
   SUBAGENT concluded, without running one.
 - `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
-  slots a `"use step"` body reaches through, each answered in memory.
+  slots a step reaches through, each answered in memory.
 - `testing-workflows.ts` — run snapshots and progress streams, for a page.
 
 ## Functions
@@ -901,7 +901,7 @@ const model = stubGenerate({ object: { steps: ["Only step"] } });
 function stubReporter(): StubReporter;
 ```
 
-Capture what a `"use step"` function narrates and emits.
+Capture what a step narrates and emits.
 
 `report()` and `emit()` both go through a published slot, and with nothing
 published they fall back to the console — which is right for a step under test
@@ -966,7 +966,7 @@ function stubStepFetch(answer?: (request: StubStepRequest) =>
   | Promise<StubStepAnswer>): StubStepFetch;
 ```
 
-Publish a fake `stepFetch`, so a `"use step"` function's HTTP can be asserted
+Publish a fake `stepFetch`, so a step's HTTP can be asserted
 without a server and without stubbing a global.
 
 A step's outbound call goes through a process-wide slot rather than
@@ -1081,7 +1081,7 @@ await expect(transcribeSegment("upl_1", segment)).rejects.toBeInstanceOf(Retryab
 function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 ```
 
-Publish an in-memory upload store, so a `"use step"` function that calls
+Publish an in-memory upload store, so a step that calls
 `readUpload` can be tested without a server.
 
 A step reads uploads through a process-wide slot rather than dialling

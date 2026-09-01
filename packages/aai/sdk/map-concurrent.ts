@@ -11,7 +11,7 @@
  *
  * ## What replay really requires
  *
- * The WDK transform rewrites a `"use step"` function into a dispatcher that
+ * A step is called through `ctx.step(name, fn)`, which dispatches it — so
  * stamps each invocation with `step_${ulid()}` from a monotonic factory seeded
  * off the run's `startedAt`. So the Nth step call ISSUED in a run gets the Nth
  * id, on the first execution and on every replay, and the step's name is only
@@ -104,7 +104,7 @@
  *   `Math.min(NaN, n)` is `NaN`, so `Array.from({ length: NaN })` is empty and
  *   the map silently does NOTHING, which reads as an empty input.
  * @param run - Called once per item, with the item and its index in `items`.
- *   Inside a workflow body this is where a `"use step"` call goes, and it must
+ *   Inside a workflow body this is where a `ctx.step` call goes, and it must
  *   be the only one — see the remarks below.
  *
  * @remarks
@@ -130,7 +130,7 @@
  *
  * @example
  * ```ts no-check
- * // In a "use workflow" body: one step per segment, four in flight.
+ * // In a workflow body: one step per segment, four in flight.
  * const cleaned = await mapConcurrent(segments, 4, (text) => postProcess(text));
  * ```
  *

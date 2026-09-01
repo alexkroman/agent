@@ -16,7 +16,6 @@
  * import { report } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {
- *   "use step";
  *   await report(`Transcribing segment ${index}.`);
  * }
  * ```
@@ -85,7 +84,7 @@ export type StepReporter = (
 type StepReporterSlot = { [STEP_REPORTER_SLOT]?: StepReporter };
 
 /**
- * Publish the reporter for this process's `"use step"` functions.
+ * Publish the reporter for this process's steps.
  *
  * Called by whatever is about to serve workflows — `createServer`, which is the
  * one front door `aai dev`, a self-hosted server and every deployed guest all
@@ -157,7 +156,6 @@ export async function report(line: string): Promise<void> {
  * import { emit } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {
- *   "use step";
  *   const text = await transcribe(index);
  *   await emit("transcript", { index, text });
  *   return { index, text };

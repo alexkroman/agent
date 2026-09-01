@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `stepTranscribe*()` — turning a recording into text from inside a
- * `"use step"` function.
+ * step.
  *
  * The counterpart of {@link stepSpeak}, and the other half of a workflow's
  * round trip: that one makes audio out of words, this one makes words out of
@@ -20,7 +20,7 @@
  * The durable shape is a body that calls a step per phase and `sleep`s between
  * polls, and **the SDK cannot own that body**: the Workflow DevKit's builder
  * transforms exactly the files under a project's `workflows/` directory, so a
- * `"use step"` in this package would be scanned by nothing, transformed into
+ * a step declared in this package would be reached by no `ctx.step`, so it would run
  * nothing, and would run inline as an ordinary function with no journal and no
  * retry — with no symptom saying so. Every step in this repository is a user's.
  *
@@ -34,20 +34,16 @@
  * import { stepTranscribePoll, stepTranscribeSubmit, stepTranscribeUpload } from "@alexkroman1/aai/step";
  *
  * export async function upload(recording: string) {
- *   "use step";
  *   return await stepTranscribeUpload(recording).catch(throwStepError);
  * }
  * export async function submit(audioUrl: string) {
- *   "use step";
  *   return await stepTranscribeSubmit(audioUrl).catch(throwStepError);
  * }
  * export async function poll(id: string) {
- *   "use step";
  *   return await stepTranscribePoll(id).catch(throwStepError);
  * }
  *
  * export async function transcribe(recording: string) {
- *   "use workflow";
  *   const { audioUrl } = await upload(recording);
  *   const { id } = await submit(audioUrl);
  *   for (let n = 0; n < 360; n += 1) {
@@ -200,7 +196,7 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
  *
  * @public
  *
- * **From a `"use step"` body, prefer `stepTranscribeUploadClassified`
+ * **From a step, prefer `stepTranscribeUploadClassified`
  * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
@@ -262,14 +258,12 @@ export async function stepTranscribeUpload(
  * } from "@alexkroman1/aai/step";
  *
  * export async function startJob(uploadId: string): Promise<string> {
- *   "use step";
  *   const { audioUrl } = await stepTranscribeUpload(uploadId);
  *   const { id } = await stepTranscribeSubmit(audioUrl);
  *   return id;
  * }
  *
  * export async function checkJob(id: string): Promise<string | undefined> {
- *   "use step";
  *   const progress = await stepTranscribePoll(id);
  *   // Branch on `done`, never on a provider status string.
  *   return progress.done ? progress.transcript.text : undefined;
@@ -278,7 +272,7 @@ export async function stepTranscribeUpload(
  *
  * @public
  *
- * **From a `"use step"` body, prefer `stepTranscribeSubmitClassified`
+ * **From a step, prefer `stepTranscribeSubmitClassified`
  * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
@@ -328,7 +322,7 @@ export async function stepTranscribeSubmit(
  *
  * @public
  *
- * **From a `"use step"` body, prefer `stepTranscribePollClassified`
+ * **From a step, prefer `stepTranscribePollClassified`
  * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.

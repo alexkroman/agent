@@ -4,7 +4,7 @@
  * one side of the line and `@alexkroman1/aai/step` is on the other.
  *
  * A `workflows/*.ts` module keeps every MODULE-scope import in the workflow
- * bundle — only a `"use step"` body is removed, the whole point of the transform
+ * bundle — only a step is removed, the whole point of the transform
  * being to leave a stub that enqueues — and that bundle is compiled as a
  * `node:vm` Script with no `require` in its context. Every `workflows/*.ts`
  * module in every media template holds `@alexkroman1/aai/step` at module scope,

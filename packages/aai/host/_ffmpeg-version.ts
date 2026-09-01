@@ -3,7 +3,7 @@
  * Is there an ffmpeg to talk to?
  *
  * Its own module rather than a line in `ffmpeg.ts` because of who asks. The
- * `@alexkroman1/aai/ffmpeg` subpath is what a `"use step"` body imports —
+ * `@alexkroman1/aai/ffmpeg` subpath is what a step imports —
  * convert, probe, classify a failure — and none of that is answered by a
  * version string. The caller here is an OPERATOR: a self-hosted server or a
  * dev-server preflight deciding whether to report "no ffmpeg on this machine"

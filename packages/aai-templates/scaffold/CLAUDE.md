@@ -478,15 +478,20 @@ const digest = await ctx.step("summarize", () => summarize(input.url), {
 ### Waiting: `ctx.sleep` and `ctx.waitFor`
 
 Both SUSPEND the run — the body stops, the container is free, and the engine
-brings the run back — so a wait may be days long and survives a redeploy, an
-idle reclaim and a crash.
+brings the run back — so a long wait costs nothing while it runs.
+
+**How long a wait really survives is a property of the run STORE, and today that
+is memory.** A wait outlives the body and the worker; it does not yet outlive the
+process, on any deployment. The durable stores are the remaining half of this
+change, and the server's boot line reports which one is in play.
 
 ```ts no-check
 // A duration in milliseconds, or an absolute Date.
 await ctx.sleep(6 * 60 * 60 * 1000, { correlationId: "review-window" });
 
-// Until somebody outside the run answers. `ctx.workflows.signal(token, payload)`
-// or a webhook at `ctx.workflows.publicWebhookUrl(token)` is what ends it.
+// Until somebody outside the run answers, via `ctx.workflows.signal(token, …)`
+// from a tool. (`publicWebhookUrl` does NOT reach this yet — that route is still
+// the DevKit's and answers a delivery with `HookNotFound`.)
 const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id), {
   timeoutMs: 120_000,
 });
@@ -495,10 +500,12 @@ if (approval === undefined) return { published: false, reason: "nobody approved"
 
 Four things worth knowing:
 
-- **A hook's token must be DERIVED, not random.** Whoever hands the URL out is
-  usually a tool, and a tool cannot see the body's local variables — so export
-  one function that computes the token from the run's own input and import it in
-  both places.
+- **A hook's token must be DERIVED, not random.** Whoever signals is usually a
+  tool, and a tool cannot see the body's local variables — so export one function
+  that computes the token from the run's own input and import it in both places.
+  Derive it from something that identifies the RUN rather than the caller: a
+  token is held for the life of its run, so two runs deriving the same one is the
+  second one failing.
 - **`timeoutMs` resolves `undefined` when the window closes unanswered.** A
   closing window is an outcome to branch on, not a failure, and the engine closes
   the hook as it shuts so a late answer cannot change what already happened.
@@ -506,8 +513,10 @@ Four things worth knowing:
   not work: both suspend, and a suspend unwinds the stack, so the race stops the
   body before the other side has been reached. That is why the deadline is a
   parameter.
-- **`ctx.workflows.wake(runId, [correlationId])`** ends a sleep early, which is
-  how a "send it now" tool cuts a scheduled wait short.
+- **`ctx.workflows.wakeUp(runId, { correlationIds: [id] })`** ends a sleep early,
+  which is how a "send it now" tool cuts a scheduled wait short. Naming no ids
+  wakes every outstanding SLEEP and deliberately not a `waitFor` deadline, so
+  cutting a schedule short cannot also close an approval window.
 
 ### A step's env, and calling a model from one
 

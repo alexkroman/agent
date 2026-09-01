@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The failure a `"use step"` body should throw (the
+ * The failure a step should throw (the
  * `@alexkroman1/aai/step-errors` subpath).
  *
  * The Workflow DevKit retries a step that throws, gives up on a `FatalError`,
@@ -157,7 +157,6 @@ export {
  * import { stepFetchOk } from "@alexkroman1/aai/step-errors";
  *
  * export async function readFeed(url: string): Promise<string> {
- *   "use step";
  *   return await (await stepFetchOk(url, { signal: AbortSignal.timeout(30_000) })).text();
  * }
  * ```
@@ -225,7 +224,6 @@ export async function stepFetchOk(url: string, init?: StepFetchInit): Promise<Re
  * import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
  *
  * export async function toPcm(bytes: Uint8Array): Promise<Uint8Array> {
- *   "use step";
  *   return await transcodeToWav(bytes, { sampleRate: 16_000 }).catch(throwFfmpegStepError);
  * }
  * ```
@@ -269,7 +267,6 @@ function ffmpegFailureKind(cause: unknown): string | undefined {
  * import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
  *
  * export async function summarize(text: string): Promise<string> {
- *   "use step";
  *   return await stepGenerateClassified(text, { system: "Summarize in two sentences." });
  * }
  * ```
@@ -396,7 +393,6 @@ export function stepTranscribePollClassified(
  * import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
  *
  * export async function announce(webhookUrl: string, headline: string): Promise<string> {
- *   "use step";
  *   return await sendToChannelClassified(slackChannel({ webhookUrl }), { text: headline });
  * }
  * ```

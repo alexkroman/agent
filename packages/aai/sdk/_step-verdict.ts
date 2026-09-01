@@ -61,7 +61,6 @@ import { errorMessage } from "./utils.ts";
  * import { toStepError } from "@alexkroman1/aai/step-errors";
  *
  * export async function fetchOrder(id: string): Promise<unknown> {
- *   "use step";
  *   const response = await fetch(`https://api.example.com/orders/${id}`);
  *   if (!response.ok) throw toStepError(response, `Order ${id}: HTTP ${response.status}`);
  *   return await response.json();
@@ -88,7 +87,7 @@ export function toStepError(cause: unknown, message?: string): Error {
  * down and one this function was PAYING when it read `cause instanceof
  * Response`.
  *
- * A `"use step"` body is bundled separately and executed in its own realm, and
+ * A step runs in the guest, separately from the agent bundle, and
  * the `fetch` it calls belongs to the HOST — so the response it is handed was
  * built by another realm's undici and `instanceof` against this realm's
  * `Response` is false. Measured inside a real step bundle under `aai dev`:
@@ -141,7 +140,7 @@ type CarriedVerdict = {
  *
  * The shape IS the contract, which is what lets a fourth SDK error join by
  * having these fields rather than by earning another branch. Structural is also
- * the only thing that WORKS here: `toStepError` runs inside `"use step"` bodies,
+ * the only thing that WORKS here: `toStepError` runs inside step bodies,
  * where an error can arrive rehydrated from the durable journal with no
  * prototype — an `instanceof` chain silently misses those and a
  * `retryable: false` refusal comes back out as retryable. `step-errors.ts` made
@@ -181,7 +180,6 @@ function fromCarriedVerdict(cause: CarriedVerdict, message: string | undefined):
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  *
  * export async function summarize(text: string): Promise<string> {
- *   "use step";
  *   return await stepGenerate(text, { system: "Summarize in two sentences." }).catch(
  *     throwStepError,
  *   );

@@ -1570,8 +1570,7 @@ export const digest = workflow({
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 import type { digest } from "../agent.ts";
 
-export async function digestFlow(input: WorkflowInputOf<typeof digest>) {
-  "use workflow";
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowCtx) {
   // `limit` is `number`, not `number | undefined` — the default already ran.
   return await research(input.topic, input.limit);
 }

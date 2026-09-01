@@ -9,7 +9,7 @@
  *
  * It used to be twice this and cover three unrelated readers, because the
  * subpath's membership rule was a BUILD property ("zod-free, so the CLI can
- * import it on every invocation") rather than an audience. The `"use step"`
+ * import it on every invocation") rather than an audience. The STEP
  * vocabulary is the `step` capability now (`@alexkroman1/aai/step`), and the
  * framework's own wire helpers and platform contracts are on
  * `@alexkroman1/aai/internal`, which is not contracted at all — it is explicitly

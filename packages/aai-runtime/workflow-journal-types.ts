@@ -127,6 +127,19 @@ export type SleepRecord = {
   woken: boolean;
   /** What a targeted `wake` matches on, when the author named one. */
   correlationId?: string | undefined;
+  /**
+   * What this wait IS, which decides whether a broad wake may end it.
+   *
+   * A `waitFor(token, { timeoutMs })` journals its deadline through the same
+   * primitive as a `ctx.sleep`, and without this they were indistinguishable — so
+   * `ctx.workflows.wakeUp(runId)` with no ids, which is the "send it now" call a
+   * tool makes to cut a SCHEDULE short, also closed any pending approval window
+   * on that run. A body cancelling a human approval it never asked to cancel.
+   *
+   * A bare wake therefore reaches `sleep` only. A hook's deadline is ended by
+   * naming its correlation id, or by the answer arriving.
+   */
+  kind: "sleep" | "hookTimeout";
 };
 
 /**
@@ -224,12 +237,14 @@ export type JournalStore = {
     key: string,
     wakeAt: number,
     correlationId: string | undefined,
+    kind?: SleepRecord["kind"],
   ): Promise<SleepRecord>;
   /**
    * Cut short the run's outstanding waits, and resolve how many were stopped.
    *
    * `correlationIds` narrows to the waits declared with one of those ids;
-   * omitted, every outstanding wait on the run is woken. A wait already woken,
+   * omitted, every outstanding `sleep` is woken and a hook's DEADLINE is not —
+   * see {@link SleepRecord.kind} for the approval window that used to close. A wait already woken,
    * or already elapsed, is NOT counted — the number is what this call changed,
    * which is what makes `{ woken: 0 }` an answer a caller can act on rather than
    * a tie between "nothing was waiting" and "I woke something twice".

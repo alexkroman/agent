@@ -35,7 +35,6 @@
  * import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
  *
  * export async function transcribeClip(uploadId: string) {
- *   "use step";
  *   const clip = await readUpload(uploadId);
  *   const { text } = await stepTranscribeSync(clip.bytes).catch(throwStepError);
  *   return text;
@@ -106,7 +105,7 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
 /**
  * Transcribe one complete audio file.
  *
- * **From a `"use step"` body, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
+ * **From a step, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
  * It is this call plus `throwStepError`, and the DevKit decides its retry policy
  * from WHICH error a step throws: raw, a terminal failure burns every remaining
  * attempt and a rate limit backs off for one second while the delay the far side
@@ -151,7 +150,6 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
  * import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
  *
  * export async function transcribeClip(uploadId: string): Promise<string> {
- *   "use step";
  *   const clip = await readUpload(uploadId);
  *   const { text } = await stepTranscribeSync(clip.bytes);
  *   return text;

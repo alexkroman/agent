@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `@alexkroman1/aai/step` — the surface a `"use step"` body is written
+ * `@alexkroman1/aai/step` — the surface a step body is written
  * against.
  *
  * This is the half of `/utils` that has an AUDIENCE rather than a build
@@ -14,7 +14,7 @@
  *
  * **That reader is a `workflows/*.ts` module in an agent project.** The
  * Workflow Development Kit's builder scans exactly that directory and rewrites
- * the `"use step"` and `"use workflow"` bodies it finds there — a body written
+ * the bodies it finds there — a body written
  * anywhere else is transformed by nothing and runs inline, with no journal and
  * no retry. So the loop is: `workflow` on the root DECLARES the run and
  * types its input, a `workflows/*.ts` module holds the body, this subpath is

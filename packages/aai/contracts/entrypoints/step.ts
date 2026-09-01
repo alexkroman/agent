@@ -2,7 +2,7 @@
 /**
  * Capability contract: `step`.
  *
- * The vocabulary a `"use step"` body is written against — `@alexkroman1/aai/step`
+ * The vocabulary a step is written against — `@alexkroman1/aai/step`
  * whole, minus the two neighbouring capabilities that own their own halves of it
  * (`transcribe` for the four transcription entry points and their types,
  * `uploads` for the byte round trip).

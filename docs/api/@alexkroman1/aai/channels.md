@@ -17,7 +17,6 @@ import { slackChannel } from "@alexkroman1/aai/channels";
 import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
 
 export async function postSummary(webhookUrl: string, points: string[]): Promise<string> {
-  "use step";
   return await sendToChannelClassified(slackChannel({ webhookUrl }), {
     text: `Weekly summary: ${points.length} items`,
     heading: "Weekly summary",
@@ -349,7 +348,6 @@ import { sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
 import { throwStepError } from "@alexkroman1/aai/step-errors";
 
 export async function announce(webhookUrl: string): Promise<string> {
-  "use step";
   return await sendToChannel(slackChannel({ webhookUrl }), { text: "Run finished." }).catch(
     throwStepError,
   );
@@ -385,7 +383,6 @@ import { slackChannel } from "@alexkroman1/aai/channels";
 import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
 
 export async function postDigest(webhookUrl: string, summary: string): Promise<string> {
-  "use step";
   return await sendToChannelClassified(slackChannel({ webhookUrl }), {
     text: `Daily digest: ${summary}`,
     heading: "Daily digest",

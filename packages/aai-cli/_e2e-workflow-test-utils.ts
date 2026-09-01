@@ -37,22 +37,27 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { ofetch } from "ofetch";
 
 /**
- * The lab's directive bodies — three flows and two steps, no provider.
+ * The lab's bodies — two flows and two steps, no provider.
  *
- * Under `workflows/`, because that is the only directory the WDK builder
- * transforms: a body outside it runs inline, once, with no durability and
- * nothing reporting that (see `workflow-bundler.ts`).
+ * Under `workflows/` because that is where an author puts them and where the
+ * scaffold's tooling looks; nothing about the directory is load-bearing to the
+ * engine any more, which reads a body off `agent({ workflows })`.
+ *
+ * **There is no webhook flow.** It parked on `createWebhook()` and was resumed
+ * by an HTTP delivery; the engine's `ctx.waitFor` is ended by
+ * `ctx.workflows.signal`, and the webhook route still points at the DevKit's own
+ * hook table. See `dev-workflow.scenario.test.ts` for the same gap stated at
+ * length.
  */
 const LAB_FLOWS_TS = `// Written by the e2e suite — a provider-free workflow lab.
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { report } from "@alexkroman1/aai/step";
-import { createWebhook, sleep } from "workflow";
 
-export async function labSleepFlow(input: { seconds: number }) {
-  "use workflow";
+export async function labSleepFlow(input: { seconds: number }, ctx: WorkflowCtx) {
   // Stamped by a STEP either side, so the elapsed time is journaled rather than
   // read off a body that replays: a resumed run recomputes the body from the
   // top, and a bare Date.now() there would restamp on every replay.
-  const before = await labNow();
+  const before = await ctx.step("labNowBefore", () => labNow());
   // Reported IMMEDIATELY before the sleep, and it is load-bearing for the
   // wakeUp case: a run is \`running\` from the moment it is picked up, which is
   // while it is still in the step above and has no pending sleep to interrupt.
@@ -60,41 +65,26 @@ export async function labSleepFlow(input: { seconds: number }) {
   // green-looking assertion about nothing. This line is the only signal that
   // the sleep is actually registered.
   report(\`lab-sleeping \${input.seconds}\`);
-  await sleep(\`\${input.seconds}s\`);
-  const after = await labNow();
+  await ctx.sleep(input.seconds * 1000);
+  const after = await ctx.step("labNowAfter", () => labNow());
   return { before, after, elapsedMs: after - before };
 }
 
-export async function labWebhookFlow(input: { tag: string }) {
-  "use workflow";
-  using hook = createWebhook();
-  // Claim the token BEFORE the URL is handed out: createWebhook() registers
-  // nothing on its own, so a delivery without this races a token no hook owns.
-  await hook.getConflict();
-  report(\`lab-hook \${input.tag} url=\${hook.url}\`);
-  const request = await hook;
-  const body = (await request.json()) as { note?: string };
-  return { tag: input.tag, note: body.note ?? "(none)" };
-}
-
-export async function labCountFlow(input: { steps: number }) {
-  "use workflow";
+export async function labCountFlow(input: { steps: number }, ctx: WorkflowCtx) {
   let total = 0;
   for (let i = 0; i < input.steps; i += 1) {
-    total = await labInc(total);
+    total = await ctx.step("labInc", () => labInc(total));
     report(\`lab-count \${total}\`);
-    await sleep("1s");
+    await ctx.sleep(1000);
   }
   return { total };
 }
 
 export async function labNow(): Promise<number> {
-  "use step";
   return Date.now();
 }
 
 export async function labInc(n: number): Promise<number> {
-  "use step";
   return n + 1;
 }
 `;
@@ -127,18 +117,12 @@ test("the lab declares a sleeper", () => {
 const LAB_DECL_TS = `// Written by the e2e suite — declarations for the workflow lab.
 import { workflow } from "@alexkroman1/aai";
 import { z } from "zod";
-import { labCountFlow, labSleepFlow, labWebhookFlow } from "./workflows/lab.ts";
+import { labCountFlow, labSleepFlow } from "./workflows/lab.ts";
 
 export const labSleep = workflow({
   description: "Sleep for N seconds and report the wall clock either side",
   input: z.object({ seconds: z.number() }),
   run: labSleepFlow,
-});
-
-export const labWebhook = workflow({
-  description: "Park on a createWebhook() URL until a third party POSTs it",
-  input: z.object({ tag: z.string() }),
-  run: labWebhookFlow,
 });
 
 export const labCount = workflow({
@@ -186,9 +170,9 @@ export function installWorkflowLab(projectDir: string): void {
   }
   fs.writeFileSync(
     agentPath,
-    `import { labCount, labSleep, labWebhook } from "./lab.ts";\n${agent}`.replace(
+    `import { labCount, labSleep } from "./lab.ts";\n${agent}`.replace(
       WORKFLOWS_ANCHOR,
-      "  workflows: { research, labSleep, labWebhook, labCount },",
+      "  workflows: { research, labSleep, labCount },",
     ),
   );
 }
@@ -260,22 +244,6 @@ export async function wakeRun(url: string, runId: string): Promise<number> {
     method: "POST",
   });
   return body.woken;
-}
-
-/**
- * The hook URL a parked `labWebhook` run reported, from the server's own lines.
- *
- * `createWebhook()`'s token is random and body-side only, so the URL cannot be
- * derived by the caller — and `report()` writes to the server log, which the
- * supervisor already captures for exactly this kind of read.
- */
-export function hookUrlFor(lines: readonly string[], tag: string): string | undefined {
-  const marker = `lab-hook ${tag} url=`;
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    const at = lines[i]?.indexOf(marker);
-    if (at !== undefined && at >= 0) return lines[i]?.slice(at + marker.length).trim();
-  }
-  return undefined;
 }
 
 /**

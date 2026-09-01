@@ -24,7 +24,7 @@
  * the binaries are on this machine — and the three budgets are what the runner
  * spends when a caller names nothing. A `.d.ts` an agent author imports is the
  * wrong place to publish either; `@alexkroman1/aai/ffmpeg` keeps the four
- * things a `"use step"` body actually calls.
+ * things a step actually calls.
  */
 export {
   DEFAULT_FFMPEG_TIMEOUT_MS,
