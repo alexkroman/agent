@@ -66,6 +66,28 @@
  * and the sweep abandons the message exactly as before. Measured, in the course
  * of fixing the `workflowStartedAt` half.
  *
+ * ## An envelope is only the codec's if the codec WROTE it
+ *
+ * Both revivers recognise an envelope STRUCTURALLY, so for a long time an
+ * author's own `{ __type: "Uint8Array", data }` decoded as bytes — type confusion
+ * across a trust boundary, a run's input arriving at `POST /workflows/runs`.
+ * `workflow-typed-json-escape.ts` closes it by renaming an author's reserved keys
+ * on the way out and back on the way in; its doc carries the scheme and the
+ * argument that the rename is total. A bare `__type` still decodes as an
+ * envelope, so their transport's output and every row already on the wire are
+ * unaffected — which is why the deployment order is decoder-first.
+ *
+ * ## The two codecs agree on a date SHAPE, and differ only on what they EMIT
+ *
+ * `{ __type: "Date", iso }` used to survive `decodeTypedJson` as a plain object
+ * and be revived by `decodeStorageJson`, so one author value meant two different
+ * things depending on which wire it took. With escaping, neither revives an
+ * author's date-shaped object: both hand back the record that went in, which is
+ * the round trip. The asymmetry that REMAINS is the split above and is
+ * deliberate — the storage RPC emits the date envelope because both ends are
+ * ours, the queue path never emits one because the DevKit's reviver is the far
+ * end and has no date envelope to read. Shapes agree; emission differs.
+ *
  * ## It is a REPLACER and a REVIVER, not a deep clone
  *
  * `JSON.stringify`'s replacer is called for every value, so nesting, arrays and
@@ -75,6 +97,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
+import { escapeReservedKeys, unescapeIfRecord } from "./workflow-typed-json-escape.ts";
 
 /** What a `Uint8Array` becomes on the wire. */
 type BinaryEnvelope = { __type: "Uint8Array"; data: string };
@@ -161,9 +184,29 @@ export function binaryReplacer(this: unknown, key: string, value: unknown): unkn
   // `Buffer.from(view)` COPIES rather than aliasing the underlying buffer, which
   // matters for a `Uint8Array` that is a view into a larger allocation: encoding
   // the whole allocation would be a data leak as well as wrong.
-  return raw instanceof Uint8Array
-    ? { __type: "Uint8Array", data: Buffer.from(raw).toString("base64") }
-    : value;
+  if (raw instanceof Uint8Array) {
+    return { __type: "Uint8Array", data: Buffer.from(raw).toString("base64") };
+  }
+  return escapeIfPlain(value);
+}
+
+/**
+ * An author's own object with its reserved keys renamed, or `value` untouched.
+ *
+ * **It reads `value`, not `raw`, and that is the opposite of the two checks above
+ * it — deliberately.** `raw` exists to see past `Buffer`'s and `Date`'s own
+ * `toJSON`, which are the two this codec must look THROUGH. An object carrying a
+ * `toJSON` an AUTHOR wrote is the other case: JSON's own semantics say its result
+ * is what gets serialized, so its result is what has to be escaped. Escaping
+ * `raw` there would silently undo the author's `toJSON`, and escaping neither
+ * would let its result smuggle a `__type` through.
+ *
+ * A class instance is left alone by {@link isPlainObject} for the reason
+ * {@link withPlainViews} gives: rebuilding one structurally destroys it.
+ */
+function escapeIfPlain(value: unknown): unknown {
+  if (!isPlainObject(value)) return value;
+  return escapeReservedKeys(value) ?? value;
 }
 
 /**
@@ -172,7 +215,38 @@ export function binaryReplacer(this: unknown, key: string, value: unknown): unkn
  * @internal
  */
 export function binaryReviver(_key: string, value: unknown): unknown {
-  return isBinaryEnvelope(value) ? new Uint8Array(Buffer.from(value.data, "base64")) : value;
+  if (isBinaryEnvelope(value)) return bytesFromBase64(value.data);
+  return unescapeIfRecord(value);
+}
+
+/**
+ * A tagged envelope's payload as bytes, or a throw.
+ *
+ * **`Buffer.from(s, "base64")` cannot be used here: it is LENIENT.** It drops any
+ * character outside the alphabet and returns whatever the survivors decode to, so
+ * `"not base64 at all!!"` came back as ten arbitrary bytes with nothing raised —
+ * a corrupt payload reaching a step as plausible-looking binary, which is the
+ * same silent-garbage failure this whole module exists to prevent, one layer in.
+ *
+ * `Uint8Array.fromBase64` throws instead, and `lastChunkHandling: "strict"` is
+ * what makes it reject the two shapes the lenient decoder invents a value for:
+ * an unpadded final chunk (`"aGVsbG8"`), and a final chunk whose unused trailing
+ * bits are non-zero (`"AAB="`, which decodes to the same bytes as `"AAA="` and so
+ * has two spellings). Every string this codec EMITS is canonical padded base64,
+ * so nothing it wrote can fail this.
+ *
+ * ASCII whitespace is still accepted — the spec allows it at any position, and
+ * unlike the cases above it decodes to one unambiguous answer rather than to a
+ * guess.
+ */
+function bytesFromBase64(data: string): Uint8Array {
+  try {
+    return Uint8Array.fromBase64(data, { alphabet: "base64", lastChunkHandling: "strict" });
+  } catch (cause) {
+    // Named, because the raw message ("Found a character that cannot be part of a
+    // valid base64 string") says nothing about which wire or which field.
+    throw new Error("typed-json: Uint8Array envelope carries malformed base64", { cause });
+  }
 }
 
 /**
@@ -346,7 +420,30 @@ export function storageReplacer(this: unknown, key: string, value: unknown): unk
  * @internal
  */
 export function storageReviver(key: string, value: unknown): unknown {
-  return isDateEnvelope(value) ? new Date(value.iso ?? Number.NaN) : binaryReviver(key, value);
+  return isDateEnvelope(value) ? dateFromEnvelope(value.iso) : binaryReviver(key, value);
+}
+
+/**
+ * A date envelope's payload as a `Date`, or a throw.
+ *
+ * `null` is the encoder's own spelling of an INVALID date (see
+ * {@link DateEnvelope}), so it revives as one — that is a round trip, not
+ * corruption.
+ *
+ * A non-null string that will not parse is the other thing entirely: nothing this
+ * codec emits can produce one, because `toISOString()` either throws or returns a
+ * string `Date` re-reads. So it is a corrupt or forged wire, and reviving it
+ * would hand the guest an `Invalid Date` whose `+date` is `NaN` — the exact value
+ * that stalled every durable run on the platform and the reason this module
+ * exists. Failing the decode names the problem where it happened instead.
+ */
+function dateFromEnvelope(iso: string | null): Date {
+  if (iso === null) return new Date(Number.NaN);
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) {
+    throw new Error(`typed-json: Date envelope carries an unparsable iso: ${JSON.stringify(iso)}`);
+  }
+  return when;
 }
 
 /**
