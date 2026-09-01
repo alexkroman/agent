@@ -57,16 +57,7 @@ import {
   warnStale,
 } from "./_ratchet.mjs";
 import { scanChangesetPackageNames } from "./guard-invariants-changesets.mjs";
-import {
-  GUEST_SURFACE_PATHSPECS,
-  LINE_RULES,
-  SCRIPT_PATHSPECS,
-  SESSION_SURFACE_PATHS,
-  SHIPPED_SOURCE_PATHSPECS,
-  SOURCE_PATHSPECS,
-  TEMPLATE_PATHSPECS,
-  WORKFLOW_BODY_PATHSPECS,
-} from "./guard-invariants-rules.mjs";
+import { LINE_RULES, SCAN_CORPORA } from "./guard-invariants-rules.mjs";
 import {
   scanSymlinks,
   scanTemplateEscapingImports,
@@ -326,49 +317,6 @@ function baselineDescription(next) {
 }
 
 const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
-
-/**
- * The floors under every scan — see `_ratchet.mjs` on why they measure the
- * CORPUS.
- *
- * SIX of them, because the rules walk six different scopes and only two were
- * floored. Each number is set well below the measured actual, recorded beside
- * it, so ordinary movement in the tree does not trip a floor while a scan that
- * has gone blind does.
- *
- * The three that were missing are the interesting ones. Rule 11's is a THIRD
- * source corpus (shipped source only) that neither existing call covered, and
- * it is the Windows-portability rule — the one whose regressions are invisible
- * on every machine that runs CI. Rules 12 and 13 derive their corpus from
- * `git ls-files`, which exits **0** on a pathspec matching nothing where
- * `git grep` exits 1: that asymmetry is exactly why the grep-based rules
- * announced their own blindness and these two could not.
- *
- * A TABLE rather than six near-identical calls, so a new scope is one row and
- * cannot be added without a floor — which is how three of these came to be
- * missing: they were spelled inline on a rule, where nobody counting floors
- * would see them.
- */
-const SCAN_CORPORA = [
-  { what: "the line-rule source scan", pathspecs: SOURCE_PATHSPECS, minFiles: 800 }, // ~1,530
-  { what: "rules 11+27's shipped-source scan", pathspecs: SHIPPED_SOURCE_PATHSPECS, minFiles: 600 }, // 1,224
-  // An explicit file list, so every entry must resolve — the floor IS its length.
-  {
-    what: "rule 16's session-surface file list",
-    pathspecs: SESSION_SURFACE_PATHS,
-    minFiles: SESSION_SURFACE_PATHS.length,
-  },
-  { what: "rule 12's guest HTTP-surface scan", pathspecs: GUEST_SURFACE_PATHSPECS, minFiles: 20 }, // 32
-  { what: "rule 13's template scan", pathspecs: TEMPLATE_PATHSPECS, minFiles: 100 }, // 175
-  {
-    what: "rule 26's shipped workflow-body scan",
-    pathspecs: WORKFLOW_BODY_PATHSPECS,
-    minFiles: 15,
-  }, // 24
-  // Both pathspec shapes: the nested one resolves ZERO now and `scripts/*.mjs`
-  // carries the whole corpus — see SCRIPT_PATHSPECS for why the pair stays.
-  { what: "rule 28's gate-script scan", pathspecs: SCRIPT_PATHSPECS, minFiles: 50 }, // 69
-];
 
 for (const corpus of SCAN_CORPORA) assertScanCorpus({ gate: GATE, ...corpus });
 

@@ -8,12 +8,14 @@
  * `undici`, being on the CLI's zero-dependency startup path and riding the
  * browser bundle, so the dispatcher lives here and `createServer` publishes it.
  *
- * ## `allowH2: false` is the entire mechanism
+ * ## `allowH2: false` is the entire mechanism, and it lives in `_http1-agent.ts`
  *
  * undici's connector offers `ALPNProtocols: allowH2 ? ['http/1.1', 'h2'] :
  * ['http/1.1']`, and undici 8 defaults `allowH2` to **true** — so turning it off
  * is what stops the far side upgrading a fan-out onto one multiplexed
- * connection. Everything else here is sizing.
+ * connection. It moved to `_http1-agent.ts` when the runtime's OWN egress needed
+ * the same flag for the same reason (`_egress-fetch.ts`, which carries the
+ * production failure that found it); everything else here is sizing.
  *
  * It was measured rather than inferred, against the same live endpoint and the
  * same 8-concurrent 17.66 MB segments as the SDK-side table: `allowH2: false`
@@ -29,7 +31,6 @@
 
 import type { StepFetch } from "@alexkroman1/aai/host-internal";
 import {
-  asDispatcher,
   type PinnedRequestInit,
   pinnedFetch,
   STEP_FETCH_CONNECTIONS,
@@ -38,7 +39,7 @@ import {
 } from "@alexkroman1/aai/host-internal";
 import type { StepFetchInit } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { Agent } from "undici";
+import { createHttp1Pool } from "./_http1-agent.ts";
 
 /**
  * A published step `fetch`, with the pool behind it.
@@ -71,9 +72,7 @@ type StepFetchHandle = {
  * @internal
  */
 export function createStepFetch(): StepFetchHandle {
-  const agent = new Agent({
-    // The point of the whole module — see above.
-    allowH2: false,
+  const pool = createHttp1Pool({
     connections: STEP_FETCH_CONNECTIONS,
     keepAliveTimeout: STEP_FETCH_KEEP_ALIVE_MS,
     pipelining: STEP_FETCH_PIPELINING,
@@ -81,11 +80,12 @@ export function createStepFetch(): StepFetchHandle {
     // DevKit's step budget. undici's default 300s header timeout and 300s body
     // timeout would otherwise cut a long provider call off with a transport
     // error the caller cannot classify, which is the failure mode this whole
-    // module exists to remove.
+    // module exists to remove. The runtime's own egress pool does NOT do this —
+    // see `_egress-fetch.ts`.
     headersTimeout: 0,
     bodyTimeout: 0,
   });
-  const dispatcher = asDispatcher(agent);
+  const dispatcher = pool.dispatcher;
   const fetch: StepFetch = (url: string, init: StepFetchInit = {}): Promise<Response> => {
     // Rebuilt rather than spread wholesale: `StepFetchInit` admits only the
     // plain shapes that survive the realm boundary (see `_undici.ts`), and
@@ -109,10 +109,11 @@ export function createStepFetch(): StepFetchHandle {
     };
     return pinnedFetch(url, request);
   };
-  // `close`, not `destroy`: a request already in flight when the server shuts
-  // down is a step's, and cutting it off would fail a run that was about to
-  // finish. Idle keep-alive sockets — the thing a rebuild strands — go either way.
-  return { fetch, close: () => agent.close() };
+  // `close`, not `destroy` — see `createHttp1Pool`. A request already in flight
+  // when the server shuts down is a step's, and cutting it off would fail a run
+  // that was about to finish. Idle keep-alive sockets — the thing a rebuild
+  // strands — go either way.
+  return { fetch, close: pool.close };
 }
 
 /**

@@ -792,6 +792,93 @@ byte route reads `UPLOAD_READ_AHEAD` chunks ahead of what it has written — bot
 `mapStream` (below), which is where the ordering, the memory bound, and the
 whole-window buffering that keeps a failed write re-sendable are argued.
 
+## Every call this runtime makes of its OWN goes through `egressFetch`
+
+`_egress-fetch.ts` is the one outbound `fetch` for the platform's routes and the
+bucket a window is read from; `_http1-agent.ts` holds the `allowH2: false` both
+it and `step-fetch.ts` are built on. **`globalThis.fetch` is banned here by
+`guard-invariants` rule 29**, whose remedy carries the argument.
+
+`sdk/step-fetch.ts` measured the problem and fixed it for a STEP's outbound call:
+undici 8 — the copy backing `globalThis.fetch` from Node 26 — defaults `allowH2`
+to `true`, so N concurrent requests to one origin are multiplexed onto ONE TCP
+connection sharing one flow-control window, and a capacity limit then arrives as
+a stream reset carrying no HTTP status. 14 of 16 concurrent 17.66 MB requests
+landed on the global against 16/16 on HTTP/1.1.
+
+**What that left behind is that the RUNTIME's own calls are the same shape**, and
+five of them were still on the global: the upload broker's byte operations
+(`_upload-blobs-brokered.ts`), the operator-bucket ones beside them
+(`_upload-blobs-http.ts`), every platform RPC (`platform-rpc.ts`), and the
+run-event STREAM read (`workflow-platform-storage.ts`) — which is the worst case
+of all, a read meant to stay open on the same window as a burst of byte probes.
+
+Observed on a deployed transcription workflow uploading ~64 MB in 8 MB windows:
+
+```text
+Workflow run event read failed { runId: 'wrun_…', error: 'fetch failed', failures: 2 }
+Workflow API request failed { error: 'fetch failed' }
+PUT …/workflows/uploads/<id>/parts -> 500 Internal Server Error (execution: 37.9 s)
+```
+
+Three things in that log are ONE fault, which is the tell. The failures are
+simultaneous across UNRELATED routes — a claim's bucket probes and the event
+stream's storage reads — because those requests shared a connection. The error is
+`fetch failed` with no status, which is what a reset looks like from `fetch`. And
+`BYTE_OP_ATTEMPTS`' ~750 ms of retry could not help, because re-issuing in
+lockstep onto the connection that just reset IS the failure rather than the cure.
+
+Four things about the pool worth not rediscovering:
+
+- **It is per PROCESS, where the step pool is per `AgentServer`.** That pool is
+  rebuilt on every `aai dev` file save; this one is addressed by the process's own
+  environment and serves callers with no server to hang a lifetime off —
+  `platformPost` is reached from four clients holding nothing but a base and a
+  bearer. So it is a lazy singleton, and `closeEgressFetch()` RESETS it rather
+  than poisoning it: a caller holding `egressFetch` across a close gets a fresh
+  pool on its next request.
+- **undici's timeouts are LEFT ALONE, deliberately unlike the step pool**, which
+  turns them off because a step owns its own deadline. Here the callers bound the
+  REQUEST (`BYTE_OP_TIMEOUT_MS`, `PlatformCall.timeoutMs`) and nothing bounds
+  draining the body afterwards — exactly what a window `read` does — so undici's
+  body-inactivity timeout is the only limit that path has.
+- **The `fetch?:` seam stays optional.** Only the DEFAULT was the bug, and making
+  it required is a breaking change: `createHttpUploadBlobs` is a published export
+  a self-hoster calls.
+- **Bodies must be plain.** This goes through `pinnedFetch`, so `host/_undici.ts`'s
+  rule applies — a `FormData`, `Blob`, `Headers` or `Request` from the GLOBAL
+  undici brand-checks against the wrong classes and is silently stringified. Every
+  caller here passes a `Uint8Array` or a string, which is what made the swap safe.
+  `providers/_openai-stream-repair.ts` is the rule's one baselined occurrence for
+  the mirror-image reason, recorded at the line.
+
+### A transport failure is a 503, and it used to be an opaque 500
+
+The amplification half, and its own bug. `fetch` rejecting with
+`TypeError: fetch failed` reached the router as an unnamed rejection, so
+`answerHandlerFailure` answered `500 { error: "Internal server error" }` with no
+`Retry-After` — six times on one claim, ~40 s each, the browser re-sending 8 MB
+windows it had already stored into the same fault. `workflowApiErrorStatus` had
+a table entry for a full disk (507) and a saturated pool (503) and none for the
+hop OUT, which is the same finding those two entries record: a client cannot
+back off on a 500, an operator cannot triage it, and a load balancer cannot shed
+on it.
+
+`isTransportFailure` (`workflow-api-http.ts`) walks the `cause` chain — the code
+is almost never on the value that was thrown — against a closed vocabulary, and
+answers 503 with `Retry-After: 1`. Three properties are decisions:
+
+- **`ENOTFOUND` is deliberately absent.** A hostname that does not resolve is a
+  misconfiguration, and "retry shortly" hides a permanent fault behind a client's
+  loop forever. `EAI_AGAIN`, the temporary DNS failure, is in for the mirror
+  reason.
+- **It is checked LAST of the 5xx entries.** A full disk and an exhausted pool
+  both surface transport-shaped codes on their way out, and each has advice this
+  one cannot give.
+- **It is not `isCallerGone`**, which reads `ECONNRESET` off the TOP-level value
+  and is checked first. An inbound socket that closed must not get a 503 written
+  to it.
+
 ## A callback URL comes from `publicWebhookUrl`, never from `hook.url`
 
 `createWebhook()` sets `hook.url`, and it is **guest-local**: the DevKit composes

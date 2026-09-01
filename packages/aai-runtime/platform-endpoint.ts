@@ -92,7 +92,10 @@ export type PlatformEndpoint = {
    * `aai-server/guest-bearer.ts`.
    */
   token: string;
-  /** Test seam — production uses the global. */
+  /**
+   * Test seam — production takes the pooled HTTP/1.1 `egressFetch`, NEVER
+   * `globalThis.fetch`: see `_egress-fetch.ts`.
+   */
   fetch?: typeof globalThis.fetch | undefined;
 };
 

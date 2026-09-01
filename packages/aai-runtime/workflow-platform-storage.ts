@@ -37,6 +37,7 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import { WorkflowRunNotFoundError } from "workflow/errors";
+import { egressFetch } from "./_egress-fetch.ts";
 import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
 import { platformBearer, platformPost } from "./platform-rpc.ts";
 import { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
@@ -251,7 +252,13 @@ export function createPlatformStreamReader(
   opts: PlatformStorageOptions,
 ): (name: string, startIndex?: number) => Promise<ReadableStream<Uint8Array>> {
   return async (name: string, startIndex?: number) => {
-    const fetchFn = opts.fetch ?? globalThis.fetch;
+    // `egressFetch`, never the global — see `_egress-fetch.ts`. This one is the
+    // WORST case for the HTTP/2 default it avoids: the read is meant to stay open,
+    // so on a multiplexed connection a live event stream sits on the same
+    // flow-control window as the upload broker's byte operations, and a reset takes
+    // both. Which is what production showed — `Workflow run event read failed
+    // { error: 'fetch failed' }` interleaved with the claim's 500s, same instant.
+    const fetchFn = opts.fetch ?? egressFetch;
     const url = new URL(platformUrl(opts.base, PLATFORM_ROUTES.workflowStream));
     url.searchParams.set("name", name);
     // A NEGATIVE index is legal and load-bearing: their doc says it starts that many

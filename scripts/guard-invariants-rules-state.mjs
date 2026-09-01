@@ -22,6 +22,7 @@ import {
 } from "./guard-invariants-ere.mjs";
 import {
   CHANNEL_MESSAGE_PATHS,
+  RUNTIME_EGRESS_PATHSPECS,
   SESSION_SURFACE_PATHS,
   SHIPPED_SOURCE_PATHSPECS,
   SOURCE_PATHSPECS,
@@ -244,5 +245,63 @@ export const STATE_RULES = [
       "    cannot express 'dispose a resource acquired in another scope'.\n" +
       "  - `define-client.tsx`'s `() => session[Symbol.dispose]()`, a teardown\n" +
       "    thunk handed to the React root. A callback is not a scope either.",
+  },
+  {
+    id: 29,
+    key: "rule29_globalFetchInRuntime",
+    label: "globalThis.fetch as a runtime egress default",
+    // The FALLBACK expression, never the type. `fetch?: typeof globalThis.fetch`
+    // is how every one of these modules declares its test seam and is correct —
+    // what this bans is that seam's DEFAULT. `typeof ` sits immediately before
+    // the member expression in the type form, so neither alternative can reach
+    // it: ERE has no lookbehind, and none is needed.
+    re: '(\\?\\?|\\|\\|) *globalThis\\.fetch|= *globalThis\\.fetch[^"]',
+    paths: RUNTIME_EGRESS_PATHSPECS,
+    skipComments: true,
+    samples: {
+      matches: [
+        "  const call = opts.fetch ?? globalThis.fetch;",
+        "  const fetchFn = opts.fetch || globalThis.fetch;",
+        "  const doFetch = globalThis.fetch;",
+      ],
+      ignores: [
+        "  const call = opts.fetch ?? egressFetch;",
+        // The TYPE, which every one of these seams declares and must keep.
+        "  fetch?: typeof globalThis.fetch | undefined;",
+        "export const egressFetch: typeof globalThis.fetch = (input, init) =>",
+      ],
+    },
+    remedy:
+      "Use `egressFetch` from ./_egress-fetch.ts.\n" +
+      "\n" +
+      "undici 8 — the copy backing `globalThis.fetch` from Node 26 — defaults\n" +
+      "`allowH2` to TRUE, so every concurrent request this process makes to one\n" +
+      "origin is multiplexed onto ONE TCP connection sharing one flow-control\n" +
+      "window. A capacity limit then arrives as a STREAM RESET, which carries no\n" +
+      "HTTP status at all: `TypeError: fetch failed`, for everything in flight.\n" +
+      "`sdk/step-fetch.ts` measured it — 14 of 16 concurrent 17.66 MB requests\n" +
+      "landed on the global against 16/16 on HTTP/1.1 — and fixed it for a STEP's\n" +
+      "outbound call. This rule exists because that left FIVE call sites in this\n" +
+      "package on the global, and they are the same shape: 32 concurrent bucket\n" +
+      "probes per part claim, a workflow's window reads, and a run-event stream\n" +
+      "held open across all of it.\n" +
+      "\n" +
+      "What that cost in production, on one 64 MB upload: six consecutive\n" +
+      "`PUT …/workflows/uploads/<id>/parts -> 500`, ~40s each, interleaved with\n" +
+      "`Workflow run event read failed { error: 'fetch failed' }` on an unrelated\n" +
+      "route in the same instant — one transport fault reading as three bugs. The\n" +
+      "byte path's own retry could not help: re-issuing in lockstep onto the\n" +
+      "connection that just reset IS the failure.\n" +
+      "\n" +
+      "Keep the `fetch?: typeof globalThis.fetch` seam — a caller passing one\n" +
+      "still wins, which is what a spec uses. Only the DEFAULT is the bug.\n" +
+      "\n" +
+      "Baseline an occurrence only where the pooled fetch would be WRONG, not\n" +
+      "merely unnecessary. `providers/_openai-stream-repair.ts` is the standing\n" +
+      "entry: it wraps a caller-supplied provider fetch, resolves the global per\n" +
+      "call so a spec can stub it, and builds a `Headers`/`Response` from the\n" +
+      "ambient realm — which undici 8 brand-checks against its own classes (see\n" +
+      "`host/_undici.ts`). Its origin is a model provider, one streaming call a\n" +
+      "turn, not a fan-out.",
   },
 ];
