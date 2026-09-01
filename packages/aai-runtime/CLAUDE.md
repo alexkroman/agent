@@ -751,6 +751,72 @@ Rendered in ISOLATION it reports seven more, all `{@link Db}`-shaped links into
 `@alexkroman1/aai`. Those are an artifact of the SDK not being in the project,
 not a defect in these comments — do not "fix" them by deleting links.
 
+## A run's journal has THREE homes, and the order between them is a decision
+
+`selectJournal` (`workflow-runtime.ts`) picks the replay engine's journal:
+**platform, then postgres, then memory**, and the boot line names whichever won.
+
+- **platform** — `createPlatformJournal`, one `POST /:slug/workflow-journal` per
+  operation, beside the queue, session state and upload records that already work
+  this way. The statements run on the platform's own database
+  (`aai-server/platform-workflow-journal.ts`), which mirrors
+  `workflow-journal-schema.ts` with a `slug` added to every key.
+- **postgres** — `createPostgresJournal` over the agent's own `DATABASE_URL`,
+  which is what a self-hosted deployment has and the platform never provisions.
+- **memory** — a `Map`, for trying a workflow out before provisioning anything.
+
+**The order is what closed the bug, and it is not "most specific wins".** A
+deployed guest could reach NEITHER durable backend: the platform provisions no
+tenant database, so every deployed run journaled into a sandbox that self-exits
+after `AGENT_IDLE_EXIT_MS`. A step's result, its attempt count and an open
+approval window died with it — and nothing reported it, because from inside the
+system a step whose result was lost is indistinguishable from one never reached.
+The run sat suspended looking healthy, so "durable" was true of the interface and
+false of every deployment.
+
+Platform BEFORE postgres for a second reason: a deployed guest may also carry an
+author-supplied `DATABASE_URL`, and its runs belong beside its session state
+rather than split across two databases with the wake sweep able to see only one
+of them.
+
+**The platform pair is read from THIS PROCESS's environment**
+(`platformGuestOptions`), never the agent's — the distinction that already cost
+a deployment, and the safer read besides: an agent may set any `AAI_*` key as a
+secret, so under the tenant spelling an agent would choose the base URL and
+bearer its own journal was sent to. The section below on `AAI_PLATFORM_BASE_URL`
+carries the rest.
+
+**Memory is last and the boot line SAYS so.** A durability tradeoff absent from
+the log reads as a bug, and this is the one an author is most likely to hit by
+accident.
+
+### What the three tiers of test each cover, and why none substitutes
+
+The claims are of three different kinds, which is why there are three files:
+
+- **`workflow-journal-platform.test.ts`** — our side of the wire. The CODEC (a
+  `Uint8Array` in a step's output crosses as an envelope, not as an index map,
+  which `JSON.stringify` produces with no error), and three answers REFUSED
+  rather than invented: `claimAttempt` on a non-number (a made-up ceiling does
+  not hold), `appendStep` on an unreadable answer (the STORED entry is what makes
+  a double execution deterministic), `claimSleep` likewise.
+- **`aai-server/platform-workflow-journal.test.ts`** — SHAPE, over all twelve
+  methods as a TABLE rather than a case each: every statement binds the slug as
+  `$1`, no statement binds a bare `$n::jsonb`, `claimAttempt` issues exactly one
+  query. A table because the interesting failure is one method forgetting, and a
+  hand-written case per method is what a thirteenth method would not get.
+- **`aai-server/platform-workflow-journal.scenario.test.ts`** — the only place
+  TENANCY is testable, that being a claim about column values in a shared table.
+  Two tenants' rows, and every cross-tenant read comes back empty.
+
+Two things the scenario tier taught. **`jsonb` NORMALIZES**, so a value survives
+by MEANING and not by bytes — the memory journal preserves bytes and these do
+not, a divergence a spec might reasonably have asserted, so the cases compare
+parsed values. And the **`::text::jsonb`** binding is deliberate on both stores:
+postgres.js JSON-serializes a parameter bound to a jsonb position, and the
+self-hosted twin shipped with a bare cast that stored a JSON string containing
+the JSON, found only by a real server.
+
 ## An upload's bytes are OBJECTS, and its record has two homes
 
 **An upload ID is checked at the ROUTER, for every `/uploads/:id` route.** The
