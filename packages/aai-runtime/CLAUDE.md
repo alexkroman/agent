@@ -879,24 +879,50 @@ answers 503 with `Retry-After: 1`. Three properties are decisions:
   and is checked first. An inbound socket that closed must not get a 503 written
   to it.
 
-## A callback URL comes from `publicWebhookUrl`, never from `hook.url`
+## A callback URL comes from `publicWebhookUrl`, and the route is on `createServer`
 
-`createWebhook()` sets `hook.url`, and it is **guest-local**: the DevKit composes
-it from `getWorkflowMetadata().url`, which is `http://localhost:<port>` off the
-running process (its only other branch is `https://$VERCEL_URL`). Deployed, that
-names the inside of a sandbox which has self-exited by the time a payment
-provider calls back. So the SDK mints its own:
-`ctx.workflows.publicWebhookUrl(token)` — `RuntimeOptions.publicUrl` plus the
-same `WORKFLOW_WEBHOOK_PREFIX` the guest's own router parses, so the URL handed
-out and the path that answers it cannot drift.
+`ctx.workflows.publicWebhookUrl(token)` mints the one workflow URL that LEAVES
+the system — `RuntimeOptions.publicUrl` plus `WORKFLOW_WEBHOOK_PREFIX`, the same
+constant the router parses, so the URL handed out and the path that answers it
+cannot drift. It exists because the DevKit's own `hook.url` was **guest-local**:
+composed from `getWorkflowMetadata().url`, i.e. `http://localhost:<port>` off
+the running process, which names the inside of a sandbox that has self-exited by
+the time a payment provider calls back.
 
-Three properties are load-bearing:
+**The route is mounted in `createServer`, and that is a correction rather than a
+detail.** It used to be mounted by `createWorkflowSurface`, which returns early
+unless the bundle carries both `workflowCode` and `stepCode` — the DevKit
+transform's output. When the replay engine replaced the DevKit those strings
+stopped being produced and the route mounted on NO door, so every callback a
+deployed run had handed out answered 404 permanently.
+
+Nothing in the system could see that. A run waiting on a hook that never arrives
+is indistinguishable from a payer who never paid, so it reports as healthily
+suspended and the failure lands weeks later on somebody else's server, on a URL
+nobody can re-issue. Two properties keep it closed:
+
+- **It hangs off `createServer`**, which every front door goes through — `aai
+  dev`, a self-hosted `server.mjs`, a deployed guest — so it cannot come to
+  depend on a build artifact again.
+- **It reads `runtime.workflows` through a LAZY getter**, like the workflow API
+  beside it, because the guest builds its runtime on the first request that
+  needs one; a captured value is `undefined` for the life of the server.
+
+`WorkflowClient.signal` is the delivery, and a `false` from it is a **404, never
+a 5xx**: the caller is a third party whose retry loop reads 5xx as "come back",
+so a miss used to be retried against an error forever. 404 stops it, and it is
+stable — a closed hook does not reopen. `workflow-webhook.ts` owns that
+reasoning; `workflow-http-adapter.ts` is why the failure status is a parameter
+(a queue callback wants the 500 the world retries, and this route must never
+emit one).
+
+Three properties of the URL itself are load-bearing:
 
 - **`publicUrl` is an OPTION, never sniffed.** Each deployment supplies it — the
   platform bakes `AAI_PUBLIC_BASE_URL` into the guest's exec env and the harness
   passes it through, `server.mjs` reads `PUBLIC_URL`, `aai dev` passes its own
-  BACKEND origin (Vite proxies the browser surface and not the DevKit's
-  `/.well-known/` routes, so the port a developer opens would 404 a delivery).
+  BACKEND origin (Vite proxies the browser surface and not the `/.well-known/`
+  routes, so the port a developer opens would 404 a delivery).
   Reading an `AAI_*` variable here would make the SDK depend on the vocabulary of
   one of its three deployments.
 - **Unconfigured THROWS**, naming the option. A `localhost` URL would be the
@@ -906,10 +932,10 @@ Three properties are load-bearing:
   already states. `createWebhook()`'s own token is random and body-side only,
   so a URL that has to be minted from a TOOL wants `createHook({ token })`.
 
-Not yet closed: a `"use workflow"` BODY, and a step it hands `hook.token` to,
-have no `ToolContext` and so no way to reach `publicUrl` — a run that must EMAIL
-its own callback URL still composes it from a value the author supplies.
-`stepEnv`'s `Symbol.for` slot is the shape that would close it.
+Not yet closed: a workflow BODY, and a step it hands a hook token to, have no
+`ToolContext` and so no way to reach `publicUrl` — a run that must EMAIL its own
+callback URL still composes it from a value the author supplies. `stepEnv`'s
+`Symbol.for` slot is the shape that would close it.
 
 ## `AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials, not what the guest dials
 
