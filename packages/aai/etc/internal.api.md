@@ -157,6 +157,21 @@ export const HEARD_AUDIO_LAG_MS = 150;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+export function invariant(condition: boolean, name: string, detail?: InvariantDetail): asserts condition;
+
+// @public
+export type InvariantDetail = () => Record<string, unknown>;
+
+// @public
+export class InvariantViolation extends Error {
+    constructor(name: string, message: string);
+    readonly invariant: string;
+}
+
+// @public
+export function isInvariantViolation(value: unknown): value is InvariantViolation;
+
 // @internal
 export function isTextAssetPath(assetPath: string): boolean;
 

@@ -759,6 +759,9 @@ isolated `ctx.messages` are in `packages/aai-runtime/CLAUDE.md`, "Subagents".
 
 ## Concurrency primitives (use these, don't hand-roll)
 
+`sdk/invariant.ts` (`/internal`) is the sibling seam for STATE rather than
+timing — see "Runtime invariants" in `packages/aai-runtime/CLAUDE.md`.
+
 The repo's recurring async-coordination patterns are reified as small
 primitives, and almost all of them live in this package — reach for one before
 re-inventing the pattern at a call site. Two that do not are stated in the root

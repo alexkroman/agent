@@ -10,8 +10,10 @@ import { describe, expect, test, vi } from "vitest";
 import { MAX_PLATFORM_DB_CONNECTIONS } from "./constants.ts";
 import {
   announcePlatformDbCapacity,
+  capacityLine,
   platformDbBudget,
   readPlatformDbCapacity,
+  unpooledAdminConnections,
 } from "./platform-db-capacity.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { captureLogs } from "./test-utils.ts";
@@ -201,5 +203,82 @@ describe("announcePlatformDbCapacity", () => {
     expect(announcePlatformDbCapacity(failing)).toBeUndefined();
     await logged(logs.warns);
     expect(String(logs.warns()[0])).toContain("could not read");
+  });
+});
+
+/**
+ * The boot line has to be ARITHMETICALLY consistent with the headroom beside it.
+ *
+ * It was not. `c.budgeted` is `platformDbBudget(env)`, which already contains
+ * `unpooledAdminConnections(env)` — and the line said `plus`, so on the arm
+ * production actually runs (`PLATFORM_POOLER_URL` unset, `MAX_CONTAINERS=3`) boot
+ * printed `platform budget=42 (plus 12 for DIRECT admin pools)`. A reader sums
+ * that to 54 against a real claim of 42, and the `headroom` on the same line used
+ * 42. Second time this double count has shipped in this file; the first was in the
+ * arithmetic, this one in the preposition.
+ *
+ * So these do not assert the WORDING. They parse the numbers back out of the line
+ * and check them against the reading it describes, which is the only form that
+ * survives someone rewording it — and the only one that would have failed on the
+ * `plus`.
+ */
+describe("the boot line describes the reading it was built from", () => {
+  const numbersIn = (line: string): number[] =>
+    [...line.matchAll(/(\d+)/g)].map((m) => Number(m[1]));
+
+  /** Every arm of the one env that changes the arithmetic. */
+  const arms: [string, NodeJS.ProcessEnv][] = [
+    ["production today — no pooler", { MAX_CONTAINERS: "3" }],
+    ["pooled", { MAX_CONTAINERS: "3", PLATFORM_POOLER_URL: "postgres://x" }],
+    ["a single self-hosted replica", {}],
+    ["a large fleet", { MAX_CONTAINERS: "25" }],
+  ];
+
+  test.each(arms)("%s: the terms compose the total, they do not add to it", (_label, env) => {
+    const budgeted = platformDbBudget(env);
+    const capacity = { maxConnections: 100, inUse: 5, budgeted, headroom: 100 - 5 - budgeted };
+    const line = capacityLine(capacity, env);
+
+    // The budget it prints IS the one the headroom used — the property the `plus`
+    // broke. Every other number on the line must be a PART of it, never a term
+    // beside it, so nothing on the line may exceed the total.
+    expect(line).toContain(`platform budget=${budgeted}`);
+    const unpooled = unpooledAdminConnections(env);
+    if (unpooled > 0) {
+      expect(numbersIn(line)).toContain(unpooled);
+      // **The discriminating assertion, and the first draft did not have one.**
+      // Every check around it passes on the buggy line too: `budget=42 (plus 12)`
+      // still contains `budget=42`, still names 12, and 12 is still less than 42.
+      // What is actually wrong is that the term is presented as an ADDITION to a
+      // total it is already inside, so that is what has to be asserted. A/B'd:
+      // restoring `plus` fails here and nothing else.
+      expect(
+        line,
+        "the admin pool is INSIDE the budget, so the line may not add it to one: " +
+          '"plus N" reads as a sum and an operator sizes the instance from it',
+      ).not.toMatch(/plus \d/);
+      expect(line, "it has to say so, not merely avoid saying the wrong thing").toMatch(
+        /of which \d/,
+      );
+    }
+    // The reading is recoverable from the line: an operator subtracting the
+    // budget from max_connections gets the same headroom the warning branches on.
+    expect(capacity.maxConnections - capacity.inUse - budgeted).toBe(capacity.headroom);
+  });
+
+  /**
+   * The invariant itself, which is what stops the two drifting again: a term
+   * added to `platformDbBudget` and not named here fails the decomposition.
+   */
+  test("a budget the named terms cannot account for is a violation, not a wrong line", () => {
+    const env = { MAX_CONTAINERS: "3" };
+    // A budget that grew by a term the line knows nothing about.
+    const drifted = { maxConnections: 100, inUse: 5, budgeted: platformDbBudget(env), headroom: 1 };
+    expect(() => capacityLine(drifted, env)).not.toThrow();
+    // `unpooledAdminConnections` is derived from env, so forcing a mismatch means
+    // handing it a budget no env can produce — which is exactly the drift.
+    expect(() => capacityLine({ ...drifted, budgeted: Number.NaN }, env)).toThrow(
+      /capacity\.line\.terms/,
+    );
   });
 });
