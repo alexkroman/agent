@@ -31,6 +31,7 @@ import { afterAll, beforeAll, describe } from "vitest";
 import { createPgPreviewQueue } from "./studio-preview-queue.ts";
 import { createPgStudioSessionRegistry } from "./studio-session-registry.ts";
 import {
+  conformanceLike,
   previewQueueConformance,
   studioSessionRegistryConformance,
 } from "./studio-store-conformance.ts";
@@ -50,9 +51,18 @@ describeWithStack("studio store conformance: the Supabase stack arm", () => {
 
   afterAll(async () => {
     // Sessions cascade off their workspace, so one sweep covers both. Queue rows
-    // are acked or archived by the cases themselves; a leftover is invisible to
-    // every other scope because each case owns a `conf-*` one.
-    await sql("delete from aai_platform.studio_workspaces where scope like 'conf-%'");
+    // are acked or archived by the cases themselves.
+    //
+    // The pattern is THIS PROCESS's prefix, never `conf-%`: that wildcard also
+    // matched `aai-server`'s conformance rows, and turbo runs the two suites in
+    // parallel against this same database — so whichever finished first deleted
+    // the other's live workspace and cascaded away the chat under it. This
+    // comment used to say a leftover was "invisible to every other scope because
+    // each case owns a `conf-*` one", which was true of the keys and silent
+    // about the sweep.
+    await sql("delete from aai_platform.studio_workspaces where scope like $1", [
+      conformanceLike(),
+    ]);
     await db?.close();
   });
 

@@ -210,9 +210,37 @@ export const STORE_CONTRACTS = [
 }[];
 
 /** A fresh, collision-proof key per case — see the arm-independence rule above. */
+/**
+ * The prefix every conformance key carries, and the ONLY pattern a cleanup may
+ * match on.
+ *
+ * The pid is in the PREFIX rather than the middle, and that placement is the
+ * whole point. Two packages run a conformance suite over these tables —
+ * `aai-server`'s and `aai-studio-server`'s — and turbo runs them in PARALLEL
+ * against one database, each ending in an `afterAll` that swept
+ * `scope like 'conf-%'`. That pattern matches the other suite's LIVE rows, and
+ * `studio_chats` cascades off `studio_workspaces`, so whichever finished first
+ * deleted the other's parent workspace mid-run and the chat under it went with
+ * it. It presents as a chat that was written and read back `null`, on one of the
+ * two scoped-chat assertions, intermittently — the studio file's own comment
+ * ("a leftover is invisible to every other scope because each case owns a
+ * `conf-*` one") was right about the KEYS and silent about the SWEEP.
+ *
+ * A per-process prefix makes the two suites' rows disjoint by construction, so
+ * a sweep can only ever reach what its own process wrote. The cost is that a
+ * CRASHED run leaves its rows behind, where a shared prefix let the next run
+ * collect them — which is the right way round: rows nobody is reading cost a
+ * scratch database nothing, and deleting rows a live suite is reading costs a
+ * red build that reproduces on nothing.
+ */
+export const CONFORMANCE_PREFIX = `conf-${process.pid}-`;
+
+/** The `like` pattern for everything THIS process wrote. */
+export const conformanceLike = (): string => `${CONFORMANCE_PREFIX}%`;
+
 export function uniqueKeys(label: string): () => string {
   let n = 0;
-  return () => `conf-${label}-${process.pid}-${Date.now().toString(36)}-${n++}`;
+  return () => `${CONFORMANCE_PREFIX}${label}-${Date.now().toString(36)}-${n++}`;
 }
 
 /**

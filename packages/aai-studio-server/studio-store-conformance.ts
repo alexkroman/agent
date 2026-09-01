@@ -22,9 +22,24 @@ import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { StudioSessionRecord, StudioSessionRegistry } from "./studio-session-registry.ts";
 
 /** A fresh, collision-proof scope per case — the stack arm shares one database. */
+/**
+ * The prefix every key here carries — see `CONFORMANCE_PREFIX` in
+ * `aai-server/store-conformance.ts` for why the pid is in the PREFIX rather than
+ * the middle. Short version: this suite and that package's run in PARALLEL
+ * against one database, and each ended in an `afterAll` sweeping `conf-%`, which
+ * matched the other's live rows.
+ *
+ * Spelled out here rather than imported so this file keeps needing nothing from
+ * that module; disjointness comes from the pid, not from a shared constant.
+ */
+export const CONFORMANCE_PREFIX = `conf-${process.pid}-`;
+
+/** The `like` pattern for everything THIS process wrote. */
+export const conformanceLike = (): string => `${CONFORMANCE_PREFIX}%`;
+
 function uniqueKeys(label: string): () => string {
   let n = 0;
-  return () => `conf-${label}-${process.pid}-${Date.now().toString(36)}-${n++}`;
+  return () => `${CONFORMANCE_PREFIX}${label}-${Date.now().toString(36)}-${n++}`;
 }
 
 /** No foreign key to satisfy — the memory arm's `parent`. */
