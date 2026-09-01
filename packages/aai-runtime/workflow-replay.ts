@@ -55,6 +55,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
 import { withRunContext } from "./workflow-run-context.ts";
+import type { StepGate } from "./workflow-step-gate.ts";
 import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
 
 /**
@@ -143,6 +144,15 @@ export type ReplayOptions = {
    * at the next one, which is the honest guarantee.
    */
   signal?: AbortSignal | undefined;
+  /**
+   * How many step bodies may EXECUTE at once, across this whole process.
+   *
+   * Absent, a step runs the moment the body reaches it — which is what a body's
+   * own fan-out width then means, and is the regression `workflow-step-gate.ts`
+   * documents: the DevKit's world bounded execution and the engine inherited no
+   * such bound. Every production caller passes one.
+   */
+  gate?: StepGate | undefined;
 };
 
 /**
@@ -212,6 +222,8 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
    */
   let suspendThrown = false;
 
+  const gate = options.gate;
+
   const ctx: WorkflowCtx = {
     runId,
     workflow,
@@ -235,6 +247,17 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
           maxAttempts: stepOptions?.maxAttempts ?? DEFAULT_STEP_MAX_ATTEMPTS,
           journal,
           signal,
+          // GATED around the attempt loop rather than around `fn`, so a step
+          // holds its slot across its own retries. Re-queueing between attempts
+          // would let a fan-out's stragglers interleave with fresh work and
+          // defeat the bound at exactly the moment it matters — when a provider
+          // is rate-limiting and every step is retrying.
+          //
+          // The journal reads above the gate are deliberately outside it: a
+          // settled step answers from `settled`/`readSteps` without executing
+          // anything, and making it queue behind live work would make a replay
+          // of a long finished run as slow as the run.
+          gate,
           fn,
         }));
       settled.set(key, entry);

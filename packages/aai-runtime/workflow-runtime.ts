@@ -45,6 +45,7 @@ import type { JournalStore } from "./workflow-journal-types.ts";
 import { createRunNotifier, type RunNotifier } from "./workflow-notify.ts";
 import { createPlatformDispatch } from "./workflow-platform-dispatch.ts";
 import { platformGuestOptions } from "./workflow-platform-world.ts";
+import { resolveStepConcurrency } from "./workflow-step-gate.ts";
 
 /**
  * The client a runtime hands to tools, and the handle its teardown owes.
@@ -163,6 +164,12 @@ export function buildWorkflowClient(
     // durable journal behind in-process timers looks healthy and forgets every
     // wait, so the two are reported together rather than inferred from each other.
     deliveries: dispatchKind,
+    // How many step bodies may EXECUTE at once. Reported because it is the
+    // number that decides whether a wide fan-out fits in this container, and
+    // because it USED to be the workflow world's and is now ours — an author
+    // whose body says `mapConcurrent(32)` needs to see the number that actually
+    // applies. See `workflow-step-gate.ts` for the guest it killed.
+    stepConcurrency: resolveStepConcurrency(),
     // Reported at boot for the same reason the key store is: whether a run can
     // hand out a reachable callback URL is a property of the DEPLOYMENT, and the
     // alternative to one boot line is discovering it from a throw inside a tool

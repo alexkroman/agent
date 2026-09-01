@@ -41,6 +41,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./workflow-journal-types.ts";
 import { type ReplayOutcome, replayRun } from "./workflow-replay.ts";
+import { createStepGate, resolveStepConcurrency, type StepGate } from "./workflow-step-gate.ts";
 import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
 
@@ -68,6 +69,16 @@ export type WorkflowEngineOptions = {
   dispatch: (runId: string, at?: number) => void;
   /** Mints a run id. Injected so a spec can pin one. */
   newRunId: () => string;
+  /**
+   * How many step bodies may EXECUTE at once in this process.
+   *
+   * Defaults to `resolveStepConcurrency()`, which reads
+   * `AAI_WORKFLOW_STEP_CONCURRENCY` and falls back to the bound the DevKit's
+   * world used to provide. A spec passes its own; nothing should pass
+   * `Infinity`, which is the state that killed a guest — see
+   * `workflow-step-gate.ts`.
+   */
+  stepConcurrency?: number | undefined;
   logger: Logger;
 };
 
@@ -105,6 +116,9 @@ function toWdkRecord(record: RunRecord): WdkRunRecord {
  */
 export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEngine {
   const { workflows, journal, streams, dispatch, newRunId, logger } = options;
+  // One gate for the ENGINE, not one per run: what it protects is process
+  // memory, and a deployed guest serves every run of its slug.
+  const gate: StepGate = createStepGate(options.stepConcurrency ?? resolveStepConcurrency());
 
   /**
    * Fail a run for a reason the ENGINE found before the body ran.
@@ -231,6 +245,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
           journal,
           streams,
           signal,
+          gate,
         }),
       );
     },

@@ -588,3 +588,63 @@ describe("a hook with a deadline", () => {
     expect(second.wakeAt).toBe(first.wakeAt);
   });
 });
+
+describe("step execution is BOUNDED, whatever the body opens", () => {
+  test("a fan-out of 32 runs `stepConcurrency` at a time", async () => {
+    // The regression this exists for, at the level that matters: the gate's own
+    // spec proves the gate, and this proves the ENGINE applies it. Removing
+    // `gate` from `replayRun`'s options in `workflow-engine.ts` fails only here.
+    //
+    // What it prevented: `mapConcurrent(32)` meant "32 queued jobs, three
+    // running" under the DevKit's world and "thirty-two running" once steps
+    // executed inline. A 50-minute recording opened 32 transcriptions against a
+    // 640 MB in-flight budget and the microVM died five seconds later — before
+    // any settled, so nothing journaled and every redelivery redid all 32.
+    const running: number[] = [];
+    const release: (() => void)[] = [];
+    let n = 0;
+    const engine = createWorkflowEngine({
+      workflows: {
+        fanout: workflow({
+          description: "fanout",
+          run: async (_input, ctx) =>
+            Promise.all(
+              Array.from({ length: 32 }, (_, i) =>
+                ctx.step(`segment${i}`, async () => {
+                  running.push(i);
+                  await new Promise<void>((resolve) => release.push(resolve));
+                  running.pop();
+                  return i;
+                }),
+              ),
+            ),
+        }),
+      },
+      journal: createMemoryJournal(),
+      streams: createMemoryStreams(),
+      dispatch: vi.fn(),
+      newRunId: () => `wrun_${++n}`,
+      logger: silentLogger,
+      stepConcurrency: 4,
+    });
+
+    const runId = await engine.start("fanout", [{}]);
+    void engine.execute(runId);
+    // A real elapsed wait rather than `vi.waitFor`: the assertion is that the
+    // count STOPS at four and stays there, which a poller that succeeds the
+    // moment it sees four cannot distinguish from one that overshot and came
+    // back down.
+    await sleep(200);
+    expect(running.length).toBe(4);
+
+    // And the queue drains rather than deadlocking — 32 admitted in total, four
+    // at a time.
+    const seen = new Set<number>(running);
+    for (let i = 0; i < 40 && release.length > 0; i++) {
+      release.shift()?.();
+      await sleep(5);
+      for (const id of running) seen.add(id);
+    }
+    expect(seen.size).toBeGreaterThan(4);
+  });
+});

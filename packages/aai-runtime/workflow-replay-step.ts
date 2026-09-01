@@ -18,6 +18,7 @@ import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { withStepContext } from "./workflow-run-context.ts";
+import type { StepGate } from "./workflow-step-gate.ts";
 
 /**
  * The longest this will hold a worker waiting to retry a step.
@@ -73,6 +74,14 @@ export type StepAttemptOptions = {
   maxAttempts: number;
   journal: JournalStore;
   signal: AbortSignal | undefined;
+  /**
+   * How many step bodies may execute at once in this process.
+   *
+   * Held across the WHOLE attempt loop rather than per attempt — see the call
+   * site in `workflow-replay.ts` for why. Absent runs ungated, which is what a
+   * spec wants and what no production caller passes.
+   */
+  gate: StepGate | undefined;
   fn: () => unknown;
 };
 
@@ -91,6 +100,11 @@ export type StepAttemptOptions = {
  * the throw cannot come apart.
  */
 export async function runStepAttempts(options: StepAttemptOptions): Promise<StepEntry> {
+  const gate = options.gate;
+  return gate ? gate(() => attemptLoop(options)) : attemptLoop(options);
+}
+
+async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
   const { runId, name, key, maxAttempts, journal, signal, fn } = options;
 
   for (;;) {
