@@ -154,12 +154,19 @@ export type UploadInfo = {
    * contiguous prefix, which {@link UploadInfo.size} already states), and a
    * finished parts upload is covered end to end by construction.
    *
-   * `size` remains the only field a READER may act on — it is the contiguous
-   * prefix, so it is how far the bytes can be read, and a range past it is a hole
-   * whatever this says. What this is for is the UPLOADER: a client re-sending a
-   * parts upload can skip the windows that are already stored instead of sending
-   * the file again, which is the difference between resuming a recording and
-   * starting it over.
+   * **A READER may act on it, and {@link readUpload} already does.** This used to
+   * say `size` was the only field a reader could trust, on the ground that a range
+   * past the prefix names bytes with a hole in front of them. The bytes are still
+   * there — the store maps a window onto the objects covering it and never
+   * consults the prefix — so what the rule really protected was a read STRADDLING
+   * a hole, and clamping to the containing run protects that exactly while making
+   * a landed window readable. Without it a parts upload publishes nothing a run
+   * can use until its first window lands, which under a fan-out is the end of the
+   * upload; `readableEnd` carries the measurement.
+   *
+   * The other reader is the UPLOADER: a client re-sending a parts upload can skip
+   * the windows that are already stored instead of sending the file again, which
+   * is the difference between resuming a recording and starting it over.
    *
    * Sorted, non-overlapping, and half-open like every other range here.
    *
@@ -377,13 +384,42 @@ export async function readUpload(id: string, opts: ReadUploadOptions = {}): Prom
   const reader = requireUploadAccess();
   const info = await reader.info(id);
   if (!info) throw new Error(`No upload with id ${id}`);
-  const start = clamp(opts.start ?? 0, 0, info.size);
-  const end = clamp(opts.end ?? info.size, start, info.size);
+  const ceiling = readableEnd(info, opts.start ?? 0);
+  const start = clamp(opts.start ?? 0, 0, ceiling);
+  const end = clamp(opts.end ?? info.size, start, ceiling);
   // An empty window is answered without touching the store: it is a legal ask
   // (a zero-length trailing segment) and every backend would have to special
   // case it anyway.
   const bytes = end > start ? await reader.read(id, start, end) : new Uint8Array(0);
   return { info, bytes, start, end };
+}
+
+/**
+ * How far a read starting at `start` may go: the end of the stored run it falls in.
+ *
+ * {@link UploadInfo.size} is the CONTIGUOUS PREFIX, and clamping to it alone is
+ * why a window that is fully stored can still read as empty. That is the ordinary
+ * case for a parts upload rather than an edge one: the browser sends
+ * `UPLOAD_PART_CONCURRENCY` windows of `UPLOAD_PART_BYTES` at once, so they share
+ * the uplink and land together — the prefix is 0 until the FIRST part completes,
+ * which is within a second of the last one. Measured on a deployed agent, a 27 MB
+ * recording at 0.9 MB/s: `size` was 0 for 45 of 45 seconds, then the whole file.
+ * A run watching that upload sees nothing to work on until it is over, which is
+ * exactly the wait streaming exists to remove.
+ *
+ * So the ceiling is the end of the run CONTAINING `start`, never `end`'s own run:
+ * a window that begins inside stored bytes and runs into a hole must still stop at
+ * the hole. `Math.max` with `size` keeps every prefix read byte-identical to what
+ * it was — the prefix IS a run, and a `start` in no run at all clamps to the
+ * prefix and reads nothing, as before.
+ *
+ * `ranges` is absent for every upload that is not an unfinished parts upload
+ * (a whole-file write has no windows; a finished one is covered end to end), so
+ * this is a no-op everywhere else.
+ */
+function readableEnd(info: UploadInfo, start: number): number {
+  const run = info.ranges?.find((range) => range.start <= start && start < range.end);
+  return Math.max(info.size, run?.end ?? 0);
 }
 
 /**

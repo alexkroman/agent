@@ -38,7 +38,14 @@ import {
   NORMALIZED_SAMPLE_RATE,
   normalizeRecording,
 } from "./workflows/normalize.ts";
-import { expectedSegments, planStreamed, probeUpload } from "./workflows/stream.ts";
+import {
+  expectedSegments,
+  planStreamed,
+  probeUpload,
+  segmentStored,
+  storedBytes,
+  type UploadProgressView,
+} from "./workflows/stream.ts";
 import {
   mergeTranscript,
   splitRecording,
@@ -666,7 +673,92 @@ describe("the streaming flow", () => {
     publishPartial(1000, 320_000);
     // The poll the body runs. `complete` is separate from `size` because a size that
     // stopped growing is not a claim that the file is finished.
-    await expect(probeUpload(UPLOAD_ID)).resolves.toEqual({ size: 44 + 1000, complete: false });
+    // `stored` equals `size` here and only here: a whole-file upload's bytes ARE
+    // its prefix, and the store publishes no windows for one.
+    await expect(probeUpload(UPLOAD_ID)).resolves.toEqual({
+      size: 44 + 1000,
+      complete: false,
+      stored: 44 + 1000,
+    });
+  });
+
+  /**
+   * A poll of a parts upload: `landed` windows of a `declared`-byte file.
+   *
+   * Built by hand rather than through `stubUploads`, which models an upload as one
+   * contiguous buffer and so cannot express a HOLE — which is the entire state under
+   * test. These two functions are pure over a poll's result, so a literal is the
+   * whole fixture.
+   */
+  function poll(landed: readonly [number, number][], declared: number): UploadProgressView {
+    const ranges = landed.map(([start, end]) => ({ start, end }));
+    const prefix = ranges.find((range) => range.start === 0)?.end ?? 0;
+    return {
+      size: prefix,
+      complete: prefix >= declared,
+      stored: storedBytes(prefix, ranges),
+      ranges,
+    };
+  }
+
+  test("segmentStored reads a landed window the PREFIX cannot see", () => {
+    // The state the browser's default fan-out produces and the reason this flow
+    // was a no-op against it: eight windows go up at once, share the uplink, and
+    // finish together — so nothing starts at byte zero until the very end. Measured
+    // on a deployed agent, a 27 MB recording at 0.9 MB/s reported `size: 0` at every
+    // poll for 45 seconds and then the whole file.
+    const at = poll([[8000, 24_000]], 32_000);
+    expect(at.size).toBe(0);
+    expect(segmentStored({ index: 1, start: 8000, end: 16_000, startMs: 0, endMs: 0 }, at)).toBe(
+      true,
+    );
+    // And the prefix arm still answers on its own, which is what keeps a whole-file
+    // upload (no windows at all) behaving exactly as it did.
+    expect(segmentStored({ index: 0, start: 0, end: 4000, startMs: 0, endMs: 0 }, at)).toBe(false);
+  });
+
+  test("segmentStored refuses a window that STRADDLES a hole", () => {
+    // A run is contiguous, so containment in one is the whole test — and it has to
+    // be, because `readUpload` clamps to the run a read starts in. A segment
+    // spanning two runs would come back short and be transcribed as a fragment,
+    // which is a wrong transcript rather than a failed one.
+    const at = poll(
+      [
+        [0, 8000],
+        [16_000, 24_000],
+      ],
+      32_000,
+    );
+    expect(segmentStored({ index: 1, start: 4000, end: 20_000, startMs: 0, endMs: 0 }, at)).toBe(
+      false,
+    );
+    expect(segmentStored({ index: 2, start: 16_000, end: 24_000, startMs: 0, endMs: 0 }, at)).toBe(
+      true,
+    );
+  });
+
+  test("storedBytes counts the WINDOWS, so a moving upload never reads as stalled", () => {
+    // The other half of the fix. Judge a stall on the prefix and a parts upload
+    // running at full speed reports the same number at every poll — so the run
+    // abandons it after MAX_IDLE_POLLS with the bytes still arriving.
+    const first = poll([[8000, 16_000]], 32_000);
+    const later = poll(
+      [
+        [8000, 16_000],
+        [24_000, 32_000],
+      ],
+      32_000,
+    );
+    expect(first.size).toBe(later.size);
+    expect(later.stored).toBeGreaterThan(first.stored);
+  });
+
+  test("storedBytes does not double-count the prefix", () => {
+    // `ranges` COVERS the prefix rather than sitting beside it, so summing the two
+    // would report a growing total for an upload that had stopped.
+    expect(storedBytes(8000, [{ start: 0, end: 8000 }])).toBe(8000);
+    // And an upload with no windows at all is its prefix.
+    expect(storedBytes(8000, undefined)).toBe(8000);
   });
 
   test("probeUpload reports complete once it is", async () => {

@@ -35,6 +35,32 @@
  * transcript of most of a recording and report success. The stall is what
  * {@link MAX_IDLE_POLLS} is for, and it FAILS the run rather than finishing it.
  *
+ * ## A poll reads THREE numbers, and each answers a different question
+ *
+ * `size` is the CONTIGUOUS PREFIX, `stored` is every byte that has landed, and
+ * `ranges` is where those bytes are. They are one number only for a whole-file
+ * upload; under the browser's default fan-out they diverge completely, and reading
+ * the wrong one is two separate bugs:
+ *
+ * - **Readiness on the prefix alone made this flow a no-op.** The client sends
+ *   `UPLOAD_PART_CONCURRENCY` windows of `UPLOAD_PART_BYTES` at once, so every part
+ *   of any recording that fits in one round shares the uplink and they all finish
+ *   together. The prefix cannot move until the FIRST part completes, which is
+ *   within a second of the last. Measured on a deployed agent, a 27 MB recording at
+ *   0.9 MB/s: `size` was 0 at every poll for 45 seconds and then the whole file, so
+ *   the run planned nothing, transcribed nothing, and did its entire fan-out after
+ *   the upload — the classic flow, with extra steps. `segmentStored` reads `ranges`
+ *   instead, and `readUpload` clamps to the run a read starts in rather than to the
+ *   prefix, so a window that has landed is a window this flow can work on.
+ * - **The stall test on the prefix would then FAIL a healthy upload.** A parts
+ *   upload moving at full speed reports the same prefix at every poll, which is
+ *   indistinguishable from a dead client — so past {@link MAX_IDLE_POLLS} the run
+ *   abandons an upload that is still arriving. It reads `stored`, which grows with
+ *   every window whatever order they land in.
+ *
+ * `size` keeps the two jobs only it can do: the header probe (which reads from byte
+ * zero) and the finished recording's duration.
+ *
  * ## It really does overlap, and the granularity is a SEGMENT
  *
  * Watched directly — the same 10-minute recording at 2 MB/s, polling the upload's
@@ -60,8 +86,11 @@
  *
  * - a segment is `SEGMENT_SECONDS + SEGMENT_OVERLAP_SECONDS` of audio — ~17.6 MB at
  *   48 kHz stereo, which is ~9s of a 2 MB/s uplink;
- * - the store publishes `size` a `UPLOAD_CHUNK_BYTES` chunk at a time (1 MiB), so the
- *   view a poll reads is at most a megabyte stale;
+ * - the store publishes bytes an `UPLOAD_PART_BYTES` window at a time (8 MiB), so the
+ *   view a poll reads is up to a window stale. This paragraph said 1 MiB, naming
+ *   `UPLOAD_CHUNK_BYTES`, which is the chunk a range READ is served in and not the
+ *   unit a write publishes: `putWindows` cuts a body into `UPLOAD_PART_BYTES`
+ *   windows so one byte layout serves every route an upload can arrive by;
  * - the body sleeps {@link POLL_INTERVAL} between polls when nothing is ready, cut
  *   short by the client's wake.
  *
@@ -138,9 +167,15 @@
  * what keeps that order a pure function of journaled values.
  */
 
-import { mapConcurrent, readUpload, report, uploadInfo } from "@alexkroman1/aai/step";
+import {
+  mapConcurrent,
+  readUpload,
+  report,
+  type UploadRange,
+  uploadInfo,
+} from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
-import { formatDuration, plural } from "@alexkroman1/aai/utils";
+import { formatDuration, omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { sleep } from "workflow";
 import {
   fatalOnUnsupported,
@@ -179,10 +214,32 @@ const MAX_IDLE_POLLS = 60;
 
 /** What one poll of the upload found. */
 export type UploadProgressView = {
-  /** Bytes stored so far. */
+  /**
+   * The CONTIGUOUS PREFIX — how far the file can be read from byte zero.
+   *
+   * Not how much has arrived: see {@link UploadProgressView.stored}. It is what
+   * the header probe and the final duration are measured against, because both
+   * want a length rather than a coverage map.
+   */
   size: number;
   /** Whether that is all of them. The ONLY field an exit may be decided on. */
   complete: boolean;
+  /**
+   * Total bytes landed, prefix and windows ahead of it alike.
+   *
+   * The one number a STALL may be judged on. `size` cannot be: a fan-out lands
+   * its windows out of order, so the prefix stays at zero through an upload that
+   * is moving at full speed and {@link MAX_IDLE_POLLS} would call it dead.
+   */
+  stored: number;
+  /**
+   * The windows that have landed, when the upload arrived as parts.
+   *
+   * Absent for a whole-file write, whose bytes are the prefix and nothing else.
+   * This is what makes a segment readable before the windows in front of it
+   * arrive — see the readiness test in the body.
+   */
+  ranges?: readonly UploadRange[];
 };
 
 /** The cut, derived once from the header. */
@@ -208,10 +265,20 @@ export async function transcribeStreamFlow(input: { recording: string }) {
   const done = new Set<number>();
   const parts: SegmentTranscript[] = [];
   let idlePolls = 0;
-  let lastSize = -1;
+  // The prefix at the last poll, which is what the final duration is measured
+  // from — and deliberately NOT what the stall test reads; see `lastStored`.
+  let lastSize = 0;
+  // Total bytes landed at the last poll. A fan-out lands its windows out of
+  // order, so this is the only number that distinguishes an upload that has
+  // stopped from one whose prefix has not caught up yet.
+  let lastStored = -1;
 
   for (;;) {
     const at = await probeUpload(input.recording);
+    // Every poll, because this is only ever read at the END — the run breaks out
+    // on a `complete` view, whose prefix is the whole file. Updating it inside a
+    // branch is how it used to end up describing whichever poll last had work.
+    lastSize = at.size;
 
     // The header has to be present before anything can be planned, and it is the
     // first thing to arrive. `complete` also qualifies, for a recording shorter
@@ -229,11 +296,11 @@ export async function transcribeStreamFlow(input: { recording: string }) {
       const ready = plan.segments.filter(
         (segment) =>
           !done.has(segment.index) &&
-          (segment.end <= at.size || (at.complete && segment.start < at.size)),
+          (segmentStored(segment, at) || (at.complete && segment.start < at.size)),
       );
       if (ready.length > 0) {
         idlePolls = 0;
-        lastSize = at.size;
+        lastStored = at.stored;
         for (const segment of ready) done.add(segment.index);
         // One step per segment, bounded, in an order a replay reproduces exactly —
         // `ready` is derived from a journaled poll, and `mapConcurrent` issues its
@@ -259,18 +326,21 @@ export async function transcribeStreamFlow(input: { recording: string }) {
 
     // Nothing to work on, so this view is current and the exit can be trusted.
     if (at.complete && plan && done.size >= expectedSegments(plan, at.size)) break;
-    // A stall, not an ending — see MAX_IDLE_POLLS.
-    if (at.size === lastSize) idlePolls += 1;
+    // A stall, not an ending — see MAX_IDLE_POLLS. Judged on `stored` rather than
+    // on the prefix: under the browser's default fan-out the prefix does not move
+    // at all until the first window lands, so a run reading it would call a
+    // healthy upload abandoned five minutes in and fail.
+    if (at.stored === lastStored) idlePolls += 1;
     else {
       idlePolls = 0;
-      lastSize = at.size;
+      lastStored = at.stored;
     }
     if (idlePolls > MAX_IDLE_POLLS) abandon(input.recording, at);
     await sleep(POLL_INTERVAL);
   }
 
   const finished = plan;
-  if (!finished) abandon(input.recording, { size: 0, complete: false });
+  if (!finished) abandon(input.recording, { size: 0, complete: false, stored: 0 });
   return await mergeTranscript(
     input.recording,
     offsetToMs(finished.format, Math.min(finished.format.dataEnd, lastSize)),
@@ -292,7 +362,56 @@ export async function probeUpload(id: string): Promise<UploadProgressView> {
   "use step";
 
   const info = await uploadInfo(id);
-  return { size: info.size, complete: info.complete };
+  return {
+    size: info.size,
+    complete: info.complete,
+    stored: storedBytes(info.size, info.ranges),
+    // `omitUndefined` rather than a spread, because a journaled step result is
+    // compared on replay and `{ ranges: undefined }` is not `{}` once it has been
+    // through JSON.
+    ...omitUndefined({ ranges: info.ranges }),
+  };
+}
+
+/**
+ * How many bytes have landed in total, prefix and detached windows alike.
+ *
+ * `ranges` COVERS the prefix when it is present (it is every window the record
+ * holds, merged), so this is the larger of the two rather than their sum — adding
+ * them would double-count the prefix and make a stalled upload look like it was
+ * still growing, which is the one thing {@link MAX_IDLE_POLLS} must not be lied
+ * to about.
+ */
+export function storedBytes(size: number, ranges: readonly UploadRange[] | undefined): number {
+  if (!ranges) return size;
+  return Math.max(
+    size,
+    ranges.reduce((total, range) => total + (range.end - range.start), 0),
+  );
+}
+
+/**
+ * Whether every byte of `segment` is stored, wherever in the file it landed.
+ *
+ * The prefix answers most of this — a whole-file upload has no windows and a
+ * finished one is covered end to end — and the `ranges` arm is what makes the
+ * streaming flow work against the browser's DEFAULT upload. That fan-out puts
+ * `UPLOAD_PART_CONCURRENCY` windows on the link at once, so they finish together
+ * and the prefix is zero until the last moment; measured on a deployed agent, a
+ * 27 MB recording at 0.9 MB/s reported `size: 0` for 45 of its 45 seconds. Read
+ * only the prefix and the run has nothing to do until the upload is over, which
+ * is the entire wait this flow exists to remove.
+ *
+ * A window has to be covered WHOLE by one run: `readUpload` clamps to the run a
+ * read starts in, so a segment straddling a hole would come back short and be
+ * transcribed as a fragment. `rangesOf` merges adjacent windows, so a run really
+ * is a contiguous stretch and one containment test is the whole check.
+ */
+export function segmentStored(segment: Segment, at: UploadProgressView): boolean {
+  if (segment.end <= at.size) return true;
+  return (at.ranges ?? []).some(
+    (range) => range.start <= segment.start && segment.end <= range.end,
+  );
 }
 
 /**
@@ -356,7 +475,8 @@ export function expectedSegments(plan: StreamPlan, size: number): number {
  */
 function abandon(id: string, at: UploadProgressView): never {
   throw new Error(
-    `Gave up waiting for ${id}: ${at.size} byte(s) stored and still incomplete. ` +
-      `Nothing new arrived for ${MAX_IDLE_POLLS} polls — the uploader stopped.`,
+    `Gave up waiting for ${id}: ${at.stored} byte(s) stored, ${at.size} readable from the ` +
+      `start, and still incomplete. Nothing new arrived for ${MAX_IDLE_POLLS} polls — the ` +
+      "uploader stopped.",
   );
 }
