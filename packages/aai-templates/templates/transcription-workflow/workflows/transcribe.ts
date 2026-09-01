@@ -63,6 +63,7 @@
  *   `output` exists only when the last segment does.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import {
   emit,
   encodeWav,
@@ -236,9 +237,7 @@ export type SegmentTranscript = {
  * The input is what `POST /workflows/runs` carries — see `agent.ts` for the
  * schema it is validated against before a run exists.
  */
-export async function transcribeFlow(input: { recording: string }) {
-  "use workflow";
-
+export async function transcribeFlow(input: { recording: string }, ctx: WorkflowCtx) {
   // Both at once: neither needs the other, and issued together they are one
   // round trip instead of two before any audio is read. The ORDER is still a
   // pure function of this line — the two calls go out synchronously, left to
@@ -247,12 +246,16 @@ export async function transcribeFlow(input: { recording: string }) {
   // The clock starts before the conversion rather than after it, because a
   // reader comparing the three flows over one file is comparing what the desk
   // COST them, and re-encoding an m4a is part of that.
-  const [startedAt, ready] = await Promise.all([startClock(), normalizeRecording(input.recording)]);
+  // `maxAttempts: 6` was `normalizeRecording.maxRetries = 5`.
+  const [startedAt, ready] = await Promise.all([
+    ctx.step("startClock", () => startClock()),
+    ctx.step("normalizeRecording", () => normalizeRecording(input.recording), { maxAttempts: 6 }),
+  ]);
 
   // `ready.recording` from here on, not `input.recording`: a converted file is a
   // DIFFERENT upload, and cutting the original by offsets planned against the
   // converted one is a fan-out of garbage that still reports success.
-  const plan = await splitRecording(ready.recording);
+  const plan = await ctx.step("splitRecording", () => splitRecording(ready.recording));
 
   // One step per segment, bounded, in an order a replay reproduces exactly.
   // A failed segment fails the RUN, deliberately: every sibling that finished is
@@ -260,13 +263,18 @@ export async function transcribeFlow(input: { recording: string }) {
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
   const parts = await mapConcurrent(plan.segments, segmentConcurrency(plan.format), (segment) =>
-    transcribeSegment(ready.recording, plan.format, segment),
+    // `maxAttempts: 6` was `transcribeSegment.maxRetries = 5`.
+    ctx.step("transcribeSegment", () => transcribeSegment(ready.recording, plan.format, segment), {
+      maxAttempts: 6,
+    }),
   );
 
   // The ORIGINAL id, and only here: `mergeTranscript` uses it for the filename a
   // reader sees, and `standup.m4a` is the recording they uploaded — where the
   // converted copy is an artifact of how the desk works.
-  return await mergeTranscript(input.recording, plan.durationMs, parts, startedAt);
+  return await ctx.step("mergeTranscript", () =>
+    mergeTranscript(input.recording, plan.durationMs, parts, startedAt),
+  );
 }
 
 /**
@@ -283,8 +291,6 @@ export async function splitRecording(uploadId: string): Promise<{
   segments: Segment[];
   durationMs: number;
 }> {
-  "use step";
-
   const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
   const format = fatalOnUnsupported(() => parseWav(head.bytes, head.info.size));
   const segments = fatalOnUnsupported(() => planSegments(format));
@@ -308,8 +314,6 @@ export async function transcribeSegment(
   format: WavFormat,
   segment: Segment,
 ): Promise<SegmentTranscript> {
-  "use step";
-
   // One line per segment, which is what makes the fan-out legible to a page: the
   // status is `running` for the whole thing, so without this a sixty-segment
   // recording and a one-segment recording look identical while they run.
@@ -368,7 +372,6 @@ export async function transcribeSegment(
  * Retries beyond the default 3, because a rate limit is the expected failure and
  * a segment that 429s is not a segment that is wrong.
  */
-transcribeSegment.maxRetries = 5;
 
 /**
  * Stitch the segments into one transcript.
@@ -385,8 +388,6 @@ export async function mergeTranscript(
   parts: readonly SegmentTranscript[],
   startedAt: number,
 ): Promise<Transcript> {
-  "use step";
-
   await report(`Stitching ${parts.length} ${plural(parts.length, "segment")} together.`);
 
   // `mapConcurrent` resolves in ITEM order however the calls settled, so this is
@@ -427,8 +428,6 @@ export async function mergeTranscript(
  * which needs one number measured one way.
  */
 export async function startClock(): Promise<number> {
-  "use step";
-
   return Date.now();
 }
 

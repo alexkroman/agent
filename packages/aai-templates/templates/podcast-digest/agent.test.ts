@@ -10,7 +10,7 @@
  * - The DECLARATION — the config a deploy validates and the schema a `start()`
  *   is checked against.
  * - The PURE helpers, pulled out of the flow for exactly this reason.
- * - The STEPS, directly. Imported with no bundler in the path a `"use step"`
+ * - The STEPS, directly. A step is an ordinary exported async function, so one
  *   function is an ordinary async function, so its HTTP handling, its
  *   partial-failure policy and its `FatalError` guards are all reachable —
  *   `installStubStepFetch` answers the network and `stubGateway` answers the model.
@@ -21,7 +21,7 @@
  * that fails to transcribe taking the whole digest down with it.
  */
 
-import { parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
+import { createWorkflowCtx, parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
   installStubGateway as stubGateway,
@@ -29,7 +29,9 @@ import {
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import {
+  dailyDigestFlow,
   formatScheduleInterval,
+  POLL_DELAY_MS,
   pollTranscript,
   scheduleIntervalMs,
   submitTranscript,
@@ -712,5 +714,109 @@ describe("posting the digest", () => {
     expect((err as Error).message).toContain("503");
     // NOT fatal — a `FatalError` here would drop a digest over a blip.
     expect((err as Error).name).not.toBe("FatalError");
+  });
+});
+
+describe("the body — the run that IS the schedule", () => {
+  /**
+   * The body driven end to end with no I/O.
+   *
+   * `runSteps: false` plus a skeleton of results: what this pins is the body's
+   * own logic — the digest loop, the shrinking pending set in
+   * `waitForTranscripts`, and the sleep between digests — none of which any
+   * per-step spec can see, and all of which is the template's actual subject.
+   */
+  function driveTwoDigests(pollResults: unknown) {
+    const ctx = createWorkflowCtx({
+      runSteps: false,
+      results: {
+        discoverEpisodes: [EPISODE],
+        submitTranscript: { id: EPISODE.id, transcriptId: "t_1" },
+        pollTranscript: pollResults,
+        summarizeTranscript: EPISODE,
+        postDigest: { ok: true },
+        timestamp: "2026-08-21T00:00:00.000Z",
+      },
+    });
+    return { ctx };
+  }
+
+  test("sends one digest per interval and sleeps BETWEEN them, never after the last", async () => {
+    // A run that has delivered everything it owes should end, not sleep for a
+    // day and then end.
+    const { ctx } = driveTwoDigests({
+      id: EPISODE.id,
+      transcriptStatus: "completed",
+      transcript: "words",
+    });
+
+    const output = await dailyDigestFlow(
+      {
+        ...VALID,
+        slackWorkflowTextParam: "text",
+        daysToRun: 2,
+        maxEpisodesPerDigest: 1,
+        intervalEvery: 2,
+        intervalUnit: "hours",
+      },
+      ctx,
+    );
+
+    expect(output.digestsSent).toBe(2);
+    expect(output.digestsScheduled).toBe(2);
+    // Two digests, ONE sleep.
+    expect(ctx.slept).toHaveLength(1);
+    expect(ctx.slept[0]?.until).toBe(scheduleIntervalMs(2, "hours"));
+    expect(ctx.steps.filter((step) => step.name === "postDigest")).toHaveLength(2);
+  });
+
+  test("reports the last digest it actually sent", async () => {
+    const { ctx } = driveTwoDigests({
+      id: EPISODE.id,
+      transcriptStatus: "completed",
+      transcript: "words",
+    });
+
+    const output = await dailyDigestFlow(
+      {
+        ...VALID,
+        slackWorkflowTextParam: "text",
+        daysToRun: 1,
+        maxEpisodesPerDigest: 1,
+        intervalEvery: 1,
+        intervalUnit: "days",
+      },
+      ctx,
+    );
+
+    expect(output.lastDigest).toMatchObject({
+      sentAt: "2026-08-21T00:00:00.000Z",
+      episodes: [EPISODE],
+    });
+    expect(ctx.slept).toEqual([]);
+  });
+
+  test("gives up on an episode that never finishes rather than failing the digest", async () => {
+    // Running out of poll rounds is NOT an error: a partial digest beats none,
+    // and the reason is printed where a reader will see it. The poll answers
+    // `submitted` forever, so the loop exhausts its rounds.
+    const { ctx } = driveTwoDigests({ id: EPISODE.id, transcriptStatus: "submitted" });
+
+    const output = await dailyDigestFlow(
+      {
+        ...VALID,
+        slackWorkflowTextParam: "text",
+        daysToRun: 1,
+        maxEpisodesPerDigest: 1,
+        intervalEvery: 1,
+        intervalUnit: "days",
+      },
+      ctx,
+    );
+
+    expect(output.digestsSent).toBe(1);
+    // Every round slept except the last, which is what bounds the wait.
+    expect(ctx.slept.length).toBeGreaterThan(0);
+    for (const sleep of ctx.slept) expect(sleep.until).toBe(POLL_DELAY_MS);
   });
 });

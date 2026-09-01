@@ -121,6 +121,16 @@ export type HookRecord = {
   /** True once somebody signalled. `payload` is only meaningful then. */
   delivered: boolean;
   payload?: unknown;
+  /**
+   * True once the wait's WINDOW closed unanswered, so no signal may be taken.
+   *
+   * Not cosmetic, and not the same as `delivered`. A body whose
+   * `waitFor(token, { timeoutMs })` timed out has already returned `undefined`
+   * and moved on; if a signal could still land, the next replay would read a
+   * payload, take the ANSWERED branch, and the two walks of the body would
+   * disagree about what happened. Closing it is what keeps the answer a fact.
+   */
+  closed?: boolean;
 };
 
 /**
@@ -218,11 +228,19 @@ export type JournalStore = {
    */
   claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
   /**
+   * Refuse any further signal for this wait, the window having closed.
+   *
+   * Called by the engine on the timeout path, BEFORE the body continues — see
+   * {@link HookRecord.closed} for the divergence it prevents.
+   */
+  closeHook(runId: string, key: string): Promise<void>;
+  /**
    * Deliver `payload` to whatever holds `token`.
    *
    * Resolves the run id that was waiting, or `undefined` when nothing holds the
-   * token — the ORDINARY answer, since a token whose run has moved on, finished
-   * or never started is indistinguishable to a caller and needs no error.
+   * token — the ORDINARY answer, since a token whose run has moved on, finished,
+   * closed its window or never started is indistinguishable to a caller and
+   * needs no error.
    *
    * Addressed by TOKEN rather than by run id because that is what the signaller
    * knows: it is answering a question, not driving a particular run.

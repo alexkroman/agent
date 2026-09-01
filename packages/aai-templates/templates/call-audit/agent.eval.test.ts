@@ -45,7 +45,7 @@
 //   * the VOICE — see `speakATone` below, which carries both reasons.
 //
 // WHAT NO EVAL HERE COVERS: durability. Imported through vitest with no bundler
-// in the path, a `"use workflow"` body is an ordinary async function — no
+// in the path, a workflow body is an ordinary async function — no
 // journal, no replay, and no per-step retry, so the resume-after-segment-27
 // property is NOT exercised and a rate-limited live run fails where a deployed
 // one would have ridden it out. `aai-cli`'s `dev-workflow.scenario.test.ts` is

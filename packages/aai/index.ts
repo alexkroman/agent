@@ -249,6 +249,7 @@ export {
   DEFAULT_STEP_MAX_ATTEMPTS,
   type SleepOptions,
   type StepOptions,
+  type WaitForOptions,
   type WorkflowClient,
   // What a workflow BODY is handed. An author annotates a body's second
   // parameter with it, which is the membership test this barrel applies.

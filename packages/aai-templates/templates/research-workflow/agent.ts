@@ -48,7 +48,7 @@
  *
  * ## What is NOT here
  *
- * No `ctx.step`, no `ctx.waitFor`. Steps are `"use step"` functions in
+ * The body composes them with `ctx.step`. The functions themselves live in
  * `workflows/research.ts` and waitpoints are the Workflow DevKit's own
  * `defineHook()`. The SDK's job is declaring the workflow and starting runs; the
  * durable execution belongs to `workflow`.

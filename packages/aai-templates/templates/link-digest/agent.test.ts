@@ -13,19 +13,25 @@
  * The workflow BODY is not tested here: it is only durable once the Workflow
  * DevKit's build has transformed it, so a unit test of it would exercise a plain
  * async function and prove nothing about replay. Its STEPS are, and directly —
- * imported with no bundler in the path a `"use step"` function is an ordinary
+ * a step is an ordinary exported async function, so
  * async function, so its HTML handling, its JSON contract with the model and its
  * `FatalError` guards are all testable.
  */
 
-import { schemaInputIssues } from "@alexkroman1/aai/testing";
+import { createWorkflowCtx, schemaInputIssues } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
-import { extractText, extractTitle, fetchArticle, summarize } from "./workflows/digest.ts";
+import {
+  digestFlow,
+  extractText,
+  extractTitle,
+  fetchArticle,
+  summarize,
+} from "./workflows/digest.ts";
 
 describe("the agent declares itself a workflow app", () => {
   test("under the name the page starts a run by", () => {
@@ -208,7 +214,21 @@ describe("summarize", () => {
     await expect(summarize(ARTICLE)).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
   });
 
-  test("retries beyond the default, because a rate limit and a bad format both happen", () => {
-    expect(summarize.maxRetries).toBeGreaterThan(3);
+  test("is called with more attempts than the default, because a rate limit and a bad format both happen", async () => {
+    // The retry policy is an argument to `ctx.step` now, not a `maxRetries`
+    // property on the function — so the assertion is about the BODY's call,
+    // which is the only place the policy is observable at all. `runSteps: false`
+    // because the subject is the declared policy rather than the work: the steps
+    // would otherwise need a page and a model.
+    const ctx = createWorkflowCtx({ runSteps: false });
+    await digestFlow({ url: "https://example.com/a" }, ctx);
+
+    const summarizeStep = ctx.steps.find((step) => step.name === "summarize");
+    expect(summarizeStep?.maxAttempts).toBeGreaterThan(3);
+    // The order is the body's, and it is worth pinning beside the policy: the
+    // fetch is separate from the model call precisely so a rate-limited
+    // summarize replays the fetch from the journal instead of hitting a
+    // stranger's server again.
+    expect(ctx.steps.map((step) => step.name)).toEqual(["fetchArticle", "summarize", "file"]);
   });
 });

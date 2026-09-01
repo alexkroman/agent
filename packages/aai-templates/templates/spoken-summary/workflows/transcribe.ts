@@ -22,12 +22,14 @@
  *
  * ## The steps are still OURS, and they have to be
  *
- * The SDK cannot ship a `"use step"`: the Workflow DevKit's builder transforms
- * exactly the files under this `workflows/` directory, so a directive inside a
- * dependency would be transformed by nothing and would run inline with no
- * journal and no retry, silently. The SDK owns what happens INSIDE a step; the
- * boundaries — which is to say, what gets journaled and what a retry repeats —
- * are the app's.
+ * A step is a `ctx.step(name, fn)` in the BODY, and only the body holds a `ctx` —
+ * so the SDK could not declare one even if it wanted to. That is a better
+ * boundary than the one it replaced: under the DevKit a step directive shipped
+ * inside a dependency was transformed by nothing and ran inline with no journal
+ * and no retry, SILENTLY, and the rule was a convention this comment had to
+ * state. Now the SDK owns what happens INSIDE a step and the app owns which
+ * steps exist — which is to say what gets journaled and what a retry repeats —
+ * and neither can accidentally take the other's half.
  *
  * **The async API rather than the sync one, and the choice is about the FORM.**
  * The sync endpoint (`stepTranscribeSync`) answers inside the request and pays
@@ -46,13 +48,17 @@ import {
 } from "@alexkroman1/aai/step-errors";
 import { countWords, formatBytes } from "@alexkroman1/aai/utils";
 
-/** How long between polls of a submitted job. */
-export const POLL_INTERVAL = "10s";
+/**
+ * How long between polls of a submitted job.
+ *
+ * Milliseconds: `ctx.sleep` takes a number or a `Date` and no duration STRING.
+ */
+export const POLL_INTERVAL_MS = 10_000;
 
 /**
  * Polls before the run gives up on a job.
  *
- * At {@link POLL_INTERVAL} this is an hour, well past what the async API takes
+ * At {@link POLL_INTERVAL_MS} this is an hour, well past what the async API takes
  * for any recording it accepts. Bounded rather than endless because a job that
  * never leaves `queued` is a run that would otherwise be replayed forever.
  */
@@ -86,8 +92,6 @@ export type Transcript = {
  * same way for the same reason.
  */
 export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: string }> {
-  "use step";
-
   const stored = await uploadInfo(uploadId);
   await report(
     `Uploading ${stored.name || uploadId} (${formatBytes(stored.size)}) for transcription.`,
@@ -96,12 +100,9 @@ export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: st
 }
 
 /** Retries beyond the default 3: an upload is the one call here worth another attempt. */
-uploadToProvider.maxRetries = 5;
 
 /** Create the transcription job, and answer with the id that outlives this run. */
 export async function createJob(audioUrl: string): Promise<{ id: string }> {
-  "use step";
-
   const job = await stepTranscribeSubmitClassified(audioUrl);
   await report(`Transcribing — job ${job.id}.`);
   return job;
@@ -120,8 +121,6 @@ export async function pollTranscript(
   uploadId: string,
   id: string,
 ): Promise<{ done: false } | { done: true; transcript: Transcript }> {
-  "use step";
-
   const progress = await stepTranscribePollClassified(id);
   if (!progress.done) return { done: false };
 

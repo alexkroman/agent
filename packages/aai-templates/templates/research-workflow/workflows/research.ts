@@ -49,11 +49,11 @@
  * researcher CONCLUDED, which is exactly what the step returns.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { mapConcurrent, report } from "@alexkroman1/aai/step";
 import { stepGenerateClassified, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { errorMessage, isToolFailure, plural } from "@alexkroman1/aai/utils";
-import { sleep } from "workflow";
 import { z } from "zod";
 import {
   BRIEF_SUMMARY_SYSTEM,
@@ -82,7 +82,7 @@ const ANGLE_CONCURRENCY = 2;
  * use; what makes either affordable is that the run is SUSPENDED rather than
  * blocked, so the sandbox is free to exit and the run resumes when it comes due.
  */
-const REVIEW_DELAY = "30 seconds";
+export const REVIEW_DELAY_MS = 30_000;
 
 /** Most angles a wave may carry, whatever the supervisor asks for. */
 const MAX_ANGLES = 4;
@@ -208,35 +208,46 @@ export type Findings = {
  * is for. `agent.ts` starts this with `notify`, so the agent says so when it
  * lands rather than waiting to be asked.
  *
- * The `sleep` on top is the review wait — the one suspension in the template,
- * and what `file_it_now` skips with `wakeUp`.
+ * The `ctx.sleep` on top is the review wait — the one suspension in the template,
+ * and what `file_it_now` skips with `wake`.
  */
-export async function researchFlow(input: { topic: string; requestedBy: string }) {
-  "use workflow";
+export async function researchFlow(
+  input: { topic: string; requestedBy: string },
+  ctx: WorkflowCtx,
+) {
+  const brief = await ctx.step("writeBrief", () => writeBrief(input.topic));
+  const angles = await ctx.step("planAngles", () => planAngles(brief));
 
-  const brief = await writeBrief(input.topic);
-  const angles = await planAngles(brief);
-
-  // One step per angle, bounded, in an order a replay reproduces exactly. A
-  // failed angle fails the RUN: its finished siblings are already journaled, so
-  // the resume replays them for free and re-issues only what is missing, where
-  // catching here would file a report with a silent hole in it.
+  // One step per angle, bounded, in an order a replay reproduces exactly —
+  // `mapConcurrent` hands out items from a monotonic cursor, so the Nth call
+  // ISSUED is item N whatever order they settle in, and the Nth call is
+  // `investigate#N`. A failed angle fails the RUN: its finished siblings are
+  // already journaled, so the resume replays them for free and re-issues only
+  // what is missing, where catching here would file a report with a silent hole
+  // in it. `maxAttempts: 5` was `investigate.maxRetries = 4`.
   const first = await mapConcurrent(angles, ANGLE_CONCURRENCY, (angle) =>
-    investigate(brief, angle),
+    ctx.step("investigate", () => investigate(brief, angle), { maxAttempts: 5 }),
   );
 
   // The supervisor's second look. Usually empty — a second wave costs the caller
   // minutes, and the prompt says so.
-  const gaps = await findGaps(brief, first);
-  const second = await mapConcurrent(gaps, ANGLE_CONCURRENCY, (angle) => investigate(brief, angle));
+  const gaps = await ctx.step("findGaps", () => findGaps(brief, first));
+  // A DIFFERENT step name from the first wave, though it calls the same
+  // function. Two waves under one name would share one occurrence counter, which
+  // is replay-safe (the waves are sequential, so the order is fixed) and reads
+  // terribly in a run's history: `investigate#7` would be the second wave's
+  // first angle with nothing saying so. The name is what an operator reads.
+  const second = await mapConcurrent(gaps, ANGLE_CONCURRENCY, (angle) =>
+    ctx.step("investigateGap", () => investigate(brief, angle), { maxAttempts: 5 }),
+  );
 
   const notes = [...first, ...second];
-  const written = await writeReport(input.topic, brief, notes);
+  const written = await ctx.step("writeReport", () => writeReport(input.topic, brief, notes));
 
   // Suspended, not blocked. On resume the body re-runs from the top and every
   // step above returns its journaled result rather than researching again —
-  // which is also what `file_it_now` ends early, through `wakeUp`.
-  await sleep(REVIEW_DELAY);
+  // which is also what `file_it_now` ends early, through `wake`.
+  await ctx.sleep(REVIEW_DELAY_MS);
 
   // Whatever this returns is what `ctx.workflows.get(runId)` reports as `output`
   // on a completed run — so it is what the agent reads back, and what the
@@ -247,7 +258,7 @@ export async function researchFlow(input: { topic: string; requestedBy: string }
     report: written.report,
     sources: countSources(notes),
     angles: notes.map((note) => note.angle),
-    filedAt: await file(input.requestedBy, input.topic),
+    filedAt: await ctx.step("file", () => file(input.requestedBy, input.topic)),
   } satisfies Findings & { filedAt: string };
 }
 
@@ -260,8 +271,6 @@ export async function researchFlow(input: { topic: string; requestedBy: string }
  * later model call.
  */
 export async function writeBrief(topic: string): Promise<Brief> {
-  "use step";
-
   await report(`Working out what "${topic}" is really asking.`);
   const parsed = await stepGenerateJsonClassified(
     `Research request, as the caller said it: ${topic}`,
@@ -278,8 +287,6 @@ export async function writeBrief(topic: string): Promise<Brief> {
  * asking the model again and getting a different one.
  */
 export async function planAngles(brief: Brief): Promise<string[]> {
-  "use step";
-
   const parsed = await stepGenerateJsonClassified(briefText(brief), {
     system: PLAN_SYSTEM,
     schema: AnglesReply,
@@ -303,8 +310,6 @@ export async function planAngles(brief: Brief): Promise<string[]> {
  * at the end, which is where it becomes small enough to journal.
  */
 export async function investigate(brief: Brief, angle: string): Promise<Note> {
-  "use step";
-
   await report(`Looking into: ${angle}`);
   const seen: string[] = [];
   const sources: Source[] = [];
@@ -332,7 +337,6 @@ export async function investigate(brief: Brief, angle: string): Promise<Note> {
 }
 
 /** Retries beyond the default: the far side is a search engine and a model. */
-investigate.maxRetries = 4;
 
 /**
  * The supervisor's second look.
@@ -342,8 +346,6 @@ investigate.maxRetries = 4;
  * caller who is told "still working" for twenty minutes.
  */
 export async function findGaps(brief: Brief, notes: readonly Note[]): Promise<string[]> {
-  "use step";
-
   if (notes.length === 0) return [];
   const parsed = await stepGenerateJsonClassified(
     `${briefText(brief)}\n\nWhat came back:\n${notes.map(noteText).join("\n\n")}`,
@@ -370,8 +372,6 @@ export async function writeReport(
   brief: Brief,
   notes: readonly Note[],
 ): Promise<{ report: string; summary: string }> {
-  "use step";
-
   await report(`Writing up ${notes.length} ${plural(notes.length, "angle")}.`);
   const written = await stepGenerateClassified(
     `${briefText(brief)}\n\nFindings:\n${notes.map(noteText).join("\n\n")}`,
@@ -391,8 +391,6 @@ export async function writeReport(
  * parameters carry `_` for the same reason.
  */
 export async function file(_requestedBy: string, _topic: string): Promise<string> {
-  "use step";
-
   await report("Filing the findings.");
   return "filed";
 }

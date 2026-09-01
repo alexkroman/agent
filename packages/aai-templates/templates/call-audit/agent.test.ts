@@ -26,7 +26,7 @@
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { stubSpeech } from "@alexkroman1/aai/testing";
+import { createWorkflowCtx, stubSpeech } from "@alexkroman1/aai/testing";
 import {
   installStubGateway,
   installStubReporter,
@@ -36,7 +36,13 @@ import {
 } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { audit } from "./agent.ts";
-import { joinSegments, now, SEGMENT_CONCURRENCY, transcribeSegment } from "./workflows/audit.ts";
+import {
+  auditFlow,
+  joinSegments,
+  now,
+  SEGMENT_CONCURRENCY,
+  transcribeSegment,
+} from "./workflows/audit.ts";
 import { analyse, ingestRecording } from "./workflows/ingest.ts";
 import {
   ANALYSIS_FORMAT,
@@ -626,11 +632,11 @@ describe("transcribing one segment", () => {
   });
 
   test("a rate limit is RETRYABLE, so one busy minute does not fail the run", async () => {
-    // The expected failure of a 32-wide fan-out, and the reason this step's
-    // `maxRetries` is above the default.
+    // The expected failure of a 32-wide fan-out, and the reason the BODY calls
+    // this step with more attempts than the default — asserted where the policy
+    // now lives, in `the whole run` below.
     stubProvider({ status: 429, message: "slow down" });
     await expect(transcribeSegment(UPLOAD_ID, SEGMENT)).rejects.toBeInstanceOf(RetryableError);
-    expect(transcribeSegment.maxRetries).toBe(5);
   });
 
   test("a rejected request is FATAL, so it is not asked five more times", async () => {
@@ -783,8 +789,6 @@ describe("the ffmpeg steps, up to the spawn", () => {
     // Fatal, not retryable: four more attempts find the same missing binary, and the
     // message already carries the install instructions.
     await expect(ingestRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
-    // And the retry budget is still raised, for the I/O halves that ARE transient.
-    expect(ingestRecording.maxRetries).toBe(5);
   });
 
   test("narrate speaks first, then fails fatally with no ffmpeg to master with", async () => {
@@ -813,5 +817,76 @@ describe("the ffmpeg steps, up to the spawn", () => {
     expect(after.filter((name) => name.startsWith("aai-call-audit-"))).toEqual(
       before.filter((name) => name.startsWith("aai-call-audit-")),
     );
+  });
+});
+
+describe("the body's step policy", () => {
+  test("raises the attempt budget on both steps whose failure is transient I/O", async () => {
+    // The retry policy is an argument to `ctx.step` now rather than a
+    // `maxRetries` property, so the CALL is the only place it is observable —
+    // which is also the honest place for it, since the same function called from
+    // two sites may deserve different patience. `runSteps: false` with a
+    // skeleton of results: no ffmpeg, no provider, no model.
+    const ctx = createWorkflowCtx({
+      runSteps: false,
+      results: {
+        clockStart: 1000,
+        clockEnd: 4000,
+        ingestRecording: {
+          audio: "upl_pcm",
+          source: "call.wav",
+          codec: "pcm_s16le",
+          durationMs: 20_000,
+          bytes: 60 * BYTES_PER_SECOND,
+          silences: pauses(10, 20, 30),
+          loudness: MEASURED,
+        },
+        transcribeSegment: { index: 0, text: "hello" },
+        summarize: { headline: "H", risks: [], actions: [], spoken: "S." },
+        narrate: { audio: "upl_wav", durationMs: 500, bytes: 32 },
+      },
+    });
+
+    await auditFlow({ recording: UPLOAD_ID }, ctx);
+
+    const budgets = new Map(ctx.steps.map((step) => [step.name, step.maxAttempts]));
+    expect(budgets.get("ingestRecording")).toBeGreaterThan(3);
+    expect(budgets.get("transcribeSegment")).toBeGreaterThan(3);
+    // The clock and the two model-shaped steps take the default, which is the
+    // other half of the claim: a raised budget is a decision about ONE step.
+    expect(budgets.get("clockStart")).toBeUndefined();
+    expect(budgets.get("summarize")).toBeUndefined();
+  });
+
+  test("reads the clock at each end under its own name, so a run's history is legible", async () => {
+    // `(name, occurrence)` would tell two `now` calls apart on its own
+    // (`now#0`, `now#1`); distinct names are for the person reading the history.
+    const ctx = createWorkflowCtx({
+      runSteps: false,
+      results: {
+        clockStart: 1000,
+        clockEnd: 4000,
+        ingestRecording: {
+          audio: "upl_pcm",
+          source: "call.wav",
+          codec: "pcm_s16le",
+          durationMs: 20_000,
+          bytes: 60 * BYTES_PER_SECOND,
+          silences: pauses(10, 20, 30),
+          loudness: MEASURED,
+        },
+        transcribeSegment: { index: 0, text: "hello" },
+        summarize: { headline: "H", risks: [], actions: [], spoken: "S." },
+        narrate: { audio: "upl_wav", durationMs: 500, bytes: 32 },
+      },
+    });
+
+    const output = await auditFlow({ recording: UPLOAD_ID }, ctx);
+
+    expect(ctx.steps[0]?.name).toBe("clockStart");
+    expect(ctx.steps.at(-1)?.name).toBe("clockEnd");
+    // Subtracted in the BODY from two journaled values, so a replay reports the
+    // same elapsed rather than re-reading a clock.
+    expect(output.elapsedMs).toBe(3000);
   });
 });

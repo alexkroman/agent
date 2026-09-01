@@ -39,6 +39,7 @@
 import type { StepReporter } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
+import { currentRun } from "./workflow-run-context.ts";
 
 /** The two DevKit entry points a report reads, as that package exports them. */
 type WorkflowRuntime = {
@@ -73,6 +74,15 @@ function loadDevkit(): Promise<WorkflowRuntime> {
 function stepMetadata(
   mod: WorkflowRuntime,
 ): { stepName: string; stepId: string; attempt: number } | undefined {
+  // OUR engine first. `workflow-run-context.ts` is an `AsyncLocalStorage` this
+  // package owns, so it is both cheaper than the DevKit's lazy import and the
+  // only one that answers for a run this engine is executing. The DevKit arm
+  // stays for as long as a body can still be a `"use step"` one; when the last
+  // template migrates it goes, and with it the try/catch — the DevKit's
+  // `getStepMetadata()` THREW outside a step, which is a legitimate place to
+  // call `report()` from.
+  const step = currentRun()?.step;
+  if (step) return { stepName: step.name, stepId: step.key, attempt: step.attempt };
   try {
     return mod.getStepMetadata?.();
   } catch {
@@ -145,6 +155,16 @@ async function writeChunk(
   chunk: unknown,
   namespace: string | undefined,
 ): Promise<void> {
+  // OUR engine first, same order and same reason as `stepMetadata`. `write`
+  // takes the namespace resolved rather than optional, because this engine's
+  // stream store has one default and does not need to tell "absent" from
+  // "explicitly the default" — the distinction below exists only because
+  // `getWritable` makes it.
+  const run = currentRun();
+  if (run) {
+    await run.write(namespace ?? "", chunk);
+    return;
+  }
   // No DevKit in this process (a spec, a script): the log line above is the
   // whole report, which is what makes an exported step callable without a world.
   if (!mod.getWritable) return;

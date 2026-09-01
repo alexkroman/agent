@@ -14,8 +14,8 @@
  * | --- | --- |
  * | `saga` — `openAccount`'s compensation stack | {@link recapFlow}'s `compensations`, unwound by {@link compensate} |
  * | `polling` — infrequent polling | {@link awaitTranscript}: a bounded loop of one step plus one durable `sleep` |
- * | `timer-examples` — `processOrderWorkflow` | the `Promise.race` against {@link PATIENCE}, then the "still going" note |
- * | `expense` — `timeoutOrUserAction` | the RETENTION GATE: a hook raced against {@link RETENTION_WINDOW}, three outcomes and a safe default |
+ * | `timer-examples` — `processOrderWorkflow` | {@link PATIENCE_POLLS} turns of the poll loop, then the "still going" note |
+ * | `expense` — `timeoutOrUserAction` | the RETENTION GATE: one `ctx.waitFor` with {@link RETENTION_WINDOW_MS}, three outcomes and a safe default |
  *
  * The voice half — start, query, cancel, and the answer to the gate — is ported
  * in `agent.ts`.
@@ -67,6 +67,7 @@
  * just your shell.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { report, requireStepEnv, stepFetch } from "@alexkroman1/aai/step";
 import {
   FatalError,
@@ -76,7 +77,6 @@ import {
   toStepError,
 } from "@alexkroman1/aai/step-errors";
 import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { createHook, sleep } from "workflow";
 import { z } from "zod";
 import { retentionToken } from "./tokens.ts";
 
@@ -95,7 +95,7 @@ const API_KEY_ENV = "ASSEMBLYAI_API_KEY";
  * file, and the docs' own 1–2 second advice is for a load test with a
  * rate-limit budget to spend.
  */
-const POLL_INTERVAL = "15 seconds";
+const POLL_INTERVAL_MS = 15_000;
 
 /**
  * Polls before the desk gives up.
@@ -103,33 +103,40 @@ const POLL_INTERVAL = "15 seconds";
  * A bound rather than a deadline, because it is what the LOOP can enforce with
  * nothing but journaled values: attempt N is attempt N on every replay, where a
  * wall-clock deadline read in the body would move under it. At
- * {@link POLL_INTERVAL} this is twenty minutes, which is far past the
+ * {@link POLL_INTERVAL_MS} this is twenty minutes, which is far past the
  * turnaround of any recording a phone caller will name.
  */
 const MAX_POLLS = 80;
 
 /**
- * How long the desk waits before admitting a recording is a long one.
+ * How many polls before the desk admits a recording is a long one.
  *
- * The port of Temporal's `processOrderWorkflow`: race the work against a timer,
- * and if the timer wins, do the other thing — there the delayed-order email,
- * here a progress line the caller hears when they ask. Then keep waiting for
- * the work either way.
+ * The port of Temporal's `processOrderWorkflow`, and the ONE place this port
+ * changes shape rather than vocabulary. There the pattern is a `Promise.race`
+ * between the work and a timer; here both a `ctx.sleep` and the work's own polls
+ * SUSPEND, and a suspend unwinds the stack — so racing them stops the body on
+ * whichever suspends first, before the other has been reached. Counting polls
+ * says the same thing with journaled values only: attempt N is attempt N on
+ * every replay, which is the property {@link MAX_POLLS} already rests on. At
+ * {@link POLL_INTERVAL_MS} this is two minutes, the same wait the timer named.
  */
-const PATIENCE = "2 minutes";
+const PATIENCE_POLLS = 8;
 
 /**
  * How long the desk holds the transcript waiting for an answer.
  *
  * The port of `timeoutOrUserAction`: Temporal races a `condition()` against a
- * timeout, this races a hook against a `sleep`, and both have THREE outcomes —
- * approved, declined, nobody answered. The window is a `sleep`, so a caller who
- * hangs up costs nothing while it runs.
+ * timeout, this passes the window to `ctx.waitFor` as `timeoutMs`, and both have
+ * THREE outcomes — approved, declined, nobody answered. A parameter rather than
+ * a race for the reason {@link PATIENCE_POLLS} gives, and it is the better shape
+ * anyway: the deadline is journaled once, so a replay cannot extend the window,
+ * and the engine CLOSES the hook when it shuts so a late answer cannot be taken.
+ * The run is suspended throughout, so a caller who hangs up costs nothing.
  *
  * Two minutes because a caller is on the line; a desk whose approver is on email
- * would write `"2 days"` and nothing else in this file would change.
+ * would write two days and nothing else in this file would change.
  */
-const RETENTION_WINDOW = "2 minutes";
+const RETENTION_WINDOW_MS = 120_000;
 
 /** Every HTTP call's deadline. `fetch` has none of its own, and a hung step never ends. */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -205,9 +212,7 @@ export type Compensation = { label: string; undo: () => Promise<void> };
  * `agent.ts` reads back down the phone, so it is shaped for an ear rather than
  * a page.
  */
-export async function recapFlow(input: { url: string; requestedBy: string }) {
-  "use workflow";
-
+export async function recapFlow(input: { url: string; requestedBy: string }, ctx: WorkflowCtx) {
   // The compensation stack, newest first — `unshift` after each successful
   // acquisition, exactly as Temporal's `openAccount` does. Registering the undo
   // AFTER the step it undoes is the whole discipline: a step that never
@@ -216,34 +221,30 @@ export async function recapFlow(input: { url: string; requestedBy: string }) {
   const compensations: Compensation[] = [];
 
   try {
-    const job = await submitRecording(input.url);
+    const job = await ctx.step("submitRecording", () => submitRecording(input.url));
     compensations.unshift({
       label: `transcript ${job.id}`,
-      undo: () => discardTranscript(job.id),
+      undo: () => ctx.step("discardTranscript", () => discardTranscript(job.id)),
     });
 
-    // Temporal's `processOrderWorkflow`, line for line: start the work, race it
-    // against a timer, and if the timer wins first say so and then go on
-    // waiting. `ready` is an ordinary local — deterministic, because the only
-    // thing that flips it is a journaled step result.
-    let ready = false;
-    const work = awaitTranscript(job.id).then((state) => {
-      ready = true;
-      return state;
-    });
-    await Promise.race([work, sleep(PATIENCE)]);
-    if (!ready) await note("Still transcribing — this is a long one. I'll keep going.");
-    const transcript = await work;
+    // Temporal's `processOrderWorkflow`, in the shape a replay engine allows:
+    // the poll loop itself says "still going" once it has waited
+    // `PATIENCE_POLLS` turns, rather than a `Promise.race` against a timer. See
+    // `PATIENCE_POLLS` for why the race cannot work here.
+    const transcript = await awaitTranscript(job.id, ctx);
 
-    const recap = await summarize(input.url, transcript);
-    const retention = await askWhetherToKeep(input.requestedBy, job.id, compensations);
+    const recap = await ctx.step("summarize", () => summarize(input.url, transcript), {
+      // Was `summarize.maxRetries = 5` — five retries after the first attempt.
+      maxAttempts: 6,
+    });
+    const retention = await askWhetherToKeep(input.requestedBy, job.id, compensations, ctx);
     return { ...recap, ...retention, requestedBy: input.requestedBy };
   } catch (err) {
     // The saga's whole point. Everything acquired above is released, in reverse,
     // before the failure is re-thrown — and because each undo is a STEP, a crash
     // during the unwind resumes with the finished ones replayed from the journal
     // rather than run twice.
-    await compensate(compensations, errorMessage(err));
+    await compensate(compensations, errorMessage(err), ctx);
     throw err;
   }
 }
@@ -262,19 +263,26 @@ export async function recapFlow(input: { url: string; requestedBy: string }) {
  * on a journaled step result, so a replay takes the same number of turns it took
  * live.
  */
-export async function awaitTranscript(id: string): Promise<TranscriptState> {
+export async function awaitTranscript(id: string, ctx: WorkflowCtx): Promise<TranscriptState> {
   for (let attempt = 1; attempt <= MAX_POLLS; attempt++) {
-    const state = await checkTranscript(id);
+    const state = await ctx.step("checkTranscript", () => checkTranscript(id));
     if (state.status === "completed") return state;
     if (state.status === "error") {
       // The provider's own terminal answer. A plain `Error`, not a
       // `FatalError`: this is the BODY, and a body's throw is never retried —
-      // `FatalError` is the vocabulary for telling the DevKit not to retry a
+      // `FatalError` is the vocabulary for telling the ENGINE not to retry a
       // STEP, and using it here would claim a distinction that does not exist.
       throw new Error(`The provider could not transcribe that recording: ${state.error}`);
     }
+    // Once, at the point the timer used to fire. `attempt` is a journaled-value
+    // function, so a replay says it at the same turn or not at all.
+    if (attempt === PATIENCE_POLLS) {
+      await ctx.step("noteSlow", () =>
+        note("Still transcribing — this is a long one. I'll keep going."),
+      );
+    }
     // Suspended, not blocked: nothing is resident while this waits.
-    await sleep(POLL_INTERVAL);
+    await ctx.sleep(POLL_INTERVAL_MS);
   }
   throw new Error(`Gave up on that recording after ${MAX_POLLS} checks.`);
 }
@@ -283,8 +291,8 @@ export async function awaitTranscript(id: string): Promise<TranscriptState> {
  * Ask the caller whether the transcript stays on file, and act on the answer.
  *
  * The port of Temporal's `timeoutOrUserAction`, and a body-side helper for the
- * same reason {@link awaitTranscript} is: it opens a hook and `sleep`s, neither
- * of which a step can do.
+ * same reason {@link awaitTranscript} is: it waits, which only a body may do —
+ * so it takes the `ctx`.
  *
  * The default is DELETE, which is what makes the timeout meaningful. A gate
  * whose no-answer branch keeps the data is not a gate — it is a prompt with a
@@ -295,25 +303,27 @@ export async function askWhetherToKeep(
   requestedBy: string,
   transcriptId: string,
   compensations: Compensation[],
+  ctx: WorkflowCtx,
 ): Promise<Retention> {
-  // `using`, so the token is released when this scope exits — including the
-  // timeout branch, where nothing ever arrives. A hook left registered holds
-  // its token against the caller's NEXT run, which `getConflict()` below would
-  // then report as a conflict.
-  using decision = createHook<{ keep: boolean }>({ token: retentionToken(requestedBy) });
-  // Claim the token BEFORE anyone is told to signal it. `createHook()` registers
-  // nothing on its own — registration is committed when the workflow suspends —
-  // so without this the caller's answer races a token no hook owns yet and is
-  // answered "nobody is listening", which is indistinguishable from being late.
-  await decision.getConflict();
-
-  await note(
-    `Recap ready. Keep the transcript on file, or delete it? Deleting in ${RETENTION_WINDOW} otherwise.`,
+  await ctx.step("noteGate", () =>
+    note(
+      "Recap ready. Keep the transcript on file, or delete it? Deleting in two minutes otherwise.",
+    ),
   );
-  const answer = await Promise.race([decision, sleep(RETENTION_WINDOW).then(() => undefined)]);
+
+  // ONE call, not a race — and the ordering worry the DevKit version opened with
+  // is gone with it. `createHook()` registered nothing until the workflow
+  // suspended, so a caller's answer could reach a token no hook owned yet and be
+  // told "nobody is listening", indistinguishable from being late; hence the
+  // `getConflict()` claim on the line above it. `ctx.waitFor` registers the
+  // token BEFORE it suspends, by construction, because registering it is how it
+  // knows what to wait for.
+  const answer = await ctx.waitFor<{ keep: boolean }>(retentionToken(requestedBy), {
+    timeoutMs: RETENTION_WINDOW_MS,
+  });
 
   if (answer?.keep === true) return { kept: true, answered: true };
-  await discardTranscript(transcriptId);
+  await ctx.step("discardOnDecline", () => discardTranscript(transcriptId));
   // Drop the undo now that the run has DONE what it undoes. Leaving it would be
   // harmless (`discardTranscript` treats a 404 as success, as every compensation
   // must) and would still be wrong to read: an unwind that reverses something
@@ -332,14 +342,26 @@ export async function askWhetherToKeep(
  * reported and stepped over rather than thrown. The `label` is what makes that
  * report actionable.
  */
-export async function compensate(compensations: Compensation[], because: string): Promise<void> {
+export async function compensate(
+  compensations: Compensation[],
+  because: string,
+  ctx: WorkflowCtx,
+): Promise<void> {
   if (compensations.length === 0) return;
-  await note(`Recap failed (${because}) — undoing ${compensations.length} step(s).`);
+  // The narration is a STEP like every other, so an unwind interrupted by a
+  // crash resumes with the lines already said replayed from the journal rather
+  // than said twice. Each undo is a step too — registered as one by whoever
+  // stacked it — which is what makes an interrupted unwind resumable at all.
+  await ctx.step("noteUnwind", () =>
+    note(`Recap failed (${because}) — undoing ${compensations.length} step(s).`),
+  );
   for (const compensation of compensations) {
     try {
       await compensation.undo();
     } catch (err) {
-      await note(`Could not undo ${compensation.label}: ${errorMessage(err)}`);
+      await ctx.step("noteUndoFailed", () =>
+        note(`Could not undo ${compensation.label}: ${errorMessage(err)}`),
+      );
     }
   }
 }
@@ -353,8 +375,6 @@ export async function compensate(compensations: Compensation[], because: string)
  * makes the poll below a real wait rather than a simulated one.
  */
 export async function submitRecording(url: string): Promise<{ id: string }> {
-  "use step";
-
   await report(`Submitting ${new URL(url).hostname} for transcription…`);
 
   // `stepTranscribeSubmitClassified` owns the endpoint, the raw-key auth, the
@@ -386,8 +406,6 @@ export async function submitRecording(url: string): Promise<{ id: string }> {
  * template.
  */
 export async function checkTranscript(id: string): Promise<TranscriptState> {
-  "use step";
-
   const response = await request(`${TRANSCRIPT_ENDPOINT}/${id}`);
   const body = await response.json();
   const status = readString(body, "status");
@@ -427,8 +445,6 @@ export async function checkTranscript(id: string): Promise<TranscriptState> {
  * a replay is exactly that world.
  */
 export async function discardTranscript(id: string): Promise<void> {
-  "use step";
-
   await report(`Discarding transcript ${id}.`);
   // Not through `request` above, because a 404 is a SUCCESS here — see below.
   // `stepFetch` for the same reason it does; only the status handling differs.
@@ -455,8 +471,6 @@ export async function discardTranscript(id: string): Promise<void> {
  * journal instead of submitting the recording again.
  */
 export async function summarize(url: string, transcript: TranscriptState): Promise<Recap> {
-  "use step";
-
   await report("Writing the recap.");
 
   const text = (transcript.text ?? "").slice(0, MAX_TRANSCRIPT_CHARS);
@@ -491,7 +505,6 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
 }
 
 /** A rate limit — and a model that ignored the format — are both expected here. */
-summarize.maxRetries = 5;
 
 /**
  * Say one line into the run's progress channel.
@@ -502,7 +515,6 @@ summarize.maxRetries = 5;
  * `recap_progress` is what reads it back down the phone.
  */
 export async function note(line: string): Promise<void> {
-  "use step";
   await report(line);
 }
 

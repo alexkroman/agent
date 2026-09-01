@@ -423,51 +423,102 @@ by name without a `DATABASE_URL`. (`ctx.db` was the other; there is no `ctx.db`
 
 ### Workflow bodies live in `workflows/`
 
-The build transforms that directory and nothing else. A `"use workflow"` body
-written in `agent.ts` is never transformed — it runs inline once, with no
-durability and nothing saying so.
+A body is an ordinary exported async function of its input and a `WorkflowCtx`.
+There is no directive and no compile step of its own — the agent bundle compiles
+`workflows/` like any other source file — and durability is a method call:
 
 ```ts
-import { sleep } from "workflow";
+import type { WorkflowCtx } from "@alexkroman1/aai";
 
-export async function digestFlow(input: { url: string }) {
-  "use workflow";
+export async function digestFlow(input: { url: string }, ctx: WorkflowCtx) {
+  const digest = await ctx.step("summarize", () => summarize(input.url));
 
-  const digest = await summarize(input.url);
   // Suspended, not blocked: the container is free to exit here and the run
-  // resumes when it comes due. `"6 hours"` works the same as `"10 seconds"`.
-  await sleep("10 seconds");
-  return { ...digest, filedAt: await file(digest) };
+  // resumes when it comes due. Six hours works the same as ten seconds.
+  await ctx.sleep(10_000);
+
+  const filedAt = await ctx.step("file", () => file(digest));
+  return { ...digest, filedAt };
 }
 
 async function summarize(url: string) {
-  "use step";
   // The whole Node runtime is available in a step: fetch, a model call, a
   // database. Not in the body.
   return { url, headline: `What ${new URL(url).hostname} says`, points: [] };
 }
 
-async function file(digest: { url: string }) {
-  "use step";
+async function file(_digest: { url: string }) {
   return new Date().toISOString();
 }
 ```
+
+`ctx.step(name, fn)` runs `fn` once, journals what it returned, and on every
+later replay returns the journaled value without running it again. The step
+functions themselves are ordinary functions — which is also what lets a spec call
+one directly, with no engine in the path.
 
 Three rules. The second and third fail silently if broken; the first is
 warned about by `aai build` and `aai dev`, naming the file and the call:
 
 - **The body replays from the top on every resume**, so it holds no live handle
   and makes no undurable decision — no `Date.now()`, no `Math.random()`, no
-  `crypto.randomUUID()`, no `fetch`. Those belong in a step, whose result is
-  journaled and returned unchanged on replay. (The warning reads the built
-  workflow bundle, where step bodies have already been removed, so a step doing
-  any of this is not flagged — that is what a step is FOR.)
+  `crypto.randomUUID()`, no `fetch`. Those go inside a `ctx.step`, whose result
+  is journaled and returned unchanged on replay.
 - **A step's arguments and return value cross a queue**, so they must be
   JSON-shaped and small. Put bytes in storage and pass the key.
-- **A step gets no tool context.** It is bundled and dispatched separately from
-  the agent, so there is no `ctx` in one — see below for how it reaches the
-  agent's env and a model anyway. A step reaches a database the same way a tool
-  does now — its own client, its own credential from `requireStepEnv`.
+- **A step gets no tool context.** There is no `ctx.db` and no `ctx.generate`
+  inside one — see below for how it reaches the agent's env and a model anyway.
+  A step reaches a database the way a tool does: its own client, its own
+  credential from `requireStepEnv`.
+
+**A step's NAME is its identity in the journal**, so write a string literal and
+keep it stable: renaming one makes an in-flight run re-run that step. A single
+call site inside a loop or a `mapConcurrent` fan-out is exactly what the scheme
+is for — each reach gets its own entry — but two DIFFERENT call sites should not
+share a name, because a run's history is read by a person.
+
+**Per-step retries are an argument, not a property.** Pass
+`{ maxAttempts }` where a step deserves more patience than the default three:
+
+```ts no-check
+const digest = await ctx.step("summarize", () => summarize(input.url), {
+  maxAttempts: 6,
+});
+```
+
+### Waiting: `ctx.sleep` and `ctx.waitFor`
+
+Both SUSPEND the run — the body stops, the container is free, and the engine
+brings the run back — so a wait may be days long and survives a redeploy, an
+idle reclaim and a crash.
+
+```ts no-check
+// A duration in milliseconds, or an absolute Date.
+await ctx.sleep(6 * 60 * 60 * 1000, { correlationId: "review-window" });
+
+// Until somebody outside the run answers. `ctx.workflows.signal(token, payload)`
+// or a webhook at `ctx.workflows.publicWebhookUrl(token)` is what ends it.
+const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id), {
+  timeoutMs: 120_000,
+});
+if (approval === undefined) return { published: false, reason: "nobody approved" };
+```
+
+Four things worth knowing:
+
+- **A hook's token must be DERIVED, not random.** Whoever hands the URL out is
+  usually a tool, and a tool cannot see the body's local variables — so export
+  one function that computes the token from the run's own input and import it in
+  both places.
+- **`timeoutMs` resolves `undefined` when the window closes unanswered.** A
+  closing window is an outcome to branch on, not a failure, and the engine closes
+  the hook as it shuts so a late answer cannot change what already happened.
+- **Do NOT race the two.** `Promise.race([ctx.waitFor(t), ctx.sleep(ms)])` does
+  not work: both suspend, and a suspend unwinds the stack, so the race stops the
+  body before the other side has been reached. That is why the deadline is a
+  parameter.
+- **`ctx.workflows.wake(runId, [correlationId])`** ends a sleep early, which is
+  how a "send it now" tool cuts a scheduled wait short.
 
 ### A step's env, and calling a model from one
 
@@ -481,8 +532,6 @@ import { stepEnv } from "@alexkroman1/aai/step";
 import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
 
 async function summarize(text: string) {
-  "use step";
-
   // The agent's env by name — the same values a tool reads from `ctx.env`.
   // `requireStepEnv` fails naming the key; `stepEnv` returns undefined.
   const style = stepEnv("DIGEST_STYLE") ?? "plain";
@@ -505,8 +554,8 @@ deploy. Use `stepGenerateJsonClassified` with a Zod `schema` if you need a shape
 ### From a step, reach for the `Classified` call
 
 `@alexkroman1/aai/step-errors` publishes a wrapper for every `/step` call that
-can fail against a remote service, and **inside a `"use step"` body the wrapper
-is the one to use**:
+can fail against a remote service, and **inside a step the wrapper is the one to
+use**:
 
 | Raw, on `@alexkroman1/aai/step` | Use this instead, on `@alexkroman1/aai/step-errors` |
 | --- | --- |
@@ -575,8 +624,6 @@ import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir } from "@alexkroman1/aai/step-files";
 
 export async function measure(uploadId: string) {
-  "use step";
-
   return await withTempDir(async (dir) => {
     const path = `${dir}/input`;
     // Read the upload ONCE. A five-step version reads it five times, and on a
@@ -602,8 +649,6 @@ import { requireStepEnv } from "@alexkroman1/aai/step";
 import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
 
 export async function announce(headline: string, points: string[]) {
-  "use step";
-
   const message: ChannelMessage = {
     text: headline,
     sections: points.map((point) => ({ text: point })),
@@ -630,8 +675,6 @@ call to make from a step, for a reason nothing at the call site shows:
 import { multipartBody, stepFetch, StepTransportError } from "@alexkroman1/aai/step";
 
 async function transcribeChunk(key: string, bytes: Uint8Array, index: number) {
-  "use step";
-
   // Multipart as BYTES. Never a `FormData` — see below.
   const part = multipartBody({
     name: "audio",
@@ -665,7 +708,7 @@ and pathological for `mapConcurrent` over large bodies. Measured on 8 concurrent
 HTTP/2 a capacity limit arrives as a *stream reset* — `NGHTTP2_ENHANCE_YOUR_CALM`
 — and a stream error carries no HTTP status, so `isTransientStatus` and
 `retryAfter` cannot see it. Every sibling in the batch then retries in lockstep
-into the same reset, exhausts `maxRetries`, and fails the run with
+into the same reset, exhausts the step's attempts, and fails the run with
 `TypeError: fetch failed`, whose real cause is two `cause` hops down where
 nothing prints it. Over HTTP/1.1 the identical limit arrives as `503` with
 `retry-after`, which your retry policy already reads.
@@ -701,8 +744,6 @@ shows the whole round trip.
 import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(script: string) {
-  "use step";
-
   const spoken = await stepSpeak(script, { voice: "jane" });
   const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
   return { audio: stored.id, durationMs: spoken.durationMs };

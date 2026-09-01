@@ -167,6 +167,7 @@
  * what keeps that order a pure function of journaled values.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import {
   mapConcurrent,
   readUpload,
@@ -176,7 +177,6 @@ import {
 } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { formatDuration, omitUndefined, plural } from "@alexkroman1/aai/utils";
-import { sleep } from "workflow";
 import {
   fatalOnUnsupported,
   mergeTranscript,
@@ -196,7 +196,7 @@ import {
 } from "./wav.ts";
 
 /** How long the body waits between polls when nothing new has arrived. */
-const POLL_INTERVAL = "5s";
+const POLL_INTERVAL_MS = 5000;
 
 /**
  * Consecutive polls with NO new bytes before the run gives up.
@@ -255,10 +255,8 @@ export type StreamPlan = {
  * an upload id exactly as in the classic flow; what differs is that the client chose
  * it and the bytes are still on their way.
  */
-export async function transcribeStreamFlow(input: { recording: string }) {
-  "use workflow";
-
-  const startedAt = await startClock();
+export async function transcribeStreamFlow(input: { recording: string }, ctx: WorkflowCtx) {
+  const startedAt = await ctx.step("startClock", () => startClock());
   let plan: StreamPlan | undefined;
   // Body state, and legal because every value in it came out of a journaled step
   // result — a replay rebuilds the identical sets in the identical order.
@@ -274,7 +272,7 @@ export async function transcribeStreamFlow(input: { recording: string }) {
   let lastStored = -1;
 
   for (;;) {
-    const at = await probeUpload(input.recording);
+    const at = await ctx.step("probeUpload", () => probeUpload(input.recording));
     // Every poll, because this is only ever read at the END — the run breaks out
     // on a `complete` view, whose prefix is the whole file. Updating it inside a
     // branch is how it used to end up describing whichever poll last had work.
@@ -284,7 +282,7 @@ export async function transcribeStreamFlow(input: { recording: string }) {
     // first thing to arrive. `complete` also qualifies, for a recording shorter
     // than the probe window.
     if (!plan && (at.size >= HEADER_PROBE_BYTES || at.complete)) {
-      plan = await planStreamed(input.recording);
+      plan = await ctx.step("planStreamed", () => planStreamed(input.recording));
     }
 
     if (plan) {
@@ -310,7 +308,13 @@ export async function transcribeStreamFlow(input: { recording: string }) {
           ...(await mapConcurrent(
             ready,
             segmentConcurrency((plan as StreamPlan).format),
-            (segment) => transcribeSegment(input.recording, (plan as StreamPlan).format, segment),
+            (segment) =>
+              // `maxAttempts: 6` was `transcribeSegment.maxRetries = 5`.
+              ctx.step(
+                "transcribeSegment",
+                () => transcribeSegment(input.recording, (plan as StreamPlan).format, segment),
+                { maxAttempts: 6 },
+              ),
           )),
         );
         // Straight back to the top WITHOUT sleeping, and this line was measured
@@ -336,16 +340,18 @@ export async function transcribeStreamFlow(input: { recording: string }) {
       lastStored = at.stored;
     }
     if (idlePolls > MAX_IDLE_POLLS) abandon(input.recording, at);
-    await sleep(POLL_INTERVAL);
+    await ctx.sleep(POLL_INTERVAL_MS);
   }
 
   const finished = plan;
   if (!finished) abandon(input.recording, { size: 0, complete: false, stored: 0 });
-  return await mergeTranscript(
-    input.recording,
-    offsetToMs(finished.format, Math.min(finished.format.dataEnd, lastSize)),
-    parts,
-    startedAt,
+  return await ctx.step("mergeTranscript", () =>
+    mergeTranscript(
+      input.recording,
+      offsetToMs(finished.format, Math.min(finished.format.dataEnd, lastSize)),
+      parts,
+      startedAt,
+    ),
   );
 }
 
@@ -359,8 +365,6 @@ export async function transcribeStreamFlow(input: { recording: string }) {
  * from.
  */
 export async function probeUpload(id: string): Promise<UploadProgressView> {
-  "use step";
-
   const info = await uploadInfo(id);
   return {
     size: info.size,
@@ -429,8 +433,6 @@ export function segmentStored(segment: Segment, at: UploadProgressView): boolean
  * which is what the classic flow is for.
  */
 export async function planStreamed(id: string): Promise<StreamPlan> {
-  "use step";
-
   const head = await readUpload(id, { end: HEADER_PROBE_BYTES });
   const format = fatalOnUnsupported(() => parseWav(head.bytes, Number.POSITIVE_INFINITY));
   if (!Number.isFinite(format.dataEnd)) {

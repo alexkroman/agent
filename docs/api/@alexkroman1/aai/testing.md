@@ -221,6 +221,37 @@ test("recommend pushes its picks to the client", async () => {
 
 ***
 
+### createWorkflowCtx()
+
+```ts
+function createWorkflowCtx(options?: WorkflowCtxOptions): WorkflowCtxRecorder;
+```
+
+Build a `WorkflowCtx` that runs a body and records what it asked for.
+
+#### Parameters
+
+##### options?
+
+[`WorkflowCtxOptions`](#workflowctxoptions)
+
+#### Returns
+
+[`WorkflowCtxRecorder`](#workflowctxrecorder)
+
+#### Example
+
+```ts no-check
+const ctx = createWorkflowCtx();
+const output = await digestFlow({ url: "https://example.com/a" }, ctx);
+
+expect(output.headline).toBe("…");
+expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
+expect(ctx.slept).toEqual([{ until: 10_000 }]);
+```
+
+***
+
 ### deployedAgent()
 
 ```ts
@@ -1590,6 +1621,64 @@ an error, not a no-op: see [deployedAgent](#deployedagent).
 
 ***
 
+### RecordedSleep
+
+```ts
+type RecordedSleep = {
+  correlationId?: string;
+  until: number | Date;
+};
+```
+
+One wait the body asked for — and did NOT take.
+
+#### Properties
+
+##### correlationId?
+
+```ts
+optional correlationId?: string;
+```
+
+##### until
+
+```ts
+until: number | Date;
+```
+
+Exactly what the body passed: milliseconds, or a `Date`.
+
+***
+
+### RecordedStep
+
+```ts
+type RecordedStep = {
+  maxAttempts?: number;
+  name: string;
+};
+```
+
+One step the body reached, as the recorder saw it.
+
+#### Properties
+
+##### maxAttempts?
+
+```ts
+optional maxAttempts?: number;
+```
+
+What the body asked for, or `undefined` when it passed no options.
+
+##### name
+
+```ts
+name: string;
+```
+
+***
+
 ### RunSnapshotOverrides
 
 ```ts
@@ -2642,6 +2731,124 @@ that binds it.
 #### Returns
 
 `Promise`\<`unknown`\>
+
+***
+
+### WorkflowCtxOptions
+
+```ts
+type WorkflowCtxOptions = {
+  hooks?: Record<string, unknown>;
+  results?: Record<string, unknown>;
+  runId?: string;
+  runSteps?: boolean;
+  workflow?: string;
+};
+```
+
+What [createWorkflowCtx](#createworkflowctx) takes.
+
+#### Properties
+
+##### hooks?
+
+```ts
+optional hooks?: Record<string, unknown>;
+```
+
+Payloads for `ctx.waitFor`, by token.
+
+A token that is absent THROWS rather than hanging, because a spec that hangs
+reports a timeout naming the runner instead of the missing payload.
+
+##### results?
+
+```ts
+optional results?: Record<string, unknown>;
+```
+
+Results to answer particular steps with, by step NAME.
+
+Takes precedence over running the step, so it works in both modes: with
+`runSteps: true` it stubs one expensive step and leaves the rest real, and
+with `runSteps: false` it is what makes a body whose control flow READS its
+steps drivable at all — `planAngles` returning `undefined` otherwise reaches
+the fan-out below it as a missing list.
+
+Keyed by name rather than by occurrence: a step in a loop is one name, and a
+spec that needs the iterations to differ wants `runSteps: true` with the
+collaborator stubbed instead.
+
+##### runId?
+
+```ts
+optional runId?: string;
+```
+
+Defaults to `"wrun_test"`.
+
+##### runSteps?
+
+```ts
+optional runSteps?: boolean;
+```
+
+Run each step's `fn`, or only record that it was reached.
+
+Defaults to `true`, which is what makes this drive a REAL body. Pass `false`
+when the subject is the policy or the order — a step that is not run needs
+no collaborator stubbed, so such a spec stays short.
+
+Note a recorded-only step resolves `undefined`, so a body that reads its
+result will see one. That is the honest cost of not running it.
+
+##### workflow?
+
+```ts
+optional workflow?: string;
+```
+
+The declared key. Defaults to `"test"`.
+
+***
+
+### WorkflowCtxRecorder
+
+```ts
+type WorkflowCtxRecorder = WorkflowCtx & {
+  slept: RecordedSleep[];
+  steps: RecordedStep[];
+  waited: string[];
+};
+```
+
+What [createWorkflowCtx](#createworkflowctx) answers: a real `WorkflowCtx` plus its log.
+
+#### Type Declaration
+
+##### slept
+
+```ts
+readonly slept: RecordedSleep[];
+```
+
+Every `ctx.sleep`, in order.
+
+##### steps
+
+```ts
+readonly steps: RecordedStep[];
+```
+
+Every step reached, in the order the body reached them.
+
+##### waited
+
+```ts
+readonly waited: string[];
+```
+
+Every token `ctx.waitFor` was called with, in order.
 
 ## Variables
 

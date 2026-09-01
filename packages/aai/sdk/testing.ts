@@ -113,6 +113,17 @@ export {
   type StubUploadWrite,
   stubUploads,
 } from "./testing-uploads.ts";
+// Driving a workflow BODY, which nothing else can do: its steps are ordinary
+// functions a spec calls directly and its declaration is a value a spec reads,
+// but the body takes a `ctx` only an engine constructs. Three templates
+// hand-rolled one.
+export {
+  createWorkflowCtx,
+  type RecordedSleep,
+  type RecordedStep,
+  type WorkflowCtxOptions,
+  type WorkflowCtxRecorder,
+} from "./testing-workflow-ctx.ts";
 export {
   createProgressStream,
   createRunSnapshot,

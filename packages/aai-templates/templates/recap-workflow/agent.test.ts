@@ -14,7 +14,7 @@
  *   for a second transcription, and that a cancel says out loud what cancelling
  *   does not do.
  * - **The steps**, directly. Imported through vitest with no bundler in the
- *   path a `"use step"` function is an ordinary async function, so its HTTP
+ *   path a step is an ordinary async function, so its HTTP
  *   handling, its retryable/fatal split and its JSON contract with the model are
  *   all testable.
  * - **The body's two helpers** — the poll loop and the compensation unwind —
@@ -27,10 +27,13 @@
  *   runs a real one.
  */
 
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 import type { WorkflowClient } from "@alexkroman1/aai";
 import {
   createRunSnapshot,
   createToolContext,
+  createWorkflowCtx,
   parseSchemaInput,
   schemaInputIssues,
   toolRunner,
@@ -42,7 +45,6 @@ import {
 } from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { createHook, type Hook, sleep } from "workflow";
 import { recap } from "./shared.ts";
 import {
   askWhetherToKeep,
@@ -50,28 +52,12 @@ import {
   checkTranscript,
   compensate,
   discardTranscript,
+  recapFlow,
   submitRecording,
   summarize,
   type TranscriptState,
 } from "./workflows/recap.ts";
 import { retentionToken } from "./workflows/tokens.ts";
-
-/**
- * The DevKit, with only its timer replaced.
- *
- * `sleep` throws outside a run, so the poll loop cannot be exercised at all
- * without this — and everything else the module imports from `workflow`
- * (`FatalError`, `RetryableError`) is a real class the steps' own specs assert
- * against, so it is `importActual` plus one override rather than a fake module.
- */
-vi.mock("workflow", async (importActual) => ({
-  ...(await importActual<typeof import("workflow")>()),
-  sleep: vi.fn(async () => undefined),
-  createHook: vi.fn(),
-}));
-
-/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
-import agentDef from "virtual:aai/agent";
 
 /**
  * Every tool here is driven through the agent's own table, by the name the model
@@ -566,8 +552,23 @@ describe("summarize", () => {
     await expect(summarize("https://x/a.mp3", transcript())).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
   });
 
-  test("retries beyond the default, because a rate limit and a bad format both happen", () => {
-    expect(summarize.maxRetries).toBeGreaterThan(3);
+  test("is called with more attempts than the default, a rate limit and a bad format both happening", async () => {
+    // The policy is an argument to `ctx.step` now, so it is observable only at
+    // the call. `runSteps: false` and a skeleton of results: the subject is what
+    // the body ASKED FOR.
+    const ctx = createWorkflowCtx({
+      runSteps: false,
+      results: {
+        submitRecording: { id: "t_1" },
+        checkTranscript: { status: "completed", text: "Done.", durationMs: 1 },
+        summarize: { headline: "H", points: [], spoken: "S." },
+      },
+      hooks: { [retentionToken("Ada")]: { keep: true } },
+    });
+    await recapFlow({ url: "https://x/a.mp3", requestedBy: "Ada" }, ctx);
+
+    const step = ctx.steps.find((entry) => entry.name === "summarize");
+    expect(step?.maxAttempts).toBeGreaterThan(3);
   });
 });
 
@@ -593,7 +594,7 @@ describe("awaitTranscript — the polling port", () => {
       { status: "processing" },
       { status: "completed", text: "Done.", audio_duration: 60 },
     ]);
-    const state = await awaitTranscript("t_1");
+    const state = await awaitTranscript("t_1", createWorkflowCtx());
     expect(state).toMatchObject({ status: "completed", text: "Done." });
     expect(polls()).toBe(3);
   });
@@ -602,65 +603,40 @@ describe("awaitTranscript — the polling port", () => {
     // `error` is terminal: polling a failed job to the bound would spend twenty
     // minutes learning what the first answer already said.
     const polls = stubStatuses([{ status: "error", error: "Transcoding failed" }]);
-    await expect(awaitTranscript("t_1")).rejects.toThrow(/Transcoding failed/);
+    await expect(awaitTranscript("t_1", createWorkflowCtx())).rejects.toThrow(/Transcoding failed/);
     expect(polls()).toBe(1);
   });
 
   test("gives up at the bound rather than polling a stuck job forever", async () => {
     stubStatuses([{ status: "processing" }]);
-    await expect(awaitTranscript("t_1")).rejects.toThrow(/Gave up/);
+    await expect(awaitTranscript("t_1", createWorkflowCtx())).rejects.toThrow(/Gave up/);
   });
 });
 
 describe("askWhetherToKeep — the expense port", () => {
   beforeEach(() => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    // The window has NOT elapsed unless a test says so. A `sleep` that resolves
-    // would race the hook's own answer, and which one won would come down to
-    // microtask order rather than to the branch under test.
-    vi.mocked(sleep).mockReturnValue(new Promise<void>(() => undefined));
-    vi.mocked(createHook).mockReturnValue(hookAnswering(undefined));
   });
 
   /**
-   * A hook that resolves with `payload`, or never — which is what the timeout
-   * branch has to see.
+   * The gate, driven with or without an answer.
    *
-   * Built by hanging the hook's own members on a REAL promise rather than by
-   * writing a `then` property: a `Hook` is a thenable, and a hand-written one
-   * is both a lint finding and a worse model of the thing.
-   *
-   * `createHook()` throws outside a run, so this is the only way to reach the
-   * gate's branching at all. What it pins is the three OUTCOMES and the safe
-   * default; suspension, token registration and replay are not testable here
-   * and are not claimed to be.
+   * This block used to be forty lines of DevKit scaffolding: `vi.mock("workflow")`
+   * over `createHook` and `sleep`, plus a hand-built `Hook` assembled by hanging
+   * members on a real promise, plus a never-resolving `sleep` so the two sides of
+   * a `Promise.race` could not settle in an order that decided the test instead
+   * of the branch. The gate is ONE call now — `ctx.waitFor(token, { timeoutMs })`
+   * — so an answer is a `hooks` entry and the no-answer branch is its absence.
+   * What is pinned is unchanged: the three outcomes and the safe default.
    */
-  function hookAnswering(
-    payload: { keep: boolean } | undefined,
-    onClaim: () => void = () => undefined,
-  ): Hook<{ keep: boolean }> {
-    const settled: Promise<{ keep: boolean }> =
-      payload === undefined ? new Promise(() => undefined) : Promise.resolve(payload);
-    return Object.assign(settled, {
-      token: "retention:stub",
-      getConflict: async () => {
-        onClaim();
-        return null;
-      },
-      dispose: () => undefined,
-      [Symbol.dispose]: () => undefined,
-      [Symbol.asyncIterator]: async function* () {
-        yield await settled;
-      },
-    });
-  }
+  const gateCtx = (answer?: { keep: boolean }) =>
+    createWorkflowCtx(answer === undefined ? {} : { hooks: { [retentionToken("s_1")]: answer } });
 
   test("keeps the transcript when the caller says to, and deletes nothing", async () => {
-    vi.mocked(createHook).mockReturnValue(hookAnswering({ keep: true }));
     const provider = installStubStepFetch();
 
     const compensations = [{ label: "transcript t_1", undo: async () => undefined }];
-    expect(await askWhetherToKeep("s_1", "t_1", compensations)).toEqual({
+    expect(await askWhetherToKeep("s_1", "t_1", compensations, gateCtx({ keep: true }))).toEqual({
       kept: true,
       answered: true,
     });
@@ -670,11 +646,10 @@ describe("askWhetherToKeep — the expense port", () => {
   });
 
   test("deletes on a DECLINE, and drops the undo it just performed", async () => {
-    vi.mocked(createHook).mockReturnValue(hookAnswering({ keep: false }));
     const calls = stubProvider({ id: "t_1" });
 
     const compensations = [{ label: "transcript t_1", undo: async () => undefined }];
-    expect(await askWhetherToKeep("s_1", "t_1", compensations)).toEqual({
+    expect(await askWhetherToKeep("s_1", "t_1", compensations, gateCtx({ keep: false }))).toEqual({
       kept: false,
       answered: true,
     });
@@ -686,29 +661,33 @@ describe("askWhetherToKeep — the expense port", () => {
 
   test("DELETES when nobody answers, which is what makes the window mean anything", async () => {
     // The safe default, and the whole reason the gate is a gate: a no-answer
-    // branch that kept the data would be a prompt with a grace period.
-    vi.mocked(sleep).mockResolvedValue(undefined);
+    // branch that kept the data would be a prompt with a grace period. No
+    // `hooks` entry is exactly the closed-window case, because the wait carries a
+    // `timeoutMs` and so has an unanswered branch to take.
     const calls = stubProvider({ id: "t_1" });
 
-    expect(await askWhetherToKeep("s_1", "t_1", [])).toEqual({ kept: false, answered: false });
+    expect(await askWhetherToKeep("s_1", "t_1", [], gateCtx())).toEqual({
+      kept: false,
+      answered: false,
+    });
     expect(calls[0]?.method).toBe("DELETE");
   });
 
-  test("claims the token BEFORE the caller is asked to answer it", async () => {
-    // `createHook()` registers nothing until the workflow suspends, so an answer
-    // sent before the claim lands is answered "nobody is listening" — which is
-    // indistinguishable from being late.
-    const order: string[] = [];
-    vi.mocked(createHook).mockReturnValue(
-      hookAnswering({ keep: true }, () => order.push("claimed")),
-    );
-    installStubStepFetch(() => {
-      order.push("asked");
-      return { body: {} };
-    });
+  test("asks BEFORE it waits, so the caller knows what they are answering", async () => {
+    // The ordering that replaced `createHook`'s claim-then-ask dance. Under the
+    // DevKit the hook registered nothing until the workflow suspended, so an
+    // answer sent before the claim landed was told "nobody is listening" —
+    // indistinguishable from being late — and the body had to call
+    // `getConflict()` first to force it. `ctx.waitFor` registers the token as
+    // part of waiting, by construction, so what is left to assert is the thing
+    // that still matters to a person: the note goes out first.
+    const ctx = gateCtx({ keep: true });
+    installStubStepFetch();
 
-    await askWhetherToKeep("s_1", "t_1", []);
-    expect(order[0]).toBe("claimed");
+    await askWhetherToKeep("s_1", "t_1", [], ctx);
+
+    expect(ctx.steps[0]?.name).toBe("noteGate");
+    expect(ctx.waited).toEqual([retentionToken("s_1")]);
   });
 });
 
@@ -723,6 +702,7 @@ describe("compensate — the saga port", () => {
         { label: "first", undo: async () => void order.push("first") },
       ],
       "because",
+      createWorkflowCtx(),
     );
     expect(order).toEqual(["second", "first"]);
   });
@@ -744,6 +724,7 @@ describe("compensate — the saga port", () => {
           { label: "fine", undo: async () => void order.push("fine") },
         ],
         "because",
+        createWorkflowCtx(),
       ),
     ).resolves.toBeUndefined();
     expect(order).toEqual(["fine"]);
@@ -753,6 +734,8 @@ describe("compensate — the saga port", () => {
     // The case where the FIRST step failed: there is nothing to reverse, and a
     // run that narrated an unwind it did not perform would be lying to the
     // caller reading its progress.
-    await expect(compensate([], "nothing was acquired")).resolves.toBeUndefined();
+    await expect(
+      compensate([], "nothing was acquired", createWorkflowCtx()),
+    ).resolves.toBeUndefined();
   });
 });

@@ -45,6 +45,7 @@
  * ingest result, once as the plan) and buy nothing.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { encodeWav, mapConcurrent, readUpload, report } from "@alexkroman1/aai/step";
 import { countWords, formatDuration } from "@alexkroman1/aai/utils";
 // ERASED at build time, so the body can name the schema's own output type without
@@ -150,14 +151,24 @@ export type CallAudit = {
  * The input is what `POST /workflows/runs` carries — see `agent.ts` for the schema
  * it is validated against before a run exists.
  */
-export async function auditFlow(input: WorkflowInputOf<typeof audit>): Promise<CallAudit> {
-  "use workflow";
-
+export async function auditFlow(
+  input: WorkflowInputOf<typeof audit>,
+  ctx: WorkflowCtx,
+): Promise<CallAudit> {
   // Both at once: neither needs the other, and issued together they are one round
   // trip instead of two before any audio moves. The ORDER is still a pure function
   // of this expression — the two calls go out synchronously, left to right — which
   // is what a replay reproduces.
-  const [startedAt, ingested] = await Promise.all([now(), ingestRecording(input.recording)]);
+  //
+  // `clockStart` and `clockEnd` are two NAMES for one function, deliberately.
+  // `(name, occurrence)` step identity would tell two `now` calls apart on its
+  // own (`now#0`, `now#1`), but a run's history is read by a person: `clockEnd`
+  // says which end it is where `now#1` makes the reader count call sites.
+  // `maxAttempts: 6` was `ingestRecording.maxRetries = 5`.
+  const [startedAt, ingested] = await Promise.all([
+    ctx.step("clockStart", () => now()),
+    ctx.step("ingestRecording", () => ingestRecording(input.recording), { maxAttempts: 6 }),
+  ]);
 
   // Pure, in the body, from journaled values. See the module doc. Planned against
   // the stored BYTE COUNT rather than the reported duration — `durationSeconds`
@@ -169,14 +180,22 @@ export async function auditFlow(input: WorkflowInputOf<typeof audit>): Promise<C
   // already journaled, so a resume replays those for free and re-issues only what
   // is missing — where catching here to salvage a partial transcript would return
   // a recording with a silent hole in it and report success.
+  // `mapConcurrent` hands out items from a monotonic cursor, so the Nth call
+  // ISSUED is segment N whatever order they settle in — which is what makes
+  // `transcribeSegment#N` stable across a replay. `maxAttempts: 6` was
+  // `transcribeSegment.maxRetries = 5`.
   const parts = await mapConcurrent(segments, SEGMENT_CONCURRENCY, (segment) =>
-    transcribeSegment(ingested.audio, segment),
+    ctx.step("transcribeSegment", () => transcribeSegment(ingested.audio, segment), {
+      maxAttempts: 6,
+    }),
   );
 
   const transcript = joinSegments(segments, parts);
-  const summary = await summarize(transcript, ingested.source, ingested.durationMs);
-  const spoken = await narrate(summary.spoken, input.voice);
-  const finishedAt = await now();
+  const summary = await ctx.step("summarize", () =>
+    summarize(transcript, ingested.source, ingested.durationMs),
+  );
+  const spoken = await ctx.step("narrate", () => narrate(summary.spoken, input.voice));
+  const finishedAt = await ctx.step("clockEnd", () => now());
 
   // Whatever this returns is what a caller reads as `output` on a completed run —
   // so it is what the page renders, typed through `WorkflowOutputOf`. Assembled in
@@ -221,8 +240,6 @@ export async function auditFlow(input: WorkflowInputOf<typeof audit>): Promise<C
  * no reason for a second copy of it to exist.
  */
 export async function transcribeSegment(audioId: string, segment: Segment): Promise<SegmentText> {
-  "use step";
-
   // One line per segment, which is what makes the fan-out legible to a page: the
   // status is `running` for the whole thing, so without this a sixty-segment
   // recording and a one-segment recording look identical while they run.
@@ -249,7 +266,6 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
  * Retries beyond the default 3, because a rate limit is the expected failure and a
  * segment that 429s is not a segment that is wrong.
  */
-transcribeSegment.maxRetries = 5;
 
 /**
  * When it is now, as epoch ms.
@@ -266,8 +282,6 @@ transcribeSegment.maxRetries = 5;
  * smaller thing.
  */
 export async function now(): Promise<number> {
-  "use step";
-
   return Date.now();
 }
 

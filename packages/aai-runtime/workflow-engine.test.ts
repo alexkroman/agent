@@ -11,11 +11,14 @@
  */
 
 import { type WorkflowCtx, workflow } from "@alexkroman1/aai";
+import { publishStepReporter } from "@alexkroman1/aai/host-internal";
+import { report } from "@alexkroman1/aai/step";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import type { JournalStore } from "./workflow-journal-types.ts";
+import { createStepReporter } from "./workflow-report.ts";
 import { createMemoryStreams } from "./workflow-streams.ts";
 
 /** A workflow body, as the engine's registry holds one. */
@@ -405,5 +408,138 @@ describe("hooks", () => {
     // The step is answered from the journal on the resume, not re-run.
     expect(work).toHaveBeenCalledTimes(1);
     expect(await engine.readOutput(runId)).toEqual({ notes: "researched", ok: true });
+  });
+});
+
+describe("progress", () => {
+  test("a report() from inside a step reaches the run's stream", async () => {
+    // The seam this proves: `report()` finds its run through
+    // `workflow-run-context.ts` rather than through the DevKit's
+    // `getWritable()`, and the executor enters that context per STEP so the
+    // line is attributed to the right one.
+    const journal = createMemoryJournal();
+    const streams = createMemoryStreams();
+    const engine = createWorkflowEngine({
+      workflows: {
+        digest: workflow({
+          description: "digest",
+          run: async (_input, ctx) => {
+            await ctx.step("research", async () => {
+              await report("reading the page");
+            });
+            return "done";
+          },
+        }),
+      },
+      journal,
+      streams,
+      dispatch: () => undefined,
+      newRunId: () => "wrun_1",
+      logger: silentLogger,
+    });
+
+    // The reporter is a process-global slot, so it is published for this test
+    // and taken back down — `publishStepReporter` returns nothing, so the
+    // `finally` publishes `undefined` rather than calling a restore.
+    publishStepReporter(createStepReporter(silentLogger));
+    try {
+      const runId = await engine.start("digest", [{}]);
+      expect(await engine.execute(runId)).toBe("completed");
+    } finally {
+      publishStepReporter(undefined);
+    }
+
+    expect(await streams.read("wrun_1", {})).toEqual([{ index: 0, value: "reading the page" }]);
+    expect(await engine.streamTail("wrun_1", {})).toBe(0);
+  });
+});
+
+describe("a hook with a deadline", () => {
+  /** A body that waits for an answer but not forever — Temporal's `timeoutOrUserAction`. */
+  const gated = {
+    digest: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      const answer = await ctx.waitFor<{ keep: boolean }>("tok_gate", { timeoutMs: 60_000 });
+      return { kept: answer?.keep ?? false, answered: answer !== undefined };
+    },
+  };
+
+  test("suspends with the deadline scheduled, so an unanswered window still ends", async () => {
+    // The difference from an unbounded wait: THIS one schedules a delivery,
+    // because the window closing is an event the engine owns.
+    const { engine, dispatch } = harness(gated);
+    const runId = await engine.start("digest", [{}]);
+    dispatch.mockClear();
+
+    expect(await engine.execute(runId)).toBe("running");
+    const [id, at] = dispatch.mock.calls[0] ?? [];
+    expect(id).toBe(runId);
+    expect(at).toBeGreaterThan(Date.now());
+  });
+
+  test("an answer inside the window wins", async () => {
+    const { engine } = harness(gated);
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    expect(await engine.signal("tok_gate", { keep: true })).toBe(true);
+    expect(await engine.execute(runId)).toBe("completed");
+    expect(await engine.readOutput(runId)).toEqual({ kept: true, answered: true });
+  });
+
+  test("a closed window resolves undefined, so the body takes its safe default", async () => {
+    // `undefined` rather than a throw: a window closing is an outcome a body
+    // branches on. The deadline is forced past by waking the companion sleep,
+    // which is how a `wake` cuts the window short too.
+    const journal = createMemoryJournal();
+    const engine = createWorkflowEngine({
+      workflows: { digest: workflow({ description: "d", run: gated.digest }) },
+      journal,
+      streams: createMemoryStreams(),
+      dispatch: () => undefined,
+      newRunId: () => "wrun_1",
+      logger: silentLogger,
+    });
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+
+    expect(await journal.wakeSleeps(runId, undefined)).toBe(1);
+    expect(await engine.execute(runId)).toBe("completed");
+    expect(await engine.readOutput(runId)).toEqual({ kept: false, answered: false });
+  });
+
+  test("a signal that arrives after the window closed is refused", async () => {
+    // So a caller cannot be told their answer was taken when it was not.
+    const journal = createMemoryJournal();
+    const engine = createWorkflowEngine({
+      workflows: { digest: workflow({ description: "d", run: gated.digest }) },
+      journal,
+      streams: createMemoryStreams(),
+      dispatch: () => undefined,
+      newRunId: () => "wrun_1",
+      logger: silentLogger,
+    });
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    await journal.wakeSleeps(runId, undefined);
+    await engine.execute(runId);
+
+    expect(await engine.signal("tok_gate", { keep: true })).toBe(false);
+  });
+
+  test("the deadline is decided ONCE, so a replay cannot extend the window", async () => {
+    const journal = createMemoryJournal();
+    const engine = createWorkflowEngine({
+      workflows: { digest: workflow({ description: "d", run: gated.digest }) },
+      journal,
+      streams: createMemoryStreams(),
+      dispatch: () => undefined,
+      newRunId: () => "wrun_1",
+      logger: silentLogger,
+    });
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    const first = await journal.claimSleep(runId, "hookTimeout!0", 0, undefined);
+    await engine.execute(runId);
+    const second = await journal.claimSleep(runId, "hookTimeout!0", 0, undefined);
+    expect(second.wakeAt).toBe(first.wakeAt);
   });
 });

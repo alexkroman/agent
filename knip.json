@@ -145,10 +145,20 @@
         "**/*.test.ts",
         "_test-utils.ts"
       ],
-      // `workflow` needs no entry here any more: `dev-workflow.scenario.test.ts`
-      // imports `workflow/api` for real, to start a run against the dev server it
-      // just booted. It was ignored while the only use was a fixture project
-      // symlinking this package's node_modules so the DevKit resolved THERE.
+      // `workflow` is used only from FIXTURE SOURCE — template literals that
+      // `dev-workflow.scenario.test.ts` and `_e2e-workflow-test-utils.ts` write
+      // into a scaffolded project, which then resolves the DevKit by walking up
+      // into this package's `node_modules`. knip reads imports, not strings, so
+      // it cannot see those and reports the dependency unused.
+      //
+      // This entry was removed once, on the ground that the same spec ALSO
+      // imported `workflow/api` for real to start a run — and it came back when
+      // that block was deleted: it read the compiler's `workflowId` off a built
+      // bundle, and there is no such id since the engine moved in-house. It goes
+      // for good when the fixtures stop needing the DevKit at all.
+      "ignoreDependencies": [
+        "workflow"
+      ]
     },
     // `templates/**` stays ignored so a template's unused EXPORTS never reach
     // the report — they are examples, not a surface anything imports. The

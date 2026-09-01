@@ -5495,6 +5495,33 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### WaitForOptions
+
+```ts
+type WaitForOptions = {
+  timeoutMs: number;
+};
+```
+
+Per-wait options.
+
+#### Properties
+
+##### timeoutMs
+
+```ts
+timeoutMs: number;
+```
+
+How long to wait before giving up, in milliseconds.
+
+Resolves `undefined` when it elapses unanswered — not a throw, because a
+window closing is an ordinary outcome a body branches on rather than a
+failure. A signal that arrives after it is answered `false`, so a caller
+cannot be told their answer was taken when it was not.
+
+***
+
 ### WorkflowClient
 
 ```ts
@@ -6210,6 +6237,8 @@ duplicate check.
 
 ##### waitFor()
 
+###### Call Signature
+
 ```ts
 waitFor<T>(token: string): Promise<T>;
 ```
@@ -6240,6 +6269,20 @@ generated body-side for exactly this reason a problem.
 a schema before acting on it; the type parameter is a claim about what you
 expect, not a check.
 
+## A deadline is an OPTION, never a race
+
+"Wait for an answer, but not forever" is the common case — Temporal's
+`timeoutOrUserAction`, and what a retention gate or an approval window is.
+Write it as `waitFor(token, { timeoutMs })`, which resolves `undefined` when
+the window closes unanswered.
+
+**Do NOT reach for `Promise.race([ctx.waitFor(t), ctx.sleep(ms)])`.** Both
+suspend, and a suspend unwinds the stack — so the race rejects on whichever
+suspends first and the body stops before the other has been reached. That
+composes under an engine whose waits are real promises and does not compose
+here, which is why the deadline is a parameter: one call the engine can
+journal as one decision.
+
 ###### Type Parameters
 
 ###### T
@@ -6261,6 +6304,32 @@ Who is being waited for. Two concurrent waits in one body
 ###### Returns
 
 `Promise`\<`T`\>
+
+###### Call Signature
+
+```ts
+waitFor<T>(token: string, options: WaitForOptions): Promise<T | undefined>;
+```
+
+###### Type Parameters
+
+###### T
+
+`T` = `unknown`
+
+###### Parameters
+
+###### token
+
+`string`
+
+###### options
+
+[`WaitForOptions`](#waitforoptions)
+
+###### Returns
+
+`Promise`\<`T` \| `undefined`\>
 
 #### Properties
 

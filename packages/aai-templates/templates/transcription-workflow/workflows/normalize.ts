@@ -134,8 +134,6 @@ export type NormalizedRecording = {
  * file that already exists instead of paying for a second one.
  */
 export async function normalizeRecording(uploadId: string): Promise<NormalizedRecording> {
-  "use step";
-
   const stored = await uploadInfo(uploadId);
   const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
 
@@ -235,7 +233,6 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
  * recording out of the store and writes a whole one back, and either can lose a
  * connection on a file this size.
  */
-normalizeRecording.maxRetries = 5;
 
 /**
  * Whether `splitRecording` will be able to read this header.
@@ -266,7 +263,7 @@ export function cuttable(head: Uint8Array, totalBytes: number): boolean {
  * so six times the upload per request is the difference between segments landing
  * in single digits and segments landing at 22-28s — which is not a slow run, it
  * is a run where the first straggler past 30s takes the whole thing down (a
- * segment burns `maxRetries`, the body throws, and every sibling still in flight
+ * segment burns its attempts, the body throws, and every sibling still in flight
  * is discarded and re-billed on the resume).
  *
  * This is NOT the "second opinion" the module doc warns about. That warning is

@@ -45,6 +45,7 @@ import {
   DEFAULT_STEP_MAX_ATTEMPTS,
   type SleepOptions,
   type StepOptions,
+  type WaitForOptions,
   type WorkflowCtx,
 } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/host-internal";
@@ -341,7 +342,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       throw new SuspendSignal(record.wakeAt);
     },
 
-    async waitFor<T>(token: string): Promise<T> {
+    async waitFor<T>(token: string, waitOptions?: WaitForOptions): Promise<T | undefined> {
       // Its own key space again, for the reason sleeps have one.
       const occurrence = hooks;
       hooks++;
@@ -349,8 +350,31 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       // The FIRST payload, every replay. `claimHook` is idempotent on the key, so
       // a re-walk reads what was delivered rather than registering a second wait.
       if (record.delivered) return record.payload as T;
+
       // No deadline: nothing but a signal ends this.
-      throw new SuspendSignal(undefined);
+      if (waitOptions === undefined) throw new SuspendSignal(undefined);
+
+      // A DEADLINE is journaled as its own sleep, sharing the hook's occurrence
+      // so the two travel together. That is what makes the window immune to
+      // replay: the wake time is decided the first time this wait is reached,
+      // where a `Promise.race` against a fresh `ctx.sleep` would restart it on
+      // every delivery and the window would never close.
+      const deadline = await journal.claimSleep(
+        runId,
+        `hookTimeout!${occurrence}`,
+        Date.now() + waitOptions.timeoutMs,
+        undefined,
+      );
+      // Closed unanswered. The hook is CLOSED before the body continues, so a
+      // signal arriving a moment later cannot make the next replay read a
+      // payload and take the answered branch — see `HookRecord.closed`.
+      // `undefined` rather than a throw: a window closing is an outcome a body
+      // branches on, not a failure.
+      if (deadline.woken || Date.now() >= deadline.wakeAt) {
+        await journal.closeHook(runId, `hook!${occurrence}`);
+        return undefined;
+      }
+      throw new SuspendSignal(deadline.wakeAt);
     },
   };
 

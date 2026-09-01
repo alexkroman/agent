@@ -105,8 +105,6 @@ export async function summarize(
   source: string,
   durationMs: number,
 ): Promise<CallSummary> {
-  "use step";
-
   await report("Reading the transcript.");
   const reply = await stepGenerateJsonClassified(
     `Audit this transcript of a recorded call (${source}, ${formatDuration(durationMs)}).\n\n` +
@@ -161,8 +159,6 @@ export async function narrate(
   script: string,
   voice?: string,
 ): Promise<{ audio: string; durationMs: number; bytes: number }> {
-  "use step";
-
   const spoken = await stepSpeak(script, omitUndefined({ voice }));
 
   return await withTempDir(

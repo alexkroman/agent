@@ -19,7 +19,7 @@
  *
  * ## What a step still owns
  *
- * The `"use step"` stays HERE, and it has to. The Workflow DevKit's builder
+ * The STEP BOUNDARY stays HERE, and it has to. Only a body holds a `ctx`, so
  * rewrites step bodies it finds in this directory; one written inside the SDK
  * would be transformed by nothing, so it would run inline with no journal and
  * no retry while looking durable at the call site.
@@ -51,8 +51,6 @@ export type SlackDigestInput = {
  * `RetryableError` carrying Slack's own `Retry-After` on a 5xx.
  */
 export async function sendDigestToSlack(input: SlackDigestInput): Promise<string> {
-  "use step";
-
   await report("Posting the digest to Slack.");
   return await sendToChannelClassified(
     slackChannel({ webhookUrl: input.slackWebhookUrl, textParam: input.slackWorkflowTextParam }),

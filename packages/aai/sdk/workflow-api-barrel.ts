@@ -80,6 +80,7 @@ export type {
   // reachable from this entry point. `StepOptions` is `WorkflowCtx.step`'s.
   SleepOptions,
   StepOptions,
+  WaitForOptions,
   WorkflowBody,
   WorkflowCtx,
   // `WorkflowDef` and `WorkflowClient` belong to the `workflow` capability and

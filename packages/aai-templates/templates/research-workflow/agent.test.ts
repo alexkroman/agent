@@ -13,7 +13,7 @@
  * progress stream, the early wake) ask for what a voice reply can use.
  *
  * The STEPS are exercised separately, and directly: imported through vitest with
- * no bundler in the path, a `"use step"` function is an ordinary async function,
+ * a step is an ordinary exported async function,
  * so its prompt handling, its parsing and its `FatalError` guards are all
  * testable — while durability, suspension and replay are not. The body itself is
  * not driven here for that reason; `aai-cli`'s `dev-workflow.scenario.test.ts`
@@ -25,6 +25,7 @@ import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import {
   createRunSnapshot,
   createToolContext,
+  createWorkflowCtx,
   parseSchemaInput,
   type StubGatewayCall,
   schemaInputIssues,
@@ -41,6 +42,7 @@ import {
   findGaps,
   investigate,
   planAngles,
+  researchFlow,
   writeBrief,
   writeReport,
 } from "./workflows/research.ts";
@@ -422,13 +424,37 @@ describe("the steps that research", () => {
     expect(promptOf(calls, 2)).toContain("search is down");
   });
 
-  test("investigate retries beyond the default, because a rate limit is expected", () => {
-    expect(investigate.maxRetries).toBeGreaterThan(3);
+  test("both investigate waves are called with more attempts than the default", async () => {
+    // The retry policy is an argument to `ctx.step` now rather than a
+    // `maxRetries` property, so it is observable only at the CALL — and there
+    // are two calls, one per wave, which is exactly the kind of thing a property
+    // could not have said differently.
+    // `planAngles`' result is what the fan-out iterates, so it is supplied
+    // rather than run — the rest of the body needs no page and no model.
+    const ctx = createWorkflowCtx({
+      runSteps: false,
+      // Every step the body READS needs a value: with `runSteps: false` nothing
+      // runs, so this is the skeleton of a run rather than a run. That is the
+      // trade — no page, no model and no search, in exchange for spelling the
+      // shape out.
+      results: {
+        planAngles: ["Adoption", "Tooling"],
+        findGaps: ["Cost"],
+        investigate: { angle: "Adoption", findings: "f", sources: [] },
+        investigateGap: { angle: "Cost", findings: "f", sources: [] },
+        writeReport: { summary: "s", report: "r" },
+      },
+    });
+    await researchFlow({ topic: "Tool use", requestedBy: "Ada" }, ctx);
+
+    const investigations = ctx.steps.filter((step) => step.name.startsWith("investigate"));
+    expect(investigations.length).toBeGreaterThan(0);
+    for (const step of investigations) expect(step.maxAttempts).toBeGreaterThan(3);
   });
 
-  test("a rate limit is RETRYABLE, so the DevKit tries again", async () => {
+  test("a rate limit is RETRYABLE, so the engine tries again", async () => {
     // The message alone cannot say this — a 429 and a 401 read alike — so what
-    // is asserted is the class the DevKit actually branches on.
+    // is asserted is the class the engine actually branches on.
     stubGateway([""], { status: 429 });
     const err = await investigate(brief, "Tool use").catch((thrown: unknown) => thrown);
     expect(RetryableError.is(err)).toBe(true);

@@ -10,7 +10,7 @@
  * tool failure. A tool is its own file, so the declaration needs a home that is
  * neither the agent nor any one tool.
  *
- * The `"use workflow"` BODY stays in `workflows/recap.ts`: the Workflow DevKit
+ * The BODY stays in `workflows/recap.ts`: the agent bundle
  * builder scans that directory and rewrites what it finds, and a body written
  * anywhere else runs inline once with no durability and nothing saying so.
  */

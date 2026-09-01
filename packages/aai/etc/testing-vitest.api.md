@@ -240,6 +240,11 @@ type StubUploadWrite = {
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -275,6 +280,7 @@ type WorkflowCtx = {
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public

@@ -25,6 +25,39 @@ derived so both sides agree. A token two waits share is refused rather than
 resolved arbitrarily: one signal would end whichever the store found first and the
 other would wait forever.
 
+## The eight workflow templates are migrated
+
+Every shipped template's body is `(input, ctx)` now, its steps are ordinary
+exported functions called through `ctx.step`, and its `sleep`/`createHook` use is
+`ctx.sleep`/`ctx.waitFor`. `@alexkroman1/aai` and `aai-templates` no longer depend
+on `workflow` at all.
+
+Three things the migration bought rather than merely moved:
+
+- **A retry policy is an argument, not a property.** `fn.maxRetries = 5` became
+  `ctx.step(name, fn, { maxAttempts: 6 })` at the call, which is where it
+  belongs — the same function called from two sites may deserve different
+  patience, and a property could not say so. `research-workflow` has exactly that
+  case, its two `investigate` waves.
+- **`recap-workflow`'s retention gate lost forty lines of scaffolding.** It was
+  `vi.mock("workflow")` over `createHook` and `sleep`, a hand-built `Hook`
+  assembled by hanging members on a real promise, and a never-resolving `sleep`
+  so the two sides of a `Promise.race` could not settle in an order that decided
+  the test instead of the branch. It is one `ctx.waitFor(token, { timeoutMs })`,
+  so an answer is a `hooks` entry and the closed window is its absence.
+- **`createWorkflowCtx` (`@alexkroman1/aai/testing`) is new**, because a body
+  takes a `ctx` only an engine constructs and three templates had hand-rolled
+  one. It runs the steps and records what the body asked for, so a spec can
+  assert a policy that is otherwise observable nowhere.
+
+`ctx.waitFor` takes a `timeoutMs` for the same reason, and it is a parameter
+rather than a race deliberately: both `waitFor` and `sleep` suspend, and a
+suspend unwinds the stack, so `Promise.race([waitFor, sleep])` stops the body
+before the other side has been reached. Worse, it DIVERGES — the body returns
+`undefined` and moves on, and a signal landing a second later would make the next
+replay read a payload and take the answered branch. The engine closes the hook as
+the window shuts, so the answer stays a fact.
+
 `@alexkroman1/aai` no longer depends on `workflow` at all.
 
 Eighteen capability epoch classifications in all, every one a `--drop`: `workflow`, `workflow-api` and `step-errors` for the signature changes above, `aai-runtime:eval` for the eval engine's own `WorkflowCtx`, and the rest collaterally — their reports name `ToolContext.workflows`, so the changed body type reaches them.

@@ -10,7 +10,7 @@
  * so "both halves import the declaration" needs the declaration to have a home
  * that is neither half.
  *
- * The `"use workflow"` BODY stays in `workflows/research.ts`: the Workflow DevKit
+ * The BODY stays in `workflows/research.ts`: the agent bundle
  * builder scans that directory and rewrites what it finds, and a body written
  * anywhere else runs inline once with no durability and nothing saying so.
  */

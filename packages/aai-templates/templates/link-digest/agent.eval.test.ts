@@ -18,17 +18,19 @@
 //     each one is answered in memory. It proves the wiring, not the summary.
 //
 // WHAT NO EVAL HERE COVERS: durability. Imported through vitest with no bundler
-// in the path, a `"use workflow"` body is an ordinary async function — no
+// in the path, a workflow body is an ordinary async function — no
 // journal, no replay, no retry, and the `sleep` is RECORDED rather than taken.
 // `run.slept` below is that admission written as an assertion. The tier that
 // really suspends and resumes a run is `aai-cli`'s
 // `dev-workflow.scenario.test.ts`.
+
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect, onTestFinished } from "vitest";
 import agentDef, { digest } from "./agent.ts";
+import { SETTLE_MS } from "./workflows/digest.ts";
 
 /** The gateway leg, so one handler can route the page and the model apart. */
 const isModelCall = (url: string): boolean => url.includes("/chat/completions");
@@ -150,7 +152,7 @@ describeWorkflowEval(agentDef, (test) => {
     expect(run.reported).toContain("Filing the digest.");
     // The one thing this harness cannot do, stated as an assertion rather than
     // left implied: the durable wait was ASKED FOR and not taken.
-    expect(run.slept).toEqual([{ duration: "10 seconds" }]);
+    expect(run.slept).toEqual([{ duration: SETTLE_MS }]);
   });
 
   test("fails terminally on a page with no readable text", async ({ app, mode }) => {

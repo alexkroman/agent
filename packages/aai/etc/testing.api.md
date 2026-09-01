@@ -56,6 +56,9 @@ export function createStubWorkflows(overrides?: Partial<WorkflowClient>): Workfl
 export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 
 // @public
+export function createWorkflowCtx(options?: WorkflowCtxOptions): WorkflowCtxRecorder;
+
+// @public
 type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @public
@@ -172,6 +175,18 @@ interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+export type RecordedSleep = {
+    until: number | Date;
+    correlationId?: string | undefined;
+};
+
+// @public
+export type RecordedStep = {
+    name: string;
+    maxAttempts?: number | undefined;
+};
 
 // @public
 export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
@@ -763,6 +778,11 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -798,6 +818,23 @@ type WorkflowCtx = {
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public
+export type WorkflowCtxOptions = {
+    runId?: string;
+    workflow?: string;
+    runSteps?: boolean;
+    results?: Record<string, unknown>;
+    hooks?: Record<string, unknown>;
+};
+
+// @public
+export type WorkflowCtxRecorder = WorkflowCtx & {
+    readonly steps: RecordedStep[];
+    readonly slept: RecordedSleep[];
+    readonly waited: string[];
 };
 
 // @public

@@ -223,14 +223,20 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // case it costs. The seam that would close it is an
       // `openEvalWorkflows({ hooks })` supplying payloads by token; it is not
       // built, and this message is what says so.
-      waitFor: () =>
-        Promise.reject(
-          new Error(
-            "ctx.waitFor is not available in an eval run: a hook's payload comes from " +
-              "outside the run, so there is nothing here to send one. Drive the run " +
-              "through the workflow HTTP API in a scenario test instead.",
-          ),
-        ),
+      waitFor: (_token: string, waitOptions?: { timeoutMs: number }) =>
+        // A wait with a DEADLINE has an honest answer here — nobody signalled, so
+        // the window closed — and it is the branch a retention gate or an
+        // approval window takes when no one replies. Only an UNBOUNDED wait has
+        // nothing this engine can say.
+        waitOptions !== undefined
+          ? Promise.resolve(undefined)
+          : Promise.reject(
+              new Error(
+                "ctx.waitFor is not available in an eval run: a hook's payload comes from " +
+                  "outside the run, so there is nothing here to send one. Drive the run " +
+                  "through the workflow HTTP API in a scenario test instead.",
+              ),
+            ),
     };
   }
 

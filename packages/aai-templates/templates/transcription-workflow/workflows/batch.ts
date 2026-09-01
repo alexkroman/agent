@@ -34,7 +34,7 @@
  * What stays here is what a dependency cannot decide: how many steps to cut the job
  * into, and therefore what is journaled and what a retry repeats. That is also
  * structural rather than stylistic — the Workflow DevKit's builder transforms
- * exactly the files under this `workflows/` directory, so a `"use step"` shipped
+ * only a body holds a `ctx`, so a step boundary shipped
  * inside the SDK would be transformed by nothing and would run inline with no
  * journal and no retry, silently.
  *
@@ -54,6 +54,7 @@
  * request rather than two and the value journaled by the last poll IS the result.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { report, TRANSCRIBE_API, uploadInfo } from "@alexkroman1/aai/step";
 import {
   stepTranscribePollClassified,
@@ -61,11 +62,10 @@ import {
   stepTranscribeUploadClassified,
 } from "@alexkroman1/aai/step-errors";
 import { countWords, formatBytes } from "@alexkroman1/aai/utils";
-import { sleep } from "workflow";
 import { startClock, type Transcript } from "./transcribe.ts";
 
 /** How long between polls of a submitted job. */
-const POLL_INTERVAL = "10s";
+const POLL_INTERVAL_MS = 10_000;
 
 /**
  * Polls before the run gives up on a job.
@@ -77,22 +77,26 @@ const POLL_INTERVAL = "10s";
 const MAX_POLLS = 360;
 
 /** Transcribe a recording through the async API. */
-export async function transcribeBatchFlow(input: { recording: string }): Promise<Transcript> {
-  "use workflow";
-
+export async function transcribeBatchFlow(
+  input: { recording: string },
+  ctx: WorkflowCtx,
+): Promise<Transcript> {
   // Both at once: the clock does not depend on the upload, and issuing them
   // together costs one round trip instead of two before a byte moves. Their issue
   // order is still decided by this line rather than by which lands first.
+  // `maxAttempts: 6` was `uploadToProvider.maxRetries = 5`.
   const [startedAt, { audioUrl }] = await Promise.all([
-    startClock(),
-    uploadToProvider(input.recording),
+    ctx.step("startClock", () => startClock()),
+    ctx.step("uploadToProvider", () => uploadToProvider(input.recording), { maxAttempts: 6 }),
   ]);
-  const job = await createJob(audioUrl);
+  const job = await ctx.step("createJob", () => createJob(audioUrl));
 
   for (let poll = 0; poll < MAX_POLLS; poll += 1) {
-    const progress = await pollTranscript(input.recording, job.id, startedAt);
+    const progress = await ctx.step("pollTranscript", () =>
+      pollTranscript(input.recording, job.id, startedAt),
+    );
     if (progress.done) return progress.transcript;
-    await sleep(POLL_INTERVAL);
+    await ctx.sleep(POLL_INTERVAL_MS);
   }
   // A plain throw: this is the BODY, where the fatal/retryable distinction has
   // nothing to apply to — see `stream.ts`'s `abandon` for the same reasoning.
@@ -123,8 +127,6 @@ export async function transcribeBatchFlow(input: { recording: string }): Promise
  * same reason.
  */
 export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: string }> {
-  "use step";
-
   const stored = await uploadInfo(uploadId);
   await report(
     `Uploading ${stored.name || uploadId} (${formatBytes(stored.size)}) to the async API.`,
@@ -133,12 +135,9 @@ export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: st
 }
 
 /** Retries beyond the default 3: an upload is the one call here worth another attempt. */
-uploadToProvider.maxRetries = 5;
 
 /** Create the transcription job, and answer with the id that outlives this run. */
 export async function createJob(audioUrl: string): Promise<{ id: string }> {
-  "use step";
-
   const job = await stepTranscribeSubmitClassified(audioUrl);
   await report(`Submitted — job ${job.id}.`);
   return job;
@@ -157,8 +156,6 @@ export async function pollTranscript(
   id: string,
   startedAt: number,
 ): Promise<{ done: false } | { done: true; transcript: Transcript }> {
-  "use step";
-
   const progress = await stepTranscribePollClassified(id);
   if (!progress.done) {
     await report(`Transcript ${id} is ${progress.status}.`);

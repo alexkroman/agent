@@ -2,7 +2,7 @@
  * The durable half of the redline desk: write, critique, revise — in a loop
  * whose length the CRITIC decides.
  *
- * The rules a `"use workflow"` body lives under are spelled out in
+ * The rules a workflow body lives under are spelled out in
  * `research-workflow/workflows/research.ts` and `link-digest/workflows/digest.ts`:
  * the body is replayed from the top on every resume, so it holds no live handle
  * and makes no undurable decision, and a step's arguments and result cross a
@@ -31,6 +31,7 @@
  * three functions read more tidily than one.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { report } from "@alexkroman1/aai/step";
 import {
   FatalError,
@@ -96,15 +97,22 @@ export interface Round {
  * the page's render model — and `WorkflowOutputOf<typeof redline>` in
  * `client.tsx` is that type, derived rather than restated.
  */
-export async function redlineFlow(input: RedlineInput) {
-  "use workflow";
-
-  let draft = await writeDraft(input);
+export async function redlineFlow(input: RedlineInput, ctx: WorkflowCtx) {
+  // The three `maxAttempts` below were `maxRetries` properties on the functions
+  // (5, 3, 3 — retries AFTER the first attempt, so 6, 4, 4 in all). The policy
+  // is an argument to the CALL now, which is where it belongs: the same function
+  // called from two places may deserve different patience.
+  let draft = await ctx.step("writeDraft", () => writeDraft(input), { maxAttempts: 4 });
   const rounds: Round[] = [];
   let shipped = false;
 
   for (let round = 1; round <= input.rounds; round++) {
-    const critique = await critiqueDraft(draft, input, round);
+    // ONE call site in a loop, which is exactly what `(name, occurrence)` step
+    // identity is for: this is `critiqueDraft#0`, `critiqueDraft#1`, … so each
+    // round journals separately and a resume replays the rounds already done.
+    const critique = await ctx.step("critiqueDraft", () => critiqueDraft(draft, input, round), {
+      maxAttempts: 6,
+    });
 
     if (critique.verdict === "ship") {
       // The break is decided by a STEP'S JOURNALED RESULT, which is what makes
@@ -114,7 +122,9 @@ export async function redlineFlow(input: RedlineInput) {
       break;
     }
 
-    draft = await reviseDraft(draft, critique, input, round);
+    draft = await ctx.step("reviseDraft", () => reviseDraft(draft, critique, input, round), {
+      maxAttempts: 4,
+    });
     rounds.push({ round, critique, revisedWords: countWords(draft) });
   }
 
@@ -130,8 +140,6 @@ export async function redlineFlow(input: RedlineInput) {
 
 /** Their `generation_node`, first pass. */
 export async function writeDraft(input: RedlineInput): Promise<string> {
-  "use step";
-
   if (input.brief.trim().length < MIN_BRIEF_CHARS) {
     // Fatal rather than retryable: the same brief is the same brief on every
     // attempt, and four more model calls will not make it longer.
@@ -166,8 +174,6 @@ export async function critiqueDraft(
   input: RedlineInput,
   round: number,
 ): Promise<Critique> {
-  "use step";
-
   await report(`Round ${round}: reading it back critically.`);
   // `stepGenerateJson` owns the fence, the parse, the non-object case and the
   // shape — and throws PLAINLY when any of them misses, unlike the fatal one
@@ -200,8 +206,6 @@ export async function reviseDraft(
   input: RedlineInput,
   round: number,
 ): Promise<string> {
-  "use step";
-
   await report(`Round ${round}: revising.`);
   const revised = await stepGenerateClassified(
     [
@@ -242,8 +246,3 @@ export function clampScore(score: number): number {
 // `RetryableError` carrying the delay the gateway itself named, which beats
 // `RetryableError`'s own one-second default. Three templates each wrapped the
 // raw `/step` call to say that; the wrapper is a suffix on the import now.
-
-/** A rate limit — and a model that ignored the format — are both expected. */
-critiqueDraft.maxRetries = 5;
-writeDraft.maxRetries = 3;
-reviseDraft.maxRetries = 3;

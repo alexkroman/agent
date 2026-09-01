@@ -1851,6 +1851,12 @@ Re-exports [UploadRange](step.md#uploadrange)
 
 ***
 
+### WaitForOptions
+
+Re-exports [WaitForOptions](index.md#waitforoptions)
+
+***
+
 ### WorkflowClient
 
 Re-exports [WorkflowClient](index.md#workflowclient)

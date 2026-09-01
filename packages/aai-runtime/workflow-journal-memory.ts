@@ -202,14 +202,19 @@ export function createMemoryJournal(): JournalStore {
       return { ...record };
     },
 
+    async closeHook(runId: string, key: string): Promise<void> {
+      const record = slotOf(runId)?.hooks.get(key);
+      if (record) record.closed = true;
+    },
+
     async deliverHook(token: string, payload: unknown): Promise<string | undefined> {
       const owner = byToken.get(token);
       if (!owner) return undefined;
       const record = runs.get(owner.runId)?.hooks.get(owner.key);
-      // Already answered: the second signal is not a second resolution. A body
-      // is replayed and must read the FIRST payload every time, or two walks of
-      // it diverge.
-      if (!record || record.delivered) return undefined;
+      // Already answered, or the window closed. Both are the same refusal for
+      // the same reason: a body is replayed and must read the same answer every
+      // time, or two walks of it diverge.
+      if (!record || record.delivered || record.closed) return undefined;
       record.delivered = true;
       record.payload = payload;
       return owner.runId;

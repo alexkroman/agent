@@ -4,7 +4,7 @@
  *
  * **The body itself is not driven here**, and that is a property of what a
  * workflow template demonstrates rather than a gap: imported through vitest
- * with no bundler in the path, a `"use step"` function is an ordinary async
+ * a step is an ordinary exported async function, so
  * function — so its HTTP handling, its fatal/retryable classification and what
  * it returns are all testable, while durability, suspension and replay are not.
  * A body test that looked like a durability test would be the worse failure;
@@ -19,6 +19,7 @@
 
 import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
+import { createWorkflowCtx } from "@alexkroman1/aai/testing";
 import {
   installStubGateway,
   installStubReporter,
@@ -233,7 +234,7 @@ describe("the whole run", () => {
   /**
    * Answer every leg's HTTP, so the BODY can be driven end to end.
    *
-   * Imported through vitest with no bundler in the path, a `"use workflow"`
+   * Imported through vitest, a workflow
    * function is an ordinary async function — so what this exercises is the
    * ORDER the legs are wired in and the shape they hand each other, which is
    * the one thing the per-leg specs above cannot see. Durability, suspension
@@ -276,7 +277,7 @@ describe("the whole run", () => {
     installStubReporter();
     installStubSpeech();
 
-    const summary = await spokenSummaryFlow({ recording: UPLOAD_ID });
+    const summary = await spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowCtx());
 
     expect(summary).toEqual({
       source: "standup.wav",
@@ -298,7 +299,7 @@ describe("the whole run", () => {
     installStubReporter();
     const speech = installStubSpeech();
 
-    await spokenSummaryFlow({ recording: UPLOAD_ID, voice: "michael" });
+    await spokenSummaryFlow({ recording: UPLOAD_ID, voice: "michael" }, createWorkflowCtx());
 
     expect(speech.calls[0]).toMatchObject({ text: "Spoken.", voice: "michael" });
   });
@@ -308,6 +309,8 @@ describe("the whole run", () => {
     installStubReporter();
     installStubSpeech();
 
-    await expect(spokenSummaryFlow({ recording: UPLOAD_ID })).rejects.toThrow("corrupt audio");
+    await expect(spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowCtx())).rejects.toThrow(
+      "corrupt audio",
+    );
   });
 });

@@ -24,7 +24,7 @@
 // that answers "is the transcript really of the recording".
 //
 // WHAT NO EVAL HERE COVERS: durability. Imported through vitest with no bundler
-// in the path, a `"use workflow"` body is an ordinary async function — no
+// in the path, a workflow body is an ordinary async function — no
 // journal, no replay, and no per-step retry, so the resume-after-segment-27
 // property this template exists to demonstrate is NOT exercised here, and a
 // rate-limited live run fails where a deployed one would have ridden it out.

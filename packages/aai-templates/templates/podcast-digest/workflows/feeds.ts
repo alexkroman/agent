@@ -92,8 +92,6 @@ export async function discoverEpisodes(
   podcastChannels: string,
   maxEpisodes: number,
 ): Promise<Episode[]> {
-  "use step";
-
   await report("Finding recent podcast episodes.");
   const links = parsePodcastChannels(podcastChannels);
   if (links.length === 0) throw new FatalError("Add at least one podcast link.");

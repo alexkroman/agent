@@ -394,6 +394,8 @@ describe("API-EXPORTS.json", () => {
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("ToolModules");
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
       "ProjectFiles",
+      "RecordedSleep",
+      "RecordedStep",
       "RunSnapshotOverrides",
       "STUB_SPEECH_PCM_BYTES",
       "SentEvent",
@@ -430,10 +432,13 @@ describe("API-EXPORTS.json", () => {
       "ToolBearingAgent",
       "ToolContextOverrides",
       "ToolRunner",
+      "WorkflowCtxOptions",
+      "WorkflowCtxRecorder",
       "createProgressStream",
       "createRunSnapshot",
       "createStubWorkflows",
       "createToolContext",
+      "createWorkflowCtx",
       "deployedAgent",
       "ok",
       "okPosition",

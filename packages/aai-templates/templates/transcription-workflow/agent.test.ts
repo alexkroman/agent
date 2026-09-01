@@ -5,7 +5,7 @@
  *
  * **The body itself is not driven here, and that is a property of what this
  * template demonstrates rather than a gap in the spec.** Imported through vitest
- * with no bundler in the path, a `"use step"` function is an ordinary async
+ * a step is an ordinary exported async function, so
  * function — so its retries, its `FatalError` guards, its HTTP handling and its
  * merge are all testable, while durability, suspension and replay are not. A
  * body test that looked like a durability test would be the worse failure; the
@@ -21,6 +21,7 @@ import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { readUpload } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
+import { createWorkflowCtx } from "@alexkroman1/aai/testing";
 import {
   installStubReporter,
   installStubStepFetch,
@@ -52,6 +53,7 @@ import {
   stitchChunks,
   stitchTranscript,
   TRANSCRIPT_STREAM,
+  transcribeFlow,
   transcribeSegment,
 } from "./workflows/transcribe.ts";
 import {
@@ -610,8 +612,27 @@ describe("transcribeSegment", () => {
     );
   });
 
-  test("retries beyond the default, because a rate limit is expected", () => {
-    expect(transcribeSegment.maxRetries).toBeGreaterThan(3);
+  test("is called with more attempts than the default by every flow that fans out", async () => {
+    // The policy is an argument to `ctx.step` now, so it is observable only at
+    // the CALL — and there are three call sites across the three flows, which is
+    // exactly the kind of thing a property on the function could not have said
+    // differently. `runSteps: false` with a skeleton of results: no provider, no
+    // ffmpeg, no bytes.
+    const ctx = createWorkflowCtx({
+      runSteps: false,
+      results: {
+        startClock: 0,
+        normalizeRecording: { recording: UPLOAD_ID, converted: false },
+        splitRecording: { format: FORMAT, segments: [SEGMENT], durationMs: 1000 },
+        transcribeSegment: { index: 0, text: "hello" },
+        mergeTranscript: { text: "hello" },
+      },
+    });
+    await transcribeFlow({ recording: UPLOAD_ID }, ctx);
+
+    const segments = ctx.steps.filter((step) => step.name === "transcribeSegment");
+    expect(segments.length).toBeGreaterThan(0);
+    for (const step of segments) expect(step.maxAttempts).toBeGreaterThan(3);
   });
 });
 
@@ -651,7 +672,7 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
  * The STREAMING flow's own steps.
  *
  * Same honest line as the classic half above: the steps are driven directly and the
- * body is not, because imported through vitest a `"use step"` function is an ordinary
+ * body is not, because a step is an ordinary exported async function and this is
  * async function. Almost nothing here is new — the transcribing and the merging are
  * `transcribe.ts`'s own steps, called unchanged — so what is worth asserting is the
  * two things this flow adds: reading how far the upload has got, and planning from a
@@ -1132,7 +1153,6 @@ describe("the conversion, up to the spawn", () => {
     // It got as far as deciding the file needs converting — the failure is the
     // binary, not the input.
     expect(reporter.lines.join(" ")).toContain("standup.m4a");
-    expect(normalizeRecording.maxRetries).toBe(5);
   });
 
   test("leaves no temp directory behind when the conversion fails", async () => {

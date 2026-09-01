@@ -27,6 +27,10 @@ export {
   // worth having, so its option bag is part of the declaring surface.
   type SleepOptions,
   type StepOptions,
+  // `ctx.waitFor`'s options. A hook's DEADLINE is a parameter rather than a race
+  // against `ctx.sleep`, because both suspend and a suspend unwinds the stack —
+  // so the deadline belongs to the declaring surface too.
+  type WaitForOptions,
   type WorkflowClient,
   // What a BODY is handed, and the per-step overrides it may pass. They join
   // this capability rather than `workflow-api` by that same test: `ctx.step` is
