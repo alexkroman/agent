@@ -34,6 +34,7 @@ function fakeWorkflows(): WorkflowClient {
   return {
     ...rejectingWorkflows("not stubbed in this test"),
     start: vi.fn(async () => "wrun_1"),
+    signal: vi.fn(async (token: string) => token === "live"),
     get: vi.fn(async () => undefined),
     find: vi.fn(async () => []),
     recent: vi.fn(async () => []),
@@ -200,5 +201,86 @@ describe("the workflow API mount", () => {
     });
     await server.listen(0);
     expect((await get(`http://127.0.0.1:${server.port}/workflows`)).status).toBe(200);
+  });
+
+  /**
+   * The webhook route, which is the one workflow URL handed to a third party.
+   *
+   * It is mounted HERE — by `createServer`, off the same lazy `runtime.workflows`
+   * getter the API uses — and that is the regression. It used to be mounted by
+   * `createWorkflowSurface`, gated on the DevKit's `workflowCode`/`stepCode`
+   * pair; once the engine replaced the DevKit those strings stopped existing, so
+   * the route was reachable from NOWHERE and every callback a deployed run had
+   * handed out answered 404 forever. Nothing else could see it: the run reported
+   * as healthily suspended, and the failure lands weeks later on somebody else's
+   * server.
+   */
+  describe("the webhook route", () => {
+    const hookUrl = (port: number | undefined, token: string) =>
+      `http://127.0.0.1:${port}/.well-known/workflow/v1/webhook/${token}`;
+
+    async function serveWorkflows() {
+      const workflows = fakeWorkflows();
+      server = createServer({ runtime: makeRuntime(() => workflows), logger: silentLogger });
+      await server.listen(0);
+      const { port } = server;
+      // `listen` resolved, so a port is bound. A THROW rather than an
+      // `expect.fail`: this is a helper, and Biome's `noMisplacedAssertion`
+      // rightly refuses an assertion outside a test body. Without it an
+      // undefined builds `…/undefined/live` and every case below fails on a URL
+      // nobody looks at.
+      if (port === undefined) throw new Error("server bound no port");
+      return { workflows, port };
+    }
+
+    test("delivers to an open hook and answers 200", async () => {
+      const { workflows, port } = await serveWorkflows();
+      const res = await fetch(hookUrl(port, "live"), {
+        method: "POST",
+        body: JSON.stringify({ approved: true }),
+      });
+      expect(res.status).toBe(200);
+      expect(workflows.signal).toHaveBeenCalledWith("live", { approved: true });
+    });
+
+    test("takes whatever verb the far side chose", async () => {
+      // The URL went to a third party, which picks its own method.
+      const { workflows, port } = await serveWorkflows();
+      expect((await fetch(hookUrl(port, "live"))).status).toBe(200);
+      expect(workflows.signal).toHaveBeenCalledWith("live", undefined);
+    });
+
+    test("a token nothing is listening on answers 404, never a 5xx", async () => {
+      // The caller is a third party with a retry loop, and a 5xx tells that loop
+      // to come back — so an expired callback was retried against an error
+      // forever. 404 is what stops it, and it is stable: a closed hook does not
+      // reopen.
+      const { port } = await serveWorkflows();
+      const res = await fetch(hookUrl(port, "gone"), { method: "POST" });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "No workflow hook for this token" });
+    });
+
+    test("an agent that declares no workflows answers 404 rather than 500", async () => {
+      server = createServer({ runtime: makeRuntime(), logger: silentLogger });
+      await server.listen(0);
+      expect((await fetch(hookUrl(server.port, "live"), { method: "POST" })).status).toBe(404);
+    });
+
+    test("answers a malformed token instead of killing the process", async () => {
+      // The regression for the worst finding of the 2026-08 sweep: a raw `%`
+      // clears the ""/"/" guards and reached `decodeURIComponent`, whose URIError
+      // surfaced as an uncaughtException — `process.exit(4)` in the guest, taking
+      // every concurrent voice session with it, from an unauthenticated GET.
+      // Driven through a real server because an ANSWER is the proof: a throw here
+      // destroys the socket rather than answering.
+      const { workflows, port } = await serveWorkflows();
+      for (const token of ["%", "%A", "%zz", "%C0%80"]) {
+        const res = await fetch(hookUrl(port, token));
+        expect(res.status, token).toBe(404);
+      }
+      // Declined rather than delivered: a token nobody can decode names no run.
+      expect(workflows.signal).not.toHaveBeenCalled();
+    });
   });
 });

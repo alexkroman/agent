@@ -21,7 +21,6 @@ function surfaceOf(): WorkflowSurface {
   return {
     flow: vi.fn(async () => new Response("flow", { status: 200 })),
     step: vi.fn(async () => new Response("step", { status: 200 })),
-    webhook: vi.fn(async () => new Response("hook", { status: 200 })),
   };
 }
 
@@ -153,13 +152,17 @@ describe("dispatchQueueMessage", () => {
     expect(surface.step).not.toHaveBeenCalled();
   });
 
-  test("never reaches the webhook handler, whatever the queue name says", async () => {
-    // The webhook is the one workflow route a third party calls, gated by its own
-    // path token. A queue name must not be a way to reach it.
+  test("resolves ONLY flow and step, whatever the queue name says", async () => {
+    // This used to assert that no queue name reaches the WEBHOOK handler — the
+    // one workflow route a third party calls, gated by its own path token rather
+    // than by a queue name. That property is now structural: the webhook is not
+    // on `WorkflowSurface` at all, having moved to `createServer` when the
+    // replay engine replaced the DevKit's hook table. What is still worth
+    // pinning is the general form, since the surface can grow another member.
     const surface = surfaceOf();
     for (const name of ["__wkf_workflow_r1", "__wkf_step_r1", "__wkf_webhook_r1"]) {
       await deliver(surface, name).catch(() => undefined);
     }
-    expect(surface.webhook).not.toHaveBeenCalled();
+    expect(Object.keys(surface).sort()).toEqual(["flow", "step"]);
   });
 });

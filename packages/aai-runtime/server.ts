@@ -34,7 +34,9 @@ import { createSessionEventsApi, SESSION_EVENTS_TOKEN_ENV } from "./session-even
 import { handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
 import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
 import { answerHandlerFailure, sendJson } from "./workflow-api-http.ts";
+import { serveFetch } from "./workflow-http-adapter.ts";
 import { installWorkflowSupport } from "./workflow-install.ts";
+import { createWebhookHandler, webhookToken } from "./workflow-webhook.ts";
 import { asSessionWebSocket } from "./ws-handler.ts";
 
 export type {
@@ -152,6 +154,20 @@ export function createServer(options: ServerOptions): AgentServer {
   });
 
   /**
+   * `/.well-known/workflow/v1/webhook/:token` — the one workflow URL handed to a
+   * third party.
+   *
+   * Mounted HERE, beside the workflow API and on the same lazy getter, because
+   * every front door goes through `createServer` — `aai dev`, a self-hosted
+   * `server.mjs`, a deployed guest — and this route must answer identically on
+   * all three. It used to be mounted by `createWorkflowSurface` instead, which
+   * is gated on the DevKit's `workflowCode`/`stepCode` pair; those strings no
+   * longer exist, so the route was reachable nowhere and every callback a
+   * deployed run handed out 404'd.
+   */
+  const workflowWebhook = createWebhookHandler(() => runtime.workflows, logger);
+
+  /**
    * The session event stream's read surface (`/session-events/:id`).
    *
    * Mounted beside the workflow API and for the same reason: every front door —
@@ -221,6 +237,18 @@ export function createServer(options: ServerOptions): AgentServer {
     // the guest's manage surface) and before static serving, so a client asset
     // named `workflows` can never shadow the API.
     if (workflowApi(req, res, url, method)) return;
+    const hookToken = webhookToken(url);
+    if (hookToken !== undefined) {
+      void serveFetch((request) => workflowWebhook(hookToken, request), req, res, {
+        logger,
+        label: "Workflow webhook",
+        // 502, not 500: the caller is a third party whose retry loop reads a 5xx
+        // as "come back". An ordinary MISS never reaches here — the handler
+        // answers that 404 itself, which is what stops the loop.
+        failureStatus: 502,
+      });
+      return;
+    }
     if (sessionEventsApi(req, res, url, method)) return;
     handleRequest(req, res, url, method).catch((err: unknown) => {
       // A rejection here would otherwise be an unhandled rejection that can

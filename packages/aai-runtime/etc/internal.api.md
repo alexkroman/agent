@@ -201,6 +201,7 @@ type FetchHandler = (req: Request) => Promise<Response>;
 // @internal
 export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
+    logger?: Logger | undefined;
 }): boolean;
 
 // @public
@@ -679,7 +680,6 @@ export function workflowJournalDdl(schema?: string): string[];
 export type WorkflowSurface = {
     flow: FetchHandler;
     step: FetchHandler;
-    webhook: (token: string, req: Request) => Promise<Response>;
 };
 
 // @internal

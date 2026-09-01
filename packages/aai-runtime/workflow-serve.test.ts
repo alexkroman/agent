@@ -13,6 +13,7 @@ import { networkInterfaces } from "node:os";
 import { requestPath } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
+import type { Logger } from "./runtime-config.ts";
 import { WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
 import {
   createWorkflowSurface,
@@ -22,11 +23,8 @@ import {
   rewriteWorkflowImports,
   WORKFLOW_FLOW_PATH,
   WORKFLOW_STEP_PATH,
-  WORKFLOW_WEBHOOK_PREFIX,
   type WorkflowSurface,
-  webhookToken,
 } from "./workflow-serve.ts";
-import { createWebhookHandler } from "./workflow-webhook.ts";
 
 describe("rewriteWorkflowImports", () => {
   test("rewrites a bare DevKit import to an absolute file URL", () => {
@@ -157,85 +155,6 @@ describe("createWorkflowSurface", () => {
   });
 });
 
-describe("createWebhookHandler", () => {
-  const req = () => new Request("http://agent.example/hook", { method: "POST" });
-
-  test("a token nothing is listening on answers 404, not 500", async () => {
-    // The caller here is a THIRD PARTY on the public internet — a payment
-    // provider, an approval mail — and a 5xx tells it to retry. Reaching
-    // `serveFetch`'s catch (whose 500 is right for the queue's own callbacks)
-    // meant an expired callback was retried forever. Observed under `aai dev`:
-    // `POST /.well-known/workflow/v1/webhook/nosuchtoken` answered
-    // `500 {"error":"workflow route failed"}`.
-    const handler = createWebhookHandler(
-      () => Promise.reject(new Error("Hook not found")),
-      () => true,
-    );
-    const res = await handler("gone", req());
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "No workflow hook for this token" });
-  });
-
-  test("any OTHER failure still throws, so the queue's retry survives", async () => {
-    // Only the one expected class is an answer. A lost world is a real fault and
-    // must still reach the 500 that gets it another attempt.
-    const boom = new Error("world unreachable");
-    const handler = createWebhookHandler(
-      () => Promise.reject(boom),
-      () => false,
-    );
-    await expect(handler("live", req())).rejects.toBe(boom);
-  });
-
-  test("a delivered webhook is passed through untouched", async () => {
-    const ok = new Response("delivered", { status: 202 });
-    const handler = createWebhookHandler(
-      () => Promise.resolve(ok),
-      () => true,
-    );
-    const res = await handler("live", req());
-    expect(res).toBe(ok);
-    expect(res.status).toBe(202);
-  });
-});
-
-describe("webhookToken", () => {
-  test("extracts the token from a webhook path", () => {
-    expect(webhookToken("/.well-known/workflow/v1/webhook/abc123")).toBe("abc123");
-  });
-
-  test("percent-decodes it", () => {
-    expect(webhookToken("/.well-known/workflow/v1/webhook/a%2Fb")).toBe("a/b");
-  });
-
-  test("rejects an empty trailing segment", () => {
-    // A webhook URL is handed out of the system, so the token IS the
-    // authorization; an empty one must not reach the DevKit as a lookup.
-    expect(webhookToken("/.well-known/workflow/v1/webhook/")).toBeUndefined();
-  });
-
-  test("rejects a multi-segment tail rather than joining it", () => {
-    expect(webhookToken("/.well-known/workflow/v1/webhook/a/b")).toBeUndefined();
-  });
-
-  test("returns undefined for any other path", () => {
-    expect(webhookToken("/.well-known/workflow/v1/flow")).toBeUndefined();
-    expect(webhookToken("/health")).toBeUndefined();
-  });
-
-  test.each([
-    ["a lone percent", "%"],
-    ["a truncated escape", "%A"],
-    ["a non-hex escape", "%zz"],
-    ["an overlong UTF-8 sequence", "%C0%80"],
-  ])("declines %s instead of throwing", (_label, token) => {
-    // `decodeURIComponent` raises URIError on every one of these, and this whole
-    // call chain is synchronous — see the module doc on `_path-decode.ts`.
-    expect(() => webhookToken(`${WORKFLOW_WEBHOOK_PREFIX}${token}`)).not.toThrow();
-    expect(webhookToken(`${WORKFLOW_WEBHOOK_PREFIX}${token}`)).toBeUndefined();
-  });
-});
-
 /**
  * Serve `surface` from a REAL http server and return its base URL.
  *
@@ -253,6 +172,11 @@ async function serving(
   // What a composition WITH a platform supplies. Absent is the default because
   // absent is what `aai dev`, host mode and a self-hosted server all pass.
   allowRemote?: (req: IncomingMessage) => boolean,
+  // Where a failed handler is reported. Injected rather than spied on, because
+  // `consoleLogger` captures `console.error` BY REFERENCE at module load — a
+  // `vi.spyOn(console, "error")` installed by a test replaces the global
+  // afterwards and the captured reference never sees it.
+  logger?: Logger,
 ): Promise<{ url: string; port: number; close: () => Promise<void> }> {
   const server = createServer((req, res) => {
     const url = requestPath(req.url);
@@ -263,7 +187,7 @@ async function serving(
         res,
         url,
         req.method ?? "GET",
-        omitUndefined({ allowRemote }),
+        omitUndefined({ allowRemote, logger }),
       )
     ) {
       res.writeHead(404);
@@ -302,7 +226,6 @@ function surfaceOf(over: Partial<WorkflowSurface> = {}): WorkflowSurface {
   return {
     flow: vi.fn(async () => new Response("flow", { status: 200 })),
     step: vi.fn(async () => new Response("step", { status: 200 })),
-    webhook: vi.fn(async () => new Response("hook", { status: 200 })),
     ...over,
   };
 }
@@ -339,7 +262,7 @@ describe("handleWorkflowRequest", () => {
     let seen: string | undefined;
     const s = await serving(
       surfaceOf({
-        flow: async (req) => {
+        flow: async (req: Request) => {
           seen = await req.text();
           return new Response("ok");
         },
@@ -347,16 +270,6 @@ describe("handleWorkflowRequest", () => {
     );
     await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST", body: `{"runId":"abc"}` });
     expect(seen).toBe(`{"runId":"abc"}`);
-    await s.close();
-  });
-
-  test("routes a webhook by token, whatever verb the far side used", async () => {
-    // The URL went to a third party, which picks its own method.
-    const surface = surfaceOf();
-    const s = await serving(surface);
-    const res = await fetch(`${s.url}${WORKFLOW_WEBHOOK_PREFIX}tok123`);
-    expect(res.status).toBe(200);
-    expect(surface.webhook).toHaveBeenCalledWith("tok123", expect.any(Request));
     await s.close();
   });
 
@@ -373,47 +286,26 @@ describe("handleWorkflowRequest", () => {
     await s.close();
   });
 
-  test("answers a malformed webhook path instead of killing the process", async () => {
-    // The regression for the worst finding of the 2026-08 sweep. `GET
-    // /.well-known/workflow/v1/webhook/%` is an unauthenticated request whose raw
-    // `%` clears the ""/"/" guards and reached `decodeURIComponent`. Nothing in
-    // `webhookToken` → `pickWorkflowHandler` → `handleWorkflowRequest` is async
-    // and `createServer` calls them from its `request` hook with no `try`, so the
-    // URIError surfaced as an uncaughtException — `process.exit(4)` in the guest,
-    // taking every concurrent voice session with it.
-    //
-    // Driven through a real server (the `serving` harness reproduces exactly that
-    // untried synchronous call), so an answer is proof the throw is gone: a
-    // handler that threw here would destroy the socket, not answer 404.
-    const surface = surfaceOf();
-    const s = await serving(surface);
-    for (const token of ["%", "%A", "%zz", "%C0%80"]) {
-      const res = await fetch(`${s.url}${WORKFLOW_WEBHOOK_PREFIX}${token}`);
-      expect(res.status, token).toBe(404);
-      expect(await res.text()).toBe("unclaimed");
-    }
-    // Declined rather than delivered: a token nobody can decode identifies no run.
-    expect(surface.webhook).not.toHaveBeenCalled();
-    await s.close();
-  });
-
   test("answers 500 when a handler throws, rather than taking the guest down", async () => {
     // These run off a node request event, so an unhandled rejection would kill
     // the process mid-run. A 5xx is also what makes the world retry.
-    const errors: unknown[] = [];
-    // No `mockRestore()` below: `restoreMocks` in `vitest.shared.ts` restores
-    // every `vi.spyOn` before each test, so the call was dead code.
-    vi.spyOn(console, "error").mockImplementation((...a) => errors.push(a));
+    const error = vi.fn();
     const s = await serving(
       surfaceOf({
         flow: async () => {
           throw new Error("boom");
         },
       }),
+      undefined,
+      undefined,
+      { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error },
     );
     const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST" });
     expect(res.status).toBe(500);
-    expect(errors.length).toBeGreaterThan(0);
+    expect(error).toHaveBeenCalledWith(
+      "Workflow route failed",
+      expect.objectContaining({ error: "boom" }),
+    );
     await s.close();
   });
 });
@@ -489,27 +381,6 @@ describe("the queue callbacks are guest-internal", () => {
     try {
       const res = await fetch(`${s.url}${path}`, { method: "POST" });
       expect(res.status).toBe(200);
-    } finally {
-      await s.close();
-    }
-  });
-
-  // The webhook URL is handed OUT of the system — to a payment provider, an
-  // approval mail — so the platform proxies it and the DevKit's path token is
-  // its authorization. Gating it on network position would break every one.
-  test("does not gate the webhook route, which is public by design", async () => {
-    const external = firstExternalIpv4();
-    if (!external) {
-      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
-    }
-    const surface = surfaceOf();
-    const s = await serving(surface, "0.0.0.0");
-    try {
-      const res = await fetch(`http://${external}:${s.port}${WORKFLOW_WEBHOOK_PREFIX}tok`, {
-        method: "POST",
-      });
-      expect(res.status).toBe(200);
-      expect(surface.webhook).toHaveBeenCalledTimes(1);
     } finally {
       await s.close();
     }

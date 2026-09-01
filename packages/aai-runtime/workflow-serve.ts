@@ -52,11 +52,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { errorMessage } from "@alexkroman1/aai/utils";
-import { decodePathSegment } from "./_path-decode.ts";
+import { consoleLogger, type Logger } from "./runtime-config.ts";
+import { type FetchHandler, serveFetch } from "./workflow-http-adapter.ts";
 import { dispatchQueueMessage, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
 import { resolveImportSpecifier } from "./workflow-resolve.ts";
-import { createWebhookHandler } from "./workflow-webhook.ts";
 
 /** Distinct temp file per load — Node's module registry caches by URL. */
 let moduleSeq = 0;
@@ -206,38 +205,6 @@ export function isLoopbackAddress(address: string | undefined): boolean {
 }
 
 /**
- * The token from a webhook path, or undefined when the path is not one.
- *
- * A webhook URL is handed OUT of the system — it goes to a payment provider, an
- * approval email — so the token is the only thing identifying the run, and an
- * empty trailing segment must not read as a valid one.
- *
- * **A segment that will not decode is "not a webhook path" too**, and that is
- * the load-bearing part: this whole call chain is synchronous and
- * `createServer` invokes it from the `request` hook with no `try`, so a
- * `URIError` from a raw `%` here reached the guest's `uncaughtException` guard
- * and exited the process — from an unauthenticated `GET`. See
- * `_path-decode.ts`.
- *
- * @internal
- */
-export function webhookToken(pathname: string): string | undefined {
-  if (!pathname.startsWith(WORKFLOW_WEBHOOK_PREFIX)) return;
-  const token = pathname.slice(WORKFLOW_WEBHOOK_PREFIX.length);
-  // A token with a slash in it is not one: the route is a single segment, and
-  // accepting more would let `…/webhook/a/b` reach the DevKit as the token "a/b".
-  if (token === "" || token.includes("/")) return;
-  return decodePathSegment(token);
-}
-
-/**
- * A fetch-style handler, which is what every DevKit entrypoint is.
- *
- * @internal
- */
-export type FetchHandler = (req: Request) => Promise<Response>;
-
-/**
  * The workflow surface one loaded bundle exposes.
  *
  * @internal
@@ -247,14 +214,6 @@ export type WorkflowSurface = {
   flow: FetchHandler;
   /** `POST /.well-known/workflow/v1/step` — executes one step. */
   step: FetchHandler;
-  /**
-   * `/.well-known/workflow/v1/webhook/:token` — delivers a webhook to a run.
-   *
-   * Takes the token as its own argument because `resumeWebhook` does: the DevKit
-   * does not parse it out of the URL, so whoever routes the request owns
-   * extracting it. See `webhookToken`.
-   */
-  webhook: (token: string, req: Request) => Promise<Response>;
 };
 
 /**
@@ -280,11 +239,6 @@ export async function createWorkflowSurface(
   // `workflow/errors` rides along in the same lazy step so the webhook route can
   // classify its one expected failure without this module importing the DevKit
   // eagerly — see `workflow-wdk.ts`'s module doc for why that matters.
-  const [{ resumeWebhook }, { HookNotFoundError }] = await Promise.all([
-    import("workflow/api"),
-    import("workflow/errors"),
-  ]);
-
   // Steps first: a flow replay can dispatch a step immediately, and an
   // unregistered step id is a hard failure rather than a retry.
   const steps = await loadWorkflowModule(stepCode, "steps");
@@ -293,7 +247,6 @@ export async function createWorkflowSurface(
   return {
     flow: routeHandler(flows, "flow"),
     step: routeHandler(steps, "step"),
-    webhook: createWebhookHandler(resumeWebhook, (err) => HookNotFoundError.is(err)),
   };
 }
 
@@ -366,6 +319,15 @@ export function handleWorkflowRequest(
      * stay loopback-only, and the whole point of the door is that they can.
      */
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
+    /**
+     * Where a failed queue callback is reported.
+     *
+     * Optional with a console fallback because this is the behaviour it
+     * replaced, and every caller here is a composition root that already has a
+     * logger — a required field would be a breaking change to three doors for a
+     * line that only prints on a fault.
+     */
+    logger?: Logger | undefined;
   } = {},
 ): boolean {
   if (!surface) return false;
@@ -390,7 +352,13 @@ export function handleWorkflowRequest(
   const handler = pickWorkflowHandler(surface, url, method);
   if (!handler) return false;
 
-  void serveFetch(handler, req, res);
+  void serveFetch(handler, req, res, {
+    logger: opts.logger ?? consoleLogger,
+    label: "Workflow route",
+    // A queue callback: the world RETRIES a 5xx, which is how a transient fault
+    // gets another attempt.
+    failureStatus: 500,
+  });
   return true;
 }
 
@@ -413,49 +381,4 @@ function pickWorkflowHandler(
   if (method === "POST" && url === WORKFLOW_QUEUE_PATH) {
     return (request: Request) => dispatchQueueMessage(surface, request);
   }
-  const token = webhookToken(url);
-  if (token !== undefined) return (request: Request) => surface.webhook(token, request);
-}
-
-/** Run a fetch-style handler against a node request/response pair. */
-async function serveFetch(
-  handler: FetchHandler,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  try {
-    const response = await handler(await toFetchRequest(req));
-    res.writeHead(response.status, Object.fromEntries(response.headers));
-    res.end(Buffer.from(await response.arrayBuffer()));
-  } catch (err: unknown) {
-    // These are queue callbacks: the world RETRIES a 5xx, so failing loudly
-    // here is how a transient fault gets another attempt. Throwing instead
-    // would surface as an unhandled rejection and take the guest down mid-run.
-    console.error("Workflow route failed:", errorMessage(err));
-    if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "workflow route failed" }));
-  }
-}
-
-/** One node header entry as zero or more `[name, value]` pairs. */
-function toHeaderPairs(key: string, value: string | string[] | undefined): [string, string][] {
-  if (value === undefined) return [];
-  if (Array.isArray(value)) return value.map((one) => [key, one]);
-  return [[key, value]];
-}
-
-/** Build a `Request` from a node request, body included. */
-async function toFetchRequest(req: IncomingMessage): Promise<Request> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
-  const body = Buffer.concat(chunks);
-  // The absolute URL is required by `Request` and is otherwise unused — the
-  // DevKit routes on the payload, not the host.
-  return new Request(`http://guest.local${req.url ?? "/"}`, {
-    method: req.method ?? "GET",
-    headers: Object.entries(req.headers).flatMap(([key, value]) => toHeaderPairs(key, value)),
-    // A GET/HEAD may carry no body at all, and `duplex` is required whenever
-    // one is present.
-    ...(body.length > 0 ? { body, duplex: "half" } : {}),
-  } as RequestInit);
 }
