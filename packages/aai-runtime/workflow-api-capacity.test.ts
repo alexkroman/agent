@@ -11,12 +11,12 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  isCallerGone,
   isDiskFull,
   isInsufficientResources,
   isTransportFailure,
   workflowApiErrorStatus,
-} from "./workflow-api-http.ts";
+} from "./workflow-api-error-status.ts";
+import { isCallerGone } from "./workflow-api-http.ts";
 
 describe("isInsufficientResources", () => {
   /** The one that actually happened, and the one that reaches us WRAPPED. */

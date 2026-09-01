@@ -60,6 +60,7 @@ import {
   SESSION_EVENT_FLUSH_THRESHOLD,
   SESSION_EVENT_READ_LIMIT,
 } from "@alexkroman1/aai/host-internal";
+import { invariant } from "@alexkroman1/aai/internal";
 import {
   EVENT_ID_PREFIX,
   type SessionEvent,
@@ -283,7 +284,35 @@ export function createSessionEventStream(opts: {
     // The count is asked ONLY when this process has no entry, so a warm read
     // (every read of a live session) still costs no query.
     const known = sessions.get(sessionId);
-    return { events, tail: known ? known.next : await backend.countEvents(sessionId) };
+    const resolved = known ? known.next : await backend.countEvents(sessionId);
+    // `tail` is a CURSOR — the absolute index one past the last event that
+    // exists — so a page cannot contain events the tail says are not there yet.
+    // This is the bug the paragraph above describes, stated as a property
+    // instead of remembered: a cold read answered `tail: 0` beside four events,
+    // and a client resuming from that cursor re-reads the stream from zero.
+    //
+    // It holds for every backend and every read, so it is checked on every read
+    // rather than in the one spec that walked to it — and it is two integer
+    // comparisons on numbers this function is already holding.
+    //
+    // **The empty guard is not defensive, it is the definition.** A read STARTING
+    // past the tail is legitimate — `startIndex` is a caller's cursor and
+    // `session-events-api.ts` clamps a huge one to `MAX_SAFE_INTEGER` — and it
+    // answers zero events, about which the tail says nothing. The first draft
+    // omitted the guard and two existing specs failed inside eight seconds, which
+    // is the whole argument for stating a property where every test drives it
+    // rather than in the one spec that walks to it deliberately.
+    invariant(
+      events.length === 0 || resolved >= startIndex + events.length,
+      "session.page.tail",
+      () => ({
+        sessionId,
+        startIndex,
+        events: events.length,
+        tail: resolved,
+      }),
+    );
+    return { events, tail: resolved };
   }
 
   return {

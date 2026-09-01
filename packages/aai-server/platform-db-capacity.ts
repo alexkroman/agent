@@ -38,6 +38,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { invariant } from "@alexkroman1/aai/internal";
 import { ADMIN_POOL_MAX, MAX_PLATFORM_DB_CONNECTIONS } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
@@ -164,6 +165,57 @@ export async function readPlatformDbCapacity(
 }
 
 /**
+ * The arithmetic a boot line prints, as a DECOMPOSITION of the number the
+ * headroom was computed from.
+ *
+ * ## The bug this is shaped against
+ *
+ * It said `plus`, and the term was already in the total. `c.budgeted` is
+ * `platformDbBudget(env)`, which is `MAX_PLATFORM_DB_CONNECTIONS +
+ * unpooledAdminConnections(env)` — so on the arm production actually runs
+ * (`PLATFORM_POOLER_URL` unset, `MAX_CONTAINERS=3`) boot printed
+ * `platform budget=42 (plus 12 for DIRECT admin pools)`, which a reader sums to
+ * 54 against a real claim of 42. The `headroom` beside it used 42, so the line
+ * disagreed with itself and an operator sizing the instance from it would
+ * over-provision by exactly the admin pool.
+ *
+ * The comment that produced it was reasoning about the CONSTANT — which really
+ * does exclude the admin pool — while the code printed the BUDGET, which does
+ * not. That is the whole failure mode: an announcement that RESTATES a number
+ * instead of reading the one the behaviour used. It is also the second time this
+ * exact double count has been shipped here; the first was in the arithmetic, and
+ * this one hid in the preposition.
+ *
+ * ## Why it is a function with an invariant in it
+ *
+ * The parts are now DERIVED and their sum is checked against the total, so the
+ * two cannot drift again: a term added to `platformDbBudget` and not to this line
+ * fails, and so does the reverse. Pure, so the property is a unit test rather
+ * than something only a boot can exercise.
+ */
+export function capacityLine(c: PlatformDbCapacity, env: NodeJS.ProcessEnv): string {
+  const unpooled = unpooledAdminConnections(env);
+  const fleet = c.budgeted - unpooled;
+  // The line names two terms; they must BE the total it prints beside them.
+  invariant(fleet + unpooled === c.budgeted, "capacity.line.terms", () => ({
+    fleet,
+    unpooled,
+    budgeted: c.budgeted,
+  }));
+  return (
+    `max_connections=${c.maxConnections}, in use at boot=${c.inUse}, ` +
+    `platform budget=${c.budgeted}` +
+    // "of which", never "plus": the admin pool is INSIDE the budget, and the
+    // preposition is the entire difference between a decomposition and a sum.
+    // Omitted when a transaction pooler makes it zero — a term that costs
+    // nothing does not belong in a line somebody reads at boot.
+    (unpooled > 0
+      ? ` (of which ${unpooled} is DIRECT admin pools — set PLATFORM_POOLER_URL to pool them)`
+      : "")
+  );
+}
+
+/**
  * Announce the instance's capacity, and warn when the budget overruns it.
  *
  * Sync, fire-and-forget with a `.catch` — the same shape as
@@ -186,13 +238,7 @@ export function announcePlatformDbCapacity(
       // term the constant does not contain (see `unpooledAdminConnections`), and it
       // is omitted entirely when a transaction pooler makes it zero: a term that
       // costs nothing does not belong in a line somebody reads at boot.
-      const unpooled = unpooledAdminConnections(env);
-      const arithmetic =
-        `max_connections=${c.maxConnections}, in use at boot=${c.inUse}, ` +
-        `platform budget=${c.budgeted}` +
-        (unpooled > 0
-          ? ` (plus ${unpooled} for DIRECT admin pools — set PLATFORM_POOLER_URL)`
-          : "");
+      const arithmetic = capacityLine(c, env);
       if (c.headroom < 0) {
         log.warn(
           `budget OVERRUNS the instance by ${-c.headroom} connections: ` +

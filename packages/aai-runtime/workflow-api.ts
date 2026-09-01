@@ -89,8 +89,9 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import { runIdOr400 } from "./_workflow-run-id.ts";
 import type { Logger } from "./runtime-config.ts";
 import { workflowApiUnauthorized } from "./workflow-api-auth.ts";
+import { workflowApiErrorStatus } from "./workflow-api-error-status.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
-import { claimUnder, sendJson, workflowApiErrorStatus } from "./workflow-api-http.ts";
+import { claimUnder, sendJson } from "./workflow-api-http.ts";
 import {
   cancelRun,
   findRuns,

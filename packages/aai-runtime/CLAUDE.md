@@ -1302,3 +1302,99 @@ vacuously: `{ __proto__: … }` written as an object LITERAL is the
 prototype-setter syntax and creates no own property, and a server-side case using
 `runs.get` answered 400 whether or not the fix was in, because a `Uint8Array` is
 not a run id. Both are noted where they sit.
+
+## Runtime invariants
+
+`@alexkroman1/aai/internal` publishes `invariant(condition, name, detail?)`,
+`InvariantViolation` and `isInvariantViolation`. The seam lives in the SDK
+because every package depends on it; the invariants stated against it are
+mostly this package's, which is why the argument is here.
+
+**The economics are the point.** A review of ~38 defects fixed in one 48-hour
+window found every one at a boundary the test suite owned both sides of — the
+suite is almost entirely CONFIRMATORY, pinning fixes after the fact. An
+invariant inverts that: state the property once, where it has to be
+maintained, and every existing test file, every load run, every `aai dev`
+session and production itself becomes a detector for it, including the paths
+nobody wrote a test for.
+
+Three rules come with it:
+
+- **It throws; it is never a log.** A logged invariant goes to a stream nobody
+  reads, on a request that returned a wrong answer anyway. Every violation is
+  a bug in this process by construction — the conditions are ours to maintain,
+  and a peer's input is validated by a schema rather than by this. The risk is
+  stated rather than hidden: a WRONG invariant turns a working path into an
+  outage, so a condition goes in only when it is a property this code
+  establishes and nothing else can perturb.
+- **`detail` is a THUNK.** It runs only on the failing path, so a violation
+  reports the actual numbers for free — the difference between
+  `session.page.tail violated: {"startIndex":0,"events":4,"tail":0}` and a
+  bare assertion. Its call is wrapped, because a thunk reading the state that
+  just went inconsistent is the likeliest place for a second throw, and
+  reporting ITS `TypeError` would lose the finding entirely.
+- **There is deliberately no SAMPLING.** The obvious design checks always in
+  dev and on a fraction of calls in production so an expensive condition can
+  stay on. Every invariant here today is O(1) — a comparison between two
+  numbers the caller already holds — so a thunk would allocate a closure to
+  avoid work cheaper than the closure. A rate nothing needs is a knob nobody
+  tunes and a path nobody exercises, the shape this repo has been bitten by
+  four times (`.size-limit.json`, the `ls-lint` config, the root coverage
+  thresholds, the `.turbo` cache path). It belongs with its first O(n) caller.
+
+**Where one does NOT go: inside an error handler.** A throw there turns a 500
+into an unhandled rejection, and an oracle meant to find conditions nobody has
+classified yet is the last one you want failing that way the first time it is
+right. The workflow API's classification is swept over a pure function
+instead — see "Every environmental error is classified" below.
+
+**Stating one wrong is cheap, and that is a feature.** The first draft of
+`session.page.tail` said `tail >= startIndex + events.length` with no empty
+guard, and two existing specs failed inside eight seconds: a read STARTING
+past the tail is legitimate and answers zero events, about which the tail says
+nothing. An invariant is exercised by the whole suite the moment it lands.
+
+### The two stated so far
+
+- **`session.page.tail`** (`session-event-stream.ts`) — a page cannot contain
+  events its own tail says do not exist. This is the cold-read bug that
+  shipped: four events beside `tail: 0`, because the tail came from the
+  in-process map and the events from a durable backend. Reverting that fix now
+  reports `{"sessionId":"s-1","startIndex":0,"events":4,"tail":0}` from every
+  read that reaches it, not only from the spec that walks to it.
+- **`capacity.line.terms`** (`aai-server/platform-db-capacity.ts`) — the terms
+  a boot line names must COMPOSE the total it prints, never add to it. See
+  "The boot line describes the reading it was built from" in that package.
+
+## Every environmental error is classified
+
+`workflow-api-error-status.ts` maps a thrown value to a status, and
+`workflow-api-error-classification.test.ts` requires that there be no THIRD
+state: every environmental code a Node service here can meet is either mapped
+or named in `DELIBERATELY_INTERNAL` with a reason a 500 is right. "Nobody
+thought about this code" is what both of the window's
+500-that-should-have-been-503 defects were.
+
+The sweep found eight unclassified codes on its first run, none of which had
+an incident behind them: `ENETDOWN`, `ENOTCONN` and `EAGAIN` are ordinary
+transport failures and joined the table; `EMFILE`, `ENFILE`, `ENOBUFS` and
+`ENOMEM` are a FOURTH condition the table had no entry for — this process out
+of a local resource, which is neither "the database is at capacity" nor
+"could not reach the platform" — and got `isResourceExhausted` and a 503 of
+their own, ordered BEFORE the transport entry because a descriptor limit
+surfaces on a socket operation and looks transport-shaped on the way out. The
+eighth, `UND_ERR_RESPONSE_STATUS_CODE`, is declared internal: a response
+arrived, so there is nothing transient to wait for.
+
+**One divergence is pinned as a known gap rather than fixed.** `isCallerGone`
+reads `code === "ECONNRESET"` off the TOP-level value and the transport entry
+is guarded by `!isCallerGone(err)`, so a reset arriving WRAPPED — how `fetch`
+delivers one — is a 503, while the identical condition arriving BARE is read
+as the caller hanging up and falls through to 500. For a real inbound hangup
+that is harmless and deliberate. The open question is whether anything
+OUTBOUND throws a bare top-level `ECONNRESET` here: a `postgres` driver error
+carries its code at the top level, unlike `fetch`, in which case a client
+waiting on `POST /runs` gets a 500 with no `Retry-After` AND the failure is
+logged as "caller went away". Direction is not recoverable from the code
+alone; `syscall` is the candidate discriminator, since Node's inbound
+`aborted` error carries none. Not guessed at.
