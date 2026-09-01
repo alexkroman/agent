@@ -63,7 +63,6 @@
     "postgres": "^3.4.9",
     "ulid": "catalog:",
     "undici": "^8.10.0",
-    "workflow": "4.8.2",
     "ws": "catalog:",
     "xstate": "catalog:",
     "zod": "catalog:"

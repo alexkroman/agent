@@ -30,12 +30,6 @@ import { describe, expect, test } from "vitest";
  * harmless with its script skipped.
  */
 const VOUCHED: Record<string, string> = {
-  // Optional native accelerator for cbor-x (via @workflow/world-postgres).
-  // `node-gyp-build-optional-packages` only resolves the prebuilt
-  // @cbor-extract/* package, and cbor-x require()s it in a try/catch and falls
-  // back to its JS decoder — verified round-tripping cbor-x on a
-  // scripts-skipped linux/x64 install.
-  "cbor-extract": "prebuilt platform package; cbor-x falls back to JS",
   // darwin-only (`os: ["darwin"]`), so it is never installed in the linux
   // guest image at all — vite's optional file watcher.
   fsevents: "darwin-only optional dep; absent from the linux image",
@@ -60,9 +54,10 @@ function packageName(path: string): string {
 describe("guest toolchain install scripts", () => {
   test("the lockfile is really being read", () => {
     // The whole assertion below is a set difference, so a parse that stopped
-    // finding packages would compare nothing against nothing and pass. 258
-    // entries today.
-    expect(Object.keys(lockPackages()).length).toBeGreaterThan(150);
+    // finding packages would compare nothing against nothing and pass. 143
+    // entries today — it was 258 before the Workflow DevKit left, and the floor
+    // TRACKS the real number rather than being relaxed to zero.
+    expect(Object.keys(lockPackages()).length).toBeGreaterThan(120);
   });
 
   test("declares no install script that has not been vouched for", () => {

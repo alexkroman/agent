@@ -171,15 +171,9 @@ export {
   type PlatformQueueOptions,
   payloadRunId,
 } from "./workflow-platform-queue.ts";
-export {
-  callPlatformStorage,
-  createPlatformStorage,
-  createPlatformStreamer,
-  createPlatformStreamReader,
-  type PlatformStorageOptions,
-} from "./workflow-platform-storage.ts";
-// The DevKit's queue-name grammar, and the classifier over it. The grammar is a
-// third-party one — `parseQueueName` in `@workflow/world` — and the DevKit is a
+// The queue-name grammar, and the classifier over it. It began as the DevKit's
+// (`parseQueueName` in `@workflow/world`) and is ours now — the platform's claim
+// SQL matches the two patterns, so it has to stay stable whoever owns it. It is a
 // declared dependency of THIS package and not of `aai-server`, so a second
 // spelling on that side is exactly the copy this subpath exists to prevent.
 //
@@ -200,13 +194,6 @@ export {
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
 export { handleWorkflowRequest } from "./workflow-serve.ts";
-// The STORAGE half of the codec only, which is the half `aai-server`'s storage
-// handler is the other end of. The queue half (`encodeTypedJson`) has one
-// intra-package caller and the two raw replacer/reviver pairs have none, so by
-// this subpath's own rule — a name is here because something IMPORTS it — they
-// stay off it. Which side of the codec a path is on is load-bearing rather than
-// incidental: see `workflow-typed-json.ts`.
-export { type StorageRefusalStatus, storageStatusFor } from "./workflow-storage-status.ts";
 export { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 // Standing an upload store up. The store TYPE, the two blob implementations and
 // the part addressing are contracted, on the root barrel; this is what JOINS

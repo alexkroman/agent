@@ -141,11 +141,6 @@ async function main(): Promise<void> {
   const teardown = async (): Promise<void> => {
     await teardownSandboxes({ slots: base.slots, broker: { dispose: disposeStudio } });
     await base.events.close();
-    // The workflow world's own `close` ends the streamer's dedicated `LISTEN`
-    // client and the pool behind it. Last, and after the guests: a guest still
-    // draining may write one more journal entry through `/:slug/workflow-storage`,
-    // and closing the world under it would fail that write rather than the run.
-    await base.runStorage?.close();
   };
 
   // Both apps in one process, dispatched by path. Each app carries

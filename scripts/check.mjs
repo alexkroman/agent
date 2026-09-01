@@ -235,12 +235,6 @@ const GATES = [
     why: "The third committed copy in this shape and the only one that SHIPS: it cannot say `catalog:`, so every catalogued bump is applied to it a second time. Nothing enforced that — the sync script ran only during a release, unchecked — and the catalog migration had already broken it into writing a literal `catalog:` into a manifest npm cannot resolve.",
   },
   {
-    script: "check:workflow-schema",
-    phase: "ratchets",
-    fatal: false,
-    why: "The DevKit's `workflow` schema is the platform's durable-run journal and nothing in this repo created it. It is a vendored migration now, generated from the installed package — the fourth committed copy in this shape, and it goes stale the first time they add a table.",
-  },
-  {
     script: "check:konsistent",
     phase: "ratchets",
     fatal: false,

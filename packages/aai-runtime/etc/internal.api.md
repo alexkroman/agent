@@ -44,9 +44,6 @@ export function applyWorkflowJournalDdl(opts: {
 }): Promise<boolean>;
 
 // @internal
-export function callPlatformStorage(opts: PlatformStorageOptions, method: string, args: readonly unknown[]): Promise<unknown>;
-
-// @internal
 export const consoleLogger: Logger;
 
 export { CONTAINED_ENV }
@@ -60,42 +57,6 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName:
 }) => Promise<{
     messageId: string | null;
 }>;
-
-// @internal
-export function createPlatformStorage(opts: PlatformStorageOptions): {
-    runs: {
-        get: StorageFn;
-        list: StorageFn;
-    };
-    steps: {
-        get: StorageFn;
-        list: StorageFn;
-    };
-    events: {
-        create: StorageFn;
-        get: StorageFn;
-        list: StorageFn;
-        listByCorrelationId: StorageFn;
-    };
-    hooks: {
-        get: StorageFn;
-        getByToken: StorageFn;
-        list: StorageFn;
-    };
-};
-
-// @internal
-export function createPlatformStreamer(opts: PlatformStorageOptions): {
-    writeToStream: StorageFn;
-    writeToStreamMulti: StorageFn;
-    closeStream: StorageFn;
-    listStreamsByRunId: StorageFn;
-    getStreamChunks: StorageFn;
-    getStreamInfo: StorageFn;
-};
-
-// @internal
-export function createPlatformStreamReader(opts: PlatformStorageOptions): (name: string, startIndex?: number) => Promise<ReadableStream<Uint8Array>>;
 
 // @internal
 export function createPostgresJournal(opts: {
@@ -255,9 +216,6 @@ export type PlatformQueueOptions = PlatformEndpoint;
 
 // @public
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
-
-// @public
-export type PlatformStorageOptions = PlatformEndpoint;
 
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
@@ -472,21 +430,6 @@ type StepEntry = {
     attempts: number;
     finishedAt: number;
 };
-
-// @public
-const STORAGE_CONFLICT_STATUS = 409;
-
-// @public
-const STORAGE_RUN_EXPIRED_STATUS = 410;
-
-// @public
-type StorageFn = (...args: unknown[]) => Promise<unknown>;
-
-// @public
-export type StorageRefusalStatus = typeof STORAGE_RUN_EXPIRED_STATUS | typeof STORAGE_CONFLICT_STATUS;
-
-// @internal
-export function storageStatusFor(err: unknown): StorageRefusalStatus | undefined;
 
 // @public
 type StoredSessionEvent = {

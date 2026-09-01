@@ -20,8 +20,6 @@
  * | `/workflows/*` | a page, or a script | the agent's own `AAI_WORKFLOW_API_TOKEN`, forwarded |
  * | `…/uploads/:id/:offset` | a browser, or the guest | an unguessable upload id |
  * | `/workflow-enqueue` | **this agent's guest** | the per-sandbox bearer, bound to one slug |
- * | `/workflow-storage` | **this agent's guest** | the same, plus per-run ownership both ways |
- * | `/workflow-stream` | **this agent's guest** | the same, plus a namespaced stream name |
  * | `/session-state` | **this agent's guest** | the same, and every statement is slug-scoped |
  * | `/workflow-journal` | **this agent's guest** | the same, and every statement is slug-scoped |
  * | `/upload-records` | **this agent's guest** | the same |
@@ -69,13 +67,6 @@ import {
   WORKFLOW_JOURNAL_ROUTE,
 } from "./workflow-journal-handler.ts";
 import {
-  createWorkflowStorageHandler,
-  MAX_STORAGE_BODY_BYTES,
-  WORKFLOW_STORAGE_ROUTE,
-} from "./workflow-storage-handler.ts";
-import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
-import { createWorkflowStreamHandler, WORKFLOW_STREAM_ROUTE } from "./workflow-stream-handler.ts";
-import {
   createWorkflowWebhookHandler,
   MAX_WEBHOOK_BODY_BYTES,
   WORKFLOW_WEBHOOK_ROUTE,
@@ -92,7 +83,6 @@ export type AgentWorkflowRouteOptions = {
    * The DevKit's world on the platform's database. Absent means this deployment
    * serves no run storage, which the route answers 501 for.
    */
-  runStorage?: PlatformWorldStorage | undefined;
   uploadBytes: UploadBytes;
   workflowRateLimiter?: RateLimiter | undefined;
   workflowStartRateLimiter?: RateLimiter | undefined;
@@ -141,27 +131,10 @@ export function registerAgentWorkflowRoutes(
     createWorkflowEnqueueHandler(opts.adminDb),
   );
 
-  // The guest's run-storage calls, scoped to this agent and forwarded to the
-  // DevKit's world running on the platform's own database. Same bearer as the
-  // enqueue route beside it, and the same reason it is neither `existingOwnerMw`
-  // nor open: the caller is this agent's guest, and what it reaches is run state.
-  agents.post(
-    WORKFLOW_STORAGE_ROUTE,
-    limit(MAX_STORAGE_BODY_BYTES),
-    createWorkflowStorageHandler({
-      ...omitUndefined({ adminDb: opts.adminDb }),
-      ...omitUndefined({ storage: opts.runStorage }),
-    }),
-  );
-
-  // The seventh Streamer member: a LIVE read, which is a streaming response rather
-  // than one request and one reply, so it cannot share the RPC route above. Its
-  // tenant boundary is the qualified stream NAME rather than a run check — that
-  // method has no run id — see `workflow-stream-handler.ts`.
-  agents.get(
-    WORKFLOW_STREAM_ROUTE,
-    createWorkflowStreamHandler(omitUndefined({ storage: opts.runStorage })),
-  );
+  // Two routes used to sit here: the guest's run-storage RPC and the live stream
+  // read beside it, both forwarding to the DevKit's world on the platform's own
+  // database. They went with that world — the replay engine's journal is
+  // `/workflow-journal` below, and its progress streams are the guest's own.
 
   // The guest's session slots and event log — turn-level durability with no tenant
   // database. Same bearer as the routes above, and its scoping is simpler than run
