@@ -292,7 +292,6 @@
     "TranscribeSyncOptions",
     "Transcript",
     "UploadInfo",
-    "UploadRange",
     "UploadSlice",
     "WAV_HEADER_BYTES",
     "WriteUploadOptions"
