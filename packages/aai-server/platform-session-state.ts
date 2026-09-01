@@ -8,8 +8,9 @@
  *
  * ## Tenancy is in the KEY, which is stronger than a check
  *
- * `workflow-run-owner.ts` needs a mapping table because the DevKit's schema is
- * fixed and has no tenant column. This schema is the platform's own, so the slug is
+ * That is the design, and it is worth naming what it replaced: the DevKit's
+ * journal had a fixed schema with no tenant column, so a `workflow_run_owner`
+ * mapping table carried ownership beside it. Both are gone. This schema is the platform's own, so the slug is
  * part of the primary key and part of every statement below. A guessed session id
  * therefore reaches nothing: there is no query here that can be pointed at another
  * agent's rows, so there is no check to forget.

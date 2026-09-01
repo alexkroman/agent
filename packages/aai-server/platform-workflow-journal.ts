@@ -15,8 +15,8 @@
  * every statement below, taken from the per-sandbox bearer and never from the
  * request. A guessed run id therefore reaches nothing: there is no query here that
  * can be pointed at another agent's rows. Same design as `platform-session-state.ts`;
- * `workflow-run-owner.ts` needs a mapping table only because the DevKit's schema
- * was fixed and had no such column.
+ * A `workflow_run_owner` mapping table used to carry this beside the DevKit's
+ * journal, whose fixed schema had no such column. Both are gone.
  *
  * ## The statements mirror `workflow-journal-schema.ts`, deliberately
  *

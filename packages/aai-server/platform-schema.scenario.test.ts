@@ -234,7 +234,7 @@ describeWithStack("the platform migration applies and the stores work against it
       //
       // Tenancy is the leading column of every primary key, so a guessed run id
       // reaches nothing — same design as `session_slots` above, and the reason
-      // `workflow_run_owner` below had to be a mapping table instead.
+      // the `workflow_run_owner` mapping table, now dropped, had to exist.
       "workflow_attempts",
       "workflow_hooks",
       // The platform-owned durable-workflow QUEUE
@@ -242,11 +242,6 @@ describeWithStack("the platform migration applies and the stores work against it
       // SCHEDULE: that guest's own timers die with a sandbox that self-exits, so
       // a due message here is what boots it and re-walks the journal above.
       "workflow_queue",
-      // Which agent owns a durable run
-      // (`20260827010000_workflow_run_owner.sql`). The DevKit's schema has no
-      // tenant column, so this is what scopes every storage read once that world
-      // runs on the platform's database rather than in each guest.
-      "workflow_run_owner",
       // The journal's own three remaining tables, alphabetically after the owner
       // row — see the block above `workflow_attempts` for the whole account.
       "workflow_runs",

@@ -189,13 +189,17 @@ export type WorkflowCtx = {
    * run parks on a human approval, a review that may take a week, or anything
    * else somebody else decides.
    *
-   * **The WEBHOOK route does not reach this yet.**
-   * `ctx.workflows.publicWebhookUrl(token)` still mints a URL served by the
-   * Workflow DevKit's own hook table, which knows nothing about this wait and
-   * answers a delivery with `HookNotFound`. Until that route is rewired, a run
-   * parked here is ended by `signal` — reachable from a tool, which is where a
-   * human approval arrives from anyway. Do not build a payment-callback flow on
-   * it yet.
+   * **The WEBHOOK route reaches this.** `ctx.workflows.publicWebhookUrl(token)`
+   * mints a URL that `createServer` serves, and a delivery to it resolves the
+   * wait: the route calls `WorkflowClient.signal`, which writes the payload
+   * against this hook's own journal row and re-walks the body. So a
+   * payment-callback flow is a supported shape.
+   *
+   * It was NOT, until recently, and the note here said so — the URL was served
+   * by the DevKit's own hook table, which knew nothing about this wait and
+   * answered `HookNotFound`. Both hops are covered now: the route→`signal` hop
+   * by `server-workflow-app.test.ts`, and `signal`→resume by
+   * `workflow-in-process.test.ts`.
    *
    * ```ts no-check
    * // The token is the AUTHOR's, derived so the body and the tool that hands it

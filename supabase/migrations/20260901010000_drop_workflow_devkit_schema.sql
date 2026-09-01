@@ -1,0 +1,50 @@
+-- Drop the Workflow DevKit's schema, its migration bookkeeping, and the
+-- ownership table that existed only to make it multi-tenant.
+--
+-- The replay engine's journal is `aai_platform.workflow_*`
+-- (`20260901000000_platform_workflow_journal.sql`), and no code in this
+-- repository reads or writes `workflow.*` any more — the package that created
+-- it, `@workflow/world-postgres`, is declared by nothing.
+--
+-- ## This is a CONTRACT, and it is deliberately not waiting a release
+--
+-- The standing rule is that a contract migration cannot ride the same release as
+-- the code that stops using it: `supabase db push` runs BEFORE the deploy, and
+-- old containers keep serving through the rollout, so a drop beside its own
+-- expand fails every request that reaches one. `platform-schema.test.ts`'s
+-- `RETIRED_COLUMNS` ledger exists to carry exactly this debt to a later release.
+--
+-- It does not apply here, and the reason is worth stating rather than assuming.
+-- An old container's durable runs are ALREADY broken by the release this rides
+-- with: its guests hold a DevKit world that the platform no longer serves
+-- `/:slug/workflow-storage` for, so every one of their runs fails at its first
+-- journal write whether or not this schema exists. There is nothing left for a
+-- staged drop to protect. Retiring it now is the honest version of a decision
+-- already taken.
+--
+-- ## What goes, and what it held
+--
+-- - **`workflow`** — six cross-tenant tables: `workflow_runs` (`input`,
+--   `output`, `execution_context`, `error`), `workflow_steps`, `workflow_events`,
+--   `workflow_hooks`, `workflow_stream_chunks`, `workflow_waits`. Created
+--   out-of-band by drizzle migrations that issue no RLS of their own, which is
+--   why `20260828010000_workflow_schema_rls.sql` had to add deny-all over them.
+-- - **`workflow_drizzle`** — the DevKit's own migration bookkeeping
+--   (`workflow_migrations`), which is how its migrate algorithm decided what to
+--   apply. Nothing applies those migrations now.
+-- - **`aai_platform.workflow_run_owner`** — the run→slug mapping. The DevKit's
+--   schema had no tenant column, so every storage call was scoped through this
+--   table. The engine's journal carries the slug in every primary key, so
+--   tenancy is in the key and there is nothing left to map.
+--
+-- `cascade` because the tables reference each other and `workflow_run_owner`'s
+-- own rows cascade from `agents`; dropping the schemas is the only way to take
+-- the set down in one statement without hand-ordering six tables.
+--
+-- Its own migration's note about a leak — "the DevKit's own rows in `workflow.*`
+-- outlive [an agent], which is a known leak rather than an oversight: reaping
+-- them needs a delete that walks their five tables in dependency order" — is
+-- closed by this in the only way it ever could be.
+drop schema if exists workflow cascade;
+drop schema if exists workflow_drizzle cascade;
+drop table if exists aai_platform.workflow_run_owner;

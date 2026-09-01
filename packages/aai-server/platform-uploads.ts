@@ -22,7 +22,7 @@
  * The slug is half the primary key and appears in every statement below, so no
  * query here can be pointed at another agent's rows — the same arrangement as
  * `platform-session-state.ts`, and for the same reason: this schema is the
- * platform's own. `workflow-run-owner.ts` needs a mapping table only because the
+ * platform's own. A `workflow_run_owner` mapping table used to be needed because the
  * DevKit's schema is fixed and has no tenant column.
  *
  * ## The write volume, and the tripwire that would change this design
