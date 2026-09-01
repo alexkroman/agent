@@ -23,6 +23,7 @@
  * | `/workflow-storage` | **this agent's guest** | the same, plus per-run ownership both ways |
  * | `/workflow-stream` | **this agent's guest** | the same, plus a namespaced stream name |
  * | `/session-state` | **this agent's guest** | the same, and every statement is slug-scoped |
+ * | `/workflow-journal` | **this agent's guest** | the same, and every statement is slug-scoped |
  * | `/upload-records` | **this agent's guest** | the same |
  *
  * The split in that table is the point: the first three are open by design and each
@@ -62,6 +63,11 @@ import {
   WORKFLOW_ENQUEUE_ROUTE,
 } from "./workflow-enqueue-handler.ts";
 import { createAgentWorkflowsHandler, createWorkflowRateLimitMw } from "./workflow-handler.ts";
+import {
+  createWorkflowJournalHandler,
+  MAX_WORKFLOW_JOURNAL_BODY_BYTES,
+  WORKFLOW_JOURNAL_ROUTE,
+} from "./workflow-journal-handler.ts";
 import {
   createWorkflowStorageHandler,
   MAX_STORAGE_BODY_BYTES,
@@ -165,6 +171,17 @@ export function registerAgentWorkflowRoutes(
     SESSION_STATE_ROUTE,
     limit(MAX_SESSION_STATE_BODY_BYTES),
     createSessionStateHandler(omitUndefined({ adminDb: opts.adminDb })),
+  );
+
+  // The replay engine's JOURNAL — what makes a deployed durable run durable at
+  // all. The engine's other two backends are a `Map` and a store over the agent's
+  // own `DATABASE_URL`, and the platform provisions neither, so before this route
+  // every deployed run journaled into a sandbox that self-exits. Same bearer and
+  // the same slug-in-every-statement scoping as session state.
+  agents.post(
+    WORKFLOW_JOURNAL_ROUTE,
+    limit(MAX_WORKFLOW_JOURNAL_BODY_BYTES),
+    createWorkflowJournalHandler(omitUndefined({ adminDb: opts.adminDb })),
   );
 
   // The guest's workflow UPLOAD records — the last piece of a guest's durable state

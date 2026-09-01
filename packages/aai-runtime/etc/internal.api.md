@@ -261,6 +261,7 @@ export const PLATFORM_ROUTES: {
     readonly sessionState: "/session-state";
     readonly uploadRecords: "/upload-records";
     readonly workflowStorage: "/workflow-storage";
+    readonly workflowJournal: "/workflow-journal";
     readonly workflowStream: "/workflow-stream";
     readonly workflowEnqueue: "/workflow-enqueue";
 };

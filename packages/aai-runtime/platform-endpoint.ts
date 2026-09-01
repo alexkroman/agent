@@ -48,6 +48,8 @@ export const PLATFORM_ROUTES = {
   uploadRecords: "/upload-records",
   /** The DevKit storage RPC, scoped and checked both ways. */
   workflowStorage: "/workflow-storage",
+  /** The replay engine's journal — the third backend, and the only durable one a deployed guest can reach. */
+  workflowJournal: "/workflow-journal",
   /** A live stream read. GET, and deliberately not on the RPC route: it stays open. */
   workflowStream: "/workflow-stream",
   /** The guest asking the platform to queue a message for one of its own runs. */

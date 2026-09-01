@@ -39,8 +39,11 @@ import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";
 import { createWorkflowClient, resolveKeyStore } from "./workflow-client.ts";
 import { createInProcessWorkflowEngine } from "./workflow-in-process.ts";
+import { createPlatformJournal } from "./workflow-journal-platform.ts";
 import { createPostgresJournal } from "./workflow-journal-postgres.ts";
+import type { JournalStore } from "./workflow-journal-types.ts";
 import { createRunNotifier, type RunNotifier } from "./workflow-notify.ts";
+import { platformGuestOptions } from "./workflow-platform-world.ts";
 
 /**
  * The client a runtime hands to tools, and the handle its teardown owes.
@@ -55,6 +58,41 @@ export type BuiltWorkflowClient = {
   client: WorkflowClient;
   stop: () => void;
 };
+
+/**
+ * Pick the run journal, and name it for the boot line.
+ *
+ * Three backends and the order is a strict preference, because two of them can be
+ * available at once and only one is right: a DEPLOYED guest may also carry an
+ * author-supplied `DATABASE_URL`, and its runs belong in the platform's journal
+ * beside its session state rather than split across two databases with the wake
+ * sweep able to see only one.
+ *
+ * **The platform pair is read from THIS PROCESS's environment**
+ * (`platformGuestOptions`), never from the agent's. That distinction has already
+ * cost a deployment: the same two keys read out of the tenant env resolve to
+ * nothing — the platform puts them in the sandbox's process env, not in the
+ * secrets file — so session state silently fell to memory while the world one
+ * line earlier resolved fine. Reading the process env is also the SAFER half: an
+ * agent may set any `AAI_*` key as a secret, and under the tenant spelling an
+ * agent chose the base URL and bearer its own journal was sent to.
+ *
+ * Memory is last and the boot line SAYS so. A durability tradeoff absent from the
+ * log reads as a bug, and this is the one an author is most likely to hit by
+ * accident.
+ */
+function selectJournal(db: Db | undefined): {
+  journal: JournalStore | undefined;
+  journalKind: string;
+} {
+  const platform = platformGuestOptions();
+  if (platform) return { journal: createPlatformJournal(platform), journalKind: "platform" };
+  if (db) return { journal: createPostgresJournal({ db }), journalKind: "postgres" };
+  return {
+    journal: undefined,
+    journalKind: "memory (in-process — runs do not survive a restart)",
+  };
+}
 
 /**
  * Build `ctx.workflows` for one runtime, or `undefined` when the agent declares
@@ -80,6 +118,7 @@ export function buildWorkflowClient(
 ): BuiltWorkflowClient | undefined {
   const workflows = agent.workflows;
   if (!workflows || Object.keys(workflows).length === 0) return;
+  const { journal, journalKind } = selectJournal(db);
   logger.info?.("Workflows resolved", {
     workflows: Object.keys(workflows),
     // Which store is in play decides whether a correlation key survives a
@@ -90,7 +129,7 @@ export function buildWorkflowClient(
     // one an operator actually asks after a restart. Reported rather than
     // assumed, because a durability tradeoff absent from the log reads as a bug —
     // and because there is now a case where the answer is good.
-    runStore: db ? "postgres" : "memory (in-process — runs do not survive a restart)",
+    runStore: journalKind,
     // Reported at boot for the same reason the key store is: whether a run can
     // hand out a reachable callback URL is a property of the DEPLOYMENT, and the
     // alternative to one boot line is discovering it from a throw inside a tool
@@ -100,19 +139,7 @@ export function buildWorkflowClient(
   });
   // Held so `stop` can reach it: the CLIENT is what the runtime hands to tools,
   // and the engine's timers are what a rebuild has to cancel.
-  const engine = createInProcessWorkflowEngine({
-    workflows,
-    logger,
-    // A `DATABASE_URL` is what makes a run outlive its process. Absent, the
-    // in-memory default stands and the boot line below says so — the honest trade
-    // for trying a workflow out before provisioning anything.
-    //
-    // An explicit `undefined` rather than a conditional spread: `db` is an object
-    // or absent, so the truthiness guard and a presence test agree, and
-    // `guard-invariants` rule 22 is right that the spread hides which of the
-    // three situations this is.
-    journal: db ? createPostgresJournal({ db }) : undefined,
-  });
+  const engine = createInProcessWorkflowEngine({ workflows, logger, journal });
   const client = createWorkflowClient({
     workflows,
     keys: resolveKeyStore(db),

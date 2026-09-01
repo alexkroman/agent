@@ -148,11 +148,20 @@ export const STORE_CONTRACTS = [
     // resting on a primary key that exists, a hook token unique across RUNS —
     // and a shared case list run against a Map could assert none of them.
     // `workflow-journal.scenario.test.ts` runs the DDL and every one of those.
+    //
+    // There is a THIRD arm this pair cannot name: `createPlatformJournal`, the
+    // same interface over HTTP to `/:slug/workflow-journal`, which is what a
+    // DEPLOYED run uses. It is not a store twin — it holds no rows and speaks to
+    // the platform — so it is outside this registry by construction, and it has
+    // its own two tiers: `aai-runtime/workflow-journal-platform.test.ts` for the
+    // codec and the three refusals on this side of the wire, and
+    // `platform-workflow-journal.scenario.test.ts` for the SQL, which is the only
+    // place TENANCY is testable at all.
     contract: "workflow-journal",
     memory: "createMemoryJournal",
     pg: "createPostgresJournal",
     conformance: false,
-    why: "SDK tier: one case list cannot span the boundary; real arm is workflow-journal.scenario.test.ts",
+    why: "SDK tier: one case list cannot span the boundary; real arms are workflow-journal.scenario.test.ts and platform-workflow-journal.scenario.test.ts",
   },
   {
     contract: "upload-bytes",
