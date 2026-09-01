@@ -88,11 +88,13 @@
  * substitutes directly for `Promise.all(items.map(run))` where a bound is
  * needed.
  *
- * A rejection propagates and stops the window taking new items, which is what a
- * workflow body wants: the finished siblings are already journaled, so a resume
- * replays them for free and re-issues only what is missing. Catching per item to
- * salvage a partial result is a decision only the caller can make — do it inside
- * `run`.
+ * A rejection stops the window taking new items and then propagates once the
+ * calls already in flight have SETTLED — not the instant it happens. That order
+ * is what a workflow body wants: every sibling that finished is journaled, so a
+ * resume replays it for free and re-issues only what is missing, where throwing
+ * immediately would discard siblings that were mid-call and have the resume pay
+ * for them a second time. Catching per item to salvage a partial result is a
+ * decision only the caller can make — do it inside `run`.
  *
  * @param items - What to map. An empty list runs nothing and resolves `[]`.
  * @param size - Most calls in flight at once. Rounded down, and floored at 1.
@@ -149,6 +151,17 @@ export async function mapConcurrent<T, R>(
   // Nth call issued is item N-1 however the calls settle.
   let cursor = 0;
   let stopped = false;
+  /**
+   * The first failure IN TIME, which in a fan-out is the CAUSAL one.
+   *
+   * Every later rejection is downstream of this one — `stopped` turned it into a
+   * no-op for the slots that had not started, and a caller that aborts its
+   * siblings on failure (the parts uploader does exactly this) turns it into an
+   * `aborted` for the ones that had. Reporting any of those would name the
+   * symptom: "aborted" for a caller whose real problem is that a part was
+   * refused.
+   */
+  let firstFailure: { reason: unknown } | undefined;
 
   const slot = async (): Promise<void> => {
     for (let at = cursor++; at < items.length && !stopped; at = cursor++) {
@@ -162,6 +175,7 @@ export async function mapConcurrent<T, R>(
         // the rest of a list whose result is already lost. It cannot change the
         // issue ORDER — the cursor is still monotonic — only where it stops.
         stopped = true;
+        firstFailure ??= { reason: err };
         throw err;
       }
     }
@@ -169,6 +183,25 @@ export async function mapConcurrent<T, R>(
 
   // Started synchronously, in order, so the first `width` calls are issued as
   // items 0..width-1 before any of them settles.
-  await Promise.all(Array.from({ length: Math.min(width, items.length) }, slot));
+  //
+  // DRAINED, then thrown. `Promise.all` rejects the moment one slot does, and
+  // `stopped` only stops a slot taking a NEW item — so a slot already inside
+  // `await run(...)` is abandoned mid-call, with its result discarded whether or
+  // not the call went on to succeed. In a durable fan-out those are the calls
+  // that have already been paid for: the DevKit reports them as
+  // "run failed with N uncommitted operation(s)", their journal entries never
+  // land, and the resume re-issues and re-bills work that had SUCCEEDED. Draining
+  // first costs the tail of whatever is in flight — bounded by those calls' own
+  // deadlines, and they are running either way — and buys every one of their
+  // results.
+  //
+  // Issue ORDER is untouched, which is what replay correlation rests on: the
+  // cursor is still monotonic and still read synchronously, so the Nth call
+  // issued is still item N-1.
+  await Promise.allSettled(Array.from({ length: Math.min(width, items.length) }, slot));
+  // `firstFailure` rather than the settled results, because WHICH rejection is
+  // raised matters as much as raising one — see its declaration. Boxed so a
+  // rejection whose reason is itself `undefined` is still a failure.
+  if (firstFailure !== undefined) throw firstFailure.reason;
   return results;
 }

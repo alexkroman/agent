@@ -40,6 +40,7 @@ import { WorkflowRunNotFoundError } from "workflow/errors";
 import { egressFetch } from "./_egress-fetch.ts";
 import { PLATFORM_ROUTES, type PlatformEndpoint, platformUrl } from "./platform-endpoint.ts";
 import { platformBearer, platformPost } from "./platform-rpc.ts";
+import { storageErrorForStatus } from "./workflow-storage-status.ts";
 import { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 
 /**
@@ -140,6 +141,13 @@ function storageFailure(
   args: readonly unknown[],
 ): Error {
   const detail = `storage ${method} answered HTTP ${status}: ${body.slice(0, 500)}`;
+  // A PERMANENT refusal, in the DevKit's own vocabulary — see
+  // `workflow-storage-status.ts` for the taxonomy and for why the platform must
+  // not answer one of these 503. Checked before the 404 arm because the two are
+  // the same kind of translation and only the subject differs; a plain `Error`
+  // here would be retried by a runtime that knows how to stop.
+  const permanent = storageErrorForStatus(status, detail);
+  if (permanent) return permanent;
   if (status !== 404) return new Error(detail);
   // Their constructor takes the RUN ID and formats it into the message, so it is
   // worth passing the real one: every run-scoped method on this surface takes it

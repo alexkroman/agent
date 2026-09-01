@@ -33,9 +33,18 @@
  * including a 192 kHz 32-bit stereo WAV that trips
  * {@link MAX_BYTES_PER_SECOND}, which downsampling genuinely repairs.
  *
- * The fast path costs one 64 KB read and no subprocess at all: a WAV that was
- * already cuttable is returned by the id it came in under, so nothing is copied
- * and nothing is re-encoded.
+ * The fast path costs one 64 KB read and no subprocess at all: a WAV that is
+ * already cuttable AND already light enough is returned by the id it came in
+ * under, so nothing is copied and nothing is re-encoded.
+ *
+ * ## Cuttable is not the same as worth cutting
+ *
+ * {@link parseWav} succeeding is necessary and not sufficient. A 48 kHz stereo
+ * WAV parses and cuts perfectly and is six times the bytes per request that the
+ * same audio is at {@link NORMALIZED_SAMPLE_RATE} mono — which the sync
+ * endpoint's 30-second deadline turns from a cost into a failure. So the fast
+ * path is gated on {@link heavierThanNormalized} as well, and that predicate's
+ * own doc carries the measurement.
  *
  * ## File → file, not bytes → bytes
  *
@@ -130,7 +139,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
   const stored = await uploadInfo(uploadId);
   const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
 
-  if (cuttable(head.bytes, stored.size)) {
+  if (cuttable(head.bytes, stored.size) && !heavierThanNormalized(head.bytes, stored.size)) {
     // No subprocess, no copy, no second upload. The overwhelmingly common case
     // for a desk whose form says WAV, and the reason the check is a 64 KB read.
     await report(`${stored.name || uploadId} is already linear-PCM WAV — cutting it as it is.`);
@@ -141,8 +150,16 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
   // long recording and a run that says nothing until the conversion finishes looks
   // stuck. It is also the line that distinguishes "this file needs converting" from
   // the fast path above.
+  // WHY it is being converted, because there are now two reasons and they look
+  // nothing alike to a reader watching the log: a file the parser refused, and a
+  // WAV that is fine but too heavy to cut at this rate. Reporting "not a WAV we
+  // can cut" for the second one is a line that contradicts the file they
+  // uploaded.
   await report(
-    `Converting ${stored.name || uploadId} (${formatBytes(stored.size)}) — not a WAV we can cut.`,
+    `Converting ${stored.name || uploadId} (${formatBytes(stored.size)}) — ` +
+      (cuttable(head.bytes, stored.size)
+        ? `heavier per second than ${NORMALIZED_SAMPLE_RATE / 1000} kHz mono.`
+        : "not a WAV we can cut."),
   );
 
   // The temp directory's lifetime is this lexical scope, and the `finally` inside
@@ -236,6 +253,44 @@ export function cuttable(head: Uint8Array, totalBytes: number): boolean {
     if (err instanceof UnsupportedRecordingError) return false;
     throw err;
   }
+}
+
+/**
+ * Whether cutting this file AS IS would make every request too heavy.
+ *
+ * {@link cuttable} asks whether `splitRecording` CAN read the header; this asks
+ * whether it SHOULD. They are different questions and the answers point opposite
+ * ways for one common file: a 48 kHz stereo recording parses perfectly and cuts
+ * perfectly, and each 92-second segment of it is 17.7 MB against the 2.94 MB the
+ * same segment is once normalized. The sync endpoint deadlines a request at 30s,
+ * so six times the upload per request is the difference between segments landing
+ * in single digits and segments landing at 22-28s — which is not a slow run, it
+ * is a run where the first straggler past 30s takes the whole thing down (a
+ * segment burns `maxRetries`, the body throws, and every sibling still in flight
+ * is discarded and re-billed on the resume).
+ *
+ * This is NOT the "second opinion" the module doc warns about. That warning is
+ * about the pass-through decision disagreeing with the CUT decision — passing
+ * through something `splitRecording` then cannot read. This predicate can only
+ * ever send MORE files to ffmpeg, never fewer, and what comes back is 16 kHz mono
+ * by construction, so the two decisions still cannot disagree.
+ *
+ * Compared against the normalize targets rather than against a byte budget of its
+ * own: the question is literally "would converting make this smaller", and
+ * anything at or below {@link NORMALIZED_SAMPLE_RATE} / {@link NORMALIZED_CHANNELS}
+ * would only be re-encoded into itself. Note this deliberately does NOT look at
+ * `bitsPerSample` — `wavEncodeArgs` emits `pcm_s16le`, so a 24- or 32-bit file at
+ * 16 kHz mono really would shrink, but that is a 1.5-2x saving on a file already
+ * inside the budget, and converting it costs an ffmpeg pass over the whole
+ * recording. Revisit if a 32-bit mono source ever shows up in practice.
+ *
+ * Safe to call only where {@link cuttable} has already answered `true` — it
+ * re-parses the same window and a rejected header would throw here rather than
+ * answering.
+ */
+export function heavierThanNormalized(head: Uint8Array, totalBytes: number): boolean {
+  const format = parseWav(head, totalBytes);
+  return format.sampleRate > NORMALIZED_SAMPLE_RATE || format.channels > NORMALIZED_CHANNELS;
 }
 
 /** `41:20 of aac`, or as much of that as ffprobe would say. */

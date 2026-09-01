@@ -18,7 +18,11 @@
  * property is asserted HERE, directly, or nowhere.
  */
 
-import { describe, expect, test } from "vitest";
+// `tick` from `host/_test-utils.ts` rather than a local yield: `guard-invariants`
+// rule 4 exists to stop a seventh spelling of it, and `_map-stream.test.ts`
+// already reaches across for the same reason.
+import { describe, expect, test, vi } from "vitest";
+import { tick } from "../host/_test-utils.ts";
 import { mapConcurrent } from "./map-concurrent.ts";
 
 /** A run that records its own start order and settles after `delay` ticks. */
@@ -194,6 +198,64 @@ describe("mapConcurrent", () => {
     // A prefix of the list, and a short one — never the whole of it.
     expect(started).toEqual(items.slice(0, started.length));
     expect(started.length).toBeLessThan(5);
+  });
+
+  test("waits for in-flight siblings to SETTLE before the rejection propagates", async () => {
+    // The property a durable fan-out actually needs. `Promise.all` rejects the
+    // instant one slot does, which abandons the calls already running — and in a
+    // workflow those are steps that have been paid for, whose journal entries
+    // never land, so the resume re-issues and re-bills work that SUCCEEDED. The
+    // DevKit names them: "run failed with N uncommitted operation(s)".
+    const finished: number[] = [];
+    const slowSibling = Promise.withResolvers<void>();
+
+    const mapped = mapConcurrent([0, 1], 2, async (item) => {
+      if (item === 0) throw new Error("segment 0 failed");
+      await slowSibling.promise;
+      finished.push(item);
+      return item;
+    });
+    const settled = vi.fn();
+    void mapped.catch(settled);
+
+    // Item 0 has rejected by now; the map must NOT have settled, because item 1
+    // is still in flight. This is the assertion that fails against `Promise.all`.
+    await tick();
+    expect(settled).not.toHaveBeenCalled();
+    expect(finished).toEqual([]);
+
+    slowSibling.resolve();
+    await expect(mapped).rejects.toThrow(/segment 0 failed/);
+    // And the sibling's work completed rather than being discarded.
+    expect(finished).toEqual([1]);
+  });
+
+  test("raises the CAUSAL failure, not whichever sibling the drain waited on", async () => {
+    // The one that draining puts at risk, and it is not hypothetical: the parts
+    // uploader aborts its in-flight siblings the moment one part is refused, so
+    // every other slot then fails with `aborted`. Raising one of those names the
+    // symptom to a caller whose real problem is that a part was REFUSED — which
+    // is exactly what `sendEveryPart`'s doc says must not happen.
+    //
+    // First-in-time is what makes it the cause: every later rejection here is
+    // downstream of the first, either through `stopped` or through the caller's
+    // own abort.
+    const siblings = new AbortController();
+    const held = Promise.withResolvers<void>();
+    siblings.signal.addEventListener("abort", () => {
+      held.resolve();
+    });
+
+    await expect(
+      mapConcurrent([0, 1], 2, async (item) => {
+        if (item === 1) {
+          siblings.abort();
+          throw new Error("part refused");
+        }
+        await held.promise;
+        throw new Error("aborted");
+      }),
+    ).rejects.toThrow(/part refused/);
   });
 
   test("accepts a synchronous run function", async () => {

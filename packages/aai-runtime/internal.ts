@@ -204,6 +204,7 @@ export {
 // this subpath's own rule — a name is here because something IMPORTS it — they
 // stay off it. Which side of the codec a path is on is load-bearing rather than
 // incidental: see `workflow-typed-json.ts`.
+export { type StorageRefusalStatus, storageStatusFor } from "./workflow-storage-status.ts";
 export { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 // Standing an upload store up. The store TYPE, the two blob implementations and
 // the part addressing are contracted, on the root barrel; this is what JOINS

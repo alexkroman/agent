@@ -8470,7 +8470,19 @@ type StateSyncSession = {
 export const STEP_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_step_.+$";
 
 // @public
+const STORAGE_CONFLICT_STATUS = 409;
+
+// @public
+const STORAGE_RUN_EXPIRED_STATUS = 410;
+
+// @public
 type StorageFn = (...args: unknown[]) => Promise<unknown>;
+
+// @public
+export type StorageRefusalStatus = typeof STORAGE_RUN_EXPIRED_STATUS | typeof STORAGE_CONFLICT_STATUS;
+
+// @internal
+export function storageStatusFor(err: unknown): StorageRefusalStatus | undefined;
 
 // @public
 type StoredSessionEvent = {

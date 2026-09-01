@@ -227,6 +227,55 @@ describe("POST /:slug/workflow-storage", () => {
       expect(Buffer.from(run.output as Uint8Array)).toEqual(Buffer.from([1, 2]));
     });
 
+    test("a write to a TERMINAL run comes back as RunExpiredError, not a 503", async () => {
+      // The production failure, end to end. A fan-out that loses one segment
+      // leaves siblings in flight; they finish, write their results back, and the
+      // run is already `failed` — so the world raises `RunExpiredError`. Answered
+      // 503 (which is what every unclassified error gets) the guest reads
+      // "transient" and retries a call that can never succeed, once per abandoned
+      // step, until the budget is gone.
+      //
+      // Both halves are asserted together on purpose: the status the platform
+      // picks and the class the guest rebuilds from it are only correct with
+      // respect to each other, and they live in different packages.
+      // Built by NAME rather than imported from `workflow/errors`, and that is
+      // faithful rather than a shortcut: `RunExpiredError.is` is
+      // `isError(v) && v.name === "RunExpiredError"` precisely because the copy
+      // that RAISES is not the copy anyone imported — this tree holds four. A
+      // spec that imported one would be testing a tighter thing than production
+      // has. (`aai-server` does not depend on `workflow` either, which is why the
+      // taxonomy itself lives in `aai-runtime`.)
+      const expired = new Error('Cannot modify non-running step on run in terminal state "failed"');
+      expired.name = "RunExpiredError";
+      const world = fakeWorld({ "events.create": expired });
+      const p = await platform(world);
+      const storage = createPlatformStorage({
+        base: `http://platform.test/${MINE}`,
+        token: await bearerFor(p.store, MINE),
+        fetch: async (i, init) => {
+          const req = new Request(i, init);
+          return p.fetch(new URL(req.url).pathname, {
+            method: req.method,
+            headers: req.headers,
+            body: await req.text(),
+          });
+        },
+      });
+
+      const failure = await storage.events.create("run_mine", { eventType: "step_completed" }).then(
+        () => undefined,
+        (err: unknown) => err,
+      );
+      // The DevKit's own class, which its runtime knows to STOP on — asserted the
+      // way `RunExpiredError.is` asserts it. A plain `Error` carrying the same
+      // text gets none of that handling.
+      expect((failure as Error).name).toBe("RunExpiredError");
+      // And the status it travelled as — 410, never 503, which is the bit that
+      // says "do not retry" on the wire.
+      expect((failure as Error).message).toContain("HTTP 410");
+      expect((failure as Error).message).not.toContain("HTTP 503");
+    });
+
     test("a run another agent owns rejects with the platform's 404", async () => {
       const p = await platform();
       const storage = createPlatformStorage({
