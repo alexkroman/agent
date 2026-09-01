@@ -37,12 +37,33 @@
  * failing.
  */
 
-/** Where a run is. Pinned equal to the public `WorkflowRunStatus` by its own spec. */
-export type RunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+import { TERMINAL_WORKFLOW_STATUSES } from "@alexkroman1/aai/internal";
+import type { WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
 
-/** Is this status one nothing will move off? */
+/**
+ * Where a run is — the PUBLIC union, imported rather than restated.
+ *
+ * An earlier draft wrote the five members out here under a comment claiming they
+ * were "pinned equal to the public `WorkflowRunStatus` by its own spec". No such
+ * spec existed: `workflow-status-align.test.ts` pins the public union against the
+ * DevKit's, which is a different claim, so this was a third hand-copy that
+ * nothing checked. It is an alias now, which makes the question unaskable.
+ */
+export type RunStatus = WorkflowRunStatus;
+
+/**
+ * Is this status one nothing will move off?
+ *
+ * The SET comes from `TERMINAL_WORKFLOW_STATUSES`, which is where the repo
+ * already decides this; only the predicate's shape is local, because `isTerminal`
+ * takes a snapshot where the engine has a bare status. Four independent
+ * statements of "which statuses are terminal" existed before this imported one
+ * of them, and `workflow-engine.ts` reads it to decide whether a redelivery is a
+ * no-op — so a status added to the public union would have left that check
+ * silently wrong.
+ */
 export function isTerminalStatus(status: RunStatus): boolean {
-  return status === "completed" || status === "failed" || status === "cancelled";
+  return (TERMINAL_WORKFLOW_STATUSES as readonly string[]).includes(status);
 }
 
 /**

@@ -247,6 +247,10 @@ export {
 } from "./sdk/utils.ts";
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  // What a body's `catch` must test before doing cleanup — see the module doc
+  // for the shipped bug that makes this part of the authoring surface rather
+  // than an engine internal.
+  isWorkflowSuspend,
   type SleepOptions,
   type StepOptions,
   type WaitForOptions,

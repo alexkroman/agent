@@ -185,13 +185,14 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 5,
-    "supported": [5],
+    "current": 6,
+    "supported": [6],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "A workflow body is now (input, ctx) and carries no compiler-stamped workflowId: the Workflow DevKit's \"use workflow\"/\"use step\" directives are replaced by ctx.step, so a body written at epoch 2 does not compile.",
       "3": "ctx.sleep and ctx.waitFor were added to WorkflowCtx: durable suspension (phase 2) and hooks (phase 3) of the DevKit removal. A body written at the previous epoch still compiles, but the engine it was written for did not have either, so the epoch evidences nothing.",
-      "4": "ctx.waitFor gained a timeout option, so a hook's deadline is a parameter rather than a Promise.race against ctx.sleep — both suspend, and a suspend unwinds the stack, so the race stops the body before the other side is reached."
+      "4": "ctx.waitFor gained a timeout option, so a hook's deadline is a parameter rather than a Promise.race against ctx.sleep — both suspend, and a suspend unwinds the stack, so the race stops the body before the other side is reached.",
+      "5": "isWorkflowSuspend is new, and it is part of the authoring surface rather than an engine internal: a catch inside a body must re-throw the engine's suspend signal or its failure path runs against a run that was only waiting. recap-workflow shipped that bug."
     }
   },
   "workflow-api": {

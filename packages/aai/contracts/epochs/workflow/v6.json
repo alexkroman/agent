@@ -1,0 +1,17 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "workflow",
+  "epoch": 6,
+  "sha256": "8cf6882f4b6fc45c1c81e0b5d3dfc75d35693e8dc4778015a06dc5174c4044e8",
+  "exports": [
+    "DEFAULT_STEP_MAX_ATTEMPTS",
+    "SleepOptions",
+    "StepOptions",
+    "WaitForOptions",
+    "WorkflowClient",
+    "WorkflowCtx",
+    "WorkflowDef",
+    "isWorkflowSuspend",
+    "workflow"
+  ]
+}

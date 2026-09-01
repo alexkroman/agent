@@ -31,12 +31,14 @@
  * exactly the same reason — a deadline recomputed from the clock on every replay
  * moves further out each time, and the run never wakes.
  *
- * `aai-cli`'s workflow scan enforces this at build time as an AST pass: code
- * lexically inside a `ctx.step(...)` callback runs once, code outside it
- * replays, and that boundary is decidable without running anything. Under the
- * directives the same check read the BUILT bundle, because the builder stripped
- * step bodies out of it; the lexical form reports a source location instead of a
- * generated line number, which is strictly better for the author.
+ * **Nothing checks this yet, and that is worth knowing rather than implying.**
+ * `aai-cli`'s workflow scan still reads the BUILT flow bundle and still assumes
+ * the builder stripped step bodies out of it, which the engine no longer does —
+ * so it now warns about a `Date.now()` INSIDE a step callback, which is legal,
+ * and cannot see the boundary it was written to police. Replacing it with a
+ * lexical AST pass is the remaining half of this change: code inside a
+ * `ctx.step(...)` callback runs once and code outside it replays, and that
+ * boundary is decidable without running anything.
  *
  * ## Step identity is `(name, occurrence)`, and neither half is optional
  *
@@ -53,11 +55,17 @@
  * So the key is the name plus the count of times THAT name has been reached in
  * THIS run — `tick#0`, `tick#1`, … — which is stable under insertion elsewhere
  * and correct in a loop. The cost is a hazard the compile-time ids did not have:
- * two DIFFERENT call sites sharing a literal name alias onto one counter and
- * read each other's results. That is not a convention to remember, it is a build
- * failure — the same scan rejects two distinct `ctx.step` sites in one body using
- * the same literal. A single site in a loop is exactly what the scheme is for and
- * is left alone.
+ * two DIFFERENT call sites sharing a literal name alias onto one counter and read
+ * each other's results.
+ *
+ * **Today that is a convention to remember, and nothing enforces it.** An earlier
+ * draft of this doc said it was "not a convention to remember, it is a build
+ * failure" — describing the duplicate-literal check the scan above is meant to
+ * grow and does not have. Until it does, give two call sites two names; a single
+ * site in a loop or a fan-out is exactly what the scheme is for and needs none.
+ * The shipped templates follow that (`research-workflow` names its two
+ * `investigate` waves separately, `call-audit` its two clock reads), which is the
+ * pattern to copy.
  *
  * @module
  */

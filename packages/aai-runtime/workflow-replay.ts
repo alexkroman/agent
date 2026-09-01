@@ -32,13 +32,15 @@
  * would take the success path on the second and diverge. {@link stepFailure}
  * reconstructs it.
  *
- * ## What is NOT here
+ * ## Suspension is a THROW
  *
- * Suspension. A body that must wait — a durable sleep, a hook — cannot do it in
- * this version: `replayRun` runs a body to a terminal answer or throws. Adding
- * it is Phase 2, and the shape is already cut for it — a suspend becomes a
- * distinguished throw that this function reports instead of failing the run,
- * and the journal already records enough to resume.
+ * A body that must wait — `ctx.sleep`, `ctx.waitFor` — cannot return, because the
+ * wait may be days long and the process must be free meanwhile. So it throws
+ * {@link SuspendSignal}, which unwinds whatever depth the call was made at and
+ * which `replayRun` reports as an outcome rather than a failure. That is also the
+ * whole reason a deadline is a PARAMETER of `waitFor` rather than a `Promise.race`
+ * against `sleep`: a race stops the body on whichever suspends first, before the
+ * other has been reached.
  */
 
 import {
@@ -49,10 +51,12 @@ import {
   type WorkflowCtx,
 } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/host-internal";
+import { isWorkflowSuspend, WORKFLOW_SUSPEND_BRAND } from "@alexkroman1/aai/internal";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { withRunContext, withStepContext } from "./workflow-run-context.ts";
-import { DEFAULT_STREAM_NAMESPACE, type StreamStore } from "./workflow-streams.ts";
+import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
 
 /**
  * The longest this will hold a worker waiting to retry a step.
@@ -91,10 +95,17 @@ export type ReplayOutcome =
  * A throw rather than a returned sentinel, because a suspend has to unwind an
  * arbitrarily deep call stack — `ctx.sleep` may be reached from inside a helper
  * the body called — and there is no way to signal "stop and come back later" up
- * through code that is not expecting it. That does mean a body wrapping a sleep
- * in `try { … } catch { … }` catches this, which is why it carries no useful
- * message: it is not a failure, and a body that swallows it simply continues
- * without having waited. The build scan is where that gets reported.
+ * through code that is not expecting it.
+ *
+ * **JavaScript `catch` catches everything, so a body CAN swallow this**, and one
+ * shipped template did: `recap-workflow`'s saga wrapped its whole body in a
+ * `try`/`catch` that unwound the compensation stack, so the first poll that had
+ * to wait deleted the transcript the run was waiting for. `isWorkflowSuspend`
+ * (`@alexkroman1/aai`) is what a body's `catch` tests, and {@link replayRun}'s
+ * own check below is what catches a body that forgot — see `sdk/workflow-suspend.ts`.
+ *
+ * Branded rather than merely named, so the predicate works across however many
+ * copies of either module a guest bundle holds.
  */
 class SuspendSignal extends Error {
   /** `undefined` for a hook — see `ReplayOutcome`. */
@@ -104,6 +115,11 @@ class SuspendSignal extends Error {
     super("workflow suspended");
     this.name = "SuspendSignal";
     this.wakeAt = wakeAt;
+    Object.defineProperty(this, WORKFLOW_SUSPEND_BRAND, {
+      value: true,
+      enumerable: false,
+      configurable: true,
+    });
   }
 }
 
@@ -157,6 +173,22 @@ function stepFailure(entry: StepEntry): Error {
   return new FatalError(entry.error?.message ?? `step ${entry.name} failed`);
 }
 
+/**
+ * What to record when a body swallowed its own suspend.
+ *
+ * Names the remedy rather than the symptom, because the symptom is whatever the
+ * body did next and the cause is one line in a `catch`.
+ */
+function swallowedSuspend(err: unknown): string {
+  const after = err === undefined ? "returned a value" : `threw: ${errorMessage(err)}`;
+  return (
+    `This workflow caught the engine's suspend signal and ${after}. ` +
+    "A catch in a workflow body must test it with isWorkflowSuspend from " +
+    "@alexkroman1/aai and throw it again — otherwise the body's failure path " +
+    "runs against a run that was only waiting."
+  );
+}
+
 /** How long to wait before a retryable step's next attempt, clamped. */
 function retryDelay(err: unknown): number {
   const at = RetryableError.is(err) ? err.retryAfter.getTime() - Date.now() : 0;
@@ -171,11 +203,6 @@ function retryDelay(err: unknown): number {
  */
 function wakeAtFrom(until: number | Date): number {
   return until instanceof Date ? until.getTime() : Date.now() + until;
-}
-
-/** The message to record for a thrown value that may not be an `Error`. */
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -250,7 +277,7 @@ async function runStepAttempts(options: StepAttemptOptions): Promise<StepEntry> 
         key,
         name,
         status: "failed",
-        error: { message: messageOf(err) },
+        error: { message: errorMessage(err) },
         attempts: attempt,
         finishedAt: Date.now(),
       });
@@ -288,6 +315,16 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // same sleeps in the same order, so the Nth reach is the Nth wait.
   let sleeps = 0;
   let hooks = 0;
+  /**
+   * Whether a suspend was thrown during THIS walk.
+   *
+   * The other half of `sdk/workflow-suspend.ts`'s two defences. A body that
+   * catches a suspend and does not re-throw has run its failure path against a
+   * run that was merely waiting — `recap-workflow`'s saga deleted the transcript
+   * it was waiting for — and the engine can see that without a build scan: a
+   * suspend went out, and something other than a suspend came back.
+   */
+  let suspendThrown = false;
 
   const ctx: WorkflowCtx = {
     runId,
@@ -339,6 +376,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       // deadline in the past is not an error: a run resuming after a long outage
       // meets that case legitimately, and so does every replay after the wake.
       if (record.woken || Date.now() >= record.wakeAt) return;
+      suspendThrown = true;
       throw new SuspendSignal(record.wakeAt);
     },
 
@@ -352,7 +390,10 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       if (record.delivered) return record.payload as T;
 
       // No deadline: nothing but a signal ends this.
-      if (waitOptions === undefined) throw new SuspendSignal(undefined);
+      if (waitOptions === undefined) {
+        suspendThrown = true;
+        throw new SuspendSignal(undefined);
+      }
 
       // A DEADLINE is journaled as its own sleep, sharing the hook's occurrence
       // so the two travel together. That is what makes the window immune to
@@ -374,29 +415,44 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
         await journal.closeHook(runId, `hook!${occurrence}`);
         return undefined;
       }
+      suspendThrown = true;
       throw new SuspendSignal(deadline.wakeAt);
     },
   };
 
+  let completed: ReplayOutcome = { kind: "completed", output: undefined };
   try {
     const output = await withRunContext(
       {
         runId,
         workflow,
         write: (namespace, value) =>
-          options.streams?.write(runId, namespace || DEFAULT_STREAM_NAMESPACE, value) ??
-          Promise.resolve(-1),
+          options.streams?.write(runId, streamNamespace(namespace), value) ?? Promise.resolve(-1),
       },
       async () => options.run(input, ctx),
     );
-    return { kind: "completed", output };
+    completed = { kind: "completed", output };
   } catch (err: unknown) {
     // An abort is the caller's own signal coming back out, not a run failure —
     // the run was cancelled and its status is already whatever cancelled it.
     if (signal?.aborted && err === signal.reason) throw err;
     // A suspend is not a failure either: the run is mid-flight and the caller
     // schedules its next delivery.
-    if (err instanceof SuspendSignal) return { kind: "suspended", wakeAt: err.wakeAt };
-    return { kind: "failed", error: { message: messageOf(err) } };
+    if (isWorkflowSuspend(err)) {
+      return { kind: "suspended", wakeAt: err instanceof SuspendSignal ? err.wakeAt : undefined };
+    }
+    // A suspend went out and something ELSE came back: the body caught it. Fail
+    // rather than recording the failure it happens to have thrown, because the
+    // interesting fact is the swallow — everything the body did on its failure
+    // path ran against a run that was only waiting.
+    if (suspendThrown) return { kind: "failed", error: { message: swallowedSuspend(err) } };
+    return { kind: "failed", error: { message: errorMessage(err) } };
   }
+  // Resolved NORMALLY after suspending, which is the quieter half of the same
+  // bug: the body caught the suspend and carried on to an answer, so the output
+  // describes a run that skipped its own wait.
+  if (suspendThrown) {
+    return { kind: "failed", error: { message: swallowedSuspend(undefined) } };
+  }
+  return completed;
 }

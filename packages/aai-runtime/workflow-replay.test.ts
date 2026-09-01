@@ -9,6 +9,7 @@
  */
 
 import type { WorkflowCtx } from "@alexkroman1/aai";
+import { isWorkflowSuspend } from "@alexkroman1/aai";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
@@ -378,5 +379,105 @@ describe("durable sleep", () => {
       return "both";
     });
     expect(outcome.kind).toBe("suspended");
+  });
+});
+
+describe("a body that swallows its own suspend", () => {
+  // The severe case, and it shipped: `recap-workflow`'s saga wrapped its whole
+  // body in a `try`/`catch` that unwound a compensation stack, so the first poll
+  // that had to WAIT deleted the transcript the run was waiting for, journaled
+  // the deletion as successful, and re-threw — and the engine, seeing its own
+  // signal come back out, recorded the run as healthily suspended.
+
+  test("fails the run rather than reporting the failure the body threw instead", async () => {
+    const { journal } = await seed();
+    const cleanup = vi.fn(() => "undone");
+    const outcome = await replay(journal, async (_input, ctx) => {
+      try {
+        await ctx.sleep(60_000);
+        return "unreachable";
+      } catch (err) {
+        // The shipped shape: cleanup, then throw something of its own. Carrying
+        // the suspend as `cause` does NOT rescue it — the brand is on the cause,
+        // not on what was thrown — which is the realistic version, since a body
+        // wrapping an error is likelier than one discarding it.
+        await ctx.step("cleanup", cleanup);
+        throw new Error("recap failed", { cause: err });
+      }
+    });
+
+    expect(outcome.kind).toBe("failed");
+    // The message names the REMEDY, because the symptom is whatever the body did
+    // next and the cause is one line in a `catch`.
+    expect(outcome).toMatchObject({
+      error: { message: expect.stringContaining("isWorkflowSuspend") },
+    });
+    // What the body threw is carried as CONTEXT rather than presented as the
+    // run's cause — a reader needs both halves: the swallow is the bug, and the
+    // error the body threw instead is how they will recognise their own code.
+    expect(outcome).toMatchObject({
+      error: { message: expect.stringContaining("threw: recap failed") },
+    });
+    // The cleanup DID run, which is exactly the damage being reported. Pinned so
+    // nobody reads the guard as preventing it — it cannot, it can only refuse to
+    // call the result healthy.
+    expect(cleanup).toHaveBeenCalled();
+  });
+
+  test("fails the run when the body swallows it and returns a value", async () => {
+    // The quieter half: the output would describe a run that skipped its wait.
+    const { journal } = await seed();
+    const outcome = await replay(journal, async (_input, ctx) => {
+      try {
+        await ctx.sleep(60_000);
+      } catch {
+        // Swallowed entirely.
+      }
+      return "as if it had waited";
+    });
+
+    expect(outcome.kind).toBe("failed");
+    expect(outcome).toMatchObject({
+      error: { message: expect.stringContaining("returned a value") },
+    });
+  });
+
+  test("suspends normally when the catch re-throws it, which is the documented shape", async () => {
+    const { journal } = await seed();
+    const cleanup = vi.fn(() => "undone");
+    const outcome = await replay(journal, async (_input, ctx) => {
+      try {
+        await ctx.sleep(60_000);
+        return "later";
+      } catch (err) {
+        if (isWorkflowSuspend(err)) throw err;
+        await ctx.step("cleanup", cleanup);
+        throw err;
+      }
+    });
+
+    expect(outcome.kind).toBe("suspended");
+    // The failure path did NOT run — which is the whole point.
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
+  test("still lets a body catch a real STEP failure while a suspend is re-thrown", async () => {
+    // The two must stay distinguishable, or the guard would make `try`/`catch`
+    // useless in a body that also waits.
+    const { journal } = await seed();
+    const outcome = await replay(journal, async (_input, ctx) => {
+      let recovered = "no";
+      try {
+        await ctx.step("flaky", () => {
+          throw new FatalError("nope");
+        });
+      } catch (err) {
+        if (isWorkflowSuspend(err)) throw err;
+        recovered = "yes";
+      }
+      return recovered;
+    });
+
+    expect(outcome).toEqual({ kind: "completed", output: "yes" });
   });
 });

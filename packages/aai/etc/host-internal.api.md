@@ -776,9 +776,6 @@ type Message = {
     content: string;
 };
 
-// @internal
-export const MISSING_WORKFLOW_ID_MESSAGE: string;
-
 // @public
 export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
 

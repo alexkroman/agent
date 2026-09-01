@@ -61,3 +61,27 @@ the window shuts, so the answer stays a fact.
 `@alexkroman1/aai` no longer depends on `workflow` at all.
 
 Eighteen capability epoch classifications in all, every one a `--drop`: `workflow`, `workflow-api` and `step-errors` for the signature changes above, `aai-runtime:eval` for the eval engine's own `WorkflowCtx`, and the rest collaterally — their reports name `ToolContext.workflows`, so the changed body type reaches them.
+
+## Two defects the review found, both severe
+
+**A body that swallowed its own suspend was recorded as healthy.** `ctx.sleep` and
+`ctx.waitFor` suspend by THROWING, and JavaScript `catch` catches everything — so
+`recap-workflow`'s saga, which wraps its whole body in a `try`/`catch` that unwinds
+a compensation stack, ran its failure path on the first poll that had to wait: it
+DELETED the transcript the run was waiting for, journaled the deletion as
+successful, re-threw, and the engine saw its own signal come back out and recorded
+the run as suspended. The data was gone and every signal said fine.
+
+Two defences, because one is not enough. `isWorkflowSuspend` (`@alexkroman1/aai`)
+is what a body's `catch` tests before doing anything else. And the engine checks
+too: if a suspend went out and something else came back — or the body simply
+returned — the run FAILS naming the remedy, because that cannot be enforced at
+build time (whether a `catch` re-throws is a runtime property).
+
+**`lastLine` returned the OLDEST progress line.** `WorkflowClient.lastLine` asks
+for `startIndex: -1` meaning "the last chunk alone", the DevKit's count-back-from-
+the-end semantics. The new store implemented an unsigned floor, so `-1` meant
+"everything after index -1" and the client took the first chunk — the exact thing
+that method exists to avoid. `StreamRead.startIndex` is signed now, and a read is
+`slice` arithmetic rather than a filter over the whole ring.
+

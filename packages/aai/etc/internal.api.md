@@ -176,6 +176,9 @@ export function isInvariantViolation(value: unknown): value is InvariantViolatio
 export function isTextAssetPath(assetPath: string): boolean;
 
 // @public
+export function isWorkflowSuspend(value: unknown): boolean;
+
+// @public
 export function linkConfirmationCode(code: string): string;
 
 // @public
@@ -207,9 +210,6 @@ export const MIC_SEND_MAX_BUFFERED_BYTES: number;
 
 // @internal
 export const MIC_SILENCE_PROBE_MS = 1500;
-
-// @internal
-export const MISSING_WORKFLOW_ID_MESSAGE: string;
 
 // @public
 export function normalizeSpeechText(text: string): string;
@@ -374,6 +374,9 @@ type WakeUpOptions = {
 
 // @public
 export const WORKFLOW_API_PREFIX = "/workflows";
+
+// @internal
+export const WORKFLOW_SUSPEND_BRAND: unique symbol;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;

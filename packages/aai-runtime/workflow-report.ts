@@ -72,7 +72,7 @@ function loadDevkit(): Promise<WorkflowRuntime> {
  * "no step" rather than a failure.
  */
 function stepMetadata(
-  mod: WorkflowRuntime,
+  mod: WorkflowRuntime | undefined,
 ): { stepName: string; stepId: string; attempt: number } | undefined {
   // OUR engine first. `workflow-run-context.ts` is an `AsyncLocalStorage` this
   // package owns, so it is both cheaper than the DevKit's lazy import and the
@@ -84,7 +84,7 @@ function stepMetadata(
   const step = currentRun()?.step;
   if (step) return { stepName: step.name, stepId: step.key, attempt: step.attempt };
   try {
-    return mod.getStepMetadata?.();
+    return mod?.getStepMetadata?.();
   } catch {
     return undefined;
   }
@@ -98,7 +98,14 @@ function stepMetadata(
  */
 export function createStepReporter(logger: Logger): StepReporter {
   return async (chunk: unknown, options): Promise<void> => {
-    const mod = await loadDevkit();
+    // OUR context first, and the `await` below is what that costs when there is
+    // one: nothing. An earlier draft claimed this ordering while still opening
+    // with `await loadDevkit()`, so every `report()` in the process paid a full
+    // module load of the package this change exists to remove — on the narration
+    // path of a run's FIRST step, which is the first line a watching page is
+    // waiting for.
+    const run = currentRun();
+    const mod = run ? undefined : await loadDevkit();
     const step = stepMetadata(mod);
     const namespace = options?.namespace;
     // **The attempt is part of the LINE, not just the log context.** A fan-out
@@ -151,7 +158,7 @@ export function createStepReporter(logger: Logger): StepReporter {
  * the same request as no options at all.
  */
 async function writeChunk(
-  mod: WorkflowRuntime,
+  mod: WorkflowRuntime | undefined,
   chunk: unknown,
   namespace: string | undefined,
 ): Promise<void> {
@@ -162,12 +169,15 @@ async function writeChunk(
   // `getWritable` makes it.
   const run = currentRun();
   if (run) {
-    await run.write(namespace ?? "", chunk);
+    // `namespace` is passed through UNRESOLVED — `streamNamespace` in
+    // `workflow-streams.ts` is the one owner, and an earlier draft's `?? ""`
+    // here defeated it while a comment claimed the opposite.
+    await run.write(namespace, chunk);
     return;
   }
   // No DevKit in this process (a spec, a script): the log line above is the
   // whole report, which is what makes an exported step callable without a world.
-  if (!mod.getWritable) return;
+  if (!mod?.getWritable) return;
   const writer = mod
     .getWritable<unknown>(namespace === undefined ? undefined : { namespace })
     .getWriter();

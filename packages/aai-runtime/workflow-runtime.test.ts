@@ -54,6 +54,10 @@ describe("buildWorkflowClient", () => {
     expect(logger.info).toHaveBeenCalledWith("Workflows resolved", {
       workflows: ["digest"],
       keyStore: "postgres",
+      // The RUN store is its own line, and asserting it is the point: it is the
+      // question an operator asks after a restart, and it currently has an
+      // unflattering answer that a boot line is the right place to be honest in.
+      runStore: expect.stringContaining("memory"),
       publicUrl: PUBLIC_URL,
     });
   });
@@ -68,6 +72,7 @@ describe("buildWorkflowClient", () => {
     expect(logger.info).toHaveBeenCalledWith("Workflows resolved", {
       workflows: ["digest"],
       keyStore: "memory",
+      runStore: expect.stringContaining("memory"),
       publicUrl: PUBLIC_URL,
     });
   });

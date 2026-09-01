@@ -437,6 +437,47 @@ function readStatus(body: string): string | undefined {
 
 ***
 
+### isWorkflowSuspend()
+
+```ts
+function isWorkflowSuspend(value: unknown): boolean;
+```
+
+Is this the engine asking the body to stop, rather than something failing?
+
+**A `catch` inside a workflow body must ask this first and re-throw.** The wait
+has not failed — the run is suspended, and the engine will deliver it again.
+
+```ts no-check
+try {
+  const job = await ctx.step("submit", () => submit(input.url));
+  undo.push(() => ctx.step("discard", () => discard(job.id)));
+  await ctx.sleep(60_000);
+  return await ctx.step("collect", () => collect(job.id));
+} catch (err) {
+  // Not a failure: the run is waiting, and everything above it still stands.
+  if (isWorkflowSuspend(err)) throw err;
+  await unwind(undo);
+  throw err;
+}
+```
+
+A body with no `try` around its waits never needs this. Reach for it only where
+cleanup runs on the failure path — which is exactly where swallowing a suspend
+does damage.
+
+#### Parameters
+
+##### value
+
+`unknown`
+
+#### Returns
+
+`boolean`
+
+***
+
 ### omitUndefined()
 
 ```ts

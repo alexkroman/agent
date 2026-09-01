@@ -11,13 +11,12 @@
  *   `workflows` seam exists for and which no assertion about the client alone
  *   can cover — the runtime has to have been handed it.
  * - **What the harness will NOT claim**: a cancelled run's body ran on, and a
- *   `sleep` was recorded rather than taken.
+ *   `ctx.sleep` was recorded rather than taken.
  */
 
 import { type AgentDef, agent, tool, workflow } from "@alexkroman1/aai";
 import { report, stepEnv } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { sleep } from "workflow";
 import { z } from "zod";
 import { describeWorkflowEval } from "./describe-workflows.ts";
 import { openEvalSession } from "./session.ts";
@@ -30,12 +29,15 @@ import {
   openEvalWorkflows,
 } from "./workflows.ts";
 
+/** How long `digest` asks to wait. Recorded, never taken. */
+const SLEEP_MS = 10_000;
+
 const digest = workflow({
   description: "Digest a link",
   input: z.object({ url: z.string() }),
-  run: async (input: { url: string }) => {
+  run: async (input: { url: string }, ctx) => {
     await report(`reading ${input.url}`);
-    await sleep("10 seconds");
+    await ctx.sleep(SLEEP_MS);
     return { headline: `about ${input.url}` };
   },
 });
@@ -123,7 +125,7 @@ describe("openEvalWorkflows", () => {
     expect(run.reported).toEqual(["reading https://example.test/post"]);
     // The honest report: the body ASKED for ten seconds and the harness did not
     // wait, because a suspension is the property it cannot reproduce.
-    expect(run.slept).toEqual([{ duration: "10 seconds" }]);
+    expect(run.slept).toEqual([{ duration: SLEEP_MS }]);
     expect(run.error).toBeUndefined();
   });
 

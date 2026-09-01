@@ -211,13 +211,17 @@ export {
   MAX_WORKFLOW_WAIT_MS,
   TERMINAL_WORKFLOW_STATUSES,
 } from "./sdk/workflow-run.ts";
+// The engine's suspend brand and its predicate. `isWorkflowSuspend` is ALSO on
+// the root barrel, because a body's `catch` is where it is tested; the brand is
+// here because only `@alexkroman1/aai-runtime` may set it.
+export { isWorkflowSuspend, WORKFLOW_SUSPEND_BRAND } from "./sdk/workflow-suspend.ts";
+
 // The unavailable-workflows trio. Here rather than on the root barrel because all
 // three are `@internal`: their readers are the tool executor, the two
 // test-context builders, and the guest harness. Keeping them off the root also
 // keeps them out of the docs surface, which a `@public` `{@link}` to an
 // `@internal` symbol would otherwise fail the docs build over.
 export {
-  MISSING_WORKFLOW_ID_MESSAGE,
   rejectingWorkflows,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
 } from "./sdk/workflow-unavailable.ts";

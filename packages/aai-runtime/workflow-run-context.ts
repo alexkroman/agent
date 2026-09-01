@@ -46,8 +46,14 @@ export type RunContext = {
         attempt: number;
       }
     | undefined;
-  /** Append a progress chunk. Bound to this run by whoever entered the context. */
-  write(namespace: string, value: unknown): Promise<number>;
+  /**
+   * Append a progress chunk. Bound to this run by whoever entered the context.
+   *
+   * The namespace arrives UNRESOLVED — `streamNamespace` owns that, once, in
+   * `workflow-streams.ts`. Taking a resolved string here is what produced four
+   * resolutions under three rules, two of which disagreed about `""`.
+   */
+  write(namespace: string | undefined, value: unknown): Promise<number>;
 };
 
 /**

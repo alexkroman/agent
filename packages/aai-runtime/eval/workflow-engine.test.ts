@@ -15,7 +15,6 @@
 import { workflow } from "@alexkroman1/aai";
 import { emit, report, stepEnv } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { sleep } from "workflow";
 import { z } from "zod";
 import { createEvalWorkflowEngine, type EvalWorkflowEngine } from "./workflow-engine.ts";
 
@@ -27,13 +26,16 @@ afterEach(async () => {
   engine = undefined;
 });
 
+/** How long `narrator` asks to wait. Recorded, never taken — see `EvalSleep`. */
+const SLEEP_MS = 10_000;
+
 /** A body that narrates, emits, sleeps and returns — one of each. */
 const narrator = workflow({
   input: z.object({ topic: z.string() }),
-  run: async (input: { topic: string }) => {
+  run: async (input: { topic: string }, ctx) => {
     await report(`reading ${input.topic}`);
     await emit("results", { topic: input.topic });
-    await sleep("10 seconds");
+    await ctx.sleep(SLEEP_MS);
     await report("done");
     return { topic: input.topic, key: stepEnv("FIXTURE_KEY") };
   },
@@ -82,7 +84,7 @@ describe("createEvalWorkflowEngine", () => {
     expect(record.emitted).toEqual([{ namespace: "results", chunk: { topic: "otters" } }]);
     // RECORDED, not taken: a ten-second wait in a unit test would be the harness
     // pretending it can suspend.
-    expect(record.slept).toEqual([{ duration: "10 seconds" }]);
+    expect(record.slept).toEqual([{ duration: SLEEP_MS }]);
     expect(record.elapsedMs).toBeTypeOf("number");
   });
 
@@ -197,8 +199,8 @@ describe("createEvalWorkflowEngine", () => {
     // exported step callable from an ordinary spec.
     vi.stubEnv("FIXTURE_KEY", "from-the-shell");
     expect(stepEnv("FIXTURE_KEY")).toBe("from-the-shell");
-    // And the sleep global is gone, so the DevKit's own refusal is back.
-    await expect(sleep("1 second")).rejects.toThrow(/inside a workflow function/);
+    // There is no sleep GLOBAL any more: a body's waits are `ctx.sleep`, which
+    // `evalCtx` answers, so releasing the engine leaves nothing behind to unset.
   });
 });
 

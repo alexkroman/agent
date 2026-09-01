@@ -3,8 +3,9 @@
  * One decision: does this runtime get a real `ctx.workflows`, and backed by what?
  *
  * Split from `runtime.ts` so `createRuntime` reads as one line, and from
- * `workflow-client.ts` so that module stays free of the Workflow DevKit import
- * (see `workflow-wdk.ts` for why that matters to its specs).
+ * `workflow-client.ts` so that module stays free of anything that resolves a
+ * store at import time — which is what lets the client's own specs run with no
+ * journal at all.
  *
  * The interesting part is the key store, because the two cases are not "prod and
  * a test" but two legitimate deployments:
@@ -13,15 +14,16 @@
  *   the AUTHOR supplied. This used to be every platform workflow app, because
  *   creating one switched app storage on; the platform provisions no database now,
  *   so it is whoever set the secret.
- * - **Without** — `aai dev` against the Local World, which keeps runs in
- *   `.workflow-data/` and needs no database; and a deployed app on the platform
- *   world, whose RUNS are durable on the platform's own database even though this
- *   index is not. The index is then in memory and forgotten on restart.
+ * - **Without** — the index is in memory and forgotten on restart.
  *
- *   Worth stating plainly because it is a real gap rather than a symmetry: a
- *   deployed app with no `DATABASE_URL` has durable runs and a forgotten
- *   correlation index, so `find()` by key stops resolving across a restart while
- *   the runs themselves survive.
+ * **The RUNS are a separate question, and right now they are in memory too.**
+ * That used to be the interesting asymmetry here: a deployed app's runs were
+ * durable on the platform's own database while this index was not, so `find()`
+ * by key stopped resolving across a restart while the runs themselves survived.
+ * With the engine in-house and only its memory journal written, the asymmetry is
+ * gone in the unhelpful direction — nothing survives a restart. The platform and
+ * Postgres journals are the remaining half of the DevKit removal, and the boot
+ * line below reports which store is in play so this is answerable from outside.
  *
  * A missing database is therefore NOT a reason to withhold the client. It was
  * tempting to make storage a hard requirement and have `ctx.workflows` reject
@@ -35,8 +37,8 @@ import type { Db } from "@alexkroman1/aai/internal";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";
 import { createWorkflowClient, resolveKeyStore } from "./workflow-client.ts";
+import { createInProcessWorkflowEngine } from "./workflow-in-process.ts";
 import { createRunNotifier, type RunNotifier } from "./workflow-notify.ts";
-import { wdkAdapter } from "./workflow-wdk.ts";
 
 /**
  * Build `ctx.workflows` for one runtime, or `undefined` when the agent declares
@@ -68,6 +70,13 @@ export function buildWorkflowClient(
     // restart, so it belongs in the one line an operator reads at boot rather
     // than being inferred from whether storage happens to be on.
     keyStore: db ? "postgres" : "memory",
+    // The RUN store, which is a different question from the key store and the
+    // one an operator actually asks after a restart. In-process for now: the
+    // platform and Postgres journals are the remaining half of the DevKit
+    // removal, so a deployed run survives an idle sandbox no better than a
+    // `aai dev` one does. Reported rather than assumed, because a durability
+    // tradeoff absent from the log reads as a bug.
+    runStore: "memory (in-process — runs do not survive a restart)",
     // Reported at boot for the same reason the key store is: whether a run can
     // hand out a reachable callback URL is a property of the DEPLOYMENT, and the
     // alternative to one boot line is discovering it from a throw inside a tool
@@ -78,7 +87,12 @@ export function buildWorkflowClient(
   return createWorkflowClient({
     workflows,
     keys: resolveKeyStore(db),
-    wdk: wdkAdapter(),
+    // The engine this repo owns, executing its own deliveries in this process.
+    // It replaced `wdkAdapter()`, and the swap had to happen HERE rather than
+    // later: `createWorkflowClient` hands `start` the DECLARED KEY, which the
+    // DevKit cannot resolve to a body at all — so the two halves had stopped
+    // agreeing about what identifies a workflow.
+    wdk: createInProcessWorkflowEngine({ workflows, logger }),
     // Declared `string | undefined` rather than optional on the options type, so
     // the absent case passes straight through — no `omitUndefined`, and no
     // spread-ternary for rule 2 to catch.

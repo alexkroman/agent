@@ -40,25 +40,8 @@ import type { WorkflowClient } from "./workflow.ts";
  */
 export const WORKFLOWS_UNAVAILABLE_MESSAGE =
   "Workflows are not available for this app: it declares none. Add them with " +
-  "`agent({ workflows })`, with each body in a module under `workflows/` whose " +
-  'first statement is `"use workflow";`.';
-
-/**
- * The error a declaration gets when its `run` carries no `workflowId`.
- *
- * Its own export because two layers throw it: `workflow()` at declaration time,
- * and the client when it resolves a def it was handed. Naming the bundler plugin
- * is the whole value — the symptom otherwise is `start` rejecting with the
- * Workflow DevKit's own "invalid workflow function", which points an agent author
- * at this SDK rather than at their build.
- *
- * @internal
- */
-export const MISSING_WORKFLOW_ID_MESSAGE =
-  'workflow({ run }) was given a function with no "use workflow" directive, or the ' +
-  "Workflow DevKit bundler plugin did not run. Declare the body in a module under " +
-  '`workflows/`, put `"use workflow";` as its first statement, and make sure the ' +
-  "project is built by `aai build`/`aai dev` rather than a bare bundler.";
+  "`agent({ workflows })`, with each body an exported async function in a module " +
+  "under `workflows/` taking `(input, ctx)`.";
 
 /**
  * A `WorkflowClient` whose every method rejects with `message`.

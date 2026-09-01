@@ -23,6 +23,11 @@
 
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  // What a body's `catch` must test before running its failure path. On the
+  // declaring surface rather than an engine internal because a body is where it
+  // is called, and because getting it wrong shipped once: `recap-workflow`'s
+  // saga swallowed a suspend and deleted the transcript it was waiting for.
+  isWorkflowSuspend,
   // `WorkflowCtx.sleep`'s options. Durable sleep is what makes a replay engine
   // worth having, so its option bag is part of the declaring surface.
   type SleepOptions,

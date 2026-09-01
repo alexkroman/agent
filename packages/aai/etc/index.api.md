@@ -282,6 +282,9 @@ export function isRecord(value: unknown): value is Record<string, unknown>;
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
 
+// @public
+export function isWorkflowSuspend(value: unknown): boolean;
+
 // @public (undocumented)
 export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
     readonly size: number;

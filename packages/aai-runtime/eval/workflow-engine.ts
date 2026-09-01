@@ -61,12 +61,12 @@
  *
  * ## The published slots ARE the observable surface
  *
- * Three are always filled: a step narrates through `publishStepReporter`, reads
- * credentials through `publishStepEnv`, and a body sleeps through a
- * `Symbol.for("WORKFLOW_SLEEP")` global the DevKit's `sleep()` looks for —
- * absent, it throws "`sleep()` can only be called inside a workflow function",
- * which is what makes a body like `link-digest`'s undrivable without this. Two
- * more are filled only when a caller supplies one
+ * Two are always filled: a step narrates through `publishStepReporter` and reads
+ * credentials through `publishStepEnv`, which is what makes a body like
+ * `link-digest`'s drivable at all. A body's WAITS need no slot — `ctx.sleep` and
+ * `ctx.waitFor` are `evalCtx`'s to answer, where the DevKit's `sleep()` looked
+ * for a `Symbol.for("WORKFLOW_SLEEP")` global and threw without one. Two more are
+ * filled only when a caller supplies one
  * ({@link EvalWorkflowEngineOptions.stepFetch}, `.speech`), and both are
  * unpublished on release either way — a slot this call left empty may hold a
  * PREVIOUS engine's value.
@@ -93,13 +93,11 @@ import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import type { WorkflowCtx, WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import type { WdkAdapter, WdkRunRecord } from "../workflow-wdk-types.ts";
 
-import {
-  type EvalBody,
-  type EvalRunRecord,
-  type EvalWorkflowEngine,
-  type EvalWorkflowEngineOptions,
-  type SleepSlot,
-  WORKFLOW_SLEEP,
+import type {
+  EvalBody,
+  EvalRunRecord,
+  EvalWorkflowEngine,
+  EvalWorkflowEngineOptions,
 } from "./workflow-engine-types.ts";
 
 // Every type this engine takes or records lives one file over — see that module's
@@ -159,16 +157,6 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   // package's program. See the two option docs.
   if (opts.speech) publishSpeechSynthesizer(opts.speech);
   if (opts.stepFetch) publishStepFetch(opts.stepFetch);
-
-  // Saved and restored rather than deleted, so an engine opened inside something
-  // that had already installed a sleep (a future harness, a nested case) does not
-  // silently take it away.
-  const globals = globalThis as SleepSlot;
-  const priorSleep = globals[WORKFLOW_SLEEP];
-  globals[WORKFLOW_SLEEP] = (duration) => {
-    current.getStore()?.slept.push({ duration });
-    return Promise.resolve();
-  };
 
   let sequence = 0;
 
@@ -391,8 +379,6 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // cross-file leak `stubUploads` carries the same warning about.
       publishSpeechSynthesizer(undefined);
       publishStepFetch(undefined);
-      if (priorSleep === undefined) delete globals[WORKFLOW_SLEEP];
-      else globals[WORKFLOW_SLEEP] = priorSleep;
       // A caller-supplied fetch is the CALLER's to close: this call did not open
       // its pool and cannot know who else holds it.
       return Promise.resolve();

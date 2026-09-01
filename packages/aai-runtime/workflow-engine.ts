@@ -41,7 +41,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./workflow-journal-types.ts";
 import { type ReplayOutcome, replayRun } from "./workflow-replay.ts";
-import { DEFAULT_STREAM_NAMESPACE, type StreamStore } from "./workflow-streams.ts";
+import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
 
 /** What one engine needs. */
@@ -105,20 +105,6 @@ function toWdkRecord(record: RunRecord): WdkRunRecord {
  */
 export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEngine {
   const { workflows, journal, streams, dispatch, newRunId, logger } = options;
-
-  /**
-   * Which channel a read means.
-   *
-   * An EMPTY namespace resolves to the default rather than to a channel named
-   * `""`, because that is what an absent one means and a query string is where
-   * the two become indistinguishable: `?namespace=` parses to the empty string,
-   * and answering it with a channel nobody writes to is an empty progress log
-   * with nothing to say why.
-   */
-  function namespaceOf(streamOptions: WdkStreamOptions): string {
-    const named = streamOptions.namespace?.trim();
-    return named ? named : DEFAULT_STREAM_NAMESPACE;
-  }
 
   /**
    * Fail a run for a reason the ENGINE found before the body ran.
@@ -292,7 +278,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
     },
 
     async streamTail(runId: string, streamOptions: WdkStreamOptions): Promise<number> {
-      return streams.tail(runId, namespaceOf(streamOptions));
+      return streams.tail(runId, streamNamespace(streamOptions.namespace));
     },
 
     readStream(runId: string, streamOptions: WdkStreamOptions): ReadableStream<unknown> {

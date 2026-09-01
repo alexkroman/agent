@@ -32,6 +32,7 @@ import type {
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-types.ts";
+import { isTerminalStatus } from "./workflow-journal-types.ts";
 
 /** One run's mutable state, kept together so a run is one map lookup. */
 type Slot = {
@@ -65,6 +66,23 @@ function newestFirst(a: RunRecord, b: RunRecord): number {
 }
 
 /**
+ * How many TERMINAL runs are kept before the oldest are forgotten.
+ *
+ * The one caller with a real lifetime is `aai dev`, which stays up for a working
+ * day — and a run retains its input, its output and every step's output, which
+ * for the shipped templates is transcripts and audio. Unbounded, that is heap
+ * growth proportional to total run payload rather than to work in flight, in the
+ * process a developer leaves running. `workflow-streams.ts` caps the channel
+ * holding the SMALLER values and this held the larger ones with no cap at all.
+ *
+ * Only terminal runs are candidates: an in-flight run is still owed a delivery,
+ * and forgetting one would strand it. The recent ones are what `aai workflow` and
+ * a page read back, so the cap is generous enough that a day's work is still
+ * inspectable.
+ */
+const MAX_TERMINAL_RUNS = 200;
+
+/**
  * Build an in-memory journal.
  *
  * @internal
@@ -79,9 +97,37 @@ export function createMemoryJournal(): JournalStore {
    */
   const byToken = new Map<string, { runId: string; key: string }>();
 
-  /** The slot, or a throw naming the run — every method below needs one. */
+  /**
+   * The slot, or `undefined`.
+   *
+   * Deliberately NOT a guard, and it used to claim to be one ("or a throw naming
+   * the run") while returning `undefined` — with four callers hand-rolling the
+   * throw right after it. A comment saying a function checks something it does
+   * not is how the fifth caller comes to skip the check.
+   */
   function slotOf(runId: string): Slot | undefined {
     return runs.get(runId);
+  }
+
+  /**
+   * Drop the oldest terminal runs past {@link MAX_TERMINAL_RUNS}.
+   *
+   * `Map` preserves insertion order, which is start order, so the oldest
+   * terminal runs are simply the first ones the walk meets. Their hook tokens go
+   * with them — `byToken` is the index INTO these slots, so leaving an entry
+   * behind would hold a token against a caller's next run forever, which is the
+   * lifetime half of what the DevKit's `using`-scoped hook used to release.
+   */
+  function forgetOldTerminalRuns(): void {
+    const terminal: string[] = [];
+    for (const [runId, slot] of runs) {
+      if (isTerminalStatus(slot.record.status)) terminal.push(runId);
+    }
+    for (const runId of terminal.slice(0, terminal.length - MAX_TERMINAL_RUNS)) {
+      const slot = runs.get(runId);
+      if (slot) for (const hook of slot.hooks.values()) byToken.delete(hook.token);
+      runs.delete(runId);
+    }
   }
 
   return {
@@ -128,9 +174,14 @@ export function createMemoryJournal(): JournalStore {
       const slot = slotOf(runId);
       if (!slot) return false;
       if (expect && !expect.includes(slot.record.status)) return false;
+      const wasTerminal = isTerminalStatus(slot.record.status);
       slot.record.status = next;
       if (patch && "output" in patch) slot.record.output = patch.output;
       if (patch?.error) slot.record.error = patch.error;
+      // The one moment a run becomes a candidate for forgetting, so it is where
+      // the sweep belongs — cheaper than a timer, and it cannot run while a
+      // delivery is in flight.
+      if (!wasTerminal && isTerminalStatus(next)) forgetOldTerminalRuns();
       return true;
     },
 
