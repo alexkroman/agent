@@ -224,7 +224,6 @@ export { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 // the part addressing are contracted, on the root barrel; this is what JOINS
 // them, which is a host's job.
 export { createUploadStore } from "./workflow-uploads.ts";
-export { wdkAdapter } from "./workflow-wdk.ts";
 // Choosing the world a workflow lives in, and starting it when the agent
 // declares one. `WorldKind` is what the first hands the second.
 export {

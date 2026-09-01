@@ -8869,39 +8869,6 @@ type UploadStore = UploadReader & {
     recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
 };
 
-// @public
-type WdkAdapter = {
-    start(workflowId: string, args: unknown[]): Promise<string>;
-    getRun(runId: string): Promise<WdkRunRecord | undefined>;
-    listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
-    cancel(runId: string): Promise<boolean>;
-    wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
-    signal(token: string, payload: unknown): Promise<boolean>;
-    readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
-    streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
-    readOutput(runId: string): Promise<unknown>;
-};
-
-// @internal
-export function wdkAdapter(): WdkAdapter;
-
-// @public
-type WdkRunRecord = {
-    runId: string;
-    workflowName: string;
-    status: "pending" | "running" | "completed" | "failed" | "cancelled";
-    createdAt: Date | number;
-    error?: {
-        message: string;
-    } | undefined;
-};
-
-// @public
-type WdkStreamOptions = {
-    namespace?: string | undefined;
-    startIndex?: number | undefined;
-};
-
 // @internal
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void;
 
