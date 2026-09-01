@@ -2,14 +2,20 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignore": [
     "examples/**",
-    // Sources `scripts/loadtest-boot.sh` COPIES over a scaffolded project — the
-    // stubbed-provider agent and the workflow-step agent. They import what a
-    // scaffolded project has (`@alexkroman1/aai`, `workflow`, `zod`) and are
-    // resolved there, not here, so knip reads every import as an unlisted root
-    // dependency. Each directory carries its own package.json declaring them,
-    // which is what satisfies Biome; knip resolves a non-workspace manifest
-    // against the root instead. Same reason `examples/**` is above it.
-    "scripts/loadtest-stub-agent/**",
+    // A source `scripts/loadtest-boot.sh` COPIES over a scaffolded project: the
+    // workflow-step agent. It imports what a scaffolded project has
+    // (`@alexkroman1/aai`, `workflow`, `zod`) and is resolved THERE, not here, so
+    // knip reads every import as an unlisted root dependency. The directory
+    // carries its own package.json declaring them, which is what satisfies
+    // Biome; knip resolves a non-workspace manifest against the root instead.
+    // Same reason `examples/**` is above it.
+    //
+    // `scripts/loadtest-stub-agent/**` was here too and is NOT needed: that
+    // agent imports only workspace packages (`@alexkroman1/aai`,
+    // `@alexkroman1/aai-runtime` and two of their subpaths), which knip resolves
+    // from the root fine. The entry suppressed nothing, and knip reports a
+    // redundant ignore as a configuration hint — which is the same
+    // dead-config shape as the `.size-limit.json` nobody ran.
     "scripts/loadtest-workflow-agent/**"
   ],
   "ignoreBinaries": [

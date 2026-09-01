@@ -247,6 +247,7 @@ export {
 } from "./sdk/utils.ts";
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  type SleepOptions,
   type StepOptions,
   type WorkflowClient,
   // What a workflow BODY is handed. An author annotates a body's second

@@ -280,3 +280,103 @@ describe("cancellation", () => {
     expect(second).not.toHaveBeenCalled();
   });
 });
+
+describe("durable sleep", () => {
+  test("suspends on a wait that has not elapsed, reporting when to come back", async () => {
+    const { journal } = await seed();
+    const after = vi.fn(() => "later");
+    const outcome = await replay(journal, async (_input, ctx) => {
+      await ctx.sleep(60_000);
+      return ctx.step("after", after);
+    });
+    expect(outcome.kind).toBe("suspended");
+    expect(after).not.toHaveBeenCalled();
+  });
+
+  test("returns immediately for a deadline already in the past", async () => {
+    // Not an error: a run resuming after a long outage meets this legitimately.
+    const { journal } = await seed();
+    const outcome = await replay(journal, async (_input, ctx) => {
+      await ctx.sleep(new Date(Date.now() - 1000));
+      return "carried on";
+    });
+    expect(outcome).toEqual({ kind: "completed", output: "carried on" });
+  });
+
+  test("decides the wake time ONCE, so a replay cannot push it further out", async () => {
+    // The bug this prevents: `ctx.sleep(60_000)` re-evaluated on every delivery
+    // stores a deadline 60s later each time, and the run never wakes.
+    const { journal } = await seed();
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      await ctx.sleep(60_000);
+      return "done";
+    };
+    const first = await replay(journal, body);
+    const stored = await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 999_999, undefined);
+    await replay(journal, body);
+    const after = await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 999_999, undefined);
+    expect(first.kind).toBe("suspended");
+    expect(after.wakeAt).toBe(stored.wakeAt);
+  });
+
+  test("continues past a wait the journal says was woken", async () => {
+    const { journal } = await seed();
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      await ctx.sleep(60_000);
+      return ctx.step("after", () => "ran");
+    };
+    expect((await replay(journal, body)).kind).toBe("suspended");
+
+    expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(1);
+    expect(await replay(journal, body)).toEqual({ kind: "completed", output: "ran" });
+  });
+
+  test("wakes only the wait a correlation id names", async () => {
+    const { journal } = await seed();
+    await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 60_000, "review");
+    await journal.claimSleep("wrun_1", "sleep!1", Date.now() + 60_000, "backoff");
+    expect(await journal.wakeSleeps("wrun_1", ["review"])).toBe(1);
+    // The second is untouched, so a targeted wake cannot end an unrelated wait.
+    const backoff = await journal.claimSleep("wrun_1", "sleep!1", 0, "backoff");
+    expect(backoff.woken).toBe(false);
+  });
+
+  test("counts only the waits a wake actually stopped", async () => {
+    // Not a tie between "nothing was waiting" and "woke something twice".
+    const { journal } = await seed();
+    await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 60_000, undefined);
+    expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(1);
+    expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(0);
+  });
+
+  test("does not count a wait that had already elapsed", async () => {
+    const { journal } = await seed();
+    await journal.claimSleep("wrun_1", "sleep!0", Date.now() - 1, undefined);
+    expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(0);
+  });
+
+  test("keeps a step named `sleep` clear of the wait key space", async () => {
+    // A step's key is `sleep#0` and a wait's is `sleep!0`, so the two cannot
+    // alias however the author names their steps.
+    const { journal } = await seed();
+    const outcome = await replay(journal, async (_input, ctx) => {
+      const value = await ctx.step("sleep", () => "a step, not a wait");
+      await ctx.sleep(60_000);
+      return value;
+    });
+    expect(outcome.kind).toBe("suspended");
+    expect((await journal.readSteps("wrun_1")).map((s) => s.key)).toEqual(["sleep#0"]);
+  });
+
+  test("journals each wait in a loop separately", async () => {
+    const { journal } = await seed();
+    // Two waits, the first already elapsed: the body must reach and suspend on
+    // the SECOND rather than re-reading the first.
+    await journal.claimSleep("wrun_1", "sleep!0", Date.now() - 1, undefined);
+    const outcome = await replay(journal, async (_input, ctx) => {
+      for (let i = 0; i < 2; i++) await ctx.sleep(60_000);
+      return "both";
+    });
+    expect(outcome.kind).toBe("suspended");
+  });
+});

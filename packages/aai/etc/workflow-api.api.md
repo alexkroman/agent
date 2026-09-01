@@ -61,6 +61,11 @@ export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is T
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
 
 // @public
+export type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 interface StandardSchemaIssue {
     readonly errors?: unknown;
     // (undocumented)
@@ -256,6 +261,8 @@ export type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public

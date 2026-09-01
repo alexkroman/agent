@@ -1827,6 +1827,12 @@ has to upload first.
 
 ## References
 
+### SleepOptions
+
+Re-exports [SleepOptions](index.md#sleepoptions)
+
+***
+
 ### StepOptions
 
 Re-exports [StepOptions](index.md#stepoptions)

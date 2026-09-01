@@ -389,6 +389,11 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 type SessionEventType = SessionEvent["type"];
 
 // @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
@@ -791,6 +796,8 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public

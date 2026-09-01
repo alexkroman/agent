@@ -90,6 +90,40 @@ export type StepEntry = {
 };
 
 /**
+ * One durable WAIT, as stored.
+ *
+ * Unlike a {@link StepEntry} this is MUTABLE, and the difference is real rather
+ * than an inconsistency: a step entry records something that happened, where a
+ * sleep records something that has not happened yet. `wake` is what changes it,
+ * which is the whole point of `ctx.workflows.wake(runId)` — a scheduled wait a
+ * caller decides to cut short. An append-only log cannot express that without a
+ * tombstone convention every backend would have to agree on.
+ */
+export type SleepRecord = {
+  /** When the body may continue. Decided ONCE, on the first reach. */
+  wakeAt: number;
+  /** Set by {@link JournalStore.wakeSleeps}. A woken sleep returns immediately. */
+  woken: boolean;
+  /** What a targeted `wake` matches on, when the author named one. */
+  correlationId?: string | undefined;
+};
+
+/**
+ * One outstanding HOOK: a body parked on somebody else's answer.
+ *
+ * Mutable for the reason {@link SleepRecord} is — it records something that has
+ * not happened yet. It differs in being addressed from OUTSIDE the run: a
+ * signaller knows the token, not the run id, which is why the store carries a
+ * token index and why `token` is unique across runs rather than per run.
+ */
+export type HookRecord = {
+  token: string;
+  /** True once somebody signalled. `payload` is only meaningful then. */
+  delivered: boolean;
+  payload?: unknown;
+};
+
+/**
  * The durable store, as the engine needs it.
  *
  * Deliberately has no `updateStep` and no `deleteRun`: the journal is
@@ -142,6 +176,58 @@ export type JournalStore = {
    * number to two concurrent deliveries and let a step exceed its ceiling.
    */
   claimAttempt(runId: string, key: string): Promise<number>;
+  /**
+   * Record this sleep's wake time the FIRST time it is reached, and read back
+   * whatever is stored on every reach after.
+   *
+   * Idempotent on `key`, and that is the property the whole mechanism rests on:
+   * a body is replayed, so `ctx.sleep(60_000)` is evaluated again on every
+   * delivery. Storing the newly-computed deadline each time would push it 60
+   * seconds further out per replay and the run would never wake. So the first
+   * write wins and later calls are reads.
+   *
+   * Resolves the record now in force — the stored one when there was one.
+   */
+  claimSleep(
+    runId: string,
+    key: string,
+    wakeAt: number,
+    correlationId: string | undefined,
+  ): Promise<SleepRecord>;
+  /**
+   * Cut short the run's outstanding waits, and resolve how many were stopped.
+   *
+   * `correlationIds` narrows to the waits declared with one of those ids;
+   * omitted, every outstanding wait on the run is woken. A wait already woken,
+   * or already elapsed, is NOT counted — the number is what this call changed,
+   * which is what makes `{ woken: 0 }` an answer a caller can act on rather than
+   * a tie between "nothing was waiting" and "I woke something twice".
+   */
+  wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+  /**
+   * Register a hook the body is parked on, or read back what was delivered.
+   *
+   * Idempotent on `key`, for the same replay reason `claimSleep` is: the body is
+   * re-walked on every delivery and must find the SAME hook rather than
+   * registering a second one.
+   *
+   * A `token` already registered by a DIFFERENT run or key is a conflict and
+   * throws: two waits sharing a token means one signal resolves whichever the
+   * store happens to find and the other waits forever, which is a bug worth
+   * failing the run over rather than resolving arbitrarily.
+   */
+  claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+  /**
+   * Deliver `payload` to whatever holds `token`.
+   *
+   * Resolves the run id that was waiting, or `undefined` when nothing holds the
+   * token — the ORDINARY answer, since a token whose run has moved on, finished
+   * or never started is indistinguishable to a caller and needs no error.
+   *
+   * Addressed by TOKEN rather than by run id because that is what the signaller
+   * knows: it is answering a question, not driving a particular run.
+   */
+  deliverHook(token: string, payload: unknown): Promise<string | undefined>;
   /**
    * Append one settled step.
    *

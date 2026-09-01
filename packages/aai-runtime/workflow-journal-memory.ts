@@ -24,7 +24,14 @@
  * exists to close.
  */
 
-import type { JournalStore, RunRecord, RunStatus, StepEntry } from "./workflow-journal-types.ts";
+import type {
+  HookRecord,
+  JournalStore,
+  RunRecord,
+  RunStatus,
+  SleepRecord,
+  StepEntry,
+} from "./workflow-journal-types.ts";
 
 /** One run's mutable state, kept together so a run is one map lookup. */
 type Slot = {
@@ -35,6 +42,10 @@ type Slot = {
   byKey: Map<string, StepEntry>;
   /** Attempts consumed per step key. */
   attempts: Map<string, number>;
+  /** Durable waits by key. Mutable, unlike `steps` — see `SleepRecord`. */
+  sleeps: Map<string, SleepRecord>;
+  /** Outstanding hooks by key. The token index below points back at these. */
+  hooks: Map<string, HookRecord>;
 };
 
 /**
@@ -60,6 +71,13 @@ function newestFirst(a: RunRecord, b: RunRecord): number {
  */
 export function createMemoryJournal(): JournalStore {
   const runs = new Map<string, Slot>();
+  /**
+   * Token to the hook holding it, so a signal is one lookup rather than a scan
+   * of every run. It is also what makes a duplicate token DETECTABLE — a scan
+   * would find one too, but a signaller's latency should not grow with the
+   * number of runs the store has ever held.
+   */
+  const byToken = new Map<string, { runId: string; key: string }>();
 
   /** The slot, or a throw naming the run — every method below needs one. */
   function slotOf(runId: string): Slot | undefined {
@@ -79,6 +97,8 @@ export function createMemoryJournal(): JournalStore {
         steps: [],
         byKey: new Map(),
         attempts: new Map(),
+        sleeps: new Map(),
+        hooks: new Map(),
       });
     },
 
@@ -124,6 +144,75 @@ export function createMemoryJournal(): JournalStore {
       const next = (slot.attempts.get(key) ?? 0) + 1;
       slot.attempts.set(key, next);
       return next;
+    },
+
+    async claimSleep(
+      runId: string,
+      key: string,
+      wakeAt: number,
+      correlationId: string | undefined,
+    ): Promise<SleepRecord> {
+      const slot = slotOf(runId);
+      if (!slot) throw new Error(`workflow run ${runId} not found`);
+      // First write wins. A replay re-evaluates `ctx.sleep(60_000)` and would
+      // otherwise store a deadline 60s further out on every delivery.
+      const existing = slot.sleeps.get(key);
+      if (existing) return { ...existing };
+      const record: SleepRecord = { wakeAt, woken: false, correlationId };
+      slot.sleeps.set(key, record);
+      return { ...record };
+    },
+
+    async wakeSleeps(
+      runId: string,
+      correlationIds: readonly string[] | undefined,
+    ): Promise<number> {
+      const slot = slotOf(runId);
+      if (!slot) return 0;
+      const now = Date.now();
+      let stopped = 0;
+      for (const record of slot.sleeps.values()) {
+        // Counted only when this call CHANGED something: an elapsed or
+        // already-woken wait is not one this call stopped.
+        if (record.woken || record.wakeAt <= now) continue;
+        if (correlationIds && !correlationIds.includes(record.correlationId ?? "")) continue;
+        record.woken = true;
+        stopped++;
+      }
+      return stopped;
+    },
+
+    async claimHook(runId: string, key: string, token: string): Promise<HookRecord> {
+      const slot = slotOf(runId);
+      if (!slot) throw new Error(`workflow run ${runId} not found`);
+      const existing = slot.hooks.get(key);
+      if (existing) return { ...existing };
+      // A token held by a different run or a different wait is a bug rather than
+      // a race: one signal would resolve whichever the store found first and the
+      // other wait would never end. Failing the run says so.
+      const owner = byToken.get(token);
+      if (owner && !(owner.runId === runId && owner.key === key)) {
+        throw new Error(
+          `workflow hook token ${JSON.stringify(token)} is already held by run ${owner.runId}`,
+        );
+      }
+      const record: HookRecord = { token, delivered: false };
+      slot.hooks.set(key, record);
+      byToken.set(token, { runId, key });
+      return { ...record };
+    },
+
+    async deliverHook(token: string, payload: unknown): Promise<string | undefined> {
+      const owner = byToken.get(token);
+      if (!owner) return undefined;
+      const record = runs.get(owner.runId)?.hooks.get(owner.key);
+      // Already answered: the second signal is not a second resolution. A body
+      // is replayed and must read the FIRST payload every time, or two walks of
+      // it diverge.
+      if (!record || record.delivered) return undefined;
+      record.delivered = true;
+      record.payload = payload;
+      return owner.runId;
     },
 
     async appendStep(runId: string, entry: StepEntry): Promise<StepEntry> {

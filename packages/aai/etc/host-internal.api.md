@@ -1037,10 +1037,15 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 type SessionMode = "s2s" | "pipeline" | "text";
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
+export function sleep(ms: number, opts?: SleepOptions_2): Promise<void>;
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
 
 // @internal
-type SleepOptions = {
+type SleepOptions_2 = {
     signal?: AbortSignal;
     unref?: boolean;
 };
@@ -1434,6 +1439,8 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public

@@ -223,15 +223,187 @@ describe("readOutput", () => {
   });
 });
 
-describe("the not-yet-built halves", () => {
-  test("wakeUp reports nothing was sleeping", async () => {
-    const { engine } = harness({ digest: () => 1 });
+describe("durable sleep", () => {
+  test("leaves a suspended run `running` and schedules its next delivery", async () => {
+    // Not a terminal state and not `pending`: the run IS in progress, it is just
+    // not executing. That is the status a caller polling it should see.
+    const { engine, dispatch } = harness({
+      digest: async (_input, ctx) => {
+        await ctx.sleep(60_000);
+        return "eventually";
+      },
+    });
     const runId = await engine.start("digest", [{}]);
-    expect(await engine.wakeUp(runId, undefined)).toBe(0);
+    dispatch.mockClear();
+
+    expect(await engine.execute(runId)).toBe("running");
+    expect(await engine.getRun(runId)).toMatchObject({ status: "running" });
+    const [id, at] = dispatch.mock.calls[0] ?? [];
+    expect(id).toBe(runId);
+    expect(at).toBeGreaterThan(Date.now());
   });
 
-  test("signal reports no hook holds the token", async () => {
+  test("does not re-dispatch a run cancelled while it was waiting", async () => {
+    const { engine, journal, dispatch } = harness({
+      digest: async (_input, ctx) => {
+        await journal.setStatus("wrun_1", "cancelled", undefined, ["running"]);
+        await ctx.sleep(60_000);
+        return "unreachable";
+      },
+    });
+    const runId = await engine.start("digest", [{}]);
+    dispatch.mockClear();
+    expect(await engine.execute(runId)).toBe("cancelled");
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  test("wake ends the wait, reports how many it stopped, and re-delivers", async () => {
+    const after = vi.fn(() => "ran");
+    const { engine, dispatch } = harness({
+      digest: async (_input, ctx) => {
+        await ctx.sleep(60_000);
+        return ctx.step("after", after);
+      },
+    });
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    dispatch.mockClear();
+
+    expect(await engine.wakeUp(runId, undefined)).toBe(1);
+    // Re-delivered so the woken body actually continues, rather than waiting out
+    // the deadline it was just told to skip.
+    expect(dispatch).toHaveBeenCalledWith(runId);
+    expect(await engine.execute(runId)).toBe("completed");
+    expect(await engine.readOutput(runId)).toBe("ran");
+  });
+
+  test("a wake on a run that is not waiting reports 0 and costs no delivery", async () => {
+    const { engine, dispatch } = harness({ digest: () => "done" });
+    const runId = await engine.start("digest", [{}]);
+    dispatch.mockClear();
+    expect(await engine.wakeUp(runId, undefined)).toBe(0);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  test("a wake on a run that never existed reports 0", async () => {
     const { engine } = harness();
-    expect(await engine.signal("tok_whatever", {})).toBe(false);
+    expect(await engine.wakeUp("wrun_nope", undefined)).toBe(0);
+  });
+
+  test("a wake naming a correlation id ends only that wait", async () => {
+    const { engine } = harness({
+      digest: async (_input, ctx) => {
+        await ctx.sleep(60_000, { correlationId: "review" });
+        return "published";
+      },
+    });
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    expect(await engine.wakeUp(runId, ["something-else"])).toBe(0);
+    expect(await engine.wakeUp(runId, ["review"])).toBe(1);
+  });
+
+  test("resumes past the wait once its deadline has passed, with no wake", async () => {
+    const { engine } = harness({
+      digest: async (_input, ctx) => {
+        // Already elapsed, so the second delivery walks straight through.
+        await ctx.sleep(-1);
+        return "through";
+      },
+    });
+    const runId = await engine.start("digest", [{}]);
+    expect(await engine.execute(runId)).toBe("completed");
+  });
+});
+
+describe("hooks", () => {
+  /** A body that parks on one token and reports what it was sent. */
+  const parking = {
+    digest: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      const answer = await ctx.waitFor<{ approved: boolean }>("tok_review");
+      return { approved: answer.approved };
+    },
+  };
+
+  test("parks the body with NO next delivery scheduled", async () => {
+    // The property that distinguishes a hook from a sleep: nothing but a signal
+    // ends it, so scheduling a delivery would poll a run parked for a week.
+    const { engine, dispatch } = harness(parking);
+    const runId = await engine.start("digest", [{}]);
+    dispatch.mockClear();
+
+    expect(await engine.execute(runId)).toBe("running");
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  test("a signal delivers the payload, re-delivers the run, and it completes", async () => {
+    const { engine, dispatch } = harness(parking);
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    dispatch.mockClear();
+
+    expect(await engine.signal("tok_review", { approved: true })).toBe(true);
+    expect(dispatch).toHaveBeenCalledWith(runId);
+    expect(await engine.execute(runId)).toBe("completed");
+    expect(await engine.readOutput(runId)).toEqual({ approved: true });
+  });
+
+  test("reports false for a token nothing holds", async () => {
+    const { engine } = harness(parking);
+    expect(await engine.signal("tok_nobody_is_waiting", {})).toBe(false);
+  });
+
+  test("reports false for a second signal on the same token", async () => {
+    // A body is replayed and must read the FIRST payload every time, or two
+    // walks of it diverge. So the second signal is not a second resolution.
+    const { engine } = harness(parking);
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    expect(await engine.signal("tok_review", { approved: true })).toBe(true);
+    expect(await engine.signal("tok_review", { approved: false })).toBe(false);
+    await engine.execute(runId);
+    expect(await engine.readOutput(runId)).toEqual({ approved: true });
+  });
+
+  test("reports false for a token whose run already finished", async () => {
+    // The ORDINARY case rather than an error: the run moved past its wait.
+    const { engine } = harness(parking);
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    await engine.signal("tok_review", { approved: true });
+    await engine.execute(runId);
+    expect(await engine.getRun(runId)).toMatchObject({ status: "completed" });
+    expect(await engine.signal("tok_review", { approved: true })).toBe(false);
+  });
+
+  test("fails a run whose token another run already holds", async () => {
+    // One signal would resolve whichever wait the store found first and the
+    // other would never end, so it is a bug worth failing the run over.
+    const { engine } = harness({ ...parking, second: parking.digest });
+    const first = await engine.start("digest", [{}]);
+    await engine.execute(first);
+    const clash = await engine.start("second", [{}]);
+    expect(await engine.execute(clash)).toBe("failed");
+    expect(await engine.getRun(clash)).toMatchObject({
+      error: { message: expect.stringContaining("already held by") },
+    });
+  });
+
+  test("a body may wait on a hook AFTER a step, resuming past the step", async () => {
+    const work = vi.fn(() => "researched");
+    const { engine } = harness({
+      digest: async (_input, ctx) => {
+        const notes = await ctx.step("research", work);
+        const answer = await ctx.waitFor<{ ok: boolean }>("tok_gate");
+        return { notes, ok: answer.ok };
+      },
+    });
+    const runId = await engine.start("digest", [{}]);
+    await engine.execute(runId);
+    await engine.signal("tok_gate", { ok: true });
+    expect(await engine.execute(runId)).toBe("completed");
+    // The step is answered from the journal on the resume, not re-run.
+    expect(work).toHaveBeenCalledTimes(1);
+    expect(await engine.readOutput(runId)).toEqual({ notes: "researched", ok: true });
   });
 });

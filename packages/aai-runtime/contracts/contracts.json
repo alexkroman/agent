@@ -8,9 +8,11 @@
     }
   },
   "eval": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The eval workflow engine's WorkflowCtx gained sleep (recorded, not taken) and waitFor (refused with a named message, a hook's payload coming from outside the run). Its types also moved to workflow-engine-types.ts under the 500-line cap, which the rollup's provenance shows."
+    }
   },
   "keys": {
     "current": 2,

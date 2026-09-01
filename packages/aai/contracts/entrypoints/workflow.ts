@@ -23,6 +23,9 @@
 
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  // `WorkflowCtx.sleep`'s options. Durable sleep is what makes a replay engine
+  // worth having, so its option bag is part of the declaring surface.
+  type SleepOptions,
   type StepOptions,
   type WorkflowClient,
   // What a BODY is handed, and the per-step overrides it may pass. They join

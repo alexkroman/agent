@@ -40,7 +40,7 @@ import type { WorkflowDef } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./workflow-journal-types.ts";
-import { replayRun } from "./workflow-replay.ts";
+import { type ReplayOutcome, replayRun } from "./workflow-replay.ts";
 import { DEFAULT_STREAM_NAMESPACE, type StreamStore } from "./workflow-streams.ts";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
 
@@ -51,15 +51,21 @@ export type WorkflowEngineOptions = {
   journal: JournalStore;
   streams: StreamStore;
   /**
-   * Hand a newly-started run to whatever will execute it.
+   * Hand a run to whatever will execute it, now or at `at`.
    *
    * Synchronous and returning nothing, because a caller of `ctx.workflows.start`
    * is told the run's ID and nothing about its progress — making this awaited
    * would let a slow queue block a tool call, and making it fallible would give
    * `start` a second failure mode with no better answer than the retry the queue
    * already owns.
+   *
+   * `at` is a wall-clock millisecond deadline, set when a body SUSPENDED on
+   * `ctx.sleep`. A dispatcher that cannot delay may deliver immediately: the
+   * body re-suspends on the same journaled wake time, so the wait is still
+   * honoured — it just costs a wasted delivery, which is the right way for a
+   * limited dispatcher to be wrong.
    */
-  dispatch: (runId: string) => void;
+  dispatch: (runId: string, at?: number) => void;
   /** Mints a run id. Injected so a spec can pin one. */
   newRunId: () => string;
   logger: Logger;
@@ -114,6 +120,61 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
     return named ? named : DEFAULT_STREAM_NAMESPACE;
   }
 
+  /**
+   * Fail a run for a reason the ENGINE found before the body ran.
+   *
+   * Two callers, both "this delivery can never succeed": the workflow is no
+   * longer declared, and the stored input is not a record. Sharing them is not
+   * about the three lines — it is that both must WRITE the failure rather than
+   * leaving the run `pending` forever, which is the silent version of the same
+   * outcome, and a second copy is the one that would forget the log line.
+   */
+  async function abandon(runId: string, workflow: string, message: string): Promise<"failed"> {
+    await journal.setStatus(runId, "failed", { error: { message } });
+    logger.warn?.("Workflow run abandoned", { runId, workflow, reason: message });
+    return "failed";
+  }
+
+  /**
+   * Record what one delivery's replay resolved to.
+   *
+   * Split from `execute` because the two answer different questions — `execute`
+   * decides whether this delivery may run the body at all, and this decides what
+   * the run becomes afterwards. Keeping them together put both in one function
+   * Biome measured at complexity 20.
+   */
+  async function recordOutcome(
+    runId: string,
+    outcome: ReplayOutcome,
+  ): Promise<RunRecord["status"] | undefined> {
+    if (outcome.kind === "suspended") {
+      // The run stays `running` — it IS in progress, just not executing. A
+      // cancel that landed while the body was in flight must not be
+      // re-dispatched, so the status is re-read rather than assumed: this is the
+      // one arm that does not write it.
+      const current = (await journal.getRun(runId))?.status;
+      // A timer schedules its own next delivery; a HOOK does not, and that is
+      // the point of the undefined. Nothing but a signal ends a hook wait, so
+      // dispatching anyway would poll a run that may be parked for a week — and
+      // `signal` re-delivers it when the answer arrives.
+      if (current === "running" && outcome.wakeAt !== undefined) {
+        dispatch(runId, outcome.wakeAt);
+      }
+      return current;
+    }
+
+    // `expect` excludes the terminal statuses, which is what stops a run
+    // CANCELLED mid-flight from being overwritten as completed by the worker
+    // that had not noticed. The body ran to the end either way; what the cancel
+    // decided is what the run is recorded as.
+    const moved =
+      outcome.kind === "completed"
+        ? await journal.setStatus(runId, "completed", { output: outcome.output }, ["running"])
+        : await journal.setStatus(runId, "failed", { error: outcome.error }, ["running"]);
+    if (!moved) return (await journal.getRun(runId))?.status;
+    return outcome.kind;
+  }
+
   return {
     async start(workflow: string, args: unknown[]): Promise<string> {
       // `args` is the adapter's shape — the DevKit's `start` was variadic. A
@@ -150,28 +211,23 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       if (isTerminalStatus(record.status)) return record.status;
 
       const def = workflows[record.workflow];
+      // The agent no longer declares this workflow — a redeploy that renamed or
+      // removed one, with a run still in flight. There is no body to replay.
       if (!def) {
-        // The agent no longer declares this workflow — a redeploy that renamed
-        // or removed one, with a run still in flight. Failing it is the only
-        // honest answer: there is no body to replay, and leaving it `pending`
-        // forever is the silent version of the same outcome.
-        const error = { message: `workflow ${record.workflow} is no longer declared` };
-        await journal.setStatus(runId, "failed", { error });
-        logger.warn?.("Workflow run abandoned", { runId, workflow: record.workflow });
-        return "failed";
+        return abandon(runId, record.workflow, `workflow ${record.workflow} is no longer declared`);
       }
 
-      // The input crossed a wire to get here, and a body's parameter is an
-      // object because a workflow's schema is an object schema. So this is a
-      // genuine boundary check rather than a cast in checked clothing: a
-      // non-record input means the store gave back something no `start` could
-      // have written, and replaying a body against it would fail somewhere
-      // deeper and less legibly.
+      // The input crossed a wire to get here, and a body's parameter is an object
+      // because a workflow's schema is an object schema. So this is a genuine
+      // boundary check rather than a cast in checked clothing: a non-record input
+      // means the store gave back something no `start` could have written, and
+      // replaying a body against it would fail somewhere deeper and less legibly.
       if (!isRecord(record.input)) {
-        const error = { message: `workflow run ${runId} has a malformed input record` };
-        await journal.setStatus(runId, "failed", { error });
-        logger.warn?.("Workflow run input malformed", { runId, workflow: record.workflow });
-        return "failed";
+        return abandon(
+          runId,
+          record.workflow,
+          `workflow run ${runId} has a malformed input record`,
+        );
       }
 
       // Compare-and-set, so exactly one delivery announces the run as started.
@@ -179,26 +235,18 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // not a lock is what makes that safe.
       await journal.setStatus(runId, "running", undefined, ["pending", "running"]);
 
-      const outcome = await replayRun({
+      return recordOutcome(
         runId,
-        workflow: record.workflow,
-        input: record.input,
-        run: def.run,
-        journal,
-        streams,
-        signal,
-      });
-
-      // `expect` excludes the terminal statuses, which is what stops a run
-      // CANCELLED mid-flight from being overwritten as completed by the worker
-      // that had not noticed. The body ran to the end either way; what the
-      // cancel decided is what the run is recorded as.
-      const moved =
-        outcome.kind === "completed"
-          ? await journal.setStatus(runId, "completed", { output: outcome.output }, ["running"])
-          : await journal.setStatus(runId, "failed", { error: outcome.error }, ["running"]);
-      if (!moved) return (await journal.getRun(runId))?.status;
-      return outcome.kind === "completed" ? "completed" : "failed";
+        await replayRun({
+          runId,
+          workflow: record.workflow,
+          input: record.input,
+          run: def.run,
+          journal,
+          streams,
+          signal,
+        }),
+      );
     },
 
     async getRun(runId: string): Promise<WdkRunRecord | undefined> {
@@ -221,19 +269,26 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       return journal.setStatus(runId, "cancelled", undefined, ["pending", "running"]);
     },
 
-    async wakeUp(_runId: string, _correlationIds: string[] | undefined): Promise<number> {
-      // Nothing sleeps yet. `0` is the honest answer and also the ordinary one —
-      // `wakeUp` on a live run that is not sleeping already reports 0, so a
-      // caller cannot tell this apart from the case it will report once durable
-      // sleep lands, and does not need to.
-      return 0;
+    async wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number> {
+      const stopped = await journal.wakeSleeps(runId, correlationIds);
+      // Re-deliver so the woken body actually continues, rather than waiting out
+      // the deadline it was told to skip. Only when something was stopped: a
+      // `wake` on a run that is not waiting is an ordinary answer (0) and must
+      // not cost a delivery.
+      if (stopped > 0) dispatch(runId);
+      return stopped;
     },
 
-    async signal(_token: string, _payload: unknown): Promise<boolean> {
-      // No hooks yet, and `false` is what "no hook holds this token" means —
-      // the ORDINARY answer for a token whose run has moved on. A caller already
-      // handles it.
-      return false;
+    async signal(token: string, payload: unknown): Promise<boolean> {
+      const runId = await journal.deliverHook(token, payload);
+      // `false` is what "no hook holds this token" means, and it is the ORDINARY
+      // answer rather than an error: a token whose run has moved past its wait,
+      // finished, or was never started is indistinguishable to the caller, and a
+      // caller that had to catch this would catch it on the happy path.
+      if (!runId) return false;
+      // The answer is stored; the body has to be re-walked to read it.
+      dispatch(runId);
+      return true;
     },
 
     async streamTail(runId: string, streamOptions: WdkStreamOptions): Promise<number> {

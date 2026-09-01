@@ -41,7 +41,12 @@
  * and the journal already records enough to resume.
  */
 
-import { DEFAULT_STEP_MAX_ATTEMPTS, type StepOptions, type WorkflowCtx } from "@alexkroman1/aai";
+import {
+  DEFAULT_STEP_MAX_ATTEMPTS,
+  type SleepOptions,
+  type StepOptions,
+  type WorkflowCtx,
+} from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/host-internal";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
@@ -67,7 +72,39 @@ export const MAX_IN_PROCESS_RETRY_MS = 30_000;
 /** What a run's execution resolved to. */
 export type ReplayOutcome =
   | { kind: "completed"; output: unknown }
-  | { kind: "failed"; error: { message: string } };
+  | { kind: "failed"; error: { message: string } }
+  /**
+   * The body is waiting. Not an outcome the RUN has — it is still `running` —
+   * but the outcome this DELIVERY has: the caller returns the worker.
+   *
+   * `wakeAt` present means a TIMER — schedule the next delivery for then.
+   * `undefined` means a HOOK: there is no deadline, and the next delivery comes
+   * from whoever signals. Scheduling one anyway would poll a run that may be
+   * parked for a week.
+   */
+  | { kind: "suspended"; wakeAt: number | undefined };
+
+/**
+ * A body reaching a wait that has not elapsed.
+ *
+ * A throw rather than a returned sentinel, because a suspend has to unwind an
+ * arbitrarily deep call stack — `ctx.sleep` may be reached from inside a helper
+ * the body called — and there is no way to signal "stop and come back later" up
+ * through code that is not expecting it. That does mean a body wrapping a sleep
+ * in `try { … } catch { … }` catches this, which is why it carries no useful
+ * message: it is not a failure, and a body that swallows it simply continues
+ * without having waited. The build scan is where that gets reported.
+ */
+class SuspendSignal extends Error {
+  /** `undefined` for a hook — see `ReplayOutcome`. */
+  readonly wakeAt: number | undefined;
+
+  constructor(wakeAt: number | undefined) {
+    super("workflow suspended");
+    this.name = "SuspendSignal";
+    this.wakeAt = wakeAt;
+  }
+}
 
 /** What {@link replayRun} needs to run one body. */
 export type ReplayOptions = {
@@ -123,6 +160,16 @@ function stepFailure(entry: StepEntry): Error {
 function retryDelay(err: unknown): number {
   const at = RetryableError.is(err) ? err.retryAfter.getTime() - Date.now() : 0;
   return Math.min(Math.max(at, 0), MAX_IN_PROCESS_RETRY_MS);
+}
+
+/**
+ * The absolute moment a `sleep(until)` names.
+ *
+ * A `Date` is taken as given; a number is a DURATION from now. Read once, at the
+ * first reach, and journaled — see `JournalStore.claimSleep`.
+ */
+function wakeAtFrom(until: number | Date): number {
+  return until instanceof Date ? until.getTime() : Date.now() + until;
 }
 
 /** The message to record for a thrown value that may not be an `Error`. */
@@ -235,6 +282,12 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // same names in the same order and so recomputes the same keys.
   const occurrences = new Map<string, number>();
 
+  // Sleeps are counted positionally rather than by name — a wait has no name, so
+  // there is nothing to key a map on. Same replay property: the body walks the
+  // same sleeps in the same order, so the Nth reach is the Nth wait.
+  let sleeps = 0;
+  let hooks = 0;
+
   const ctx: WorkflowCtx = {
     runId,
     workflow,
@@ -268,6 +321,37 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       // the same thing or the two replays diverge from here on.
       return entry.output as T;
     },
+
+    async sleep(until: number | Date, sleepOptions?: SleepOptions): Promise<void> {
+      // Sleeps get their own key space rather than sharing the step counter, so
+      // an author's step LITERALLY named "sleep" (`sleep#0`) cannot alias a
+      // durable wait (`sleep!0`). `!` is not producible by `${name}#${n}`.
+      const occurrence = sleeps;
+      sleeps++;
+      const record = await journal.claimSleep(
+        runId,
+        `sleep!${occurrence}`,
+        wakeAtFrom(until),
+        sleepOptions?.correlationId,
+      );
+      // Woken early, or the moment has passed — either way the wait is over. A
+      // deadline in the past is not an error: a run resuming after a long outage
+      // meets that case legitimately, and so does every replay after the wake.
+      if (record.woken || Date.now() >= record.wakeAt) return;
+      throw new SuspendSignal(record.wakeAt);
+    },
+
+    async waitFor<T>(token: string): Promise<T> {
+      // Its own key space again, for the reason sleeps have one.
+      const occurrence = hooks;
+      hooks++;
+      const record = await journal.claimHook(runId, `hook!${occurrence}`, token);
+      // The FIRST payload, every replay. `claimHook` is idempotent on the key, so
+      // a re-walk reads what was delivered rather than registering a second wait.
+      if (record.delivered) return record.payload as T;
+      // No deadline: nothing but a signal ends this.
+      throw new SuspendSignal(undefined);
+    },
   };
 
   try {
@@ -286,6 +370,9 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     // An abort is the caller's own signal coming back out, not a run failure —
     // the run was cancelled and its status is already whatever cancelled it.
     if (signal?.aborted && err === signal.reason) throw err;
+    // A suspend is not a failure either: the run is mid-flight and the caller
+    // schedules its next delivery.
+    if (err instanceof SuspendSignal) return { kind: "suspended", wakeAt: err.wakeAt };
     return { kind: "failed", error: { message: messageOf(err) } };
   }
 }

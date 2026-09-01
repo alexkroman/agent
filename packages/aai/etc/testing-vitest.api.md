@@ -50,6 +50,11 @@ export type MockWorkflowsOptions = {
 };
 
 // @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 interface StandardSchemaIssue {
     readonly errors?: unknown;
     // (undocumented)
@@ -268,6 +273,8 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public

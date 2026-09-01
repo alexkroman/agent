@@ -78,6 +78,7 @@ export type {
   // `WorkflowBody`'s second parameter, so it travels with it under the same
   // rule the comment below states — a type a public signature names must be
   // reachable from this entry point. `StepOptions` is `WorkflowCtx.step`'s.
+  SleepOptions,
   StepOptions,
   WorkflowBody,
   WorkflowCtx,

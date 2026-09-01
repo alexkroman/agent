@@ -1321,10 +1321,15 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 type SessionMode = "s2s" | "pipeline" | "text";
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
+export function sleep(ms: number, opts?: SleepOptions_2): Promise<void>;
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
 
 // @internal
-type SleepOptions = {
+type SleepOptions_2 = {
     signal?: AbortSignal;
     unref?: boolean;
 };
@@ -1718,6 +1723,8 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public
@@ -2456,6 +2463,11 @@ type SilenceNudgeParams = {
 type SilencePromptWithoutTimeoutMisuse = "`silencePrompt` is the instruction injected when `silenceTimeoutMs` elapses — with no timeout nothing ever injects it; set `silenceTimeoutMs`, or remove `silencePrompt`";
 
 // @public
+export type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 export type SlotHolder = {
     readonly slots: SlotStore;
     readonly sessionId: string;
@@ -2691,6 +2703,8 @@ export type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public
@@ -3027,6 +3041,11 @@ export type SleepOptions = {
 };
 
 // @public
+type SleepOptions_2 = {
+    correlationId?: string;
+};
+
+// @public
 interface StandardSchemaIssue {
     readonly errors?: unknown;
     // (undocumented)
@@ -3130,6 +3149,8 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions_2): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public
@@ -3736,6 +3757,11 @@ type SessionEventType = SessionEvent["type"];
 export type SessionMode = "s2s" | "pipeline" | "text";
 
 // @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
@@ -3924,6 +3950,8 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public
@@ -5400,6 +5428,11 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 type SessionEventType = SessionEvent["type"];
 
 // @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
@@ -5802,6 +5835,8 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public
@@ -5912,6 +5947,11 @@ export type MockWorkflowsOptions = {
     names?: readonly string[];
     runId?: string;
     lastLine?: unknown;
+};
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
 };
 
 // @public
@@ -6133,6 +6173,8 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public
@@ -6440,6 +6482,11 @@ export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is T
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
 
 // @public
+export type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 interface StandardSchemaIssue {
     readonly errors?: unknown;
     // (undocumented)
@@ -6635,6 +6682,8 @@ export type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public
@@ -6840,7 +6889,7 @@ import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import { StepFetch } from '@alexkroman1/aai/host-internal';
@@ -7128,9 +7177,9 @@ import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
-import { StepFetch } from '@alexkroman1/aai/host-internal';
+import type { StepFetch } from '@alexkroman1/aai/host-internal';
 import type { ToolInputSchema } from '@alexkroman1/aai';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';

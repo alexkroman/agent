@@ -4768,6 +4768,33 @@ FILE, so this is typed as the message that names the one to create.
 
 ***
 
+### SleepOptions
+
+```ts
+type SleepOptions = {
+  correlationId?: string;
+};
+```
+
+Per-sleep options.
+
+#### Properties
+
+##### correlationId?
+
+```ts
+optional correlationId?: string;
+```
+
+A name for this wait, so it can be ended early by name.
+
+Not required, and the default is deliberately the broad one: a `wake` naming
+no ids ends every outstanding wait on the run. An id is what lets a run with
+two concurrent waits — a review window and a retry backoff — have one of them
+cut short without the other.
+
+***
+
 ### SlotHolder
 
 ```ts
@@ -6063,7 +6090,9 @@ in the run is interrupted.
 type WorkflowCtx = {
   runId: string;
   workflow: string;
+  sleep: Promise<void>;
   step: Promise<T>;
+  waitFor: Promise<T>;
 };
 ```
 
@@ -6088,6 +6117,55 @@ body is replayed and may hold nothing live at all. Sharing one type would put
 the DevKit migration removed and which this must not reintroduce.
 
 #### Methods
+
+##### sleep()
+
+```ts
+sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+```
+
+Wait, durably — for a duration in milliseconds, or until an absolute `Date`.
+
+**This is not `setTimeout`, and the difference is the whole point.** The run
+SUSPENDS: the body stops, the process is free, and the engine re-delivers the
+run when the time comes. So a wait may be days long and survives a redeploy,
+an idle sandbox reclaim and a crash — which is what makes "check back
+tomorrow" a thing a workflow can express at all.
+
+A sleep is journaled the first time it is reached, so its wake time is
+decided ONCE. That matters because the body is replayed: computing the
+deadline from the clock on every replay would push it further out each time
+and a run could sleep forever.
+
+```ts no-check
+await ctx.step("draft", () => draft(input.topic));
+await ctx.sleep(6 * 60 * 60 * 1000, { correlationId: "review-window" });
+await ctx.step("publish", () => publish(input.topic));
+```
+
+###### Parameters
+
+###### until
+
+`number` \| `Date`
+
+Milliseconds to wait, or the `Date` to wait until. A value
+  already in the past returns immediately rather than erroring — a deadline
+  that has passed HAS been reached, and a run resuming after a long outage
+  meets that case legitimately.
+
+###### options?
+
+[`SleepOptions`](#sleepoptions)
+
+`correlationId` names this wait so
+  `ctx.workflows.wake(runId, [id])` can end it early, which is how a "send
+  it now" tool cuts a scheduled wait short. Waits with no id are woken by a
+  `wake` that names none.
+
+###### Returns
+
+`Promise`\<`void`\>
 
 ##### step()
 
@@ -6125,6 +6203,60 @@ duplicate check.
 ###### options?
 
 [`StepOptions`](#stepoptions)
+
+###### Returns
+
+`Promise`\<`T`\>
+
+##### waitFor()
+
+```ts
+waitFor<T>(token: string): Promise<T>;
+```
+
+Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
+
+Suspends like [WorkflowCtx.sleep](#sleep) and with no deadline at all: the run
+waits until `ctx.workflows.signal(token, payload)` is called, or a webhook
+arrives at the URL `ctx.workflows.publicWebhookUrl(token)` mints for the same
+token. That is how a run parks on a human approval, a payment provider's
+callback, or a review that may take a week.
+
+```ts no-check
+// The token is the AUTHOR's, derived so the body and the tool that hands it
+// out agree — see below.
+const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id));
+if (!approval.approved) return { published: false };
+```
+
+**The token must be DERIVED, not random.** Whoever hands the URL out is
+usually a tool, and a tool cannot see the body's local variables — so a
+random token leaves the run waiting on something nobody can name. Export one
+function that computes the token from the run's own input and import it in
+both places. This replaced the DevKit's `createHook()`, whose token was
+generated body-side for exactly this reason a problem.
+
+**A payload is UNTRUSTED.** It arrives over public HTTP, so validate it with
+a schema before acting on it; the type parameter is a claim about what you
+expect, not a check.
+
+###### Type Parameters
+
+###### T
+
+`T` = `unknown`
+
+What the signaller is expected to send.
+
+###### Parameters
+
+###### token
+
+`string`
+
+Who is being waited for. Two concurrent waits in one body
+  must use different tokens, or a single signal resolves whichever the
+  journal registered first and the other waits forever.
 
 ###### Returns
 

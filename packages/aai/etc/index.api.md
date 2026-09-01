@@ -678,6 +678,11 @@ type SilenceNudgeParams = {
 type SilencePromptWithoutTimeoutMisuse = "`silencePrompt` is the instruction injected when `silenceTimeoutMs` elapses — with no timeout nothing ever injects it; set `silenceTimeoutMs`, or remove `silencePrompt`";
 
 // @public
+export type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 export type SlotHolder = {
     readonly slots: SlotStore;
     readonly sessionId: string;
@@ -913,6 +918,8 @@ export type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
 };
 
 // @public
