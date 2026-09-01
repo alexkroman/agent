@@ -164,7 +164,9 @@ describe("round-trip totality over a generated domain", () => {
 
   /** What the generator actually reached, floored at the bottom of the block. */
   const seen = new Map<string, number>();
-  const note = (what: string): void => seen.set(what, (seen.get(what) ?? 0) + 1);
+  const note = (what: string): void => {
+    seen.set(what, (seen.get(what) ?? 0) + 1);
+  };
 
   /** Walk a generated value and record which interesting states it contains. */
   function census(value: unknown): void {
