@@ -62,6 +62,19 @@ const sharedDepSources = {
   "@tailwindcss/vite": "packages/aai-ui/package.json",
   "@vitejs/plugin-react": "packages/aai-ui/package.json",
   vite: "packages/aai-cli/package.json",
+  // The DevKit, and by now for ONE reason only: `aai build` still runs
+  // `workflow-bundler.ts`, which marks `workflow` external and emits a bundle
+  // that resolves `workflow/internal/builtins` from the project's own
+  // `node_modules`. Nothing an author writes imports it — the engine owns
+  // `ctx.step`, `ctx.sleep` and hooks, and no template has a bare `workflow`
+  // import left.
+  //
+  // So this entry is waiting on the BUNDLER rather than on any authored code,
+  // and removing it before that is not a tidy-up: a scaffolded project fails
+  // `aai build` with `Can't resolve 'workflow/internal/builtins'`, which the e2e
+  // tier catches and nothing cheaper does. It comes out in the same change that
+  // deletes `workflow-bundler.ts`.
+  workflow: "packages/aai-runtime/package.json",
   zod: "packages/aai/package.json",
   // Same shape as the two above, for the same reason: a template's `agent.ts`
   // imports `setup` from `xstate` DIRECTLY (a machine is authored, not wrapped),

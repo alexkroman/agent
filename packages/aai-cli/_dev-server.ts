@@ -324,6 +324,11 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // to reach a webhook on this machine.
       publicUrl: process.env.PUBLIC_URL?.trim() || `http://localhost:${backendPort}`,
     });
+    // The engine's delivery hook, so the door ANSWERS rather than falling
+    // through to a 404. `aai dev` deliberately passes no `allowRemote`, so what
+    // it answers is 401 — see the `request` hook below.
+    const deliver = runtime.deliverWorkflow;
+
     return createServer({
       runtime,
       name: agentDef.name,
@@ -356,7 +361,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // Mounted anyway, rather than skipped, so the route ANSWERS on the same
       // door it answers on when deployed. A path that 404s in dev and 401s in
       // production is the kind of difference a feature is developed against.
-      request: (req, res, url, method) => handleWorkflowRequest(req, res, url, method),
+      request: (req, res, url, method) =>
+        handleWorkflowRequest(req, res, url, method, omitUndefined({ deliver })),
       ...clientDirOpt,
     });
   }

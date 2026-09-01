@@ -260,16 +260,21 @@ describe("self-hosted server: durable workflows", () => {
 
     const server = await startSelfHostedServer(projectDir);
     try {
-      // The callback route the world dispatches to. Unmounted it 404s, and every
-      // run then stalls forever with nothing logged — which is exactly how this
-      // door behaved before. A 404 here is the assertion that matters; the body
-      // is nonsense, so anything BUT 404 means the route is mounted.
-      const flow = await fetch(`${server.url}/.well-known/workflow/v1/flow`, {
+      // The PLATFORM's delivery door, which replaced the DevKit's `flow` and
+      // `step` callbacks. Unmounted it 404s and the request falls through — which
+      // is exactly how this door behaved before it was wired — so anything BUT
+      // 404 means the route is mounted.
+      //
+      // 401 is the RIGHT answer here and not a disappointment: a self-hosted
+      // server supplies no `allowRemote`, having no queue outside its own
+      // process, so it refuses a caller it cannot vouch for. The run below is
+      // what proves the engine actually works; this proves the route exists.
+      const delivery = await fetch(`${server.url}/workflow-queue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
-      expect(flow.status).not.toBe(404);
+      expect(delivery.status).toBe(401);
 
       // And the run itself, which is the whole point: started through the public
       // API and polled to a terminal status, the way a `curl` script would.
@@ -353,16 +358,20 @@ describe("aai dev: a scaffolded workflow template", () => {
     return server.url;
   }
 
-  test("boots and mounts the DevKit's queue callbacks", async ({ skip }) => {
-    // Booting at all is most of it: `loadWorker` compiles `workflows/` BEFORE
-    // the server listens. Unmounted, this 404s and every run stalls forever
-    // with nothing logged — exactly how it behaved before the routes existed.
-    const res = await fetch(`${await settled(skip)}/.well-known/workflow/v1/flow`, {
+  test("boots and mounts the platform's delivery door", async ({ skip }) => {
+    // Booting at all is most of it. The door replaced the DevKit's `flow` and
+    // `step` callbacks; unmounted it 404s and the request falls through.
+    //
+    // 401 rather than 200 because `aai dev` supplies no `allowRemote` — its
+    // engine dispatches on a `setTimeout` in this process, so there is no queue
+    // outside it and no caller to vouch for. That the route ANSWERS is the
+    // claim; the two cases below are what prove runs actually advance.
+    const res = await fetch(`${await settled(skip)}/workflow-queue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
     });
-    expect(res.status).not.toBe(404);
+    expect(res.status).toBe(401);
   });
 
   test("a run reaches a terminal status, and its sleep is REALLY taken", async ({ skip }) => {
