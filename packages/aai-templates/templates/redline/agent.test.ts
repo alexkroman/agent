@@ -17,10 +17,10 @@
  * of that lives.
  */
 
+import { FatalError } from "@alexkroman1/aai/step-errors";
 import { parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { FatalError } from "workflow";
 import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
 import {
   briefBlock,

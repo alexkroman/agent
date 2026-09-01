@@ -16,7 +16,7 @@
  * instead — and the far side of a rate limit has already told us the number:
  *
  * ```ts no-check
- * import { RetryableError } from "workflow";
+ * import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
  * import { isTransientStatus, retryAfter } from "@alexkroman1/aai/step";
  *
  * if (!isTransientStatus(res.status)) throw new FatalError(message);

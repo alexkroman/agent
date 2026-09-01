@@ -20,9 +20,9 @@
  * the DevKit's `workflow` package.
  */
 
-import { FatalError, RetryableError } from "workflow";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import { FatalError, RetryableError } from "./step-error-classes.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
 import { errorMessage } from "./utils.ts";
 

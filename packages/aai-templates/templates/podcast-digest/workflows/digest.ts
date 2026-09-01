@@ -51,13 +51,14 @@
 
 import { mapConcurrent, report, TRANSCRIBE_API } from "@alexkroman1/aai/step";
 import {
+  FatalError,
   stepGenerateJsonClassified,
   stepTranscribePollClassified,
   stepTranscribeSubmitClassified,
 } from "@alexkroman1/aai/step-errors";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
-import { FatalError, sleep } from "workflow";
+import { sleep } from "workflow";
 import { z } from "zod";
 import type { dailyDigest } from "../agent.ts";
 import { discoverEpisodes, type Episode } from "./feeds.ts";

@@ -10,6 +10,7 @@
     "AssemblyAITtsVoice",
     "BuiltinTool",
     "createKeyedLock",
+    "DEFAULT_STEP_MAX_ATTEMPTS",
     "DEFAULT_SYSTEM_PROMPT",
     "DefaultToolResult",
     "Dialog",
@@ -55,12 +56,14 @@
     "spokenOrdinal",
     "StateProjection",
     "StaticAgentParams",
+    "StepOptions",
     "SttProvider",
     "SubagentDef",
     "TextAgentParams",
     "ToolChoice",
     "TtsProvider",
-    "withLock"
+    "withLock",
+    "WorkflowCtx"
   ],
   "@alexkroman1/aai-runtime/eval": [
     "completedOutput",
@@ -296,7 +299,11 @@
     "WAV_HEADER_BYTES",
     "WriteUploadOptions"
   ],
-  "@alexkroman1/aai/step-errors": ["throwStepError"],
+  "@alexkroman1/aai/step-errors": [
+    "DEFAULT_RETRY_DELAY_MS",
+    "RetryableErrorOptions",
+    "throwStepError"
+  ],
   "@alexkroman1/aai/step-files": [
     "ReadUploadToFileOptions",
     "STEP_FILE_WINDOW_BYTES",
@@ -398,6 +405,7 @@
     "FindOptions",
     "readEventStream",
     "StartOptions",
+    "StepOptions",
     "StreamOptions",
     "TerminalWorkflowRun",
     "UploadBody",
@@ -413,6 +421,7 @@
     "WorkflowApiClientOptions",
     "WorkflowBody",
     "WorkflowClient",
+    "WorkflowCtx",
     "WorkflowRunBase",
     "WorkflowRunStatus",
     "WorkflowSummary"

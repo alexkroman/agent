@@ -69,13 +69,14 @@
 
 import { report, requireStepEnv, stepFetch } from "@alexkroman1/aai/step";
 import {
+  FatalError,
   stepFetchOk,
   stepGenerateJsonClassified,
   stepTranscribeSubmitClassified,
   toStepError,
 } from "@alexkroman1/aai/step-errors";
 import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { createHook, FatalError, sleep } from "workflow";
+import { createHook, sleep } from "workflow";
 import { z } from "zod";
 import { retentionToken } from "./tokens.ts";
 

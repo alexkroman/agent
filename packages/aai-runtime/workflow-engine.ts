@@ -1,0 +1,277 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The engine as the run API already expects it: a {@link WdkAdapter} over a
+ * journal, a stream store and a dispatcher.
+ *
+ * This is the module that makes the Workflow DevKit removable. `workflow-wdk.ts`
+ * implemented the same nine-method interface over `workflow/api`, and
+ * everything above it — `workflow-client.ts`, the fifteen `workflow-api-*.ts`
+ * route modules, the run notifier — was already written against the interface
+ * rather than against the DevKit. So swapping the implementation is a one-line
+ * change in `workflow-runtime.ts`, and the seam that made that true was the whole
+ * reason the previous slice went in first.
+ *
+ * ## Starting a run and RUNNING one are deliberately separate
+ *
+ * {@link WorkflowEngine.start} creates the record and hands the run to a
+ * dispatcher; it does not execute anything. {@link WorkflowEngine.execute} is
+ * what a delivery calls. Keeping them apart is what lets the same engine serve
+ * all three deployments without knowing which it is in:
+ *
+ * - **`aai dev`, host mode, a self-hosted server** — the dispatcher runs the run
+ *   in this process, on the next turn of the loop.
+ * - **A deployed guest** — the dispatcher POSTs the platform's queue, which
+ *   delivers to `/workflow-queue`, which calls `execute`.
+ *
+ * A `start` that executed inline would make the first case the only one, and it
+ * is the case that does not need to be durable.
+ *
+ * ## A delivery is AT-LEAST-ONCE, and `execute` is written for that
+ *
+ * Two deliveries of one run may overlap. What keeps that safe is not a lock — a
+ * lock is a thing to lose — but the journal: a step already settled is answered
+ * from it, and `appendStep` is idempotent on its key, so the loser of a race
+ * adopts the winner's value. The one thing a lock WOULD buy is not doing the work
+ * twice, which is a cost rather than a correctness problem, so the status
+ * compare-and-set below is the only mutual exclusion here.
+ */
+
+import type { WorkflowDef } from "@alexkroman1/aai";
+import { isRecord } from "@alexkroman1/aai/utils";
+import type { Logger } from "./runtime-config.ts";
+import { isTerminalStatus, type JournalStore, type RunRecord } from "./workflow-journal-types.ts";
+import { replayRun } from "./workflow-replay.ts";
+import { DEFAULT_STREAM_NAMESPACE, type StreamStore } from "./workflow-streams.ts";
+import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
+
+/** What one engine needs. */
+export type WorkflowEngineOptions = {
+  /** The agent's declared workflows, keyed by the name they are declared under. */
+  workflows: Readonly<Record<string, WorkflowDef>>;
+  journal: JournalStore;
+  streams: StreamStore;
+  /**
+   * Hand a newly-started run to whatever will execute it.
+   *
+   * Synchronous and returning nothing, because a caller of `ctx.workflows.start`
+   * is told the run's ID and nothing about its progress — making this awaited
+   * would let a slow queue block a tool call, and making it fallible would give
+   * `start` a second failure mode with no better answer than the retry the queue
+   * already owns.
+   */
+  dispatch: (runId: string) => void;
+  /** Mints a run id. Injected so a spec can pin one. */
+  newRunId: () => string;
+  logger: Logger;
+};
+
+/** The engine, which is an adapter plus the door a delivery comes through. */
+export type WorkflowEngine = WdkAdapter & {
+  /**
+   * Execute one run to a terminal status.
+   *
+   * Idempotent in the sense that matters: calling it on a run that is already
+   * terminal is a no-op, and calling it on a partially-executed run resumes from
+   * the journal. Resolves the status the run ended on, or `undefined` when there
+   * was no such run.
+   */
+  execute(runId: string, signal?: AbortSignal): Promise<RunRecord["status"] | undefined>;
+};
+
+/** A journal record as the run API reads it. */
+function toWdkRecord(record: RunRecord): WdkRunRecord {
+  return {
+    runId: record.runId,
+    // The DECLARED key. Under the DevKit this field carried a compiler-minted
+    // id and every reader translated; there is one identity now, and the field
+    // keeps its name only because `WdkRunRecord` is the run API's shape.
+    workflowName: record.workflow,
+    status: record.status,
+    createdAt: record.createdAt,
+    ...(record.status === "failed" && record.error ? { error: record.error } : {}),
+  };
+}
+
+/**
+ * Build the engine.
+ *
+ * @internal
+ */
+export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEngine {
+  const { workflows, journal, streams, dispatch, newRunId, logger } = options;
+
+  /**
+   * Which channel a read means.
+   *
+   * An EMPTY namespace resolves to the default rather than to a channel named
+   * `""`, because that is what an absent one means and a query string is where
+   * the two become indistinguishable: `?namespace=` parses to the empty string,
+   * and answering it with a channel nobody writes to is an empty progress log
+   * with nothing to say why.
+   */
+  function namespaceOf(streamOptions: WdkStreamOptions): string {
+    const named = streamOptions.namespace?.trim();
+    return named ? named : DEFAULT_STREAM_NAMESPACE;
+  }
+
+  return {
+    async start(workflow: string, args: unknown[]): Promise<string> {
+      // `args` is the adapter's shape — the DevKit's `start` was variadic. A
+      // body takes exactly one input, so the first element IS the input and a
+      // second would be silently dropped; this refuses instead, because the one
+      // caller is `workflow-client.ts` and a second element means it changed.
+      if (args.length !== 1) {
+        throw new Error(`workflow ${workflow} takes one input, got ${args.length} argument(s)`);
+      }
+      if (!workflows[workflow]) {
+        throw new Error(`no workflow declared as ${JSON.stringify(workflow)}`);
+      }
+      const runId = newRunId();
+      await journal.createRun({
+        runId,
+        workflow,
+        status: "pending",
+        createdAt: Date.now(),
+        input: args[0],
+      });
+      // After the record exists, never before: a dispatcher that delivered first
+      // would race a worker against `createRun` and report "no such run" for a
+      // run that is about to exist.
+      dispatch(runId);
+      return runId;
+    },
+
+    async execute(runId: string, signal?: AbortSignal): Promise<RunRecord["status"] | undefined> {
+      const record = await journal.getRun(runId);
+      if (!record) return undefined;
+      // A terminal run is DONE, and a redelivery of one is ordinary rather than
+      // an error: the platform's queue acks on a 200, so any delivery whose ack
+      // was lost arrives again after the run finished.
+      if (isTerminalStatus(record.status)) return record.status;
+
+      const def = workflows[record.workflow];
+      if (!def) {
+        // The agent no longer declares this workflow — a redeploy that renamed
+        // or removed one, with a run still in flight. Failing it is the only
+        // honest answer: there is no body to replay, and leaving it `pending`
+        // forever is the silent version of the same outcome.
+        const error = { message: `workflow ${record.workflow} is no longer declared` };
+        await journal.setStatus(runId, "failed", { error });
+        logger.warn?.("Workflow run abandoned", { runId, workflow: record.workflow });
+        return "failed";
+      }
+
+      // The input crossed a wire to get here, and a body's parameter is an
+      // object because a workflow's schema is an object schema. So this is a
+      // genuine boundary check rather than a cast in checked clothing: a
+      // non-record input means the store gave back something no `start` could
+      // have written, and replaying a body against it would fail somewhere
+      // deeper and less legibly.
+      if (!isRecord(record.input)) {
+        const error = { message: `workflow run ${runId} has a malformed input record` };
+        await journal.setStatus(runId, "failed", { error });
+        logger.warn?.("Workflow run input malformed", { runId, workflow: record.workflow });
+        return "failed";
+      }
+
+      // Compare-and-set, so exactly one delivery announces the run as started.
+      // The loser proceeds anyway — see this module's doc on why the journal and
+      // not a lock is what makes that safe.
+      await journal.setStatus(runId, "running", undefined, ["pending", "running"]);
+
+      const outcome = await replayRun({
+        runId,
+        workflow: record.workflow,
+        input: record.input,
+        run: def.run,
+        journal,
+        streams,
+        signal,
+      });
+
+      // `expect` excludes the terminal statuses, which is what stops a run
+      // CANCELLED mid-flight from being overwritten as completed by the worker
+      // that had not noticed. The body ran to the end either way; what the
+      // cancel decided is what the run is recorded as.
+      const moved =
+        outcome.kind === "completed"
+          ? await journal.setStatus(runId, "completed", { output: outcome.output }, ["running"])
+          : await journal.setStatus(runId, "failed", { error: outcome.error }, ["running"]);
+      if (!moved) return (await journal.getRun(runId))?.status;
+      return outcome.kind === "completed" ? "completed" : "failed";
+    },
+
+    async getRun(runId: string): Promise<WdkRunRecord | undefined> {
+      const record = await journal.getRun(runId);
+      return record ? toWdkRecord(record) : undefined;
+    },
+
+    async listRuns(workflow: string, limit: number): Promise<WdkRunRecord[]> {
+      return (await journal.listRuns(workflow, limit)).map(toWdkRecord);
+    },
+
+    async cancel(runId: string): Promise<boolean> {
+      // "True when THIS call is what ended it" — the contract
+      // `WorkflowClient.cancel` promises. The compare-and-set answers it
+      // directly, which is the one place this engine is simpler than the adapter
+      // it replaces: `workflow-wdk.ts` needed a speculative read plus two
+      // error-class predicates plus a cause-chain walk to reach the same
+      // boolean, because the DevKit signalled all three outcomes by throwing and
+      // did so differently per world.
+      return journal.setStatus(runId, "cancelled", undefined, ["pending", "running"]);
+    },
+
+    async wakeUp(_runId: string, _correlationIds: string[] | undefined): Promise<number> {
+      // Nothing sleeps yet. `0` is the honest answer and also the ordinary one —
+      // `wakeUp` on a live run that is not sleeping already reports 0, so a
+      // caller cannot tell this apart from the case it will report once durable
+      // sleep lands, and does not need to.
+      return 0;
+    },
+
+    async signal(_token: string, _payload: unknown): Promise<boolean> {
+      // No hooks yet, and `false` is what "no hook holds this token" means —
+      // the ORDINARY answer for a token whose run has moved on. A caller already
+      // handles it.
+      return false;
+    },
+
+    async streamTail(runId: string, streamOptions: WdkStreamOptions): Promise<number> {
+      return streams.tail(runId, namespaceOf(streamOptions));
+    },
+
+    readStream(runId: string, streamOptions: WdkStreamOptions): ReadableStream<unknown> {
+      // A snapshot of what is written, closed at the tail. That is a real
+      // difference from the DevKit's stream, which stayed open, and it is the
+      // better shape for the one thing the interface documents the tail for: a
+      // progress channel is never closed by its writer, so a reader that waits
+      // for the end waits forever. Bounding the read HERE means the caller's
+      // `finally`-cancel is a formality rather than the only thing preventing a
+      // leaked pump — the failure `workflow-wdk.ts`'s `streamTail` had to
+      // measure and defend against.
+      return new ReadableStream<unknown>({
+        async start(controller) {
+          try {
+            for (const chunk of await streams.read(runId, streamOptions)) {
+              controller.enqueue(chunk.value);
+            }
+            controller.close();
+          } catch (err: unknown) {
+            controller.error(err);
+          }
+        },
+      });
+    },
+
+    async readOutput(runId: string): Promise<unknown> {
+      const record = await journal.getRun(runId);
+      // Only meaningful on a completed run, which is the caller's precondition
+      // (`toSnapshot` reads it having observed `completed`). Answering
+      // `undefined` for anything else rather than polling is the deliberate
+      // difference from the DevKit, whose `returnValue` waited on a pending run
+      // at 1s intervals with no ceiling — so a speculative read there turned a
+      // snapshot into a wait for the whole run.
+      return record?.status === "completed" ? record.output : undefined;
+    },
+  };
+}

@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 9,
-    "supported": [9],
+    "current": 10,
+    "supported": [10],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
@@ -10,7 +10,8 @@
       "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "6": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "7": "`agent({ system })` is gone; the field is `systemPrompt`. The alias existed to match the Vercel AI SDK's spelling and made `agent({ system, systemPrompt })` representable, which then needed a runtime throw to forbid — one concept with two names and a rule to police them. A stale `system` is reported by name, because it is in the stray-field renames map.",
-      "8": "Pre-release: `StaticAgentParams` is now `Omit<StaticAgentParamsCore, WorkflowAppOnlyField>` plus the misuse messages, rather than sharing a third unexported base with the arm — so this epoch would in fact still compile, the shape being identical. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty. The change exists so the docs build has one name to resolve instead of two: TypeDoc refuses an undocumented type on a public signature, and `StaticAgentParamsBase` was a second one."
+      "8": "Pre-release: `StaticAgentParams` is now `Omit<StaticAgentParamsCore, WorkflowAppOnlyField>` plus the misuse messages, rather than sharing a third unexported base with the arm — so this epoch would in fact still compile, the shape being identical. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty. The change exists so the docs build has one name to resolve instead of two: TypeDoc refuses an undocumented type on a public signature, and `StaticAgentParamsBase` was a second one.",
+      "9": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface."
     }
   },
   "builtins": {
@@ -31,14 +32,15 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 6,
-    "supported": [6],
+    "current": 7,
+    "supported": [7],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "3": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
       "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "6": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface."
     }
   },
   "ffmpeg": {
@@ -74,14 +76,15 @@
     "dropped": {}
   },
   "state": {
-    "current": 6,
-    "supported": [6],
+    "current": 7,
+    "supported": [7],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "3": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
       "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "6": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface."
     }
   },
   "step": {
@@ -93,10 +96,11 @@
     }
   },
   "step-errors": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "2": "FatalError and RetryableError are this SDK's own classes rather than @workflow/errors', and RetryableErrorOptions.retryAfter no longer accepts a duration string. Membership is a brand rather than instanceof."
     }
   },
   "step-files": {
@@ -110,18 +114,19 @@
     "dropped": {}
   },
   "subagent": {
-    "current": 5,
-    "supported": [5],
+    "current": 6,
+    "supported": [6],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
       "3": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "4": "`SubagentDef.instructions` is `systemPrompt`. It was the only field renamed between `subagent()` and its larger sibling — otherwise a field-for-field smaller `agent()` — so one concept had two names depending on which declaration you were writing. Migration is the rename at each `subagent({ … })` call site; a stale one is reported BY NAME, because `instructions` is in the stray-field renames map."
+      "4": "`SubagentDef.instructions` is `systemPrompt`. It was the only field renamed between `subagent()` and its larger sibling — otherwise a field-for-field smaller `agent()` — so one concept had two names depending on which declaration you were writing. Migration is the rename at each `subagent({ … })` call site; a stale one is reported BY NAME, because `instructions` is in the stray-field renames map.",
+      "5": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface."
     }
   },
   "testing": {
-    "current": 10,
-    "supported": [10],
+    "current": 11,
+    "supported": [11],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -131,18 +136,20 @@
       "6": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "7": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "8": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "9": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example. `withDiscoveredTools` is no longer exported: it was the tools-only half of `deployedAgent`, and with `virtual:aai/agent` serving the whole lowering there is nothing left for a spec to reach it for."
+      "9": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example. `withDiscoveredTools` is no longer exported: it was the tools-only half of `deployedAgent`, and with `virtual:aai/agent` serving the whole lowering there is nothing left for a spec to reach it for.",
+      "10": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface."
     }
   },
   "tool": {
-    "current": 6,
-    "supported": [6],
+    "current": 7,
+    "supported": [7],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
       "3": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "6": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface."
     }
   },
   "transcribe": {
@@ -166,18 +173,20 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
-    }
-  },
-  "workflow-api": {
     "current": 3,
     "supported": [3],
     "dropped": {
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "2": "A workflow body is now (input, ctx) and carries no compiler-stamped workflowId: the Workflow DevKit's \"use workflow\"/\"use step\" directives are replaced by ctx.step, so a body written at epoch 2 does not compile."
+    }
+  },
+  "workflow-api": {
+    "current": 4,
+    "supported": [4],
+    "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
-      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "3": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface."
     }
   }
 }

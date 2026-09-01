@@ -15,13 +15,11 @@ import { describe, expect, test } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
 import { buildWorkflowClient } from "./workflow-runtime.ts";
 
-function body(id: string): WorkflowBody {
-  const fn = (() => Promise.resolve()) as WorkflowBody;
-  fn.workflowId = id;
-  return fn;
+function body(): WorkflowBody {
+  return (() => Promise.resolve()) as WorkflowBody;
 }
 
-const digest = workflow({ run: body("workflow//./workflows/digest//digestFlow") });
+const digest = workflow({ run: body() });
 const unusedDb: Db = { query: () => Promise.reject(new Error("db not used")) };
 const PUBLIC_URL = "https://agents.test/digest-desk";
 

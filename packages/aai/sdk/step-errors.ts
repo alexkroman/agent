@@ -106,6 +106,18 @@ import { responseErrorMessage } from "./utils.ts";
 // the ffmpeg arm and the seven classified callers all CALL them and a
 // re-export brings nothing into this module's scope.
 export { throwFatalStepError, throwStepError, toStepError } from "./_step-verdict.ts";
+// The two classes the verdict RESOLVES TO. They were the DevKit's and are now
+// ours (`step-error-classes.ts` says why), and this subpath is where an author
+// meets them — a step that has already decided its failure is terminal throws a
+// `FatalError` directly rather than routing through a classifier that would have
+// to guess. Re-exported rather than given a subpath of their own: every importer
+// of one is an importer of this module's vocabulary.
+export {
+  DEFAULT_RETRY_DELAY_MS,
+  FatalError,
+  RetryableError,
+  type RetryableErrorOptions,
+} from "./step-error-classes.ts";
 
 /**
  * `stepFetch`, with the non-2xx branch every caller was writing by hand.

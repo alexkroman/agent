@@ -140,7 +140,6 @@
     "htmlparser2": "^12.0.0",
     "p-timeout": "catalog:",
     "undici": "^8.10.0",
-    "workflow": "4.8.2",
     "xstate": "catalog:",
     "zod": "catalog:"
   },

@@ -20,6 +20,7 @@
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { readUpload } from "@alexkroman1/aai/step";
+import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import {
   installStubReporter,
   installStubStepFetch,
@@ -27,7 +28,6 @@ import {
   installStubUploads,
 } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/batch.ts";

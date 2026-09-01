@@ -21,6 +21,7 @@
  */
 
 import type { WorkflowClient } from "@alexkroman1/aai";
+import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import {
   createRunSnapshot,
   createToolContext,
@@ -33,7 +34,6 @@ import { mockWorkflows, installStubGateway as stubGateway } from "@alexkroman1/a
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { FatalError, RetryableError } from "workflow";
 import { research } from "./shared.ts";
 import {
   countSources,

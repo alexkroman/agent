@@ -45,9 +45,8 @@
  */
 
 import { report } from "@alexkroman1/aai/step";
-import { stepFetchOk } from "@alexkroman1/aai/step-errors";
+import { FatalError, stepFetchOk } from "@alexkroman1/aai/step-errors";
 import { decodeHtmlEntities, isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
-import { FatalError } from "workflow";
 
 /** How long any one of these lookups may take before it is a failure. */
 const REQUEST_TIMEOUT_MS = 30_000;

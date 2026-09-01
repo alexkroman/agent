@@ -70,10 +70,15 @@ const sharedDepSources = {
   // scaffolded project has to declare it or its first run fails with
   // `Cannot find module '@workflow/world-postgres'`.
   //
-  // The two are sourced from DIFFERENT packages since the runtime split:
-  // `workflow` is the DevKit an `agent.ts` authors against and stayed with the
-  // SDK, while the Postgres world is only ever opened by the host.
-  workflow: "packages/aai/package.json",
+  // Both are sourced from `aai-runtime` now. `workflow` used to come from the
+  // SDK, on the ground that it was "the DevKit an `agent.ts` authors against" —
+  // which stopped being true when the engine moved in-house: the SDK owns
+  // `ctx.step` and its two error classes and declares no DevKit dependency at
+  // all. What still needs the package is the HOST — `aai-runtime` for the world
+  // and the queue, and a scaffolded project for the `sleep` and `createHook` a
+  // body still imports until durable sleep and hooks land here too. When that
+  // last import goes, this entry and the scaffold's dependency go with it.
+  workflow: "packages/aai-runtime/package.json",
   "@workflow/world-postgres": "packages/aai-runtime/package.json",
   // Same shape as the two above, for the same reason: a template's `agent.ts`
   // imports `setup` from `xstate` DIRECTLY (a machine is authored, not wrapped),

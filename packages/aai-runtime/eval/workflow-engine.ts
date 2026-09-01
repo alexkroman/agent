@@ -91,7 +91,7 @@ import {
   type StepFetch,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
-import type { WorkflowDef, WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowCtx, WorkflowDef, WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
 import type { WdkAdapter, WdkRunRecord } from "../workflow-wdk-types.ts";
 
 /**
@@ -133,8 +133,8 @@ export type EvalSleep = {
 /** One run this engine executed, as the engine records it. */
 export type EvalRunRecord = {
   readonly runId: string;
-  /** The synthetic `workflowId` this engine stands in for the compiler's with. */
-  readonly workflowId: string;
+  /** The key this workflow is declared under in `agent({ workflows })`. */
+  readonly workflowName: string;
   status: WorkflowRunStatus;
   readonly createdAt: number;
   output?: unknown;
@@ -164,7 +164,7 @@ export type EvalRunRecord = {
  * `Record<string, unknown>` — the validated input — so this is that signature
  * named, and it is what lets the engine call a body without a cast.
  */
-type EvalBody = (input: Record<string, unknown>) => Promise<unknown> | unknown;
+type EvalBody = (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown;
 
 /** What {@link createEvalWorkflowEngine} takes. */
 export type EvalWorkflowEngineOptions = {
@@ -222,7 +222,7 @@ export type EvalWorkflowEngine = {
   /** Every run, oldest first. */
   records(): readonly EvalRunRecord[];
   /**
-   * Unpublish the step slots and give the synthetic `workflowId`s back.
+   * Unpublish the step slots.
    *
    * Never optional: the slots are process-global, so an engine left installed
    * answers the NEXT case's steps — the cross-file leak `stubUploads` carries the
@@ -237,13 +237,13 @@ let engines = 0;
 /**
  * Build the in-process engine, publishing what a step reads.
  *
- * The synthetic `workflowId` is the interesting part. `createWorkflowClient`
- * reads `def.run.workflowId` and refuses without one, because on every real path
- * the DevKit's transform has attached it — so this engine attaches one itself
- * and hands it back on `release()`. Assigning rather than working around the
- * check is deliberate: the check is what makes "the bundler plugin did not run"
- * a legible error in production, and an eval that bypassed the field would also
- * bypass `recent`, whose whole filter is that id.
+ * **This used to stamp a synthetic `workflowId` onto every body, and the fact
+ * that it no longer has to is the shape of the DevKit removal.**
+ * `createWorkflowClient` read `def.run.workflowId` and refused without one,
+ * because on every real path a compile-time transform had attached it — so an
+ * eval, which imports a body through a test runner with no bundler in the path,
+ * had to forge one and give it back on `release()`. A workflow is identified by
+ * its declared key now, which an eval has for free.
  *
  * @see the module doc for what an eval run does NOT exercise.
  */
@@ -251,20 +251,13 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   engines += 1;
   const prefix = `eval-${engines}`;
   const runs = new Map<string, EvalRunRecord>();
-  const byWorkflowId = new Map<string, { name: string; def: WorkflowDef }>();
-  /** The `run` functions this engine stamped, so `release` can unstamp them. */
-  const stamped: WorkflowDef["run"][] = [];
+  const byName = new Map<string, { name: string; def: WorkflowDef }>();
 
   for (const [name, def] of Object.entries(opts.workflows)) {
-    // FIRST key wins, matching `createWorkflowClient`'s own two indexes: the same
-    // def declared under two names is legitimate and a run of it carries no trace
-    // of which one a caller meant, so both sides have to pick the same one.
-    if (def.run.workflowId === undefined) {
-      def.run.workflowId = `workflow//${prefix}//${name}`;
-      stamped.push(def.run);
-    }
-    const id = def.run.workflowId;
-    if (id !== undefined && !byWorkflowId.has(id)) byWorkflowId.set(id, { name, def });
+    // FIRST key wins, matching `createWorkflowClient`'s own index: the same def
+    // declared under two names is legitimate and a run of it carries no trace of
+    // which one a caller meant, so both sides have to pick the same one.
+    if (!byName.has(name)) byName.set(name, { name, def });
   }
 
   // The narration channel. `report()` and `emit()` carry no run id — a real step
@@ -299,12 +292,34 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   function toWdkRecord(record: EvalRunRecord): WdkRunRecord {
     return {
       runId: record.runId,
-      // The synthetic id, under WDK's own name for the field — which is the
-      // machine identifier, not the declared key. `toSnapshot` translates it.
-      workflowName: record.workflowId,
+      workflowName: record.workflowName,
       status: record.status,
       createdAt: record.createdAt,
       ...(record.status === "failed" && record.error ? { error: record.error } : {}),
+    };
+  }
+
+  /**
+   * The `ctx` a body is handed here — and the one method on it does NOT journal.
+   *
+   * `step(name, fn)` calls `fn` and returns what it returns. There is no
+   * memoization, because nothing replays; no attempt counting, because nothing
+   * retries; and no persistence, because there is no journal to persist to. It
+   * is a pass-through that exists so the body can be WRITTEN the way a deployed
+   * body is written.
+   *
+   * That is the same limitation the module doc states, moved to where it is now
+   * VISIBLE. Under the DevKit it was invisible and accidental — an untransformed
+   * `"use step"` is just a directive nobody read, so the body silently degraded
+   * to ordinary calls and only prose said so. Here the degradation is a function
+   * a reader can see the whole of, which is strictly better even though it
+   * measures exactly as much.
+   */
+  function evalCtx(record: EvalRunRecord): WorkflowCtx {
+    return {
+      runId: record.runId,
+      workflow: record.workflowName,
+      step: async (_name, fn) => await fn(),
     };
   }
 
@@ -321,7 +336,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // — and a workflow declaring no schema is handed whatever the caller
       // passed, which its body is free to ignore. `{}` for that case rather than
       // `undefined`, because the parameter is typed as present.
-      const output = await body(isRecord(input) ? input : {});
+      const output = await body(isRecord(input) ? input : {}, evalCtx(record));
       record.elapsedMs = Date.now() - startedAt;
       // A cancelled run keeps its status: there is no queue to stop delivering
       // to, so the body ran on regardless, and reporting `completed` would claim
@@ -351,13 +366,13 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   }
 
   const adapter: WdkAdapter = {
-    start(workflowId, args) {
-      const entry = byWorkflowId.get(workflowId);
+    start(workflowName, args) {
+      const entry = byName.get(workflowName);
       if (!entry) {
         return Promise.reject(
           new Error(
-            `eval workflow engine has no workflow for id ${JSON.stringify(workflowId)}; ` +
-              `it serves ${[...byWorkflowId.keys()].join(", ") || "(none)"}`,
+            `eval workflow engine has no workflow named ${JSON.stringify(workflowName)}; ` +
+              `it serves ${[...byName.keys()].join(", ") || "(none)"}`,
           ),
         );
       }
@@ -365,7 +380,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       const runId = `${prefix}-run-${sequence}`;
       const record: EvalRunRecord = {
         runId,
-        workflowId,
+        workflowName,
         status: "running",
         createdAt: Date.now(),
         reported: [],
@@ -386,10 +401,10 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       return Promise.resolve(record ? toWdkRecord(record) : undefined);
     },
 
-    listRuns(workflowId, limit) {
+    listRuns(workflowName, limit) {
       // Newest first, which is what `recent` promises.
       const matching = [...runs.values()]
-        .filter((record) => record.workflowId === workflowId)
+        .filter((record) => record.workflowName === workflowName)
         .reverse()
         .slice(0, limit);
       return Promise.resolve(matching.map(toWdkRecord));
@@ -461,7 +476,6 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       publishStepFetch(undefined);
       if (priorSleep === undefined) delete globals[WORKFLOW_SLEEP];
       else globals[WORKFLOW_SLEEP] = priorSleep;
-      for (const run of stamped) delete run.workflowId;
       // A caller-supplied fetch is the CALLER's to close: this call did not open
       // its pool and cannot know who else holds it.
       return Promise.resolve();

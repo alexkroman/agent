@@ -25,9 +25,9 @@
  */
 
 import { report } from "@alexkroman1/aai/step";
-import { stepFetchOk, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import { FatalError, stepFetchOk, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
 import { decodeHtmlEntities } from "@alexkroman1/aai/utils";
-import { FatalError, sleep } from "workflow";
+import { sleep } from "workflow";
 import { z } from "zod";
 
 /** How long the digest sits before it is filed, so the wait is visible in dev. */

@@ -1,9 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
 import { FfmpegError, type FfmpegFailureKind } from "../host/ffmpeg.ts";
 import { TranscribeError } from "./_transcribe-shared.ts";
+import { FatalError, RetryableError } from "./step-error-classes.ts";
 import {
   stepFetchOk,
   stepGenerateClassified,
@@ -22,16 +22,22 @@ import { publishUploadReader } from "./step-uploads.ts";
 import { stubGateway } from "./testing-gateway.ts";
 
 /**
- * The DevKit decides retry behaviour with `FatalError.is` / `RetryableError.is`,
- * both of which are NAME checks — an error crosses the journal, so `instanceof`
- * could not be the contract. Asserting the name as well as the class is
- * therefore asserting the thing the DevKit will actually read.
+ * The verdict as the ENGINE reads it — `FatalError.is` / `RetryableError.is`,
+ * never `instanceof`.
+ *
+ * Both statics read a branding symbol rather than the prototype chain, because a
+ * guest bundle can hold two copies of `step-error-classes.ts` and `instanceof`
+ * answers false across them. Asserting through the statics is therefore
+ * asserting the thing `workflow-replay.ts` will actually ask, which is the whole
+ * point of the helper: a classifier that produced an error only `instanceof`
+ * recognised would pass a spec written the other way and silently retry a
+ * `FatalError` in production.
  */
-function devKitVerdict(err: unknown): { fatal: boolean; retryable: boolean; retryAfter?: Date } {
+function stepVerdict(err: unknown): { fatal: boolean; retryable: boolean; retryAfter?: Date } {
   return {
     fatal: FatalError.is(err),
     retryable: RetryableError.is(err),
-    ...(err instanceof RetryableError && err.retryAfter ? { retryAfter: err.retryAfter } : {}),
+    ...(RetryableError.is(err) && err.retryAfter ? { retryAfter: err.retryAfter } : {}),
   };
 }
 
@@ -79,7 +85,7 @@ describe("toStepError, given a Response", () => {
   test("makes a 4xx the DevKit will not retry FATAL", () => {
     const err = toStepError(responseWith(404), "GET /x failed: HTTP 404");
 
-    expect(devKitVerdict(err)).toEqual({ fatal: true, retryable: false });
+    expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
     expect(err.message).toBe("GET /x failed: HTTP 404");
   });
 
@@ -89,7 +95,7 @@ describe("toStepError, given a Response", () => {
     // step body is handed, so every one of them fell through to the plain-Error
     // arm and the DevKit retried a 401 three times with its own 1s default.
     const foreign = responseFromAnotherRealm(401);
-    expect(devKitVerdict(toStepError(foreign, "GET /x failed: HTTP 401"))).toEqual({
+    expect(stepVerdict(toStepError(foreign, "GET /x failed: HTTP 401"))).toEqual({
       fatal: true,
       retryable: false,
     });
@@ -100,7 +106,7 @@ describe("toStepError, given a Response", () => {
     // unclassified error retries too) but the DELAY was not, so a rate limit
     // asking for 5s got the DevKit's 1s and N siblings all asked again at once.
     const err = toStepError(responseFromAnotherRealm(503, "5"), "nope");
-    const verdict = devKitVerdict(err);
+    const verdict = stepVerdict(err);
     expect(verdict).toMatchObject({ fatal: false, retryable: true });
     // Within the second: the header is seconds and the error carries a Date.
     const seconds = Math.round(((verdict.retryAfter?.getTime() ?? 0) - Date.now()) / 1000);
@@ -108,7 +114,7 @@ describe("toStepError, given a Response", () => {
   });
 
   test.each([408, 429, 500, 503])("makes a transient %i retryable", (status) => {
-    expect(devKitVerdict(toStepError(responseWith(status), "nope"))).toMatchObject({
+    expect(stepVerdict(toStepError(responseWith(status), "nope"))).toMatchObject({
       fatal: false,
       retryable: true,
     });
@@ -119,7 +125,7 @@ describe("toStepError, given a Response", () => {
     // together, and on our own backoff they re-collect their 429s N at a time.
     const err = toStepError(responseWith(429, "30"), "rate limited");
 
-    const verdict = devKitVerdict(err);
+    const verdict = stepVerdict(err);
     expect(verdict.retryable).toBe(true);
     expect(verdict.retryAfter?.getTime()).toBeGreaterThan(Date.now() + 25_000);
   });
@@ -128,7 +134,7 @@ describe("toStepError, given a Response", () => {
     // Not "the DevKit decides": the class always sets a date, and unset means
     // ONE SECOND. Worth pinning, because a fan-out that all retries a second
     // later is how a rate limit is turned into a tighter rate limit.
-    const at = devKitVerdict(toStepError(responseWith(429), "rate limited")).retryAfter;
+    const at = stepVerdict(toStepError(responseWith(429), "rate limited")).retryAfter;
 
     expect(at?.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
   });
@@ -142,7 +148,7 @@ describe("toStepError, given a StepGenerateError", () => {
   test("takes the gateway's own terminal verdict", () => {
     const err = toStepError(new StepGenerateError("bad key", { status: 401, retryable: false }));
 
-    expect(devKitVerdict(err)).toEqual({ fatal: true, retryable: false });
+    expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
     expect(err.message).toBe("bad key");
   });
 
@@ -155,7 +161,7 @@ describe("toStepError, given a StepGenerateError", () => {
       new StepGenerateError("slow down", { status: 429, retryable: true, retryAfter: at }),
     );
 
-    expect(devKitVerdict(err)).toMatchObject({ retryable: true, retryAfter: at });
+    expect(stepVerdict(err)).toMatchObject({ retryable: true, retryAfter: at });
   });
 });
 
@@ -168,7 +174,7 @@ describe("toStepError, given a TranscribeError", () => {
       new TranscribeError("no speech in that recording", { retryable: false }),
     );
 
-    expect(devKitVerdict(err)).toEqual({ fatal: true, retryable: false });
+    expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
     expect(err.message).toBe("no speech in that recording");
   });
 
@@ -180,7 +186,7 @@ describe("toStepError, given a TranscribeError", () => {
       new TranscribeError("slow down", { status: 429, retryable: true, retryAfter: at }),
     );
 
-    expect(devKitVerdict(err)).toMatchObject({ retryable: true, retryAfter: at });
+    expect(stepVerdict(err)).toMatchObject({ retryable: true, retryAfter: at });
   });
 
   test("reads a verdict off an error REHYDRATED from the journal", () => {
@@ -196,7 +202,7 @@ describe("toStepError, given a TranscribeError", () => {
       retryAfter: undefined,
     });
 
-    expect(devKitVerdict(err)).toEqual({ fatal: true, retryable: false });
+    expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
     expect(err.message).toBe("no speech in that recording");
   });
 });
@@ -208,7 +214,7 @@ describe("toStepError, given anything else", () => {
     const original = new Error("something else went wrong");
 
     expect(toStepError(original)).toBe(original);
-    expect(devKitVerdict(toStepError(original))).toMatchObject({
+    expect(stepVerdict(toStepError(original))).toMatchObject({
       fatal: false,
       retryable: false,
     });
@@ -306,7 +312,7 @@ describe("stepFetchOk", () => {
 
     const err = await stepFetchOk("https://api.test/gone").catch((e: unknown) => e);
 
-    expect(devKitVerdict(err)).toEqual({ fatal: true, retryable: false });
+    expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
   });
 
   test("makes a 5xx RETRYABLE, honouring a Retry-After the server named", async () => {
@@ -318,7 +324,7 @@ describe("stepFetchOk", () => {
 
     const err = await stepFetchOk("https://api.test/busy").catch((e: unknown) => e);
 
-    expect(devKitVerdict(err)).toMatchObject({ fatal: false, retryable: true });
+    expect(stepVerdict(err)).toMatchObject({ fatal: false, retryable: true });
     expect((err as RetryableError).retryAfter?.getTime()).toBe(at.getTime());
   });
 

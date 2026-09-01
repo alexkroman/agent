@@ -21,4 +21,17 @@
  * `scripts/api-contracts.mjs`.
  */
 
-export { type WorkflowClient, type WorkflowDef, workflow } from "../../index.ts";
+export {
+  DEFAULT_STEP_MAX_ATTEMPTS,
+  type StepOptions,
+  type WorkflowClient,
+  // What a BODY is handed, and the per-step overrides it may pass. They join
+  // this capability rather than `workflow-api` by that same test: `ctx.step` is
+  // what an author WRITES inside a `workflows/*.ts` module, where a run snapshot
+  // is what a page READS. They arrived with the engine that replaced the
+  // Workflow DevKit's `"use step"` directive — the durability an author reaches
+  // is a method call now, so it is part of the declaring surface.
+  type WorkflowCtx,
+  type WorkflowDef,
+  workflow,
+} from "../../index.ts";

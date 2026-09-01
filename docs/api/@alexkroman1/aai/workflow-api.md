@@ -1473,31 +1473,23 @@ reader reach for a `!` or a conditional spread.
 ### WorkflowBody
 
 ```ts
-type WorkflowBody<I, R> = (input: I) => Promise<R> | R & {
-  workflowId?: string;
-};
+type WorkflowBody<I, R> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 ```
 
-A `"use workflow"` function, as the compiler leaves it.
+A workflow body: an ordinary async function of its input and a
+[WorkflowCtx](index.md#workflowctx).
 
-The `workflowId` property is what the WDK's transform attaches and what
-`start()` reads; it is the whole reason a declaration can name a workflow body
-without importing the engine. Typed as optional-but-present rather than
-required because the property does not exist until the transform runs, and a
-required field would make an untransformed function a compile error at the
-declaration site — which is the wrong place to report it. `ctx.workflows.start`
-checks it instead, at the point the id is actually needed, where the error can
-say that the bundler plugin did not run.
+**There is no `workflowId` any more, and its absence is the point.** Under the
+Workflow DevKit this type carried one, attached by a compile-time transform,
+and `start()` read it — so a body that the bundler plugin had not reached
+looked perfectly valid at the declaration site and failed at the first
+`start()` with `MISSING_WORKFLOW_ID`. An agent that builds, deploys, boots and
+answers the phone but cannot start a run is a bad failure to design in. A
+workflow is now identified by the key it is declared under in
+`agent({ workflows })`, which cannot go missing because the declaration IS the
+registration.
 
-#### Type Declaration
-
-##### workflowId?
-
-```ts
-optional workflowId?: string;
-```
-
-Attached by the WDK compiler: `workflow//{file}//{export}`.
+The body is REPLAYED — see [WorkflowCtx](index.md#workflowctx) for what that forbids.
 
 #### Type Parameters
 
@@ -1505,13 +1497,27 @@ Attached by the WDK compiler: `workflow//{file}//{export}`.
 
 `I` = `unknown`
 
-The body's single input argument.
+The body's validated input.
 
 ##### R
 
 `R` = `unknown`
 
 What the body returns.
+
+#### Parameters
+
+##### input
+
+`I`
+
+##### ctx
+
+[`WorkflowCtx`](index.md#workflowctx)
+
+#### Returns
+
+`Promise`\<`R`\> \| `R`
 
 ***
 
@@ -1821,6 +1827,12 @@ has to upload first.
 
 ## References
 
+### StepOptions
+
+Re-exports [StepOptions](index.md#stepoptions)
+
+***
+
 ### UploadInfo
 
 Re-exports [UploadInfo](step.md#uploadinfo)
@@ -1836,6 +1848,12 @@ Re-exports [UploadRange](step.md#uploadrange)
 ### WorkflowClient
 
 Re-exports [WorkflowClient](index.md#workflowclient)
+
+***
+
+### WorkflowCtx
+
+Re-exports [WorkflowCtx](index.md#workflowctx)
 
 ***
 

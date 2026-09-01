@@ -5,8 +5,6 @@
  * This is the one test that exercises the whole chain rather than a link of it,
  * and every link in it has already been wrong once:
  *
- * - the WDK client transform, without which the agent's own copy of a body
- *   carries no `workflowId` and `ctx.workflows.start` throws;
  * - the two builder outputs being ROUTE MODULES, not raw workflow code — handing
  *   the flow module to `workflowEntrypoint` compiles it in a `node:vm` Script
  *   and every run dies at replay;
@@ -19,11 +17,18 @@
  * neighbouring one does: a run that never completes is the only symptom the
  * chain has, and it is invisible to every layer's own suite.
  *
- * The run is driven through the DevKit's own `start`, not through a voice
+ * Runs are driven through the workflow HTTP API rather than through a voice
  * session — a session would add STT/LLM/TTS credentials to a test about
- * durability. It is the same call `ctx.workflows.start` makes (`workflow-wdk.ts`),
- * with the id read off the built bundle exactly as `createWorkflowClient` reads
- * it, so the seam between them is asserted rather than assumed.
+ * durability.
+ *
+ * **A block asserting the COMPILER's `workflowId` was here and is gone.** It
+ * read the id off the built bundle the way `createWorkflowClient` used to, and
+ * started a run with the DevKit's own `start({ workflowId })`. There is no such
+ * id any more: a workflow is identified by the key it is declared under in
+ * `agent({ workflows })`, which cannot go missing because the declaration IS the
+ * registration. Nothing behavioural went with it — the HTTP suite below starts
+ * runs, waits them out and reads their output through the routes a real caller
+ * uses, which is the stronger claim.
  */
 
 import fs from "node:fs/promises";
@@ -31,8 +36,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import getPort, { portNumbers } from "get-port";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { createWorkerEvaluator } from "./_bundler.ts";
-import { loadWorker, startDevServer } from "./_dev-server.ts";
+import { startDevServer } from "./_dev-server.ts";
 
 /**
  * The fixture lives INSIDE this package, not in `os.tmpdir()`.
@@ -311,7 +315,6 @@ async function writeFixture(): Promise<void> {
  * `beforeAll` nested in the first block tears it down before the second starts.
  */
 let stop: (() => Promise<void>) | undefined;
-let workflowId: string | undefined;
 let origin = "";
 
 /**
@@ -343,43 +346,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await stop?.();
   await fs.rm(FIXTURE, { recursive: true, force: true });
-});
-
-describe("aai dev serves a durable workflow", () => {
-  test("the built agent bundle carries the compiler's workflowId", async () => {
-    // What `ctx.workflows.start` reads. Undefined here means the client
-    // transform did not run, which is a bundle that serves every workflow route
-    // and cannot start a run.
-    const worker = await loadWorker(FIXTURE, createWorkerEvaluator());
-    const def = worker.agent.workflows?.research;
-    workflowId = def?.run.workflowId;
-    expect(workflowId).toBeTruthy();
-    // Both halves present, or the guest mounts no surface at all.
-    expect(typeof worker.workflowCode).toBe("string");
-    expect(typeof worker.stepCode).toBe("string");
-  });
-
-  test("a run started against that id completes with the workflow's output", async () => {
-    expect(workflowId).toBeTruthy();
-    // The world is process-global and the dev server configured it, so this
-    // reaches the same local world the server's routes serve.
-    const { getRun, start } = await import("workflow/api");
-    const { getWorld } = await import("workflow/runtime");
-
-    const run = await start({ workflowId: workflowId as string }, [{ topic: "otters" }]);
-
-    // Polled rather than `vi.waitFor`ed on a fixed delay: the run's own
-    // one-second sleep dominates, and the statuses in between are what a
-    // half-wired chain gets stuck in ("pending" forever with nothing logged).
-    await expect
-      .poll(async () => (await getWorld().runs.get(run.runId, { resolveData: "none" })).status, {
-        timeout: 25_000,
-        interval: 250,
-      })
-      .toBe("completed");
-
-    expect(await getRun(run.runId).returnValue).toEqual({ topic: "otters", sources: 3 });
-  });
 });
 
 /**

@@ -665,3 +665,207 @@ export async function fetchOrder(id: string): Promise<unknown> {
   return await response.json();
 }
 ```
+
+## Classes
+
+### FatalError
+
+A failure that another attempt cannot fix.
+
+Throwing one fails the RUN, not merely the step — a step whose remaining
+attempts are pointless has nothing left to contribute. Reach for it where the
+far side has already given a terminal answer: a `404` on a resource that was
+deleted, a `422` on input that will be malformed on every attempt, a provider
+saying the recording has no speech in it.
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new FatalError(message: string, options?: {
+  cause?: unknown;
+}): FatalError;
+```
+
+###### Parameters
+
+###### message
+
+`string`
+
+###### options?
+
+###### cause?
+
+`unknown`
+
+###### Returns
+
+[`FatalError`](#fatalerror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+#### Methods
+
+##### is()
+
+```ts
+static is(value: unknown): value is FatalError;
+```
+
+Is `value` a [FatalError](#fatalerror), including one from another copy of this module?
+
+###### Parameters
+
+###### value
+
+`unknown`
+
+###### Returns
+
+`value is FatalError`
+
+#### Properties
+
+##### fatal
+
+```ts
+readonly fatal: true = true;
+```
+
+Always `true`.
+
+A readable field rather than only the brand, because it is what shows up in
+a journaled failure and in a log line — `fatal: true` in a run's history
+answers "why did this stop after one attempt" without the reader knowing
+this class exists.
+
+***
+
+### RetryableError
+
+A failure another attempt might survive, with an optional "not before".
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new RetryableError(message: string, options?: RetryableErrorOptions): RetryableError;
+```
+
+###### Parameters
+
+###### message
+
+`string`
+
+###### options?
+
+[`RetryableErrorOptions`](#retryableerroroptions)
+
+###### Returns
+
+[`RetryableError`](#retryableerror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+#### Methods
+
+##### is()
+
+```ts
+static is(value: unknown): value is RetryableError;
+```
+
+Is `value` a [RetryableError](#retryableerror), including one from another copy of this module?
+
+###### Parameters
+
+###### value
+
+`unknown`
+
+###### Returns
+
+`value is RetryableError`
+
+#### Properties
+
+##### retryAfter
+
+```ts
+readonly retryAfter: Date;
+```
+
+When the next attempt may run. Always a `Date` — a number passed to the
+constructor is resolved against the clock AT CONSTRUCTION, which is the
+moment the caller meant.
+
+## Type Aliases
+
+### RetryableErrorOptions
+
+```ts
+type RetryableErrorOptions = {
+  cause?: unknown;
+  retryAfter?: number | Date;
+};
+```
+
+What [RetryableError](#retryableerror) accepts for its delay.
+
+#### Properties
+
+##### cause?
+
+```ts
+optional cause?: unknown;
+```
+
+##### retryAfter?
+
+```ts
+optional retryAfter?: number | Date;
+```
+
+When the next attempt may run: a delay in MILLISECONDS, or the absolute
+`Date` the far side named.
+
+Defaults to [DEFAULT\_RETRY\_DELAY\_MS](#default_retry_delay_ms) from now. The DevKit accepted a
+duration STRING here too (`"5s"`) and this does not — a string delay is one
+more parser to own and no call site in the repo passed one, every one of
+them having a `Retry-After` header or nothing.
+
+## Variables
+
+### DEFAULT\_RETRY\_DELAY\_MS
+
+```ts
+const DEFAULT_RETRY_DELAY_MS: 1000 = 1000;
+```
+
+How long a [RetryableError](#retryableerror) that names no delay waits.
+
+One second, which is what the DevKit's class defaulted to — kept so the
+migration changes no timing it does not have to. It is not a considered
+number, and a caller who has the far side's own `Retry-After` should pass it:
+this SDK encourages fan-out, so N segments meet a rate limit together and a
+second later all N ask again.

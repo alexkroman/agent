@@ -25,6 +25,7 @@
 
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { stubSpeech } from "@alexkroman1/aai/testing";
 import {
   installStubGateway,
@@ -34,7 +35,6 @@ import {
   installStubUploads,
 } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { FatalError, RetryableError } from "workflow";
 import agentDef, { audit } from "./agent.ts";
 import { joinSegments, now, SEGMENT_CONCURRENCY, transcribeSegment } from "./workflows/audit.ts";
 import { analyse, ingestRecording } from "./workflows/ingest.ts";

@@ -88,6 +88,11 @@ type StartOptions = {
 };
 
 // @public
+type StepOptions = {
+    maxAttempts?: number;
+};
+
+// @public
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
@@ -235,9 +240,7 @@ type WakeUpOptions = {
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -258,6 +261,13 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
 };
 
 // @public

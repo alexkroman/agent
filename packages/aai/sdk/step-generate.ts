@@ -147,7 +147,7 @@ export class StepGenerateError extends Error {
  * @example
  * ```ts
  * import { stepGenerate, StepGenerateError } from "@alexkroman1/aai/step";
- * import { FatalError } from "workflow";
+ * import { FatalError } from "@alexkroman1/aai/step-errors";
  *
  * export async function summarize(text: string): Promise<string> {
  *   "use step";

@@ -18,39 +18,39 @@ import { makeLogger } from "./_test-utils.ts";
 import { createWorkflowClient, type WdkAdapter, type WdkRunRecord } from "./workflow-client.ts";
 import { createMemoryKeyStore, type WorkflowKeyStore } from "./workflow-keys.ts";
 
-/** A `"use workflow"` body as the compiler leaves it — the id is what start reads. */
-function body<I, R>(id: string, result?: R): WorkflowBody<I, R> {
-  const fn = (() => Promise.resolve(result as R)) as WorkflowBody<I, R>;
-  fn.workflowId = id;
-  return fn;
+/** A workflow body. Identity is the key it is declared under, so this carries none. */
+function body<I, R>(result?: R): WorkflowBody<I, R> {
+  return (() => Promise.resolve(result as R)) as WorkflowBody<I, R>;
 }
 
 /**
- * The compiler's identifier for `digest` — what WDK stores as `workflowName`.
+ * The name `digest` is declared under — and, since the DevKit removal, the only
+ * identity it has.
  *
- * Spelled out as a constant because the fake below has to answer with it: a
- * record carrying the DECLARED name instead is the shape that let `recent` and
- * the snapshot's `workflow` field both report the wrong string with every spec
- * in this file green.
+ * Still a constant because the fake has to answer with it, and the assertion it
+ * guards is unchanged in spirit: a run record whose `workflowName` disagrees
+ * with the declared key is what let `recent` and the snapshot's `workflow`
+ * field both report the wrong string with every spec in this file green. What
+ * changed is that the two strings can no longer differ BY DESIGN rather than by
+ * a translation somebody has to remember.
  */
-const DIGEST_ID = "workflow//./workflows/digest//digestFlow";
+const DIGEST_ID = "digest";
 
 const digest = workflow({
   description: "Research a topic",
   input: z.object({ topic: z.string() }),
-  run: body<{ topic: string }, { ok: true }>(DIGEST_ID),
+  run: body<{ topic: string }, { ok: true }>(),
 });
 
 /** The `createdAt` every fake run carries — asserted by both spellings WDK reports. */
 const CREATED_AT = Date.UTC(2026, 7, 12);
 
 /** A workflow with no schema, to pin that validation is skipped rather than failed. */
-const bare = workflow({ run: body("workflow//./workflows/bare//bareFlow") });
+const bare = workflow({ run: body() });
 
 function record(over: Partial<WdkRunRecord> = {}): WdkRunRecord {
   return {
     runId: "wrun_1",
-    // WDK's own vocabulary: the compiler id, not the declared key.
     workflowName: DIGEST_ID,
     status: "pending",
     createdAt: new Date("2026-08-12T00:00:00Z"),
@@ -121,18 +121,14 @@ describe("starting a run", () => {
     await client.start(digest, { topic: "otters" }, { key: "sess-1" });
     // The workflowId reaches WDK; the NAME is what the key index records, so a
     // workflow moved between modules keeps its keys.
-    expect(wdk.start).toHaveBeenCalledWith("workflow//./workflows/digest//digestFlow", [
-      { topic: "otters" },
-    ]);
+    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }]);
     expect(await keys.lookup("digest", "sess-1", 10)).toEqual(["wrun_1"]);
   });
 
   test("accepts the name as a string for a workflow that is data", async () => {
     const { client, wdk } = makeClient();
     await client.start("digest", { topic: "otters" });
-    expect(wdk.start).toHaveBeenCalledWith("workflow//./workflows/digest//digestFlow", [
-      { topic: "otters" },
-    ]);
+    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }]);
   });
 
   test("rejects a workflow the agent does not declare, naming the declared set", async () => {
@@ -143,7 +139,7 @@ describe("starting a run", () => {
   });
 
   test("rejects a definition that was never wired into agent({ workflows })", async () => {
-    const orphan = workflow({ run: body("workflow//./workflows/orphan//orphanFlow") });
+    const orphan = workflow({ run: body() });
     const { client, wdk } = makeClient();
     await expect(client.start(orphan, {})).rejects.toThrow(/not declared on this agent/);
     expect(wdk.start).not.toHaveBeenCalled();
@@ -160,7 +156,7 @@ describe("starting a run", () => {
   test("passes input through unvalidated for a workflow with no schema", async () => {
     const { client, wdk } = makeClient();
     await client.start(bare, {});
-    expect(wdk.start).toHaveBeenCalledWith("workflow//./workflows/bare//bareFlow", [{}]);
+    expect(wdk.start).toHaveBeenCalledWith("bare", [{}]);
   });
 
   test("a failed key write warns and still returns the runId", async () => {
@@ -188,15 +184,6 @@ describe("starting a run", () => {
     const { client } = makeClient({ keys });
     await client.start(digest, { topic: "otters" });
     expect(keys.record).not.toHaveBeenCalled();
-  });
-
-  test("rejects a body the WDK compiler never transformed, naming the build", async () => {
-    // `workflow()` guards this at declaration time, so reaching the client with
-    // one means the def was built by hand — which the studio's generated code
-    // could plausibly do.
-    const untransformed = { run: (() => Promise.resolve()) as WorkflowBody } as WorkflowDef;
-    const { client } = makeClient({ workflows: { untransformed } });
-    await expect(client.start("untransformed", {})).rejects.toThrow(/use workflow/);
   });
 });
 
@@ -314,15 +301,6 @@ describe("recent runs", () => {
       wdk: { listRuns: async (id) => stored.filter((r) => r.workflowName === id) },
     });
     expect((await client.recent(digest)).map((r) => r.runId)).toEqual(["wrun_a", "wrun_b"]);
-  });
-
-  test("rejects a workflow whose body the compiler never transformed", async () => {
-    // Same failure `start` reports, for the same reason: with no id there is
-    // nothing to filter by, and answering "no runs" would read as an empty
-    // history rather than as an untransformed build.
-    const untransformed = { run: (() => Promise.resolve()) as WorkflowBody } as WorkflowDef;
-    const { client } = makeClient({ workflows: { untransformed } });
-    await expect(client.recent("untransformed")).rejects.toThrow(/use workflow/);
   });
 });
 
@@ -568,7 +546,7 @@ describe("listing declared workflows", () => {
       },
     };
     const unconvertible: WorkflowDef = {
-      run: body("workflow//./workflows/x//x"),
+      run: body(),
       input: unconvertibleInput,
     };
     const { client, logger } = makeClient({ workflows: { unconvertible } });

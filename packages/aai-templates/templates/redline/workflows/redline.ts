@@ -32,9 +32,12 @@
  */
 
 import { report } from "@alexkroman1/aai/step";
-import { stepGenerateClassified, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import {
+  FatalError,
+  stepGenerateClassified,
+  stepGenerateJsonClassified,
+} from "@alexkroman1/aai/step-errors";
 import { countWords } from "@alexkroman1/aai/utils";
-import { FatalError } from "workflow";
 import { z } from "zod";
 import { CRITIC_SYSTEM, REVISER_SYSTEM, WRITER_SYSTEM } from "./prompts.ts";
 

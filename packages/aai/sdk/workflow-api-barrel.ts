@@ -75,7 +75,12 @@ export { type EventStreamFrame, readEventStream } from "./event-stream.ts";
  */
 export type {
   AnyWorkflowDef,
+  // `WorkflowBody`'s second parameter, so it travels with it under the same
+  // rule the comment below states — a type a public signature names must be
+  // reachable from this entry point. `StepOptions` is `WorkflowCtx.step`'s.
+  StepOptions,
   WorkflowBody,
+  WorkflowCtx,
   // `WorkflowDef` and `WorkflowClient` belong to the `workflow` capability and
   // stay on the ROOT — they are what an `agent.ts` declares with. They are
   // reachable here only because the run types' own docs `{@link}` them, and a

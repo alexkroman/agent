@@ -18,6 +18,7 @@
  */
 
 import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
+import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import {
   installStubGateway,
   installStubReporter,
@@ -26,7 +27,6 @@ import {
   installStubUploads,
 } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { FatalError, RetryableError } from "workflow";
 import agentDef, { spokenSummary } from "./agent.ts";
 import { speak, spokenSummaryFlow, summarize } from "./workflows/summarize.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/transcribe.ts";
