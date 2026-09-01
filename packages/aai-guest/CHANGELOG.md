@@ -1,5 +1,17 @@
 # aai-guest
 
+## 0.5.9
+
+### Patch Changes
+
+- Updated dependencies [1ad4977]
+- Updated dependencies [bee46bc]
+- Updated dependencies [1e5170a]
+  - @alexkroman1/aai@9.2.0
+  - @alexkroman1/aai-runtime@9.2.0
+  - @alexkroman1/aai-cli@9.2.0
+  - @alexkroman1/aai-ui@9.2.0
+
 ## 0.5.8
 
 ### Patch Changes
