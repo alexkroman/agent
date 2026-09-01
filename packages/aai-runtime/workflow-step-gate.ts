@@ -39,17 +39,66 @@
  */
 
 /**
- * The default, and it is chosen to RESTORE prior behaviour rather than to be
- * optimal.
+ * The default, and it is now MEASURED against a guest rather than inherited.
  *
- * Three is what graphile-worker ran on the `DATABASE_URL` path, so an agent that
- * worked before this engine works the same after it. It is deliberately not the
- * transcription template's measured knee of 32: that number is the ENDPOINT's,
- * measured against the transcription API with one concurrency per run, and it
- * says nothing about how much audio a 1-CPU sandbox can hold. An operator who
- * has sized their guest for more raises it.
+ * It was three, which was graphile-worker's number on the `DATABASE_URL` path —
+ * chosen to restore prior behaviour, explicitly not to be optimal, and never
+ * measured against the thing it bounds. What it actually cost is that a body's
+ * fan-out was capped at three whatever it asked for: the transcription template
+ * opens `mapConcurrent(32)` and got three, so its own measured knee was inert.
+ *
+ * ## What sixteen is measured against
+ *
+ * A real libkrun microVM (`msb`), running the template's own `downsampleSegment`
+ * and `parseWav` plus this SDK's `encodeWav` and `multipartBody` — every
+ * allocation a `transcribeSegment` makes before its request goes out — with the
+ * HTTP call replaced by a hold of equal duration. Peak RSS, by width:
+ *
+ * | width | 16 kHz mono segment | 48 kHz stereo segment |
+ * | --- | --- | --- |
+ * | 3 | 135 MB | 224 MB |
+ * | 8 | 218 MB | 368 MB |
+ * | 16 | 344 MB | 576 MB |
+ * | 32 | 459 MB | 981 MB |
+ * | 64 | 754 MB | 1816 MB |
+ *
+ * Linear, at **10.1 MB per concurrent segment** for 16 kHz mono and **26.1 MB**
+ * for 48 kHz stereo, over a ~105-146 MB base. That decomposes exactly as the code
+ * does — for stereo: the window (16.9), the downsampled copy (2.81), `encodeWav`
+ * (2.81) and the multipart body (2.81) — which is why it extrapolates.
+ *
+ * ## Why sixteen and not more
+ *
+ * **The bound is Modal's RESERVATION, not its cap.** `modal_deploy.py` reserves
+ * `SANDBOX_MEMORY_MB` (1024) and caps at `SANDBOX_MEMORY_LIMIT_MB` (4096); only
+ * the reservation is guaranteed, so a default that needs the burst is a default
+ * that fails under host pressure. Measured in a 1 CPU / 982 MB guest, the worst
+ * format survives to 32 (950 MB — 97% of usable, which is luck rather than
+ * headroom) and dies at 48. Sixteen sits at 576 MB, 59%, which leaves room for the
+ * co-resident voice session `DEFAULT_GUEST_MEMORY_MIB` sizes for.
+ *
+ * The 48 kHz stereo column is the one that governs, and it is not hypothetical:
+ * `transcribeStream` cuts windows out of the recording AS UPLOADED and normalizes
+ * each one in process, so its segments really are the heavy ones. Only the classic
+ * flow, which converts the whole file first, gets the cheap column.
+ *
+ * **It is not CPU.** Wall time was flat (4.0-4.6s) from width 3 to 48 on ONE core,
+ * so Modal's single-core reservation does not bind this workload; memory does.
+ *
+ * ## What the old default was really protecting against
+ *
+ * A guest that died at 32 wide, which this doc used to cite as the reason for
+ * three. Reproduced: 32 wide at 48 kHz stereo is 981 MB, fine in a 4 GB guest and
+ * fatal in the 480 MiB one microsandbox gives when `SANDBOX_MEMORY_LIMIT_MB` is
+ * unset. The fault was an unsized guest, not the width — and the failure is SILENT
+ * (the buffers are ArrayBuffers, so V8's heap limit never trips and the kernel
+ * OOM-kills the process with no diagnostic at all), which is why it read as a
+ * concurrency problem.
+ *
+ * An operator whose guest is bigger raises it; one whose recordings are heavier
+ * than 48 kHz stereo lowers it.
  */
-export const DEFAULT_STEP_CONCURRENCY = 3;
+export const DEFAULT_STEP_CONCURRENCY = 16;
 
 /** Where an operator raises it. */
 export const STEP_CONCURRENCY_ENV = "AAI_WORKFLOW_STEP_CONCURRENCY";

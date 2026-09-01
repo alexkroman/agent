@@ -48,7 +48,7 @@ type ClientTheme = {
 };
 
 // @public
-export const DEFAULT_PROGRESS_POLL_MS = 1000;
+export const DEFAULT_PROGRESS_POLL_MS = 5000;
 
 // @public
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;

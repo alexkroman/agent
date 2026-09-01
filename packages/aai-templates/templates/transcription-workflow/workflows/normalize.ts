@@ -75,30 +75,18 @@ import { readUpload, report, uploadInfo } from "@alexkroman1/aai/step";
 import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
+import {
+  heavierThanNormalizedFormat,
+  NORMALIZED_CHANNELS,
+  NORMALIZED_SAMPLE_RATE,
+} from "./downsample.ts";
 import { HEADER_PROBE_BYTES, parseWav, UnsupportedRecordingError } from "./wav.ts";
 
-/**
- * The rate everything is converted TO.
- *
- * 16 kHz because that is what speech models are trained at — a higher rate
- * carries no information the decoder uses and costs proportional bytes in a
- * fan-out whose width is bounded by bytes in flight (`BYTES_IN_FLIGHT` in
- * `transcribe.ts`). A converted two-hour recording is 230 MB of 16 kHz mono
- * against 1.4 GB of 48 kHz stereo, which is the difference between a fan-out
- * that saturates on width and one that saturates on the queue.
- */
-export const NORMALIZED_SAMPLE_RATE = 16_000;
-
-/**
- * Channels everything is converted TO.
- *
- * Mono, and it is a real loss rather than a free win: a stereo call recording
- * with one party per channel is exactly the file where the channels are the most
- * interesting thing about it, and downmixing throws that away. This desk
- * transcribes rather than diarizes, so it takes the 2x saving; a desk that wants
- * the speakers apart splits the channels first and transcribes each one.
- */
-export const NORMALIZED_CHANNELS = 1;
+// Re-exported rather than re-declared: they are still this module's vocabulary —
+// the `runFfmpeg` call below converts TO them — and they live in `downsample.ts`
+// only because the streaming flow needs them from a module that reaches no
+// `node:` builtin. See that file's module doc.
+export { NORMALIZED_CHANNELS, NORMALIZED_SAMPLE_RATE } from "./downsample.ts";
 
 /**
  * How long a conversion may run before it is killed.
@@ -286,8 +274,7 @@ export function cuttable(head: Uint8Array, totalBytes: number): boolean {
  * answering.
  */
 export function heavierThanNormalized(head: Uint8Array, totalBytes: number): boolean {
-  const format = parseWav(head, totalBytes);
-  return format.sampleRate > NORMALIZED_SAMPLE_RATE || format.channels > NORMALIZED_CHANNELS;
+  return heavierThanNormalizedFormat(parseWav(head, totalBytes));
 }
 
 /** `41:20 of aac`, or as much of that as ffprobe would say. */

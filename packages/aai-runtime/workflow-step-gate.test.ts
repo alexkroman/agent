@@ -106,16 +106,20 @@ describe("createStepGate", () => {
 });
 
 describe("resolveStepConcurrency", () => {
-  test("defaults to the bound the DevKit's world provided", () => {
-    // Three, so an agent that worked before the engine works the same after it.
-    // Deliberately not the transcription template's measured knee of 32: that is
-    // the ENDPOINT's number and says nothing about what a 1-CPU sandbox holds.
+  test("defaults to what a guest was MEASURED to hold", () => {
+    // Sixteen, pinned because the number is the finding: 26.1 MB per concurrent
+    // segment at 48 kHz stereo against Modal's GUARANTEED 1024 MB reservation is
+    // 576 MB at this width, 59% of usable. It was three — graphile-worker's
+    // number, inherited to restore prior behaviour and never measured — which
+    // capped every fan-out at three whatever the body asked for. The constant's
+    // own doc carries the table and why the reservation rather than the cap.
     expect(resolveStepConcurrency({})).toBe(DEFAULT_STEP_CONCURRENCY);
-    expect(DEFAULT_STEP_CONCURRENCY).toBe(3);
+    expect(DEFAULT_STEP_CONCURRENCY).toBe(16);
   });
 
   test("an operator can raise it", () => {
-    expect(resolveStepConcurrency({ [STEP_CONCURRENCY_ENV]: "16" })).toBe(16);
+    // Above the default, so this cannot pass by accidentally reading it.
+    expect(resolveStepConcurrency({ [STEP_CONCURRENCY_ENV]: "48" })).toBe(48);
   });
 
   test.each([

@@ -76,14 +76,13 @@ form-fronted workflow app instead.`,
   runs inline with no durability and nothing reporting it. The body replays
   from the top on every resume (no fetch, no clock, no randomness — those go
   in a \`"use step"\` function), and a step gets no ctx at all — no ctx.env.
-- A workflow app needs NO setup to run durably: a deployed app's runs live on
-  the platform and survive the sandbox recycling and every redeploy. A workflow
-  UPLOAD is the exception — its record needs a database the author supplied, so
-  with no \`DATABASE_URL\` secret the bytes do not outlive the sandbox even
-  though the runs reading them do. Build first; mention that only when a file
-  field comes up. A voice agent can also start a run from a tool
-  (\`ctx.workflows.start\`) and answer the turn — that is the other shape, and
-  it stays an \`agent()\`.
+- A workflow app needs NO setup to run durably, and that now covers UPLOADS
+  too: a deployed app's runs and its uploaded files both live on the platform
+  and survive the sandbox recycling and every redeploy. Do not tell an author to
+  set a \`DATABASE_URL\` for durability — the platform supplies both halves, and
+  an agent that sets one is bringing its own database for its own reasons. A
+  voice agent can also start a run from a tool (\`ctx.workflows.start\`) and
+  answer the turn — that is the other shape, and it stays an \`agent()\`.
 - The reference below has the full section ("Workflow apps — workflowApp()"):
   the declaration, the body rules, the page, and the HTTP routes.`,
 
@@ -235,14 +234,13 @@ unless they ask outright for a voice agent instead.`,
   reached over HTTP, so a run survives the sandbox recycling when it goes
   idle and survives every edit you make. There is no switch to flip and
   nothing to tell the user to turn on.
-- **A file UPLOAD is the exception, and it is a real limitation.** An
-  upload's record needs a database the AUTHOR supplied, so with no
-  \`DATABASE_URL\` secret the bytes live only as long as the sandbox — while
-  the runs that read them do not. \`api.upload\`, \`<UploadField>\` and
-  \`useWorkflowStream\` work, but what they store is ephemeral. Say so plainly
-  when you build a form that takes a file — \`transcription-workflow\` does —
-  and point the user at a \`DATABASE_URL\` secret pointing at a database they
-  own, NOT at any studio switch: the platform provisions no database.
+- **File UPLOADS are durable with no setup either, and this used to be the
+  exception.** An upload's RECORD is a platform table and its bytes are
+  platform storage, reached over the same HTTP hop as the run — so
+  \`api.upload\`, \`<UploadField>\` and \`useWorkflowStream\` outlive the sandbox
+  exactly as the runs reading them do. Do NOT tell an author to set a
+  \`DATABASE_URL\` for this; a deployed app needs no database of its own, and
+  one that sets the secret is bringing a database for its own queries.
 - **If the user actually wants someone on the line** — a phone number, a
   microphone, a conversation — that is the OTHER shape: an \`agent()\` whose
   tool calls \`ctx.workflows.start(def, input)\` and answers the turn. Say
@@ -300,10 +298,8 @@ why — the user is brainstorming, so no edits — and offers to build it.
 [Assistant] *Calls list_files to see the workspace, and use_template with
 transcription-workflow.* Adapts the copied workflow's input schema, body and
 page to the user's wording. *Runs test_agent.* "Your transcription desk is
-ready — try it in the UI pane. Runs are durable automatically. It takes a file,
-though, and an upload's record needs your own database — set a DATABASE_URL
-secret if you want the audio to outlive the sandbox. Hit Publish when you want
-it in production."
+ready — try it in the UI pane. Runs and uploaded files are both durable
+automatically. Hit Publish when you want it in production."
 
 [User] Add a field for who requested it
 [Assistant] *Calls edit_file to add \`requestedBy\` to the workflow's input

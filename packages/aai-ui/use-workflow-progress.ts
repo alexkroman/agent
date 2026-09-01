@@ -70,8 +70,36 @@ export type UseWorkflowProgressResult<T = string> = {
   supported: boolean;
 };
 
-/** How often a live run's progress is re-read once a bounded read has ended. */
-export const DEFAULT_PROGRESS_POLL_MS = 1000;
+/**
+ * How often a live run's progress is re-read once a bounded read has ended.
+ *
+ * **Five seconds, up from one, because narration is the cheapest thing on the
+ * page and it was the most expensive thing on the wire.**
+ *
+ * On the platform every one of these reads BROKERS (see `useWorkflowRun`'s note
+ * on the same hazard), and a page routinely mounts TWO of these hooks against one
+ * run — `transcription-workflow` renders `<WorkflowProgress>` for the run's own
+ * narration and `<LiveTranscript>` for the segments as they land. At one second
+ * that is 2 requests/second from a single tab, which is exactly the platform's
+ * whole per-IP surface budget (`WORKFLOW_IP_RATE_LIMIT`, 600 per 5 minutes) — so
+ * one tab watching one run, with a history entry expanded, answers
+ * `429 Too many workflow requests` partway through its own run.
+ *
+ * It is also contending for the link with the UPLOAD, which on this page is the
+ * thing the reader is actually waiting for: a workflow app's whole wall clock is
+ * bytes going out, and progress polling spends the same uplink to describe it.
+ *
+ * What five costs is that a line appears up to five seconds after the run wrote
+ * it. That is the right trade for a log a person SKIMS while waiting minutes —
+ * and it is not the run's completion, which arrives on `useWorkflowRun`'s event
+ * stream (see {@link DEFAULT_WORKFLOW_POLL_MS}, deliberately left at two seconds
+ * because it answers "is it done", not "what is it doing").
+ *
+ * A page that really wants a live feed passes `intervalMs` and owns the
+ * consequence. That option is the authoring surface for this choice, which is why
+ * this constant is `/internal` rather than public.
+ */
+export const DEFAULT_PROGRESS_POLL_MS = 5000;
 
 /** What one bounded read reported. */
 type Ending =

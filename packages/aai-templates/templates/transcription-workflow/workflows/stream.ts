@@ -195,8 +195,31 @@ import {
   type WavFormat,
 } from "./wav.ts";
 
-/** How long the body waits between polls when nothing new has arrived. */
+/**
+ * The LONGEST the body waits between polls, and its fallback when it cannot do
+ * better.
+ *
+ * It used to be the only interval, and on a slow uplink that is most of what this
+ * flow was still leaving on the table. A poll answers "has the next segment
+ * landed"; a flat interval answers it on average half an interval late, once per
+ * segment, for the whole upload — 20 segments of a 30-minute recording is ~50s of
+ * pure waiting added to a run whose entire point is to finish as the bytes arrive.
+ *
+ * So it is a CEILING now: {@link nextPollDelay} sleeps until the next segment
+ * should have landed, and falls back here when there is nothing to predict from.
+ */
 const POLL_INTERVAL_MS = 5000;
+
+/**
+ * The shortest the body will sleep.
+ *
+ * A poll is one cheap step (the body's own note above the `continue` says so), but
+ * it is not free — it is a journal write and, on the platform, a step execution —
+ * so a rate estimate that comes out near zero must not turn the loop into a spin.
+ * 250ms is under the latency of any single segment's transcription, so nothing is
+ * waiting on this.
+ */
+const MIN_POLL_INTERVAL_MS = 250;
 
 /**
  * Consecutive polls with NO new bytes before the run gives up.
@@ -240,6 +263,15 @@ export type UploadProgressView = {
    * arrive — see the readiness test in the body.
    */
   ranges?: readonly UploadRange[];
+  /**
+   * When this view was taken, as the step that took it saw the clock.
+   *
+   * Journaled, which is the only reason the body may read a clock at all: the
+   * sleep below is derived from the RATE between two of these, and a value the
+   * body sampled itself would make that derivation diverge on a replay. Same rule
+   * as every other field here — see the body's own note on why its state is legal.
+   */
+  observedAt: number;
 };
 
 /** The cut, derived once from the header. */
@@ -270,6 +302,11 @@ export async function transcribeStreamFlow(input: { recording: string }, ctx: Wo
   // order, so this is the only number that distinguishes an upload that has
   // stopped from one whose prefix has not caught up yet.
   let lastStored = -1;
+  /**
+   * The previous poll, so {@link nextPollDelay} has two journaled samples to take
+   * a rate from. Body state for the same reason the rest is: it came out of a step.
+   */
+  let previous: UploadProgressView | undefined;
 
   for (;;) {
     const at = await ctx.step("probeUpload", () => probeUpload(input.recording));
@@ -340,11 +377,15 @@ export async function transcribeStreamFlow(input: { recording: string }, ctx: Wo
       lastStored = at.stored;
     }
     if (idlePolls > MAX_IDLE_POLLS) abandon(input.recording, at);
-    await ctx.sleep(POLL_INTERVAL_MS);
+    // Sleep until the next segment should HAVE landed, rather than for a fixed
+    // interval — see `nextPollDelay`. Both arguments are journaled step results,
+    // so a replay computes the same delay from the same two samples.
+    await ctx.sleep(nextPollDelay(at, previous, plan, done));
+    previous = at;
   }
 
   const finished = plan;
-  if (!finished) abandon(input.recording, { size: 0, complete: false, stored: 0 });
+  if (!finished) abandon(input.recording, { size: 0, stored: 0 });
   return await ctx.step("mergeTranscript", () =>
     mergeTranscript(
       input.recording,
@@ -370,11 +411,79 @@ export async function probeUpload(id: string): Promise<UploadProgressView> {
     size: info.size,
     complete: info.complete,
     stored: storedBytes(info.size, info.ranges),
+    // Legal HERE and nowhere else in this flow: a step's internals are not
+    // replayed, only its result — which is what makes a step the place a clock
+    // belongs. See `sync-api.ts`'s `timed` for the same rule.
+    observedAt: Date.now(),
     // `omitUndefined` rather than a spread, because a journaled step result is
     // compared on replay and `{ ranges: undefined }` is not `{}` once it has been
     // through JSON.
     ...omitUndefined({ ranges: info.ranges }),
   };
+}
+
+/**
+ * How long to wait before asking again — the time the NEXT segment still needs.
+ *
+ * The flat {@link POLL_INTERVAL_MS} this replaced is wrong in both directions on a
+ * slow uplink: too long when a segment is seconds away, and equally too long when
+ * it is a minute away, so the run discovers work late and then asks again pointlessly.
+ * Two consecutive polls give a byte RATE, the plan gives the byte offset the next
+ * un-transcribed segment needs, and the difference is a wait with a reason.
+ *
+ * Every input is a journaled step result — both views, and a plan derived from one —
+ * so a replay computes the identical delay. That is the whole reason
+ * {@link UploadProgressView.observedAt} exists rather than the body reading a clock.
+ *
+ * It is deliberately an ESTIMATE with a floor and a ceiling rather than a promise.
+ * Undershooting costs one extra cheap poll; overshooting is bounded by
+ * {@link POLL_INTERVAL_MS}, so a rate that collapses mid-upload degrades to exactly
+ * the old behaviour instead of stalling. Note the estimate is only ever used to
+ * SLEEP: readiness is still decided by {@link segmentStored} against a real view, so
+ * a wrong guess here can waste a poll and can never transcribe a partial segment.
+ */
+export function nextPollDelay(
+  at: UploadProgressView,
+  previous: UploadProgressView | undefined,
+  plan: StreamPlan | undefined,
+  done: ReadonlySet<number>,
+): number {
+  // No previous sample, or a clock that did not advance: nothing to derive a rate
+  // from. The first sleep of every run takes this arm.
+  const elapsedMs = previous ? at.observedAt - previous.observedAt : 0;
+  if (!previous || elapsedMs <= 0) return POLL_INTERVAL_MS;
+  const bytesPerMs = (at.stored - previous.stored) / elapsedMs;
+  // A stalled or shrinking upload has no arrival to predict. `MAX_IDLE_POLLS` is
+  // what ends that run; this only declines to guess about it.
+  if (bytesPerMs <= 0) return POLL_INTERVAL_MS;
+  // Before the header is read there is no plan, so what is being waited for is the
+  // probe window itself — small, and usually one part away.
+  const needed = plan ? nextSegmentEnd(plan, done) : HEADER_PROBE_BYTES;
+  // Every segment is already stored: the loop is waiting on `complete`, which is a
+  // flag the uploader sets rather than bytes to extrapolate.
+  if (needed === undefined) return POLL_INTERVAL_MS;
+  const remaining = needed - at.stored;
+  if (remaining <= 0) return MIN_POLL_INTERVAL_MS;
+  return Math.min(
+    POLL_INTERVAL_MS,
+    Math.max(MIN_POLL_INTERVAL_MS, Math.ceil(remaining / bytesPerMs)),
+  );
+}
+
+/**
+ * The byte offset the earliest un-transcribed segment needs in order to be readable.
+ *
+ * The EARLIEST rather than the furthest: segments are transcribed as they land, so
+ * the next thing the loop can act on is the first one it has not done. `undefined`
+ * when there is nothing left to wait for.
+ */
+function nextSegmentEnd(plan: StreamPlan, done: ReadonlySet<number>): number | undefined {
+  let earliest: number | undefined;
+  for (const segment of plan.segments) {
+    if (done.has(segment.index)) continue;
+    if (earliest === undefined || segment.end < earliest) earliest = segment.end;
+  }
+  return earliest;
 }
 
 /**
@@ -475,7 +584,7 @@ export function expectedSegments(plan: StreamPlan, size: number): number {
  * should happen here, and dressing it up as a step error would suggest a retry
  * policy with nothing to apply to.
  */
-function abandon(id: string, at: UploadProgressView): never {
+function abandon(id: string, at: Pick<UploadProgressView, "size" | "stored">): never {
   throw new Error(
     `Gave up waiting for ${id}: ${at.stored} byte(s) stored, ${at.size} readable from the ` +
       `start, and still incomplete. Nothing new arrived for ${MAX_IDLE_POLLS} polls — the ` +

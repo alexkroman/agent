@@ -62,7 +62,7 @@ describe("buildWorkflowClient", () => {
       deliveries: "in-process timers",
       // How many step bodies may EXECUTE at once — the bound the DevKit's world
       // used to provide and the engine now owes, since a step runs inline.
-      stepConcurrency: 3,
+      stepConcurrency: 16,
       publicUrl: PUBLIC_URL,
     });
   });
@@ -79,7 +79,7 @@ describe("buildWorkflowClient", () => {
       keyStore: "memory",
       runStore: expect.stringContaining("memory"),
       deliveries: "in-process timers",
-      stepConcurrency: 3,
+      stepConcurrency: 16,
       publicUrl: PUBLIC_URL,
     });
   });

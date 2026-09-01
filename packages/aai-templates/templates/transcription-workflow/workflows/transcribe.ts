@@ -74,6 +74,7 @@ import {
 } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
+import { downsampleSegment, requestFormat } from "./downsample.ts";
 import { normalizeRecording } from "./normalize.ts";
 import { stitchTranscript, TRANSCRIPT_STREAM, type TranscriptChunk } from "./stitch.ts";
 import { elapsed, timed, transcribeWav } from "./sync-api.ts";
@@ -169,15 +170,18 @@ export const BYTES_IN_FLIGHT = 640 * 1024 * 1024;
  * The table above was measured under the old per-round barrier. Re-measuring it is
  * worth doing before this number moves again: the window makes a wide fan-out
  * cheaper at the tail, which if anything argues for a HIGHER knee. *
- * **What EXECUTES at this width is the world's call, not this number's.**
+ * **What EXECUTES at this width is the engine's call, not this number's.**
  * `mapConcurrent` bounds how many step calls the body has in flight; how many
- * run at once is the workflow world's worker concurrency, which on the
- * `DATABASE_URL` path defaults to three — so on a default deployment a width
- * above three is inert while still costing a queued job per item. That makes
- * this the FAR SIDE's knee and the width to use once an operator has raised
- * the ceiling, not a promise about a stock deployment. See "The WINDOW is not
- * the concurrency" in `@alexkroman1/aai/step`'s `mapConcurrent`; the numbers
- * above were measured against the endpoint and say nothing about that layer.
+ * run at once is `DEFAULT_STEP_CONCURRENCY` (`aai-runtime`), which is **16** —
+ * measured against a real microVM at Modal's guaranteed reservation, where a
+ * concurrent segment of 48 kHz stereo costs 26.1 MB. So a width above 16 is
+ * inert on a stock deployment while still costing a queued job per item, and
+ * this number is the FAR SIDE's knee: the one to use once an operator has
+ * raised `AAI_WORKFLOW_STEP_CONCURRENCY` for a larger guest. It was three,
+ * inherited from graphile-worker and never measured, which made every number
+ * in the table above unreachable. See "The WINDOW is not the concurrency" in
+ * `@alexkroman1/aai/step`'s `mapConcurrent`; the numbers above were measured
+ * against the endpoint and say nothing about that layer.
  */
 export const MAX_SEGMENT_CONCURRENCY = 32;
 
@@ -200,7 +204,13 @@ export const MAX_SEGMENT_CONCURRENCY = 32;
  * `stepFetch` pins.
  */
 export function segmentConcurrency(format: WavFormat): number {
-  const perSegment = bytesPerSecond(format) * (SEGMENT_SECONDS + SEGMENT_OVERLAP_SECONDS);
+  // The format that will be SENT, not the one that was cut. The budget is bytes
+  // UPLOADING and `transcribeSegment` normalizes each window first, so asking the
+  // source format would price a 48 kHz stereo segment at 17.66 MB when 2.94 MB
+  // goes on the wire — six times too cautious, and drifting the moment either
+  // side of that pair changes. Both derive it from `requestFormat`.
+  const perSegment =
+    bytesPerSecond(requestFormat(format)) * (SEGMENT_SECONDS + SEGMENT_OVERLAP_SECONDS);
   if (perSegment <= 0) return MAX_SEGMENT_CONCURRENCY;
   return Math.max(1, Math.min(MAX_SEGMENT_CONCURRENCY, Math.floor(BYTES_IN_FLIGHT / perSegment)));
 }
@@ -342,9 +352,18 @@ export async function transcribeSegment(
   // template's: a `WavFormat` is structurally a `PcmFormat`, and 22 lines of
   // `DataView` writes with a comment about which of the two declared lengths a
   // decoder trusts is not a thing worth a second copy of.
+  // Down to 16 kHz mono BEFORE the header goes on, because the endpoint's budget
+  // is 30 seconds of wall clock and that covers the upload. At 48 kHz stereo this
+  // window is 17.66 MB and the same audio is 2.94 MB normalized — six times the
+  // bytes against a fixed deadline, which is what turns a slow segment into a
+  // `504 request exceeded 30.0s` and then into a failed run. Inert on the classic
+  // flow, where `normalizeRecording` already converted the whole file; see
+  // `downsample.ts` for why the streaming flow cannot do the same.
+  const light = downsampleSegment(audio.bytes, format);
+
   const { value: text, ms } = await timed(() =>
     transcribeWav(
-      encodeWav(audio.bytes, format),
+      encodeWav(light.bytes, light.format),
       `segment-${segment.index}.wav`,
       `Segment ${segment.index} (${formatDuration(segment.startMs)})`,
     ),

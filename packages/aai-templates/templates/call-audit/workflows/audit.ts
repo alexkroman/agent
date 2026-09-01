@@ -80,15 +80,18 @@ import { transcribeSpan } from "./sync-api.ts";
  * the byte bound never binds and what is left is the endpoint's own knee, which it
  * measured at 32. Its `BYTES_IN_FLIGHT` and `MAX_SEGMENT_CONCURRENCY` docs carry
  * both measurements; this is the one number that survives them. *
- * **What EXECUTES at this width is the world's call, not this number's.**
+ * **What EXECUTES at this width is the engine's call, not this number's.**
  * `mapConcurrent` bounds how many step calls the body has in flight; how many
- * run at once is the workflow world's worker concurrency, which on the
- * `DATABASE_URL` path defaults to three — so on a default deployment a width
- * above three is inert while still costing a queued job per item. That makes
- * this the FAR SIDE's knee and the width to use once an operator has raised
- * the ceiling, not a promise about a stock deployment. See "The WINDOW is not
- * the concurrency" in `@alexkroman1/aai/step`'s `mapConcurrent`; the numbers
- * above were measured against the endpoint and say nothing about that layer.
+ * run at once is `DEFAULT_STEP_CONCURRENCY` (`aai-runtime`), which is **16** —
+ * measured against a real microVM at Modal's guaranteed reservation, where a
+ * concurrent segment of 48 kHz stereo costs 26.1 MB. So a width above 16 is
+ * inert on a stock deployment while still costing a queued job per item, and
+ * this number is the FAR SIDE's knee: the one to use once an operator has
+ * raised `AAI_WORKFLOW_STEP_CONCURRENCY` for a larger guest. It was three,
+ * inherited from graphile-worker and never measured, which made every number
+ * in the table above unreachable. See "The WINDOW is not the concurrency" in
+ * `@alexkroman1/aai/step`'s `mapConcurrent`; the numbers above were measured
+ * against the endpoint and say nothing about that layer.
  */
 export const SEGMENT_CONCURRENCY = 32;
 

@@ -94,9 +94,8 @@ const MAX_TRANSCRIPT_CHARS = 18_000;
 /**
  * Submissions in flight at once — polite to the provider, still parallel.
  *
- * Inside the workflow world's default worker concurrency (three on the
- * `DATABASE_URL` path), so this width is what really runs — see "The WINDOW is
- * not the concurrency" in `mapConcurrent`.
+ * Inside `DEFAULT_STEP_CONCURRENCY` (`aai-runtime`, 16), so this width is what
+ * really runs — see "The WINDOW is not the concurrency" in `mapConcurrent`.
  */
 const SUBMIT_CONCURRENCY = 2;
 

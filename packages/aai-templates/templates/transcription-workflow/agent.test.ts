@@ -33,16 +33,18 @@ import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/batch.ts";
 import {
-  cuttable,
-  heavierThanNormalized,
+  downsampleSegment,
   NORMALIZED_CHANNELS,
   NORMALIZED_SAMPLE_RATE,
-  normalizeRecording,
-} from "./workflows/normalize.ts";
+  requestFormat,
+} from "./workflows/downsample.ts";
+import { cuttable, heavierThanNormalized, normalizeRecording } from "./workflows/normalize.ts";
 import {
   expectedSegments,
+  nextPollDelay,
   planStreamed,
   probeUpload,
+  type StreamPlan,
   segmentStored,
   storedBytes,
   type UploadProgressView,
@@ -499,6 +501,198 @@ describe("splitRecording", () => {
   });
 });
 
+/**
+ * A sine, as interleaved little-endian 16-bit PCM with every channel identical.
+ *
+ * A TONE rather than noise or a ramp, because what a resampler can get wrong is
+ * frequency: decimating without a low-pass folds anything above the new Nyquist
+ * back into the speech band at full strength, and that is invisible to any
+ * assertion about lengths or formats.
+ */
+function sineFrames(opts: {
+  hz: number;
+  sampleRate: number;
+  channels: number;
+  frames: number;
+  amplitude?: number;
+}): Uint8Array {
+  const amplitude = opts.amplitude ?? 10_000;
+  const out = new Uint8Array(opts.frames * opts.channels * 2);
+  const view = new DataView(out.buffer);
+  for (let f = 0; f < opts.frames; f++) {
+    const value = Math.round(amplitude * Math.sin((2 * Math.PI * opts.hz * f) / opts.sampleRate));
+    for (let c = 0; c < opts.channels; c++) view.setInt16((f * opts.channels + c) * 2, value, true);
+  }
+  return out;
+}
+
+/** How loud 16-bit mono PCM is, in one number. */
+function rms(bytes: Uint8Array): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let total = 0;
+  for (let at = 0; at < bytes.length; at += 2) total += view.getInt16(at, true) ** 2;
+  return Math.sqrt(total / (bytes.length / 2));
+}
+
+/** How FAST a tone is, without an FFT: a sine crosses zero twice per cycle. */
+function zeroCrossings(bytes: Uint8Array): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let crossings = 0;
+  let previous = view.getInt16(0, true);
+  for (let at = 2; at < bytes.length; at += 2) {
+    const value = view.getInt16(at, true);
+    if (previous < 0 !== value < 0) crossings += 1;
+    previous = value;
+  }
+  return crossings;
+}
+
+describe("downsampleSegment — what actually goes on the wire", () => {
+  const STEREO_48K = { sampleRate: 48_000, channels: 2, bitsPerSample: 16 } as const;
+
+  test("passes already-normalized audio through UNTOUCHED, same array", () => {
+    // Identity rather than a copy, which is what the classic flow relies on:
+    // `normalizeRecording` has already converted the whole file, so this must cost
+    // nothing at all there — not a re-encode, not even an allocation.
+    const bytes = sineFrames({ hz: 440, sampleRate: 16_000, channels: 1, frames: 4000 });
+    const light = downsampleSegment(bytes, MONO_16K);
+
+    expect(light.bytes).toBe(bytes);
+    expect(light.format).toBe(MONO_16K);
+  });
+
+  test("cuts 48 kHz stereo to a SIXTH of the bytes, at 16 kHz mono", () => {
+    // The whole reason this exists: a 92-second segment is 17.66 MB at the source
+    // format and 2.94 MB here, against an endpoint that deadlines a request at 30
+    // seconds of wall clock INCLUDING the upload.
+    const bytes = sineFrames({ hz: 440, sampleRate: 48_000, channels: 2, frames: 48_000 });
+    const light = downsampleSegment(bytes, STEREO_48K);
+
+    expect(light.format).toEqual({ sampleRate: 16_000, channels: 1, bitsPerSample: 16 });
+    expect(light.bytes.length).toBe(32_000);
+    expect(light.bytes.length * 6).toBe(bytes.length);
+  });
+
+  test("the TONE survives — same pitch, same loudness", () => {
+    // The assertion the byte counts cannot make, and it is stated as an
+    // EQUIVALENCE rather than a constant: resampling a 440 Hz tone recorded at
+    // 48 kHz should give back what recording the same tone at 16 kHz would have
+    // given. 440 Hz is far below the new 8 kHz Nyquist, so the box filter costs
+    // it about 0.1%.
+    const bytes = sineFrames({ hz: 440, sampleRate: 48_000, channels: 2, frames: 12_000 });
+    const light = downsampleSegment(bytes, STEREO_48K);
+    const reference = sineFrames({ hz: 440, sampleRate: 16_000, channels: 1, frames: 4000 });
+
+    expect(zeroCrossings(light.bytes)).toBe(zeroCrossings(reference));
+    expect(rms(light.bytes)).toBeCloseTo(rms(reference), -2);
+  });
+
+  test("ATTENUATES a tone above the new Nyquist instead of folding it back", () => {
+    // The test that tells a box filter from plain decimation, and the reason the
+    // averaging is not a wasted pass. Taking every third sample of a 20 kHz tone
+    // at 48 kHz reproduces it at 4 kHz — in the middle of speech — at FULL
+    // amplitude. Averaging leaves about a quarter of it.
+    const bytes = sineFrames({ hz: 20_000, sampleRate: 48_000, channels: 2, frames: 12_000 });
+    const light = downsampleSegment(bytes, STEREO_48K);
+
+    const before = rms(bytes);
+    // Bounded on BOTH sides: an upper bound alone is satisfied by a resampler
+    // that returns silence, which would pass while destroying every transcript.
+    expect(rms(light.bytes)).toBeLessThan(before * 0.4);
+    expect(rms(light.bytes)).toBeGreaterThan(before * 0.1);
+  });
+
+  test("downmixes by AVERAGING the channels, not by dropping one", () => {
+    // A stereo call with one party per channel is exactly the file where dropping
+    // a channel loses a speaker outright. Left is +8000, right is -8000, so an
+    // average is silence and a dropped channel is a loud tone.
+    const bytes = new Uint8Array(4 * 2 * 2);
+    const view = new DataView(bytes.buffer);
+    for (let f = 0; f < 4; f++) {
+      view.setInt16(f * 4, 8000, true);
+      view.setInt16(f * 4 + 2, -8000, true);
+    }
+    const light = downsampleSegment(bytes, { sampleRate: 16_000, channels: 2, bitsPerSample: 16 });
+
+    expect(light.format).toEqual({ sampleRate: 16_000, channels: 1, bitsPerSample: 16 });
+    expect([...light.bytes]).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  test("never UPSAMPLES — 8 kHz stereo comes back at 8 kHz, mono", () => {
+    // The rate is a floor to come DOWN to, never a target to reach: resampling a
+    // narrowband recording up would invent bytes to pay the deadline with.
+    const bytes = sineFrames({ hz: 300, sampleRate: 8000, channels: 2, frames: 800 });
+    const light = downsampleSegment(bytes, { sampleRate: 8000, channels: 2, bitsPerSample: 16 });
+
+    expect(light.format).toEqual({ sampleRate: 8000, channels: 1, bitsPerSample: 16 });
+    expect(light.bytes.length).toBe(1600);
+  });
+
+  test("reads 8-bit samples as UNSIGNED, which is RIFF's one asymmetry", () => {
+    // Read as signed, a silent 8-bit recording (every byte 128) decodes as a
+    // constant -128 — full-scale DC, which transcribes as nothing but is the
+    // shape of the bug. 128 is silence; 255 is the positive peak.
+    const silent = downsampleSegment(new Uint8Array([128, 128, 128, 128]), {
+      sampleRate: 48_000,
+      channels: 2,
+      bitsPerSample: 8,
+    });
+    expect([...silent.bytes]).toEqual([0, 0]);
+
+    const loud = downsampleSegment(new Uint8Array([255, 255]), {
+      sampleRate: 16_000,
+      channels: 2,
+      bitsPerSample: 8,
+    });
+    expect(new DataView(loud.bytes.buffer).getInt16(0, true)).toBe(32_512);
+  });
+
+  test("sign-extends 24-bit samples", () => {
+    // The depth with no `DataView` accessor, so the sign extension is hand-written
+    // and is the one thing to get wrong: -1 is `ff ff ff`, which read unsigned is
+    // +8388607 rather than a whisker below zero.
+    const bytes = new Uint8Array([0xff, 0xff, 0xff, 0x00, 0x00, 0x40]);
+    const light = downsampleSegment(bytes, {
+      sampleRate: 16_000,
+      channels: 2,
+      bitsPerSample: 24,
+    });
+
+    // -1 and +4194304 on the 24-bit scale are -1/256 and +16384 on the 16-bit
+    // one; their average rounds to 8192.
+    expect(new DataView(light.bytes.buffer).getInt16(0, true)).toBe(8192);
+  });
+
+  test("REFUSES a bit depth it cannot read, terminally", () => {
+    // `parseWav` admits any multiple of 8, so this is reachable from a real file.
+    // Terminal because it answers the same way on every attempt — a retry would
+    // spend the step's whole budget arriving back here.
+    expect(() =>
+      downsampleSegment(new Uint8Array(16), {
+        sampleRate: 48_000,
+        channels: 2,
+        bitsPerSample: 64,
+      }),
+    ).toThrow(UnsupportedRecordingError);
+  });
+
+  test("requestFormat is what the fan-out's WIDTH is priced from", () => {
+    // The two must not drift: `segmentConcurrency` divides a byte budget by a
+    // segment's cost, and that budget is bytes UPLOADING. Pricing the source
+    // format would make the width six times too cautious on exactly the
+    // recordings this change is for.
+    const sent = downsampleSegment(
+      sineFrames({ hz: 440, sampleRate: 48_000, channels: 2, frames: 48_000 }),
+      STEREO_48K,
+    );
+    expect(requestFormat(STEREO_48K)).toEqual(sent.format);
+    expect(requestFormat(MONO_16K)).toBe(MONO_16K);
+    expect(bytesPerSecond(requestFormat(STEREO_48K))).toBe(
+      NORMALIZED_SAMPLE_RATE * NORMALIZED_CHANNELS * 2,
+    );
+  });
+});
+
 describe("transcribeSegment", () => {
   const FORMAT: WavFormat = { ...MONO_16K, dataStart: 44, dataEnd: 44 + 320_000 };
   const SEGMENT = { index: 0, start: 44, end: 44 + 32_000, startMs: 0, endMs: 1000 };
@@ -550,6 +744,43 @@ describe("transcribeSegment", () => {
     expect(decoded).toContain('name="audio"; filename="segment-0.wav"');
     // The WAV really rides in the part, header and all.
     expect(decoded).toContain("RIFF");
+  });
+
+  test("sends the DOWNSAMPLED window when the recording is heavier than 16 kHz mono", async () => {
+    // The end-to-end half of `downsampleSegment`'s own specs: that the lighter
+    // bytes reach the WIRE, which is the only place the endpoint's 30-second
+    // budget is spent. One second of 48 kHz stereo is 192,000 bytes and leaves
+    // here as 32,000.
+    const stereo: WavFormat = {
+      sampleRate: 48_000,
+      channels: 2,
+      bitsPerSample: 16,
+      dataStart: 44,
+      dataEnd: 44 + 192_000,
+    };
+    publishRecording(new Uint8Array(stereo.dataEnd));
+    const calls = installStubTranscribe({ text: "hello there" }).calls;
+
+    await transcribeSegment(UPLOAD_ID, stereo, {
+      index: 0,
+      start: 44,
+      end: 44 + 192_000,
+      startMs: 0,
+      endMs: 1000,
+    });
+
+    const sent = calls.find((call) => call.leg === "sync")?.body;
+    if (!(sent instanceof Uint8Array)) return expect.fail("the sync leg carries bytes");
+    expect(sent.length).toBeLessThan(40_000);
+
+    // And the HEADER agrees with the samples under it. A body that shrank while
+    // still declaring 48 kHz stereo is the one failure a byte count cannot see,
+    // and it plays back at a third speed rather than failing.
+    const at = new TextDecoder("latin1").decode(sent).indexOf("RIFF");
+    const header = new DataView(sent.buffer, sent.byteOffset + at, 44);
+    expect(header.getUint16(22, true)).toBe(1);
+    expect(header.getUint32(24, true)).toBe(16_000);
+    expect(header.getUint32(40, true)).toBe(32_000);
   });
 
   test("EMITS the segment's words as it lands, into the transcript stream", async () => {
@@ -700,6 +931,10 @@ describe("the streaming flow", () => {
       size: 44 + 1000,
       complete: false,
       stored: 44 + 1000,
+      // A real clock, which is the point of it: `nextPollDelay` derives a rate from
+      // two of these, so the step has to stamp when it looked rather than the body
+      // guessing. Matched loosely because the VALUE is the wall clock.
+      observedAt: expect.any(Number),
     });
   });
 
@@ -719,6 +954,10 @@ describe("the streaming flow", () => {
       complete: prefix >= declared,
       stored: storedBytes(prefix, ranges),
       ranges,
+      // Fixed rather than `Date.now()`: these fixtures feed pure functions, and a
+      // real clock would make `nextPollDelay`'s arithmetic depend on how long the
+      // suite took to get here.
+      observedAt: 0,
     };
   }
 
@@ -1165,5 +1404,108 @@ describe("the conversion, up to the spawn", () => {
     installStubReporter();
     await expect(normalizeRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
     expect(leaked(await readdir(tmpdir()))).toEqual(before);
+  });
+});
+
+/**
+ * The adaptive poll delay.
+ *
+ * `POLL_INTERVAL_MS` used to be the only interval, and on a slow uplink that meant
+ * discovering every segment on average half an interval late — once per segment,
+ * for the whole upload. `nextPollDelay` sleeps until the next segment should have
+ * landed instead. It is pure over two journaled polls, which is what makes it both
+ * replay-safe and testable without a clock.
+ */
+describe("nextPollDelay", () => {
+  /** A poll: `stored` bytes at `observedAt` ms. */
+  const view = (stored: number, observedAt: number): UploadProgressView => ({
+    size: stored,
+    complete: false,
+    stored,
+    observedAt,
+  });
+  /**
+   * A plan whose segments end at the given byte offsets.
+   *
+   * Both halves are REAL values rather than casts: `nextPollDelay` only reads
+   * `segments`, but a `{} as never` format would stop reporting the moment the
+   * function grew a second reader — which is the whole argument against the
+   * cast. 16 kHz mono is what `normalizeRecording` produces.
+   */
+  const planAt = (...ends: number[]): StreamPlan => ({
+    format: {
+      sampleRate: 16_000,
+      channels: 1,
+      bitsPerSample: 16,
+      dataStart: 44,
+      dataEnd: 44 + Math.max(0, ...ends),
+    },
+    segments: ends.map((end, index) => ({ index, start: 0, end, startMs: 0, endMs: 0 })),
+  });
+
+  test("falls back to the ceiling with no previous sample to take a rate from", () => {
+    // The first sleep of every run: one point is not a rate.
+    expect(nextPollDelay(view(1000, 5000), undefined, planAt(50_000), new Set())).toBe(5000);
+  });
+
+  test("falls back to the ceiling for a STALLED upload rather than guessing", () => {
+    // Nothing arrived between the two samples, so there is no arrival to
+    // extrapolate. MAX_IDLE_POLLS is what ends such a run; this only declines to
+    // predict it, and must not divide by zero doing so.
+    expect(nextPollDelay(view(1000, 2000), view(1000, 1000), planAt(50_000), new Set())).toBe(5000);
+  });
+
+  test("waits the time the next segment still needs, at the observed rate", () => {
+    // 10_000 bytes over 1000ms is 10 bytes/ms; the next segment needs 10_000 more.
+    const delay = nextPollDelay(view(20_000, 2000), view(10_000, 1000), planAt(30_000), new Set());
+    expect(delay).toBe(1000);
+  });
+
+  test("targets the EARLIEST unfinished segment, not the furthest", () => {
+    // Segments land as they arrive, so what the loop can act on next is the first
+    // one it has not done — waiting for the last would sleep through the rest.
+    const done = new Set([0]);
+    const delay = nextPollDelay(
+      view(10_000, 2000),
+      view(0, 1000),
+      planAt(5000, 20_000, 90_000),
+      done,
+    );
+    // 10 bytes/ms, 10_000 more needed to reach segment 1's end at 20_000.
+    expect(delay).toBe(1000);
+  });
+
+  test("clamps to the ceiling so a collapsing rate degrades to the old behaviour", () => {
+    // 1 byte/ms against 10 MB outstanding is hours; the ceiling is what stops this
+    // becoming a stall no MAX_IDLE_POLLS can see.
+    const delay = nextPollDelay(view(1000, 2000), view(0, 1000), planAt(10_000_000), new Set());
+    expect(delay).toBe(5000);
+  });
+
+  test("clamps to the floor rather than spinning when the bytes are already there", () => {
+    // The segment is stored but the loop reached the sleep anyway (it is waiting on
+    // `complete`). A poll is cheap and not free — this must not become a spin.
+    const delay = nextPollDelay(view(60_000, 2000), view(10_000, 1000), planAt(30_000), new Set());
+    expect(delay).toBe(250);
+  });
+
+  test("waits for the HEADER window before there is a plan to aim at", () => {
+    // No plan yet, so what is being waited for is the probe window itself.
+    const delay = nextPollDelay(view(0, 2000), view(0, 1000), undefined, new Set());
+    // Rate is zero here, so this takes the stalled arm — the point is that a missing
+    // plan is not a crash.
+    expect(delay).toBe(5000);
+  });
+
+  test("returns the ceiling once every segment is done", () => {
+    // Nothing left to extrapolate toward: the loop is waiting on the `complete`
+    // flag, which is set by the uploader rather than reached by bytes.
+    const delay = nextPollDelay(
+      view(50_000, 2000),
+      view(40_000, 1000),
+      planAt(30_000),
+      new Set([0]),
+    );
+    expect(delay).toBe(5000);
   });
 });

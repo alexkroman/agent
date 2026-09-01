@@ -198,10 +198,17 @@ describe("studioSystemPrompt", () => {
     // a pane that no longer exists.
     expect(prompt).not.toContain("Settings → Database");
     expect(prompt).not.toContain("aai storage enable");
-    // Uploads ARE still limited by the author having a database, and the prompt
-    // has to say so — a run outliving its own uploaded bytes is the confusing
-    // half of the current state.
-    expect(prompt).toContain("A file UPLOAD is the exception");
+    // And now the THIRD direction, which is why the comment above says "both"
+    // and this says otherwise: uploads used to be the one real limitation — an
+    // upload's record needed a database the author supplied, so a run outlived
+    // its own bytes — and they are the platform's too now (`platform-uploads.ts`,
+    // the `workflow_uploads` table). So the exception is GONE, and what has to
+    // be absent is the advice it justified: a deployed app needs no database of
+    // its own for durability of either half, and telling an author to set one
+    // sends them to provision something the platform already provides.
+    expect(prompt).toContain("File UPLOADS are durable with no setup");
+    expect(prompt).not.toContain("A file UPLOAD is the exception");
+    expect(prompt).not.toContain("set a DATABASE_URL secret if you want");
   });
 
   test("the two prompts share everything that is not mode-specific", () => {
