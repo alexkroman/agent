@@ -131,6 +131,24 @@ describe("POST /:slug/workflow-storage", () => {
       ["a missing method", { args: [] }],
       ["args that are not an array", { method: "runs.get", args: "run_1" }],
       ["a body that is not an object", '"a string"'],
+      // A malformed envelope has to be classified as the CALLER's fault and reach
+      // no world: the codec used to answer arbitrary bytes for the first and an
+      // `Invalid Date` for the second, so the world was handed invented data on a
+      // request nothing had rejected. `events.create` is the shape that shows it —
+      // the envelope sits in `args[1]`, past the run-id check, so a version of
+      // this using `runs.get` would answer 400 for the unrelated reason that a
+      // `Uint8Array` is not a run id, and would pass with the fix reverted.
+      // A/B'd both ways. See `workflow-typed-json.ts`.
+      [
+        "a Uint8Array envelope carrying malformed base64",
+        '{"method":"events.create","args":["run_mine",{"eventType":"step_started",' +
+          '"input":{"__type":"Uint8Array","data":"not base64 at all!!"}}]}',
+      ],
+      [
+        "a Date envelope carrying an unparsable iso",
+        '{"method":"events.create","args":["run_mine",{"eventType":"step_started",' +
+          '"at":{"__type":"Date","iso":"garbage"}}]}',
+      ],
     ])("answers 400 for %s", async (_label, body) => {
       const p = await platform();
       const res = await callStorage(p.fetch, MINE, body, await bearerFor(p.store, MINE));
