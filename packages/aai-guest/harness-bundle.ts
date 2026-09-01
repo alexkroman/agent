@@ -329,6 +329,16 @@ export function lazyRuntime(
     get workflows() {
       return ensureRuntime(state).workflows as SessionRuntime["workflows"];
     },
+    /**
+     * The delivery hook, a GETTER for the same lazy-runtime reason as `workflows`.
+     *
+     * A bundle predating the replay engine has none, and `undefined` is the
+     * honest answer there rather than a throwing stub: that bundle's runs belong
+     * to the DevKit's own world, which holds their schedule itself.
+     */
+    get deliverWorkflow() {
+      return ensureRuntime(state).deliverWorkflow as SessionRuntime["deliverWorkflow"];
+    },
     shutdown: async () => {
       await state.runtime?.shutdown();
     },

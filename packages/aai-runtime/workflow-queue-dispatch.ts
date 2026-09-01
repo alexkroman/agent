@@ -176,3 +176,63 @@ export async function dispatchQueueMessage(
   // and `workflow-serve.ts` forming a cycle.
   return kind === "workflow" ? surface.flow(request) : surface.step(request);
 }
+
+/**
+ * Serve one delivery from the platform's queue by re-walking the run.
+ *
+ * The engine's half of this door, beside {@link dispatchQueueMessage}, which is
+ * the DevKit's. What arrives is a message the platform held on this run's behalf
+ * — because a deployed guest's own timers die with the sandbox — and all it
+ * carries that matters is WHICH run.
+ *
+ * ## The run id comes from the queue NAME, and from nothing else
+ *
+ * The name is `__wkf_workflow_<runId>` — composed by `queueNameFor` on the way
+ * out and matched by the platform's claim to serialize orchestration per run — so
+ * the id is already in the one field this door is routed by. Reading the payload
+ * as a fallback was tried and removed: it couples this module to the SENDING
+ * client for a case that cannot arise, since every message this engine can
+ * receive is one it composed.
+ *
+ * A message whose name is a STEP topic therefore answers 400, which is right
+ * rather than unfortunate: this engine executes a step inline during the walk and
+ * never as its own message, so such a name can only be a DevKit-era message
+ * still in flight across a deploy. 400 retires it instead of spending the whole
+ * abandonment budget on it first.
+ *
+ * ## An unroutable message is a 400, and a failed replay a 500
+ *
+ * The distinction is what the platform's abandonment budget rests on. A 400 says
+ * "do not retry this, it can never route" — a message with no id in it will not
+ * grow one. A 500 says "the guest was up and could not finish", which is the case
+ * a retry is for. Answering 400 for a real failure abandons a live run; answering
+ * 500 for a corrupt message spends the whole budget on it and then abandons it
+ * anyway, several minutes later.
+ *
+ * @internal
+ */
+export async function deliverQueueMessage(
+  deliver: (runId: string) => Promise<unknown>,
+  request: Request,
+): Promise<Response> {
+  const queueName = request.headers.get(QUEUE_NAME_HEADER);
+  const runId = runIdFromQueueName(queueName);
+  if (runId === undefined) {
+    return Response.json(
+      { error: `no run id in delivery: ${queueName ?? "(absent)"}` },
+      { status: 400 },
+    );
+  }
+  await deliver(runId);
+  // The STATUS is not reported, and that is deliberate: the platform acks on a
+  // 200 and a run that is merely still suspended has been fully served. Reporting
+  // "suspended" as anything but success would have the queue retry a wait.
+  return Response.json({ ok: true });
+}
+
+/** The id in `__[<ns>_]wkf_workflow_<id>`, or undefined when the name is not one. */
+function runIdFromQueueName(queueName: string | null): string | undefined {
+  if (queueName === null || queueNameKind(queueName) !== "workflow") return;
+  const id = queueName.slice(queueName.indexOf("wkf_workflow_") + "wkf_workflow_".length);
+  return id === "" ? undefined : id;
+}

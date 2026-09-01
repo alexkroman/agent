@@ -10,6 +10,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import {
+  deliverQueueMessage,
   dispatchQueueMessage,
   QUEUE_NAME_HEADER,
   queueNameKind,
@@ -164,5 +165,79 @@ describe("dispatchQueueMessage", () => {
       await deliver(surface, name).catch(() => undefined);
     }
     expect(Object.keys(surface).sort()).toEqual(["flow", "step"]);
+  });
+});
+
+describe("deliverQueueMessage", () => {
+  const QUEUE_NAME_HEADER = "x-vqs-queue-name";
+
+  const post = (queueName?: string) =>
+    new Request("http://guest.local/workflow-queue", {
+      method: "POST",
+      headers: queueName === undefined ? {} : { [QUEUE_NAME_HEADER]: queueName },
+      body: JSON.stringify({ runId: "from-payload" }),
+    });
+
+  test("re-walks the run the queue NAME names", async () => {
+    // This is the whole door under the replay engine. A deployed guest's own
+    // timers die with a sandbox that self-exits, so the platform's queue holds the
+    // schedule and a due message boots the guest and arrives here.
+    const deliver = vi.fn(async () => "completed");
+    const res = await deliverQueueMessage(deliver, post("__wkf_workflow_wrun_7"));
+    expect(res.status).toBe(200);
+    expect(deliver).toHaveBeenCalledWith("wrun_7");
+  });
+
+  test("reads the name and NOT the payload, even when the payload carries an id", async () => {
+    // The name is the field the platform's claim routes by and the one this engine
+    // composed. A payload fallback was tried and removed: it couples this door to
+    // the sending client for a case that cannot arise.
+    const deliver = vi.fn(async () => undefined);
+    await deliverQueueMessage(deliver, post("__wkf_workflow_wrun_7"));
+    expect(deliver).toHaveBeenCalledWith("wrun_7");
+    expect(deliver).not.toHaveBeenCalledWith("from-payload");
+  });
+
+  test("tolerates a namespaced name, which is the same grammar", async () => {
+    const deliver = vi.fn(async () => undefined);
+    await deliverQueueMessage(deliver, post("__acme_wkf_workflow_wrun_7"));
+    expect(deliver).toHaveBeenCalledWith("wrun_7");
+  });
+
+  test("answers 200 for a run that is still SUSPENDED", async () => {
+    // The platform acks on a 200, and a run that suspended again has been fully
+    // served. Reporting "still waiting" as anything but success would have the
+    // queue retry a wait — and burn an attempt doing it.
+    const deliver = vi.fn(async () => "running");
+    expect((await deliverQueueMessage(deliver, post("__wkf_workflow_r1"))).status).toBe(200);
+  });
+
+  test.each([
+    ["a STEP topic", "__wkf_step_r1"],
+    ["an unrelated name", "orders"],
+    ["an empty id", "__wkf_workflow_"],
+    ["no header at all", undefined],
+  ])("answers 400 for %s, rather than 500", async (_label, queueName) => {
+    // 400 versus 500 is what the platform's abandonment budget rests on. A 400
+    // says "do not retry, this can never route" — a message with no id will not
+    // grow one. A 500 would spend the whole budget first and abandon it anyway,
+    // several minutes later. A step topic is included deliberately: this engine
+    // runs a step inline during the walk and never as its own message, so such a
+    // name can only be a DevKit-era message still in flight across a deploy.
+    const deliver = vi.fn(async () => undefined);
+    const res = await deliverQueueMessage(deliver, post(queueName));
+    expect(res.status).toBe(400);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  test("lets a replay failure REJECT, so the door answers 500 and the queue retries", async () => {
+    // A guest that was up and could not finish is exactly the case a retry is
+    // for, and `serveFetch` is what turns the rejection into the 500.
+    const deliver = vi.fn(async () => {
+      throw new Error("journal unreachable");
+    });
+    await expect(deliverQueueMessage(deliver, post("__wkf_workflow_r1"))).rejects.toThrow(
+      /journal unreachable/,
+    );
   });
 });

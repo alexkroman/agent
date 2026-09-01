@@ -22,6 +22,7 @@
 
 import type http from "node:http";
 import { requestQuery } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { handleWorkflowRequest, type WorkflowSurface } from "@alexkroman1/aai-runtime/internal";
 import { verifyBearer } from "./harness-auth.ts";
 import { guestLogBuffer, parseLogQuery } from "./harness-logs.ts";
@@ -175,6 +176,19 @@ export function createWorkflowActivity(): WorkflowActivity {
 export function createAgentRequestHandler(deps: {
   manage: ManageDeps;
   workflows: () => WorkflowSurface | null;
+  /**
+   * `AgentRuntime.deliverWorkflow` — re-walk one run for a platform delivery.
+   *
+   * A GETTER for the reason `workflows` is one: the harness builds its runtime on
+   * the first thing that needs it, so a captured value is `undefined` for the
+   * life of the process. Absent means this guest has no engine to deliver to, and
+   * the door then answers as it did before — 404 for an agent with no workflows.
+   *
+   * This is the whole reason the door exists under the replay engine: a deployed
+   * guest's own timers die with a sandbox that self-exits, so the platform's
+   * queue holds the schedule and a due message boots the guest and lands here.
+   */
+  deliverWorkflow?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
   /** Absent leaves workflow work invisible to the idle controller — tests only. */
   activity?: WorkflowActivity | undefined;
 }): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
@@ -194,6 +208,7 @@ export function createAgentRequestHandler(deps: {
         // caller but the platform, so there is nothing to compose with and the
         // ordinary bearer is the honest spelling.
         allowRemote: (r) => verifyBearer(r.headers.authorization, deps.manage.token),
+        ...omitUndefined({ deliver: deps.deliverWorkflow?.() }),
       })
     ) {
       deps.activity?.begin(res);

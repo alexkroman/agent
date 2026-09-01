@@ -202,6 +202,7 @@ type FetchHandler = (req: Request) => Promise<Response>;
 export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
     logger?: Logger | undefined;
+    deliver?: ((runId: string) => Promise<unknown>) | undefined;
 }): boolean;
 
 // @public

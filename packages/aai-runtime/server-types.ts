@@ -25,7 +25,7 @@ import type { AgentRuntime } from "./runtime-types.ts";
  */
 export type SessionRuntime = Pick<
   AgentRuntime,
-  "startSession" | "shutdown" | "workflows" | "sessionEvents"
+  "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow"
 >;
 
 /** Configuration for {@link createServer}. */

@@ -68,6 +68,18 @@ export type InProcessWorkflowEngineOptions = {
   journal?: JournalStore | undefined;
   /** Defaults to a fresh in-memory progress store. */
   streams?: StreamStore | undefined;
+  /**
+   * Where a delivery goes. Defaults to a `setTimeout` in this process.
+   *
+   * A DEPLOYED guest passes `createPlatformDispatch` instead, because its timers
+   * die with a sandbox that self-exits after `AGENT_IDLE_EXIT_MS` — see that
+   * module for why it REPLACES the local timer rather than racing it.
+   *
+   * `stop()` still cancels whatever timers this factory created, which for an
+   * injected dispatcher is none: what a deployed guest owes on the way down is
+   * nothing, the queue holding the schedule.
+   */
+  dispatch?: ((runId: string, at?: number) => void) | undefined;
 };
 
 /** The engine plus the one thing a host must do on the way down. */
@@ -143,7 +155,7 @@ export function createInProcessWorkflowEngine(
     workflows,
     journal,
     streams,
-    dispatch: schedule,
+    dispatch: options.dispatch ?? schedule,
     // `wrun_` + a uuid. Not sortable, and it does not need to be: `listRuns`
     // orders by `createdAt` with the id only breaking a tie, so what the id owes
     // is uniqueness and the grammar `_workflow-run-id.ts` will accept.

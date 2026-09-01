@@ -43,6 +43,7 @@ import { createPlatformJournal } from "./workflow-journal-platform.ts";
 import { createPostgresJournal } from "./workflow-journal-postgres.ts";
 import type { JournalStore } from "./workflow-journal-types.ts";
 import { createRunNotifier, type RunNotifier } from "./workflow-notify.ts";
+import { createPlatformDispatch } from "./workflow-platform-dispatch.ts";
 import { platformGuestOptions } from "./workflow-platform-world.ts";
 
 /**
@@ -57,6 +58,13 @@ import { platformGuestOptions } from "./workflow-platform-world.ts";
 export type BuiltWorkflowClient = {
   client: WorkflowClient;
   stop: () => void;
+  /**
+   * What `AgentRuntime.deliverWorkflow` forwards to — the engine's `execute`.
+   *
+   * Carried out separately from `client` because it is deliberately NOT on the
+   * client: a delivery is the queue's to make, not a tool's. See that field's doc.
+   */
+  execute: (runId: string) => Promise<unknown>;
 };
 
 /**
@@ -81,16 +89,36 @@ export type BuiltWorkflowClient = {
  * log reads as a bug, and this is the one an author is most likely to hit by
  * accident.
  */
-function selectJournal(db: Db | undefined): {
+function selectJournal(
+  db: Db | undefined,
+  logger: Logger,
+): {
   journal: JournalStore | undefined;
   journalKind: string;
+  dispatch: ((runId: string, at?: number) => void) | undefined;
+  dispatchKind: string;
 } {
   const platform = platformGuestOptions();
-  if (platform) return { journal: createPlatformJournal(platform), journalKind: "platform" };
-  if (db) return { journal: createPostgresJournal({ db }), journalKind: "postgres" };
+  if (platform) {
+    // BOTH halves come from the same resolved pair, and that is the property to
+    // preserve: a deployment with a platform journal and in-process timers would
+    // store a `ctx.sleep`'s deadline durably and then forget to come back for it,
+    // which is the same failure as no journal at all with a healthier-looking log.
+    return {
+      journal: createPlatformJournal(platform),
+      journalKind: "platform",
+      dispatch: createPlatformDispatch({ platform, logger }),
+      dispatchKind: "platform queue",
+    };
+  }
+  const localTimers = { dispatch: undefined, dispatchKind: "in-process timers" };
+  if (db) {
+    return { journal: createPostgresJournal({ db }), journalKind: "postgres", ...localTimers };
+  }
   return {
     journal: undefined,
     journalKind: "memory (in-process — runs do not survive a restart)",
+    ...localTimers,
   };
 }
 
@@ -118,7 +146,7 @@ export function buildWorkflowClient(
 ): BuiltWorkflowClient | undefined {
   const workflows = agent.workflows;
   if (!workflows || Object.keys(workflows).length === 0) return;
-  const { journal, journalKind } = selectJournal(db);
+  const { journal, journalKind, dispatch, dispatchKind } = selectJournal(db, logger);
   logger.info?.("Workflows resolved", {
     workflows: Object.keys(workflows),
     // Which store is in play decides whether a correlation key survives a
@@ -130,6 +158,11 @@ export function buildWorkflowClient(
     // assumed, because a durability tradeoff absent from the log reads as a bug —
     // and because there is now a case where the answer is good.
     runStore: journalKind,
+    // WHERE a delivery goes, which is a different question from where a run is
+    // stored and the one that decides whether a `ctx.sleep` ever comes back. A
+    // durable journal behind in-process timers looks healthy and forgets every
+    // wait, so the two are reported together rather than inferred from each other.
+    deliveries: dispatchKind,
     // Reported at boot for the same reason the key store is: whether a run can
     // hand out a reachable callback URL is a property of the DEPLOYMENT, and the
     // alternative to one boot line is discovering it from a throw inside a tool
@@ -139,7 +172,7 @@ export function buildWorkflowClient(
   });
   // Held so `stop` can reach it: the CLIENT is what the runtime hands to tools,
   // and the engine's timers are what a rebuild has to cancel.
-  const engine = createInProcessWorkflowEngine({ workflows, logger, journal });
+  const engine = createInProcessWorkflowEngine({ workflows, logger, journal, dispatch });
   const client = createWorkflowClient({
     workflows,
     keys: resolveKeyStore(db),
@@ -155,7 +188,7 @@ export function buildWorkflowClient(
     publicUrl,
     logger,
   });
-  return { client, stop: () => engine.stop() };
+  return { client, stop: () => engine.stop(), execute: (runId) => engine.execute(runId) };
 }
 
 /**

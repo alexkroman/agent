@@ -7521,6 +7521,7 @@ export type AgentRuntime = {
     shutdown(): Promise<void>;
     readonly readyConfig: ReadyConfig;
     readonly workflows?: WorkflowClient | undefined;
+    readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
     readonly sessionEvents?: SessionEventStream | undefined;
 };
 
@@ -7968,7 +7969,7 @@ export type SessionEventStream = {
 };
 
 // @public
-export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents">;
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow">;
 
 // @public
 export type SessionStartOptions = {
@@ -8468,6 +8469,7 @@ type FetchHandler = (req: Request) => Promise<Response>;
 export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
     logger?: Logger | undefined;
+    deliver?: ((runId: string) => Promise<unknown>) | undefined;
 }): boolean;
 
 // @public

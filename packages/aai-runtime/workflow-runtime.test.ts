@@ -56,6 +56,10 @@ describe("buildWorkflowClient", () => {
       // `DATABASE_URL` as the key index deliberately — an asymmetry is a trap
       // either way, a key pointing at a run that is gone or the reverse.
       runStore: "postgres",
+      // WHERE a delivery goes, which decides whether a `ctx.sleep` ever comes
+      // back. Reported beside the store rather than inferred from it: a durable
+      // journal behind in-process timers looks healthy and forgets every wait.
+      deliveries: "in-process timers",
       publicUrl: PUBLIC_URL,
     });
   });
@@ -71,6 +75,7 @@ describe("buildWorkflowClient", () => {
       workflows: ["digest"],
       keyStore: "memory",
       runStore: expect.stringContaining("memory"),
+      deliveries: "in-process timers",
       publicUrl: PUBLIC_URL,
     });
   });
@@ -117,6 +122,20 @@ describe("buildWorkflowClient", () => {
         ? (detail as Record<string, unknown>).runStore
         : undefined;
     }
+
+    test("pairs the platform journal with the platform QUEUE, never local timers", () => {
+      // The two halves come from one resolved pair on purpose. A platform journal
+      // behind in-process timers would store a sleep's deadline durably and then
+      // forget to come back for it once the sandbox self-exits — the same failure
+      // as no journal at all, with a healthier-looking boot line.
+      withPlatform();
+      const logger = makeLogger();
+      buildWorkflowClient({ workflows: { digest } }, unusedDb, PUBLIC_URL, logger);
+      expect(logger.info).toHaveBeenCalledWith(
+        "Workflows resolved",
+        expect.objectContaining({ runStore: "platform", deliveries: "platform queue" }),
+      );
+    });
 
     test("prefers the PLATFORM even when the agent also has a database", () => {
       // A deployed guest may carry an author-supplied `DATABASE_URL`. Its runs

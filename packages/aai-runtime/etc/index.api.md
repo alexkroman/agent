@@ -64,6 +64,7 @@ export type AgentRuntime = {
     shutdown(): Promise<void>;
     readonly readyConfig: ReadyConfig;
     readonly workflows?: WorkflowClient | undefined;
+    readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
     readonly sessionEvents?: SessionEventStream | undefined;
 };
 
@@ -511,7 +512,7 @@ export type SessionEventStream = {
 };
 
 // @public
-export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents">;
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow">;
 
 // @public
 export type SessionStartOptions = {

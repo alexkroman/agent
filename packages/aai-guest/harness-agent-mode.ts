@@ -278,6 +278,9 @@ export async function mainAgent(port: number, host: string, token: string): Prom
         startDrain: idle.startDrain,
       },
       workflows: () => state.workflows,
+      // The platform's delivery door reaches the ENGINE through this. A getter,
+      // because reading it is what builds the runtime — see `lazyRuntime`.
+      deliverWorkflow: () => runtime.deliverWorkflow,
       activity,
     }),
   });

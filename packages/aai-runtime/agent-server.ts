@@ -266,7 +266,20 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // has a claim on; it returns false for everything else, so an unclaimed
     // request still reaches the caller's hook.
     request: (req, res, url, method) =>
-      handleWorkflowRequest(surface, req, res, url, method) ||
+      handleWorkflowRequest(
+        surface,
+        req,
+        res,
+        url,
+        method,
+        // The DELIVERY hook, so this door serves the platform's queue message the
+        // same way the guest harness does. No `allowRemote` beside it, which is
+        // deliberate: a self-hosted server has no platform to be vouched for by,
+        // so the door stays refused here and the engine's own in-process timers
+        // are what deliver. What this buys is that the wiring is identical on both
+        // doors, rather than one of them silently lacking a route.
+        omitUndefined({ deliver: runtime.deliverWorkflow, logger: hooks.logger }),
+      ) ||
       (hooks.request?.(req, res, url, method) ?? false),
   });
 

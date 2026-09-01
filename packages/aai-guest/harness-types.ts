@@ -90,6 +90,20 @@ export type GuestRuntime = {
    * belongs to the bundle's SDK, and the harness only hands it back.
    */
   workflows?: unknown;
+  /**
+   * The bundle's `deliverWorkflow` — re-walk one run for a platform delivery.
+   *
+   * OPTIONAL for exactly the reason `workflows` above is: the harness↔bundle
+   * contract is versioned additively, and a bundle built before the replay engine
+   * returns a runtime without it. The delivery door then answers as it did
+   * before — that bundle's runs are the DevKit's and its own world holds their
+   * schedule, so there is nothing here for the platform to drive.
+   *
+   * This is what makes a DEPLOYED run's `ctx.sleep` come back: a guest's own
+   * timers die with a sandbox that self-exits, so the platform's queue holds the
+   * schedule and a due message boots the guest and lands here.
+   */
+  deliverWorkflow?: unknown;
 };
 
 /**

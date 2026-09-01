@@ -54,7 +54,11 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { type FetchHandler, serveFetch } from "./workflow-http-adapter.ts";
-import { dispatchQueueMessage, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
+import {
+  deliverQueueMessage,
+  dispatchQueueMessage,
+  WORKFLOW_QUEUE_PATH,
+} from "./workflow-queue-dispatch.ts";
 import { resolveImportSpecifier } from "./workflow-resolve.ts";
 
 /** Distinct temp file per load — Node's module registry caches by URL. */
@@ -328,9 +332,26 @@ export function handleWorkflowRequest(
      * line that only prints on a fault.
      */
     logger?: Logger | undefined;
+    /**
+     * Re-walk one run, for a delivery arriving on the PLATFORM's door.
+     *
+     * `AgentRuntime.deliverWorkflow`. This is what the door is FOR under the
+     * replay engine: the platform's queue holds a deployed run's schedule,
+     * because that guest's own timers die with a sandbox that self-exits, and a
+     * due message boots it and lands here.
+     *
+     * Optional, and its absence is what a self-hosted server looks like — there
+     * the dispatcher is a `setTimeout` in the same process and no delivery ever
+     * arrives from outside.
+     */
+    deliver?: ((runId: string) => Promise<unknown>) | undefined;
   } = {},
 ): boolean {
-  if (!surface) return false;
+  // The PLATFORM's door is served off `deliver` alone, so an agent with no DevKit
+  // surface still receives its deliveries — which after the engine replaced the
+  // DevKit is every agent. The two queue CALLBACKS below still need a surface,
+  // being the DevKit's own.
+  if (!(surface || opts.deliver)) return false;
 
   // The two queue callbacks are GUEST-INTERNAL, and this is what makes that
   // true rather than merely intended. See the block comment above.
@@ -349,7 +370,7 @@ export function handleWorkflowRequest(
     return true;
   }
 
-  const handler = pickWorkflowHandler(surface, url, method);
+  const handler = pickWorkflowHandler(surface, url, method, opts.deliver);
   if (!handler) return false;
 
   void serveFetch(handler, req, res, {
@@ -370,15 +391,24 @@ export function handleWorkflowRequest(
  * URL was handed to a third party that chooses its own.
  */
 function pickWorkflowHandler(
-  surface: WorkflowSurface,
+  surface: WorkflowSurface | null | undefined,
   url: string,
   method: string,
+  deliver: ((runId: string) => Promise<unknown>) | undefined,
 ): FetchHandler | undefined {
-  if (method === "POST" && url === WORKFLOW_FLOW_PATH) return surface.flow;
-  if (method === "POST" && url === WORKFLOW_STEP_PATH) return surface.step;
-  // The platform's delivery door dispatches to one of the two above by queue
-  // name; its gate has already run in `handleWorkflowRequest`.
-  if (method === "POST" && url === WORKFLOW_QUEUE_PATH) {
-    return (request: Request) => dispatchQueueMessage(surface, request);
+  if (method !== "POST") return;
+  // The platform's delivery door. Its gate has already run in
+  // `handleWorkflowRequest`.
+  //
+  // `deliver` FIRST, because it is the engine's path and the surface's is the
+  // DevKit's: an agent that has both should re-walk its own journal rather than
+  // hand the message to a queue callback that would replay a body the engine
+  // already owns.
+  if (url === WORKFLOW_QUEUE_PATH) {
+    if (deliver) return (request: Request) => deliverQueueMessage(deliver, request);
+    return surface ? (request: Request) => dispatchQueueMessage(surface, request) : undefined;
   }
+  if (!surface) return;
+  if (url === WORKFLOW_FLOW_PATH) return surface.flow;
+  if (url === WORKFLOW_STEP_PATH) return surface.step;
 }

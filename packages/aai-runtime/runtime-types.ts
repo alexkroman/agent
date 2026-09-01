@@ -67,6 +67,30 @@ export type AgentRuntime = {
    */
   readonly workflows?: WorkflowClient | undefined;
   /**
+   * Re-walk one durable run's body, for a delivery that arrived from outside.
+   *
+   * `ctx.workflows.start` hands a run to a DISPATCHER and executes nothing, which
+   * is what lets one engine serve every deployment. Where that dispatcher points
+   * differs: `aai dev` and a self-hosted server run the delivery on the next turn
+   * of the loop, and a deployed guest POSTs the platform's queue, which delivers
+   * back to `POST /workflow-queue` — and THIS is what that route calls.
+   *
+   * It exists on the runtime rather than on {@link workflows} because it is not
+   * something an agent's own code may do. A tool starting or cancelling a run is
+   * ordinary; a tool re-walking one on demand would let a body's own step drive
+   * its own replay, and the engine's idempotence is written for a queue rather
+   * than for a caller.
+   *
+   * Undefined for an agent that declares no workflows, so a delivery to one
+   * answers rather than throwing.
+   *
+   * **A delivery is AT-LEAST-ONCE and this is written for it.** Two overlapping
+   * deliveries of one run are safe because the journal answers a settled step
+   * from itself rather than because anything locks; what they cost is doing the
+   * work twice, which is why a deployment has exactly one dispatcher.
+   */
+  readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
+  /**
    * This runtime's session event stream — what {@link createServer} serves
    * `/session-events/:id` from, and what a resuming session reads its
    * conversation back out of.

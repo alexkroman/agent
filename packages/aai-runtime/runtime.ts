@@ -483,5 +483,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // page and a `curl` reach the same runs a tool does. One client per runtime,
     // not one per surface — two would index correlation keys separately.
     workflows,
+    // The DELIVERY hook, separate from the client on purpose — see its own doc on
+    // `AgentRuntime`. Present only when THIS runtime built the engine: a caller
+    // that supplied its own `workflows` client supplied a client and not an
+    // engine, so there is nothing here to re-walk a run with, and answering a
+    // delivery from someone else's client would be a guess.
+    deliverWorkflow: builtWorkflows?.execute,
   };
 }
