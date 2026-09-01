@@ -35,6 +35,7 @@ import {
   decodeStorageJson,
   encodeStorageJson,
   PLATFORM_ROUTES,
+  storageStatusFor,
 } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
@@ -118,7 +119,30 @@ export function createWorkflowStorageHandler(
 
     return await withReserved(
       adminDb,
-      { log, failure: "storage call failed", detail: { slug, method: call.method } },
+      {
+        log,
+        failure: "storage call failed",
+        detail: { slug, method: call.method },
+        // A world error that no retry can fix must not be answered 503, which is
+        // what `withReserved` gives anything it does not recognise and what the
+        // guest reads as "try again". `RunExpiredError` is the one that bit:
+        // every step abandoned by a failed fan-out writes its result back, the
+        // run is already terminal, and each of those writes burned a retry
+        // budget against a call that could never land. See
+        // `aai-runtime/workflow-storage-status.ts` for the taxonomy, and note
+        // the guest translates these statuses back into the DevKit's own
+        // classes — a status added on one side is inert without the other.
+        //
+        // NOT logged through `failure`: a refused write to a terminal run is
+        // this route working, the same argument `uploads-handler.ts` makes for
+        // its 409.
+        statusFor: (err) => {
+          const status = storageStatusFor(err);
+          return status === undefined
+            ? undefined
+            : new HTTPException(status, { message: "storage call refused", cause: err });
+        },
+      },
       async (sql) => {
         const result = await serve(call, { slug, sql, storage });
         // ENCODED the same way, for the same reason in the other direction:

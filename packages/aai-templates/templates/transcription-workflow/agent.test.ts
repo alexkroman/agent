@@ -31,7 +31,13 @@ import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/batch.ts";
-import { cuttable, normalizeRecording } from "./workflows/normalize.ts";
+import {
+  cuttable,
+  heavierThanNormalized,
+  NORMALIZED_CHANNELS,
+  NORMALIZED_SAMPLE_RATE,
+  normalizeRecording,
+} from "./workflows/normalize.ts";
 import { expectedSegments, planStreamed, probeUpload } from "./workflows/stream.ts";
 import {
   mergeTranscript,
@@ -895,6 +901,59 @@ describe("normalizing the recording", () => {
     // asking the parser rather than asking about the codec.
     const dense = wavFile({ sampleRate: 4_000_000, channels: 8, bitsPerSample: 32 }, 32_000);
     expect(cuttable(dense, 44 + 32_000)).toBe(false);
+  });
+
+  test("48 kHz stereo is cuttable and still too heavy to cut as it is", () => {
+    // The file that broke a real run. It parses, it cuts, and every 92-second
+    // segment of it is 17.7 MB against 2.94 MB normalized — six times the upload
+    // per request, against a sync endpoint that deadlines at 30s. `cuttable`
+    // cannot see that, which is the whole reason there are two predicates.
+    const heavy = wavFile({ sampleRate: 48_000, channels: 2, bitsPerSample: 16 }, 32_000);
+    expect(cuttable(heavy, 44 + 32_000)).toBe(true);
+    expect(heavierThanNormalized(heavy, 44 + 32_000)).toBe(true);
+  });
+
+  test.each([
+    ["a higher rate alone", { sampleRate: 44_100, channels: 1, bitsPerSample: 16 }],
+    ["more channels alone", { sampleRate: 16_000, channels: 2, bitsPerSample: 16 }],
+  ])("%s is enough to convert", (_label, fmt) => {
+    // Either axis on its own, because the segment cost is their PRODUCT — a file
+    // that is only wide or only fast still costs a multiple of the target.
+    expect(heavierThanNormalized(wavFile(fmt, 32_000), 44 + 32_000)).toBe(true);
+  });
+
+  test("the normalize target itself is not heavier than itself", () => {
+    // The predicate has to be false at the fixed point or the fast path is dead
+    // and every recording pays an ffmpeg pass that produces its own input.
+    const target = {
+      sampleRate: NORMALIZED_SAMPLE_RATE,
+      channels: NORMALIZED_CHANNELS,
+      bitsPerSample: 16,
+    };
+    expect(heavierThanNormalized(wavFile(target, 32_000), 44 + 32_000)).toBe(false);
+  });
+
+  test("a rate BELOW the target is left alone rather than upsampled", () => {
+    // 8 kHz telephony audio. Converting it would invent no information and cost a
+    // full pass over the recording, so the comparison is `>` and not `!==`.
+    const narrow = wavFile({ sampleRate: 8000, channels: 1, bitsPerSample: 16 }, 32_000);
+    expect(heavierThanNormalized(narrow, 44 + 32_000)).toBe(false);
+  });
+
+  test("a heavy WAV is CONVERTED, and the line says why rather than lying", async () => {
+    // The report used to read "not a WAV we can cut" on every conversion, which
+    // for this file contradicts the thing the caller uploaded. The conversion
+    // itself is out of tier (it spawns ffmpeg), so what is asserted is that the
+    // fast path was declined and the reason given is the weight.
+    publishRecording(
+      wavFile({ sampleRate: 48_000, channels: 2, bitsPerSample: 16 }, 32_000),
+      "workshop.wav",
+    );
+    const reporter = installStubReporter();
+    await normalizeRecording(UPLOAD_ID).catch(() => undefined);
+    const said = reporter.lines.join(" ");
+    expect(said).not.toContain("already linear-PCM WAV");
+    expect(said).toContain("heavier per second than 16 kHz mono");
   });
 
   test("an already-cuttable recording keeps the id it came in under", async () => {

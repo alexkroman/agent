@@ -47,6 +47,14 @@ export function fakeWorld(
           (...args: unknown[]) => {
             const key = `${name}.${method}`;
             calls.push({ method: key, args });
+            // An `Error` answer is THROWN rather than returned, which is the only
+            // way to reach this route's failure taxonomy: a world raises
+            // `RunExpiredError` for a write to a terminal run, and the status that
+            // becomes is the difference between the guest stopping and the guest
+            // retrying forever. A fake that could only resolve left that whole arm
+            // unreachable from a spec.
+            const declared = answers[key];
+            if (declared instanceof Error) return Promise.reject(declared);
             // `in`, never `??`, so a declared answer of `undefined` means VOID.
             // With the coalescing version this fake could not express a void
             // method at all — every unspecified one answered a truthy `{ ok: true }`

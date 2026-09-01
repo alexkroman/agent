@@ -224,11 +224,13 @@ Results come back in ITEM order however the individual calls settle, so it
 substitutes directly for `Promise.all(items.map(run))` where a bound is
 needed.
 
-A rejection propagates and stops the window taking new items, which is what a
-workflow body wants: the finished siblings are already journaled, so a resume
-replays them for free and re-issues only what is missing. Catching per item to
-salvage a partial result is a decision only the caller can make — do it inside
-`run`.
+A rejection stops the window taking new items and then propagates once the
+calls already in flight have SETTLED — not the instant it happens. That order
+is what a workflow body wants: every sibling that finished is journaled, so a
+resume replays it for free and re-issues only what is missing, where throwing
+immediately would discard siblings that were mid-call and have the resume pay
+for them a second time. Catching per item to salvage a partial result is a
+decision only the caller can make — do it inside `run`.
 
 #### Type Parameters
 
