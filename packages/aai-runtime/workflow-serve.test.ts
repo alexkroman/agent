@@ -41,6 +41,9 @@ async function serving(
   // `vi.spyOn(console, "error")` installed by a test replaces the global
   // afterwards and the captured reference never sees it.
   logger?: Logger,
+  // Stands in for the guest's `ensureRuntime` getter, so a spec can observe WHEN
+  // it is read and make it throw. Absent, `deliver` is handed over directly.
+  onResolve?: () => void,
 ): Promise<{ url: string; port: number; close: () => Promise<void> }> {
   const server = createServer((req, res) => {
     const url = requestPath(req.url);
@@ -50,7 +53,14 @@ async function serving(
         res,
         url,
         req.method ?? "GET",
-        omitUndefined({ allowRemote, logger, deliver }),
+        omitUndefined({
+          allowRemote,
+          logger,
+          deliver: () => {
+            onResolve?.();
+            return deliver;
+          },
+        }),
       )
     ) {
       res.writeHead(404);
@@ -125,6 +135,51 @@ describe("handleWorkflowRequest", () => {
     const s = await serving(deliver);
     expect((await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, { method: "POST" })).status).toBe(401);
     expect(deliver).not.toHaveBeenCalled();
+    await s.close();
+  });
+
+  test("resolves the engine only AFTER the bearer, so an unvouched caller builds nothing", async () => {
+    // The guest supplies `deliver` as a getter over `ensureRuntime`, so reading
+    // it BUILDS the runtime. Evaluated as an argument — which it was — an
+    // unauthenticated request on the public sandbox tunnel forced that work.
+    let resolved = 0;
+    const s = await serving(
+      async () => undefined,
+      undefined,
+      () => false,
+      undefined,
+      () => {
+        resolved++;
+      },
+    );
+    expect((await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, { method: "POST" })).status).toBe(401);
+    expect(resolved).toBe(0);
+    await s.close();
+  });
+
+  test("a resolver that THROWS answers 500 instead of killing the process", async () => {
+    // `ensureRuntime` throws for a bundle that has not loaded or a missing
+    // provider credential. This runs inside `createServer`'s request hook, which
+    // is called with no `try`, so an escaping throw was an `uncaughtException` —
+    // and the guest's guard exits the process, taking every live voice session
+    // with it. Driven through a real server because an ANSWER is the proof.
+    const error = vi.fn();
+    const s = await serving(
+      async () => undefined,
+      undefined,
+      () => true,
+      { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error },
+      () => {
+        throw new Error("Agent not loaded");
+      },
+    );
+    const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, { method: "POST" });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain("Agent not loaded");
+    expect(error).toHaveBeenCalledWith(
+      "Workflow delivery unavailable",
+      expect.objectContaining({ error: "Agent not loaded" }),
+    );
     await s.close();
   });
 

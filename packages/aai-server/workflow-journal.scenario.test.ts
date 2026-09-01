@@ -96,6 +96,10 @@ describeWithPg("the durable workflow journal over a real Postgres", () => {
     await db.close();
   });
 
+  /** A fresh run id per call, for the cases that need several. */
+  let seq = 0;
+  const nextRun = () => `wrun_seq${++seq}`;
+
   /** A fresh run, so each test owns its own rows. */
   async function seed(runId: string, workflow = "digest"): Promise<void> {
     await journal.createRun({
@@ -220,6 +224,49 @@ describeWithPg("the durable workflow journal over a real Postgres", () => {
     const first = await journal.claimSleep("wrun_sleep", "sleep!0", 1000, undefined);
     const again = await journal.claimSleep("wrun_sleep", "sleep!0", 999_999, undefined);
     expect(again.wakeAt).toBe(first.wakeAt);
+  });
+
+  test("releases the run's hook TOKENS when it goes terminal", async () => {
+    // Same claim as the platform store's, and it has to be tested on BOTH: they
+    // are separate SQL against separate schemas, and the memory backend was the
+    // only one that ever released. A derived token — `recap-workflow`'s
+    // `retention:<sessionId>` — otherwise served exactly one run ever.
+    const first = nextRun();
+    await seed(first);
+    await journal.claimHook(first, "hook!0", "retention:sess-1");
+    await journal.setStatus(first, "completed");
+
+    const second = nextRun();
+    await seed(second);
+    await expect(journal.claimHook(second, "hook!0", "retention:sess-1")).resolves.toMatchObject({
+      token: "retention:sess-1",
+    });
+  });
+
+  test("does NOT release while the run is still going", async () => {
+    const runId = nextRun();
+    await seed(runId);
+    await journal.claimHook(runId, "hook!0", `live-${runId}`);
+    await journal.setStatus(runId, "running");
+    const other = nextRun();
+    await seed(other);
+    await expect(journal.claimHook(other, "hook!0", `live-${runId}`)).rejects.toThrow(
+      /already held/,
+    );
+  });
+
+  test("does not release when the compare-and-set REFUSED the move", async () => {
+    // The release rides the same statement as the update, so a refused move must
+    // leave the tokens alone.
+    const runId = nextRun();
+    await seed(runId);
+    await journal.claimHook(runId, "hook!0", `refused-${runId}`);
+    expect(await journal.setStatus(runId, "completed", undefined, ["running"])).toBe(false);
+    const other = nextRun();
+    await seed(other);
+    await expect(journal.claimHook(other, "hook!0", `refused-${runId}`)).rejects.toThrow(
+      /already held/,
+    );
   });
 
   test("a bare wake reaches SLEEPS and not a hook's deadline", async () => {

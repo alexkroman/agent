@@ -226,6 +226,12 @@ export function ensureSessionStateSchema(opts: {
 }): Promise<boolean>;
 
 // @public
+export function ensureWorkflowJournalSchema(opts: {
+    url: string;
+    logger: Logger;
+}): Promise<boolean>;
+
+// @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
     type: T;
 }>;

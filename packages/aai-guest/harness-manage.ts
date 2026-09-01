@@ -207,7 +207,10 @@ export function createAgentRequestHandler(deps: {
         // caller but the platform, so there is nothing to compose with and the
         // ordinary bearer is the honest spelling.
         allowRemote: (r) => verifyBearer(r.headers.authorization, deps.manage.token),
-        ...omitUndefined({ deliver: deps.deliverWorkflow?.() }),
+        // The getter itself, NOT its result: reading it builds the runtime, and
+        // `handleWorkflowRequest` resolves it only after the path and the bearer.
+        // Passed as a value it was evaluated on every request reaching this hook.
+        ...omitUndefined({ deliver: deps.deliverWorkflow }),
       })
     ) {
       deps.activity?.begin(res);

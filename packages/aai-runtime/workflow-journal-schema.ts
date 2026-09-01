@@ -18,6 +18,7 @@
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
+import { createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /**
@@ -115,6 +116,43 @@ export function workflowJournalDdl(schema?: string): string[] {
     CREATE_SLEEPS(q(WORKFLOW_SLEEP_TABLE)),
     CREATE_HOOKS(q(WORKFLOW_HOOK_TABLE)),
   ];
+}
+
+/**
+ * Create the journal's tables on a database this deployment owns.
+ *
+ * **The half that was missing, and its absence broke every self-hosted durable
+ * workflow.** `applyWorkflowJournalDdl` below existed from the start and had NO
+ * production caller — so `aai dev` or a scaffolded `server.mjs` with a
+ * `DATABASE_URL` printed `runStore: "postgres"` at boot and then died on the
+ * first run with `42P01 relation "aai_workflow_runs" does not exist`. The boot
+ * line said durable and nothing was.
+ *
+ * **PUBLIC, for the reason `ensureSessionStateSchema` is** — the operator who
+ * needs it is not ours. `aai dev` could reach the applier through
+ * `@alexkroman1/aai-runtime/internal`; `server.mjs` is a file that SHIPS to a
+ * user and may import only the published surface, so a self-hosted deployment
+ * could not apply the DDL it is contractually responsible for. That module
+ * records the same rule one table over, and this is the second time it has been
+ * the missing half rather than a convenience.
+ *
+ * It opens its OWN single-connection pool and closes it, again mirroring that
+ * function: the caller has no `Db` yet, the runtime builds one from the same URL
+ * afterwards, and a pool held open for six statements would sit against the
+ * connection budget for the life of the process.
+ *
+ * @public
+ */
+export async function ensureWorkflowJournalSchema(opts: {
+  url: string;
+  logger: Logger;
+}): Promise<boolean> {
+  const db = createPostgresDb({ url: opts.url, max: 1 });
+  try {
+    return await applyWorkflowJournalDdl({ db, logger: opts.logger });
+  } finally {
+    await db.close().catch(() => undefined);
+  }
 }
 
 /**

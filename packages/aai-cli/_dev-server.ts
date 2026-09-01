@@ -20,6 +20,7 @@ import {
   createRuntime,
   createServer,
   ensureSessionStateSchema,
+  ensureWorkflowJournalSchema,
   type Logger,
   requiredProviderEnvVars,
   withHostCredentialFallback,
@@ -281,6 +282,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     if (env.DATABASE_URL && !sessionSchemaEnsured) {
       sessionSchemaEnsured = true;
       await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: devLogger });
+      // And the durable-run JOURNAL, which had no creator at all: the boot line
+      // said `runStore: "postgres"` and the first run died on `42P01 relation
+      // "aai_workflow_runs" does not exist`.
+      await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: devLogger });
     }
 
     // What a `"use step"` body reads with `stepEnv()`. The AGENT env, not
@@ -348,7 +353,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // door it answers on when deployed. A path that 404s in dev and 401s in
       // production is the kind of difference a feature is developed against.
       request: (req, res, url, method) =>
-        handleWorkflowRequest(req, res, url, method, omitUndefined({ deliver })),
+        handleWorkflowRequest(req, res, url, method, { deliver: () => deliver }),
       ...clientDirOpt,
     });
   }

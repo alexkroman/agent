@@ -139,7 +139,7 @@ type ExecuteToolCallOptions = {
 export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
     logger?: Logger | undefined;
-    deliver?: ((runId: string) => Promise<unknown>) | undefined;
+    deliver?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
 }): boolean;
 
 // @public

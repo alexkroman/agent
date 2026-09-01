@@ -226,7 +226,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
         // so the door stays refused here and the engine's own in-process timers
         // are what deliver. What this buys is that the wiring is identical on both
         // doors, rather than one of them silently lacking a route.
-        omitUndefined({ deliver: runtime.deliverWorkflow, logger: hooks.logger }),
+        omitUndefined({ deliver: () => runtime.deliverWorkflow, logger: hooks.logger }),
       ) ||
       (hooks.request?.(req, res, url, method) ?? false),
   });

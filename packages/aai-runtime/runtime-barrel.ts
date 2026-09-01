@@ -270,6 +270,9 @@ export {
   type WdkStreamOptions,
   type WorkflowClientOptions,
 } from "./workflow-client.ts";
+// The journal's tables, for the same reason and the same operator: a self-hosted
+// deployment owns its database and `server.mjs` may import only this surface.
+export { ensureWorkflowJournalSchema } from "./workflow-journal-schema.ts";
 export {
   createMemoryKeyStore,
   createPostgresKeyStore,

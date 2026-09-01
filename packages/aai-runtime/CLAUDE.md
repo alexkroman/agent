@@ -945,6 +945,47 @@ answers 503 with `Retry-After: 1`. Three properties are decisions:
   and is checked first. An inbound socket that closed must not get a 503 written
   to it.
 
+## A deployed guest has TWO copies of this package
+
+The harness bundles its own `aai-runtime` and calls `createServer` from it; the
+agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`, so a deployed
+agent runs the SDK version it was tested against
+(`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both are loaded in one
+process, and **anything this package uses to rendezvous between them has to be
+keyed on `globalThis`, not on a module-level value.**
+
+The instance that got this wrong was the workflow run context, and its own doc
+had already stated the failure — "two stores would each see only their own
+`run()` calls, so a `report()` reaching the wrong one would silently find no
+context and degrade to log-only" — while taking a module-level
+`new AsyncLocalStorage()`, which is one store per COPY rather than one per
+process. So the reporter `installWorkflowSupport` published belonged to the
+harness's copy and the run context belonged to the bundle's:
+
+```text
+Workflow: Transcribing 45:00–46:32. {}
+```
+
+The empty context object is the whole symptom, and it reads as cosmetic. It is
+not: the same lookup decides whether a narration line is STREAMED, so a
+fifty-minute transcription reported no progress to a watching page at all, and
+the attempt suffix that tells a reader a fan-out is retrying could never appear.
+Every other signal was healthy, the log line being unconditional.
+
+**It survived the DevKit because the arms this replaced resolved once.**
+`getStepMetadata` and `getWritable` came from the `workflow` package, which the
+guest image resolved from its own `node_modules` and both copies shared.
+Removing those arms made the store's own warning come true — which is the
+general shape of this whole removal: a seam the DevKit's world covered, inherited
+without being enumerated.
+
+The store is `Symbol.for`-keyed now, the same mechanism the step reporter slot
+one module over already used, and for the same reason. **`vi.resetModules()` is
+a second copy**, which is what makes this testable in one process —
+`workflow-run-context.test.ts` loads two and asserts a context entered through
+one is visible through the other. A/B'd: both cross-copy cases fail against the
+module-level form.
+
 ## A callback URL comes from `publicWebhookUrl`, and the route is on `createServer`
 
 `ctx.workflows.publicWebhookUrl(token)` mints the one workflow URL that LEAVES

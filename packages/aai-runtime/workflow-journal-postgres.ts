@@ -77,6 +77,7 @@ import type {
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-types.ts";
+import { isTerminalStatus } from "./workflow-journal-types.ts";
 import { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 
 /** A run row, as the driver hands it back. */
@@ -193,13 +194,33 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       // The COMPARE-AND-SET, and the row count is the answer. `returning run_id`
       // rather than a driver-specific affected-row count, so the check is one
       // the `Db` interface can actually express.
+      //
+      // **The hook release rides the SAME statement, and it is not an
+      // optimisation.** A token is held for exactly as long as its run might
+      // still be answered; the memory backend gives it back the moment the run
+      // goes terminal and these two did not, so a DERIVED token — which is what
+      // the SDK tells authors to use — served exactly one run ever.
+      // `recap-workflow` derives `retention:<sessionId>`, so a second recap in
+      // one session hit `claimHook`'s conflict, which is not a suspend, so the
+      // saga compensated and deleted that transcript too.
+      //
+      // As a CTE rather than a second query because the two must not diverge: a
+      // crash between them leaves a terminal run holding its tokens forever, and
+      // nothing sweeps them here the way `forgetOldTerminalRuns` does in memory.
       const rows = await db.query<{ run_id: string }>(
-        `update ${WORKFLOW_RUN_TABLE}
-         set status = $2,
-             output = case when $4::boolean then $5::text::jsonb else output end,
-             error = coalesce($6, error)
-         where run_id = $1 and ($3::text[] is null or status = any($3::text[]))
-         returning run_id`,
+        `with moved as (
+           update ${WORKFLOW_RUN_TABLE}
+           set status = $2,
+               output = case when $4::boolean then $5::text::jsonb else output end,
+               error = coalesce($6, error)
+           where run_id = $1 and ($3::text[] is null or status = any($3::text[]))
+           returning run_id
+         ), released as (
+           delete from ${WORKFLOW_HOOK_TABLE} h
+            using moved m
+            where h.run_id = m.run_id and $7::boolean
+         )
+         select run_id from moved`,
         [
           runId,
           next,
@@ -207,6 +228,9 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
           patch !== undefined && "output" in patch,
           patch !== undefined && "output" in patch ? encodeStorageJson(patch.output) : null,
           patch?.error?.message ?? null,
+          // Only a TERMINAL move releases. A run going `running` still owns its
+          // tokens — that is the whole point of a hook.
+          isTerminalStatus(next),
         ],
       );
       return rows.length > 0;

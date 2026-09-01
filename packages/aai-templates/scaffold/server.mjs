@@ -20,6 +20,7 @@ import { parseEnv } from "node:util";
 import {
   createAgentServer,
   ensureSessionStateSchema,
+  ensureWorkflowJournalSchema,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
@@ -153,6 +154,10 @@ const publicUrl = process.env.PUBLIC_URL?.trim();
  */
 if (env.DATABASE_URL) {
   await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: console });
+  // And the durable-run journal's, which is a separate set of tables owned by
+  // the same deployment. Without it a project with a `DATABASE_URL` boots
+  // claiming durable runs and fails on the first one.
+  await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: console });
 }
 
 const server = createAgentServer({

@@ -13,6 +13,7 @@ import {
   mockCreateServer,
   mockEnsureApiKey,
   mockEnsureSessionStateSchema,
+  mockEnsureWorkflowJournalSchema,
   mockListen,
   mockResolveServerEnv,
   mockValidateAgentExport,
@@ -283,6 +284,42 @@ describe("startDevServer", () => {
         expect(mockEnsureSessionStateSchema).toHaveBeenCalledWith(
           expect.objectContaining({ url: "postgres://u:p@127.0.0.1:5432/db" }),
         );
+        await cleanup();
+      });
+    });
+
+    test("the JOURNAL's tables are ensured on the same boot", async () => {
+      // `applyWorkflowJournalDdl` existed from the start with NO production
+      // caller, so a project with a `DATABASE_URL` printed `runStore: "postgres"`
+      // and then died on its first run with `42P01 relation
+      // "aai_workflow_runs" does not exist`. The boot line said durable and
+      // nothing was — which is the shape this whole pairing exists to prevent,
+      // one table set over from where it was already solved.
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+        mockResolveServerEnv.mockResolvedValue({
+          ASSEMBLYAI_API_KEY: "k",
+          DATABASE_URL: "postgres://u:p@127.0.0.1:5432/db",
+        });
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        expect(mockEnsureWorkflowJournalSchema).toHaveBeenCalledWith(
+          expect.objectContaining({ url: "postgres://u:p@127.0.0.1:5432/db" }),
+        );
+        await cleanup();
+      });
+    });
+
+    test("neither DDL runs without a DATABASE_URL, there being no database to own", async () => {
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+        mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "k" });
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        expect(mockEnsureSessionStateSchema).not.toHaveBeenCalled();
+        expect(mockEnsureWorkflowJournalSchema).not.toHaveBeenCalled();
         await cleanup();
       });
     });

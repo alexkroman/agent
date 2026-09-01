@@ -60,6 +60,8 @@ export const mockResolveServerEnv = vi.fn();
  * Postgres pool, which is what the tier rules put in `test:scenario`.
  */
 export const mockEnsureSessionStateSchema = vi.fn();
+/** The JOURNAL's DDL, public for the same reason and applied on the same boot. */
+export const mockEnsureWorkflowJournalSchema = vi.fn();
 export const mockValidateAgentExport = vi.fn();
 
 /**
@@ -111,6 +113,7 @@ export function primeDevServerMocks(): void {
     mockEnsureApiKey,
     mockResolveServerEnv,
     mockEnsureSessionStateSchema,
+    mockEnsureWorkflowJournalSchema,
     mockValidateAgentExport,
     mockChokidarWatch,
   ]) {
@@ -192,6 +195,7 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     // stale comment, it is a hard vitest error naming the missing export.
     // Inert here; the specs assert on the CALL.
     ensureSessionStateSchema: mockEnsureSessionStateSchema,
+    ensureWorkflowJournalSchema: mockEnsureWorkflowJournalSchema,
   };
 }
 

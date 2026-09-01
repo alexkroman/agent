@@ -57,13 +57,42 @@ export type RunContext = {
 };
 
 /**
- * The one store for the process.
+ * The one store for the process — and "the process" needs saying carefully.
  *
- * Module-level, which is the only thing that works: two stores would each see
- * only their own `run()` calls, so a `report()` reaching the wrong one would
- * silently find no context and degrade to log-only.
+ * Two stores would each see only their own `run()` calls, so a `report()`
+ * reaching the wrong one finds no context and degrades to log-only. This module
+ * said that and then took a module-level `new AsyncLocalStorage()`, which is one
+ * store per COPY of this package rather than one per process.
+ *
+ * **A deployed guest has two copies**, and that is by design rather than by
+ * accident: the harness bundles its own `aai-runtime` and calls `createServer`
+ * from it, while the agent's runtime is built by the BUNDLE's own
+ * `__aaiCreateRuntime` so a deployed agent runs the SDK version it was tested
+ * against (`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). So the
+ * reporter `installWorkflowSupport` publishes belonged to the harness's copy and
+ * the run context belonged to the bundle's, and every `report()` from inside a
+ * step logged its line with an empty context and streamed NOTHING — a page
+ * watching a fifty-minute transcription saw no progress at all, and the attempt
+ * suffix that tells a reader a fan-out is retrying never appeared.
+ *
+ * It survived the DevKit because the arms this replaced — `getStepMetadata` and
+ * `getWritable` — came from the `workflow` package, which resolved ONCE from the
+ * guest image's `node_modules` and was shared by both copies. Removing them made
+ * the store's own warning come true.
+ *
+ * `Symbol.for` on `globalThis` is the same mechanism the step reporter slot
+ * already uses one module over (`sdk/step-report.ts`), and for the same reason:
+ * a cross-copy rendezvous is the only kind that works here.
  */
-const storage = new AsyncLocalStorage<RunContext>();
+type RunContextSlot = { [RUN_CONTEXT_SLOT]?: AsyncLocalStorage<RunContext> };
+const RUN_CONTEXT_SLOT = Symbol.for("@alexkroman1/aai-runtime.workflowRunContext");
+
+// Not `??=`: an assignment inside an expression is a lint error here, and the
+// two-step form reads as what it is — adopt the store a sibling copy already
+// registered, or be the copy that registers it.
+const slot = globalThis as RunContextSlot;
+slot[RUN_CONTEXT_SLOT] ??= new AsyncLocalStorage<RunContext>();
+const storage: AsyncLocalStorage<RunContext> = slot[RUN_CONTEXT_SLOT];
 
 /**
  * The run in scope, or `undefined` outside one.

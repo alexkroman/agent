@@ -43,6 +43,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { serveFetch } from "./workflow-http-adapter.ts";
 import { deliverQueueMessage, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
@@ -125,25 +126,34 @@ export function handleWorkflowRequest(
      */
     logger?: Logger | undefined;
     /**
-     * Re-walk one run. `AgentRuntime.deliverWorkflow`.
+     * Resolves `AgentRuntime.deliverWorkflow` — re-walk one run.
      *
-     * Absent means this deployment has no engine to deliver to — an agent that
-     * declares no workflows — and the door then DECLINES, so the request falls
-     * through to the rest of the server rather than answering for a feature the
-     * agent does not have.
+     * A THUNK, and that is load-bearing rather than a style. The guest supplies
+     * it as a getter over `ensureRuntime`, so READING it builds the runtime; as a
+     * plain value it was evaluated as an argument to this function, on every
+     * request that reached the hook. Two consequences, both real: an
+     * unauthenticated `GET /` on the public sandbox tunnel forced runtime
+     * construction, and `ensureRuntime` THROWS for a bundle that has not loaded
+     * or a missing provider credential — into `createServer`'s request hook,
+     * which is called with no `try`, so it surfaced as an `uncaughtException` and
+     * the guest's guard exited the process, taking every live voice session with
+     * it.
+     *
+     * So it is resolved LAST: after the path, after the method, and after the
+     * bearer. `createWorkflowApi`'s `engine` getter has had this shape all along.
+     *
+     * Resolving to `undefined` means this deployment has no engine — an agent
+     * that declares no workflows — and the door then DECLINES, so the request
+     * falls through rather than answering for a feature the agent lacks.
      */
-    deliver?: ((runId: string) => Promise<unknown>) | undefined;
+    deliver?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
   } = {},
 ): boolean {
   if (method !== "POST" || url !== WORKFLOW_QUEUE_PATH) return false;
-  const deliver = opts.deliver;
-  // Nothing to deliver to. DECLINED rather than answered: this is
-  // indistinguishable from an agent that declares no workflows, and claiming the
-  // request would shadow whatever else the host serves on that path.
-  if (!deliver) return false;
 
-  // HOST-ONLY: a caller the composition does not vouch for is refused even on
-  // loopback. Fails closed when no predicate was supplied, which is every
+  // HOST-ONLY, and checked BEFORE the engine is resolved: resolving builds the
+  // runtime in a guest, which is work an unauthenticated caller must not be able
+  // to trigger. Fails closed when no predicate was supplied, which is every
   // composition that has no platform.
   if (!opts.allowRemote?.(req)) {
     res.writeHead(401, { "Content-Type": "application/json" });
@@ -151,7 +161,28 @@ export function handleWorkflowRequest(
     return true;
   }
 
-  void serveFetch((request: Request) => deliverQueueMessage(deliver, request), req, res, {
+  // A resolver that THREW could not build the runtime — a misconfigured agent
+  // rather than one without workflows — so it answers 500 with the reason. The
+  // catch is the point: this runs inside `createServer`'s request hook, which is
+  // called with no `try`, so an escaping throw is an `uncaughtException` and the
+  // guest's guard exits the process mid-call.
+  let deliver: ((runId: string) => Promise<unknown>) | undefined;
+  try {
+    deliver = opts.deliver?.();
+  } catch (err: unknown) {
+    const logger = opts.logger ?? consoleLogger;
+    logger.error("Workflow delivery unavailable", { error: errorMessage(err) });
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `Workflow delivery unavailable: ${errorMessage(err)}` }));
+    return true;
+  }
+  // Nothing to deliver to. DECLINED rather than answered: this is
+  // indistinguishable from an agent that declares no workflows, and claiming the
+  // request would shadow whatever else the host serves on that path.
+  if (!deliver) return false;
+
+  const run = deliver;
+  void serveFetch((request: Request) => deliverQueueMessage(run, request), req, res, {
     logger: opts.logger ?? consoleLogger,
     label: "Workflow delivery",
     // The platform RETRIES a 5xx, which is how a guest that was up and could not

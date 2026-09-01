@@ -265,6 +265,56 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
     expect(JSON.parse(String(after.payload))).toEqual({ approved: true });
   });
 
+  test("releases the run's hook TOKENS when it goes terminal", async () => {
+    // A derived token is what the SDK tells authors to use — `recap-workflow`
+    // derives `retention:<sessionId>` — so a token held past its run served
+    // exactly one run ever: the second recap in a session hit `claimHook`'s
+    // conflict, which is not a suspend, so the saga compensated and deleted the
+    // transcript it had just made. Only the memory backend released; both SQL
+    // ones did not.
+    const first = nextRun();
+    await seed(first);
+    await journal.claimHook(sql, SLUG, first, "hook!0", "retention:sess-1");
+    await journal.setStatus(sql, SLUG, first, "completed", undefined, undefined);
+
+    // The same DERIVED token, a second run, same session.
+    const second = nextRun();
+    await seed(second);
+    await expect(
+      journal.claimHook(sql, SLUG, second, "hook!0", "retention:sess-1"),
+    ).resolves.toMatchObject({ token: "retention:sess-1" });
+  });
+
+  test("does NOT release while the run is still going", async () => {
+    // A hook's whole point is outliving the step that opened it.
+    const runId = nextRun();
+    await seed(runId);
+    await journal.claimHook(sql, SLUG, runId, "hook!0", `live-${runId}`);
+    await journal.setStatus(sql, SLUG, runId, "running", undefined, undefined);
+    const other = nextRun();
+    await seed(other);
+    await expect(journal.claimHook(sql, SLUG, other, "hook!0", `live-${runId}`)).rejects.toThrow(
+      /already held/,
+    );
+  });
+
+  test("does not release when the compare-and-set REFUSED the move", async () => {
+    // The release rides the same statement as the update, so a refused move must
+    // leave the tokens alone — otherwise a worker that had not noticed a cancel
+    // frees a token the run is still parked on.
+    const runId = nextRun();
+    await seed(runId);
+    await journal.claimHook(sql, SLUG, runId, "hook!0", `refused-${runId}`);
+    expect(await journal.setStatus(sql, SLUG, runId, "completed", undefined, ["running"])).toBe(
+      false,
+    );
+    const other = nextRun();
+    await seed(other);
+    await expect(journal.claimHook(sql, SLUG, other, "hook!0", `refused-${runId}`)).rejects.toThrow(
+      /already held/,
+    );
+  });
+
   test("a CLOSED window refuses a late delivery", async () => {
     const runId = nextRun();
     await seed(runId);

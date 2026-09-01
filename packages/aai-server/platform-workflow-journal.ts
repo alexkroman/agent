@@ -56,6 +56,16 @@
 
 import type { SqlExec } from "./secret-store.ts";
 
+/**
+ * Statuses nothing will change again.
+ *
+ * Spelled here rather than imported from the runtime's `TERMINAL_WORKFLOW_STATUSES`
+ * because this module takes `status` as a plain `string` — it is the platform's
+ * side of an HTTP boundary, where the value arrived over the wire and the union is
+ * the runtime's to police. `platform-workflow-journal.test.ts` pins the two equal.
+ */
+const TERMINAL = new Set(["completed", "failed", "cancelled"]);
+
 /** Where the journal lives. One schema-qualified name per table, spelled once. */
 const RUNS = "aai_platform.workflow_runs";
 const STEPS = "aai_platform.workflow_steps";
@@ -213,15 +223,43 @@ export async function setStatus(
   result: { output?: string | undefined; error?: string | undefined } | undefined,
   expect: readonly string[] | undefined,
 ): Promise<boolean> {
+  // **The hook release rides the SAME statement.** A token is held for exactly as
+  // long as its run might still be answered; the memory backend gives it back the
+  // moment the run goes terminal and this did not, so a DERIVED token — which is
+  // what the SDK tells authors to use — served exactly one run ever.
+  // `recap-workflow` derives `retention:<sessionId>`, so a second recap in one
+  // session hit `claimHook`'s conflict, which is not a suspend, so the saga
+  // compensated and deleted that transcript too.
+  //
+  // A CTE rather than a second query because the two must not diverge: a crash
+  // between them leaves a terminal run holding its tokens forever, and nothing
+  // here sweeps them the way `forgetOldTerminalRuns` does in memory.
   const rows = await sql(
-    `update ${RUNS}
-        set status = $3,
-            output = coalesce($4::text::jsonb, output),
-            error = coalesce($5, error)
-      where slug = $1 and run_id = $2
-        and ($6::text[] is null or status = any($6::text[]))
-      returning run_id`,
-    [slug, runId, status, result?.output ?? null, result?.error ?? null, expect ?? null],
+    `with moved as (
+       update ${RUNS}
+          set status = $3,
+              output = coalesce($4::text::jsonb, output),
+              error = coalesce($5, error)
+        where slug = $1 and run_id = $2
+          and ($6::text[] is null or status = any($6::text[]))
+        returning run_id
+     ), released as (
+       delete from ${HOOKS} h
+        using moved m
+        where h.slug = $1 and h.run_id = m.run_id and $7::boolean
+     )
+     select run_id from moved`,
+    [
+      slug,
+      runId,
+      status,
+      result?.output ?? null,
+      result?.error ?? null,
+      expect ?? null,
+      // Only a TERMINAL move releases. A run going `running` still owns its
+      // tokens — that is the whole point of a hook.
+      TERMINAL.has(status),
+    ],
   );
   return rows.length > 0;
 }

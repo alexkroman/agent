@@ -7673,6 +7673,12 @@ export function ensureSessionStateSchema(opts: {
 }): Promise<boolean>;
 
 // @public
+export function ensureWorkflowJournalSchema(opts: {
+    url: string;
+    logger: Logger;
+}): Promise<boolean>;
+
+// @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
     type: T;
 }>;
@@ -8387,7 +8393,7 @@ type ExecuteToolCallOptions = {
 export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
     logger?: Logger | undefined;
-    deliver?: ((runId: string) => Promise<unknown>) | undefined;
+    deliver?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
 }): boolean;
 
 // @public

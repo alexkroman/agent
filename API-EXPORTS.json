@@ -987,6 +987,7 @@
     "createToolCallRepair",
     "decliningRuntime",
     "ensureSessionStateSchema",
+    "ensureWorkflowJournalSchema",
     "partKey",
     "partsOf",
     "registerLlmKind",
