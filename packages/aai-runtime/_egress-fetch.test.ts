@@ -59,7 +59,7 @@ describe("egressFetch", () => {
   test("LEAVES undici's timeouts alone, unlike the step pool", async () => {
     await fresh();
     await egressFetch("https://platform.test/a");
-    // The step pool sets both to 0 because a step owns its own deadline. Here the
+    // The step pool RAISES both, its bodies being potentially gigabytes. Here the
     // callers bound the REQUEST and nothing bounds draining the body afterwards,
     // which is exactly what a window `read` does — so undici's body-inactivity
     // timeout is the only limit that path has, and turning it off would remove it.

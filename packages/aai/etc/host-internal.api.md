@@ -1123,6 +1123,9 @@ type StartOptions = {
 export const STEP_FETCH_CONNECTIONS = 64;
 
 // @internal
+export const STEP_FETCH_INACTIVITY_MS = 600000;
+
+// @internal
 export const STEP_FETCH_KEEP_ALIVE_MS = 30000;
 
 // @internal

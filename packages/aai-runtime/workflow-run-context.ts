@@ -44,6 +44,23 @@ export type RunContext = {
         key: string;
         /** 1-based, and it counts attempts burned by failed boots. */
         attempt: number;
+        /**
+         * The WALK's signal, aborted when this delivery is cancelled or the
+         * caller hangs up — `undefined` for a walk that has none (a spec).
+         *
+         * Here rather than as a parameter to the step body for the reason the
+         * module doc gives about `report()`: `stepFetch` is reached from deep
+         * inside a step's own helpers, and threading a signal down to it would
+         * mean every intermediate function taking one it does not use. It is the
+         * SAME signal `attemptLoop` classifies an abort against, which is what
+         * makes an aborted request read as "the walk is over" rather than as the
+         * step's own failure.
+         *
+         * A cancel could not reach a step's I/O at all before this: the body
+         * received no signal, so a cancelled run went on uploading a recording
+         * nobody was waiting for until the process died.
+         */
+        signal?: AbortSignal | undefined;
       }
     | undefined;
   /**

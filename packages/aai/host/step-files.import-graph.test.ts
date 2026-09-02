@@ -112,6 +112,9 @@ describe("step-files.ts itself", () => {
     expect(direct.sort(byCodeUnit)).toEqual([
       "../sdk/format.ts",
       "../sdk/is-record.ts",
+      // The completeness gate, whose own graph is `step-uploads.ts` and nothing
+      // else — so it costs this module no new leaf.
+      "../sdk/step-uploads-complete.ts",
       "../sdk/step-uploads-write.ts",
       "../sdk/step-uploads.ts",
     ]);

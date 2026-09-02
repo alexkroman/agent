@@ -232,3 +232,118 @@ describe("a run is walked once at a time", () => {
     expect(deliver).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * A parked delivery has to SAY SO, which for a long time it did not.
+ *
+ * The park is correct and it is silent, and silence is what a wedge looks like.
+ * The measured case: a healthy 660.8 MB provider upload settled `ok` on its
+ * first attempt after **3m21s** on one run and **15m00s** on the run before it,
+ * and between the step's own opening line and the run finishing nothing was
+ * emitted anywhere — not the guest log, not the run's event stream, not the
+ * journal. Its author waited fourteen minutes, read the run as wedged, and
+ * cancelled it 13 seconds before the upload landed.
+ *
+ * So the claim under test is not "does the door park" (above) but "can a reader
+ * tell a slow run from a stuck one", and the answer is a DURATION. A park at 61s
+ * is an ordinary slow step; a park at 900s is one an operator wants to know
+ * about, and nothing but this line distinguishes them.
+ */
+describe("a park is reported, with how long the walk has been running", () => {
+  const post = (queueName: string) =>
+    new Request("http://guest.local/workflow-queue", {
+      method: "POST",
+      headers: { "x-vqs-queue-name": queueName },
+    });
+
+  /** The `Logger` shape is every level required — see `runtime-config.ts`. */
+  const fakeLogger = () => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  });
+
+  test("names the run and the elapsed walk time, at warn", async () => {
+    const first = Promise.withResolvers<string>();
+    const deliver = vi.fn(async () => await first.promise);
+    const logger = fakeLogger();
+
+    // The clock is moved between the two calls so the reported duration is a
+    // real subtraction rather than a zero that a hardcoded field would pass.
+    // A `Date.now` spy rather than fake timers: there is no timer in this path
+    // (the door awaits a promise), and `restoreMocks` undoes a spy for free
+    // where `useFakeTimers` would owe a teardown.
+    const base = 1_700_000_000_000;
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(base)
+      .mockReturnValue(base + 125_000);
+
+    const walking = deliverQueueMessage(deliver, post("__wkf_workflow_report_1"), { logger });
+    await deliverQueueMessage(deliver, post("__wkf_workflow_report_1"), { logger });
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("parked"),
+      expect.objectContaining({ runId: "report_1", walkingForSeconds: 125 }),
+    );
+    // `warn` and not `error`: nothing has failed. A run in this state is
+    // healthy, which is the whole reason the line has to carry a number.
+    expect(logger.error).not.toHaveBeenCalled();
+
+    first.resolve("completed");
+    await walking;
+  });
+
+  test("says nothing when no delivery is parked, so a healthy run stays quiet", async () => {
+    // A delivery is only ever re-presented after `QUEUE_DELIVERY_TIMEOUT_MS`
+    // has closed the previous one's response, so the first park of any run is
+    // ~61s into its walk and a healthy run parks ZERO times. That is what makes
+    // a line per park affordable, and a line on the happy path would undo it.
+    const deliver = vi.fn(async () => "completed");
+    const logger = fakeLogger();
+    await deliverQueueMessage(deliver, post("__wkf_workflow_quiet_2"), { logger });
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("a walk that SETTLED parks nothing further, so the report cannot run forever", async () => {
+    // The in-flight entry is what a park is answered from, so a leaked one is a
+    // PERMANENT park — every later delivery told "still busy" for a walk that
+    // ended, which is the silent-wedge shape this door's `finally` exists to
+    // prevent. Asserted behaviourally rather than by exposing the map: "the
+    // entry is gone" and "the next delivery WALKS" are the same claim, and only
+    // one of them adds surface to `/internal`.
+    const deliver = vi.fn(async () => "completed");
+    const logger = fakeLogger();
+    await deliverQueueMessage(deliver, post("__wkf_workflow_settled_3"), { logger });
+    await deliverQueueMessage(deliver, post("__wkf_workflow_settled_3"), { logger });
+    expect(deliver).toHaveBeenCalledTimes(2);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("a walk that THREW parks nothing further either", async () => {
+    // The same invariant on the path that skips every non-`finally` cleanup.
+    const deliver = vi.fn(async () => {
+      throw new Error("journal unreachable");
+    });
+    const logger = fakeLogger();
+    await expect(
+      deliverQueueMessage(deliver, post("__wkf_workflow_threw_3"), { logger }),
+    ).rejects.toThrow(/journal unreachable/);
+    await expect(
+      deliverQueueMessage(deliver, post("__wkf_workflow_threw_3"), { logger }),
+    ).rejects.toThrow(/journal unreachable/);
+    expect(deliver).toHaveBeenCalledTimes(2);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("a logger is optional, so a caller without one still parks correctly", async () => {
+    const first = Promise.withResolvers<string>();
+    const deliver = vi.fn(async () => await first.promise);
+    const walking = deliverQueueMessage(deliver, post("__wkf_workflow_nolog_4"));
+    const parked = await deliverQueueMessage(deliver, post("__wkf_workflow_nolog_4"));
+    expect(await parked.json()).toEqual({ timeoutSeconds: QUEUE_DELIVERY_BUSY_SECONDS });
+    first.resolve("completed");
+    await walking;
+  });
+});

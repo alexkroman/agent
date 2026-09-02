@@ -63,7 +63,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
-import { pcmDurationMs, report, uploadInfo } from "@alexkroman1/aai/step";
+import { pcmDurationMs, report, requireCompleteUpload } from "@alexkroman1/aai/step";
 import { throwFatalStepError, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration, plural } from "@alexkroman1/aai/utils";
@@ -132,7 +132,9 @@ export type Ingested = {
 // nothing. Removing them is what took the file under the floor: a directive
 // propping a coverage number up is the least useful statement in the tree.
 export async function ingestRecording(uploadId: string): Promise<Ingested> {
-  const stored = await uploadInfo(uploadId);
+  // `requireCompleteUpload`, not `uploadInfo`: `size` is the readable PREFIX, so
+  // an upload still arriving would be copied short and levelled as the whole call.
+  const stored = await requireCompleteUpload(uploadId);
   await report(`Reading ${stored.name || uploadId} (${formatBytes(stored.size)}).`);
 
   return await withTempDir(

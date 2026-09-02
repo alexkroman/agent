@@ -333,8 +333,10 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
     tries++;
     try {
       // Inside the step's own context, so a `report()` from the body or any
-      // helper it calls is attributed to THIS step and this attempt.
-      const output = await withStepContext({ name, key, attempt: tries }, async () => fn());
+      // helper it calls is attributed to THIS step and this attempt — and so
+      // that `stepFetch` can reach the WALK's signal without the body having to
+      // thread one down to it. See `RunContext["step"].signal`.
+      const output = await withStepContext({ name, key, attempt: tries, signal }, async () => fn());
       // No release: the entry below is authoritative from now on, so every later
       // walk answers from `readSteps` and nothing reads the charge again. That
       // is what keeps the happy path at one journal round trip per step.

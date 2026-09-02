@@ -70,6 +70,7 @@ import {
   mapConcurrent,
   readUpload,
   report,
+  requireCompleteUpload,
   uploadInfo,
 } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
@@ -307,8 +308,14 @@ export async function splitRecording(uploadId: string): Promise<{
   segments: Segment[];
   durationMs: number;
 }> {
+  // The whole file, refused if it is still arriving. `info.size` is the readable
+  // PREFIX, and it is what the segment plan's width is derived from — so against a
+  // half-arrived recording this planned a fan-out over the first half and the run
+  // returned a transcript of it, reporting success. `stream.ts` is the flow for a
+  // recording that is still landing; this one wants all of it.
+  const stored = await requireCompleteUpload(uploadId);
   const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
-  const format = fatalOnUnsupported(() => parseWav(head.bytes, head.info.size));
+  const format = fatalOnUnsupported(() => parseWav(head.bytes, stored.size));
   const segments = fatalOnUnsupported(() => planSegments(format));
   const durationMs = segments.at(-1)?.endMs ?? 0;
 

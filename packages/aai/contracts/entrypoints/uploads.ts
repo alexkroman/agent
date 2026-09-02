@@ -25,6 +25,12 @@
 export {
   type ReadUploadOptions,
   readUpload,
+  // The other half of the `size`-versus-`complete` promise, and it belongs to
+  // THIS capability rather than to `transcribe` or `step-files`: it is a claim
+  // about the store — `size` is the readable prefix — and both of those readers
+  // got it wrong independently before there was one place to get it right.
+  requireCompleteUpload,
+  UploadIncompleteError,
   type UploadInfo,
   type UploadRange,
   type UploadSlice,

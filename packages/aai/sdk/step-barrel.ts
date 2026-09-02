@@ -131,6 +131,7 @@ export {
   type UploadSlice,
   uploadInfo,
 } from "./step-uploads.ts";
+export { requireCompleteUpload, UploadIncompleteError } from "./step-uploads-complete.ts";
 export { type WriteUploadOptions, writeUpload } from "./step-uploads-write.ts";
 export { stepWebhookUrl } from "./step-webhook.ts";
 export { encodeWav, type PcmFormat, pcmDurationMs, WAV_HEADER_BYTES } from "./wav.ts";

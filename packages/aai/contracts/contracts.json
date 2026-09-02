@@ -181,9 +181,11 @@
     "dropped": {}
   },
   "uploads": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Purely additive — `requireCompleteUpload` and `UploadIncompleteError` join the surface and every epoch-1 caller still compiles. Dropped rather than retained on the same grounds as `aai-runtime:db` epoch 1: there is no external consumer to keep an epoch-1 template for, and no `uploads` example exists to extend, so a retain would oblige a frozen fixture exercising all eight names to evidence a compatibility nobody is relying on."
+    }
   },
   "utils": {
     "current": 1,

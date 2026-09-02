@@ -269,11 +269,13 @@ export function handleWorkflowRequest(
   // catch is the point: this runs inside `createServer`'s request hook, which is
   // called with no `try`, so an escaping throw is an `uncaughtException` and the
   // guest's guard exits the process mid-call.
+  // Resolved once, above the try: three readers now — the resolver's own
+  // failure, `serveFetch`, and the delivery door's PARK report.
+  const logger = opts.logger ?? consoleLogger;
   let deliver: ((runId: string) => Promise<unknown>) | undefined;
   try {
     deliver = opts.deliver?.();
   } catch (err: unknown) {
-    const logger = opts.logger ?? consoleLogger;
     logger.error("Workflow delivery unavailable", { error: errorMessage(err) });
     sendJson(res, 500, { error: `Workflow delivery unavailable: ${errorMessage(err)}` });
     return true;
@@ -284,8 +286,8 @@ export function handleWorkflowRequest(
   if (!deliver) return false;
 
   const run = deliver;
-  void serveFetch((request: Request) => deliverQueueMessage(run, request), req, res, {
-    logger: opts.logger ?? consoleLogger,
+  void serveFetch((request: Request) => deliverQueueMessage(run, request, { logger }), req, res, {
+    logger,
     label: "Workflow delivery",
     // The platform RETRIES a 5xx, which is how a guest that was up and could not
     // finish gets another attempt. An unroutable message is a 400 decided inside

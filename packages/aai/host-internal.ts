@@ -279,6 +279,7 @@ export {
 } from "./sdk/step-fetch.ts";
 export {
   STEP_FETCH_CONNECTIONS,
+  STEP_FETCH_INACTIVITY_MS,
   STEP_FETCH_KEEP_ALIVE_MS,
   STEP_FETCH_PIPELINING,
 } from "./sdk/step-fetch-constants.ts";

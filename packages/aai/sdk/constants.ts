@@ -347,6 +347,7 @@ export { HEARD_AUDIO_LAG_MS, PIPELINE_PLAYBACK_GRACE_MS } from "./playback-timin
 export { ASSEMBLYAI_S2S_SAMPLE_RATE } from "./s2s-constants.ts";
 export {
   STEP_FETCH_CONNECTIONS,
+  STEP_FETCH_INACTIVITY_MS,
   STEP_FETCH_KEEP_ALIVE_MS,
   STEP_FETCH_PIPELINING,
 } from "./step-fetch-constants.ts";

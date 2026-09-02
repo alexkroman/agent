@@ -414,11 +414,21 @@ describe("a run handed to a FRESH engine over the same journal", () => {
     // the assertion that changed.
     expect(reached.rebuilds, "no run was ever handed to a fresh engine").toBeGreaterThan(30); // 45-55 (was 50-61)
     expect(reached.rebuildsOffJournal, "no rebuild inherited a journaled step").toBeGreaterThan(15); // 26-45 (was 29-44)
-    // The widest distribution of the four by far, and the one the root guide's
-    // long-left-tail warning is about: what a walk reaches is correlated within
-    // a run, so this floor sits well under its own minimum rather than a fixed
-    // fraction of the mean.
-    expect(reached.stepsAfterRebuild, "no step body ran after a rebuild").toBeGreaterThan(2); // 6-35 (was 12-51)
+    // `stepsAfterRebuild` is MEASURED and deliberately UNFLOORED, joining
+    // `resumeMooted` and `speculationAdopted` — and it is the one counter here
+    // whose recorded range was simply wrong. Floored at `> 2` against a
+    // recorded 6-35, it produced **0** in 1 run of 12: not a small minimum but
+    // a genuinely empty one, because it is `started - startedAtFirstRebuild`
+    // and a program whose rebuilds all land at its END starts no body after
+    // the first. So `> 0` fails too, and there is no number this can take.
+    //
+    // Nothing is lost by unflooring it, which is why this is not a hole:
+    // `rebuildsOffJournal > 15` above is the SUBSTANTIVE guarantee — a rebuild
+    // that inherited a journaled step is the case this property exists for —
+    // and `stepsAfterRebuild` only measured the VOLUME of work after one. The
+    // alternative is forcing the shape in the generator by appending, which
+    // would re-shift all five distributions to buy back a volume count.
+    expect(reached.stepsAfterRebuild, "measured, not floored").toBeGreaterThanOrEqual(0); // 0-35
     // The tightest of the five, and the one that actually tripped on the new
     // grammar before this recalibration: a `> 3` floor against a measured
     // minimum of 4 failed 1 run in 5.

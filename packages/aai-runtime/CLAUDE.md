@@ -1169,11 +1169,18 @@ Four things about the pool worth not rediscovering:
   bearer. So it is a lazy singleton, and `closeEgressFetch()` RESETS it rather
   than poisoning it: a caller holding `egressFetch` across a close gets a fresh
   pool on its next request.
-- **undici's timeouts are LEFT ALONE, deliberately unlike the step pool**, which
-  turns them off because a step owns its own deadline. Here the callers bound the
-  REQUEST (`BYTE_OP_TIMEOUT_MS`, `PlatformCall.timeoutMs`) and nothing bounds
-  draining the body afterwards — exactly what a window `read` does — so undici's
-  body-inactivity timeout is the only limit that path has.
+- **undici's timeouts are LEFT ALONE at their 300s defaults, which are TIGHTER
+  than the step pool's.** Here the callers bound the REQUEST
+  (`BYTE_OP_TIMEOUT_MS`, `PlatformCall.timeoutMs`) and nothing bounds draining
+  the body afterwards — exactly what a window `read` does — so undici's
+  body-inactivity timeout is the only limit that path has. The step pool RAISES
+  both to `STEP_FETCH_INACTIVITY_MS` (10 min) because a step's body can be
+  gigabytes; it had them OFF, on an argument half of which ("or the DevKit's step
+  budget") was retired with the DevKit, so a user-written `stepFetch` passing no
+  signal was bounded by no layer at all. Both undici timers are
+  inactivity/phase timers rather than total-duration ones, which is what lets one
+  number serve a JSON call and a 660 MiB upload alike — the constant carries the
+  undici mechanics and the arithmetic.
 - **The `fetch?:` seam stays optional.** Only the DEFAULT was the bug, and making
   it required is a breaking change: `createHttpUploadBlobs` is a published export
   a self-hoster calls.

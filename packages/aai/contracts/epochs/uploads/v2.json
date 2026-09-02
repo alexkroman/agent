@@ -1,0 +1,18 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "uploads",
+  "epoch": 2,
+  "sha256": "53cb6fb9248101e72fb8e3978eab4a492f190bba766aba0ac9d06791cc6f25cb",
+  "exports": [
+    "ReadUploadOptions",
+    "UploadIncompleteError",
+    "UploadInfo",
+    "UploadRange",
+    "UploadSlice",
+    "WriteUploadOptions",
+    "readUpload",
+    "requireCompleteUpload",
+    "uploadInfo",
+    "writeUpload"
+  ]
+}

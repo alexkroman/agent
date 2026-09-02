@@ -295,6 +295,7 @@
     "TranscribeSubmitOptions",
     "TranscribeSyncOptions",
     "Transcript",
+    "UploadIncompleteError",
     "UploadInfo",
     "UploadSlice",
     "WAV_HEADER_BYTES",

@@ -462,6 +462,51 @@ One line of progress, as a reader should see it. Prefer a
 
 ***
 
+### requireCompleteUpload()
+
+```ts
+function requireCompleteUpload(id: string): Promise<UploadInfo>;
+```
+
+One upload's metadata, refused unless every byte is in.
+
+The read for a step that consumes a file END TO END — an upload to a provider,
+a copy to local disk, a length a segment plan is computed from. A step that
+works on a WINDOW wants [uploadInfo](#uploadinfo-1) and clamping, which is what
+`readUpload` already does.
+
+#### Parameters
+
+##### id
+
+`string`
+
+#### Returns
+
+`Promise`\<[`UploadInfo`](#uploadinfo)\>
+
+#### Example
+
+```ts
+import { requireCompleteUpload } from "@alexkroman1/aai/step";
+
+export async function wholeFileSize(uploadId: string): Promise<number> {
+  const stored = await requireCompleteUpload(uploadId);
+  return stored.size;
+}
+```
+
+#### Throws
+
+when the upload is still arriving — see this
+  module's doc for why that is a refusal rather than a wait.
+
+#### Throws
+
+when the id names no upload, exactly as [uploadInfo](#uploadinfo-1) does.
+
+***
+
 ### requireStepEnv()
 
 ```ts
@@ -1056,6 +1101,13 @@ body is an async iterable of windows — which `stepFetch` accepts precisely
 for this. Nothing is buffered beyond one window, and one window of READ-AHEAD
 keeps the store and the socket busy at the same time.
 
+**The upload has to be FINISHED, and that is checked rather than assumed.**
+`UploadInfo.size` is the contiguous readable prefix, so reading it off a
+still-arriving recording used to upload only what had landed and transcribe a
+truncated file — a plausible wrong answer with no error anywhere.
+`requireCompleteUpload` refuses instead, BEFORE the expensive leg; its module
+doc carries why that is a refusal rather than a wait.
+
 #### Parameters
 
 ##### uploadId
@@ -1063,7 +1115,7 @@ keeps the store and the socket busy at the same time.
 `string`
 
 An upload in the agent's own store, as `writeUpload` or a
-  page's `api.upload(file)` produced.
+  page's `api.upload(file)` produced. Must be complete.
 
 ##### opts?
 
@@ -1074,6 +1126,10 @@ An upload in the agent's own store, as `writeUpload` or a
 `Promise`\<\{
   `audioUrl`: `string`;
 \}\>
+
+#### Throws
+
+when the upload is still arriving.
 
 #### Throws
 
@@ -1555,6 +1611,71 @@ readonly status: number | undefined;
 ```
 
 HTTP status the endpoint answered, when it answered one.
+
+***
+
+### UploadIncompleteError
+
+An upload that is still arriving, where the whole file was needed.
+
+`retryable: false`, and that is the interesting field: `toStepError`
+(`@alexkroman1/aai/step-errors`) recognises a carried verdict STRUCTURALLY, so
+a step ending `.catch(throwStepError)` turns this into a `FatalError` and the
+run stops on the spot with this sentence. Which is right — the default retry
+cadence is ~0 ms, so three attempts would spend the whole budget of the most
+expensive step in the flow inside a millisecond and still find the upload
+unfinished. What has to change is the run's ORDER, and no number of attempts
+changes that.
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new UploadIncompleteError(message: string, stored: number): UploadIncompleteError;
+```
+
+###### Parameters
+
+###### message
+
+`string`
+
+###### stored
+
+`number`
+
+###### Returns
+
+[`UploadIncompleteError`](#uploadincompleteerror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+#### Properties
+
+##### retryable
+
+```ts
+readonly retryable: false = false;
+```
+
+Whether asking again could plausibly answer differently. It cannot.
+
+##### stored
+
+```ts
+readonly stored: number;
+```
+
+Bytes readable when the check ran — the PREFIX, never a total.
 
 ## Type Aliases
 

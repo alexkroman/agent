@@ -93,7 +93,8 @@ import {
   transcribeSignal,
 } from "./_transcribe-shared.ts";
 import { stepFetch } from "./step-fetch.ts";
-import { readUpload, uploadInfo } from "./step-uploads.ts";
+import { readUpload } from "./step-uploads.ts";
+import { requireCompleteUpload } from "./step-uploads-complete.ts";
 
 /** The async API's base. */
 export const TRANSCRIBE_API = "https://api.assemblyai.com";
@@ -185,9 +186,17 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
  * for this. Nothing is buffered beyond one window, and one window of READ-AHEAD
  * keeps the store and the socket busy at the same time.
  *
- * @param uploadId - An upload in the agent's own store, as `writeUpload` or a
- *   page's `api.upload(file)` produced.
+ * **The upload has to be FINISHED, and that is checked rather than assumed.**
+ * `UploadInfo.size` is the contiguous readable prefix, so reading it off a
+ * still-arriving recording used to upload only what had landed and transcribe a
+ * truncated file — a plausible wrong answer with no error anywhere.
+ * `requireCompleteUpload` refuses instead, BEFORE the expensive leg; its module
+ * doc carries why that is a refusal rather than a wait.
  *
+ * @param uploadId - An upload in the agent's own store, as `writeUpload` or a
+ *   page's `api.upload(file)` produced. Must be complete.
+ *
+ * @throws {UploadIncompleteError} when the upload is still arriving.
  * @throws {TranscribeError} on a refusal, carrying the verdict `toStepError`
  *   reads. Give this step extra retries: it is the one call here worth another
  *   attempt, and the only one whose cost is the file.
@@ -203,7 +212,9 @@ export async function stepTranscribeUpload(
   uploadId: string,
   opts: TranscribeRequestOptions = {},
 ): Promise<{ audioUrl: string }> {
-  const stored = await uploadInfo(uploadId);
+  // Not `uploadInfo`: `size` is the readable PREFIX, and a run started while the
+  // recording was still arriving would upload the prefix and transcribe it.
+  const stored = await requireCompleteUpload(uploadId);
   const response = await stepFetch(`${TRANSCRIBE_API}/v2/upload`, {
     method: "POST",
     // The raw key — this API takes it unprefixed, and a `Bearer ` in front of

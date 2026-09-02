@@ -71,7 +71,7 @@
 
 import { basename, extname, join } from "node:path";
 import { probeMedia, runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
-import { readUpload, report, uploadInfo } from "@alexkroman1/aai/step";
+import { readUpload, report, requireCompleteUpload } from "@alexkroman1/aai/step";
 import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
@@ -122,7 +122,10 @@ export type NormalizedRecording = {
  * file that already exists instead of paying for a second one.
  */
 export async function normalizeRecording(uploadId: string): Promise<NormalizedRecording> {
-  const stored = await uploadInfo(uploadId);
+  // `requireCompleteUpload`, not `uploadInfo`: `size` is the readable PREFIX, and
+  // every judgement below — cuttable, heavier-per-second, the byte count copied to
+  // disk — is about the WHOLE file.
+  const stored = await requireCompleteUpload(uploadId);
   const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
 
   if (cuttable(head.bytes, stored.size) && !heavierThanNormalized(head.bytes, stored.size)) {

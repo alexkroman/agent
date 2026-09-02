@@ -1407,6 +1407,9 @@ type StartOptions = {
 export const STEP_FETCH_CONNECTIONS = 64;
 
 // @internal
+export const STEP_FETCH_INACTIVITY_MS = 600000;
+
+// @internal
 export const STEP_FETCH_KEEP_ALIVE_MS = 30000;
 
 // @internal
@@ -4502,6 +4505,9 @@ export type ReadUploadOptions = {
 export function report(line: string): Promise<void>;
 
 // @public
+export function requireCompleteUpload(id: string): Promise<UploadInfo>;
+
+// @public
 export function requireStepEnv(name: string): string;
 
 // @public
@@ -4722,6 +4728,13 @@ export type Transcript = {
     text: string;
     durationMs: number;
 };
+
+// @public
+export class UploadIncompleteError extends Error {
+    constructor(message: string, stored: number);
+    readonly retryable = false;
+    readonly stored: number;
+}
 
 // @public
 export type UploadInfo = {

@@ -70,7 +70,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { formatBytes } from "../sdk/format.ts";
 import { isRecord } from "../sdk/is-record.ts";
-import { readUpload, type UploadInfo, uploadInfo } from "../sdk/step-uploads.ts";
+import { readUpload, type UploadInfo } from "../sdk/step-uploads.ts";
+import { requireCompleteUpload } from "../sdk/step-uploads-complete.ts";
 import { type WriteUploadOptions, writeUpload } from "../sdk/step-uploads-write.ts";
 
 /**
@@ -137,13 +138,20 @@ export async function withTempDir<T>(
 /** Options for {@link readUploadToFile}. */
 export type ReadUploadToFileOptions = {
   /**
-   * How many bytes the upload holds. Defaults to what `uploadInfo` reports.
+   * How many bytes the upload holds. Defaults to what `requireCompleteUpload`
+   * reports — so with no size, an upload that is still ARRIVING is refused.
    *
    * Pass it only when you already have the record — a step that reported the
    * file's name and size before starting has one, and this saves a second look.
    * Passing a size LARGER than the store holds is not an error: `readUpload`
    * clamps its window to what has arrived, and this walk stops at what it was
    * actually given rather than at what it asked for.
+   *
+   * **Passing one moves the completeness judgement to the CALLER**, which is
+   * what makes a polling body expressible: this option means "I have read the
+   * record", and a caller who has read it can see `complete` for itself. It
+   * therefore has to read it — `uploadInfo(id).size` threaded in here is the
+   * whole bug this default now refuses, since that number IS the prefix.
    */
   size?: number | undefined;
   /** Bytes per read. Defaults to {@link STEP_FILE_WINDOW_BYTES}. */
@@ -165,18 +173,27 @@ export type ReadUploadToFileOptions = {
  * the middle of the file. Advancing by `slice.end` cannot: a short answer ends
  * the walk, and the returned count is how the caller learns it was short.
  *
+ * **With no `size`, an upload that is still arriving is REFUSED.** That count was
+ * documented as how a caller learns the store came back short, and against a
+ * defaulted size it could never say so: the default was `uploadInfo(id).size`,
+ * the contiguous readable PREFIX, so the walk copied the prefix and returned a
+ * number equal to it. What reached ffmpeg was a truncated recording with nothing
+ * anywhere reporting it. See `sdk/step-uploads-complete.ts`.
+ *
  * @param uploadId - The id a run input carried.
  * @param path - Where to write. Created, or truncated if it exists.
  * @param opts - See {@link ReadUploadToFileOptions}.
  * @returns Bytes written — equal to the upload's size unless the store came back
  *   short, which is the case a caller polling a streamed upload has to notice.
+ * @throws {UploadIncompleteError} when no `size` was given and the upload is
+ *   still arriving.
  */
 export async function readUploadToFile(
   uploadId: string,
   path: string,
   opts: ReadUploadToFileOptions = {},
 ): Promise<number> {
-  const size = opts.size ?? (await uploadInfo(uploadId)).size;
+  const size = opts.size ?? (await requireCompleteUpload(uploadId)).size;
   const windowBytes = opts.windowBytes ?? STEP_FILE_WINDOW_BYTES;
   const handle = await open(path, "w");
   try {
