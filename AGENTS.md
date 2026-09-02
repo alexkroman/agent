@@ -1155,6 +1155,24 @@ are one **fixed release group** (configured in `.changeset/config.json`). A
 changeset for any one of them bumps all four to the same version. Keep this in
 mind when creating changesets — you only need to list one package.
 
+**The PRIVATE packages are versioned too, and a changeset may name them.**
+`.changeset/config.json` sets `privatePackages: { version: true, tag: false }`,
+and `guard-invariants` rule 20 only rejects naming a private package when that
+flag is OFF. So "it is private, therefore it owes an empty changeset" is wrong
+— and it was believed for a whole session's worth of `aai-server` work, which
+matters because of what that version gates.
+
+**`ship.yml`'s deploy used to fire only on a server VERSION bump**, and both
+server packages bump only as DEPENDENTS of an SDK release
+(`updateInternalDependencies: "patch"`). So a commit touching only
+`aai-server` moved no version line and shipped nothing: #1341 rewrote most of
+the platform, took `deploy=false`, and reached production only because a
+Version Packages commit happened to land behind it. The gate now also arms on
+a change under `packages/aai-server/**` or `packages/aai-studio-server/**` —
+the version bump was a proxy, that is the thing itself. Any branch arming
+`deploy` must arm `migrate` with it, since the deploy job waits on migrate with
+a plain condition; `ship-workflow-gate.test.ts` pins both halves.
+
 ### Testing
 
 - **Vitest**. Test files co-located: `foo.ts` → `foo.test.ts`.
