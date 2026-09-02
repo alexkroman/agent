@@ -19,6 +19,7 @@
 // the transcript" in the package guide).
 
 import { CliCommands } from "./cli-commands.tsx";
+import { GithubCard, type GithubSyncState } from "./github-card.tsx";
 import { PaneShell } from "./pane-shell.tsx";
 import { Card } from "./settings-card.tsx";
 
@@ -32,12 +33,29 @@ import { Card } from "./settings-card.tsx";
 type SettingsPaneProps = {
   /** The open project's name — the target of the Delete project button. */
   project: string;
+  /** Session bearer — the GitHub card's reads and its sync ride it. */
+  bearer: string;
+  /**
+   * The workspace's GitHub stamps, for the card's "up to date / has edits"
+   * line and its last-commit link. Undefined while the project read is in
+   * flight, which the card renders as no line rather than as "never synced".
+   *
+   * A narrow slice rather than the whole `ProjectData`, so this pane does not
+   * become the place future cards reach for arbitrary project state.
+   */
+  data: GithubSyncState | undefined;
   /** Delete the project (workspace + chat). The app navigates home after. */
   onDeleteProject: () => void;
   deleting: boolean;
 };
 
-export function SettingsPane({ project, onDeleteProject, deleting }: SettingsPaneProps) {
+export function SettingsPane({
+  project,
+  bearer,
+  data,
+  onDeleteProject,
+  deleting,
+}: SettingsPaneProps) {
   return (
     <PaneShell
       title="Settings"
@@ -61,9 +79,11 @@ export function SettingsPane({ project, onDeleteProject, deleting }: SettingsPan
         <CliCommands project={project} />
       </Card>
 
-      {/* Unconditional, like the cards above and below: a database is
-            provisioned per environment as each one deploys, so it can be
-            switched on before the project has ever been published. */}
+      {/* Between the CLI round-trip and Delete project, because it is the
+          other answer to "get this code out of the studio" — and it renders
+          NOTHING when the platform has no GitHub App, so on a self-hosted
+          deploy the pane looks exactly as it did. */}
+      <GithubCard bearer={bearer} project={project} data={data} />
 
       <Card
         title="Danger zone"

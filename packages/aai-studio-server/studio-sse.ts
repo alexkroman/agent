@@ -11,6 +11,7 @@ import { registerLiveStream } from "aai-server/live-streams";
 import type { SSEStreamingApi } from "hono/streaming";
 import { type ProjectKind, resolveProjectKind } from "./studio-project-kind.ts";
 import {
+  hasGithubChanges,
   hasPreviewChanges,
   hasUnpublishedChanges,
   type StudioWorkspace,
@@ -52,6 +53,13 @@ export type ProjectPayload = {
   previewStale: boolean;
   /** CLI output of the last failed preview deploy, for the pane's banner. */
   previewError?: string | undefined;
+  /** `owner/repo` the project last synced to, when GitHub is connected. */
+  githubRepo?: string | undefined;
+  githubBranch?: string | undefined;
+  /** Commit the last sync created — the card links to it. */
+  githubCommit?: string | undefined;
+  /** Edits the last GitHub sync does not carry. False when never synced. */
+  githubStale: boolean;
 };
 
 /**
@@ -69,6 +77,7 @@ export function projectPayload(workspace: StudioWorkspace): ProjectPayload {
     kind: resolveProjectKind(workspace.kind),
     unpublished: hasUnpublishedChanges(workspace),
     previewStale: hasPreviewChanges(workspace),
+    githubStale: hasGithubChanges(workspace),
     // Presence, not truthiness: a slug is validated and a hash is 64 hex
     // digits, so neither can be falsy-but-present, and the one field that
     // could — `previewError`, sliced from CLI output — reads the same either
@@ -78,6 +87,9 @@ export function projectPayload(workspace: StudioWorkspace): ProjectPayload {
       previewSlug: workspace.previewSlug,
       previewVersion: workspace.previewHash,
       previewError: workspace.previewError,
+      githubRepo: workspace.githubRepo,
+      githubBranch: workspace.githubBranch,
+      githubCommit: workspace.githubCommit,
     }),
   };
 }

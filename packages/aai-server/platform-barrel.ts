@@ -10,4 +10,5 @@
 export { resolvePort } from "./_boot.ts";
 export { createKeyedLock, withLock } from "./_keyed-lock.ts";
 export { createCachedDirReader } from "./_static-files.ts";
+export { constantTimeEquals } from "./_timing-safe.ts";
 export { TtlCache } from "./_ttl-cache.ts";

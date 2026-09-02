@@ -21,6 +21,8 @@ import {
   CHAT_IP_RATE_LIMIT,
   CHAT_RATE_LIMIT,
   createRateLimiter,
+  GITHUB_SYNC_IP_RATE_LIMIT,
+  GITHUB_SYNC_RATE_LIMIT,
   PREVIEW_WAKE_IP_RATE_LIMIT,
   PREVIEW_WAKE_RATE_LIMIT,
   PROJECT_CREATE_IP_RATE_LIMIT,
@@ -42,6 +44,7 @@ export type RouteLimits = {
   chat: RefuseFn;
   projectCreate: RefuseFn;
   previewWake: RefuseFn;
+  githubSync: RefuseFn;
 };
 
 function tooMany(retryAfterSeconds: number): Response {
@@ -80,6 +83,10 @@ export function createRouteLimits(injected?: StudioRateLimiters): RouteLimits {
     previewWake: refuse(
       injected?.previewWake ?? createRateLimiter(PREVIEW_WAKE_RATE_LIMIT),
       injected?.previewWakeIp ?? createRateLimiter(PREVIEW_WAKE_IP_RATE_LIMIT),
+    ),
+    githubSync: refuse(
+      injected?.githubSync ?? createRateLimiter(GITHUB_SYNC_RATE_LIMIT),
+      injected?.githubSyncIp ?? createRateLimiter(GITHUB_SYNC_IP_RATE_LIMIT),
     ),
   };
 }

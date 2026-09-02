@@ -7,6 +7,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
 import { generatedSlug } from "aai-server/slug-generate";
 import { z } from "zod";
+import { GITHUB_NAME_RE } from "./studio-github-sync.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_MESSAGE_BYTES } from "./studio-limits.ts";
 import { DEFAULT_PROJECT_KIND, PROJECT_KINDS } from "./studio-project-kind.ts";
 
@@ -248,3 +249,53 @@ export const UiMessageSchema = z
     (message) => totalStringLength(message.parts) <= MAX_STUDIO_MESSAGE_BYTES,
     "Message too large",
   );
+
+/**
+ * A `owner/repo` as a sync body carries it.
+ *
+ * Both halves become PATH SEGMENTS in every GitHub request the sync makes, so
+ * the grammar is enforced before the value is ever interpolated — built from
+ * `GITHUB_NAME_RE` (studio-github-sync.ts) rather than restated, so the two
+ * layers that check it cannot drift apart.
+ */
+const NAME = GITHUB_NAME_RE.source.slice(1, -1);
+export const GithubRepoSchema = z
+  .string()
+  .min(3)
+  .max(201)
+  .regex(new RegExp(`^${NAME}/${NAME}$`), "Expected owner/repo");
+
+/**
+ * `POST /studio/projects/:project/github/sync` — where to push.
+ *
+ * The BRANCH is deliberately not a field. A sync always targets the
+ * repository's own default branch, read from GitHub at push time
+ * (`readRepoDefaultBranch`) rather than taken from the client: the picker's
+ * copy can be a rename out of date, and a branch name accepted from a request
+ * would be a validated-but-unreachable input surface — the studio has no UI
+ * that names one. Re-adding it means adding the control and the grammar
+ * together, not the grammar alone.
+ */
+export const GithubSyncSchema = z.object({
+  repo: GithubRepoSchema,
+});
+
+/**
+ * `POST /studio/github/connect` — mint an install redirect.
+ *
+ * `project` is a RETURN hint so the callback lands the user back where they
+ * pressed the button; it authorizes nothing, and is validated as a project
+ * name only so the callback can build a URL from it without escaping games.
+ */
+export const GithubConnectSchema = z.object({
+  project: ProjectNameSchema.optional(),
+});
+
+/**
+ * `POST /studio/github/repos` — create a repository under the installation's
+ * organization. The name runs the slug grammar rather than GitHub's laxer
+ * one so a repository this creates is always nameable by every other surface.
+ */
+export const GithubCreateRepoSchema = z.object({
+  name: z.string().min(1).max(100).regex(VALID_SLUG_RE, "Invalid repository name"),
+});

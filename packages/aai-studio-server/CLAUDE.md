@@ -893,6 +893,108 @@ key↔account mapping — stay in that guide's "Auth" block.
   is the only way a raw key leaves the platform, and only to the terminal
   that minted the code.
 
+### Sync to GitHub
+
+`studio-github-*.ts` plus the client's `github-card.tsx`: a signed-in account
+connects a **GitHub App installation**, picks a repository, and pushes a
+project's workspace to a branch as ONE commit.
+
+- **A GitHub App, not the GitHub OAuth the studio already signs in with.**
+  Supabase Auth stays the identity layer; this is authorization to write
+  somebody's source, and reusing the sign-in would mean adding `repo` to
+  `signInWithOAuth` — full read/write over every repository the user can
+  reach, demanded at the login screen, of every user, including the ones who
+  never sync. Two further reasons it could not have been the session anyway:
+  Supabase hands `session.provider_token` over ONCE and never refreshes it, so
+  syncing would demand a re-login at unpredictable moments; and uninstalling
+  an App is a revocation the user controls, where a leaked OAuth token is not.
+  Installation tokens are minted server-side per request from the App key and
+  the recorded installation id (`@octokit/auth-app` — nothing here mints a
+  token or signs a JWT by hand).
+- **Absent configuration DISABLES the feature rather than failing a boot.**
+  `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY` + `GITHUB_APP_SLUG`, all three or
+  none; `GET /studio/github` then answers `configured: false` and the card
+  renders nothing at all. That is what keeps a self-hosted platform's Settings
+  pane exactly as it was. The PEM is normalized for the three shapes it
+  survives an environment variable in (intact, `\n`-escaped, base64) and
+  trimmed to one value in each — it is also the HMAC key below, so a key
+  differing by a trailing newline between two replicas is a fleet whose halves
+  reject each other's states.
+- **The callback is the one studio route that cannot authenticate its
+  caller.** `GET /studio/github/callback` is a top-level navigation performed
+  by github.com — no bearer, nothing `authMw` could resolve — and what it
+  decides is which account an installation belongs to. Two things stand in,
+  and BOTH are needed: the `state` is HMAC-signed with a key derived from the
+  App's private key (without it, `?state=` is an attacker-supplied user id and
+  the route attaches THEIR installation to somebody else's account), and the
+  `installation_id` is resolved against GitHub as the App before anything is
+  stored (the signature proves who is asking, never what they are attaching).
+  The state carries a 10-minute `exp`, is compared in constant time, and is
+  minted at CLICK time by `POST /studio/github/connect` rather than handed out
+  with the status — a settings pane left open would otherwise hold a link that
+  fails after the user has picked their repositories. Every exit is a REDIRECT
+  carrying `?github=`, never a JSON body: the caller is a navigating browser.
+- **The link is keyed by studio USER** (`github-install:<uid>` in the same
+  SecretStore as `user-key:<uid>`, schema-validated on read like the
+  `cli-link:` grants). So a raw-key caller no account has claimed is refused
+  outright — deliberately not widened to the workspace scope, or a key nobody
+  claimed would inherit a browser session's repository write access.
+- **The push is the Git Data API, and the tree is written WHOLE.** Blobs →
+  tree → commit → ref, no clone and no working tree. `base_tree` is
+  deliberately absent: a workspace IS the project (the same complete map `aai
+  push` replaces atomically), so a sync REPLACES the branch's tree and a file
+  deleted in the studio is deleted there. The cost — a file added on the
+  branch is removed by the next sync — is the honest reading of one-way sync.
+  The ref PATCH is **not forced**: a non-fast-forward means somebody pushed
+  while the blobs were uploading, and discarding their commit silently is the
+  one outcome a sync must never produce. An empty repository is the COMMON
+  case (a user makes one for this), so a 404/409 on the ref read takes the
+  `POST /git/refs` path with a parentless commit.
+- **Idempotent on the same `filesHash` everything else uses.**
+  `githubRepo`/`githubBranch`/`githubHash`/`githubCommit` are `WorkspaceStamp`
+  fields, so the sync records where it landed through `stampWorkspaceMeta` —
+  a patch carrying no files, which cannot revert an edit that landed while the
+  blobs were uploading. The no-op is checked AFTER reading the branch head,
+  because a stamp claiming the branch is current is only believable while the
+  branch still exists (a repository recreated under the same name is real),
+  and only against the SAME target — the hash describes the files, never where
+  they went.
+- **Repository CREATION is organizations only, and that is GitHub's
+  boundary.** `POST /user/repos` is unavailable to an installation token at
+  all, so a personal account's repository cannot be created by an App acting
+  as an installation whatever permissions it holds; reaching it would mean
+  carrying user-to-server OAuth tokens and their refresh cycle, a second
+  per-user credential expiring on its own schedule, for one button. The route
+  answers a personal account with the INSTRUCTION (create it on GitHub, then
+  add it to the installation) rather than passing GitHub's 403 through, which
+  would read as a bug in the studio. The picker is the primary path either
+  way, and it lists the INSTALLATION's repositories — the truthful answer to
+  "where can this sync write", where the user's own list would offer
+  destinations every sync would 404 on.
+- **The branch is the repository's OWN default, never a request field.** It is
+  read at push time (`readRepoDefaultBranch`), because the picker's copy can be
+  a rename out of date — and a client-named branch would be a validated but
+  unreachable input surface, which is how a security-relevant grammar rots.
+  Re-adding it means adding the control and the grammar together.
+- **Metered like every route that costs a third party** (`GITHUB_SYNC_RATE_LIMIT`,
+  scope + IP): one sync is a blob upload per file against a service that
+  meters us as one App across every tenant, so the window protects the App's
+  standing with GitHub as much as this service. **Every studio window now comes
+  from ONE factory** (`createPgStudioRateLimiters`), the shape the agent surface
+  already uses: the composition root hand-listed them, and a window it forgot
+  fell through to the in-memory arm and silently enforced `MAX_CONTAINERS` times
+  what it says — the exact bug this guide documents for the workflow limiters,
+  invisible because every route spec injects a limiter. `studio-rate-limit.test.ts`
+  holds the factory to the windows this module declares.
+- **Tested through the wire, not through a mock of our own wrappers.**
+  `_studio-github-test-utils.ts` is a fake GitHub behind Octokit's own `fetch`
+  seam, with a real RSA key so App JWT minting and the installation-token
+  exchange really run. That is what lets the three invisible properties be
+  asserted at all — no `base_tree`, an unforced PATCH, the empty-repository
+  path — none of which a mocked `syncWorkspaceToGithub` could see. An
+  unrecognized path answers **501 naming it**, so "the code called a route
+  nobody wrote" cannot pass.
+
 ## Rate limits
 
 Moved here from `packages/aai-server/CLAUDE.md` when that guide hit its size cap,

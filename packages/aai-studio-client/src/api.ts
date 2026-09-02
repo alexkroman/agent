@@ -20,6 +20,9 @@ import type {
   AgentLogsPage,
   AuthConfig,
   ChatSession,
+  GithubRepo,
+  GithubStatus,
+  GithubSyncResult,
   ProjectData,
   ProjectKind,
   StudioStatus,
@@ -43,6 +46,9 @@ export type {
   AgentLogsPage,
   AuthConfig,
   ChatSession,
+  GithubRepo,
+  GithubStatus,
+  GithubSyncResult,
   ProjectData,
   ProjectKind,
   StudioStatus,
@@ -180,6 +186,69 @@ export const api = {
     request<{ ok: true }>(key, "/cli-link/approve", {
       method: "POST",
       body: JSON.stringify({ code }),
+    }),
+
+  /**
+   * Is GitHub sync available here, and has this account connected it?
+   *
+   * Session-authed against `requireStudioUser`, like the account routes — so
+   * it costs a round trip to Supabase's Auth server and is read once per pane
+   * open rather than polled.
+   */
+  githubStatus: (key: string) => request<GithubStatus>(key, "/github"),
+
+  /**
+   * Mint the GitHub App install redirect and hand back where to send the tab.
+   *
+   * A call rather than a URL read from {@link githubStatus}, because the state
+   * inside it expires: a settings pane left open would otherwise hold a link
+   * that fails after the user has already picked their repositories.
+   *
+   * `project` is a return hint — the callback lands the browser back on the
+   * project the button was pressed from.
+   */
+  githubConnect: (key: string, project?: string) =>
+    request<{ installUrl: string }>(key, "/github/connect", {
+      method: "POST",
+      body: JSON.stringify(omitUndefined({ project })),
+    }),
+
+  /**
+   * Forget the link. This does NOT uninstall the App on GitHub's side — the
+   * card says so, because claiming otherwise would report access revoked while
+   * the installation still granted it.
+   */
+  githubDisconnect: (key: string) => request<{ ok: true }>(key, "/github", { method: "DELETE" }),
+
+  /**
+   * Create a repository under the installation's ORGANIZATION.
+   *
+   * Organizations only, and that is GitHub's boundary rather than ours:
+   * `POST /user/repos` is unavailable to an installation token at all. The
+   * server answers a personal account with the instruction (create it on
+   * GitHub, then add it to the installation) — which is why the card only
+   * offers this control for an org.
+   */
+  githubCreateRepo: (key: string, name: string) =>
+    request<{ repo: GithubRepo }>(key, "/github/repos", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }).then((r) => r.repo),
+
+  /** Repositories the installation can write — the picker's options. */
+  githubRepos: (key: string) =>
+    request<{ repos: GithubRepo[] }>(key, "/github/repos").then((r) => r.repos),
+
+  /**
+   * Push the project's files to GitHub as one commit.
+   *
+   * No branch: the server reads the repository's own default at push time,
+   * which is the only value that cannot be a rename out of date.
+   */
+  syncToGithub: (key: string, project: string, repo: string) =>
+    request<GithubSyncResult>(key, projectPath(project, "/github/sync"), {
+      method: "POST",
+      body: JSON.stringify({ repo }),
     }),
 
   listProjects: (key: string) =>

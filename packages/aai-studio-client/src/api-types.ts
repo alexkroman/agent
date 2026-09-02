@@ -31,6 +31,49 @@ export type ProjectData = {
   previewStale?: boolean;
   /** CLI output of the last failed preview deploy. */
   previewError?: string;
+  /** `owner/repo` this project last synced to, when GitHub is connected. */
+  githubRepo?: string;
+  githubBranch?: string;
+  /** Commit the last sync created — the card links to it. */
+  githubCommit?: string;
+  /** Edits the last GitHub sync does not carry. False when never synced. */
+  githubStale?: boolean;
+};
+
+/**
+ * `GET /studio/github` — whether this platform has a GitHub App at all, and
+ * whether this ACCOUNT has connected one.
+ *
+ * The two are separate on purpose: `configured: false` is a property of the
+ * deployment (a self-hosted platform with no App registered) and the card
+ * renders nothing at all for it, where `connected: false` is a thing this user
+ * can fix and the card offers the button that fixes it.
+ */
+export type GithubStatus = {
+  configured: boolean;
+  connected: boolean;
+  /** The GitHub login the installation belongs to, once connected. */
+  account?: string;
+  accountType?: "User" | "Organization";
+  /** The App's install page — where a repository is added to the installation. */
+  manageUrl?: string;
+};
+
+/** One repository the installation can write, as the picker shows it. */
+export type GithubRepo = {
+  fullName: string;
+  private: boolean;
+};
+
+/** What a sync answers. `changed: false` means the branch was already current. */
+export type GithubSyncResult = {
+  ok: true;
+  repo: string;
+  branch: string;
+  changed: boolean;
+  commitSha: string;
+  commitUrl: string;
+  syncedHash: string;
 };
 
 /**

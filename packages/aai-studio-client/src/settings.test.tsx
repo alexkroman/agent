@@ -28,7 +28,13 @@ function cardTitles(): (string | null)[] {
 
 function renderPanel(onDeleteProject = vi.fn()) {
   renderWithClient(
-    <SettingsPane project="demo" onDeleteProject={onDeleteProject} deleting={false} />,
+    <SettingsPane
+      project="demo"
+      bearer="test-bearer"
+      data={undefined}
+      onDeleteProject={onDeleteProject}
+      deleting={false}
+    />,
   );
 }
 

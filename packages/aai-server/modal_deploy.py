@@ -51,6 +51,22 @@ Required Modal Secret named ``aai-server`` with (at least):
 - ``SUPABASE_SERVICE_ROLE_KEY`` — with ``SUPABASE_URL``, the Supabase
   Realtime change streams (sandbox invalidation, studio preview push) AND
   Storage reads/writes of deploy artifacts
+- ``GITHUB_APP_ID`` / ``GITHUB_APP_PRIVATE_KEY`` / ``GITHUB_APP_SLUG`` /
+  ``GITHUB_APP_CLIENT_ID`` / ``GITHUB_APP_CLIENT_SECRET`` —
+  the studio's "Sync to GitHub" App. The OAuth pair is what lets the install
+  callback verify the person finishing the flow actually administers the
+  installation they are attaching; without it that callback accepts any
+  (enumerable) ``installation_id``, so the App must have **"Request user
+  authorization (OAuth) during installation"** enabled. All of them or none: a half-configured App
+  is the state where the install link works and every sync fails, so absence
+  reads as "not configured" and the studio's GitHub card renders nothing (see
+  "Sync to GitHub" in ``packages/aai-studio-server/CLAUDE.md``). The private
+  key may be pasted intact, ``\n``-escaped, or base64 — all three normalize
+  to one value, which matters because it is also the HMAC key behind the
+  install ``state``, so two replicas disagreeing by a newline would reject
+  each other's callbacks. The App needs **Contents: read and write** on the
+  repositories a user grants it, and its post-install callback must point at
+  ``<origin>/studio/github/callback``
 - ``PLATFORM_POOLER_URL`` — Supavisor's TRANSACTION-mode URL (port 6543) for
   the admin pool. **Undocumented here for as long as it existed, and unset in
   production**: boot warns that the pool is opening DIRECT connections, which

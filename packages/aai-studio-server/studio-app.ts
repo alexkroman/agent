@@ -36,7 +36,7 @@ import { Hono } from "hono";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
-import { createStudioRoutes } from "./studio-routes.ts";
+import { createStudioRoutes, type StudioRouteOptions } from "./studio-routes.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import {
   handleStudioFavicon,
@@ -87,6 +87,14 @@ export type StudioAppOpts = {
    */
   previewQueue: PreviewQueue;
   replicaId?: string;
+  /**
+   * The GitHub App backing "Sync to GitHub". Absent, the routes resolve it
+   * from the environment; `undefined` there too means the platform has none
+   * and the feature reports itself unconfigured (studio-github-config.ts).
+   */
+  githubApp?: StudioRouteOptions["githubApp"];
+  /** Test seam: drive the GitHub routes against a fake API, no module mocks. */
+  githubFetch?: StudioRouteOptions["githubFetch"];
   allowedOrigins?: string[];
   isDraining?: () => boolean;
 };
@@ -128,6 +136,8 @@ export function createStudioApp(opts: StudioAppOpts): {
       rateLimiters: opts.studioRateLimiters,
       sessionRegistry: opts.studioSessionRegistry,
       replicaId: opts.replicaId,
+      githubApp: opts.githubApp,
+      githubFetch: opts.githubFetch,
     }),
     previewQueue: opts.previewQueue,
   });

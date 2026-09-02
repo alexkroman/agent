@@ -20,6 +20,7 @@ import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
 import { ChatPanel } from "./chat.tsx";
 import { DocsPane } from "./docs.tsx";
 import { bufferFor, useFileDrafts } from "./file-drafts.ts";
+import { hasGithubResult } from "./github-result.ts";
 import { LogsView } from "./logs-view.tsx";
 import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
@@ -89,7 +90,12 @@ type ProjectViewProps = {
 export function ProjectView(props: ProjectViewProps) {
   const { bearer, project, chatStatus, refreshAuth } = props;
   const queryClient = useQueryClient();
-  const [selectedTab, setSelectedTab] = useState<StudioTab>("preview");
+  // Settings when the GitHub install callback just landed here, so its report
+  // is on screen rather than consumed by a pane nobody opened — see
+  // `hasGithubResult`. A peek, not a consume: the card owns that.
+  const [selectedTab, setSelectedTab] = useState<StudioTab>(() =>
+    hasGithubResult() ? "settings" : "preview",
+  );
   const [publishOpen, setPublishOpen] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   /** The file the user picked, or null to follow the workspace's default. */
@@ -368,6 +374,8 @@ export function ProjectView(props: ProjectViewProps) {
         {tab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
         {tab === "settings" && (
           <SettingsPane
+            bearer={bearer}
+            data={workspace.data}
             project={project}
             onDeleteProject={() => deleteProject.mutate()}
             deleting={deleteProject.isPending}
