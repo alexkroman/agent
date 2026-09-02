@@ -33,10 +33,12 @@
  *   deliveries read the same number and take a step past its ceiling.
  * - **`setStatus` is a compare-and-set**, answering from the row count, so a
  *   worker that had not noticed a cancel cannot report the run completed.
- * - **`appendStep` and `claimSleep` are `do nothing` then READ BACK.** The first
- *   write wins and every later one is a read, which is what stops a replay
- *   pushing a deadline further out on each walk, and what makes two executions
- *   that both ran a step agree on what it returned.
+ * - **`appendStep` and `claimSleep` are ONE statement that both writes and
+ *   reads.** The first write wins and every later call is a read, which is what
+ *   stops a replay pushing a deadline further out on each walk, and what makes
+ *   two executions that both ran a step agree on what it returned. It used to be
+ *   two statements; see {@link firstWriteWins} for what that cost and why the
+ *   `union all` is the shape rather than an `on conflict do update`.
  * - **`createRun` is `do nothing` then `returning`, which is a REFUSAL.** The one
  *   place the mechanism deliberately differs from the twin: there, a duplicate run
  *   id trips the primary key and the driver's error is the refusal, which is not
@@ -63,7 +65,14 @@
  * @internal
  */
 
+import { firstWriteWins } from "./_journal-claim.ts";
 import { HOOKS } from "./platform-workflow-journal-hooks.ts";
+import type {
+  JournalRunRow,
+  JournalSleepRow,
+  JournalStepRow,
+} from "./platform-workflow-journal-rows.ts";
+import { millis, text, toRun, toStep } from "./platform-workflow-journal-rows.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 // One hook WINDOW is its own module — five hundred lines is the cap and the hook
@@ -76,16 +85,14 @@ export {
   type JournalHookRow,
   PlatformWorkflowHookTokenError,
 } from "./platform-workflow-journal-hooks.ts";
-// The SLEEP half likewise, and it moved for the same reason the hooks did — the
-// `started_at` column took this file past the cap. Nothing here reaches that
-// table (the release CTE only touches `HOOKS`), which is what made the sleeps
-// the cleanest family to move.
-export {
-  claimSleep,
-  type JournalSleepRow,
-  SLEEPS,
-  wakeSleeps,
-} from "./platform-workflow-journal-sleeps.ts";
+// Re-exported because the row shapes are part of THIS module's contract — every
+// caller reaches the journal as one namespace — while their definitions sit with
+// the coercions that build them.
+export type {
+  JournalRunRow,
+  JournalSleepRow,
+  JournalStepRow,
+} from "./platform-workflow-journal-rows.ts";
 
 /**
  * Statuses nothing will change again.
@@ -100,95 +107,14 @@ const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 /**
  * Where the journal lives. One schema-qualified name per table, spelled once.
  *
- * Two are exceptions and live with the operations that own them: `HOOKS`
- * (`platform-workflow-journal-hooks.ts`) and `SLEEPS`
- * (`platform-workflow-journal-sleeps.ts`), both re-exported below so a caller
- * still sees one journal. `HOOKS` is additionally imported BACK, for
- * `setStatus`'s release CTE — the one statement here that reaches another
- * family's table. `SLEEPS` is not, and the asymmetry is the tell that the sleeps
- * were the cleanest family to move: nothing here reaches them.
+ * `HOOKS` is the exception and lives with the operations that own it
+ * (`platform-workflow-journal-hooks.ts`); it is imported back for `setStatus`'s
+ * release CTE, which is the one statement here that reaches that table.
  */
 const RUNS = "aai_platform.workflow_runs";
 const STEPS = "aai_platform.workflow_steps";
 const ATTEMPTS = "aai_platform.workflow_attempts";
-
-/**
- * `bigint` arrives as a STRING from the driver, and `Number` is the read.
- *
- * Left alone every comparison against a deadline is lexicographic and every
- * arithmetic one is concatenation — both silent. Epoch milliseconds are far under
- * 2^53, so the conversion is exact for any date this will see.
- */
-const millis = (value: unknown): number => Number(value);
-
-/** A stored value, as the codec wrote it. `null` from the driver means absent. */
-const text = (value: unknown): string | undefined =>
-  typeof value === "string" ? value : undefined;
-
-/** One run, as this store answers it. Encoded values stay encoded. */
-export type JournalRunRow = {
-  runId: string;
-  workflow: string;
-  status: string;
-  createdAt: number;
-  input: string | undefined;
-  output: string | undefined;
-  error: string | undefined;
-  /**
-   * The bundle the run was started against, absent off the platform and for a
-   * row that predates the column — see `RunRecord.codeVersion` in
-   * `@alexkroman1/aai-runtime/internal`, which is the shape this crosses the
-   * wire as.
-   */
-  codeVersion: string | undefined;
-};
-
-/** One settled step. */
-export type JournalStepRow = {
-  key: string;
-  name: string;
-  status: string;
-  output: string | undefined;
-  error: string | undefined;
-  attempts: number;
-  /**
-   * Absent for a row written before the column existed — see
-   * `StepEntry.startedAt` in `@alexkroman1/aai-runtime/internal`, which is the
-   * shape this row crosses the wire as.
-   */
-  startedAt: number | undefined;
-  finishedAt: number;
-};
-
-function toRun(row: Record<string, unknown>): JournalRunRow {
-  return {
-    runId: String(row.run_id),
-    workflow: String(row.workflow),
-    status: String(row.status),
-    createdAt: millis(row.created_at),
-    input: text(row.input),
-    output: text(row.output),
-    error: text(row.error),
-    codeVersion: text(row.code_version),
-  };
-}
-
-function toStep(row: Record<string, unknown>): JournalStepRow {
-  return {
-    key: String(row.key),
-    name: String(row.name),
-    status: String(row.status),
-    output: text(row.output),
-    error: text(row.error),
-    attempts: Number(row.attempts),
-    // `millis` coerces, so NULL would become 0 — which reads as the epoch and
-    // then as a step that took 55 years. The column is nullable by construction
-    // (the rows already there have no start), so the null test comes first.
-    startedAt:
-      row.started_at === null || row.started_at === undefined ? undefined : millis(row.started_at),
-    finishedAt: millis(row.finished_at),
-  };
-}
+const SLEEPS = "aai_platform.workflow_sleeps";
 
 /**
  * Raised when a run id is already taken.
@@ -375,7 +301,8 @@ export async function readSteps(
   runId: string,
 ): Promise<JournalStepRow[]> {
   const rows = await sql(
-    `select key, name, status, output::text as output, error, attempts, started_at, finished_at
+    `select key, name, status, output::text as output, error, attempts,
+            started_at, finished_at
        from ${STEPS} where slug = $1 and run_id = $2 order by finished_at, key`,
     [slug, runId],
   );
@@ -428,37 +355,128 @@ export async function releaseAttempt(
   return null;
 }
 
-/** Record a settled step, or read the one already recorded. */
+/**
+ * Record a wait, or read the one already recorded.
+ *
+ * First write wins and later calls are READS — which is what stops a replay
+ * pushing the deadline further out on every walk of the body. ONE statement,
+ * re-run while the answer is indeterminate: {@link firstWriteWins}.
+ */
+export async function claimSleep(
+  sql: SqlExec,
+  slug: string,
+  runId: string,
+  key: string,
+  wakeAt: number,
+  correlationId: string | undefined,
+  kind: string,
+): Promise<JournalSleepRow> {
+  return await firstWriteWins(
+    async () => {
+      const rows = await sql(
+        `with mine as (
+           insert into ${SLEEPS} (slug, run_id, key, wake_at, correlation_id, kind)
+           values ($1, $2, $3, $4, $5, $6)
+           on conflict (slug, run_id, key) do nothing
+           returning wake_at, woken, correlation_id, kind
+         )
+         select wake_at, woken, correlation_id, kind from mine
+         union all
+         select wake_at, woken, correlation_id, kind from ${SLEEPS}
+          where slug = $1 and run_id = $2 and key = $3`,
+        [slug, runId, key, wakeAt, correlationId ?? null, kind],
+      );
+      const row = rows[0];
+      if (!row) return;
+      return {
+        wakeAt: millis(row.wake_at),
+        woken: Boolean(row.woken),
+        correlationId: text(row.correlation_id),
+        kind: String(row.kind),
+      };
+    },
+    () => `workflow sleep ${key} vanished for run ${runId}`,
+  );
+}
+
+/**
+ * Cut short every wait this call reaches, and answer how many.
+ *
+ * Three refusals as one `where`, the same three the memory backend makes: an
+ * ELAPSED wait is not one this call stopped, nor is an already-woken one, and a
+ * BARE wake reaches ordinary sleeps only — so cutting a schedule short cannot
+ * also close an approval window.
+ */
+export async function wakeSleeps(
+  sql: SqlExec,
+  slug: string,
+  runId: string,
+  now: number,
+  correlationIds: readonly string[] | undefined,
+): Promise<number> {
+  const rows = await sql(
+    `update ${SLEEPS}
+        set woken = true
+      where slug = $1 and run_id = $2
+        and woken = false
+        and wake_at > $3
+        and case
+              when $4::text[] is null then kind = 'sleep'
+              else correlation_id = any($4::text[])
+            end
+      returning key`,
+    [slug, runId, now, correlationIds ?? null],
+  );
+  return rows.length;
+}
+
+/**
+ * Record a settled step, or read the one already recorded.
+ *
+ * ONE statement, re-run while the answer is indeterminate:
+ * {@link firstWriteWins}. The stored entry stays authoritative, so the loser of a
+ * race adopts the winner's value rather than its own.
+ */
 export async function appendStep(
   sql: SqlExec,
   slug: string,
   runId: string,
   entry: JournalStepRow,
 ): Promise<JournalStepRow> {
-  await sql(
-    `insert into ${STEPS}
-       (slug, run_id, key, name, status, output, error, attempts, started_at, finished_at)
-     values ($1, $2, $3, $4, $5, $6::text::jsonb, $7, $8, $9, $10)
-     on conflict (slug, run_id, key) do nothing`,
-    [
-      slug,
-      runId,
-      entry.key,
-      entry.name,
-      entry.status,
-      entry.output ?? null,
-      entry.error ?? null,
-      entry.attempts,
-      entry.startedAt ?? null,
-      entry.finishedAt,
-    ],
+  return await firstWriteWins(
+    async () => {
+      const rows = await sql(
+        `with mine as (
+           insert into ${STEPS}
+             (slug, run_id, key, name, status, output, error, attempts, started_at,
+              finished_at)
+           values ($1, $2, $3, $4, $5, $6::text::jsonb, $7, $8, $9, $10)
+           on conflict (slug, run_id, key) do nothing
+           returning key, name, status, output::text as output, error, attempts,
+                     started_at, finished_at
+         )
+         select key, name, status, output, error, attempts, started_at, finished_at
+           from mine
+         union all
+         select key, name, status, output::text as output, error, attempts,
+                started_at, finished_at
+           from ${STEPS} where slug = $1 and run_id = $2 and key = $3`,
+        [
+          slug,
+          runId,
+          entry.key,
+          entry.name,
+          entry.status,
+          entry.output ?? null,
+          entry.error ?? null,
+          entry.attempts,
+          entry.startedAt ?? null,
+          entry.finishedAt,
+        ],
+      );
+      const row = rows[0];
+      return row ? toStep(row) : undefined;
+    },
+    () => `workflow step ${entry.key} vanished for run ${runId}`,
   );
-  const rows = await sql(
-    `select key, name, status, output::text as output, error, attempts, started_at, finished_at
-       from ${STEPS} where slug = $1 and run_id = $2 and key = $3`,
-    [slug, runId, entry.key],
-  );
-  const row = rows[0];
-  if (!row) throw new Error(`workflow step ${entry.key} vanished for run ${runId}`);
-  return toStep(row);
 }

@@ -38,9 +38,9 @@ type Issued = { sql: string; params: unknown[] };
 /**
  * A recording `SqlExec` that answers from a queue.
  *
- * `rows` is consumed in order, so a method that writes and then reads back —
- * `appendStep`, `claimSleep` and `claimHook` all have that shape — gets its read
- * answered by the next entry.
+ * `rows` is consumed in order. Every method here issues exactly ONE statement, so
+ * one entry is the ordinary case; a second entry is what a RE-RUN reads, which is
+ * how the first-write-wins retry is driven below.
  */
 function recorder(rows: Record<string, unknown>[][] = []) {
   const issued: Issued[] = [];
@@ -125,7 +125,7 @@ const CALLS: readonly {
   },
   {
     name: "claimSleep",
-    rows: [[], [SLEEP_ROW]],
+    rows: [[SLEEP_ROW]],
     run: (sql) => journal.claimSleep(sql, SLUG, "wrun_1", "sleep!0", 1000, undefined, "sleep"),
   },
   {
@@ -150,7 +150,7 @@ const CALLS: readonly {
   },
   {
     name: "appendStep",
-    rows: [[], [STEP_ROW]],
+    rows: [[STEP_ROW]],
     run: (sql) => journal.appendStep(sql, SLUG, "wrun_1", ENTRY),
   },
 ];
@@ -204,6 +204,92 @@ describe("every jsonb binding casts through text", () => {
     // encoded value, and a floor here is what stops this passing on an empty scan.
     expect(casts.length).toBeGreaterThanOrEqual(4);
     expect(casts.filter((cast) => !cast.includes("::text::jsonb"))).toEqual([]);
+  });
+});
+
+describe("a first-write-wins claim is ONE statement", () => {
+  // `claimSleep`, `appendStep` and `claimHook` each insert the row and, if
+  // somebody already wrote it, adopt theirs. That was an insert and then a
+  // separate select: two round trips on a route that holds one of
+  // `ADMIN_POOL_MAX` reservations for the whole request, and `appendStep` fires
+  // once per settled step. The scenario tier proves the answer is right; whether
+  // there is only one statement is this tier's question.
+  const CLAIMS = [
+    {
+      name: "claimSleep",
+      row: SLEEP_ROW,
+      run: (sql: SqlExec) => journal.claimSleep(sql, SLUG, "wrun_1", "sleep!0", 1000, "c", "sleep"),
+    },
+    {
+      name: "appendStep",
+      row: STEP_ROW,
+      run: (sql: SqlExec) => journal.appendStep(sql, SLUG, "wrun_1", ENTRY),
+    },
+    {
+      name: "claimHook",
+      row: { ...HOOK_ROW, run_id: "wrun_1", key: "hook!0" },
+      run: (sql: SqlExec) => journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok"),
+    },
+  ] as const;
+
+  test.each(CLAIMS.map((claim) => [claim.name, claim] as const))(
+    "%s writes and reads in one statement",
+    async (_name, claim) => {
+      const { sql, issued } = recorder([[claim.row]]);
+      await claim.run(sql);
+      expect(issued).toHaveLength(1);
+    },
+  );
+
+  test.each(CLAIMS.map((claim) => [claim.name, claim] as const))(
+    "%s reads the row back through a `union all` off the insert's CTE",
+    async (_name, claim) => {
+      // The outer select reads the statement's snapshot, taken BEFORE the CTE's
+      // insert, so exactly one arm can produce a row — which is the whole reason
+      // the two halves are unioned rather than selected afterwards.
+      const { sql, issued } = recorder([[claim.row]]);
+      await claim.run(sql);
+      expect(issued[0]?.sql).toContain("union all");
+      expect(issued[0]?.sql).toMatch(/on conflict.*do nothing/s);
+    },
+  );
+
+  test.each(CLAIMS.map((claim) => [claim.name, claim] as const))(
+    "%s RE-RUNS the statement when both arms came back empty",
+    async (_name, claim) => {
+      // `on conflict do nothing` does not wait for a concurrent inserter —
+      // Postgres declines — and the union's second arm reads the very snapshot
+      // the insert conflicted against, so a rival's UNCOMMITTED row leaves both
+      // arms empty. Answering that as a failure is a 503 telling the guest to
+      // retry a race whose winner it could simply have read; for `claimHook` it
+      // was worse, a 409 that makes a saga compensate. By the next attempt the
+      // rival has committed or aborted.
+      const { sql, issued } = recorder([[], [claim.row]]);
+      await expect(claim.run(sql)).resolves.toBeDefined();
+      expect(issued).toHaveLength(2);
+    },
+  );
+
+  test.each(CLAIMS.map((claim) => [claim.name, claim] as const))(
+    "%s gives up rather than re-running forever",
+    async (_name, claim) => {
+      // Exhausted is a plain `Error`, i.e. a 503, and that is the right answer:
+      // the store genuinely cannot say what the row holds, and the call is
+      // idempotent. What it may NOT do is spin.
+      const { sql, issued } = recorder([]);
+      await expect(claim.run(sql)).rejects.toThrow();
+      expect(issued.length).toBeLessThanOrEqual(3);
+    },
+  );
+
+  test("claimHook still refuses a VISIBLE owner on the first answer", async () => {
+    // The retry is scoped to the empty answer. An owner the statement can see is
+    // a decision, so it must not be re-run and must not be softened into one.
+    const { sql, issued } = recorder([[{ ...HOOK_ROW, run_id: "wrun_other", key: "hook!0" }]]);
+    await expect(journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok")).rejects.toBeInstanceOf(
+      journal.PlatformWorkflowHookTokenError,
+    );
+    expect(issued).toHaveLength(1);
   });
 });
 

@@ -44,7 +44,7 @@ the assertion.**
 | --- | --- | --- | --- |
 | Unit | `pnpm test` | no filesystem writes, subprocess, or real network | 5s |
 | Integration | `pnpm test:integration` | multiple modules **in memory** | 30s |
-| Scenario | `pnpm test:scenario` | a real subprocess, port, bundler, or Postgres | 120s |
+| Scenario | `pnpm test:scenario` | a real subprocess, port, bundler, Postgres, or NETWORK | 120s |
 | Scenario + real Postgres | `pnpm test:pg` | the above, `AAI_TEST_PG_URL` resolved | 120s |
 | E2E | `pnpm test:e2e` | full process spawn + Playwright browser | 300s |
 | Eval | `pnpm test:eval` | a live model on a real key, `*.eval.test.ts` | 1800s |
@@ -63,6 +63,17 @@ memory) and `platform-schema` (needs a database) shared one tier, timeout, retry
 policy and serial block, so neither was configured for its own failure mode — and
 `pnpm test:integration` took **721 seconds to evaluate twelve tests**, 50 of 63
 skipping for want of a database. It is 10 seconds now.
+
+**Real NETWORK is the unit tier's boundary and lands a test in SCENARIO**, which
+the table left implicit: the unit row forbade it and no other row claimed it.
+`aai-runtime/agent-server.scenario.test.ts` is the worked case — two specs that
+open a live voice session, so the runtime really dials the STT provider and is
+really refused, and they had sat in the unit tier failing on any machine with
+egress while passing wherever that connect fails fast. Note what the fix was NOT:
+their assertions resolve promptly, and what overran the 5s budget was TEARDOWN
+draining three provider connect attempts, so the tier is the answer and a longer
+deadline is not. A test in that tier for network reasons alone needs no gate —
+there is nothing to resolve and nothing to skip.
 
 **Membership is a NAMING CONVENTION** — `*.integration.test.ts`,
 `*.scenario.test.ts` and `*.eval.test.ts`, excluded by every unit config and

@@ -13,8 +13,9 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import type { AdminDb } from "./platform-lock.ts";
 import { captureLogs, fakeAdminDbOver } from "./test-utils.ts";
+import { startWorkflowQueueSweep } from "./workflow-queue-scheduler.ts";
 import type { QueuedMessage } from "./workflow-queue-store.ts";
-import { type Delivered, runQueuePass, startWorkflowQueueSweep } from "./workflow-queue-sweep.ts";
+import { type Delivered, runQueuePass } from "./workflow-queue-sweep.ts";
 
 const logs = captureLogs();
 

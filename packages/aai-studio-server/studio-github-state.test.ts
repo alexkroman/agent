@@ -87,19 +87,21 @@ describe("signInstallState / verifyInstallState", () => {
 
   test("a correctly-signed payload that is not an install state is refused", () => {
     // Signature valid, claims wrong: the schema is what stops a signed blob
-    // from some other use of this key being read as a uid.
-    const payload = Buffer.from(JSON.stringify({ uid: "", exp: Date.now() + 60_000 }))
-      .toString("base64url")
-      .replace(/=+$/, "");
-    const signed = signInstallState(testGithubApp, { uid: "x" });
-    const [realPayload] = signed.split(".");
-    expect(realPayload).toBeDefined();
-    // Re-sign the bad payload the way the module would, by round-tripping a
-    // real state and swapping only the claims — an empty uid is not identity.
-    const badState = signInstallState(testGithubApp, { uid: "x" }).replace(
-      String(realPayload),
-      payload,
-    );
+    // from some other use of this key being read as a uid. An empty uid is not
+    // identity, and `InstallStateSchema` is the ONLY thing that can reject this
+    // — the module signed it itself, so the signature check cannot.
+    //
+    // Letting the module sign it is also what makes the case deterministic.
+    // Hand-building the payload and splicing it into a real state called
+    // `signInstallState` TWICE, each defaulting `now` to its own `Date.now()`:
+    // when the millisecond ticked between them the two payloads differed, the
+    // `replace` matched nothing, and the "bad" state was a perfectly valid one
+    // that verified — which is exactly how this failed in CI and passed on
+    // every machine fast enough to sign twice inside one millisecond. And when
+    // the splice DID land it swapped the payload while keeping a signature over
+    // the original, so what rejected it was the signature rather than the
+    // schema: the assertion held with `InstallStateSchema` deleted.
+    const badState = signInstallState(testGithubApp, { uid: "" });
     expect(verifyInstallState(testGithubApp, badState)).toBeNull();
   });
 });

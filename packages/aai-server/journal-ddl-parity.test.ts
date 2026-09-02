@@ -141,6 +141,12 @@ const PLATFORM_ONLY_COLUMNS: Readonly<Record<string, string>> = {
   // one nothing writes and nothing reads, which is the dead-config shape this
   // repo keeps paying for.
   "workflow_runs.reconciled_at": "the fleet-wide reconcile throttle; no runtime sweep exists",
+  // The reconcile BUDGET, and platform-only for the same reason its stamp is:
+  // the count is incremented by the fleet-wide pass and spent against
+  // `RECONCILE_MAX_ATTEMPTS` to abandon a run no guest can ever finish
+  // (`workflow-queue-reconcile.ts`). A self-hosted engine runs no such pass, so
+  // the column would be one nothing increments and nothing reads.
+  "workflow_runs.reconciles": "the fleet-wide reconcile budget; no runtime sweep exists",
 };
 
 /** One parsed column, or a table-level `primary key (…)` clause. */
@@ -395,7 +401,7 @@ describe("the INDEXES are where the two schemas really differ", () => {
   test("both sides declare the indexes they declare", () => {
     // A floor AND a ceiling: an index added on either side alone has to be
     // classified by one of the three cases below rather than slipping in.
-    expect(platformIndexes).toHaveLength(5);
+    expect(platformIndexes).toHaveLength(6);
     expect(runtimeIndexes).toHaveLength(1);
   });
 
@@ -430,6 +436,22 @@ describe("the INDEXES are where the two schemas really differ", () => {
     );
     expect(platformIndexes).toContain(
       "create index if not exists workflow_hooks_open_idx on aai_platform.workflow_hooks (slug, run_id) where delivered = false and closed = false",
+    );
+  });
+
+  test("the RETENTION index is platform-only, and that is JUSTIFIED too", () => {
+    // `workflow_runs_terminal_idx`, from `20260902120000_workflow_run_
+    // abandonment.sql`. It serves `sweep_terminal_workflow_runs`, which walks
+    // terminal runs oldest-first across every agent to drop them past the
+    // retention window — a fleet-wide scan the runtime has no equivalent of.
+    // The memory backend bounds itself by COUNT instead
+    // (`MAX_TERMINAL_RUNS`, `forgetOldTerminalRuns`), and the Postgres one
+    // does not sweep at all: a self-hosted operator owns their database's
+    // retention. Partial on the three terminal statuses, which is what makes
+    // it disjoint from `workflow_runs_stalled_idx` rather than redundant with
+    // it — that one is partial on the two LIVE statuses.
+    expect(platformIndexes).toContain(
+      "create index if not exists workflow_runs_terminal_idx on aai_platform.workflow_runs (created_at) where status in ('completed', 'failed', 'cancelled')",
     );
   });
 

@@ -87,6 +87,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { abandonStalledRun, RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { enqueue } from "./workflow-queue-store.ts";
@@ -159,10 +160,19 @@ export type ReconcilePass = {
    * ceiling.
    */
   skipped: number;
+  /**
+   * Runs it gave up on and moved to `failed` — see {@link RECONCILE_MAX_ATTEMPTS}.
+   *
+   * Reported separately from {@link ReconcilePass.stalled} because it is the
+   * opposite outcome: a repair issued, against a repair abandoned. Each one is
+   * also logged HERE at `warn` as it happens, since it is the one thing this
+   * pass does that an author sees in their own run history.
+   */
+  abandoned: number;
 };
 
-/** A run the queue has lost. */
-export type StalledRun = { slug: string; runId: string };
+/** A run the queue has lost, and how many times this pass's predecessors found it. */
+export type StalledRun = { slug: string; runId: string; reconciles: number };
 
 /**
  * The PREDICATE, split from the write.
@@ -206,7 +216,7 @@ export async function findStalledRuns(
   // side could not
   // see break — and it picks up a plain `ctx.sleep` whose wake was lost too.
   const rows = await sql(
-    `select r.slug, r.run_id
+    `select r.slug, r.run_id, r.reconciles
        from aai_platform.workflow_runs r
       where r.status in ('pending', 'running')
         and r.created_at < $1
@@ -231,7 +241,11 @@ export async function findStalledRuns(
       limit $3`,
     [(opts.now ?? Date.now()) - STALL_GRACE_MS, "__wkf_workflow_", limit],
   );
-  return rows.map((row) => ({ slug: String(row.slug), runId: String(row.run_id) }));
+  return rows.map((row) => ({
+    slug: String(row.slug),
+    runId: String(row.run_id),
+    reconciles: Number(row.reconciles),
+  }));
 }
 
 /**
@@ -249,11 +263,20 @@ export async function findStalledRuns(
  * already `RECONCILE_MAX_PER_TICK` inserts deep on a RESERVED connection and a
  * second round trip per run would double that for bookkeeping.
  *
+ * **It also increments `reconciles`, which is the whole cost of having a budget**
+ * ({@link RECONCILE_MAX_ATTEMPTS}): the stamp is already the one write per pass
+ * that names exactly the runs a repair was issued for, so counting them is a
+ * column on a statement that was happening anyway. A run stamped here is a run
+ * that really got a message — the same reason this takes `scheduled` rather than
+ * everything the predicate found.
+ *
  * @internal
  */
 export async function markReconciled(
   sql: SqlExec,
-  runs: readonly StalledRun[],
+  // The PAIR, not a `StalledRun`: the count is what this writes, never what it
+  // reads, so asking for it would make every caller supply a value it ignores.
+  runs: readonly Pick<StalledRun, "slug" | "runId">[],
   now = Date.now(),
 ): Promise<void> {
   if (runs.length === 0) return;
@@ -262,7 +285,7 @@ export async function markReconciled(
   // a per-width entry in every plan cache on the connection.
   await sql(
     `update aai_platform.workflow_runs r
-        set reconciled_at = $1
+        set reconciled_at = $1, reconciles = r.reconciles + 1
        from unnest($2::text[], $3::text[]) as t(slug, run_id)
       where r.slug = t.slug and r.run_id = t.run_id`,
     [now, runs.map((run) => run.slug), runs.map((run) => run.runId)],
@@ -282,9 +305,19 @@ export async function reconcileStalledRuns(
   /** The runs whose message really landed — the only ones {@link markReconciled} may stamp. */
   const scheduled: StalledRun[] = [];
   let skipped = 0;
+  let abandoned = 0;
 
   for (const run of stalled) {
     const { slug, runId } = run;
+    // Out of budget: FAIL it rather than writing a sixth message. Nothing else on
+    // the platform ever writes a terminal status, so without this arm the run is
+    // repaired every `STALL_GRACE_MS` for as long as the table holds it — see
+    // {@link RECONCILE_MAX_ATTEMPTS}. Not stamped either: it is terminal now, so
+    // the predicate cannot select it again and there is no throttle to buy.
+    if (run.reconciles >= RECONCILE_MAX_ATTEMPTS) {
+      if (await abandonStalledRun(sql, run)) abandoned += 1;
+      continue;
+    }
     // Sequential because there is nothing to fan out ONTO: the caller hands in
     // one RESERVED connection (`runQueuePass`), so concurrency here would only
     // queue on it. What that does mean is that a full pass costs up to
@@ -348,5 +381,5 @@ export async function reconcileStalledRuns(
   // wrote — the same argument this function's stamp-after-enqueue ordering
   // already makes, one case finer.
   await markReconciled(sql, scheduled);
-  return { stalled: scheduled.length, skipped };
+  return { stalled: scheduled.length, skipped, abandoned };
 }
