@@ -69,7 +69,7 @@ describe("a run that SLEEPS", () => {
     description: "review",
     run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
       const written = await ctx.step("write", () => "the draft");
-      await ctx.sleep(A_DAY);
+      await ctx.sleep("settle", A_DAY);
       return { written, filed: await ctx.step("file", () => "filed") };
     },
   });
@@ -93,7 +93,7 @@ describe("a run that SLEEPS", () => {
         description: "review",
         run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
           const written = await ctx.step("write", write);
-          await ctx.sleep(A_DAY);
+          await ctx.sleep("settle", A_DAY);
           return { written, filed: await ctx.step("file", () => "filed") };
         },
       }),
@@ -187,7 +187,7 @@ describe("a wait whose WINDOW closes unanswered", () => {
     const scheduled = workflow({
       description: "scheduled",
       run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
-        await ctx.sleep(A_DAY);
+        await ctx.sleep("schedule", A_DAY);
         return "later";
       },
     });
@@ -370,7 +370,7 @@ describe("the driver's own limits", () => {
     const looping = workflow({
       description: "looping",
       run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
-        for (let i = 0; i < 100; i++) await ctx.sleep(A_DAY);
+        for (let i = 0; i < 100; i++) await ctx.sleep("poll", A_DAY);
         return "never";
       },
     });

@@ -38,7 +38,7 @@ function methods(line: string): string[] {
 }
 
 describe("the vocabulary matches the repo gate beside it", () => {
-  test("the three identities are the three rule 31 bans, and no more", () => {
+  test("the three identities are the three rule 32 bans, and no more", () => {
     // Read out of the gate script's SOURCE rather than imported: that file is
     // plain node run from the repo root, this ships inside a published CLI, and
     // neither can import the other — which is exactly why the two lists can

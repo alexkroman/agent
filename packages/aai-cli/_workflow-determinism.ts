@@ -2,7 +2,7 @@
 /**
  * A COMPUTED step identity in the project's own `workflows/`.
  *
- * `guard-invariants` rule 31 is this same check over the repo's own shipped
+ * `guard-invariants` rule 32 is this same check over the repo's own shipped
  * template bodies; this is it pointed at a USER's project, at `aai build` and
  * `aai deploy`. The two exist together because the gate holds the examples and
  * held nothing written from them.

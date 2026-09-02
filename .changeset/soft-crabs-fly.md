@@ -2,7 +2,7 @@
 "@alexkroman1/aai-cli": minor
 ---
 
-Warn at `aai build` and `aai deploy` about a COMPUTED workflow identity, and hold this repo's own shipped bodies to the same thing as `guard-invariants` rule 31.
+Warn at `aai build` and `aai deploy` about a COMPUTED workflow identity, and hold this repo's own shipped bodies to the same thing as `guard-invariants` rule 32.
 
 `ctx.step`, `ctx.sleep` and `ctx.waitFor` all key a journal ROW by their first argument, and a body is replayed — so a computed identity mints a row no earlier walk reached, after which the engine either re-executes the step or refuses the run. On a one-line body a coin flip interpolated into a step name ran the side effect twice in 7 of 10 runs, with all 10 reporting `completed`.
 

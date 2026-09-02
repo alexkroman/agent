@@ -133,7 +133,7 @@ type Queued = { runId: string; at: number | undefined };
  *   description: "Summarize a link, then file it once it has settled.",
  *   run: async (input, ctx) => {
  *     const text = await ctx.step("read", () => `the page at ${String(input.url)}`);
- *     await ctx.sleep(10_000);
+ *     await ctx.sleep("settle", 10_000);
  *     return { text, filedAt: await ctx.step("file", () => "ok") };
  *   },
  * });

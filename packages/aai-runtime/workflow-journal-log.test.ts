@@ -85,7 +85,7 @@ describe("the post-condition is wired", () => {
   test("a run still parked is skipped, and says so when asked directly", async () => {
     const world = harness({
       digest: async (_input, ctx) => {
-        await ctx.sleep(60_000);
+        await ctx.sleep("settle", 60_000);
         return "eventually";
       },
     });

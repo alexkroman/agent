@@ -706,7 +706,7 @@ runs at build time either way.
 `_workflow-determinism.ts` scans the project's `workflows/*.ts` for a
 `ctx.step`/`ctx.sleep`/`ctx.waitFor` whose identity is a template literal, and
 `build` and `deploy` print one line per finding plus the remedy. It is
-`guard-invariants` rule 31 (`scripts/guard-invariants-rules-workflow.mjs`)
+`guard-invariants` rule 32 (`scripts/guard-invariants-rules-workflow.mjs`)
 pointed at a USER's project — that rule holds this repo's shipped bodies to the
 same thing, and no project written from them was held to anything.
 
