@@ -17,14 +17,15 @@
  *
  * ## This file is a BARREL, and what the split is by
  *
- * It reached 649 lines against a 500-line source cap. The four modules under it
+ * It reached 649 lines against a 500-line source cap. The five modules under it
  * are cut by SUBJECT rather than by size:
  *
  * | module | holds |
  * | --- | --- |
  * | `guard-invariants-ere.mjs`          | the regex vocabulary |
  * | `guard-invariants-scopes.mjs`       | the eight corpora, and `SCAN_CORPORA`, the floor under each |
- * | `guard-invariants-rules-timing.mjs` | rules 3, 4, 19, 21, 23 — how code waits; plus 26 and 30, the two over a shipped `workflows/` body |
+ * | `guard-invariants-rules-timing.mjs` | rules 3, 4, 19, 21, 23, 31 — how code waits |
+ * | `guard-invariants-rules-workflow.mjs` | rules 26 and 30, the two over a shipped `workflows/` body |
  * | `guard-invariants-rules-shape.mjs`  | rules 2, 17, 18, 22, 28 — a value's shape, re-derived |
  * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16, 24, 25, 27, 29 — state someone else owns |
  *
@@ -37,7 +38,7 @@
  *     and 15 reserved; the numbers appear in commit messages and in the
  *     baseline's history, so nothing was renumbered.
  *   - **Every module here matches most of its own rules**, because each
- *     `label` and `re` is a description of the thing it bans. All five are in
+ *     `label` and `re` is a description of the thing it bans. All six are in
  *     `guard-invariants.mjs`'s `SELF_REFERENTIAL` set alongside the gate, the
  *     baseline and the gate's spec. AGENTS.md records this trap being paid for
  *     four times; a split that forgot one file would be the fifth.
@@ -50,6 +51,7 @@
 import { SHAPE_RULES } from "./guard-invariants-rules-shape.mjs";
 import { STATE_RULES } from "./guard-invariants-rules-state.mjs";
 import { TIMING_RULES } from "./guard-invariants-rules-timing.mjs";
+import { WORKFLOW_BODY_RULES } from "./guard-invariants-rules-workflow.mjs";
 
 export {
   GUEST_SURFACE_PATHSPECS,
@@ -91,10 +93,14 @@ export {
  * Sorted rather than concatenated in module order, so the gate's summary reads
  * in rule-number order and the generated baseline's key order is a function of
  * the rule set rather than of which file a rule happens to live in — otherwise
- * moving a rule between the three modules would rewrite the baseline.
+ * moving a rule between the four rule modules would rewrite the baseline —
+ * which is exactly what the 26/30 move would otherwise have done.
  *
  * @type {LineRule[]}
  */
-export const LINE_RULES = [...SHAPE_RULES, ...TIMING_RULES, ...STATE_RULES].sort(
-  (a, b) => a.id - b.id,
-);
+export const LINE_RULES = [
+  ...SHAPE_RULES,
+  ...TIMING_RULES,
+  ...STATE_RULES,
+  ...WORKFLOW_BODY_RULES,
+].sort((a, b) => a.id - b.id);

@@ -111,6 +111,7 @@ const SELF_REFERENTIAL = new Map([
   ["scripts/guard-invariants-rules-timing.mjs", "*"],
   ["scripts/guard-invariants-rules-shape.mjs", "*"],
   ["scripts/guard-invariants-rules-state.mjs", "*"],
+  ["scripts/guard-invariants-rules-workflow.mjs", "*"],
   ["scripts/guard-invariants-baseline.json", "*"],
   // The spec that proves each rule still matches. Its samples ARE the
   // anti-patterns, spelled out on purpose — it exists because a pattern
@@ -126,6 +127,7 @@ const SELF_REFERENTIAL = new Map([
   ["packages/aai-runtime/_test-utils.ts", ["rule4_inlineTickPromise"]],
   ["packages/aai/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
   ["packages/aai/sdk/is-record.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body
+  ["packages/aai/sdk/jittered-backoff.ts", ["rule31_handRolledJitter"]], // rule 31 IS this body
 ]);
 
 /** Is `file` exempt from the rule keyed `ruleKey`? */

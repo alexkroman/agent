@@ -18,6 +18,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai/channels` — `packages/aai/etc/channels.api.md`
 - `@alexkroman1/aai/ffmpeg` — `packages/aai/etc/ffmpeg.api.md`
 - `@alexkroman1/aai/host-internal` — `packages/aai/etc/host-internal.api.md`
+- `@alexkroman1/aai/html` — `packages/aai/etc/html.api.md`
 - `@alexkroman1/aai` — `packages/aai/etc/index.api.md`
 - `@alexkroman1/aai/internal` — `packages/aai/etc/internal.api.md`
 - `@alexkroman1/aai/llm` — `packages/aai/etc/llm.api.md`
@@ -1801,6 +1802,45 @@ export const XAI_API_KEY_ENV = "XAI_API_KEY";
 export const XAI_KIND: "xai";
 ```
 
+## `@alexkroman1/aai/html`
+
+```ts
+// @public
+export type FeedItem = {
+    id: string | undefined;
+    title: string | undefined;
+    link: string | undefined;
+    description: string | undefined;
+    published: string | undefined;
+    enclosureUrl: string | undefined;
+    enclosureType: string | undefined;
+};
+
+// @public
+export function htmlToText(html: string, options?: {
+    maxChars?: number;
+}): string;
+
+// @public
+export type PageMetadata = {
+    title: string | undefined;
+    description: string | undefined;
+    feedUrls: string[];
+};
+
+// @public
+export function pageMetadata(html: string): PageMetadata;
+
+// @public
+export type ParsedFeed = {
+    title: string | undefined;
+    items: FeedItem[];
+};
+
+// @public
+export function parseFeed(xml: string): ParsedFeed | undefined;
+```
+
 ## `@alexkroman1/aai`
 
 ```ts
@@ -2949,6 +2989,15 @@ export function isInvariantViolation(value: unknown): value is InvariantViolatio
 
 // @internal
 export function isTextAssetPath(assetPath: string): boolean;
+
+// @public
+export function jitteredBackoff(attempt: number, options: JitteredBackoffOptions): number;
+
+// @public
+export type JitteredBackoffOptions = {
+    baseMs: number;
+    maxMs?: number | undefined;
+};
 
 // @public
 export function linkConfirmationCode(code: string): string;

@@ -21,6 +21,7 @@
  * that fails to transcribe taking the whole digest down with it.
  */
 
+import { type FeedItem, parseFeed } from "@alexkroman1/aai/html";
 import { createWorkflowCtx, parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
@@ -199,23 +200,53 @@ describe("podcast links", () => {
 });
 
 describe("reading a feed", () => {
-  const ITEM =
+  /**
+   * One entry, through the REAL parse.
+   *
+   * `episodeFromItem` takes a `FeedItem` now rather than a slice of XML, and
+   * building one by hand would test the mapping against a literal somebody
+   * typed. Going through `parseFeed` keeps the fixture what a feed actually
+   * says, which is where the interesting cases (CDATA, date formats, a missing
+   * enclosure) live.
+   */
+  const itemOf = (itemXml: string): FeedItem => {
+    const item = parseFeed(`<rss><channel>${itemXml}</channel></rss>`)?.items[0];
+    if (!item) throw new Error("fixture did not parse as one feed item");
+    return item;
+  };
+
+  const ITEM = itemOf(
     "<item><title>An Episode</title><link>https://example.com/ep</link>" +
-    '<guid isPermaLink="false">guid-1</guid><pubDate>Fri, 21 Aug 2026 00:00:00 GMT</pubDate>' +
-    '<enclosure url="https://example.com/a.mp3" type="audio/mpeg"/></item>';
+      '<guid isPermaLink="false">guid-1</guid><pubDate>Fri, 21 Aug 2026 00:00:00 GMT</pubDate>' +
+      '<enclosure url="https://example.com/a.mp3" type="audio/mpeg"/></item>',
+  );
 
   test("reads the fields a digest needs off an item", () => {
     expect(episodeFromItem(ITEM, "https://example.com/feed.xml", "Show", 0)).toMatchObject({
       title: "An Episode",
       url: "https://example.com/ep",
       audioUrl: "https://example.com/a.mp3",
-      published: "Fri, 21 Aug 2026 00:00:00 GMT",
+      // ISO, not the RFC 822 the feed wrote — so an RSS and an Atom feed sort
+      // against each other instead of against two formats.
+      published: "2026-08-21T00:00:00.000Z",
     });
+  });
+
+  test("HTML inside CDATA arrives as text, not as markup", () => {
+    // The case `stripCdata` got wrong: it peeled the wrapper and left the
+    // entity and the tags for the model to read.
+    const item = itemOf(
+      "<item><title><![CDATA[Fish &amp; <b>Chips</b>]]></title>" +
+        '<enclosure url="https://example.com/a.mp3"/></item>',
+    );
+    expect(episodeFromItem(item, "https://example.com/feed.xml", "Show", 0)?.title).toBe(
+      "Fish & Chips",
+    );
   });
 
   /** A feed legitimately mixes text posts in; there is nothing to transcribe. */
   test("drops an item with no audio rather than inventing a URL", () => {
-    const noAudio = "<item><title>A Post</title><link>https://example.com/p</link></item>";
+    const noAudio = itemOf("<item><title>A Post</title><link>https://example.com/p</link></item>");
     expect(episodeFromItem(noAudio, "https://example.com/feed.xml", "Show", 0)).toBeUndefined();
   });
 
@@ -227,11 +258,22 @@ describe("reading a feed", () => {
     expect(stableEpisodeId("a", "b")).not.toBe(stableEpisodeId("a", "c"));
   });
 
-  test("requires BOTH an rss root and an enclosure to call it a podcast feed", () => {
-    expect(looksLikePodcastFeed('<rss><enclosure url="https://a.test/a.mp3"/></rss>')).toBe(true);
-    // A blog feed: RSS, but nothing to transcribe.
-    expect(looksLikePodcastFeed("<rss><item><title>Post</title></item></rss>")).toBe(false);
+  test("requires BOTH a parseable feed and an enclosure to call it a podcast", () => {
+    const withAudio =
+      '<rss><channel><item><title>E</title><enclosure url="https://a.test/a.mp3"/></item></channel></rss>';
+    expect(looksLikePodcastFeed(withAudio)).toBe(true);
+    // A blog feed: a real feed, but nothing to transcribe.
+    expect(
+      looksLikePodcastFeed("<rss><channel><item><title>Post</title></item></channel></rss>"),
+    ).toBe(false);
     expect(looksLikePodcastFeed("<html></html>")).toBe(false);
+  });
+
+  test("an ATOM podcast feed counts, which the `<rss` test refused outright", () => {
+    const atom =
+      '<feed xmlns="http://www.w3.org/2005/Atom"><title>Show</title>' +
+      '<entry><title>E</title><enclosure url="https://a.test/a.mp3"/></entry></feed>';
+    expect(looksLikePodcastFeed(atom)).toBe(true);
   });
 
   test("finds an advertised feed in either attribute order, and resolves it", () => {
@@ -531,18 +573,40 @@ describe("discoverEpisodes", () => {
   });
 
   test("names the four accepted shapes when a feed carries no episode audio", async () => {
-    // An `<enclosure>` outside any `<item>`: it looks like a podcast feed and
-    // yields nothing, which is the case a bare "no episodes" would not explain.
+    // Reached through APPLE, which resolves a feed URL from the lookup API and
+    // does not run it past `looksLikePodcastFeed` — so this is the one route
+    // left to a feed that resolves and yields nothing, and the case a bare "no
+    // episodes" would not explain. The plain-web route can no longer get here:
+    // the predicate asks whether some ITEM carries audio, which is the same
+    // question `readPodcastFeed` filters on, so a text-only feed is refused
+    // earlier with a message that names the URL.
+    stub({
+      "itunes.apple.com/lookup": {
+        body: { results: [{ feedUrl: "https://show.test/feed.xml", collectionName: "T" }] },
+      },
+      "show.test/feed.xml": {
+        body: "<rss><channel><title>T</title><item><title>No audio</title></item></channel></rss>",
+      },
+    });
+
+    await expect(
+      discoverEpisodes("https://podcasts.apple.com/us/podcast/x/id123", 5),
+    ).rejects.toThrow(
+      /Apple Podcasts show link, a Spotify show link, an RSS feed URL, or a podcast homepage/,
+    );
+  });
+
+  test("a text-only feed pasted directly is refused by NAME, not as an empty digest", async () => {
+    // The other half of the change above: this used to reach the generic "no
+    // episodes" message, and now names the URL the person actually pasted.
     stub({
       "show.test/feed.xml": {
-        body:
-          '<rss><channel><title>T</title><enclosure url="https://cdn.test/x.mp3"/>' +
-          "<item><title>No audio</title></item></channel></rss>",
+        body: "<rss><channel><title>T</title><item><title>No audio</title></item></channel></rss>",
       },
     });
 
     await expect(discoverEpisodes("https://show.test/feed.xml", 5)).rejects.toThrow(
-      /Apple Podcasts show link, a Spotify show link, an RSS feed URL, or a podcast homepage/,
+      /Could not find a podcast RSS feed at https:\/\/show\.test\/feed\.xml/,
     );
   });
 

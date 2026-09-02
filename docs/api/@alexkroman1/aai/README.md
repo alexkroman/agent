@@ -172,6 +172,7 @@ Full API reference: <https://alexkroman.github.io/agent/>
 
 - [channels](channels.md)
 - [ffmpeg](ffmpeg.md)
+- [html](html.md)
 - [index](index.md)
 - [llm](llm.md)
 - [manifest](manifest.md)

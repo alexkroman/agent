@@ -12,10 +12,10 @@
  *
  * Two implementations behind one async interface:
  *
- * - `createRateLimiter` — in-memory windows in a `TtlCache` (quick-lru with
- *   the window as max-age), for local dev and tests. Attacker-chosen keys
- *   cannot grow it without bound: stale windows expire on read and the LRU
- *   cap evicts beyond `maxKeys`.
+ * - `createRateLimiter` — in-memory windows in a `TtlCache` (an LRU with the
+ *   window as its TTL), for local dev and tests. Attacker-chosen keys cannot
+ *   grow it without bound: stale windows expire on read and the LRU cap evicts
+ *   beyond `maxKeys` — EXACTLY beyond it, since that cache moved to lru-cache.
  * - `createPgRateLimiter` — windows in `aai_platform.studio_rate_limits`
  *   over the platform's Supabase Postgres, so a limit holds across replicas
  *   instead of multiplying by the replica count. That difference is the whole

@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "html",
+  "epoch": 1,
+  "sha256": "35131036d3fd50014f47575e319c80062c0090770bd6dcbd3060b35880273f9d",
+  "exports": ["FeedItem", "PageMetadata", "ParsedFeed", "htmlToText", "pageMetadata", "parseFeed"]
+}

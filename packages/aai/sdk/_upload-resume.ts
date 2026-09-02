@@ -48,6 +48,7 @@
 
 import { RETRYABLE_STATUS } from "./_upload-retry.ts";
 import { failureStatus } from "./_workflow-api-envelope.ts";
+import { jitteredBackoff } from "./jittered-backoff.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { sleep } from "./sleep.ts";
 import {
@@ -86,8 +87,10 @@ export function isResumableFailure(err: unknown): boolean {
  * agent in unison.
  */
 function resumeDelay(round: number): number {
-  const window = Math.min(UPLOAD_RESUME_BASE_MS * 2 ** (round - 1), UPLOAD_RESUME_MAX_MS);
-  return window / 2 + Math.random() * (window / 2);
+  return jitteredBackoff(round, {
+    baseMs: UPLOAD_RESUME_BASE_MS,
+    maxMs: UPLOAD_RESUME_MAX_MS,
+  });
 }
 
 /**

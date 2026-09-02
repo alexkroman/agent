@@ -79,6 +79,7 @@ const SUBPATH_IMPORTS: ReadonlyArray<{
   { subpath: "./llm", load: () => import("@alexkroman1/aai/llm") },
   { subpath: "./s2s", load: () => import("@alexkroman1/aai/s2s") },
   { subpath: "./ffmpeg", load: () => import("@alexkroman1/aai/ffmpeg") },
+  { subpath: "./html", load: () => import("@alexkroman1/aai/html") },
   { subpath: "./tools", load: () => import("@alexkroman1/aai/tools") },
   { subpath: "./internal", load: () => import("@alexkroman1/aai/internal") },
   { subpath: "./host-internal", load: () => import("@alexkroman1/aai/host-internal") },

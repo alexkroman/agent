@@ -25,9 +25,9 @@
  */
 
 import type { WorkflowCtx } from "@alexkroman1/aai";
+import { htmlToText, pageMetadata } from "@alexkroman1/aai/html";
 import { report } from "@alexkroman1/aai/step";
 import { FatalError, stepFetchOk, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
-import { decodeHtmlEntities } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 
 /**
@@ -217,29 +217,34 @@ export async function file(_digest: Digest): Promise<string> {
 
 // ---- Pure helpers -----------------------------------------------------------
 
-/** The document's `<title>`, when it has one. */
+/**
+ * The page's own name for itself.
+ *
+ * `pageMetadata` prefers `og:title` over the `<title>` element, which is what a
+ * digest wants: a `<title>` usually carries the site name and a separator
+ * ("Otters and tools | Nature Weekly") that a one-line summary does not.
+ */
 export function extractTitle(html: string): string | undefined {
-  const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1];
-  return title ? decodeHtmlEntities(title).replace(/\s+/g, " ").trim() || undefined : undefined;
+  return pageMetadata(html).title?.replace(/\s+/g, " ").trim() || undefined;
 }
 
 /**
  * Reduce HTML to the text a model should read.
  *
- * Deliberately crude, and the crudeness is the honest part: a real extractor is
- * a readability implementation and a dependency, where this is four `replace`
- * calls that get most of an article. What it MUST do is drop `<script>` and
- * `<style>` CONTENT — stripping tags alone leaves a page's JavaScript in the
- * prompt, which is both expensive and a way to smuggle instructions past the
- * reader.
+ * `htmlToText` is a real HTML parse (`@alexkroman1/aai/html`, over htmlparser2),
+ * which matters most for the thing this MUST do: drop `<script>` and `<style>`
+ * CONTENT, because a page's JavaScript in the prompt is both expensive and a way
+ * to smuggle instructions past the reader. This was four `replace` calls, and
+ * they had a hole exactly there — `<script[^>]*>[\s\S]*?<\/script>` needs the
+ * close tag, so a page truncated mid-script (a byte cap, a dropped connection)
+ * removed nothing and the tag strip put the whole script into the prompt.
+ *
+ * Whitespace is collapsed to single spaces afterwards because this text crosses
+ * a queue between two steps and the blank lines `htmlToText` uses for block
+ * structure are bytes the summary does not read.
  */
 export function extractText(html: string): string {
-  return decodeHtmlEntities(
-    html
-      .replace(/<(script|style|noscript|template)[^>]*>[\s\S]*?<\/\1>/gi, " ")
-      .replace(/<!--[\s\S]*?-->/g, " ")
-      .replace(/<[^>]+>/g, " "),
-  )
+  return htmlToText(html, { maxChars: MAX_ARTICLE_CHARS })
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, MAX_ARTICLE_CHARS);

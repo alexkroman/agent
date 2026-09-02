@@ -63,6 +63,11 @@
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
+  "html": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "llm": {
     "current": 1,
     "supported": [1],

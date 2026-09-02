@@ -552,6 +552,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   | 28 | no hand-rolled `process.argv` scan in `scripts/` | `parseScriptArgs()` |
   | 29 | no `globalThis.fetch` as a runtime egress default | `egressFetch()` |
   | 30 | no non-deterministic read in a shipped `workflows/` body | move it inside `ctx.step` |
+  | 31 | no hand-rolled jittered backoff | `jitteredBackoff()` |
 
   Hand-kept, and it keeps going stale — it stopped at 23, then at 28, and
   `--rules` is the derived source to read instead. The recurrence IS the
@@ -583,11 +584,14 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   asymmetry is exactly why the grep-based rules announced their own blindness
   and these two could not.
 
-  **The rule definitions are five modules behind one barrel.**
+  **The rule definitions are six modules behind one barrel.**
   `guard-invariants-rules.mjs` re-exports `LINE_RULES` (sorted by id) and the
-  five scope constants; under it sit `-ere.mjs` (the regex vocabulary),
-  `-scopes.mjs` (the five corpora), and `-rules-timing.mjs` / `-rules-shape.mjs`
-  / `-rules-state.mjs`. **Every one is in the gate's `SELF_REFERENTIAL` set**,
+  scope constants; under it sit `-ere.mjs` (the regex vocabulary),
+  `-scopes.mjs` (the corpora), and four rule groups — `-rules-timing.mjs` /
+  `-rules-shape.mjs` / `-rules-state.mjs` / `-rules-workflow.mjs`, the last
+  holding the two rules over a shipped `workflows/` body, which left the timing
+  module when rule 31 took it past the source cap.
+  **Every one is in the gate's `SELF_REFERENTIAL` set**,
   because each `label` and `re` describes the thing it bans — a split that
   forgot one file would be the fifth time this repo pays for that trap. A rule
   may also carry `samples: { matches, ignores }`, where a widened pattern's
@@ -999,7 +1003,10 @@ async work), `createTurnMachine()` (the pipeline's turn lifecycle),
 `createKeyedLock()`/`withLock()` (serialize async work per key — the one that
 is PUBLIC, because the LLM loop runs a step's tool calls concurrently),
 `sleep(ms, { signal?, unref? })` (the ONE wait; `guard-invariants` rule 19
-keeps the seventh spelling out), `sessionSlot()` (a typed named slot that owns
+keeps the seventh spelling out),
+`jitteredBackoff(attempt, { baseMs, maxMs? })` (how long before the next
+retry — rule 31 keeps the fourth copy out; the JITTER is the half a copy gets
+wrong), `sessionSlot()` (a typed named slot that owns
 a session's state, with a SYNCHRONOUS update window), `ToolFailure` /
 `isToolFailure()` / `toolFailure()` (the failure a tool returns for the MODEL
 to recover from), `pushCapped()`, `resolveOne()`, `omitUndefined()` and

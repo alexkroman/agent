@@ -1751,7 +1751,7 @@ safe from a `workflows/*.ts` module and from a browser bundle:
 | `formatBytes`, `formatDuration`, `countWords`, `plural` | Narration. Each returns ONE fixed shape, so a step's progress line and the page rendering the same run cannot disagree — they did, one template printing `1:04:09` from its workflow and `64:09` from its page |
 | `pushCapped(list, item, max)` | An append that keeps the last N, for a log a session accumulates |
 | `isRecord(x)`, `omitUndefined(obj)` | The object guard and the spread-free way to drop undefined fields |
-| `decodeHtmlEntities(text)` | Scraped text on its way to a model |
+| `decodeHtmlEntities(text)` | Six entities, no dependency. Enough for a `client.tsx`; for a page or a feed see `/html` below |
 | `createKeyedLock()` / `withLock(lock, key, work)` | Serializing async work per key |
 
 **`createKeyedLock` is the one an agent most needs and least expects to.** The
@@ -1760,6 +1760,39 @@ external resource interleave at every `await`. A session-state mutation is NOT
 that case — `slot.update`'s window is synchronous — so reach for the lock when
 the thing being mutated is outside the session. `withLock` takes an optional
 acquire deadline and throws `KeyedLockTimeoutError` when it runs out.
+
+## Reading a page or a feed — `@alexkroman1/aai/html`
+
+A step that fetches somebody else's markup gets a real parse rather than a
+regex. Node-only (it pulls two parsers), so import it from `workflows/*.ts` or a
+tool, never from `client.tsx`:
+
+```ts
+import { htmlToText, pageMetadata, parseFeed } from "@alexkroman1/aai/html";
+
+declare const html: string;
+declare const xml: string;
+
+// A page, reduced to the prose worth putting in a prompt. `<script>` and
+// `<style>` bodies never survive, and `maxChars` caps what crosses the wire.
+const article = htmlToText(html, { maxChars: 20_000 });
+
+// `og:title` when the page declares one, else its `<title>` element.
+const { title, description, feedUrls } = pageMetadata(html);
+
+// RSS, Atom and RDF alike. `published` is ISO whatever the feed wrote, and
+// titles come back as TEXT — feeds wrap HTML in CDATA as a matter of course.
+const feed = parseFeed(xml);
+const episodes = feed?.items.filter((item) => item.enclosureUrl !== undefined) ?? [];
+```
+
+**Reach for this rather than writing the patterns.** Both are cheap to get
+wrong in ways that only show up on real pages: `<[^>]+>` cuts a tag whose
+attribute contains a `>`, `<script[^>]*>[\s\S]*?<\/script>` leaves the whole
+script in your prompt when the page was truncated mid-tag, and
+`indexOf("<title>")` finds an entry's title rather than a channel's. The
+`link-digest` and `podcast-digest` templates each shipped a version of those
+before this subpath existed.
 
 ## Persisting data — bring your own client
 

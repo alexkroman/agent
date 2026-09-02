@@ -98,6 +98,11 @@
       "types": "./dist/host/ffmpeg.d.ts",
       "import": "./dist/host/ffmpeg.js"
     },
+    "./html": {
+      "@dev/source": "./host/html.ts",
+      "types": "./dist/host/html.d.ts",
+      "import": "./dist/host/html.js"
+    },
     "./step-files": {
       "@dev/source": "./host/step-files.ts",
       "types": "./dist/host/step-files.d.ts",

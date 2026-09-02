@@ -32,7 +32,6 @@
     "modal": "^0.9.0",
     "p-retry": "^8.0.0",
     "p-timeout": "catalog:",
-    "quick-lru": "^7.3.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tailwindcss": "catalog:",

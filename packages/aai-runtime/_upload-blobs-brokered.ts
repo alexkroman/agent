@@ -48,6 +48,7 @@
  */
 
 import { RETRYABLE_STATUS, sleep } from "@alexkroman1/aai/host-internal";
+import { jitteredBackoff } from "@alexkroman1/aai/internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { egressFetch } from "./_egress-fetch.ts";
@@ -256,10 +257,14 @@ function isTransient(err: unknown): boolean {
   return err.name !== "TimeoutError" && err.name !== "AbortError";
 }
 
-/** How long to wait before re-issuing — see {@link BYTE_OP_RETRY_BASE_MS}. */
+/**
+ * How long to wait before re-issuing — see {@link BYTE_OP_RETRY_BASE_MS}.
+ *
+ * No `maxMs`: {@link BYTE_OP_ATTEMPTS} is the bound here, so the doubling
+ * cannot run away — three attempts off a 250ms base is ~750ms worst case.
+ */
 function retryDelay(attempt: number): number {
-  const window = BYTE_OP_RETRY_BASE_MS * 2 ** (attempt - 1);
-  return window / 2 + Math.random() * (window / 2);
+  return jitteredBackoff(attempt, { baseMs: BYTE_OP_RETRY_BASE_MS });
 }
 
 /**

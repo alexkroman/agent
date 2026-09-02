@@ -33,20 +33,41 @@
  * somebody runs it. A template may import the SDK, `workflow`, `zod` and React.
  * Anything else has to earn a place in the scaffold manifest first.
  *
- * ## Regex over a real XML parser, deliberately
+ * ## A real parse, once the SDK could offer one
  *
- * There is no DOM in a step artifact and no XML parser in the scaffold, so the
- * feed reading below is regular expressions over the raw body. This is the
- * honest trade rather than a shortcut: a podcast feed is machine-generated and
- * the two fields that matter (`<enclosure url>` and `<item>`) are stable across
- * every generator in the wild, so the failure mode is a missing episode rather
- * than a corrupted one. {@link episodeFromItem} drops an item it cannot read a
- * media URL from instead of inventing one.
+ * The feed reading below used to be regular expressions over the raw body, on
+ * the argument that "there is no DOM in a step artifact and no XML parser in
+ * the scaffold". The second half was the load-bearing one and it stopped being
+ * true: `@alexkroman1/aai/html` publishes the parsers the SDK already carried
+ * for its own builtins, so a template can reach them under the same rule as
+ * `zod` — it is the SDK.
+ *
+ * Three things the patterns got wrong, all of them on feeds that exist:
+ *
+ * - `textBetween(xml, "<title>", "</title>")` read the FIRST `<title>` at any
+ *   depth. In an Atom feed that is the channel's only by luck of ordering; the
+ *   same read on an entry-first document answers with an episode's title.
+ * - `stripCdata` peeled `<![CDATA[…]]>` and left the HTML inside it. Show notes
+ *   are HTML in CDATA as a matter of course, so `&amp;` reached the model as an
+ *   entity and `<p>` tags reached it as tags.
+ * - `<pubDate>` and `<published>` were tried in turn and the raw string handed
+ *   on, so a caller had to parse a date whose format depended on the feed
+ *   (RFC 822 from RSS, ISO from Atom).
+ *
+ * What the patterns got RIGHT is kept: {@link episodeFromItem} still drops an
+ * entry it cannot read a media URL from rather than inventing one, because a
+ * feed legitimately mixes text posts in with episodes.
+ *
+ * One regex remains, in {@link extractAppleSerializedFeed}, and it is a
+ * different kind of thing: it reaches into ONE vendor's `<script>` tag for a
+ * JSON blob, which is vendor knowledge with a short half-life rather than XML
+ * parsing. It is the section below's subject, not this one's.
  */
 
+import { type FeedItem, pageMetadata, parseFeed } from "@alexkroman1/aai/html";
 import { report } from "@alexkroman1/aai/step";
 import { FatalError, stepFetchOk } from "@alexkroman1/aai/step-errors";
-import { decodeHtmlEntities, isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 
 /** How long any one of these lookups may take before it is a failure. */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -190,8 +211,11 @@ async function resolveApplePodcastFeed(url: string): Promise<PodcastFeed> {
  */
 async function resolveSpotifyPodcastFeed(url: string): Promise<PodcastFeed> {
   const html = await fetchText(url);
-  const title = metaContent(html, "og:title") ?? textBetween(html, "<title>", "</title>") ?? "";
-  const description = metaContent(html, "og:description") ?? "";
+  // `pageMetadata` already prefers `og:title` over the `<title>` element and
+  // falls back to it, which is exactly the two-step this spelled out.
+  const meta = pageMetadata(html);
+  const title = meta.title ?? "";
+  const description = meta.description ?? "";
   const query = `${title} ${description}`.replace(/\s+/g, " ").trim();
   if (!query) throw new FatalError(`Could not read podcast metadata from ${url}.`);
 
@@ -212,45 +236,42 @@ async function resolveSpotifyPodcastFeed(url: string): Promise<PodcastFeed> {
 /** Every item in the feed that has audio attached, newest first by the caller. */
 async function readPodcastFeed(feed: PodcastFeed): Promise<Episode[]> {
   const xml = feed.xml ?? (await fetchText(feed.feedUrl));
-  const podcastTitle = decodeHtmlEntities(textBetween(xml, "<title>", "</title>") ?? feed.title);
+  const parsed = parseFeed(xml);
+  // `parsed.title` is the CHANNEL's, which is the whole reason to parse: the
+  // `indexOf` read this replaces took the first `<title>` at any depth.
+  const podcastTitle = parsed?.title ?? feed.title;
 
-  return [...xml.matchAll(/<item[\s\S]*?<\/item>/g)]
-    .map((match, index) => episodeFromItem(match[0], feed.feedUrl, podcastTitle, index))
+  return (parsed?.items ?? [])
+    .map((item, index) => episodeFromItem(item, feed.feedUrl, podcastTitle, index))
     .filter((episode): episode is Episode => episode !== undefined);
 }
 
-/** One `<item>`, or nothing when it carries no audio to transcribe. */
+/** One feed entry, or nothing when it carries no audio to transcribe. */
 export function episodeFromItem(
-  item: string,
+  item: FeedItem,
   feedUrl: string,
   podcastTitle: string,
   index: number,
 ): Episode | undefined {
-  const audioUrl = enclosureUrl(item);
+  const audioUrl = item.enclosureUrl;
   // Not an error: a feed legitimately mixes text posts in with episodes, and
   // there is nothing for this run to do with one.
-  if (!audioUrl) return undefined;
+  if (audioUrl === undefined) return undefined;
 
-  const guid = stripCdata(
-    textBetween(item, "<guid", "</guid>")?.replace(/^[^>]*>/, "") ?? "",
-  ).trim();
-  const link = decodeHtmlEntities(stripCdata(textBetween(item, "<link>", "</link>") ?? audioUrl));
+  const link = item.link ?? audioUrl;
   return {
-    id: stableEpisodeId(feedUrl, guid || link || audioUrl),
+    // `item.id` is the feed's `<guid>` or Atom `<id>`, already falling back to
+    // the link and then the enclosure — which is the three-way fallback this
+    // function used to spell out.
+    id: stableEpisodeId(feedUrl, item.id ?? audioUrl),
     feedUrl,
     podcastTitle,
-    title: decodeHtmlEntities(
-      stripCdata(textBetween(item, "<title>", "</title>") ?? `Episode ${index + 1}`),
-    ),
+    title: item.title ?? `Episode ${index + 1}`,
     url: link,
-    audioUrl: decodeHtmlEntities(audioUrl),
-    published: decodeHtmlEntities(
-      stripCdata(
-        textBetween(item, "<pubDate>", "</pubDate>") ??
-          textBetween(item, "<published>", "</published>") ??
-          "",
-      ),
-    ),
+    audioUrl,
+    // ISO whatever the feed wrote, so `publishedAt` below sorts RSS and Atom
+    // against each other rather than against two different formats.
+    published: item.published ?? "",
   };
 }
 
@@ -371,21 +392,32 @@ export function titleMatchesSpotify(
   );
 }
 
-/** An RSS document that actually carries audio — both halves are required. */
+/** A feed document that actually carries audio — both halves are required. */
 export function looksLikePodcastFeed(xml: string): boolean {
-  return /<rss\b/i.test(xml) && /<enclosure\b[^>]*\burl=/i.test(xml);
+  const parsed = parseFeed(xml);
+  // `parseFeed` answering at all is the "is this a feed" half, and it is
+  // stricter than the `<rss` test it replaces in the direction that matters:
+  // an HTML page mentioning `<rss` in prose is not a feed. It is also wider
+  // where being wide is right — an Atom podcast feed has no `<rss` root and
+  // was refused outright.
+  return parsed?.items.some((item) => item.enclosureUrl !== undefined) ?? false;
 }
 
-/** The feed a page advertises, in either attribute order. */
+/** The first feed a page advertises, resolved against the page's own URL. */
 export function discoverFeedUrl(html: string, pageUrl: string): string | undefined {
-  const match =
-    /<link\b[^>]*type=["']application\/(?:rss|atom)\+xml["'][^>]*href=["']([^"']+)["'][^>]*>/i.exec(
-      html,
-    ) ??
-    /<link\b[^>]*href=["']([^"']+)["'][^>]*type=["']application\/(?:rss|atom)\+xml["'][^>]*>/i.exec(
-      html,
-    );
-  return match?.[1] ? new URL(decodeHtmlEntities(match[1]), pageUrl).toString() : undefined;
+  // `pageMetadata` reads `<link>` off a parse, so attribute ORDER stops
+  // mattering — this needed one regex per order and still could not see a `>`
+  // inside a quoted href. It hands hrefs back exactly as the page wrote them,
+  // which is why the resolution is here: only the caller knows `pageUrl`.
+  const href = pageMetadata(html).feedUrls[0];
+  if (href === undefined) return undefined;
+  try {
+    return new URL(href, pageUrl).toString();
+  } catch {
+    // A page can advertise an href that is not a URL under any base. That is
+    // "no feed found", which the caller already has a sentence for.
+    return undefined;
+  }
 }
 
 /**
@@ -411,7 +443,7 @@ function publishedAt(episode: Episode): number {
 function feedFrom(feedUrl: string, body: string): PodcastFeed {
   return {
     feedUrl,
-    title: decodeHtmlEntities(textBetween(body, "<title>", "</title>") ?? hostOf(feedUrl)),
+    title: parseFeed(body)?.title ?? hostOf(feedUrl),
     xml: body,
   };
 }
@@ -422,10 +454,6 @@ function hostOf(url: string): string {
   } catch {
     return url;
   }
-}
-
-function enclosureUrl(item: string): string | undefined {
-  return /<enclosure\b[^>]*\burl=["']([^"']+)["'][^>]*>/i.exec(item)?.[1];
 }
 
 function normalizeTitle(value: string): string {
@@ -456,29 +484,6 @@ function appleResults(body: unknown): Array<{ feedUrl?: string; title?: string; 
 /** A JSON field, when the far side really did send a string. */
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
-}
-
-export function textBetween(text: string, start: string, end: string): string | undefined {
-  const from = text.indexOf(start);
-  if (from < 0) return undefined;
-  const to = text.indexOf(end, from + start.length);
-  return to < 0 ? undefined : text.slice(from + start.length, to);
-}
-
-export function metaContent(html: string, property: string): string | undefined {
-  const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match =
-    new RegExp(`<meta[^>]+property=["']${escaped}["'][^>]+content=["']([^"']+)["']`, "i").exec(
-      html,
-    ) ??
-    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${escaped}["']`, "i").exec(
-      html,
-    );
-  return decodeHtmlEntities(match?.[1] ?? "").trim() || undefined;
-}
-
-function stripCdata(text: string): string {
-  return text.replace(/^<!\[CDATA\[/, "").replace(/\]\]>$/, "");
 }
 
 // ---- HTTP -------------------------------------------------------------------

@@ -187,6 +187,32 @@ export const RACE_CONTINUES = "Promise\\.race\\(\\[?$";
  * by a rule that has nothing to say about it.
  */
 export const TIMERS_PROMISES = `setTimeout as ${IDENT}`;
+
+/**
+ * Spreading a retry over a FRACTION of a computed window — the jitter half of
+ * an exponential backoff, in both orders it gets written.
+ *
+ * Deliberately the jitter and NOT the doubling. `min(base * 2 ** (n - 1), max)`
+ * is legitimate on its own — `use-event-stream.ts` reconnects on exactly that
+ * and asserts the gaps exactly, and `_upload-byte-util.ts` doubles BYTES, not
+ * milliseconds — so a rule over `2 **` would report two correct lines and the
+ * one bug alike. The jitter is what every copy of this had to argue for in its
+ * own comment, which is this repo's standing tell for a missing primitive.
+ *
+ * Two spellings because the multiplication commutes and both were live:
+ * `w / 2 + Math.random() * (w / 2)` was what all three copies wrote, and
+ * `Math.random() * (w / 2) + w / 2` is the same line typed the other way round.
+ * The divisor is left open (`[0-9]`) rather than pinned to 2 — a copy that
+ * spreads over a third is the same mistake, and pinning it would let one
+ * through while printing a checkmark.
+ *
+ * The optional literal paren is `[(]?` rather than `\\(?`, which is the same
+ * ERE and reads as a JS non-capturing group to anything scanning for one:
+ * `guard-invariants-gate.test.ts` bans the substring `(?` outright, and it was
+ * right to fail this — a reader cannot tell the two apart either.
+ */
+const RANDOM_FRACTION = `Math\\.random\\(\\) \\* [(]?${IDENT} / [0-9]`;
+export const JITTERED_WINDOW = `/ [0-9] \\+ Math\\.random\\(\\)|${RANDOM_FRACTION}`;
 /**
  * The event-registration methods a listener is handed to.
  *
