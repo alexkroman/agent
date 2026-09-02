@@ -879,8 +879,8 @@ cache**, so a caller arriving mid-flight gets a TRAILING read and none is
 answered from a read that started before it asked. `settledSince` exists to
 rely on exactly that; a cache would silently defeat it.
 `ReplayOptions.steps` is the third — the step read is issued BESIDE the
-`running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them ("The
-admin pool bounds guest throughput", `packages/aai-server/CLAUDE.md`).
+`running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them (the
+admin pool note under "Stateless server", `packages/aai-server/CLAUDE.md`).
 
 ### An attempt is a LEASE, not a tally
 
