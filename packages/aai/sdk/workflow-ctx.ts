@@ -20,7 +20,9 @@
  *
  * - **Anything non-deterministic goes inside a `step`.** A clock, a random
  *   number, a uuid, a network call — read outside one, it produces a different
- *   value on every replay and the run silently diverges.
+ *   value on every replay and the run silently diverges. The three commonest are
+ *   methods here instead: see {@link WorkflowCtx.now},
+ *   {@link WorkflowCtx.random} and {@link WorkflowCtx.uuid} below.
  * - **Anything inside a `step` runs at most once per successful execution** and
  *   its result is journaled.
  *
@@ -70,6 +72,39 @@
  * `aai-runtime/workflow-replay-wait.ts`. It has to be the ENGINE and not a type,
  * because the callback captures the outer `ctx` and no step-scoped parameter can
  * take a binding out of lexical scope.
+ *
+ * ## A clock, a random number and a uuid are AFFORDANCES, not prohibitions
+ *
+ * The three rules above are the three mistakes, so the three are methods:
+ * {@link WorkflowCtx.now}, {@link WorkflowCtx.random} and
+ * {@link WorkflowCtx.uuid}. Each reads its source ONCE, journals the value, and
+ * answers every later walk from the journal — which is exactly what an author
+ * was already hand-rolling. Two shipped templates had written the clock half of
+ * it (`transcription-workflow`'s `startClock`, `call-audit`'s two `now` reads),
+ * each as an exported one-line function reached through a `ctx.step` and each
+ * carrying its own paragraph explaining why. A hazard that needs the same
+ * comment at every call site is a missing affordance.
+ *
+ * **They are keyed in their own POSITIONAL space** — `now!0`, `random!0`,
+ * `uuid!0`, per kind — for the reason `ctx.sleep` is: the call takes no name, so
+ * there is nothing to key a map on, and `!` is not producible by
+ * `${name}#${occurrence}` so an author's own `ctx.step("now")` cannot alias one.
+ * The counters are per KIND rather than shared, so inserting a `ctx.now()` shifts
+ * no `ctx.uuid()`.
+ *
+ * **And a positional key is what makes them illegal inside a
+ * {@link WorkflowCtx.step}**, which the engine refuses exactly as it refuses a
+ * wait there. A settled step's body is not re-executed, so a read inside one
+ * stops being reached the moment the step lands and every later read of that kind
+ * slides one place down the key space — a body would then get its predecessor's
+ * uuid, silently. Inside a step there is nothing to fix anyway: a step's
+ * internals are not replayed, only its result, so a plain `Date.now()` there is
+ * already durable.
+ *
+ * The full argument — why no step ATTEMPT is leased, why `random()` journals one
+ * float per call rather than seeding a sequence, and how the three participate in
+ * divergence detection — is in
+ * `aai-runtime/workflow-replay-determinism.ts`, which implements them.
  *
  * ## Step identity is `(name, occurrence)`, and neither half is optional
  *
@@ -225,6 +260,81 @@ export type WorkflowCtx = {
     fn: () => Promise<T> | T,
     options?: StepOptions,
   ): Promise<T>;
+  /**
+   * The wall clock, read ONCE and journaled — the same instant on every replay.
+   *
+   * The body is replayed from the top, so a plain `Date.now()` here answers
+   * differently on every walk and every duration derived from it is a different
+   * duration. This reads the clock the first time it is reached, journals the
+   * number, and hands the identical number back forever after: it is the moment
+   * the run really reached this line, however many times the line is walked.
+   *
+   * ```ts
+   * import type { WorkflowCtx } from "@alexkroman1/aai";
+   *
+   * declare function transcribe(recording: string): Promise<string>;
+   *
+   * export async function timedFlow(input: { recording: string }, ctx: WorkflowCtx) {
+   *   const startedAt = await ctx.now();
+   *   const transcript = await ctx.step("transcribe", () => transcribe(input.recording));
+   *   const finishedAt = await ctx.now();
+   *   return { transcript, elapsedMs: finishedAt - startedAt };
+   * }
+   * ```
+   *
+   * **Not legal inside a {@link WorkflowCtx.step}** — the engine refuses one and
+   * the message names the fix. A step's internals are not replayed, so a plain
+   * `Date.now()` inside one is already durable and is what to write there.
+   *
+   * @returns Epoch milliseconds, as `Date.now()` answers them.
+   */
+  now(): Promise<number>;
+  /**
+   * A random float in `[0, 1)`, journaled — the same float on every replay.
+   *
+   * ONE draw per call, keyed by its own occurrence, so a loop is correct without
+   * anything further: `random!0`, `random!1`, … each carry their own journaled
+   * value. That is deliberately not a seeded SEQUENCE — a seed would make every
+   * draw's value depend on how many draws came before it, so a body that reaches
+   * a different NUMBER of them before a loop silently re-draws the whole tail,
+   * and it would need a PRNG whose exact algorithm became part of the durable
+   * contract.
+   *
+   * The cost is one journal row per call, which is the same trade `ctx.step` makes
+   * and the reason a BULK draw belongs in a step:
+   * `ctx.step("jitter", () => Array.from({ length: 1000 }, Math.random))`.
+   *
+   * **Not legal inside a {@link WorkflowCtx.step}**, for
+   * {@link WorkflowCtx.now}'s reason.
+   */
+  random(): Promise<number>;
+  /**
+   * A fresh UUID, journaled — the same string on every replay.
+   *
+   * What an idempotency key for a downstream API wants: minted once, and still
+   * the same value after a crash, so the retry the far side sees is recognisably
+   * the same request rather than a second one.
+   *
+   * ```ts
+   * import type { WorkflowCtx } from "@alexkroman1/aai";
+   *
+   * declare function charge(amount: number, idempotencyKey: string): Promise<void>;
+   *
+   * export async function chargeFlow(input: { amount: number }, ctx: WorkflowCtx) {
+   *   const idempotencyKey = await ctx.uuid();
+   *   await ctx.step("charge", () => charge(input.amount, idempotencyKey));
+   * }
+   * ```
+   *
+   * **Not a hook TOKEN.** {@link WorkflowCtx.waitFor}'s token must be DERIVED
+   * from the run's own input, because whoever signals is usually a tool and a tool
+   * cannot see the body's local variables — a journaled uuid is stable across
+   * replays and still unnameable from outside the body.
+   *
+   * **Not legal inside a {@link WorkflowCtx.step}**, for
+   * {@link WorkflowCtx.now}'s reason.
+   */
+  uuid(): Promise<string>;
   /**
    * Wait, durably — for a duration in milliseconds, or until an absolute `Date`.
    *

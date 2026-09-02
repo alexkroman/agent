@@ -6162,8 +6162,11 @@ in the run is interrupted.
 type WorkflowCtx = {
   runId: string;
   workflow: string;
+  now: Promise<number>;
+  random: Promise<number>;
   sleep: Promise<void>;
   step: Promise<T>;
+  uuid: Promise<string>;
   waitFor: Promise<T>;
 };
 ```
@@ -6189,6 +6192,70 @@ body is replayed and may hold nothing live at all. Sharing one type would put
 the DevKit migration removed and which this must not reintroduce.
 
 #### Methods
+
+##### now()
+
+```ts
+now(): Promise<number>;
+```
+
+The wall clock, read ONCE and journaled — the same instant on every replay.
+
+The body is replayed from the top, so a plain `Date.now()` here answers
+differently on every walk and every duration derived from it is a different
+duration. This reads the clock the first time it is reached, journals the
+number, and hands the identical number back forever after: it is the moment
+the run really reached this line, however many times the line is walked.
+
+```ts
+import type { WorkflowCtx } from "@alexkroman1/aai";
+
+declare function transcribe(recording: string): Promise<string>;
+
+export async function timedFlow(input: { recording: string }, ctx: WorkflowCtx) {
+  const startedAt = await ctx.now();
+  const transcript = await ctx.step("transcribe", () => transcribe(input.recording));
+  const finishedAt = await ctx.now();
+  return { transcript, elapsedMs: finishedAt - startedAt };
+}
+```
+
+**Not legal inside a [WorkflowCtx.step](#step)** — the engine refuses one and
+the message names the fix. A step's internals are not replayed, so a plain
+`Date.now()` inside one is already durable and is what to write there.
+
+###### Returns
+
+`Promise`\<`number`\>
+
+Epoch milliseconds, as `Date.now()` answers them.
+
+##### random()
+
+```ts
+random(): Promise<number>;
+```
+
+A random float in `[0, 1)`, journaled — the same float on every replay.
+
+ONE draw per call, keyed by its own occurrence, so a loop is correct without
+anything further: `random!0`, `random!1`, … each carry their own journaled
+value. That is deliberately not a seeded SEQUENCE — a seed would make every
+draw's value depend on how many draws came before it, so a body that reaches
+a different NUMBER of them before a loop silently re-draws the whole tail,
+and it would need a PRNG whose exact algorithm became part of the durable
+contract.
+
+The cost is one journal row per call, which is the same trade `ctx.step` makes
+and the reason a BULK draw belongs in a step:
+`ctx.step("jitter", () => Array.from({ length: 1000 }, Math.random))`.
+
+**Not legal inside a [WorkflowCtx.step](#step)**, for
+[WorkflowCtx.now](#now)'s reason.
+
+###### Returns
+
+`Promise`\<`number`\>
 
 ##### sleep()
 
@@ -6311,6 +6378,41 @@ than casting at each site.
 ###### Returns
 
 `Promise`\<`T`\>
+
+##### uuid()
+
+```ts
+uuid(): Promise<string>;
+```
+
+A fresh UUID, journaled — the same string on every replay.
+
+What an idempotency key for a downstream API wants: minted once, and still
+the same value after a crash, so the retry the far side sees is recognisably
+the same request rather than a second one.
+
+```ts
+import type { WorkflowCtx } from "@alexkroman1/aai";
+
+declare function charge(amount: number, idempotencyKey: string): Promise<void>;
+
+export async function chargeFlow(input: { amount: number }, ctx: WorkflowCtx) {
+  const idempotencyKey = await ctx.uuid();
+  await ctx.step("charge", () => charge(input.amount, idempotencyKey));
+}
+```
+
+**Not a hook TOKEN.** [WorkflowCtx.waitFor](#waitfor)'s token must be DERIVED
+from the run's own input, because whoever signals is usually a tool and a tool
+cannot see the body's local variables — a journaled uuid is stable across
+replays and still unnameable from outside the body.
+
+**Not legal inside a [WorkflowCtx.step](#step)**, for
+[WorkflowCtx.now](#now)'s reason.
+
+###### Returns
+
+`Promise`\<`string`\>
 
 ##### waitFor()
 

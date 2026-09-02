@@ -626,6 +626,7 @@ describe("API-EXPORTS.json", () => {
       "ToolBearingAgent",
       "ToolContextOverrides",
       "ToolRunner",
+      "WORKFLOW_CTX_NOW",
       "WorkflowCtxOptions",
       "WorkflowCtxRecorder",
       "createProgressStream",

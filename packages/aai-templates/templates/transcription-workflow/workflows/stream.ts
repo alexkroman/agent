@@ -182,7 +182,6 @@ import {
   mergeTranscript,
   type SegmentTranscript,
   segmentConcurrency,
-  startClock,
   transcribeSegment,
 } from "./transcribe.ts";
 import {
@@ -288,7 +287,9 @@ export type StreamPlan = {
  * it and the bytes are still on their way.
  */
 export async function transcribeStreamFlow(input: { recording: string }, ctx: WorkflowCtx) {
-  const startedAt = await ctx.step("startClock", () => startClock());
+  // `ctx.now()`, not a step: the engine journals the read under its own key, so
+  // every walk of this line sees the instant the first one did.
+  const startedAt = await ctx.now();
   let plan: StreamPlan | undefined;
   // Body state, and legal because every value in it came out of a journaled step
   // result — a replay rebuilds the identical sets in the identical order.

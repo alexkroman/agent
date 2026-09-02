@@ -61,7 +61,7 @@ import {
   stepTranscribeUploadClassified,
 } from "@alexkroman1/aai/step-errors";
 import { countWords, formatBytes } from "@alexkroman1/aai/utils";
-import { startClock, type Transcript } from "./transcribe.ts";
+import type { Transcript } from "./transcribe.ts";
 
 /** How long between polls of a submitted job. */
 const POLL_INTERVAL_MS = 10_000;
@@ -88,7 +88,7 @@ export async function transcribeBatchFlow(
   // one call here worth another attempt: it moves the whole recording, and a lost
   // connection on a file this size is the expected failure.
   const [startedAt, { audioUrl }] = await Promise.all([
-    ctx.step("startClock", () => startClock()),
+    ctx.now(),
     ctx.step("uploadToProvider", () => uploadToProvider(input.recording), { maxAttempts: 6 }),
   ]);
   const job = await ctx.step("createJob", () => createJob(audioUrl));
@@ -175,9 +175,9 @@ export async function pollTranscript(
       // The provider's own measurement — the only one of the three flows that does
       // not have to derive this from byte offsets.
       durationMs: progress.transcript.durationMs,
-      // Wall clock, the same way both sync flows measure it — see `startClock`. For
-      // this flow it is mostly the provider's queue, which is exactly the thing a
-      // reader comparing the three wants to see.
+      // Wall clock, the same way both sync flows measure it — the body's
+      // `ctx.now()`, subtracted inside this step. For this flow it is mostly the
+      // provider's queue, which is exactly the thing a reader wants to see.
       elapsedMs: Date.now() - startedAt,
       words: countWords(transcript),
       transcript,

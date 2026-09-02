@@ -263,7 +263,7 @@ export async function transcribeFlow(input: { recording: string }, ctx: Workflow
   // retrying that. It is the two I/O halves that are worth another attempt: this
   // step reads a whole recording out of the store and writes a whole one back.
   const [startedAt, ready] = await Promise.all([
-    ctx.step("startClock", () => startClock()),
+    ctx.now(),
     ctx.step("normalizeRecording", () => normalizeRecording(input.recording), { maxAttempts: 6 }),
   ]);
 
@@ -441,32 +441,13 @@ export async function mergeTranscript(
     source,
     segments: parts.length,
     durationMs,
-    // Wall clock, so the three flows can be compared over one file — see
-    // `startClock`. Measured in a STEP, which is what makes it survive a replay.
+    // Wall clock, so the three flows can be compared over one file. Legal HERE
+    // and not in the body: a step's internals are not replayed, only its result.
+    // `startedAt` is the body's `ctx.now()`, journaled by the engine.
     elapsedMs: Date.now() - startedAt,
     words: countWords(transcript),
     transcript,
   };
-}
-
-// ---- The run's own clock ----------------------------------------------------
-
-/**
- * When the run started, as epoch ms.
- *
- * A STEP, and that is the whole reason this exists rather than a `Date.now()` in the
- * body: a body replays from the top on every resume, so a clock read there returns a
- * different value each time and every duration derived from it would be a different
- * duration. A step's result is journaled, so this is the moment the run really began
- * however many times it is replayed.
- *
- * Shared by all three flows deliberately. A run snapshot carries `createdAt` and no
- * end time, so "how long did this take" is not answerable from the outside — and the
- * whole point of shipping three flows over one job is that a reader can compare them,
- * which needs one number measured one way.
- */
-export async function startClock(): Promise<number> {
-  return Date.now();
 }
 
 // Re-exported rather than re-declared: `stream.ts` and `batch.ts` already import

@@ -904,6 +904,27 @@ residual — a charge cannot tell an abandoned attempt from a LIVE one, so
 `maxAttempts` simultaneous in-flight deliveries of one step is the most this
 tolerates, which needs a heartbeat to close.
 
+### A clock, a random number and a uuid are AFFORDANCES
+
+`ctx.now()`, `ctx.random()` and `ctx.uuid()` journal what they read — one value
+per reach, keyed `now!0` / `random!0` / `uuid!0` in a POSITIONAL space of their
+own, appended through `appendStep` so no `JournalStore` method was added and every
+backend carries them already. They are the shape two shipped templates were
+hand-rolling (`transcription-workflow`'s `startClock`, `call-audit`'s two `now`
+reads), and `guard-invariants` rule 30 stays the lexical backstop with its remedy
+naming them.
+
+**`workflow-replay-determinism.ts`'s module doc is the argument**, and the three
+decisions it records are the ones not to relitigate: their own key space (per
+KIND, so inserting one shifts no other); NO attempt lease (a lease bounds
+abandonment and these have no body to abandon); and one float per `random()` call
+rather than a seeded sequence. A fourth thing it settles is why they RECORD a
+divergence reach and never raise one — an unrecorded reach fails the next step on
+a healthy resume, and raising is unsound without `claimAttempt`'s corroboration.
+
+**Inside a `ctx.step` they are REFUSED**, by the same `currentRun()?.step` test
+and for the same key-shift reason as the section below.
+
 ### A step body may not WAIT, and the engine refuses one that does
 
 `ctx.sleep` and `ctx.waitFor` belong to the body. The closure `ctx.step` is

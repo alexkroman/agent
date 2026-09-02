@@ -55,25 +55,24 @@ import { SOURCE_PATHSPECS, WORKFLOW_BODY_PATHSPECS } from "./guard-invariants-sc
  * The five a workflow body must not perform at body level: three spellings'
  * worth of clock, an id, and the network.
  *
- * **`new +Date` is the one the rule shipped BLIND to**, and it was blind to it
- * by decision rather than by oversight — the fragment's own doc recorded the
- * omission and deferred the measurement. The measurement: two live occurrences,
- * both `new Date().toISOString()`, spelled that way rather than `Date.now()`
- * only because the value wanted is an ISO string. That difference is nothing to
- * the rule. A clock read at body level answers differently on every replay, so
- * a step NAME built from one re-executes the step — the failure rule 30 exists
- * for, reached by the spelling it could not see.
+ * **`new +Date` is the one the rule shipped BLIND to**, by decision rather than
+ * oversight — the fragment's own doc recorded the omission and deferred the
+ * measurement. The measurement: two live occurrences, both
+ * `new Date().toISOString()`, spelled that way only because the value wanted is
+ * an ISO string. That difference is nothing to the rule — a body-level clock
+ * read answers differently on every replay, so a step NAME built from one
+ * re-executes the step, which is the failure rule 30 exists for.
  *
  * The `+` is load-bearing in both directions. TypeScript requires whitespace
  * between `new` and the class, so demanding it costs no real occurrence; and it
- * is what keeps `renewDate(` out on the mandatory space alone, without leaning
- * on `NOT_MEMBER_BEFORE`. The trailing `\\(` in the rule does the rest:
- * `new DateRange(` is a different constructor and does not match.
+ * keeps `renewDate(` out on the mandatory space alone, without leaning on
+ * `NOT_MEMBER_BEFORE`. The trailing `\\(` does the rest: `new DateRange(` is a
+ * different constructor and does not match.
  *
- * BUILT from an array rather than spelled as one literal, for
- * `CLASSIFIABLE_STEP_CALLS`'s reason: end to end this alternation is long
- * enough that biome's `noSecrets` entropy heuristic scores it as a credential,
- * and the formatter folds any concatenation written to dodge that.
+ * BUILT from an array rather than one literal, for `CLASSIFIABLE_STEP_CALLS`'s
+ * reason: end to end this alternation is long enough that biome's `noSecrets`
+ * entropy heuristic scores it as a credential, and the formatter folds any
+ * concatenation written to dodge that.
  */
 const NONDETERMINISTIC_READS = [
   "Math\\.random",
@@ -402,15 +401,10 @@ export const TIMING_RULES = [
     key: "rule30_nondeterministicWorkflowBody",
     label: "non-deterministic read in a shipped workflow body",
     // A CALL position, and the leading class excludes a preceding `.` as well as
-    // an identifier character — without that, `client.fetch(` and
-    // `this.fetch(` score as the global. `NOT_IDENT_BEFORE` cannot be reused
-    // here for exactly that reason: it admits `.`, which is right for
-    // `stepGenerate` (never a method) and wrong for `fetch`.
-    //
-    // Composed rather than written out, for rule 26's reason just above:
-    // spelled as one literal this alternation is long enough that biome's
-    // `noSecrets` entropy heuristic scores it as a credential, and the formatter
-    // folds any concatenation written to dodge that.
+    // an identifier character — without that, `client.fetch(` and `this.fetch(`
+    // score as the global. `NOT_IDENT_BEFORE` cannot be reused for exactly that
+    // reason: it admits `.`, right for `stepGenerate` and wrong for `fetch`.
+    // Composed rather than written out, for rule 26's reason just above.
     re: `${NOT_MEMBER_BEFORE}(${NONDETERMINISTIC_READS})\\(`,
     paths: WORKFLOW_BODY_PATHSPECS,
     skipComments: true,
@@ -422,20 +416,23 @@ export const TIMING_RULES = [
         "  const res = await fetch(url);",
         // First on the line, which is what the `^` alternative is for.
         "Date.now();",
-        // `new Date(` — the spelling the rule was blind to while the fragment's
-        // doc recorded the omission. Both live occurrences read exactly like
-        // the first of these; the second proves the pattern does not depend on
-        // `()` being empty.
+        // `new Date(` — the spelling the rule was blind to. Both live
+        // occurrences read like the first; the second proves the pattern does
+        // not depend on `()` being empty.
         "  const filedAt = new Date().toISOString();",
         "  const at = new Date(raw).toISOString();",
       ],
       ignores: [
-        // The remedy: the same read, INSIDE a step callback, reached through a
-        // helper the body cannot inline. A line-based scan cannot see the
-        // callback boundary — see the remedy — so what it can see is that the
-        // body names a step instead of a clock. The third is the remedy for the
-        // `new Date(` half specifically: `file` is the baselined step helper in
-        // `link-digest`, and this is the line its body is reached from.
+        // The FIRST remedy, sampled so the fix the message names is one the
+        // rule is known to accept — `ctx` methods, naming no global at all.
+        "  const startedAt = await ctx.now();",
+        "  const jitter = await ctx.random();",
+        "  const idempotencyKey = await ctx.uuid();",
+        // The second remedy: the same read INSIDE a step callback, reached
+        // through a helper the body cannot inline. A line-based scan cannot see
+        // that boundary, so what it CAN see is that the body names a step
+        // instead of a clock. The third is the `new Date(` half's remedy —
+        // `file` is `link-digest`'s baselined step helper, reached from here.
         '  const startedAt = await ctx.step("startClock", startClock);',
         '  const id = await ctx.step("mintId", newId);',
         '  const filedAt = await ctx.step("file", () => file(digest));',
@@ -448,52 +445,55 @@ export const TIMING_RULES = [
         // A different member of the same object.
         "  const iso = Date.parse(raw);",
         // `new` glued to a preceding identifier is a different NAME, and the
-        // mandatory space in `new +Date` is what excludes it — so this holds
-        // even where `NOT_MEMBER_BEFORE` cannot reach, e.g. first on a line.
+        // mandatory space in `new +Date` excludes it — so this holds even where
+        // `NOT_MEMBER_BEFORE` cannot reach, e.g. first on a line.
         "  const next = renewDate(subscription);",
-        // A constructor whose name merely STARTS with `Date`. The trailing
-        // paren is what pins the name exactly.
+        // A constructor merely STARTING with `Date`; the trailing paren pins it.
         "  const window = new DateRange(from, to);",
       ],
     },
     remedy:
-      "Move the read INSIDE a `ctx.step` callback and use the journaled value.\n" +
+      "For a CLOCK, a RANDOM NUMBER or a UUID, call the method — each reads its\n" +
+      "source once, journals the value, and answers every later walk from it:\n" +
       "\n" +
-      "A workflow body is REPLAYED — the engine re-runs it from the top on every\n" +
-      "resume and answers each `ctx.step` from the journal — so anything read at\n" +
-      "body level is re-read on every walk and answers differently each time. A\n" +
-      "step's internals are not replayed, only its result, which is what makes a\n" +
-      "step the one place a clock, a random number, a uuid or a network read\n" +
-      "belongs:\n" +
+      "  const startedAt = await ctx.now();  // or ctx.uuid(), or ctx.random()\n" +
       "\n" +
-      '  const startedAt = await ctx.step("startClock", () => Date.now());\n' +
+      "For anything else — a `fetch`, a database read, a file — move the read\n" +
+      "INSIDE a `ctx.step` callback and use the journaled value. A workflow body\n" +
+      "is REPLAYED — the engine re-runs it from the top on every resume and\n" +
+      "answers each `ctx.step` from the journal — so anything read at body level\n" +
+      "is re-read on every walk and answers differently each time. A step's\n" +
+      "internals are not replayed, only its result, which is what makes a step\n" +
+      "the other place a non-deterministic read belongs:\n" +
       "\n" +
+      '  const page = await ctx.step("fetchArticle", () => fetch(input.url));\n' +
+      "\n" +
+      "The three methods are BODY-LEVEL only — the engine refuses one inside a\n" +
+      "`ctx.step`, and inside a step there is nothing to fix anyway, so write the\n" +
+      "plain read there. `aai-runtime/workflow-replay-determinism.ts` argues it.\n\n" +
       "The sharp case is a read that reaches a step NAME. Measured on a body one\n" +
-      "line long — a coin flip interpolated into the name a `ctx.step` is given,\n" +
-      "followed by a `ctx.sleep` — **7 of 10 runs charged twice and all 10\n" +
-      "reported `completed`**. `workflow-replay-divergence.ts` refuses that at\n" +
-      "runtime now, and this rule is the cheap half: the runtime check is the only\n" +
-      "layer that sees a name read from a config table, and this is the only layer\n" +
-      "that sees the mistake before it ships.\n" +
+      "line long — a coin flip interpolated into a `ctx.step` name, followed by a\n" +
+      "`ctx.sleep` — **7 of 10 runs charged twice and all 10 reported\n" +
+      "`completed`**. `workflow-replay-divergence.ts` refuses that at runtime now;\n" +
+      "this rule is the cheap half, and the only layer that sees the mistake\n" +
+      "before it ships.\n" +
       "\n" +
-      "It restores a guard that was LOST rather than inventing one. The DevKit's\n" +
-      "build scan tried and went with the DevKit — see `sdk/workflow-ctx.ts`,\n" +
-      "which records that it read the BUILT flow bundle, warned about a `Date.now()`\n" +
-      "INSIDE a step callback, and was blind to the boundary it existed to police.\n" +
-      "\n" +
+      "It restores a guard that was LOST rather than inventing one: the DevKit's\n" +
+      "build scan read the BUILT flow bundle, warned about an in-step read, and\n" +
+      "was blind to the boundary it policed (`sdk/workflow-ctx.ts`).\n\n" +
       "`new Date(` counts, and counted late: the alternation shipped without it\n" +
-      "and missed two live occurrences that spell the clock read that way because\n" +
-      "what they want is an ISO string. A clock is a clock — on replay it answers\n" +
-      "differently, which is the whole hazard, so the spelling is not a\n" +
-      "distinction the rule can afford to make.\n" +
+      "and missed two live occurrences spelling the clock read that way because\n" +
+      "what they want is an ISO string. A clock is a clock, so the spelling is\n" +
+      "not a distinction the rule can afford to make.\n" +
       "\n" +
       "**The callback boundary is not decidable from a line**, so this rule bans\n" +
       "the call anywhere in a shipped `workflows/*.ts` and leaves the legitimate\n" +
-      "case to the baseline — rule 26's contract, the rule just above, for the\n" +
-      "same corpus. Baseline a line that is genuinely inside a step body and say\n" +
-      "so in a comment beside it; every baselined entry is a step helper whose\n" +
-      "own comment already states the rule (`startClock`, `now`, `timed`,\n" +
-      "`probeUpload`, `file`, `timestamp`). Anything at BODY level is the bug,\n" +
-      "not an exception.",
+      "case to the baseline — rule 26's contract, for the same corpus. Baseline a\n" +
+      "line genuinely inside a step body and say so in a comment beside it; every\n" +
+      "baselined entry is a step helper whose own comment already states the rule\n" +
+      "(`timed`, `probeUpload`, `file`, `timestamp`, and the two `elapsedMs`\n" +
+      "subtractions). Anything at BODY level is the bug. The `startClock`/`now`\n" +
+      "helpers that used to head that list are GONE: they were the hand-rolled\n" +
+      "`ctx.now()` the methods above replaced.",
   },
 ];

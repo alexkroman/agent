@@ -64,6 +64,7 @@ import {
 import { WORKFLOW_SUSPEND_BRAND } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
+import { createDeterminismReads } from "./workflow-replay-determinism.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
 import { waitInsideStep } from "./workflow-replay-wait.ts";
@@ -293,12 +294,20 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
    * `completed`, which is the exact silence this check exists to end.
    */
   let refused: string | undefined;
+  /** Record one. A callback, because `refused` is a variable and not a field. */
+  const setRefused = (message: string) => {
+    refused = message;
+  };
 
   const gate = options.gate;
 
   const ctx: WorkflowCtx = {
     runId,
     workflow,
+    // `ctx.now`/`ctx.random`/`ctx.uuid`, each journaled under its own positional
+    // key. Their key space, their absent attempt lease and their part in the
+    // divergence check are argued in `workflow-replay-determinism.ts`.
+    ...createDeterminismReads({ runId, journal, settled, divergence, refuse: setRefused }),
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       // IDENTITY first: which journal key is this call? See `WorkflowCtx` in the
       // SDK for why it is a name plus an occurrence count.
@@ -309,9 +318,6 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       // in ISSUE order. A fan-out issues its keys synchronously and settles them
       // in any order, so a sibling reached a microtask later would otherwise
       // drain the set out from under this check and hide a real divergence.
-      // Recorded at IDENTITY time, synchronously, before any await — a fan-out
-      // issues its keys in one go and a sibling recorded later would drain the
-      // journal's unread set out from under this check.
       const refusal = divergence.reach(key, name, settled.get(key));
 
       // The journal is authoritative, and this arm runs BEFORE the abort check:
