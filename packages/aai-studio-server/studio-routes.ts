@@ -67,6 +67,8 @@ import {
 import { deployStudioProject } from "./studio-deploy.ts";
 import { createAfterDeploy } from "./studio-deploy-hooks.ts";
 import { registerEventRoutes } from "./studio-events-routes.ts";
+import { createGithubAppConfig, type GithubAppConfig } from "./studio-github-config.ts";
+import { registerGithubRoutes } from "./studio-github-routes.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import { PREVIEW_WAKE_THROTTLE_MS, wakeProjectPreview } from "./studio-preview-wake.ts";
@@ -111,6 +113,14 @@ export type StudioRouteOptions = {
    * .previewQueue` for the second decision point this replaced.
    */
   previewQueue: PreviewQueue;
+  /**
+   * The GitHub App backing "Sync to GitHub". Resolved from the environment
+   * when omitted, and `undefined` when the platform has none — which disables
+   * the feature rather than failing a boot (studio-github-config.ts).
+   */
+  githubApp?: GithubAppConfig | undefined;
+  /** Test seam: drive the GitHub routes against a fake API without module mocks. */
+  githubFetch?: typeof globalThis.fetch;
 };
 
 function validateProject(name: string | undefined): string {
@@ -277,6 +287,15 @@ export function createStudioRoutes(options: StudioRouteOptions): {
   // that has to carry it (studio-secrets.ts). A `ctx.db` switch sat beside it
   // until per-app databases went away.
   registerSecretRoutes(studio, ensureBroker);
+
+  // /github/* (the account's GitHub App link) and the project's sync route.
+  // Registered here, after `projectMw`, so the sync route inherits the
+  // validated project and workspace scope every other project route rides.
+  registerGithubRoutes(studio, {
+    config: options.githubApp ?? createGithubAppConfig(process.env),
+    githubSync: limits.githubSync,
+    ...omitUndefined({ fetchFn: options.githubFetch }),
+  });
 
   // Boot (or refresh) the project's coding-agent sandbox and return its
   // public chat URL — the browser talks to the sandbox directly from here

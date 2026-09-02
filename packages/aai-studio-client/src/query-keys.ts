@@ -10,6 +10,14 @@ export const queryKeys = {
   /** Prefix key: invalidates the account regardless of which bearer read it. */
   accounts: ["account"] as const,
   projects: ["projects"] as const,
+  /**
+   * The account's GitHub link, keyed by BEARER like `account` above and for
+   * the same reason: it is a property of who is signed in, not of any project,
+   * so a sign-out must not serve the next session a cached "connected".
+   */
+  github: (bearer: string) => ["github", bearer] as const,
+  /** The installation's repositories — a separate read, and a slower one. */
+  githubRepos: (bearer: string) => ["github-repos", bearer] as const,
   project: (name: string | null) => ["project", name] as const,
   chat: (name: string | null) => ["chat", name] as const,
   chatSession: (name: string | null) => ["chat-session", name] as const,

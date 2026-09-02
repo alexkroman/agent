@@ -70,6 +70,25 @@ export type StudioWorkspace = {
    * turn to carry their failure output.
    */
   previewError?: string;
+  /**
+   * `owner/repo` of the last successful GitHub sync (studio-github-sync.ts).
+   * The whole GitHub group is stamped together and read together: a repo with
+   * no hash beside it could not answer "is this branch current", which is the
+   * only question the button asks.
+   */
+  githubRepo?: string;
+  /** Branch of the last successful sync. */
+  githubBranch?: string;
+  /**
+   * `filesHash` at the last successful sync — the idempotence token, exactly
+   * as `deployedHash` and `previewHash` are for their deploys. A hash rather
+   * than a timestamp for the same two reasons: the sync itself writes the
+   * workspace, and an edit that is undone should not leave the project
+   * permanently "unsynced".
+   */
+  githubHash?: string;
+  /** Commit the last sync created, so the client can link to it. */
+  githubCommit?: string;
   updatedAt: number;
 };
 
@@ -90,6 +109,19 @@ export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
   // says "nothing published yet" rather than showing a stale banner.
   if (!workspace.deployedSlug) return false;
   return workspace.deployedHash !== workspace.hash;
+}
+
+/**
+ * True when the workspace has edits the last GitHub sync does not carry.
+ *
+ * False when nothing was ever synced — like {@link hasUnpublishedChanges} and
+ * unlike {@link hasPreviewChanges}: with no repository connected there is
+ * nothing to be out of date WITH, and a project that has never opted into
+ * GitHub must not render as permanently stale.
+ */
+export function hasGithubChanges(workspace: StudioWorkspace): boolean {
+  if (!workspace.githubRepo) return false;
+  return workspace.githubHash !== workspace.hash;
 }
 
 /**
@@ -388,7 +420,16 @@ async function applyMutation(
  * desynchronizing its hash. `undefined` REMOVES the field (the shape the call
  * sites already had — `delete next.previewHash`).
  */
-type StampField = "deployedSlug" | "deployedHash" | "previewSlug" | "previewHash" | "previewError";
+type StampField =
+  | "deployedSlug"
+  | "deployedHash"
+  | "previewSlug"
+  | "previewHash"
+  | "previewError"
+  | "githubRepo"
+  | "githubBranch"
+  | "githubHash"
+  | "githubCommit";
 
 // `?: T | undefined` rather than `Partial<Pick<…>>`: under
 // `exactOptionalPropertyTypes` those differ, and only this form lets a call

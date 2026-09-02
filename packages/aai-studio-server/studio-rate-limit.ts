@@ -35,9 +35,19 @@ export const PROJECT_CREATE_RATE_LIMIT = { limit: 60, windowMs: 60 * 60_000 } as
  * sends one per missing preview.
  */
 export const PREVIEW_WAKE_RATE_LIMIT = { limit: 60, windowMs: 5 * 60_000 } as const;
+/**
+ * `POST /studio/projects/:project/github/sync` — one request is a blob upload
+ * PER FILE plus a tree, a commit and a ref write, against a third party that
+ * meters us as one App across every tenant. So this window protects GitHub's
+ * secondary rate limits (and the App's standing with them) as much as it
+ * protects this service, which is why it is the tightest of the four: a human
+ * pressing Sync after an edit is nowhere near it, and a client stuck in a
+ * retry loop is.
+ */
+export const GITHUB_SYNC_RATE_LIMIT = { limit: 30, windowMs: 5 * 60_000 } as const;
 
 /**
- * The same two routes, metered by CLIENT IP instead of scope.
+ * The same routes, metered by CLIENT IP instead of scope.
  *
  * Deliberately looser than the per-scope limits and not a substitute for
  * them: one IP is legitimately many accounts (an office, a CI runner, a
@@ -55,16 +65,22 @@ export const PREVIEW_WAKE_IP_RATE_LIMIT = {
   limit: 180,
   windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
 } as const;
+export const GITHUB_SYNC_IP_RATE_LIMIT = {
+  limit: 60,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
 
 /** The studio's limiters, injectable per app. */
 export type StudioRateLimiters = {
   chat: RateLimiter;
   projectCreate: RateLimiter;
   previewWake?: RateLimiter;
-  /** Per-IP companions to the three above. */
+  githubSync?: RateLimiter;
+  /** Per-IP companions to the four above. */
   chatIp?: RateLimiter;
   projectCreateIp?: RateLimiter;
   previewWakeIp?: RateLimiter;
+  githubSyncIp?: RateLimiter;
 };
 
 export type { RateLimiter, RateLimitVerdict } from "aai-server/rate-limit";

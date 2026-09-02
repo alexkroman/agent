@@ -368,6 +368,8 @@ export function ProjectView(props: ProjectViewProps) {
         {tab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
         {tab === "settings" && (
           <SettingsPane
+            bearer={bearer}
+            data={workspace.data}
             project={project}
             onDeleteProject={() => deleteProject.mutate()}
             deleting={deleteProject.isPending}

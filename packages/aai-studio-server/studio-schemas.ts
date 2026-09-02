@@ -248,3 +248,61 @@ export const UiMessageSchema = z
     (message) => totalStringLength(message.parts) <= MAX_STUDIO_MESSAGE_BYTES,
     "Message too large",
   );
+
+/**
+ * A `owner/repo` as a sync body carries it.
+ *
+ * Both halves become PATH SEGMENTS in every GitHub request the sync makes, so
+ * the grammar is enforced before the value is ever interpolated —
+ * `parseRepoFullName` (studio-github-sync.ts) re-checks the same rule at the
+ * point of use, which is the layer that also runs for a value this schema
+ * never saw (a stamp read back off a workspace document).
+ */
+export const GithubRepoSchema = z
+  .string()
+  .min(3)
+  .max(201)
+  .regex(/^[\w.-]{1,100}\/[\w.-]{1,100}$/, "Expected owner/repo");
+
+/**
+ * A git branch name, restricted well inside what git allows.
+ *
+ * Sync targets a branch a human named, so the permissive half of git's
+ * `check-ref-format` grammar (spaces are legal, so is almost every byte) buys
+ * nothing here and costs the certainty that the value is a safe path segment.
+ * `..` is rejected outright — it is the one sequence that could climb out of
+ * `heads/<branch>` in a request URL.
+ */
+export const GithubBranchSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(/^[\w][\w./-]*$/, "Invalid branch name")
+  .refine((branch) => !branch.includes(".."), "Invalid branch name");
+
+/** `POST /studio/projects/:project/github/sync` — where to push. */
+export const GithubSyncSchema = z.object({
+  repo: GithubRepoSchema,
+  /** Omitted, the sync reads the repository's own default branch. */
+  branch: GithubBranchSchema.optional(),
+});
+
+/**
+ * `POST /studio/github/connect` — mint an install redirect.
+ *
+ * `project` is a RETURN hint so the callback lands the user back where they
+ * pressed the button; it authorizes nothing, and is validated as a project
+ * name only so the callback can build a URL from it without escaping games.
+ */
+export const GithubConnectSchema = z.object({
+  project: ProjectNameSchema.optional(),
+});
+
+/**
+ * `POST /studio/github/repos` — create a repository under the installation's
+ * organization. The name runs the slug grammar rather than GitHub's laxer
+ * one so a repository this creates is always nameable by every other surface.
+ */
+export const GithubCreateRepoSchema = z.object({
+  name: z.string().min(1).max(100).regex(VALID_SLUG_RE, "Invalid repository name"),
+});
