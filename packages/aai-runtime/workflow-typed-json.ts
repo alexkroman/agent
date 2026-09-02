@@ -135,7 +135,13 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { escapeReservedKeys, unescapeIfRecord } from "./workflow-typed-json-escape.ts";
+import {
+  escapeReservedKeys,
+  escapeUnstorableCharacters,
+  escapeUnstorableKeys,
+  unescapeIfRecord,
+  unescapeUnstorableCharacters,
+} from "./workflow-typed-json-escape.ts";
 import { isPlainObject, withPlainViews } from "./workflow-typed-json-views.ts";
 
 /** What a `Uint8Array` becomes on the wire. */
@@ -248,6 +254,12 @@ export function binaryReplacer(this: unknown, key: string, value: unknown): unkn
   if (raw instanceof Uint8Array) {
     return { __type: "Uint8Array", data: Buffer.from(raw).toString("base64") };
   }
+  // Every STRING the codec emits, including the ones inside the envelopes it
+  // builds — a `jsonb` column cannot hold a NUL or a lone surrogate, and the
+  // driver's refusal is a retryable 503 for a value that can never be accepted.
+  // A no-op for anything holding neither, which is every real string; see
+  // `escapeUnstorableCharacters`.
+  if (typeof value === "string") return escapeUnstorableCharacters(value);
   return escapeIfPlain(value);
 }
 
@@ -267,7 +279,12 @@ export function binaryReplacer(this: unknown, key: string, value: unknown): unkn
  */
 function escapeIfPlain(value: unknown): unknown {
   if (!isPlainObject(value)) return value;
-  return escapeReservedKeys(value) ?? value;
+  // Two escapes, and a KEY needs the second for the same reason a value does: it
+  // is a string, and it cannot be enveloped out of the problem. They compose in
+  // either order (the escape module's doc proves it); this order is the one
+  // `unescapeIfRecord` inverts.
+  const renamed = escapeReservedKeys(value) ?? value;
+  return escapeUnstorableKeys(renamed) ?? renamed;
 }
 
 /**
@@ -276,6 +293,11 @@ function escapeIfPlain(value: unknown): unknown {
  * @internal
  */
 export function binaryReviver(_key: string, value: unknown): unknown {
+  // Strings first, and the ordering is free rather than delicate: a string is
+  // never an envelope, and a reviver runs bottom-up — so an envelope's own
+  // `data` has already been through here (a no-op, base64 holding none of the
+  // escapable units) by the time the envelope itself is seen.
+  if (typeof value === "string") return unescapeUnstorableCharacters(value);
   if (isBinaryEnvelope(value)) return bytesFromBase64(value.data);
   return unescapeIfRecord(value);
 }

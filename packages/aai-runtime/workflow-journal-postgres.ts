@@ -27,12 +27,13 @@
  *   too, and the `greatest` is the floor rather than tidiness: a release that
  *   lands twice may only under-charge a budget the next claim re-takes, where a
  *   negative count is an unbounded budget for a step that wedges the guest.
- * - **`appendStep`** — `on conflict do nothing`, then read back. The stored
- *   entry stays authoritative, so the loser of a race adopts the winner's value
- *   rather than its own.
- * - **`claimSleep`** and **`claimHook`** — the same shape, because "first write
- *   wins and later calls are reads" is what makes a replay find the same
- *   deadline rather than pushing it further out.
+ * - **`appendStep`**, **`claimSleep`** and **`claimHook`** — FIRST WRITE WINS,
+ *   as ONE statement each. The stored row stays authoritative, so the loser of a
+ *   race adopts the winner's value rather than its own, and a replay finds the
+ *   same deadline rather than pushing it further out. Each was `on conflict do
+ *   nothing` and then a separate read-back, which is two round trips AND a race:
+ *   see {@link firstWriteWins} for what the second statement could not see and
+ *   why the shape is a `union all` rather than an `on conflict do update`.
  *
  * ## Values are TYPED JSON, and every binding is `::text::jsonb`
  *
@@ -66,6 +67,7 @@
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
+import { firstWriteWins } from "./_journal-claim.ts";
 import {
   encodedOrNull,
   millis,
@@ -235,31 +237,41 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       correlationId: string | undefined,
       kind: SleepRecord["kind"] = "sleep",
     ): Promise<SleepRecord> {
-      // First write wins and later calls are READS — `do nothing` then read back,
-      // which is what stops a replay pushing the deadline further out each time.
-      await db.query(
-        `insert into ${WORKFLOW_SLEEP_TABLE} (run_id, key, wake_at, correlation_id, kind)
-         values ($1, $2, $3, $4, $5) on conflict (run_id, key) do nothing`,
-        [runId, key, wakeAt, correlationId ?? null, kind],
+      // First write wins and later calls are READS, which is what stops a replay
+      // pushing the deadline further out each time. ONE statement; the retry is
+      // for the rival this one cannot see — `firstWriteWins`.
+      return await firstWriteWins(
+        async () => {
+          const rows = await db.query<{
+            wake_at: string | number;
+            woken: boolean;
+            correlation_id: string | null;
+            kind: SleepRecord["kind"];
+          }>(
+            `with mine as (
+               insert into ${WORKFLOW_SLEEP_TABLE}
+                 (run_id, key, wake_at, correlation_id, kind)
+               values ($1, $2, $3, $4, $5)
+               on conflict (run_id, key) do nothing
+               returning wake_at, woken, correlation_id, kind
+             )
+             select wake_at, woken, correlation_id, kind from mine
+             union all
+             select wake_at, woken, correlation_id, kind from ${WORKFLOW_SLEEP_TABLE}
+              where run_id = $1 and key = $2`,
+            [runId, key, wakeAt, correlationId ?? null, kind],
+          );
+          const row = rows[0];
+          if (!row) return;
+          return {
+            wakeAt: millis(row.wake_at),
+            woken: row.woken,
+            correlationId: row.correlation_id ?? undefined,
+            kind: row.kind,
+          };
+        },
+        () => `workflow sleep ${key} vanished for run ${runId}`,
       );
-      const rows = await db.query<{
-        wake_at: string | number;
-        woken: boolean;
-        correlation_id: string | null;
-        kind: SleepRecord["kind"];
-      }>(
-        `select wake_at, woken, correlation_id, kind from ${WORKFLOW_SLEEP_TABLE}
-         where run_id = $1 and key = $2`,
-        [runId, key],
-      );
-      const row = rows[0];
-      if (!row) throw new Error(`workflow sleep ${key} vanished for run ${runId}`);
-      return {
-        wakeAt: millis(row.wake_at),
-        woken: row.woken,
-        correlationId: row.correlation_id ?? undefined,
-        kind: row.kind,
-      };
     },
 
     async wakeSleeps(
@@ -303,41 +315,57 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
     async claimHook(runId: string, key: string, token: string): Promise<HookRecord> {
       // A token held by a DIFFERENT wait is a bug rather than a race — one signal
       // would end whichever the store found first and the other would wait
-      // forever — so the unique index is left to refuse it, and the message names
-      // the holder the way the memory backend's does.
-      const existing = await db.query<{ run_id: string; key: string }>(
-        `select run_id, key from ${WORKFLOW_HOOK_TABLE} where token = $1`,
-        [token],
+      // forever — so it is refused, with the message the memory backend uses.
+      //
+      // **The INSERT is the claim, in one statement.** The ownership `select`
+      // used to run first, on an untransacted connection, so two waits racing on
+      // one token both read no owner and the loser tripped the unique index: a
+      // raw `23505` instead of this authored refusal. A BARE `on conflict do
+      // nothing` (no target) absorbs the primary key and the token index alike,
+      // so the row the statement reports is what decides whose claim it was.
+      return await firstWriteWins(
+        async () => {
+          const rows = await db.query<{
+            run_id: string;
+            key: string;
+            token: string;
+            delivered: boolean;
+            payload: string | null;
+            closed: boolean;
+          }>(
+            `with claimed as (
+               insert into ${WORKFLOW_HOOK_TABLE} (run_id, key, token)
+               values ($1, $2, $3)
+               on conflict do nothing
+               returning run_id, key, token, delivered, payload::text as payload, closed
+             )
+             select run_id, key, token, delivered, payload, closed from claimed
+             union all
+             select run_id, key, token, delivered, payload::text as payload, closed
+               from ${WORKFLOW_HOOK_TABLE}
+              where (run_id = $1 and key = $2) or token = $3`,
+            [runId, key, token],
+          );
+          // Empty is INDETERMINATE — a rival's uncommitted claim, invisible to
+          // this statement's snapshot — and is the one answer worth re-running.
+          // A visible owner is a decision, so it throws from in here.
+          const owner = rows[0];
+          if (!owner) return;
+          const mine = rows.find((row) => row.run_id === runId && row.key === key);
+          if (!mine) {
+            throw new Error(
+              `workflow hook token ${JSON.stringify(token)} is already held by run ${owner.run_id}`,
+            );
+          }
+          return {
+            token: mine.token,
+            delivered: mine.delivered,
+            ...(mine.payload === null ? {} : { payload: decodeStorageJson(mine.payload) }),
+            closed: mine.closed,
+          };
+        },
+        () => `workflow hook ${key} vanished for run ${runId}`,
       );
-      const owner = existing[0];
-      if (owner && !(owner.run_id === runId && owner.key === key)) {
-        throw new Error(
-          `workflow hook token ${JSON.stringify(token)} is already held by run ${owner.run_id}`,
-        );
-      }
-      await db.query(
-        `insert into ${WORKFLOW_HOOK_TABLE} (run_id, key, token) values ($1, $2, $3)
-         on conflict (run_id, key) do nothing`,
-        [runId, key, token],
-      );
-      const rows = await db.query<{
-        token: string;
-        delivered: boolean;
-        payload: string | null;
-        closed: boolean;
-      }>(
-        `select token, delivered, payload::text as payload, closed
-         from ${WORKFLOW_HOOK_TABLE} where run_id = $1 and key = $2`,
-        [runId, key],
-      );
-      const row = rows[0];
-      if (!row) throw new Error(`workflow hook ${key} vanished for run ${runId}`);
-      return {
-        token: row.token,
-        delivered: row.delivered,
-        ...(row.payload === null ? {} : { payload: decodeStorageJson(row.payload) }),
-        closed: row.closed,
-      };
     },
 
     async closeHook(runId: string, key: string): Promise<boolean> {
@@ -408,33 +436,41 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
     },
 
     async appendStep(runId: string, entry: StepEntry): Promise<StepEntry> {
-      // Idempotent on `key`: `do nothing` then read back, so the FIRST entry
-      // stays authoritative and two executions that both ran the step agree on
-      // what it returned.
-      await db.query(
-        `insert into ${WORKFLOW_STEP_TABLE}
-           (run_id, key, name, status, output, error, attempts, finished_at)
-         values ($1, $2, $3, $4, $5::text::jsonb, $6, $7, $8)
-         on conflict (run_id, key) do nothing`,
-        [
-          runId,
-          entry.key,
-          entry.name,
-          entry.status,
-          encodedOrNull(entry.output),
-          entry.error?.message ?? null,
-          entry.attempts,
-          entry.finishedAt,
-        ],
+      // Idempotent on `key`, in ONE statement, so the FIRST entry stays
+      // authoritative and two executions that both ran the step agree on what it
+      // returned. The retry is for the rival the statement cannot see.
+      return await firstWriteWins(
+        async () => {
+          const rows = await db.query<StepRow>(
+            `with mine as (
+               insert into ${WORKFLOW_STEP_TABLE}
+                 (run_id, key, name, status, output, error, attempts, finished_at)
+               values ($1, $2, $3, $4, $5::text::jsonb, $6, $7, $8)
+               on conflict (run_id, key) do nothing
+               returning key, name, status, output::text as output, error, attempts,
+                         finished_at
+             )
+             select key, name, status, output, error, attempts, finished_at from mine
+             union all
+             select key, name, status, output::text as output, error, attempts,
+                    finished_at
+               from ${WORKFLOW_STEP_TABLE} where run_id = $1 and key = $2`,
+            [
+              runId,
+              entry.key,
+              entry.name,
+              entry.status,
+              encodedOrNull(entry.output),
+              entry.error?.message ?? null,
+              entry.attempts,
+              entry.finishedAt,
+            ],
+          );
+          const row = rows[0];
+          return row ? toStepEntry(row) : undefined;
+        },
+        () => `workflow step ${entry.key} vanished for run ${runId}`,
       );
-      const rows = await db.query<StepRow>(
-        `select key, name, status, output::text as output, error, attempts, finished_at
-         from ${WORKFLOW_STEP_TABLE} where run_id = $1 and key = $2`,
-        [runId, entry.key],
-      );
-      const row = rows[0];
-      if (!row) throw new Error(`workflow step ${entry.key} vanished for run ${runId}`);
-      return toStepEntry(row);
     },
   };
 }
