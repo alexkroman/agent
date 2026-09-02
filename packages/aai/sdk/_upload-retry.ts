@@ -13,6 +13,7 @@
  * `workflow-upload-client.ts` exists to prevent.
  */
 
+import { jitteredBackoff } from "./jittered-backoff.ts";
 import { sleep } from "./sleep.ts";
 import { UPLOAD_RETRY_BASE_MS, UPLOAD_RETRY_MAX_MS } from "./upload-constants.ts";
 
@@ -37,17 +38,20 @@ export const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
  * was the asymmetry — it re-sent IMMEDIATELY into a 503 whose body says "retry
  * shortly".
  *
- * Otherwise exponential, with jitter over the lower half of the window so the
- * parts that failed together do not come back together. Both are capped by
- * {@link UPLOAD_RETRY_MAX_MS}, `Retry-After` included: this endpoint is the app's
- * own agent, its 503s carry single-digit seconds, and a page whose upload bar
- * stops for two minutes on one it does not is a page a person reloads.
+ * Otherwise {@link jitteredBackoff} — exponential, with jitter over the lower
+ * half of the window so the parts that failed together do not come back
+ * together. Both are capped by {@link UPLOAD_RETRY_MAX_MS}, `Retry-After`
+ * included: this endpoint is the app's own agent, its 503s carry single-digit
+ * seconds, and a page whose upload bar stops for two minutes on one it does not
+ * is a page a person reloads.
  */
 function retryDelay(attempt: number, res: Response | undefined): number {
   const asked = retryAfterMs(res);
   if (asked !== undefined) return Math.min(asked, UPLOAD_RETRY_MAX_MS);
-  const window = Math.min(UPLOAD_RETRY_BASE_MS * 2 ** (attempt - 1), UPLOAD_RETRY_MAX_MS);
-  return window / 2 + Math.random() * (window / 2);
+  return jitteredBackoff(attempt, {
+    baseMs: UPLOAD_RETRY_BASE_MS,
+    maxMs: UPLOAD_RETRY_MAX_MS,
+  });
 }
 
 /** What `Retry-After` asked for, in ms — both spellings, or nothing. */

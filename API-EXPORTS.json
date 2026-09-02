@@ -248,6 +248,14 @@
     "ssrfSafeFetch",
     "toToolJsonSchema"
   ],
+  "@alexkroman1/aai/html": [
+    "FeedItem",
+    "PageMetadata",
+    "ParsedFeed",
+    "htmlToText",
+    "pageMetadata",
+    "parseFeed"
+  ],
   "@alexkroman1/aai": [
     "ASSEMBLYAI_TTS_VOICES",
     "AgentDef",
@@ -375,6 +383,7 @@
     "HEARD_AUDIO_LAG_MS",
     "InvariantDetail",
     "InvariantViolation",
+    "JitteredBackoffOptions",
     "MAX_CLIENT_EVENT_NAME_LENGTH",
     "MAX_CLIENT_EVENT_PAYLOAD_BYTES",
     "MAX_DB_RESULT_ROWS",
@@ -416,6 +425,7 @@
     "invariant",
     "isInvariantViolation",
     "isTextAssetPath",
+    "jitteredBackoff",
     "linkConfirmationCode",
     "normalizeSpeechText",
     "parseWsUpgradeParams",

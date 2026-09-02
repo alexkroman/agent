@@ -17,6 +17,7 @@
     "dist/sdk/providers/s2s-barrel.d.ts",
     "dist/host/agent-tools.d.ts",
     "dist/host/ffmpeg.d.ts",
+    "dist/host/html.d.ts",
     "dist/host/step-files.d.ts"
   ],
   "externalSymbolLinkMappings": {

@@ -147,15 +147,21 @@ export {
 // and the not-enabled message are what the driver and the guest mirror enforce.
 export { type Db, MAX_DB_RESULT_ROWS } from "./sdk/db.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
-// The repo's one always-on oracle. Here rather than on an authoring subpath
-// because an agent author never states one: an invariant is about a property the
-// FRAMEWORK maintains, and the packages that maintain them are the siblings.
 export {
   type InvariantDetail,
   InvariantViolation,
   invariant,
   isInvariantViolation,
 } from "./sdk/invariant.ts";
+// The repo's one always-on oracle. Here rather than on an authoring subpath
+// because an agent author never states one: an invariant is about a property the
+// FRAMEWORK maintains, and the packages that maintain them are the siblings.
+// Exponential backoff with jitter — the one spelling, shared by the three
+// upload retry paths that had each written it. Here rather than on
+// `./host-internal` because there is no host in it: it is arithmetic, and the
+// next plausible caller is a BROWSER reconnect loop. See the module doc for why
+// the jitter, rather than the doubling, is the half worth sharing.
+export { type JitteredBackoffOptions, jitteredBackoff } from "./sdk/jittered-backoff.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
 // The two halves of one physical delay — how long between the server handing a
 // frame to the socket and the caller hearing it. Exported for the same reason as

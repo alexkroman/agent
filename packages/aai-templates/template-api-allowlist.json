@@ -224,6 +224,7 @@
     "TranscodeToWavOptions",
     "WavEncodeOptions"
   ],
+  "@alexkroman1/aai/html": ["PageMetadata", "ParsedFeed"],
   "@alexkroman1/aai/llm": [
     "AnthropicLlmOptions",
     "ASSEMBLYAI_LLM_DEFAULT_MODEL",
@@ -391,6 +392,7 @@
   ],
   "@alexkroman1/aai/utils": [
     "createKeyedLock",
+    "decodeHtmlEntities",
     "errorDetail",
     "KeyedLock",
     "KeyedLockOptions",

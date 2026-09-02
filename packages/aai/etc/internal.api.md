@@ -170,6 +170,15 @@ export function isInvariantViolation(value: unknown): value is InvariantViolatio
 export function isTextAssetPath(assetPath: string): boolean;
 
 // @public
+export function jitteredBackoff(attempt: number, options: JitteredBackoffOptions): number;
+
+// @public
+export type JitteredBackoffOptions = {
+    baseMs: number;
+    maxMs?: number | undefined;
+};
+
+// @public
 export function linkConfirmationCode(code: string): string;
 
 // @public

@@ -268,7 +268,7 @@ export function createSupabaseAuth(opts: {
       // A REJECTION keeps the flat TTL — there is no `exp` to read from a
       // token that did not verify, and re-verifying a bad token every minute
       // is the behaviour that was wanted anyway.
-      cache.set(cacheKey, user, data ? { maxAge: cacheTtlFor(data.claims) } : undefined);
+      cache.set(cacheKey, user, data ? { ttlMs: cacheTtlFor(data.claims) } : undefined);
       return user;
     },
 
