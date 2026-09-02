@@ -120,6 +120,61 @@ function mountsWith(source: string): { client: boolean; page: boolean } {
   return { client: imports.includes("client"), page: imports.includes("page") };
 }
 
+/**
+ * `source` with its comments blanked out.
+ *
+ * Every gate here that greps a source owes this, and this one is where the debt
+ * came due: `solo-rpg` names `component:` in a JSDoc paragraph ABOUT the
+ * wrapper it deleted, which read as a custom component and failed a template
+ * that renders the default shell. Prose that discusses a construct is not that
+ * construct — the same distinction `check-test-assertions` pays a real parser
+ * for. A blank-out rather than a delete, so nothing on either side of a comment
+ * is joined into a token that was never written.
+ *
+ * It is deliberately not a tokenizer: a `//` inside a string literal is blanked
+ * too. Everything read here is a `component:` key or an import list, so the
+ * only cost of that is over-blanking a URL, and the alternative is a second
+ * parser in a file whose subject is neither.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+}
+
+/** Every template's client source keyed by template name — absent is a name
+ *  with no `client.tsx`, which is the default shell and not an omission. */
+const clientByTemplate = new Map(clients.map(({ name, source }) => [name, source]));
+
+/**
+ * Does this voice template's UI carry a new-conversation control?
+ *
+ * Three ways to have one, and the FIRST is the common one: leave `component:`
+ * out and the default shell renders `<Controls>`, whose second button is
+ * "New Conversation". That covers every template with no `client.tsx` at all
+ * and every one that only passes `sidebar:`.
+ *
+ * A `component:` replaces that shell wholesale, so a template that passes one
+ * has to say it itself — either by rendering `<Controls>` inside its own
+ * component, or by wiring its own button, which every such template here does
+ * through a local `newConversation()`. That name is the greppable half: the
+ * control is a BUTTON in three different visual idioms ("New Conversation"
+ * twice, "[N]ew Game" in the text-adventure), so its label cannot be the thing
+ * this asserts on.
+ *
+ * **Two occurrences, not one — the declaration is not the control.** A first
+ * draft accepted a single `newConversation(` and A/B'd GREEN against a real
+ * regression: unwiring `retail`'s button back to a bare `session.end()` left
+ * the helper defined and called by nobody, which is exactly the shape this is
+ * meant to catch and reads identically to a wired one. The declaration plus at
+ * least one call site is the cheapest thing that tells them apart.
+ */
+function hasNewConversation(source: string | undefined): boolean {
+  if (source === undefined) return true;
+  const code = withoutComments(source);
+  if (!/\bcomponent:/.test(code)) return true;
+  if (importsFrom(code, "@alexkroman1/aai-ui").includes("Controls")) return true;
+  return code.split("newConversation(").length - 1 >= 2;
+}
+
 describe("template client mounts", () => {
   test("there is at least one client to check", () => {
     // A glob that stops matching reports zero violations, which reads as a pass.
@@ -169,4 +224,37 @@ describe("template agent declarations", () => {
       expect(imports.includes("agent"), isStatic ? "" : "expected agent()").toBe(!isStatic);
     },
   );
+});
+
+/**
+ * Every VOICE template gives the user a way to start a fresh conversation.
+ *
+ * It is the one control a conversational agent's UI cannot do without and the
+ * easiest to lose, because it comes for free: the default shell renders
+ * `<Controls>` and nobody writing a template has to think about it — right up
+ * until a template passes `component:` and silently drops the whole footer.
+ * Two of the three that do had exactly that gap, and it is invisible in a diff
+ * (nothing is removed) and invisible to every other gate here.
+ *
+ * Scoped to voice, deliberately. A workflow app (`page: "static"`) has no
+ * conversation to restart; what it has is a run, and clearing one is a
+ * different affordance with a different name.
+ */
+describe("template new-conversation control", () => {
+  // Filtered INSIDE each case, not into a `test.each` corpus: `pageOf` reads
+  // the map `beforeAll` fills, and a `describe` body runs during collection —
+  // before it. The same reason the two describes above take `agents` whole.
+  const isVoice = (agentPath: string) => pageOf(agentPath) === "voice";
+
+  test("there is at least one voice template to check", () => {
+    // A corpus that stops matching reports no violations, which reads as a pass.
+    expect(agents.filter(({ agentPath }) => isVoice(agentPath)).length).toBeGreaterThan(0);
+  });
+
+  test.each(agents)("$name: offers a new-conversation control", ({ name, agentPath }) => {
+    expect(
+      !isVoice(agentPath) || hasNewConversation(clientByTemplate.get(name)),
+      "a custom `component:` renders no <Controls>, so this client owes its own new-conversation button",
+    ).toBe(true);
+  });
 });

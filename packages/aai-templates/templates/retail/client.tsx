@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
+import type { AgentState, ConversationItem, Session } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
   client,
@@ -417,8 +417,21 @@ function ErrorBanner() {
   );
 }
 
+/**
+ * Start a fresh conversation without leaving the console.
+ *
+ * Written out here rather than reached for on the session, because there is no
+ * one method that does it: `reset()` clears the CONVERSATION and keeps the
+ * session, which is wrong for any agent that also keeps session-scoped state —
+ * this one's store would come back with the next tool call.
+ */
+function newConversation(session: Session): void {
+  session.end();
+  session.start();
+}
+
 /** The call controls: the one place a whole-session read is what is wanted —
- *  `started`, `running` and three methods, in three buttons. */
+ *  `started`, `running` and four methods, in four buttons. */
 function CallControls({ productCount }: { productCount: number }) {
   const session = useSession();
   return (
@@ -447,6 +460,21 @@ function CallControls({ productCount }: { productCount: number }) {
             onClick={() => session.toggle()}
           >
             {session.running ? "Hold" : "Resume"}
+          </button>
+          {/* The one-click new conversation the default shell's
+              `<Controls>` gives every other template — a custom
+              `component:` renders no `<Controls>`, so a console like
+              this one has to say it itself. end() then start(), so the
+              redial is a brand-new session (fresh store, greeting
+              included) and the console stays on the call rather than
+              dropping back to "Start call". */}
+          <button
+            type="button"
+            className="px-4 py-2 rounded-md text-xs font-semibold cursor-pointer"
+            style={{ background: "#ffffff", color: "#18181b", border: "1px solid #e4e4e7" }}
+            onClick={() => newConversation(session)}
+          >
+            New Conversation
           </button>
           {/* end() hangs up and flips `started` back, so the UI
               returns to "Start call" and the next start is a brand-new

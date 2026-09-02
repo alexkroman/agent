@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
+import type { AgentState, ConversationItem, Session } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
   client,
@@ -314,8 +314,21 @@ function ErrorBanner() {
   );
 }
 
+/**
+ * Start a fresh conversation without leaving the console.
+ *
+ * Written out here rather than reached for on the session, because there is no
+ * one method that does it: `reset()` clears the CONVERSATION and keeps the
+ * session, which is wrong for any agent that also keeps session-scoped state —
+ * this one's incident board would come back with the next tool call.
+ */
+function newConversation(session: Session): void {
+  session.end();
+  session.start();
+}
+
 /** The shift controls. The one place a whole-session read is what is wanted:
- *  it needs `started`, `running` and three methods, and it is three buttons. */
+ *  it needs `started`, `running` and four methods, and it is four buttons. */
 function ShiftControls({ logged }: { logged: number }) {
   const session = useSession();
   return (
@@ -344,6 +357,27 @@ function ShiftControls({ logged }: { logged: number }) {
             onClick={() => session.toggle()}
           >
             {session.running ? "Pause" : "Resume"}
+          </button>
+          {/* The one-click new conversation the default shell's
+              `<Controls>` gives every other template — a custom
+              `component:` renders no `<Controls>`, so a console like
+              this one has to say it itself.
+
+              end() then start(), NOT reset(): reset() clears the
+              conversation and leaves the agent's own session-scoped
+              state behind, so the next tool call would repopulate the
+              shift that was just abandoned. end() drops the resume
+              identity, so the redial is a brand-new session (fresh
+              incident board, greeting included), and start() puts the
+              console straight back on the call rather than at the
+              "Start Dispatch" screen. */}
+          <button
+            type="button"
+            className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
+            style={{ background: "#1e293b", color: "#e2e8f0" }}
+            onClick={() => newConversation(session)}
+          >
+            New Conversation
           </button>
           {/* end() hangs up and flips `started` back, so the UI
               returns to "Start Dispatch" and the next start is a

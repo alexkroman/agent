@@ -144,7 +144,6 @@
     "PageConfig",
     "PageHandle",
     "SelectField",
-    "Session",
     "SessionCore",
     "SessionError",
     "SessionErrorCode",

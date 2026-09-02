@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState } from "@alexkroman1/aai-ui";
+import type { AgentState, Session } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
   client,
@@ -220,9 +220,26 @@ function ErrorBanner() {
   );
 }
 
-/** Pause/resume and hang-up. The only place a whole-session subscription is
- *  still needed: the ACTIONS live on `useSession()`, and `useSessionCore` — the
- *  narrow way `<Controls>` reaches them — is not on the public surface. */
+/**
+ * Start a fresh conversation without leaving the game screen.
+ *
+ * Written out here rather than reached for on the session, because there is no
+ * one method that does it: `reset()` clears the CONVERSATION and keeps the
+ * session, which is wrong for any agent that also keeps session-scoped state —
+ * this game's world would come back with the next tool call. `end()` drops the
+ * resume identity, so the redial is a brand-new session (fresh world, opening
+ * scene included), and `start()` puts the player straight into it rather than
+ * back at the title screen.
+ */
+function newConversation(session: Session): void {
+  session.end();
+  session.start();
+}
+
+/** Pause/resume, new game and hang-up. The only place a whole-session
+ *  subscription is still needed: the ACTIONS live on `useSession()`, and
+ *  `useSessionCore` — the narrow way `<Controls>` reaches them — is not on the
+ *  public surface. */
 function Footer() {
   const session = useSession();
   return (
@@ -240,17 +257,28 @@ function Footer() {
         >
           {session.running ? "[P]ause" : "[R]esume"}
         </button>
-        {/* end() hangs up and drops the sessionId, so the
-            session-scoped game state starts over and the title
-            screen returns. (session.reset() keeps the same
-            sessionId and would resume the old game.) */}
+        {/* The one-click new conversation the default shell's `<Controls>`
+            gives every other template — a custom `component:` renders no
+            `<Controls>`, so this screen has to say it itself. Here that is a
+            new game: end() drops the sessionId, so the session-scoped game
+            state starts over, and start() deals the player straight into it. */}
+        <button
+          type="button"
+          className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
+          style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
+          onClick={() => newConversation(session)}
+        >
+          [N]ew Game
+        </button>
+        {/* The hang-up: end() alone flips `started` back, so the title screen
+            returns and nothing is dialled until the player asks for it. */}
         <button
           type="button"
           className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
           style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
           onClick={() => session.end()}
         >
-          [N]ew Game
+          [Q]uit
         </button>
       </div>
     </div>
