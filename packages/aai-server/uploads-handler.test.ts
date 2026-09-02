@@ -19,6 +19,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   bearerFor,
   createTestOrchestrator,
+  deployAgent,
   fakeAdminDbOver,
   type TestFetch,
 } from "./test-utils.ts";
@@ -60,23 +61,8 @@ async function platform(
     return [];
   });
   const harness = await createTestOrchestrator({ adminDb });
-  for (const slug of [MINE, THEIRS]) await deploy(harness.fetch, slug);
+  for (const slug of [MINE, THEIRS]) await deployAgent(harness.fetch, slug);
   return { ...harness, seen, adminDb };
-}
-
-async function deploy(fetch: TestFetch, slug: string): Promise<void> {
-  const res = await fetch("/deploy", {
-    method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-    body: JSON.stringify({
-      slug,
-      env: { ASSEMBLYAI_API_KEY: "k" },
-      worker:
-        'export default { name: "a", systemPrompt: "p", greeting: "", maxSteps: 1, tools: {} };',
-      clientFiles: {},
-    }),
-  });
-  if (!res.ok) throw new Error(`deploy ${slug} answered ${res.status}`);
 }
 
 function callRoute(
@@ -351,7 +337,7 @@ describe("POST /:slug/upload-records", () => {
       // The same answer the enqueue, storage and session-state routes give. The
       // guest reads it once and falls back to its local store, saying so.
       const harness = await createTestOrchestrator();
-      await deploy(harness.fetch, MINE);
+      await deployAgent(harness.fetch, MINE);
       const res = await callRoute(
         harness.fetch,
         MINE,

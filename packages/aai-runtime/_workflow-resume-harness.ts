@@ -50,6 +50,7 @@ import {
   runProgram,
   tokensOf,
 } from "./_workflow-resume-program.ts";
+import { createTally, journalOutcome } from "./_workflow-tally-harness.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { isTerminalStatus, type JournalStore, type RunStatus } from "./workflow-journal-types.ts";
@@ -184,16 +185,6 @@ async function answerHook(drive: Drive): Promise<Advance> {
 }
 
 /**
- * Code-unit order, never `localeCompare`: with no explicit locale that answers
- * to the runtime's ICU default, so the same journal would sort two ways on two
- * machines and the oracle would report a divergence that is really a locale.
- */
-export function byCodeUnit(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
-
-/**
  * Run one generated program to a terminal status, optionally killing the worker
  * or cancelling the run at a chosen step boundary.
  */
@@ -202,8 +193,7 @@ export async function runScenario(
   options: ScenarioOptions = {},
 ): Promise<Scenario> {
   const journal = createMemoryJournal();
-  const counts = new Map<string, number>();
-  let started = 0;
+  const tally = createTally();
   let crashArmed = options.crashAt !== undefined;
   let cancelArmed = options.cancelAt !== undefined;
   let deliveries = 0;
@@ -211,14 +201,7 @@ export async function runScenario(
   let live: AbortController | undefined;
 
   const rec: Recorder = {
-    count(name) {
-      started++;
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-      return started;
-    },
-    runs(name) {
-      return counts.get(name) ?? 0;
-    },
+    ...tally.counted,
     async after(seq) {
       if (crashArmed && options.crashAt === seq) {
         crashArmed = false;
@@ -264,14 +247,8 @@ export async function runScenario(
     if ((await deliverOnce(drive, live)) !== "again") break;
   }
 
-  const record = await journal.getRun(runId);
   return {
-    status: record?.status,
-    output: record?.output,
-    error: record?.error?.message,
-    keys: (await journal.readSteps(runId)).map((entry) => entry.key).sort(byCodeUnit),
-    counts: Object.fromEntries(counts),
-    total: started,
+    ...(await journalOutcome(journal, runId, tally)),
     deliveries,
     suspends: drive.suspends,
     signalled: drive.answered.size,

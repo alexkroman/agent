@@ -109,12 +109,13 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
-import type { TtsSession, Unsubscribe } from "@alexkroman1/aai/host-internal";
+import type { TtsSession } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
+import { recordingTts } from "./_pipeline-test-fakes.ts";
 import { messagesFromEvents } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createPipelineHistory } from "./transports/pipeline-history.ts";
@@ -235,16 +236,6 @@ const noReached = (): Reached => ({
  * reporting the moment one is added — which is the failure `as unknown as`
  * exists to cause (see `check:hatches` in the root guide).
  */
-function recordingTts(spoken: string[]): TtsSession {
-  return {
-    sendText: (text: string) => spoken.push(text),
-    flush: () => undefined,
-    cancel: () => undefined,
-    on: (): Unsubscribe => () => undefined,
-    close: () => Promise.resolve(),
-  };
-}
-
 /**
  * `stt: null` is the documented start-failure state, not a shortcut — see
  * `TurnOutcome.speakStartFailure`, whose whole reason to exist is "STT missing

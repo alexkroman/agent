@@ -18,9 +18,9 @@ import {
   toToolJsonSchema,
 } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { generateText, jsonSchema, type LanguageModel, Output } from "ai";
-import { resolveLlm } from "./providers/resolve.ts";
+import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
 
 /**
  * The host-side `ctx.generate` implementation — takes `GenerateOptions` and
@@ -50,10 +50,6 @@ export type CreateGenerateFnOptions = {
   /** Env the provider credential resolves from (agent env / providerEnv). */
   env: ProviderEnv;
 };
-
-function isDescriptor(value: unknown): value is LlmProvider {
-  return isRecord(value) && typeof value.kind === "string";
-}
 
 /**
  * Resolve the `schema` option to plain JSON Schema. A Standard Schema (Zod,
@@ -85,22 +81,16 @@ function resolveJsonSchema(
  * @internal
  */
 export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn {
-  const models = new WeakMap<LlmProvider, LanguageModel>();
+  const modelFor = createLlmModelCache(opts.env);
 
   const resolveModel = (descriptor: LlmProvider | undefined): LanguageModel => {
-    // `isDescriptor` is `isRecord` plus a `kind` check, and `isRecord(undefined)`
-    // is already false — the extra truthiness guard read as a second condition.
-    if (!isDescriptor(descriptor)) {
+    if (!isLlmDescriptor(descriptor)) {
       throw new Error(
         "generate: no LLM configured. Pass an `llm` descriptor in the generate " +
           "options (from @alexkroman1/aai/llm), or run the agent in pipeline mode.",
       );
     }
-    const cached = models.get(descriptor);
-    if (cached) return cached;
-    const model = resolveLlm(descriptor, opts.env);
-    models.set(descriptor, model);
-    return model;
+    return modelFor(descriptor);
   };
 
   return async (options, callOpts): Promise<GenerateResult> => {

@@ -26,6 +26,7 @@ import { agentSandboxName } from "./sandbox-directory.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore, type SecretStore, type SqlExec } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+import type { AgentServerHandle } from "./warm-harness.ts";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-store.ts";
 
 /**
@@ -143,6 +144,43 @@ export function fakeSandbox(overrides: Partial<Sandbox> = {}): Sandbox {
   };
 }
 
+/**
+ * A resolved {@link AgentServerHandle}: a guest that booted, holds no sessions,
+ * and answers every management call.
+ *
+ * The `spawnAgentServer` sibling of {@link fakeSandbox}, and there for the same
+ * reason plus one more. Seven copies of this literal were spread over five
+ * suites, all of them typed only by what `mockResolvedValue` would accept — so
+ * three omitted `guestOrigin` (the field every guest surface is derived from)
+ * and all seven omitted `logs`, and the type could grow a method without a
+ * single spec noticing. Naming the return type is what makes the next field an
+ * error here rather than a `TypeError` in whichever suite reaches it first.
+ *
+ * Overrides are spread last, so a spec that needs a busy or dead guest replaces
+ * just `activeSessions`/`alive`.
+ *
+ * A suite that mocks `spawnAgentServer` arms this in a `beforeEach` rather than
+ * in its `vi.hoisted` factory, because that factory runs BEFORE the module's
+ * imports are initialized and cannot reach this function. Arming per test is
+ * also stronger than a hoisted default: a plain `vi.fn()` is not a `vi.spyOn`
+ * mock, so `restoreMocks` (vitest.shared.ts) never resets it, and one
+ * `mockReset()` anywhere in a file left every LATER test running on whatever
+ * the previous one happened to leave behind.
+ */
+export function spawnedAgent(overrides: Partial<AgentServerHandle> = {}): AgentServerHandle {
+  return {
+    sessionUrl: "wss://tunnel.test:443/websocket",
+    guestOrigin: "wss://tunnel.test:443",
+    activeSessions: vi.fn(() => Promise.resolve(0)),
+    drain: vi.fn(() => Promise.resolve()),
+    logs: vi.fn(() => Promise.resolve(emptyLogPage())),
+    alive: () => true,
+    onExit: vi.fn(),
+    shutdown: vi.fn(() => Promise.resolve()),
+    ...overrides,
+  };
+}
+
 export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
   return {
     slug: "test-agent",
@@ -237,12 +275,23 @@ export async function deploy(
   return authFetch(fetch, "/deploy", { ...opts, body: deployPayload(opts.body) });
 }
 
+/**
+ * Deploy one agent as SETUP, and fail loudly when it does not land.
+ *
+ * The status check is the whole difference from {@link deploy}, which answers
+ * the `Response` because its callers are asserting on it. Here the deploy is
+ * arrangement for the assertion below it, so a 4xx has to surface as "deploy
+ * mine answered 401" rather than as whatever the real test makes of a slug that
+ * does not exist. Two tenancy suites had each written this helper locally, byte
+ * for byte, for exactly that reason.
+ */
 export async function deployAgent(
   fetch: TestFetch,
   slug = "my-agent",
   key = "key1",
 ): Promise<void> {
-  await deploy(fetch, { key, body: { slug } });
+  const res = await deploy(fetch, { key, body: { slug } });
+  if (!res.ok) throw new Error(`deploy ${slug} answered ${res.status}`);
 }
 
 /**

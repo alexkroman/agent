@@ -44,7 +44,7 @@ import { workflow } from "@alexkroman1/aai";
 import type fc from "fast-check";
 import { COLLIDING_STARTS } from "./_workflow-laws-harness.ts";
 import { measure, type Stats } from "./_workflow-reach-harness.ts";
-import { byCodeUnit, silent } from "./_workflow-resume-harness.ts";
+import { silent } from "./_workflow-resume-harness.ts";
 import { type Program, type Recorder, runProgram, tokensOf } from "./_workflow-resume-program.ts";
 import {
   type Arm,
@@ -53,6 +53,7 @@ import {
   type Ev,
   scheduleJournal,
 } from "./_workflow-schedule-harness.ts";
+import { byCodeUnit, createTally, journalOutcome } from "./_workflow-tally-harness.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { isTerminalStatus, type JournalStore, type RunStatus } from "./workflow-journal-types.ts";
@@ -270,9 +271,8 @@ export async function runConcurrentScenario(
     by: () => who.getStore() ?? "driver",
   });
 
-  const counts = new Map<string, number>();
+  const tally = createTally();
   const walkOutputs: unknown[][] = [];
-  let started = 0;
   /**
    * The PRIMARY run's bookkeeping.
    *
@@ -282,14 +282,7 @@ export async function runConcurrentScenario(
    * per-name floor read a number no oracle predicts.
    */
   const rec: Recorder = {
-    count(name) {
-      started++;
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-      return started;
-    },
-    runs(name) {
-      return counts.get(name) ?? 0;
-    },
+    ...tally.counted,
     // Nothing to inject — see {@link runRound}. The two crash models kill a
     // worker or cancel the run from HERE; here both the cancel and the signals
     // are ordinary concurrent operations, so this hook has no work to do.
@@ -355,7 +348,6 @@ export async function runConcurrentScenario(
     if (!(await advance(drive))) break;
   }
 
-  const record = await raw.getRun(RUN_ID);
   // Read BEFORE the literal, and conditionally, rather than as a guarded spread
   // in it (`guard-invariants` rule 22): the field is present-or-absent and its
   // value costs two journal reads, so the guard has to keep the reads off the
@@ -363,15 +355,14 @@ export async function runConcurrentScenario(
   // would not. `CompanionRun | undefined` is the field's declared type, so
   // there is nothing to omit.
   const companion = options.companion ? await readCompanion(raw) : undefined;
+  // `recordInput` is this harness's alone (the collision law reads it), so the
+  // run row is fetched here rather than widening `journalOutcome`'s answer for
+  // one caller. It is a memory journal; the second lookup is a map read.
+  const record = await raw.getRun(RUN_ID);
   return {
     companion,
     runId: RUN_ID,
-    status: record?.status,
-    output: record?.output,
-    error: record?.error?.message,
-    keys: (await raw.readSteps(RUN_ID)).map((entry) => entry.key).sort(byCodeUnit),
-    counts: Object.fromEntries(counts),
-    total: started,
+    ...(await journalOutcome(raw, RUN_ID, tally)),
     rounds,
     walkOutputs,
     startsWon,

@@ -65,6 +65,7 @@ import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntime } from "../runtime.ts";
 import type { Logger } from "../runtime-config.ts";
+import { credentialVerdict } from "./_credential-verdict.ts";
 import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsIn } from "./events.ts";
 import { type FakeSpeech, installFakeSpeech } from "./fake-speech.ts";
 
@@ -128,13 +129,7 @@ export function evalCredentials(
   const missing = requiredProviderEnvVars(agent).filter((name) => !env[name]);
   return {
     env,
-    missing,
-    ready: missing.length === 0,
-    reason:
-      missing.length === 0
-        ? undefined
-        : `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set — ` +
-          "export it, or put it in the project's .env and run `aai eval`",
+    ...credentialVerdict(missing),
   };
 }
 
