@@ -354,16 +354,30 @@ jobs:
           docker run -d --name aai-test-pg -p 5432:5432 \
             -e POSTGRES_PASSWORD=postgres \
             "$PG_IMAGE"
-          # **`pg_isready` alone is a FALSE ready on this image.** Its entrypoint
-          # runs an init phase and RESTARTS Postgres, so a probe that answers
-          # once can be answered by a server about to go away — measured
+          # **`pg_isready` over the SOCKET is a FALSE ready on this image, and
+          # COUNTING successes does not fix it.** The entrypoint runs an init
+          # phase on a temporary server and then RESTARTS Postgres, so a socket
+          # probe can be answered by a server about to go away — measured
           # locally, where `create extension pg_cron` immediately after a
           # first-poll ready failed with "Is the server running locally".
-          # Three consecutive successes a second apart is what distinguishes a
-          # settled server from the init one.
+          #
+          # The answer to that was three consecutive socket successes a second
+          # apart, on the theory that a settled server outlasts the init one.
+          # That is a timing gamble rather than a discriminator, and it lost:
+          # run 33694602134 took all three inside the init phase and then hit
+          # `FATAL: the database system is shutting down` from the extension
+          # check below, six seconds after `docker run`.
+          #
+          # **TCP is the structural discriminator.** The entrypoint starts its
+          # temporary server with `listen_addresses=''` — socket only, precisely
+          # so nothing outside can reach a half-built database — so a probe on
+          # 127.0.0.1 cannot be answered until the real server is listening. It
+          # is also the question the SUITE asks: `AAI_TEST_PG_URL` below is a TCP
+          # URL, so probe and consumer now agree by construction. The count stays
+          # as cheap insurance against a listener that flaps.
           ok=0
           for _ in $(seq 1 90); do
-            if docker exec aai-test-pg pg_isready -U postgres >/dev/null 2>&1; then
+            if docker exec aai-test-pg pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then
               ok=$((ok + 1))
             else
               ok=0
@@ -375,11 +389,34 @@ jobs:
           # Fail-fast on the WRONG image rather than mid-suite: the whole point
           # of this image is the four extensions, and a migration dying on
           # `create extension` several suites in reads as a code bug.
-          docker exec aai-test-pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -Atc \
-            "select case when count(*) = 4 then 'ok'
-                    else 'missing Supabase extensions: ' || count(*)::text || ' of 4' end
-             from pg_available_extensions
-             where name in ('supabase_vault', 'pgmq', 'pg_cron', 'pg_net');" | grep -qx ok
+          #
+          # RETRIED, and that does not weaken the fail-fast. This is the first
+          # real query, and the probe above rests on a property of the
+          # entrypoint's temporary server rather than on anything this step can
+          # observe — so the retry is what makes the step correct even where that
+          # reasoning is wrong, which is the half worth having when the symptom
+          # is a false red on the only required check. It cannot convert a real
+          # failure: `ON_ERROR_STOP=1` plus `grep -qx ok` fails closed, so a
+          # missing extension fails all ten attempts and then the job, ~20s later
+          # rather than at once.
+          exts=0
+          for _ in $(seq 1 10); do
+            if docker exec aai-test-pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -Atc \
+              "select case when count(*) = 4 then 'ok'
+                      else 'missing Supabase extensions: ' || count(*)::text || ' of 4' end
+               from pg_available_extensions
+               where name in ('supabase_vault', 'pgmq', 'pg_cron', 'pg_net');" | grep -qx ok; then
+              exts=1
+              break
+            fi
+            sleep 2
+          done
+          # `${exts:-0}` for the reason `${pulled:-0}` above uses it: `set -u`.
+          [ "${exts:-0}" = 1 ] || {
+            echo "::error::Postgres never answered with all four Supabase extensions"
+            docker logs aai-test-pg
+            exit 1
+          }
           echo "AAI_TEST_PG_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
           # And make a SKIP fail here. The readiness loop above covers the server
           # not starting; it says nothing about the variable not arriving, and if
