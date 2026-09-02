@@ -1,5 +1,47 @@
 # @alexkroman1/aai-cli
 
+## 10.0.0
+
+### Major Changes
+
+- dd699c7: Delete the DevKit's build pipeline. `aai build` no longer compiles a `workflows/` directory or embeds `__aaiWorkflowCode`/`__aaiStepCode`, and `workflow` leaves the CLI and the scaffold.
+
+### Patch Changes
+
+- dd699c7: Report the two bundler-config invariants in `buildWorker` as named `InvariantViolation`s rather than generic errors, so a Vite output shape this module's own config makes impossible is distinguishable from a build failure a user can act on.
+- dd699c7: Fix three `aai dev` defects: the Vite proxy's `/workflows` prefix no longer swallows the project's own `workflows/` source directory (a file that exists on disk is served by Vite, everything else still proxies to the agent server), Vite binds the same loopback address the backend does instead of resolving `localhost` to IPv6-only, and `aai workflow` takes `--agent <url>` to target a server you are running yourself — with an undeployed project now naming that instead of asking you to log in.
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+  - @alexkroman1/aai-runtime@10.0.0
+  - @alexkroman1/aai@10.0.0
+  - @alexkroman1/aai-ui@10.0.0
+
 ## 9.2.0
 
 ### Patch Changes
