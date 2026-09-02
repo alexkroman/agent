@@ -143,6 +143,62 @@ describe("a run parked on somebody else's ANSWER", () => {
   });
 });
 
+describe("a wait whose WINDOW closes unanswered", () => {
+  /** A gate whose safe default is to refuse — the shape an approval has. */
+  const gate = workflow({
+    description: "gate",
+    run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      const answer = await ctx.waitFor<{ approved: boolean }>("approval:1", {
+        timeoutMs: 120_000,
+      });
+      return { approved: answer?.approved ?? false, answered: answer !== undefined };
+    },
+  });
+
+  test("parks first, because the window is still open", async () => {
+    const run = await runWorkflow(gate, {});
+    expect(run.status).toBe("running");
+    // A hook's deadline is scheduled, unlike a bare `waitFor` — an unanswered
+    // window still has to end.
+    expect(run.wakeAt).toBeGreaterThan(Date.now());
+  });
+
+  test("takes the TIMEOUT branch once it is expired, which is the safe default", async () => {
+    const run = await runWorkflow(gate, {});
+    await run.expireWaits();
+
+    expect(run.status).toBe("completed");
+    expect(run.output).toEqual({ approved: false, answered: false });
+  });
+
+  test("an answer that landed FIRST still wins, because the close is a compare-and-set", async () => {
+    const run = await runWorkflow(gate, {});
+    await run.signal("approval:1", { approved: true });
+    // Already completed — this is the belt-and-braces half: expiring a window
+    // that was answered must not rewrite the outcome.
+    expect(run.output).toEqual({ approved: true, answered: true });
+    await run.expireWaits();
+    expect(run.output).toEqual({ approved: true, answered: true });
+  });
+
+  test("does not touch an ordinary ctx.sleep", async () => {
+    // The distinction `SleepRecord.kind` exists for, from the other side: a
+    // schedule is `advanceSleep`'s and an approval window is this one's.
+    const scheduled = workflow({
+      description: "scheduled",
+      run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+        await ctx.sleep(A_DAY);
+        return "later";
+      },
+    });
+    const run = await runWorkflow(scheduled, {});
+    await run.expireWaits();
+    expect(run.status).toBe("running");
+    await run.advanceSleep();
+    expect(run.status).toBe("completed");
+  });
+});
+
 describe("a step that RETRIES", () => {
   test("settles once, and the entry records what it cost", async () => {
     let tries = 0;

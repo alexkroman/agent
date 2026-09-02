@@ -63,7 +63,21 @@ export type WorkflowTestRun<R> = {
   readonly output: R | undefined;
   /** The failure message, once the run is `failed`. */
   readonly error: string | undefined;
-  /** Every settled step, oldest first. */
+  /**
+   * Every settled step, in `JournalStore.readSteps` order — by `finishedAt`,
+   * with the KEY breaking a tie.
+   *
+   * The tie is not a detail: two steps of one fast walk settle inside the same
+   * millisecond routinely, so a spec asserting on the whole list should sort it
+   * or compare it as a set. What the list is evidence of is which call sites the
+   * body reached and what they returned, not the order the clock saw them in.
+   *
+   * **`ctx.now()`, `ctx.random()` and `ctx.uuid()` are in here too**, keyed
+   * `now!0` / `random!0` / `uuid!0` in a positional space of their own. They are
+   * journaled through the same append a step is — that is what makes a second
+   * walk read the same value — so a spec listing a body's keys sees them, and
+   * one that expected only `ctx.step` names will be surprised once.
+   */
   readonly steps: readonly WorkflowTestStep[];
   /**
    * The deadline the run is parked on, when it is parked on one.
@@ -137,6 +151,29 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
   signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
   /** What the last {@link WorkflowTestHandle.signal} answered. */
   readonly signalled: boolean;
+  /**
+   * Close every `ctx.waitFor` WINDOW the run is parked on, and deliver.
+   *
+   * The branch a body's safe default lives in, and the one nothing else can
+   * reach. A `waitFor(token, { timeoutMs })` journals its deadline as a sleep of
+   * kind `hookTimeout`, and `ctx.workflows.wakeUp` deliberately cannot end one:
+   * a bare wake is the "send it now" call a tool makes to cut a SCHEDULE short,
+   * and letting it also close an approval window would cancel something the body
+   * never asked to cancel. A targeted wake cannot either — the deadline carries
+   * no correlation id. So without this, the only way to reach the timeout branch
+   * is to wait out a window measured in minutes.
+   *
+   * It does NOT move a clock and does not rewrite the stored record. It answers
+   * the deadline READ the way an elapsed one answers it — `woken`, which
+   * `SleepRecord` defines as "a woken sleep returns immediately" — for the
+   * duration of the delivery it triggers. Everything downstream is the engine's
+   * own: the close is still a compare-and-set on `delivered`, so a payload that
+   * landed first still wins and the body still takes the ANSWERED branch.
+   *
+   * Resolves this handle. A run parked on a `ctx.sleep` is unaffected;
+   * {@link WorkflowTestHandle.advanceSleep} is that one.
+   */
+  expireWaits(): Promise<WorkflowTestHandle<R>>;
   /**
    * Throw this engine away, build a new one over the same journal, and deliver.
    *

@@ -3,13 +3,15 @@
  * Specs for the transcription desk's declaration, its WAV arithmetic, and its
  * steps.
  *
- * **The body itself is not driven here, and that is a property of what this
- * template demonstrates rather than a gap in the spec.** A step is an ordinary
- * exported async function — so its retries, its `FatalError` guards, its HTTP handling and its
- * merge are all testable, while durability, suspension and replay are not. A
- * body test that looked like a durability test would be the worse failure; the
- * real thing is exercised end to end by `aai-cli`'s
- * `dev-workflow.scenario.test.ts`, which builds a project and runs one.
+ * A step is an ordinary exported async function, so its retries, its
+ * `FatalError` guards, its HTTP handling and its merge are all testable
+ * directly. **And one of the three bodies IS driven**, on the real replay
+ * engine — `transcribeBatch`, in the last block, which is the flow that reaches
+ * no ffmpeg. The other two normalize the recording first and this repo's test
+ * environment has no ffmpeg, so their durability stays `aai-cli`'s
+ * `dev-workflow.scenario.test.ts`'s. Saying which of the three is covered is
+ * the point: a body test dressed up as a durability test would be the worse
+ * failure, and so would a durable one that implied it covered all three.
  *
  * The WAV half is worth its own section because it is where a silent bug lives:
  * a cut that lands mid-frame, or an off-by-one in the chunk walk, produces audio
@@ -27,6 +29,7 @@ import {
   installStubTranscribe,
   installStubUploads,
 } from "@alexkroman1/aai/testing/vitest";
+import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
@@ -1756,5 +1759,118 @@ describe("nextPollDelay", () => {
       new Set(),
     );
     expect(delay).toBe(5000);
+  });
+});
+
+/**
+ * `transcribeBatch`, on the real replay engine.
+ *
+ * The batch flow is the one of this desk's three that reaches no ffmpeg — it
+ * uploads, submits and polls — so it is the one a unit spec can drive end to
+ * end. `transcribe` and `transcribeStream` both normalize the recording first,
+ * and this repo's test environment has no ffmpeg (the `normalizeRecording` specs
+ * above assert the FatalError that produces). Their durability is
+ * `aai-cli`'s `dev-workflow.scenario.test.ts`'s to cover; what is asserted here
+ * is the half that is honestly reachable, which is better than a body test
+ * dressed up as a durability test.
+ *
+ * Two claims, and the second is the one no other tier can make:
+ *
+ * - **The recording is uploaded ONCE**, however many times the body is walked.
+ *   That is why the upload is a step of its own with a raised attempt budget.
+ * - **`ctx.now()` is JOURNALED**, so `startedAt` — which the poll step subtracts
+ *   to report `elapsedMs` — is the instant the run really began and not the
+ *   instant the latest walk began. A body that read `Date.now()` there would
+ *   report a shrinking elapsed on every resume, which is `guard-invariants`
+ *   rule 30 and the whole reason the affordance exists.
+ */
+describe("the batch run is DURABLE", () => {
+  const INPUT = { recording: UPLOAD_ID };
+
+  beforeEach(() => {
+    installStubUploads({
+      [UPLOAD_ID]: { bytes: new Uint8Array(4096), name: "standup.wav", type: "audio/wav" },
+    });
+    installStubReporter();
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
+  });
+
+  test("parks on the poll cadence with the upload already journaled", async () => {
+    const provider = installStubTranscribe({ pendingPolls: 1, text: "We shipped it." });
+    const started = Date.now();
+    const run = await runWorkflow(transcribeBatch, INPUT, { name: "transcribeBatch" });
+
+    expect(run.status).toBe("running");
+    expect(run.wakeAt).toBeGreaterThan(started);
+    // `now!0` is in the journal beside the steps, and that is the affordance
+    // being visible rather than a leak: `ctx.now()` is appended through the same
+    // path a step is, in a POSITIONAL key space of its own, which is what makes
+    // the value the same on every walk.
+    expect(run.steps.map((step) => step.key).sort()).toEqual([
+      "createJob#0",
+      "now!0",
+      "pollTranscript#0",
+      "uploadToProvider#0",
+    ]);
+    expect(provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
+  });
+
+  test("resumes past the poll without moving the recording again", async () => {
+    const provider = installStubTranscribe({ pendingPolls: 1, text: "We shipped it." });
+    const run = await runWorkflow(transcribeBatch, INPUT, { name: "transcribeBatch" });
+    await run.advanceSleep();
+
+    expect(run.status).toBe("completed");
+    expect(run.output).toMatchObject({
+      transcript: "We shipped it.",
+      // ONE, which is the difference this flow exists to show against the two
+      // that segment.
+      segments: 1,
+      source: "standup.wav",
+    });
+    expect(run.deliveries).toBe(2);
+    // The whole recording crossed the wire once, on the first walk.
+    expect(provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
+    expect(provider.calls.filter((call) => call.leg === "submit")).toHaveLength(1);
+  });
+
+  test("reports the elapsed from the run's OWN start, not the resuming walk's", async () => {
+    // The affordance's claim. `ctx.now()` is journaled under its own key, so the
+    // second walk re-reads the first walk's instant — and `elapsedMs`, which the
+    // poll step computes as `Date.now() - startedAt`, therefore counts the whole
+    // run rather than the delivery it finished on.
+    const provider = installStubTranscribe({ pendingPolls: 1, text: "We shipped it." });
+    const run = await runWorkflow(transcribeBatch, INPUT, { name: "transcribeBatch" });
+    await run.advanceSleep();
+
+    expect(run.status).toBe("completed");
+    // A journaled clock cannot go backwards across a resume, and a re-read one
+    // routinely would — the second walk starts later than the first.
+    expect(run.output?.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(provider.calls.filter((call) => call.leg === "poll")).toHaveLength(2);
+  });
+
+  test("a worker that dies before the job is created re-uploads, because nothing settled", async () => {
+    // The other side of exactly-once, and the honest one: a step whose entry was
+    // never written IS re-run, because the journal is what makes a step skippable
+    // and a crashed one left none.
+    const provider = installStubTranscribe({ text: "We shipped it." });
+    const run = await runWorkflow(transcribeBatch, INPUT, {
+      name: "transcribeBatch",
+      crashAt: "createJob",
+    });
+
+    expect(run.crashed).toBe(true);
+    // `now` beside it — the clock read the body issued in the same
+    // `Promise.all` — and nothing else: the crash landed before `createJob`.
+    expect(run.steps.map((step) => step.name).sort()).toEqual(["now", "uploadToProvider"]);
+    expect(provider.calls.filter((call) => call.leg === "submit")).toHaveLength(0);
+
+    await run.restart();
+    expect(run.status).toBe("completed");
+    // The upload SURVIVED — it settled before the crash — and only the job
+    // creation was re-issued.
+    expect(provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
+    expect(provider.calls.filter((call) => call.leg === "submit")).toHaveLength(1);
   });
 });

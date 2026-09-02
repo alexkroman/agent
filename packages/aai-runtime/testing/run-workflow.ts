@@ -180,6 +180,10 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
   // to resume at all.
   let crash: AbortController | undefined;
   let armed = options.crashAt;
+  // Set for the duration of ONE delivery by `expireWaits` — see its doc for why
+  // nothing public can end a `waitFor` window and why this answers the READ
+  // rather than rewriting the record.
+  let expiring = false;
   const store = options.journal ?? createMemoryJournal();
   const journal: JournalStore = {
     ...store,
@@ -190,6 +194,14 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
         crash?.abort(new Error(`runWorkflow: the worker died at ${key}`));
       }
       return attempt;
+    },
+    claimSleep: async (runId, key, wakeAt, correlationId, kind) => {
+      const record = await store.claimSleep(runId, key, wakeAt, correlationId, kind);
+      // Only a hook's DEADLINE, never an ordinary `ctx.sleep`: those are
+      // `advanceSleep`'s, through the engine's own `wakeUp`, and folding the two
+      // together is the exact mistake `SleepRecord.kind` exists to prevent.
+      if (!expiring || record.kind !== "hookTimeout") return record;
+      return { ...record, woken: true };
     },
   };
   const { resumableRuns } = store;
@@ -244,6 +256,21 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
     async signal(token, payload) {
       state.signalled = await state.engine.signal(token, payload);
       await drain();
+      return handle;
+    },
+    async expireWaits() {
+      expiring = true;
+      try {
+        // A delivery of its own, because a parked run has nothing in flight: the
+        // window closes on the walk that re-reads it.
+        queue.push({ runId, at: undefined });
+        await drain();
+      } finally {
+        // Cleared whatever happened, so a later delivery reads the real
+        // deadlines — an expiry that leaked would close every window the run
+        // opens for the rest of the spec.
+        expiring = false;
+      }
       return handle;
     },
     async restart() {

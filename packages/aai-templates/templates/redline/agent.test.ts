@@ -1,25 +1,26 @@
 /**
  * Specs for the redline desk — the reflection port, as a workflow app.
  *
- * Same honest line as `link-digest`'s spec, for the same reason: the workflow
- * BODY is only durable once the Workflow DevKit's build has transformed it, so
- * testing it here would exercise a plain async function and prove nothing about
- * replay. What IS testable is the declaration (three things that are silent when
- * wrong — the `page: "static"` field, the workflow's name, and the input schema)
- * and the STEPS, which imported with no bundler in the path are ordinary async
+ * The declaration is testable (three things that are silent when wrong — the
+ * `page: "static"` field, the workflow's name, and the input schema) and so are
+ * the STEPS, which imported with no bundler in the path are ordinary async
  * functions: their JSON contract with the model, their `FatalError` guards, and
  * the pure helpers underneath them.
  *
- * The loop's EXIT is the one thing worth naming that a spec here cannot reach.
- * It is decided in the body, on a step's journaled verdict — see the module doc
- * in `workflows/redline.ts` — and what would prove it is a replay, which needs a
- * built world. The critique step's verdict handling is where the testable half
- * of that lives.
+ * **And so is the loop's EXIT**, which this file used to name as the one thing a
+ * spec here could not reach: "it is decided in the body, on a step's journaled
+ * verdict, and what would prove it is a replay, which needs a built world."
+ * There is no built world any more — `runWorkflow`
+ * (`@alexkroman1/aai-runtime/testing`) runs this body on the real replay engine
+ * over an in-memory journal. The last block below is that claim, asserted the
+ * only way it can be: crash the desk mid-round, hand the journal to a fresh
+ * engine, and count the model calls the resume did NOT make.
  */
 
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
+import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
 import {
@@ -207,5 +208,136 @@ describe("the steps", () => {
       stubGateway("\n  A better draft.  \n");
       expect(await reviseDraft("A draft.", CRITIQUE, INPUT, 1)).toBe("A better draft.");
     });
+  });
+});
+
+/**
+ * The loop, against a real durable engine.
+ *
+ * `runWorkflow` starts the declared workflow on the engine `aai dev` uses, over
+ * an in-memory journal, and drives one delivery at a time. The desk has no
+ * suspension, so what these assert is the OTHER durable property — the one this
+ * module doc says is the shape neither sibling template has: a loop whose exit
+ * is decided at run time, on a step's journaled verdict, and which therefore has
+ * to take the same branch on every walk.
+ *
+ * The model is the whole world here (`writeDraft`, `critiqueDraft` and
+ * `reviseDraft` are all `stepGenerate*Classified`), so `stubGateway`'s scripted
+ * replies ARE the run, and its call log is what proves a replay did not pay for
+ * a round twice. Scripted in body order, with the last reply repeating.
+ */
+describe("the run is DURABLE", () => {
+  const BRIEF = {
+    brief: "Explain why a 402 is the interesting status code for an agent to meet.",
+    audience: "engineers" as const,
+    mustCover: [],
+  };
+  const SHIP = '{"verdict":"ship","score":9,"notes":[]}';
+  const REVISE = '{"verdict":"revise","score":5,"notes":["thin in the middle"]}';
+
+  beforeEach(() => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+  });
+
+  test("stops on the CRITIC's verdict, and journals one step per call site reached", async () => {
+    const model = stubGateway(["A draft about 402s.", SHIP]);
+    const run = await runWorkflow(redline, { ...BRIEF, rounds: 3 }, { name: "redline" });
+
+    expect(run.status).toBe("completed");
+    expect(run.output?.shipped).toBe(true);
+    expect(run.output?.roundsRun).toBe(1);
+    // Two rounds of budget went unspent, so the journal holds one critique and
+    // no revision at all — `(name, occurrence)` identity means the entries are
+    // the record of which call sites the body actually reached.
+    // SORTED, because `readSteps` orders by `finishedAt` with the key breaking
+    // a tie, and a run whose every step is one stubbed model call settles them
+    // inside the same millisecond. The claim is which call sites were reached.
+    expect(run.steps.map((step) => step.key).sort()).toEqual(["critiqueDraft#0", "writeDraft#0"]);
+    expect(model).toHaveLength(2);
+  });
+
+  test("journals a round per iteration, so `critiqueDraft#1` is round two", async () => {
+    // Revise, revise, then ship: the loop runs to its budget of three.
+    const model = stubGateway([
+      "A draft about 402s.",
+      REVISE,
+      "A better draft.",
+      REVISE,
+      "A better draft still.",
+      SHIP,
+    ]);
+    const run = await runWorkflow(redline, { ...BRIEF, rounds: 3 }, { name: "redline" });
+
+    expect(run.status).toBe("completed");
+    expect(run.output?.roundsRun).toBe(3);
+    expect(run.steps.map((step) => step.key).sort()).toEqual([
+      "critiqueDraft#0",
+      "critiqueDraft#1",
+      "critiqueDraft#2",
+      "reviseDraft#0",
+      "reviseDraft#1",
+      "writeDraft#0",
+    ]);
+    expect(model).toHaveLength(6);
+  });
+
+  test("a worker that dies mid-round replays the finished rounds instead of re-writing them", async () => {
+    // The claim the module doc makes and nothing could check: "a rate limit in
+    // round three replays rounds one and two from the journal for free and
+    // re-issues only the call that failed."
+    const model = stubGateway(["A draft about 402s.", REVISE, "A better draft.", SHIP]);
+    const run = await runWorkflow(
+      redline,
+      { ...BRIEF, rounds: 3 },
+      { name: "redline", crashAt: "reviseDraft" },
+    );
+
+    expect(run.crashed).toBe(true);
+    // SORTED, because `readSteps` orders by `finishedAt` with the key breaking
+    // a tie, and a run whose every step is one stubbed model call settles them
+    // inside the same millisecond. The claim is which call sites were reached.
+    expect(run.steps.map((step) => step.key).sort()).toEqual(["critiqueDraft#0", "writeDraft#0"]);
+    const spentBeforeTheCrash = model.length;
+    expect(spentBeforeTheCrash).toBe(2);
+
+    await run.restart();
+    expect(run.status).toBe("completed");
+    expect(run.output?.shipped).toBe(true);
+    // Four calls in total for a run that reached four call sites — so the
+    // resume paid for the revision and the second critique and NOT for the
+    // draft or the first critique, which came back out of the journal.
+    expect(model).toHaveLength(4);
+    expect(run.steps.map((step) => step.key).sort()).toEqual([
+      "critiqueDraft#0",
+      "critiqueDraft#1",
+      "reviseDraft#0",
+      "writeDraft#0",
+    ]);
+  });
+
+  test("takes the SAME branch on the walk after a crash, because the verdict is journaled", async () => {
+    // The replay-stability claim itself. The critic said "ship" on the first
+    // walk; the model is then scripted to say "revise" to anything asked
+    // afterwards. A body that re-decided the loop on a fresh model call would
+    // carry on revising — a body that reads its journaled verdict cannot.
+    const model = stubGateway(["A draft about 402s.", SHIP, REVISE]);
+    const run = await runWorkflow(
+      redline,
+      { ...BRIEF, rounds: 3 },
+      { name: "redline", crashAt: "critiqueDraft" },
+    );
+    // Crashed BEFORE the critique's body ran, so nothing is journaled but the
+    // draft — and the resume is what reaches the verdict.
+    expect(run.crashed).toBe(true);
+    expect(run.steps.map((step) => step.key)).toEqual(["writeDraft#0"]);
+
+    await run.restart();
+    expect(run.status).toBe("completed");
+    expect(run.output?.shipped).toBe(true);
+    expect(run.output?.roundsRun).toBe(1);
+    // Two calls: the draft, and the critique the crash cost. The third scripted
+    // reply — the one that would have kept the loop going — is never asked for,
+    // because the loop read its verdict out of the journal.
+    expect(model).toHaveLength(2);
   });
 });

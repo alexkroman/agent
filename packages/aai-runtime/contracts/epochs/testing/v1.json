@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "testing",
   "epoch": 1,
-  "sha256": "934c2b9f6b29851e27be257b20cc36928d1fb5b1093af15f8b313d9761d9bc9c",
+  "sha256": "bf1721c262b5bfd9092649c24663cca521b2e0a7a4c46a481c3ea2750e0a7ad2",
   "exports": [
     "DEFAULT_MAX_DELIVERIES",
     "RunWorkflowOptions",

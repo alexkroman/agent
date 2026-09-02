@@ -2,18 +2,21 @@
 /**
  * What this template promises, checked without a network.
  *
- * Three kinds of thing are checked, and the workflow BODY is none of them: it is
- * only durable once the Workflow DevKit's build has transformed it, so a unit
- * test of it would exercise a plain async function and prove nothing about
- * replay. What IS here:
+ * Four kinds of thing are checked:
  *
  * - The DECLARATION — the config a deploy validates and the schema a `start()`
  *   is checked against.
  * - The PURE helpers, pulled out of the flow for exactly this reason.
- * - The STEPS, directly. A step is an ordinary exported async function, so one
- *   function is an ordinary async function, so its HTTP handling, its
- *   partial-failure policy and its `FatalError` guards are all reachable —
- *   `installStubStepFetch` answers the network and `stubGateway` answers the model.
+ * - The STEPS, directly. A step is an ordinary exported async function, so its
+ *   HTTP handling, its partial-failure policy and its `FatalError` guards are
+ *   all reachable — `installStubStepFetch` answers the network and
+ *   `stubGateway` answers the model.
+ * - The BODY, twice. `createWorkflowCtx` records what it asked for (the digest
+ *   loop, the shrinking pending set, the sleep BETWEEN digests and never after
+ *   the last), and `runWorkflow` runs it on the real replay engine — which is
+ *   what this file used to say a unit test could not do, on the ground that a
+ *   body "is only durable once the Workflow DevKit's build has transformed it".
+ *   That stopped being true when the DevKit was replaced.
  *
  * The cases worth having are the ones where a mistake is SILENT: a schema that
  * accepts a webhook pointing anywhere, a Slack payload in the shape the other
@@ -22,11 +25,17 @@
  */
 
 import { type FeedItem, parseFeed } from "@alexkroman1/aai/html";
-import { createWorkflowCtx, parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
+import {
+  createWorkflowCtx,
+  parseSchemaInput,
+  schemaInputIssues,
+  stubGatewayRoute,
+} from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
+import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import {
@@ -882,5 +891,173 @@ describe("the body — the run that IS the schedule", () => {
     // Every round slept except the last, which is what bounds the wait.
     expect(ctx.slept.length).toBeGreaterThan(0);
     for (const sleep of ctx.slept) expect(sleep.until).toBe(POLL_DELAY_MS);
+  });
+});
+
+/**
+ * The schedule, on the real replay engine.
+ *
+ * The block above drives the same body through `createWorkflowCtx`, which
+ * RECORDS a sleep rather than taking one and replays nothing — right for the
+ * loop's logic, and silent about the property this template is: a run that
+ * sleeps for a day between digests and comes back. `runWorkflow`
+ * (`@alexkroman1/aai-runtime/testing`) is the real engine over an in-memory
+ * journal, so the run genuinely parks, genuinely resumes off its journal, and
+ * genuinely does not redo the digest it already posted.
+ *
+ * Two sleeps are in play and they are different things, which is exactly what a
+ * recorded one cannot show: the POLL cadence inside `waitForTranscripts`, and
+ * the SCHEDULE interval between digests. Both are `ctx.sleep`, so both end with
+ * `advanceSleep()` — the same call `ctx.workflows.wakeUp` makes.
+ */
+describe("the run is DURABLE", () => {
+  const FEED = feedXml(itemXml("newest", "Thu, 03 Jan 2030 00:00:00 GMT"));
+  const SUMMARY = '{"summary":"Otters are clever.","keyPoints":["They use tools","They float"]}';
+
+  const SCHEDULE = {
+    ...VALID,
+    slackWorkflowTextParam: "text",
+    maxEpisodesPerDigest: 1,
+    intervalEvery: 2,
+    intervalUnit: "hours" as const,
+  };
+
+  /**
+   * The feed, the provider, the model and Slack, behind ONE published
+   * `stepFetch`.
+   *
+   * Every step's HTTP goes through the slot, the model call included, so a
+   * gateway stub over `globalThis.fetch` beside these routes would be bypassed.
+   * `stubGatewayRoute` is the composition for it — the same note
+   * `link-digest/agent.test.ts` carries.
+   *
+   * `polls` is how many `GET /v2/transcript/:id` answers say "not yet" before
+   * the job is reported done, which is how a case decides whether the run has
+   * to sit through the poll cadence at all.
+   */
+  function stubWorld({ polls = 0 }: { polls?: number } = {}) {
+    const model = stubGatewayRoute(SUMMARY);
+    const seen = { feeds: 0, submits: 0, slack: 0, polls: 0 };
+    installStubStepFetch((request) => {
+      const routed = model.route(request);
+      if (routed) return routed;
+      if (request.url.includes("hooks.slack.com")) {
+        seen.slack += 1;
+        return { status: 200, body: "ok" };
+      }
+      if (request.url.includes("/v2/transcript")) {
+        if (request.method === "POST") {
+          seen.submits += 1;
+          return { status: 200, body: { id: "t_1", status: "queued" } };
+        }
+        seen.polls += 1;
+        return seen.polls <= polls
+          ? { status: 200, body: { id: "t_1", status: "processing" } }
+          : { status: 200, body: { id: "t_1", status: "completed", text: "Otters use tools." } };
+      }
+      seen.feeds += 1;
+      return { status: 200, body: FEED, headers: { "Content-Type": "application/xml" } };
+    });
+    return { model, seen };
+  }
+
+  beforeEach(() => vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key"));
+
+  test("a one-digest run ends without sleeping, and posts once", async () => {
+    // The negative half of the schedule claim, and the cheap one: a run that has
+    // delivered everything it owes should END, not sleep for a day and then end.
+    const world = stubWorld();
+    const run = await runWorkflow(
+      dailyDigest,
+      { ...SCHEDULE, daysToRun: 1 },
+      { name: "dailyDigest" },
+    );
+
+    expect(run.status).toBe("completed");
+    expect(run.output?.digestsSent).toBe(1);
+    expect(run.deliveries).toBe(1);
+    expect(run.wakeAt).toBeUndefined();
+    expect(world.seen.slack).toBe(1);
+  });
+
+  test("parks on the poll cadence, and the resume does not re-submit the episode", async () => {
+    // The transcription is already paid for; a resume that submitted again would
+    // buy it twice and get a different job id.
+    const world = stubWorld({ polls: 1 });
+    const run = await runWorkflow(
+      dailyDigest,
+      { ...SCHEDULE, daysToRun: 1 },
+      { name: "dailyDigest" },
+    );
+
+    expect(run.status).toBe("running");
+    expect(run.wakeAt).toBeGreaterThan(Date.now());
+    expect(world.seen.submits).toBe(1);
+    expect(run.steps.map((step) => step.key).sort()).toEqual([
+      "discoverEpisodes#0",
+      "pollTranscript#0",
+      "submitTranscript#0",
+    ]);
+
+    await run.advanceSleep();
+    expect(run.status).toBe("completed");
+    expect(run.output?.digestsSent).toBe(1);
+    // ONE submit across two walks — the first is read back out of the journal.
+    expect(world.seen.submits).toBe(1);
+    expect(world.seen.polls).toBe(2);
+  });
+
+  test("sleeps the SCHEDULE between digests, then runs the second one", async () => {
+    const world = stubWorld();
+    const started = Date.now();
+    const run = await runWorkflow(
+      dailyDigest,
+      { ...SCHEDULE, daysToRun: 2 },
+      { name: "dailyDigest" },
+    );
+
+    // Digest one is posted and the run is parked on the interval — two hours,
+    // which nothing here waits for.
+    expect(run.status).toBe("running");
+    expect(run.wakeAt).toBeGreaterThanOrEqual(started + scheduleIntervalMs(2, "hours"));
+    expect(world.seen.slack).toBe(1);
+    expect(run.output).toBeUndefined();
+
+    await run.advanceSleep();
+    expect(run.status).toBe("completed");
+    expect(run.output?.digestsSent).toBe(2);
+    expect(run.deliveries).toBe(2);
+    // TWO posts, and the second digest did its own discovery — the loop's second
+    // turn is `discoverEpisodes#1`, a different journal entry from the first, so
+    // a schedule really re-reads the feed rather than replaying yesterday's.
+    expect(world.seen.slack).toBe(2);
+    expect(run.steps.map((step) => step.key).sort()).toContain("discoverEpisodes#1");
+    // And digest one's post is NOT made a second time: one `postDigest` entry
+    // per digest, both journaled.
+    expect(run.steps.filter((step) => step.name === "postDigest")).toHaveLength(2);
+  });
+
+  test("a worker that dies before the digest is posted replays the transcription", async () => {
+    // The expensive half. Transcribing and summarizing an episode is minutes of
+    // provider time; a resume must reach Slack without paying for either again.
+    const world = stubWorld();
+    const run = await runWorkflow(
+      dailyDigest,
+      { ...SCHEDULE, daysToRun: 1 },
+      { name: "dailyDigest", crashAt: "postDigest" },
+    );
+
+    expect(run.crashed).toBe(true);
+    expect(world.seen.slack).toBe(0);
+    expect(world.seen.submits).toBe(1);
+    expect(world.model.calls).toHaveLength(1);
+
+    await run.restart();
+    expect(run.status).toBe("completed");
+    expect(run.output?.digestsSent).toBe(1);
+    expect(world.seen.slack).toBe(1);
+    // Neither the provider nor the model was asked a second time.
+    expect(world.seen.submits).toBe(1);
+    expect(world.model.calls).toHaveLength(1);
   });
 });

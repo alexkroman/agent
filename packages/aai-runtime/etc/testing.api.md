@@ -114,6 +114,7 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
     advanceSleep(correlationIds?: readonly string[]): Promise<WorkflowTestHandle<R>>;
     signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
     readonly signalled: boolean;
+    expireWaits(): Promise<WorkflowTestHandle<R>>;
     restart(): Promise<WorkflowTestHandle<R>>;
     readonly journal: JournalStore;
     close(): Promise<void>;
