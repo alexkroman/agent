@@ -600,7 +600,7 @@ describe("the run is DURABLE", () => {
     expect(run.status).toBe("running");
     expect(run.wakeAt).toBeGreaterThanOrEqual(started + REVIEW_DELAY_MS);
     // Everything except the filing is durable already, and `file` has not run.
-    expect(run.steps.map((step) => step.key).sort()).toEqual([
+    expect(run.steps.map((step) => step.key)).toEqual([
       "findGaps#0",
       "investigate#0",
       "planAngles#0",
@@ -642,7 +642,7 @@ describe("the run is DURABLE", () => {
     });
 
     expect(run.crashed).toBe(true);
-    expect(run.steps.map((step) => step.key).sort()).toEqual([
+    expect(run.steps.map((step) => step.key)).toEqual([
       "findGaps#0",
       "investigate#0",
       "planAngles#0",

@@ -2,11 +2,12 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "testing",
   "epoch": 1,
-  "sha256": "bf1721c262b5bfd9092649c24663cca521b2e0a7a4c46a481c3ea2750e0a7ad2",
+  "sha256": "d513e46d03d3431942b7996328c39fa12e364068fef6ded73e2b6294d3e58349",
   "exports": [
     "DEFAULT_MAX_DELIVERIES",
     "RunWorkflowOptions",
     "WorkflowTestHandle",
+    "WorkflowTestRead",
     "WorkflowTestRun",
     "WorkflowTestStep",
     "runWorkflow"

@@ -76,9 +76,11 @@ import {
 } from "../workflow-in-process.ts";
 import { createMemoryJournal } from "../workflow-journal-memory.ts";
 import { isTerminalStatus, type JournalStore } from "../workflow-journal-types.ts";
+import { type DeterminismKind, isDeterminismKey } from "../workflow-replay-determinism.ts";
 import type {
   RunWorkflowOptions,
   WorkflowTestHandle,
+  WorkflowTestRead,
   WorkflowTestRun,
   WorkflowTestStep,
 } from "./run-workflow-types.ts";
@@ -213,6 +215,7 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
     output: undefined,
     error: undefined,
     steps: [] as readonly WorkflowTestStep[],
+    reads: [] as readonly WorkflowTestRead[],
     wakeAt: undefined,
     deliveries: 0,
     crashed: false,
@@ -235,6 +238,9 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
     },
     get steps() {
       return state.steps;
+    },
+    get reads() {
+      return state.reads;
     },
     get wakeAt() {
       return state.wakeAt;
@@ -338,7 +344,15 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
     state.status = record?.status ?? "pending";
     state.output = record?.status === "completed" ? (record.output as R) : undefined;
     state.error = record?.error?.message;
-    state.steps = (await journal.readSteps(runId)).map(toStep);
+    const journaled = await journal.readSteps(runId);
+    state.steps = journaled
+      .filter((entry) => !isDeterminismKey(entry.key))
+      .map(toStep)
+      .sort(byCallSite);
+    state.reads = journaled
+      .filter((entry) => isDeterminismKey(entry.key))
+      .map(toRead)
+      .sort(byCallSite);
     if (record && isTerminalStatus(record.status)) state.wakeAt = undefined;
   }
 
@@ -362,6 +376,53 @@ function build<P extends ToolInputSchema, R>(
   dispatch: (runId: string, at?: number) => void,
 ): InProcessWorkflowEngine {
   return createInProcessWorkflowEngine({ workflows: { [name]: def }, journal, logger, dispatch });
+}
+
+/**
+ * By call SITE: the name ascending, then the occurrence NUMERICALLY.
+ *
+ * Both halves come out of the KEY, so one comparator serves steps and
+ * determinism reads alike — `now!0` and `summarize#0` are the same shape either
+ * side of a different separator.
+ *
+ * The occurrence is compared as a number rather than as text, which a sort of
+ * the whole key gets wrong: `poll#10` sorts before `poll#2` as a string, so a
+ * body that polled eleven times would list its rounds out of order — and the
+ * order is the only reason this is sorted at all. See
+ * {@link WorkflowTestRun.steps} for why the journal's own order is not used.
+ */
+function byCallSite(a: { key: string }, b: { key: string }): number {
+  const left = splitKey(a.key);
+  const right = splitKey(b.key);
+  if (left.name !== right.name) return left.name < right.name ? -1 : 1;
+  return left.occurrence - right.occurrence;
+}
+
+/**
+ * A journal key as its two parts.
+ *
+ * `lastIndexOf` on either separator rather than a regex, because a step NAME may
+ * legally contain a `#` and the LAST one is always the engine's. A key with
+ * neither is impossible from either writer; it answers occurrence `0` rather
+ * than `NaN`, so a malformed one sorts first instead of making every comparison
+ * against it undefined.
+ */
+function splitKey(key: string): { name: string; occurrence: number } {
+  const at = Math.max(key.lastIndexOf("#"), key.lastIndexOf("!"));
+  if (at < 0) return { name: key, occurrence: 0 };
+  const occurrence = Number(key.slice(at + 1));
+  return { name: key.slice(0, at), occurrence: Number.isFinite(occurrence) ? occurrence : 0 };
+}
+
+/** A determinism read, projected — see {@link WorkflowTestRead}. */
+function toRead(entry: { key: string; name: string; output?: unknown }): WorkflowTestRead {
+  return {
+    key: entry.key,
+    // The engine writes the KIND as the entry's name, so nothing here re-parses
+    // the key to recover it.
+    kind: entry.name as DeterminismKind,
+    value: entry.output,
+  };
 }
 
 /** A journal entry, projected — see {@link WorkflowTestStep} for why. */

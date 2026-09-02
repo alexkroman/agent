@@ -1084,14 +1084,7 @@ describe("the run is DURABLE", () => {
     // The 15s poll interval, journaled — the run is in progress and not
     // executing, which is what a caller polling it sees.
     expect(run.wakeAt).toBeGreaterThan(started);
-    // SORTED, because `readSteps` orders by `finishedAt` with the key breaking
-    // a tie — and two steps of one fast walk settle inside the same
-    // millisecond routinely. What the assertion is about is which call sites
-    // the body reached, not the microsecond it reached them in.
-    expect(run.steps.map((step) => step.key).sort()).toEqual([
-      "checkTranscript#0",
-      "submitRecording#0",
-    ]);
+    expect(run.steps.map((step) => step.key)).toEqual(["checkTranscript#0", "submitRecording#0"]);
   });
 
   test("resumes past the poll WITHOUT re-submitting the recording", async () => {
@@ -1103,7 +1096,7 @@ describe("the run is DURABLE", () => {
 
     // Parked again, now on the retention gate — a hook with a deadline.
     expect(run.status).toBe("running");
-    expect(run.steps.map((step) => step.key).sort()).toEqual([
+    expect(run.steps.map((step) => step.key)).toEqual([
       "checkTranscript#0",
       "checkTranscript#1",
       "noteGate#0",

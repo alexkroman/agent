@@ -59,6 +59,7 @@ export {
 export type {
   RunWorkflowOptions,
   WorkflowTestHandle,
+  WorkflowTestRead,
   WorkflowTestRun,
   WorkflowTestStep,
 } from "./testing/run-workflow-types.ts";

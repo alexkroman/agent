@@ -993,7 +993,7 @@ describe("the run is DURABLE", () => {
     expect(run.status).toBe("running");
     expect(run.wakeAt).toBeGreaterThan(Date.now());
     expect(world.seen.submits).toBe(1);
-    expect(run.steps.map((step) => step.key).sort()).toEqual([
+    expect(run.steps.map((step) => step.key)).toEqual([
       "discoverEpisodes#0",
       "pollTranscript#0",
       "submitTranscript#0",
@@ -1031,7 +1031,7 @@ describe("the run is DURABLE", () => {
     // turn is `discoverEpisodes#1`, a different journal entry from the first, so
     // a schedule really re-reads the feed rather than replaying yesterday's.
     expect(world.seen.slack).toBe(2);
-    expect(run.steps.map((step) => step.key).sort()).toContain("discoverEpisodes#1");
+    expect(run.steps.map((step) => step.key)).toContain("discoverEpisodes#1");
     // And digest one's post is NOT made a second time: one `postDigest` entry
     // per digest, both journaled.
     expect(run.steps.filter((step) => step.name === "postDigest")).toHaveLength(2);

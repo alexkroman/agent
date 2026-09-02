@@ -116,6 +116,7 @@
     "DEFAULT_MAX_DELIVERIES",
     "RunWorkflowOptions",
     "WorkflowTestHandle",
+    "WorkflowTestRead",
     "WorkflowTestRun",
     "WorkflowTestStep"
   ],

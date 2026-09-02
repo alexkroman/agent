@@ -956,12 +956,13 @@ describe("the run is DURABLE, as far as ffmpeg allows", () => {
 
   test("the clock is journaled BEFORE the step that fails, so the run's start survives", async () => {
     // `ctx.now()` and the ingest are issued together in one `Promise.all`, so a
-    // failing ingest must not lose the clock read that went out beside it — the
-    // affordance is journaled through the same append a step is.
+    // failing ingest must not lose the clock read that went out beside it. It is
+    // journaled through the same append a step is, into a key space of its own —
+    // which is why it reads back off `reads` rather than `steps`.
     const run = await runWorkflow(audit, { recording: UPLOAD_ID }, { name: "audit" });
 
-    const clock = run.steps.find((step) => step.key === "now!0");
-    expect(clock?.status).toBe("ok");
-    expect(typeof clock?.output).toBe("number");
+    const clock = run.reads.find((read) => read.key === "now!0");
+    expect(clock?.kind).toBe("now");
+    expect(typeof clock?.value).toBe("number");
   });
 });

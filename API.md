@@ -9054,6 +9054,9 @@ import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 export const DEFAULT_MAX_DELIVERIES = 50;
 
 // @public
+type DeterminismKind = "now" | "random" | "uuid";
+
+// @public
 type HookRecord = {
     token: string;
     delivered: boolean;
@@ -9163,12 +9166,20 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
 };
 
 // @public
+export type WorkflowTestRead = {
+    readonly key: string;
+    readonly kind: DeterminismKind;
+    readonly value: unknown;
+};
+
+// @public
 export type WorkflowTestRun<R> = {
     readonly runId: string;
     readonly status: WorkflowRunStatus;
     readonly output: R | undefined;
     readonly error: string | undefined;
     readonly steps: readonly WorkflowTestStep[];
+    readonly reads: readonly WorkflowTestRead[];
     readonly wakeAt: number | undefined;
     readonly deliveries: number;
     readonly crashed: boolean;

@@ -12,6 +12,22 @@
 import type { WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../runtime-config.ts";
 import type { JournalStore } from "../workflow-journal-types.ts";
+import type { DeterminismKind } from "../workflow-replay-determinism.ts";
+
+/**
+ * One journaled determinism read — what `ctx.now()`, `ctx.random()` or
+ * `ctx.uuid()` answered, and will answer again on every later walk.
+ *
+ * @public
+ */
+export type WorkflowTestRead = {
+  /** `now!0`, `random!0`, `uuid!0` — the reserved key space, per kind. */
+  readonly key: string;
+  /** Which affordance this reach was. */
+  readonly kind: DeterminismKind;
+  /** The value the journal holds, which every replay reads back. */
+  readonly value: unknown;
+};
 
 /**
  * One step the run journaled.
@@ -64,21 +80,45 @@ export type WorkflowTestRun<R> = {
   /** The failure message, once the run is `failed`. */
   readonly error: string | undefined;
   /**
-   * Every settled step, in `JournalStore.readSteps` order — by `finishedAt`,
-   * with the KEY breaking a tie.
+   * Every settled `ctx.step`, ordered by NAME and then by occurrence.
    *
-   * The tie is not a detail: two steps of one fast walk settle inside the same
-   * millisecond routinely, so a spec asserting on the whole list should sort it
-   * or compare it as a set. What the list is evidence of is which call sites the
-   * body reached and what they returned, not the order the clock saw them in.
+   * ## Not the journal's order, deliberately
    *
-   * **`ctx.now()`, `ctx.random()` and `ctx.uuid()` are in here too**, keyed
-   * `now!0` / `random!0` / `uuid!0` in a positional space of their own. They are
-   * journaled through the same append a step is — that is what makes a second
-   * walk read the same value — so a spec listing a body's keys sees them, and
-   * one that expected only `ctx.step` names will be surprised once.
+   * `JournalStore.readSteps` answers by `finishedAt` with the key breaking a
+   * tie, which is the right contract for a STORE — it is what makes three
+   * backends comparable — and the wrong one to hand a spec. Two steps of one
+   * fast walk settle inside the same millisecond routinely, so under that order
+   * the obvious assertion
+   * (`expect(run.steps.map((s) => s.key)).toEqual([…])`) passes on a slow
+   * machine and fails on a quick one. That is a flake whose failure names a
+   * timing detail rather than a bug, which is the shape this repo refuses
+   * everywhere else it observes a clock.
+   *
+   * So the order here is a property of the BODY rather than of the run: `name`
+   * ascending, then occurrence NUMERICALLY — `poll#2` before `poll#10`, which a
+   * plain string sort gets wrong. Nothing is lost, because settle order under a
+   * fan-out is the scheduler's and was never assertable anyway.
+   *
+   * `ctx.now()`, `ctx.random()` and `ctx.uuid()` are NOT in here — see
+   * {@link WorkflowTestRun.reads}.
    */
   readonly steps: readonly WorkflowTestStep[];
+  /**
+   * Every journaled determinism read — `ctx.now()`, `ctx.random()`,
+   * `ctx.uuid()` — in the same canonical order.
+   *
+   * Kept apart from {@link WorkflowTestRun.steps} because the ENGINE keeps them
+   * apart: they are journaled through the same `appendStep` (which is what makes
+   * a second walk read the same value, and what let them ship without a new
+   * `JournalStore` method) but into a reserved key space of their own —
+   * `now!0`, not `now#0` — and `isDeterminismKey` is the engine's own predicate
+   * for the difference. They also carry no attempt, having no body to abandon.
+   *
+   * Folding them in was this surface's own bug: a spec asserting which call
+   * sites a body reached got a `now` it never wrote, and the projection was
+   * flattening a distinction the journal makes on purpose.
+   */
+  readonly reads: readonly WorkflowTestRead[];
   /**
    * The deadline the run is parked on, when it is parked on one.
    *

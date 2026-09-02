@@ -364,7 +364,7 @@ describe("the run is DURABLE", () => {
 
     expect(run.status).toBe("running");
     expect(run.wakeAt).toBeGreaterThan(started);
-    expect(run.steps.map((step) => step.key).sort()).toEqual([
+    expect(run.steps.map((step) => step.key)).toEqual([
       "createJob#0",
       "pollTranscript#0",
       "uploadToProvider#0",

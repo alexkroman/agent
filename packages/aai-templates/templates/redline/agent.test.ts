@@ -249,10 +249,7 @@ describe("the run is DURABLE", () => {
     // Two rounds of budget went unspent, so the journal holds one critique and
     // no revision at all — `(name, occurrence)` identity means the entries are
     // the record of which call sites the body actually reached.
-    // SORTED, because `readSteps` orders by `finishedAt` with the key breaking
-    // a tie, and a run whose every step is one stubbed model call settles them
-    // inside the same millisecond. The claim is which call sites were reached.
-    expect(run.steps.map((step) => step.key).sort()).toEqual(["critiqueDraft#0", "writeDraft#0"]);
+    expect(run.steps.map((step) => step.key)).toEqual(["critiqueDraft#0", "writeDraft#0"]);
     expect(model).toHaveLength(2);
   });
 
@@ -270,7 +267,7 @@ describe("the run is DURABLE", () => {
 
     expect(run.status).toBe("completed");
     expect(run.output?.roundsRun).toBe(3);
-    expect(run.steps.map((step) => step.key).sort()).toEqual([
+    expect(run.steps.map((step) => step.key)).toEqual([
       "critiqueDraft#0",
       "critiqueDraft#1",
       "critiqueDraft#2",
@@ -293,10 +290,7 @@ describe("the run is DURABLE", () => {
     );
 
     expect(run.crashed).toBe(true);
-    // SORTED, because `readSteps` orders by `finishedAt` with the key breaking
-    // a tie, and a run whose every step is one stubbed model call settles them
-    // inside the same millisecond. The claim is which call sites were reached.
-    expect(run.steps.map((step) => step.key).sort()).toEqual(["critiqueDraft#0", "writeDraft#0"]);
+    expect(run.steps.map((step) => step.key)).toEqual(["critiqueDraft#0", "writeDraft#0"]);
     const spentBeforeTheCrash = model.length;
     expect(spentBeforeTheCrash).toBe(2);
 
@@ -307,7 +301,7 @@ describe("the run is DURABLE", () => {
     // resume paid for the revision and the second critique and NOT for the
     // draft or the first critique, which came back out of the journal.
     expect(model).toHaveLength(4);
-    expect(run.steps.map((step) => step.key).sort()).toEqual([
+    expect(run.steps.map((step) => step.key)).toEqual([
       "critiqueDraft#0",
       "critiqueDraft#1",
       "reviseDraft#0",

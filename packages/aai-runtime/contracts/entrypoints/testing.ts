@@ -30,6 +30,7 @@ export {
   type RunWorkflowOptions,
   runWorkflow,
   type WorkflowTestHandle,
+  type WorkflowTestRead,
   type WorkflowTestRun,
   type WorkflowTestStep,
 } from "../../testing-barrel.ts";

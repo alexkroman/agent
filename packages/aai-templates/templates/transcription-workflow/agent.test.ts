@@ -1802,16 +1802,14 @@ describe("the batch run is DURABLE", () => {
 
     expect(run.status).toBe("running");
     expect(run.wakeAt).toBeGreaterThan(started);
-    // `now!0` is in the journal beside the steps, and that is the affordance
-    // being visible rather than a leak: `ctx.now()` is appended through the same
-    // path a step is, in a POSITIONAL key space of its own, which is what makes
-    // the value the same on every walk.
-    expect(run.steps.map((step) => step.key).sort()).toEqual([
+    expect(run.steps.map((step) => step.key)).toEqual([
       "createJob#0",
-      "now!0",
       "pollTranscript#0",
       "uploadToProvider#0",
     ]);
+    // The clock the body read alongside the upload is journaled too, in its own
+    // reserved key space — `run.reads`, not `run.steps`.
+    expect(run.reads.map((read) => read.key)).toEqual(["now!0"]);
     expect(provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
   });
 
@@ -1861,9 +1859,10 @@ describe("the batch run is DURABLE", () => {
     });
 
     expect(run.crashed).toBe(true);
-    // `now` beside it — the clock read the body issued in the same
-    // `Promise.all` — and nothing else: the crash landed before `createJob`.
-    expect(run.steps.map((step) => step.name).sort()).toEqual(["now", "uploadToProvider"]);
+    expect(run.steps.map((step) => step.name)).toEqual(["uploadToProvider"]);
+    // The clock the body read in the same `Promise.all` survived the crash with
+    // it, which is what makes the resumed run's elapsed the WHOLE run's.
+    expect(run.reads.map((read) => read.key)).toEqual(["now!0"]);
     expect(provider.calls.filter((call) => call.leg === "submit")).toHaveLength(0);
 
     await run.restart();

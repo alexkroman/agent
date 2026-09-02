@@ -277,6 +277,69 @@ describe("a worker that DIES mid-run", () => {
   });
 });
 
+describe("what the journal holds, as a spec reads it", () => {
+  /** A body that steps in a loop and reads the clock at both ends. */
+  const audited = workflow({
+    description: "audited",
+    run: async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      const startedAt = await ctx.now();
+      // Eleven, so the occurrence has to be compared as a NUMBER: `poll#10`
+      // sorts before `poll#2` as a string.
+      for (let i = 0; i < 11; i++) await ctx.step("poll", () => i);
+      await ctx.step("file", () => "filed");
+      return { elapsed: (await ctx.now()) - startedAt };
+    },
+  });
+
+  test("orders steps by call SITE, so a same-millisecond walk is not a coin flip", async () => {
+    const run = await runWorkflow(audited, {});
+
+    expect(run.status).toBe("completed");
+    // `file` before every `poll`, and `poll#2` before `poll#10`. Under the
+    // journal's own order — `finishedAt`, key breaking a tie — this whole list
+    // would depend on how fast the machine is.
+    expect(run.steps.map((step) => step.key)).toEqual([
+      "file#0",
+      "poll#0",
+      "poll#1",
+      "poll#2",
+      "poll#3",
+      "poll#4",
+      "poll#5",
+      "poll#6",
+      "poll#7",
+      "poll#8",
+      "poll#9",
+      "poll#10",
+    ]);
+  });
+
+  test("keeps ctx.now() OUT of the steps and in `reads`", async () => {
+    const run = await runWorkflow(audited, {});
+
+    // The engine journals a determinism read through the same `appendStep` a
+    // step goes through, into a reserved key space — `now!0`, not `now#0`. A
+    // spec asserting which call sites a body reached must not see it.
+    expect(run.steps.map((step) => step.name)).not.toContain("now");
+    expect(run.reads.map((read) => read.key)).toEqual(["now!0", "now!1"]);
+    expect(run.reads.every((read) => read.kind === "now")).toBe(true);
+    expect(typeof run.reads[0]?.value).toBe("number");
+  });
+
+  test("a read is the same value on the walk after a crash", async () => {
+    // Which is the whole point of journaling it: `elapsed` is measured from the
+    // instant the RUN began, not the instant the resuming walk did.
+    const run = await runWorkflow(audited, {}, { crashAt: "file" });
+    expect(run.crashed).toBe(true);
+    const first = run.reads[0]?.value;
+    expect(typeof first).toBe("number");
+
+    await run.restart();
+    expect(run.status).toBe("completed");
+    expect(run.reads[0]?.value).toBe(first);
+  });
+});
+
 describe("the driver's own limits", () => {
   test("validates the input the way ctx.workflows.start does", async () => {
     const typed = workflow({
