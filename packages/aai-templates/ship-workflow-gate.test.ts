@@ -106,6 +106,51 @@ describe("the ordering is declared, not polled", () => {
   });
 });
 
+describe("what arms a deploy", () => {
+  /**
+   * The `changed` job decides whether the platform ships, and a VERSION BUMP is
+   * only a proxy for that. Both server packages are `private`, so changesets
+   * bumps them exclusively as dependents of an SDK release
+   * (`updateInternalDependencies: patch`) — so a commit touching only
+   * `aai-server` moves no version line. Measured on the real history:
+   * `dd699c71`, which merged #1341 and rewrote most of the platform, took
+   * `deploy=false` and shipped nothing of its own; it deployed only because a
+   * Version Packages commit happened to land behind it.
+   */
+  test("a server SOURCE change arms the deploy, not just a version bump", () => {
+    const source = workflow ?? "";
+    const diff = source.slice(source.indexOf("      - id: diff"));
+    const step = diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
+    for (const pkg of ["packages/aai-server/**", "packages/aai-studio-server/**"]) {
+      expect(step, `${pkg} does not arm a deploy, so a server-only change never ships`).toContain(
+        pkg,
+      );
+    }
+  });
+
+  /**
+   * `deploy` declares `needs: [changed, migrate, …]` with no `always()`, so a
+   * SKIPPED migrate skips the deploy however `outputs.deploy` reads. Every
+   * branch that sets `deploy=true` therefore has to set `migrate=true` too, or
+   * it is a silent no-op. Asserted by counting, because the failure is an
+   * ABSENT line rather than a wrong one.
+   */
+  test("every branch that arms a deploy also arms the migration", () => {
+    const source = workflow ?? "";
+    const diff = source.slice(source.indexOf("      - id: diff"));
+    const step = diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
+    const arms = step.match(/^ *deploy=true$/gm) ?? [];
+    const migrates = step.match(/^ *migrate=true$/gm) ?? [];
+    expect(arms.length, "no branch arms a deploy — the scan has stopped matching").toBeGreaterThan(
+      1,
+    );
+    expect(
+      migrates.length,
+      "a branch arms deploy without migrate, which `needs: migrate` turns into a no-op",
+    ).toBeGreaterThanOrEqual(arms.length);
+  });
+});
+
 describe("the packed release reaches the image", () => {
   test("pack, publish and the image build all name the same directory", () => {
     const source = workflow ?? "";
