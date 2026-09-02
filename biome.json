@@ -298,6 +298,19 @@
       }
     },
     {
+      "includes": ["**/_*-harness.ts"],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noConditionalExpect": "off"
+          },
+          "suspicious": {
+            "noMisplacedAssertion": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": [
         "**/*.test.ts",
         "**/*.test.tsx",

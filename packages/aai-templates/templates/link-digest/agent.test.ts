@@ -10,19 +10,27 @@
  * rename here is a runtime 400 there), and the input schema (which is both the
  * call-site validation and the JSON Schema `GET /workflows` serves).
  *
- * The workflow BODY is not tested here: it is only durable once the Workflow
- * DevKit's build has transformed it, so a unit test of it would exercise a plain
- * async function and prove nothing about replay. Its STEPS are, and directly —
- * a step is an ordinary exported async function, so
- * async function, so its HTML handling, its JSON contract with the model and its
- * `FatalError` guards are all testable.
+ * The STEPS are exercised directly — a step is an ordinary exported async
+ * function, so its HTML handling, its JSON contract with the model and its
+ * `FatalError` guards are all testable without an engine.
+ *
+ * And so is the BODY, durably, which it was not: this file used to say the body
+ * "is only durable once the Workflow DevKit's build has transformed it, so a
+ * unit test of it would exercise a plain async function and prove nothing about
+ * replay". That stopped being true when the DevKit was replaced — the engine
+ * runs a run off the agent's own `workflows` declaration, in process, with no
+ * bundler in the path. `runWorkflow` from `@alexkroman1/aai-runtime/testing` is
+ * that engine, so the last block below asserts the thing this template exists to
+ * demonstrate: the run SUSPENDS on its settle window and resumes past it without
+ * fetching the page or paying the model again.
  */
 
-import { createWorkflowCtx, schemaInputIssues } from "@alexkroman1/aai/testing";
+import { createWorkflowCtx, schemaInputIssues, stubGatewayRoute } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
+import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import {
@@ -30,6 +38,7 @@ import {
   extractText,
   extractTitle,
   fetchArticle,
+  SETTLE_MS,
   summarize,
 } from "./workflows/digest.ts";
 
@@ -230,5 +239,123 @@ describe("summarize", () => {
     // summarize replays the fetch from the journal instead of hitting a
     // stranger's server again.
     expect(ctx.steps.map((step) => step.name)).toEqual(["fetchArticle", "summarize", "file"]);
+  });
+});
+
+/**
+ * The run itself, against a real durable engine.
+ *
+ * `runWorkflow` starts the declared workflow on
+ * `createInProcessWorkflowEngine` over a memory journal — the same composition
+ * root `aai dev` uses — and supplies what a deployment's queue supplies: one
+ * delivery at a time, and a suspension recorded rather than waited out. So a
+ * `ctx.sleep` a deployed run would take ten seconds over (or six hours, which
+ * the body's own comment says is the interesting version) costs this file
+ * nothing, and what is asserted is the property the template is FOR.
+ *
+ * The steps are stubbed at the same two seams the blocks above use, which is
+ * what makes this affordable: the body is real, the engine is real, the journal
+ * is real, and only the page and the model are not.
+ */
+describe("the run is DURABLE", () => {
+  const PAGE = `<html><title>Otters</title><body><p>${"Otters use tools. ".repeat(20)}</p></body></html>`;
+  const REPLY = '{"headline":"Otters use tools","points":["They do."]}';
+
+  beforeEach(() => {
+    // The same fallback the `summarize` block above relies on: `stepEnv` reads
+    // the process env when no host has published one, which is what a spec is.
+    // A run whose step cannot read its credential fails FATALLY and the whole
+    // durability claim would be made about a run that never got past its first
+    // model call.
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+  });
+
+  /**
+   * The page and the model, behind ONE published `stepFetch`.
+   *
+   * The composition `stubGatewayRoute` exists for, and the reason it has to be
+   * this way here rather than `installStubGateway` beside a page stub: a step's
+   * HTTP — the model call included — goes through the published slot, so a page
+   * stub installed alongside answers the gateway request with HTML and the
+   * summarize step retries six times against it. The blocks above never hit
+   * that because each stubs one seam at a time.
+   *
+   * Both call logs come back, which is what makes a replay countable.
+   */
+  function stubWorld() {
+    const model = stubGatewayRoute(REPLY);
+    const page = vi.fn(() => ({
+      status: 200,
+      body: PAGE,
+      headers: { "Content-Type": "text/html" },
+    }));
+    installStubStepFetch((request) => model.route(request) ?? page());
+    return { page, model: model.calls };
+  }
+
+  test("suspends on the settle window instead of blocking, with its work already journaled", async () => {
+    stubWorld();
+    const started = Date.now();
+    const run = await runWorkflow(
+      digest,
+      { url: "https://example.com/otters" },
+      {
+        name: "digest",
+      },
+    );
+
+    // `running` is the PARKED state — the run is in progress, it is just not
+    // executing, which is what a page polling it sees.
+    expect(run.status).toBe("running");
+    expect(run.wakeAt).toBeGreaterThanOrEqual(started + SETTLE_MS);
+    // Everything BEFORE the wait is already durable, and `file` has not run.
+    expect(run.steps.map((step) => step.name)).toEqual(["fetchArticle", "summarize"]);
+  });
+
+  test("resumes past the wait without re-reading the page or paying the model again", async () => {
+    const { page, model } = stubWorld();
+    const run = await runWorkflow(
+      digest,
+      { url: "https://example.com/otters" },
+      {
+        name: "digest",
+      },
+    );
+    await run.advanceSleep();
+
+    expect(run.status).toBe("completed");
+    expect(run.output).toMatchObject({ headline: "Otters use tools", points: ["They do."] });
+    expect(run.output?.filedAt).toBeTruthy();
+    // Two walks of the body, one fetch and one completion. That is the whole
+    // durable-execution claim, and it is why the body splits the fetch from the
+    // model call: a resume replays a stranger's page out of the journal rather
+    // than requesting it again.
+    expect(run.deliveries).toBe(2);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(model).toHaveLength(1);
+  });
+
+  test("survives a worker that dies mid-run, and only re-runs what never settled", async () => {
+    const { page, model } = stubWorld();
+    // Killed on the way into `summarize`: the fetch is journaled, the model call
+    // is not. This is the failure a body cannot be written against without being
+    // able to produce it.
+    const run = await runWorkflow(
+      digest,
+      { url: "https://example.com/otters" },
+      {
+        name: "digest",
+        crashAt: "summarize",
+      },
+    );
+    expect(run.crashed).toBe(true);
+    expect(run.steps.map((step) => step.name)).toEqual(["fetchArticle"]);
+    expect(model).toHaveLength(0);
+
+    await run.restart();
+    await run.advanceSleep();
+    expect(run.status).toBe("completed");
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(model).toHaveLength(1);
   });
 });

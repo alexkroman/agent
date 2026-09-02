@@ -70,6 +70,11 @@
       "1": "Its frozen example imported 5 of the 13 names epoch 1 promised, and the one name whose signature moved into epoch 2 — startTelephonySession, which is how this capability's report reaches the runtime facade — is one that example did not name. So the retain documented a compatibility it structurally could not test. Dropped rather than backed by a second example, because aai-runtime has no external consumer to keep an epoch-1 template for."
     }
   },
+  "testing": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "text": {
     "current": 4,
     "supported": [4],

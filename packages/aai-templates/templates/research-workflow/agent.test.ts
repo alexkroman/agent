@@ -4,20 +4,26 @@
 /**
  * Specs for the research desk's four tools.
  *
- * All are exercised against a STUBBED `ctx.workflows`, which is the only honest
- * way to unit-test them: the real client needs a Workflow DevKit world, and the
- * bodies in `workflows/` are only durable once the build has transformed them.
+ * All are exercised against a STUBBED `ctx.workflows`, which is the honest way
+ * to unit-test a TOOL: what a tool owns is the call it makes, not what the run
+ * does afterwards.
  * What these assert is the agent's half of the contract — that the handoff tool
  * passes the correlation key, that the status tool narrows a snapshot correctly
  * before reading it aloud, and that the two tools reaching PAST a status (the
  * progress stream, the early wake) ask for what a voice reply can use.
  *
- * The STEPS are exercised separately, and directly: imported through vitest with
- * a step is an ordinary exported async function,
- * so its prompt handling, its parsing and its `FatalError` guards are all
- * testable — while durability, suspension and replay are not. The body itself is
- * not driven here for that reason; `aai-cli`'s `dev-workflow.scenario.test.ts`
- * builds a project and runs one.
+ * The STEPS are exercised separately, and directly: a step is an ordinary
+ * exported async function, so its prompt handling, its parsing and its
+ * `FatalError` guards are all testable without an engine.
+ *
+ * The BODY is driven here only through `createWorkflowCtx`, which records what
+ * it asked for and replays nothing. That is a choice rather than a limit now:
+ * `runWorkflow` from `@alexkroman1/aai-runtime/testing` will run this body on
+ * the real engine, and `link-digest` is the template that shows it — three
+ * steps and one suspension, where this desk's body is six model steps deep and a
+ * durable spec of it would be mostly stubs. `aai-cli`'s
+ * `dev-workflow.scenario.test.ts` is the tier above both, with a built project
+ * and a real queue.
  */
 
 import type { WorkflowClient } from "@alexkroman1/aai";

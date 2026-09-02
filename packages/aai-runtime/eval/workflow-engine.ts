@@ -23,9 +23,15 @@
  * one — the same rule `eval/fake-speech.ts` states at the audio boundary, for
  * the same reason: the seam is where a reader forgets.
  *
- * The tier that DOES exercise the real thing is `aai-cli`'s
+ * The tier that DOES exercise the real thing end to end is `aai-cli`'s
  * `dev-workflow.scenario.test.ts` — a built project, a real world, a real queue,
- * a run that really suspends and resumes.
+ * a run that really suspends and resumes. One tier below it, and reachable from
+ * an ordinary unit spec, is `runWorkflow` from
+ * `@alexkroman1/aai-runtime/testing`: the real replay engine over a memory
+ * journal, which is enough for a suspension, a resume, a retry, a signal and a
+ * dead worker. What it does not carry is an LLM or the assertion readers below,
+ * which is why an EVAL still wants this engine — the two answer different
+ * questions about the same body.
  *
  * ## What IS the code a deployment runs
  *

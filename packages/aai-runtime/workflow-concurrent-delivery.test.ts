@@ -114,6 +114,7 @@
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { runConcurrentScenario } from "./_workflow-concurrent-harness.ts";
+import { checkJournalInvariants } from "./_workflow-journal-invariants.ts";
 import { checkLaws } from "./_workflow-laws-harness.ts";
 import { noteScenario, type Stats, zeroStats } from "./_workflow-reach-harness.ts";
 import {
@@ -240,7 +241,14 @@ describe("two deliveries of one run, overlapping inside the journal", () => {
           });
           noteScenario(reached, run, oracle);
           if (program.some((node) => node.t === "all" || node.t === "map")) reached.fanOuts++;
-          expect(checkLaws(program, run, oracle)).toEqual([]);
+          // The five laws, plus the claims DERIVED from the write log. Neither
+          // contains the other: law 2 compares a step's `{status, output}`
+          // where `checkStepEntries` compares the whole stored entry, and law 1
+          // is a claim against an ORACLE no log-derived check can make.
+          expect([
+            ...checkLaws(program, run, oracle),
+            ...checkJournalInvariants(run.writes),
+          ]).toEqual([]);
         },
       ),
       { numRuns: 40 },
@@ -320,7 +328,14 @@ describe("a timeout window and a signal, racing for one wait", () => {
             arm,
           });
           noteScenario(raced, run, oracle);
-          expect(checkLaws(program, run, oracle)).toEqual([]);
+          // The five laws, plus the claims DERIVED from the write log. Neither
+          // contains the other: law 2 compares a step's `{status, output}`
+          // where `checkStepEntries` compares the whole stored entry, and law 1
+          // is a claim against an ORACLE no log-derived check can make.
+          expect([
+            ...checkLaws(program, run, oracle),
+            ...checkJournalInvariants(run.writes),
+          ]).toEqual([]);
         },
       ),
       { numRuns: 60 },
@@ -401,7 +416,14 @@ describe("two runs of one engine, sharing its step gate", () => {
             companion,
           });
           noteScenario(crossRun, run, oracle);
-          expect(checkLaws(program, run, oracle)).toEqual([]);
+          // The five laws, plus the claims DERIVED from the write log. Neither
+          // contains the other: law 2 compares a step's `{status, output}`
+          // where `checkStepEntries` compares the whole stored entry, and law 1
+          // is a claim against an ORACLE no log-derived check can make.
+          expect([
+            ...checkLaws(program, run, oracle),
+            ...checkJournalInvariants(run.writes),
+          ]).toEqual([]);
           // The companion, against its OWN uninterrupted oracle.
           expect(run.companion, "the companion run vanished").toBeDefined();
           expect(run.companion?.status, "the companion did not reach its status").toBe(

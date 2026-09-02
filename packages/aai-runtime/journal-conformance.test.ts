@@ -34,13 +34,28 @@
  * length against `createFakeSql`. The platform's SQL half is
  * `aai-server/platform-workflow-journal.scenario.test.ts`.
  *
- * One consequence is worth naming out loud, because it is a live divergence this
- * arm reports as green: `platform-workflow-journal.ts`'s `createRun` is
- * `on conflict (slug, run_id) do nothing`, so the platform SILENTLY accepts a
- * second start on an id where the other two backends refuse it. The fake is
- * memory-backed and therefore refuses. Closing that for real means running this
- * same case list over `createPlatformJournal` wired to the real handler and a
- * real Postgres, which can only be done from `aai-server` — see the report.
+ * One consequence used to be named here as a LIVE divergence, and it is worth
+ * keeping as the worked example of what this arm cannot see rather than as a
+ * standing bug report: `platform-workflow-journal.ts`'s `createRun` was
+ * `on conflict (slug, run_id) do nothing` with no `returning`, so the platform
+ * silently accepted a second start on an id the other two backends refuse —
+ * "two racing starts on one id therefore both believed they had won and the
+ * loser's `input` was discarded, on the platform arm only, i.e. for every
+ * deployed agent". The fake is memory-backed and refused, so this file stayed
+ * green throughout. It is FIXED — that store authors a
+ * `PlatformWorkflowRunTakenError` off the `returning` now, and
+ * `journal-conformance-platform.scenario.test.ts` is what holds it — and the
+ * general form of the gap is unchanged: closing one of these for real means
+ * running this same case list over `createPlatformJournal` wired to the real
+ * handler and a real Postgres, which can only be done from `aai-server`.
+ *
+ * What is new is a second, cheaper way to state such a claim: model the shipped
+ * behaviour as a decorator over the reference store
+ * (`_workflow-defective-journal.ts`'s `silentDuplicateCreate`) and freeze an
+ * interleaving that catches it (`workflow-interleavings/colliding-start.ts`).
+ * That does not replace a real backend — it cannot tell you which backend HAS
+ * the behaviour — but it does make "would anything have caught this" a question
+ * with a millisecond-long answer.
  */
 
 import { readdirSync, readFileSync } from "node:fs";

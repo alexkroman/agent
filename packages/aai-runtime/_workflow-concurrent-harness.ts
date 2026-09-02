@@ -42,6 +42,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { workflow } from "@alexkroman1/aai";
 import type fc from "fast-check";
+import { type JournalWrite, recordJournal } from "./_workflow-journal-log.ts";
 import { COLLIDING_STARTS } from "./_workflow-laws-harness.ts";
 import { measure, type Stats } from "./_workflow-reach-harness.ts";
 import { silent } from "./_workflow-resume-harness.ts";
@@ -107,6 +108,16 @@ export type ConcurrentOptions = {
    * generates it from a grammar with no `hook` node for that reason.
    */
   companion?: Program | undefined;
+  /**
+   * The store underneath the scheduler. Defaults to a fresh memory journal.
+   *
+   * A caller passes one only to INJECT a defect — see
+   * `_workflow-defective-journal.ts`. That is what makes the five laws
+   * falsifiable: a law that has never been seen to fire is indistinguishable
+   * from a law that cannot, and `workflow-interleavings.test.ts` is where each
+   * one is shown to fire on a named, frozen interleaving.
+   */
+  journal?: JournalStore | undefined;
 };
 
 /** What one concurrent scenario did. */
@@ -139,6 +150,17 @@ export type ConcurrentScenario = {
   /** Tokens a `deliverHook` accepted. */
   delivered: Set<string>;
   log: readonly Ev[];
+  /**
+   * The durable WRITES, in the order they landed — see
+   * `_workflow-journal-log.ts` for why this is not the op log beside it.
+   *
+   * Carried so `checkJournalInvariants` can be evaluated over an interleaved
+   * run. It reaches claims the five laws do not: law 2 compares a step entry's
+   * `{status, output}`, so a second walk overwriting an entry with the same
+   * answer but its own `attempts` and `finishedAt` is invisible to it and is
+   * exactly what `appendStep`'s first-writer-wins rule exists to prevent.
+   */
+  writes: readonly JournalWrite[];
   stats: Stats;
   /** The companion run's own answer, when the scenario carried one. */
   companion?: CompanionRun | undefined;
@@ -261,7 +283,11 @@ export async function runConcurrentScenario(
   program: Program,
   options: ConcurrentOptions,
 ): Promise<ConcurrentScenario> {
-  const raw = createMemoryJournal();
+  // The write log sits UNDER the scheduler and over the store, so it records
+  // effects in the order they landed whatever order the scheduler released them
+  // in — including the driver's own bookkeeping, which is a real write.
+  const recorded = recordJournal(options.journal ?? createMemoryJournal());
+  const raw = recorded.journal;
   const log = createOpLog();
   const who = new AsyncLocalStorage<string>();
   const journal = scheduleJournal(raw, {
@@ -369,6 +395,7 @@ export async function runConcurrentScenario(
     recordInput: record?.input,
     delivered: deliveredTokens(log.events),
     log: log.events,
+    writes: recorded.writes,
     stats: measure(log.events, walkOutputs),
   };
 }

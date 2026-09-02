@@ -14,7 +14,7 @@
     "packages/aai-runtime/workflow-notify.ts": 1,
     "packages/aai-runtime/workflow-replay-divergence.ts": 1,
     "packages/aai-runtime/ws-session-lifecycle.ts": 1,
-    "packages/aai-templates/scaffold/CLAUDE.md": 27,
+    "packages/aai-templates/scaffold/CLAUDE.md": 30,
     "packages/aai-ui/README.md": 1,
     "packages/aai-ui/_upload-session.ts": 1,
     "packages/aai-ui/components/upload-progress.tsx": 1,

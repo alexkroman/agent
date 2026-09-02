@@ -112,6 +112,13 @@
     "resolveEvalMode",
     "resolveWorkflowEvalMode"
   ],
+  "@alexkroman1/aai-runtime/testing": [
+    "DEFAULT_MAX_DELIVERIES",
+    "RunWorkflowOptions",
+    "WorkflowTestHandle",
+    "WorkflowTestRun",
+    "WorkflowTestStep"
+  ],
   "@alexkroman1/aai-ui": [
     "AgentCustomEvent",
     "ButtonSize",
@@ -340,7 +347,6 @@
     "stubGateway",
     "StubGatewayOptions",
     "StubGatewayRoute",
-    "stubGatewayRoute",
     "StubGenerate",
     "StubGenerateCall",
     "StubGenerateReply",
