@@ -1,6 +1,13 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * What keeps an AUTHOR's object from impersonating a tagged envelope.
+ * What keeps an author's value STORABLE — and their object from impersonating a
+ * tagged envelope.
+ *
+ * Two escapes, both total and both invertible, applied by the one codec
+ * (`workflow-typed-json.ts`) every journal backend goes through. The first is
+ * about type confusion and is argued below; the second is about characters
+ * PostgreSQL cannot store and is argued at
+ * {@link escapeUnstorableCharacters}.
  *
  * ## The hole this closes
  *
@@ -141,5 +148,200 @@ function rekey(
  */
 export function unescapeIfRecord(value: unknown): unknown {
   if (!isRecord(value)) return value;
-  return unescapeReservedKeys(value) ?? value;
+  // The exact inverse of `escapeIfPlain`, in reverse order.
+  const storable = unescapeUnstorableKeys(value) ?? value;
+  return unescapeReservedKeys(storable) ?? storable;
+}
+
+/**
+ * The escape character both string escapes are built on: `U+0001`.
+ *
+ * A control character, and that is the point — it is not something a real payload
+ * carries, so the fast path below skips almost every string in almost every
+ * value. PostgreSQL stores it happily: `U+0000` is the ONLY code point `text`
+ * cannot hold, so every other control character is available as a sentinel.
+ */
+const ESC = "\u0001";
+const ESC_CODE = 0x01;
+
+/** Four hex digits, for the surrogate production. `parseInt` alone is NOT this. */
+const HEX4 = /^[0-9a-fA-F]{4}$/;
+
+const isHighSurrogate = (code: number): boolean => code >= 0xd8_00 && code <= 0xdb_ff;
+const isLowSurrogate = (code: number): boolean => code >= 0xdc_00 && code <= 0xdf_ff;
+
+/**
+ * What one code unit becomes, or `undefined` when it is storable as it is.
+ *
+ * Three productions, and the second and third are one defect wearing two faces:
+ *
+ * - `U+0000`. `select '"\u0000"'::jsonb` raises `22P05 unsupported Unicode escape
+ *   sequence`, because PostgreSQL `text` cannot hold a NUL and `jsonb` is stored
+ *   as text.
+ * - A lone surrogate, high or low. A JavaScript string is a sequence of UTF-16
+ *   code units and may legally hold either; UTF-8 cannot encode one, so Postgres
+ *   refuses it the same way. **This is the likelier of the two in real code** —
+ *   `"👋".slice(0, 1)` is an unpaired high surrogate, and so is any truncation of
+ *   a transcript at a code UNIT boundary rather than a code POINT one.
+ * - The escape itself, doubled, which is what makes the map invertible.
+ */
+function replacementFor(code: number): string | undefined {
+  if (code === 0) return `${ESC}0`;
+  if (code === ESC_CODE) return ESC + ESC;
+  if (isHighSurrogate(code) || isLowSurrogate(code)) {
+    return `${ESC}u${code.toString(16).padStart(4, "0")}`;
+  }
+  return undefined;
+}
+
+/**
+ * The same string with every code unit PostgreSQL cannot store escaped away.
+ *
+ * ## The failure this closes
+ *
+ * The journal's `input`, `output` and a step's `output` are `jsonb` on both
+ * database backends, and the codec hands them over as JSON TEXT that Postgres
+ * parses. So a step returning a string that held one of the units
+ * {@link replacementFor} lists did not merely fail to store: the driver raised a
+ * raw SQLSTATE, which is a plain `Error`, which `withReserved` answers with a
+ * **503**, which tells the guest to retry a value that can never be accepted. The
+ * engine then spent the message's whole attempt budget on it.
+ *
+ * It was also a three-way DIVERGENCE, which is worse than the error: the MEMORY
+ * backend holds JavaScript values and accepts all of this, so a workflow tried
+ * under `aai dev` worked and the same workflow deployed failed — the exact shape
+ * of gap `journal-conformance.ts` exists to close, and it had no case for it.
+ *
+ * ## Why it is TOTAL and INJECTIVE, which is the property that matters
+ *
+ * Every production begins with the escape and the escape itself is doubled, so
+ * decode can consume each sequence atomically left to right and recover exactly
+ * one input; the identity covers every other code unit. A well-formed surrogate
+ * PAIR is skipped whole, so an emoji is untouched — only an unpaired half is a
+ * production. And nothing escapes to `__type` or to any key the reserved-key
+ * rename above reads, so the two escapes compose in either order.
+ *
+ * It is a NO-OP for every string holding none of them, which is every string in
+ * every real payload: the walk allocates nothing and returns the SAME string.
+ *
+ * ## A hand-written walk rather than a regex
+ *
+ * Two reasons, and the first is not style. Biome's `noControlCharactersInRegex`
+ * refuses `[\u0000\u0001]` in a pattern, and a suppression here would be one more
+ * entry on the escape-hatch ratchet for a rule that is right about ordinary code.
+ * The walk is also cheaper than the pattern it replaces: matching a lone
+ * surrogate by regex needs a lookahead AND a lookbehind, both evaluated at every
+ * position of every string the codec touches.
+ *
+ * The cost of the whole scheme is that a stored value is no longer byte-identical
+ * to what the author returned when it holds one of these units; it round-trips by
+ * MEANING, which is the property the journal already promises — `jsonb` normalizes
+ * key order and number spelling regardless.
+ *
+ * A string containing a bare `U+0001` followed by `0` and written by an OLDER
+ * encoder would decode to a NUL. Deploy decoder-first, as with the key escape
+ * above; the corpus of stored values holding a raw `U+0001` is empty by
+ * construction, since the old encoder could not write one into a `jsonb` column
+ * without the whole statement failing.
+ */
+export function escapeUnstorableCharacters(value: string): string {
+  let out: string | undefined;
+  let copied = 0;
+  for (let at = 0; at < value.length; at += 1) {
+    const code = value.charCodeAt(at);
+    // A well-formed pair, skipped WHOLE: `charCodeAt` past the end is `NaN`, which
+    // fails the low test, so a trailing high surrogate falls through as lone.
+    if (isHighSurrogate(code) && isLowSurrogate(value.charCodeAt(at + 1))) {
+      at += 1;
+      continue;
+    }
+    const replacement = replacementFor(code);
+    if (replacement === undefined) continue;
+    out = (out ?? "") + value.slice(copied, at) + replacement;
+    copied = at + 1;
+  }
+  if (out === undefined) return value;
+  return out + value.slice(copied);
+}
+
+/**
+ * The inverse of {@link escapeUnstorableCharacters}.
+ *
+ * A sequence the encoder cannot produce — the escape followed by anything else —
+ * is left EXACTLY as it is rather than guessed at, which is what makes reading a
+ * value written before either escape existed a no-op. {@link HEX4} is why the
+ * surrogate production is validated rather than parsed: `parseInt("0g12", 16)` is
+ * `0`, so a `parseInt` alone would turn four arbitrary characters into a NUL —
+ * the very unit this exists to keep out.
+ */
+export function unescapeUnstorableCharacters(value: string): string {
+  const first = value.indexOf(ESC);
+  if (first < 0) return value;
+  let out = value.slice(0, first);
+  for (let at = first; at < value.length; at += 1) {
+    if (value.charCodeAt(at) !== ESC_CODE) {
+      out += value[at];
+      continue;
+    }
+    const marker = value[at + 1];
+    if (marker === ESC) {
+      out += ESC;
+      at += 1;
+      continue;
+    }
+    if (marker === "0") {
+      out += "\u0000";
+      at += 1;
+      continue;
+    }
+    const hex = value.slice(at + 2, at + 6);
+    if (marker === "u" && HEX4.test(hex)) {
+      out += String.fromCharCode(Number.parseInt(hex, 16));
+      at += 5;
+      continue;
+    }
+    out += ESC;
+  }
+  return out;
+}
+
+/**
+ * The same record with every KEY made storable, or `undefined` when none needed
+ * it.
+ *
+ * A key is a string, so it carries the same hazard as a value and cannot be
+ * enveloped out of it. Independent of the reserved-key rename above and safely
+ * composable with it: {@link RESERVED_KEY} is anchored on `_{2,}type`, which holds
+ * none of the escapable units, so escaping can never turn an author's key INTO
+ * `__type` and renaming can never introduce one.
+ */
+export function escapeUnstorableKeys(
+  value: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  return rekeyAll(value, escapeUnstorableCharacters);
+}
+
+/** The inverse, for decode. */
+export function unescapeUnstorableKeys(
+  value: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  return rekeyAll(value, unescapeUnstorableCharacters);
+}
+
+/**
+ * {@link rekey} for a transform that applies to EVERY key rather than to the ones
+ * matching a pattern.
+ *
+ * Answers `undefined` when the transform changed nothing, so the common case
+ * allocates nothing — the same contract, and the same `Object.fromEntries`
+ * (`__proto__` is a real own property on anything `JSON.parse` produced).
+ */
+function rekeyAll(
+  value: Record<string, unknown>,
+  rename: (key: string) => string,
+): Record<string, unknown> | undefined {
+  const keys = Object.keys(value);
+  const renamed = keys.map(rename);
+  if (renamed.every((key, at) => key === keys[at])) return undefined;
+  return Object.fromEntries(renamed.map((key, at) => [key, value[keys[at] as string]] as const));
 }

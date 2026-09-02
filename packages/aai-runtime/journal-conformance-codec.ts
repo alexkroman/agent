@@ -117,6 +117,31 @@ export function journalCodecConformance(arm: JournalArm): void {
         expect(stored).toEqual(input);
         expect(stored).not.toBeInstanceOf(Map);
       });
+
+      test("a string PostgreSQL cannot store survives, on every arm", async () => {
+        // The one case in this table whose failure was a 503 rather than a wrong
+        // value. `input`, `output` and a step's `output` are `jsonb` on both
+        // database arms, and `jsonb` refuses a NUL and an unpaired surrogate — so
+        // the driver raised a raw SQLSTATE, `withReserved` answered a RETRYABLE
+        // 503, and the engine spent the message's whole attempt budget on a value
+        // that could never be accepted. The MEMORY arm holds JavaScript values
+        // and took it happily, which is what made this `aai dev` works / deployed
+        // fails: exactly the divergence this table exists to close, and it had no
+        // case for it.
+        //
+        // The lone surrogate is the likelier half in real code — `"👋".slice(0,
+        // 1)` is one, and so is any truncation of a transcript at a code UNIT
+        // boundary rather than a code POINT one. Spelled as ESCAPES, because a
+        // raw NUL makes a source file binary to `git grep`.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        const input = { note: "before\u0000after", "k\u0000ey": "\ud83d" };
+        await journal.createRun(runOf({ runId, input }));
+        expect((await journal.getRun(runId))?.input).toEqual(input);
+        const output = { tail: "wave \ud83d", sentinel: "esc\u0001aped" };
+        const stored = await journal.appendStep(runId, stepOf({ key: "nul#0", output }));
+        expect(stored.output).toEqual(output);
+      });
     });
   });
 }

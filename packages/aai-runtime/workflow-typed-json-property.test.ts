@@ -63,6 +63,10 @@ describe("round-trip totality over a generated domain", () => {
     "values",
     "__proto__",
     "toJSON",
+    // A key `jsonb` cannot store: a key is a string, so it carries the same
+    // hazard as a value and cannot be enveloped out of it.
+    "a\u0000b",
+    "\u0001",
   ] as const;
 
   /**
@@ -86,6 +90,18 @@ describe("round-trip totality over a generated domain", () => {
     "2020-01-01T00:00:00.000Z",
     "garbage",
     "",
+    // The three code units PostgreSQL cannot store, plus the escape's own
+    // sentinel and a well-formed pair that must be left ALONE. A `jsonb` column
+    // rejects the first three outright, so before the second escape existed a
+    // step returning any of them was a retryable 503 for a value that could
+    // never be accepted — and the memory backend took them happily, so the
+    // divergence was `aai dev` works / deployed fails.
+    "nul\u0000inside",
+    "\uD83D",
+    "lone\uDC4Btail",
+    "esc\u0001aped",
+    "\u0001u0000",
+    "wave 👋 pair",
   ] as const;
 
   /**
@@ -224,16 +240,56 @@ describe("round-trip totality over a generated domain", () => {
     seen.set(what, (seen.get(what) ?? 0) + 1);
   };
 
-  /** Walk a generated value and record which interesting states it contains. */
-  function census(value: unknown): void {
+  /**
+   * Does this string hold a code unit `jsonb` refuses?
+   *
+   * Spelled out rather than imported from the module under test, so the census
+   * cannot agree with a broken scanner — the floors below are the only thing
+   * standing between a live property and a decorative one.
+   */
+  const isHigh = (code: number): boolean => code >= 0xd8_00 && code <= 0xdb_ff;
+  const isLow = (code: number): boolean => code >= 0xdc_00 && code <= 0xdf_ff;
+
+  function isUnstorable(value: string): boolean {
+    for (let at = 0; at < value.length; at += 1) {
+      const code = value.charCodeAt(at);
+      if (code === 0 || code === 1) return true;
+      // A well-formed PAIR is storable and is consumed whole; `charCodeAt` past
+      // the end is `NaN`, so a trailing high surrogate falls through as lone.
+      if (isHigh(code) && isLow(value.charCodeAt(at + 1))) {
+        at += 1;
+        continue;
+      }
+      if (isHigh(code) || isLow(code)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The LEAF kinds, counted here and nowhere else.
+   *
+   * Answers whether the value was one, so {@link census} reads as leaf-then-
+   * container rather than as one chain of seven `instanceof`s.
+   */
+  function censusLeaf(value: unknown): boolean {
+    if (typeof value === "string") {
+      if (isUnstorable(value)) note("unstorableString");
+      return true;
+    }
     if (value instanceof Uint8Array) {
       note("binary");
-      return;
+      return true;
     }
     if (value instanceof Date) {
       note("date");
-      return;
+      return true;
     }
+    return false;
+  }
+
+  /** Walk a generated value and record which interesting states it contains. */
+  function census(value: unknown): void {
+    if (censusLeaf(value)) return;
     // Before the `isRecord` branch, which answers TRUE for both — `Object.keys`
     // of a `Map` is empty, so a collection walked as a record is counted as
     // nothing and its members are never reached.
@@ -283,6 +339,7 @@ describe("round-trip totality over a generated domain", () => {
     ["forgedDate", (v) => v.__type === "Date" && typeof v.iso === "string"],
     ["forgedMap", (v) => v.__type === "Map" && Array.isArray(v.entries)],
     ["forgedSet", (v) => v.__type === "Set" && Array.isArray(v.values)],
+    ["unstorableKey", (v) => Object.keys(v).some(isUnstorable)],
   ];
 
   /** {@link census} for a record: the shapes worth counting all live on one. */
@@ -400,5 +457,10 @@ describe("round-trip totality over a generated domain", () => {
     // above them and not because they are reached less often.
     expect(count("map"), "never generated a real Map").toBeGreaterThan(500); // 1020-1151
     expect(count("set"), "never generated a real Set").toBeGreaterThan(500); // 1051-1151
+    // The two states the SECOND escape exists for. Both are drawn from a pool, so
+    // they are reached constantly — the floors are here to catch a pool entry
+    // deleted or a scanner that stopped recognising one, not to pin a rate.
+    expect(count("unstorableString"), "never generated an unstorable string").toBeGreaterThan(600); // 1450-1491 over 5 runs
+    expect(count("unstorableKey"), "never generated an unstorable key").toBeGreaterThan(300); // 844-860 over 5 runs
   });
 });
