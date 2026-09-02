@@ -1,5 +1,11 @@
 # @alexkroman1/aai-ui
 
+## 10.0.1
+
+### Patch Changes
+
+- @alexkroman1/aai@10.0.1
+
 ## 10.0.0
 
 ### Minor Changes

@@ -1,5 +1,14 @@
 # @alexkroman1/aai-cli
 
+## 10.0.1
+
+### Patch Changes
+
+- Updated dependencies [f35bdf7]
+  - @alexkroman1/aai-runtime@10.0.1
+  - @alexkroman1/aai@10.0.1
+  - @alexkroman1/aai-ui@10.0.1
+
 ## 10.0.0
 
 ### Major Changes
