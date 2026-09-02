@@ -103,7 +103,6 @@ function nodeArb(
     fc
       .array(leafArb, { minLength: 1, maxLength: 2 })
       .map((children): Node => ({ t: "nested", name: "", children })),
-    fc.constant<Node>({ t: "nestedWait", name: "" }),
   ];
   if (concurrent) {
     shapes.push(
@@ -404,17 +403,29 @@ describe("a run handed to a FRESH engine over the same journal", () => {
     // these the equality assertion is satisfied by a corpus that never handed a
     // run over at all — which is precisely the vacuity that let the sibling
     // property sit green through the stranded-run bug for as long as it lived.
-    expect(reached.rebuilds, "no run was ever handed to a fresh engine").toBeGreaterThan(30); // 50-61
-    expect(reached.rebuildsOffJournal, "no rebuild inherited a journaled step").toBeGreaterThan(15); // 29-44
+    //
+    // **Re-measured over 20 fresh runs when `nestedWait` left the grammar**, and
+    // the two floors below moved because of it. That node was a step whose body
+    // suspended — now a program the engine refuses, see
+    // `workflow-replay-wait.ts` — so a drawn body holds fewer SUSPENDING nodes
+    // than it did, and the counters that need a run to be handed over more than
+    // once fell with it. The old ranges are kept beside the new ones: a floor
+    // that moves down wants the evidence that it was the DISTRIBUTION and not
+    // the assertion that changed.
+    expect(reached.rebuilds, "no run was ever handed to a fresh engine").toBeGreaterThan(30); // 45-55 (was 50-61)
+    expect(reached.rebuildsOffJournal, "no rebuild inherited a journaled step").toBeGreaterThan(15); // 26-45 (was 29-44)
     // The widest distribution of the four by far, and the one the root guide's
     // long-left-tail warning is about: what a walk reaches is correlated within
-    // a run, so this floor sits a third under its own minimum rather than a
-    // fixed fraction of the mean.
-    expect(reached.stepsAfterRebuild, "no step body ran after a rebuild").toBeGreaterThan(4); // 12-51
-    expect(reached.multiRebuilds, "no run was handed on more than once").toBeGreaterThan(3); // 8-19
+    // a run, so this floor sits well under its own minimum rather than a fixed
+    // fraction of the mean.
+    expect(reached.stepsAfterRebuild, "no step body ran after a rebuild").toBeGreaterThan(2); // 6-35 (was 12-51)
+    // The tightest of the five, and the one that actually tripped on the new
+    // grammar before this recalibration: a `> 3` floor against a measured
+    // minimum of 4 failed 1 run in 5.
+    expect(reached.multiRebuilds, "no run was handed on more than once").toBeGreaterThan(1); // 4-14 (was 8-19)
     expect(
       reached.nestedOffJournal,
       "no fresh engine inherited a nested step's journaled children",
-    ).toBeGreaterThan(1); // 3-12
+    ).toBeGreaterThan(1); // 5-17 (was 3-12)
   });
 });

@@ -8,13 +8,16 @@
  * where this decides ATTEMPTS. Keeping them together put both in one function
  * Biome measured at complexity 20, and pushed the file to the 500-line cap.
  *
- * A step cannot wait: `ctx.sleep` and `ctx.waitFor` belong to the body. But the
- * closure a step is handed CAPTURES `ctx`, so
- * `ctx.step("waiting", () => ctx.sleep(60_000))` is one line away at every call
- * site — which is why "nothing here knows about suspension" was the wrong reading
- * of that rule. The one thing this knows is that a suspend is NOT an attempt's
- * outcome: {@link attemptLoop} lets it out untouched, and everything else here is
- * the retry policy.
+ * A step cannot wait: `ctx.sleep` and `ctx.waitFor` belong to the body, and both
+ * now REFUSE when they are reached inside a step — `workflow-replay-wait.ts`
+ * carries that check and the two bugs it ends. The closure a step is handed
+ * CAPTURES `ctx`, so `ctx.step("waiting", () => ctx.sleep(60_000))` was one line
+ * away at every call site, and the engine used to run it.
+ *
+ * So no shipped path reaches the suspend arm below any more. It stays as DEPTH,
+ * and the thing it knows is still right: a suspend is NOT an attempt's outcome —
+ * {@link attemptLoop} lets it out untouched and gives the charge back — and
+ * everything else here is the retry policy.
  *
  * ## An attempt is a LEASE, and there are two budgets rather than one
  *

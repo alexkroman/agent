@@ -17,7 +17,7 @@ import { createMemorySandboxDirectory, SandboxNameTakenError } from "./sandbox-d
 import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestStore } from "./test-utils.ts";
+import { captureLogs, createTestStore } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => {
   const mockSpawnAgentServer = vi.fn().mockResolvedValue({
@@ -142,10 +142,10 @@ describe("the agent's env reaches the guest untouched", () => {
 });
 
 describe("broker while draining", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  });
+  // The seam, not `spyOn(console, ...)`: this package's every line goes through
+  // `logger.ts`, and the 503 case below asserts that NOTHING was logged at
+  // `error` — which a spy that only silences cannot see.
+  const logs = captureLogs();
 
   it("refuses to boot a new sandbox, answering a retryable 503", async () => {
     const deps = await seedAgent("shutting-down");
@@ -180,6 +180,49 @@ describe("broker while draining", () => {
     // And no empty slot is left claimed behind the refusal.
     expect(seeded.slots.get("construction-guard")).toBeUndefined();
     seeded.unwatch();
+  });
+
+  /**
+   * The construction guard's refusal has to reach the CLIENT as the 503 the
+   * error's own doc promises, and it did not.
+   *
+   * `DrainingError` says it is its own type "so the broker can turn it into a
+   * retryable 503 while `handoverSlot` can treat it as leave the old resident
+   * alone". Only `handoverSlot` ever caught it. It is not a
+   * `SandboxUnavailableError`, so `error-handler.ts`'s dependency branch did not
+   * classify it either, and it left `brokerSessionUrl` as an unhandled rejection
+   * — a `500 Internal server error`, which tells a client the request can never
+   * succeed about the single most retryable state the platform has.
+   *
+   * The reproduction is the flag flipping INSIDE the window the early guard
+   * leaves open, which is the honest shape of it: that guard runs before an
+   * `await` on the peer lookup and before `resolveSandbox` takes the per-slug
+   * lock, and a deploy or a blue-green handover holds that lock for the length
+   * of a guest boot. (The second route past the guard needs no flip at all —
+   * it is skipped outright for a slug whose resident is live at the broker's
+   * read and dead by `resolveSandbox`'s, which is the ordinary end of an
+   * idle-exiting guest. `resolveWhileDraining`'s doc carries both.)
+   */
+  it("turns the CONSTRUCTION guard's refusal into a 503, not a 500", async () => {
+    const deps = await seedAgent("drains-mid-broker");
+    mockSpawnAgentServer.mockClear();
+    // False for the broker's own guard, true by the time the sandbox is built.
+    let asked = 0;
+    const isDraining = () => asked++ > 0;
+
+    const brokered = await brokerSessionUrl("drains-mid-broker", { ...deps, isDraining });
+
+    // A 500 is what this answered before, and a 404 would be the other wrong
+    // answer available — the agent exists, it is this replica that is leaving.
+    expect(brokered).toEqual({ ok: false, status: 503 });
+    expect(asked).toBeGreaterThan(1);
+    expect(mockSpawnAgentServer).not.toHaveBeenCalled();
+    // The orphan the guard exists to prevent: nothing may be left installed.
+    expect(deps.slots.get("drains-mid-broker")).toBeUndefined();
+    // And it is not an ERROR — a replica going away on purpose is not a fault,
+    // and `unhandled error on <path>` is exactly the line this used to write.
+    expect(logs.errors()).toEqual([]);
+    deps.unwatch();
   });
 
   // A guest that already exists orphans nothing by being handed out, and the

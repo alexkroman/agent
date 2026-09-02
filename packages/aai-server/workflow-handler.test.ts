@@ -21,6 +21,7 @@ import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
 import { guestTokenFor } from "./guest-token.ts";
 import { endLiveStreams, resetLiveStreams } from "./live-streams.ts";
 import type { RateLimiter } from "./rate-limit.ts";
+import { notFoundMessage } from "./sandbox-broker.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { createTestOrchestrator, deployAgent, fakeSandbox, type TestFetch } from "./test-utils.ts";
@@ -56,8 +57,12 @@ async function residentHarness(
   guestFetch?: typeof globalThis.fetch,
   /** Per-IP limiters for this surface — the rate-limit specs pin their order. */
   limiters: { surface?: RateLimiter; start?: RateLimiter } = {},
+  /**
+   * The slot cache, for a spec that has to REINSTALL a resident after the agent
+   * row is gone — see the deleted-agent case.
+   */
+  slots = createSlotCache(),
 ) {
-  const slots = createSlotCache();
   const harness = await createTestOrchestrator({
     slots,
     ...omitUndefined({ guestFetch }),
@@ -304,6 +309,52 @@ describe("availability", () => {
     const harness = await residentHarness(() => Promise.reject(new Error("ECONNREFUSED")));
     const res = await get(harness.fetch, "/my-agent/workflows");
     expect(res.status).toBe(503);
+  });
+
+  test("a DELETED agent whose resident is still live is a 404, not a 503", async () => {
+    // The state this models is a replica that has not yet been TOLD. A deleted
+    // agent's resident is terminated by `watchAgentInvalidation`, which rides the
+    // agents table's Realtime stream — so on any replica but the deleting one the
+    // row is already gone while the resident is still live, for as long as that
+    // delivery takes (and `realtime-subscription-monitor.ts` exists because a
+    // channel can be DOWN while rejoining forever, which makes the window
+    // unbounded). `resolveSandbox`'s fast path serves that live resident WITHOUT
+    // consulting the row, so the broker succeeds and the version check below is
+    // what the request meets.
+    //
+    // Re-installing the slot after the delete is how the test holds that state:
+    // the in-memory event emitter delivers synchronously, which no real replica
+    // does. Without it this passes for the wrong reason — the broker's own 404 —
+    // which is what the A/B against the unfixed handler showed.
+    const guest = recordingGuest();
+    const slots = createSlotCache();
+    const harness = await residentHarness(guest.fetchFn, {}, slots);
+    const version = (await harness.store.getAgentVersion("my-agent")) ?? 1;
+    await harness.store.deleteAgent("my-agent");
+    setSlot(slots, { slug: "my-agent", sandbox: fakeSandbox(), version });
+    const res = await get(harness.fetch, "/my-agent/workflows/uploads/abc/parts");
+    expect(res.status).toBe(404);
+    // The SAME sentence the upload BYTE route answers for this condition
+    // (`assertAgentExists`), so one upload loop cannot be told "gone" by one half
+    // and "retry shortly" by the other — which is the reported bug.
+    expect(await res.text()).toContain(notFoundMessage("my-agent"));
+    // And nothing was forwarded to a guest whose agent is gone.
+    expect(guest.calls).toEqual([]);
+  });
+
+  test("a delete landing MID-forward is a 404, not the unreachable guest's 503", async () => {
+    // The reported failure exactly: the version read found the row, the delete
+    // terminated the resident while the request was in flight, and the forward
+    // died with `fetch failed <- aborted` — which is indistinguishable from a
+    // crashed guest except by re-reading the row, so the row is what decides.
+    const armed: { deleteAgent?: (slug: string) => Promise<void> } = {};
+    const harness = await residentHarness(async () => {
+      await armed.deleteAgent?.("my-agent");
+      throw new Error("aborted");
+    });
+    armed.deleteAgent = (slug) => harness.store.deleteAgent(slug);
+    const res = await get(harness.fetch, "/my-agent/workflows/uploads/abc/parts");
+    expect(res.status).toBe(404);
   });
 });
 

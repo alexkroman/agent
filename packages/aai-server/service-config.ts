@@ -33,6 +33,7 @@ import { announcePlatformDbCapacity } from "./platform-db-capacity.ts";
 import {
   PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
   PLATFORM_DB_QUERY_TIMEOUT_MS,
+  PLATFORM_DB_RESERVE_TIMEOUT_MS,
   platformDb,
 } from "./platform-db-errors.ts";
 import {
@@ -263,6 +264,13 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       // broker needs, the rate limits — queued behind them, and each 503s on
       // its own client-side deadline. Reachable with FOUR concurrent watchers.
       reservedQueryTimeoutMs: PLATFORM_DB_QUERY_TIMEOUT_MS,
+      // And the ACQUIRE, which those two do not cover: a statement's deadline
+      // starts once a connection is in hand, so a request that never got one
+      // was bounded by nothing on this side. Four hung reads is the same
+      // arithmetic as the line above, one step earlier — every further platform
+      // request queues on `reserve()` with no deadline, and each fails on its
+      // CALLER's timeout instead, which is a 500 where this is a 503.
+      reserveTimeoutMs: PLATFORM_DB_RESERVE_TIMEOUT_MS,
     }),
   );
   const exec: SqlExec = (query, params) => admin.query(query, params);
@@ -315,6 +323,12 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // bound, the ACQUIRE, carries its own `lock_timeout` on the connection
     // (`platform-lock.ts`). This is the whole reason that option is per-pool
     // rather than a blanket on `reserve()`.
+    //
+    // `reserveTimeoutMs` is refused on the same ground and it is the sharper
+    // case: a reservation here is held for a whole deploy, so a fifth
+    // concurrent distinct-slug mutation waits minutes for a connection
+    // LEGITIMATELY. A deadline would turn ordinary deploy concurrency into a
+    // failure, where on the admin pool the same wait can only mean exhaustion.
     slugLock: createPgSlugLock(
       platformDb(
         createPostgresDb({

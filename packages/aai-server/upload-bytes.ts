@@ -17,12 +17,19 @@
  * covers it, the credential is the same, and a second `SUPABASE_*_BUCKET` is another
  * variable a deployment can half-configure.
  *
- * The one thing that makes that safe is a prefix filter somebody else already
- * wrote: `aai-sweep-blob-gc` (pg-cron.ts) is a mark-and-sweep over objects it
- * cannot find a referrer for, and it matches `name like 'blobs/%'`. Without that
- * clause it would delete every upload in the bucket on its first run — an upload
- * has no `worker_hash` and no `client_files` entry to be found by. **Anything else
- * put in this bucket owes the same check.**
+ * What makes that safe is that `aai-sweep-blob-gc` (pg-cron.ts) sweeps the bucket
+ * PER PREFIX, with a referrer set per arm. Its blobs arm matches
+ * `name like 'blobs/%'`, and without that clause it would delete every upload in
+ * the bucket on its first run — an upload has no `worker_hash` and no
+ * `client_files` entry to be found by. Its uploads arm matches this prefix and
+ * takes the `workflow_uploads` row as the referrer instead.
+ *
+ * **Anything else put in this bucket owes an arm of its own, or it is not swept
+ * at all.** That is the cost of one bucket and it is not hypothetical: uploads
+ * lived here for the whole life of this module with no arm, so nothing ever
+ * reclaimed an uploaded byte — not agent delete, not the 7-day record expiry, not
+ * the GC. A new prefix defaults to leaking, silently, and the leak is somebody
+ * else's storage bill and somebody else's recordings.
  *
  * ## `readUrl` is the one operation that is NOT a byte move
  *

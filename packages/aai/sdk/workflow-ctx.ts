@@ -60,6 +60,17 @@
  * body reaching a different NUMBER of waits reads another wait's record — and a
  * pure-sleep divergence reaches no step name for any layer to catch.
  *
+ * **The one shape that GUARANTEES it is a wait inside a step, and the engine
+ * refuses that outright.** A settled step's body is not re-executed, so its wait
+ * stops being reached the moment the step lands and every later wait in the run
+ * slides one place down the key space — measured, a week-long `ctx.sleep` after a
+ * sleeping step was skipped in full and the run reported `completed`. The same
+ * body also re-ran its step from the top on every delivery, side effects
+ * included. A fourth layer therefore fails the run on the spot, naming the fix:
+ * `aai-runtime/workflow-replay-wait.ts`. It has to be the ENGINE and not a type,
+ * because the callback captures the outer `ctx` and no step-scoped parameter can
+ * take a binding out of lexical scope.
+ *
  * ## Step identity is `(name, occurrence)`, and neither half is optional
  *
  * The journal has to answer "have I run this one already?" across a replay, so
@@ -187,6 +198,13 @@ export type WorkflowCtx = {
    * Run `fn` once and journal what it returns; on every later replay, return
    * the journaled value without running it again.
    *
+   * **`fn` may not wait.** {@link WorkflowCtx.sleep} and
+   * {@link WorkflowCtx.waitFor} reached inside a step fail the run, because a
+   * suspend unwinds out of the step without journaling it — so the body would
+   * re-run from the top on every delivery, and every later wait in the run would
+   * read the wrong record. Put the wait in the body, between two steps. For a
+   * plain in-step delay that is not durable, use an ordinary timer.
+   *
    * `name` identifies the step in the journal and in `aai workflow` output, so
    * make it a string LITERAL. A computed one has to produce the same string on
    * every replay or the walk reads a key that was never written — and a name
@@ -226,6 +244,9 @@ export type WorkflowCtx = {
    * decided ONCE. That matters because the body is replayed: computing the
    * deadline from the clock on every replay would push it further out each time
    * and a run could sleep forever.
+   *
+   * **Call it from the BODY, never from inside a {@link WorkflowCtx.step}** — a
+   * step body that waits fails the run, and the message names the fix.
    *
    * ```ts no-check
    * await ctx.step("draft", () => draft(input.topic));

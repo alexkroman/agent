@@ -56,6 +56,7 @@ import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { createDeliveryBudget, type DeliveryBudget } from "./workflow-queue-budget.ts";
 import { claimDue } from "./workflow-queue-claim.ts";
+import type { ReconcilePass } from "./workflow-queue-reconcile.ts";
 import { reconcileStalledRuns, STALL_GRACE_MS } from "./workflow-queue-reconcile.ts";
 import {
   ack,
@@ -194,7 +195,7 @@ export type QueueSweepOptions = {
 async function claimAndReconcile(
   adminDb: AdminDb,
   limit: number,
-): Promise<{ claimed: QueuedMessage[]; repaired: { stalled: number } }> {
+): Promise<{ claimed: QueuedMessage[]; repaired: ReconcilePass }> {
   // A RESERVED connection for the claim, released before any delivery starts: a
   // delivery is an HTTP request into a guest and may take seconds, and holding a
   // pooled connection across it is how a slow guest becomes a connection
@@ -223,10 +224,10 @@ async function claimAndReconcile(
     // either the status scan or the `(slug, queue_name)` anti-join), plus the
     // retention sweep that stops terminal runs, which the predicate can never
     // select, growing that scan forever.
-    const repaired =
+    const repaired: ReconcilePass =
       claimed.length === 0
         ? await reconcileStalledRuns((q, p) => reserved.query(q, p))
-        : { stalled: 0 };
+        : { stalled: 0, skipped: 0 };
     return { claimed, repaired };
   } finally {
     reserved.release();
@@ -264,7 +265,7 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   };
 
   let claimed: QueuedMessage[];
-  let repaired: { stalled: number };
+  let repaired: ReconcilePass;
   try {
     ({ claimed, repaired } = await claimAndReconcile(
       adminDb,

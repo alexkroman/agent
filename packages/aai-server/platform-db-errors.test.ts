@@ -46,6 +46,13 @@ describe("isPlatformDbUnreachable", () => {
       // The client-side stall bound — the only signal a SILENT partition
       // produces (createPostgresDb's queryTimeoutMs), so it must shed as a 503.
       "QUERY_TIMEOUT",
+      // The other client-side bound, one step earlier: no connection was
+      // available to RESERVE within `PLATFORM_DB_RESERVE_TIMEOUT_MS`. Same
+      // condition as `53300` below, reached before the driver opens a
+      // connection rather than after Postgres refuses one — and unbounded it
+      // had no code at all, so the caller's own timeout fired instead and the
+      // 500 it produced named the wrong layer.
+      "POOL_EXHAUSTED",
       "53300",
       "57P03",
     ]) {

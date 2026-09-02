@@ -1,7 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { createPgRateLimiter, createRateLimiter } from "./rate-limit.ts";
+import { clientIp, UNKNOWN_CLIENT_IP } from "./client-ip.ts";
+import {
+  createPgAgentRateLimiters,
+  createPgRateLimiter,
+  createRateLimiter,
+  DEPLOY_IP_RATE_LIMIT,
+  WORKFLOW_IP_RATE_LIMIT,
+  WORKFLOW_START_IP_RATE_LIMIT,
+} from "./rate-limit.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { rateLimiterConformance } from "./store-conformance-cases.ts";
 
@@ -156,5 +165,87 @@ describe("createPgRateLimiter", () => {
       query.startsWith("create") ? Promise.resolve([]) : Promise.reject(new Error("db down"));
     const limiter = createPgRateLimiter(exec, { name: "chat", limit: 5, windowMs: 60_000 });
     await expect(limiter.check("scope")).rejects.toThrow("db down");
+  });
+});
+
+// ── The agent surface's limiters, as the composition root gets them ─────────
+//
+// `createPgAgentRateLimiters` exists because the entry passed ONE of the three
+// for months (see its doc). These are the two claims that would have caught
+// that: the factory answers every limiter option the orchestrator reads, and
+// each one carries the window it is named for. The half only a real database
+// can hold — that two instances over one `sql` share a BUDGET, where two
+// in-memory ones do not — is `agent-rate-limits.scenario.test.ts`.
+
+describe("createPgAgentRateLimiters", () => {
+  test("names each limiter and carries the window it is named for", async () => {
+    const clock = { now: 1_000_000 };
+    const db = fakeRateLimitDb(clock);
+    const limiters = createPgAgentRateLimiters(db.exec);
+    await limiters.deployRateLimiter.check("ip");
+    await limiters.workflowRateLimiter.check("ip");
+    await limiters.workflowStartRateLimiter.check("ip");
+    // The fake keys its rows `${name}/${key}` and stores `resetAt`, so the row
+    // set is both the namespacing and the window, read back together.
+    expect([...db.rows].map(([k, row]) => [k, row.resetAt - clock.now])).toEqual([
+      ["deploy-ip/ip", DEPLOY_IP_RATE_LIMIT.windowMs],
+      ["workflow-ip/ip", WORKFLOW_IP_RATE_LIMIT.windowMs],
+      ["workflow-start-ip/ip", WORKFLOW_START_IP_RATE_LIMIT.windowMs],
+    ]);
+  });
+
+  /**
+   * The gate the missing wiring needed, and the reason this reads SOURCE.
+   *
+   * Every limiter option on `OrchestratorOpts` is `?:` with an in-memory `??`
+   * default behind it, so a forgotten one is not a type error anywhere — it is a
+   * green build serving a per-replica limit. A text scan is what respects that:
+   * a new `foo?: RateLimiter` fails here until the factory answers it, and the
+   * composition root spreads the factory whole.
+   */
+  test("answers EVERY RateLimiter option the orchestrator reads", () => {
+    const source = readFileSync(new URL("./orchestrator.ts", import.meta.url), "utf8");
+    const options = [...source.matchAll(/^\s{2}(\w+)\?: RateLimiter;$/gm)].map((m) => m[1]);
+    // A scan whose whole output is a list prints the same pass when it matches
+    // nothing; three is what the surface has today and the floor under a rename.
+    expect(options.length).toBeGreaterThanOrEqual(3);
+    const answered = Object.keys(createPgAgentRateLimiters(fakeRateLimitDb({ now: 0 }).exec));
+    expect([...options].sort()).toEqual([...answered].sort());
+  });
+});
+
+describe("a caller with no X-Forwarded-For", () => {
+  const headerless = new Request("http://platform.test/a/workflows/runs", { method: "POST" });
+
+  test("keys on the literal `unknown`, which is a value rows are written under", () => {
+    // Pinned as a STRING, not just as the constant: it is the `key` column of
+    // every `aai_platform.studio_rate_limits` row a header-less caller writes,
+    // so changing it silently abandons whatever window is in flight.
+    expect(UNKNOWN_CLIENT_IP).toBe("unknown");
+    expect(clientIp(headerless)).toBe(UNKNOWN_CLIENT_IP);
+  });
+
+  test("shares ONE bucket with every other header-less caller", async () => {
+    // The documented trade in client-ip.ts: a shared bucket OVER-limits rather
+    // than opening, so it is the safe half of a wrong answer — and it is also a
+    // way for one such caller to spend everyone else's budget. Production is
+    // behind Modal's proxy, which always appends a hop, so this is the shape a
+    // deployment that STRIPS the header would run; deriving a better key needs
+    // something the platform can attribute a request to, and this surface is
+    // deliberately credential-free.
+    const limiter = createRateLimiter({ limit: 1, windowMs: 60_000 });
+    const other = new Request("http://platform.test/b/workflows/runs");
+    await expect(limiter.check(clientIp(headerless))).resolves.toEqual({ ok: true });
+    expect((await limiter.check(clientIp(other))).ok).toBe(false);
+  });
+
+  test("two in-memory limiters do NOT share it — the whole reason for the pg arm", async () => {
+    // One replica each. This is the state the composition root left production
+    // in for the workflow surface, and the contrast the scenario suite's
+    // Postgres arm asserts the other side of.
+    const replicaA = createRateLimiter({ limit: 1, windowMs: 60_000 });
+    const replicaB = createRateLimiter({ limit: 1, windowMs: 60_000 });
+    await expect(replicaA.check(UNKNOWN_CLIENT_IP)).resolves.toEqual({ ok: true });
+    await expect(replicaB.check(UNKNOWN_CLIENT_IP)).resolves.toEqual({ ok: true });
   });
 });

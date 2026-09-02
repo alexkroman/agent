@@ -41,6 +41,15 @@
  * log rather than a socket — but it is a poll of a CHEAP shape: each read asks
  * only for chunks past the last index it saw, so a quiet run costs an empty
  * answer rather than the whole log again.
+ *
+ * ## A FAILED read is not an absent route, whether or not it carried a status
+ *
+ * Because the loop stops for good once it decides the route is absent, that
+ * decision is the one place a single bad request can cost a live run its entire
+ * narration — and it did. Every non-2xx used to read as "this agent serves no
+ * progress route", so one transient answer hid the log permanently while the run
+ * carried on and the status line went on saying `running`. See
+ * {@link isTransientRead} for the split and `readOnce` for what each arm costs.
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -100,6 +109,28 @@ export type UseWorkflowProgressResult<T = string> = {
  * this constant is `/internal` rather than public.
  */
 export const DEFAULT_PROGRESS_POLL_MS = 5000;
+
+/**
+ * Whether a non-2xx says "come back" rather than "there is nothing here".
+ *
+ * The 408/429/5xx split, and it is a THIRD copy of that rule stated
+ * deliberately: the SDK's own `isTransientStatus` is on
+ * `@alexkroman1/aai/step` and `RETRYABLE_STATUS` is `sdk/_upload-retry.ts`'s
+ * internal, so neither is reachable from a browser bundle — this package may
+ * not import the step surface, and an `_`-prefixed module may not be imported
+ * cross-package at all. Hoisting one of them onto `/utils` (where this guide's
+ * own prose already claims `isTransientStatus` lives) is the fix that would
+ * delete this; it is a published-surface change and therefore not this one.
+ *
+ * Everything else is treated as a stable answer, which keeps a permanent
+ * refusal — a 401 against an agent whose `AAI_WORKFLOW_API_TOKEN` this page has
+ * no token for — from brokering a request every interval for as long as the tab
+ * is open. A 404 is the specific case the route documents: an agent deployed
+ * before progress streams existed, or one serving no workflow API at all.
+ */
+function isTransientRead(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
 
 /** What one bounded read reported. */
 type Ending =
@@ -213,11 +244,34 @@ function readProgressUntilComplete<T>(
       }),
       signal,
     });
-    // A non-2xx, or a body-less response, is an agent that does not serve this —
-    // the ordinary case for one deployed before the route existed. An unknown RUN
-    // is no longer in this bucket: the route frames it as `missing` on a 200
-    // (`consumeFrames` below), which is what stops a wrong id from reading as a
-    // missing feature and hiding the progress UI.
+    // A TRANSIENT status is this read failing, not the route being absent, so it
+    // is retried exactly like the thrown fetch below. That distinction was
+    // missing, and one such answer cost a live run its whole narration: it set
+    // `supported: false` and ended the loop for good, so the page showed a bare
+    // status line for the rest of the run while the run itself carried on
+    // narrating. The lines then reappeared all at once from a FRESH reader — a
+    // reload, or the finished run expanded in a history list — which is why the
+    // shape reads as "it only shows the steps once it is done" rather than as a
+    // failed request.
+    //
+    // Reported against `transcription-workflow`'s `transcribeBatch`, and the
+    // reason it surfaced there is EXPOSURE rather than anything about that flow:
+    // it waits minutes on a provider's queue with nothing else touching the
+    // agent, so it is by far the longest-lived of that template's three runs and
+    // makes the most reads. One in N failing is then a near-certainty, and on
+    // the platform every one of these reads BROKERS, so the ways it can fail
+    // transiently are not exotic. Which producer it was does not matter here:
+    // what was wrong is that ANY of them was terminal.
+    //
+    // `useWorkflowRun` has always drawn this line: an id the agent does not know
+    // is a stable answer on a small budget, and everything else is "a dropped
+    // request against a booting sandbox … giving up would strand a live run".
+    if (!res.ok && isTransientRead(res.status)) return "partial";
+    // Anything else non-2xx, or a body-less response, is an agent that does not
+    // serve this — the ordinary case for one deployed before the route existed.
+    // An unknown RUN is no longer in this bucket: the route frames it as
+    // `missing` on a 200 (`consumeFrames` below), which is what stops a wrong id
+    // from reading as a missing feature and hiding the progress UI.
     if (!(res.ok && res.body)) return "unsupported";
     const { ending, chunks } = await consumeFrames<T>(res.body, signal);
     next += chunks.length;

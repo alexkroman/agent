@@ -65,12 +65,34 @@ export const GUEST_API_REQUEST_HEADERS = [
  * `Content-Encoding` and `Transfer-Encoding` are deliberately absent: `fetch`
  * has already decoded the body we are re-emitting, so echoing them would
  * describe bytes that no longer exist.
+ *
+ * **`Retry-After` was missing, and the guest is the one that MINTS it.**
+ * `aai-runtime/workflow-api-error-status.ts` is an entire deliberate taxonomy of
+ * which 5xx carries a delay and which does not — a saturated connection pool, an
+ * exhausted descriptor table and a failed hop out of the sandbox each answer
+ * `503` with `Retry-After: 1`, while a full disk answers `507` with none, and
+ * that ABSENCE is as much a signal as the value. `workflow-api.ts` sets the
+ * header; this hop dropped it, so every one of those decisions arrived at a
+ * deployed caller as a bare status. The readers are real and already written:
+ * `aai/sdk/step-retry.ts`'s `retryAfter()` and `sdk/_upload-retry.ts`, which a
+ * browser uploading parts through `/:slug/workflows/uploads` runs on every
+ * refusal — "the far side knows something this does not" is that module's own
+ * argument for preferring it, and the far side was being censored.
+ *
+ * It is also the one name this list and {@link GUEST_WEBHOOK_RESPONSE_HEADERS}
+ * now share beyond `Content-Type`, and the two still do NOT merge. Their union
+ * is not either policy: this hop must carry the range and streaming headers, and
+ * the webhook hop must not (the platform buffers that reply, so a length or an
+ * encoding would describe bytes the runtime re-frames). Their intersection is
+ * not either policy either — it would drop `Content-Range`, which is the whole
+ * point of the `Range` request half. One list is one AUDIENCE, and there are two.
  */
 export const GUEST_API_RESPONSE_HEADERS = [
   "content-type",
   "content-length",
   "cache-control",
   "x-accel-buffering",
+  "retry-after",
   // The `Range` half's answer. Without `Content-Range` a 206 is a partial body
   // a client cannot place, and without `Accept-Ranges` a client that probes
   // first never asks for a range at all.

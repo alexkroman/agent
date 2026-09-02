@@ -178,6 +178,46 @@ export function isResourceExhausted(err: unknown): boolean {
 }
 
 /**
+ * The code `platform-rpc.ts` puts on a platform reply this guest should COME
+ * BACK for — a {@link RETRYABLE_STATUS} from one of the four platform routes.
+ *
+ * Declared here rather than beside the throw because it is a classification,
+ * and this file is the classification table; `platform-rpc.ts` imports it, the
+ * same direction `BodyTooLargeError` already travels.
+ *
+ * ## The condition it names had no code, and so no status
+ *
+ * A platform route answering 503 — a shortage on the ADMIN pool, a partitioned
+ * platform database, a replica shedding load — reached this table as
+ * `new Error("journal appendStep answered HTTP 503: …")`, a plain `Error` whose
+ * only distinguishing feature was a sentence. Every recognizer below reads a
+ * `code`, so all of them declined it and the guest answered the browser **500
+ * Internal server error**. That is wrong on the three counts this whole file is
+ * about, and one more that is specific to it: the platform had ALREADY decided
+ * the condition was transient and said so in a status, and the guest threw that
+ * decision away between one hop and the next. A 500 tells the page never to
+ * retry a condition whose entire nature is that it clears.
+ *
+ * A permanent answer keeps its 500 by construction: only a retryable status
+ * gets this code, so a 400 (a call this guest built wrongly), a 401 (a bearer it
+ * no longer holds), a 404 (a run it does not own) and a 501 (a deployment
+ * without the feature) are unchanged — retrying any of those is what the
+ * upload path's `RETRYABLE_STATUS` already exists to prevent, and reusing that
+ * set is what keeps the two ends from drifting into two policies.
+ */
+export const PLATFORM_UNAVAILABLE_CODE = "PLATFORM_UNAVAILABLE";
+
+const PLATFORM_UNAVAILABLE_CODES: ReadonlySet<string> = new Set([PLATFORM_UNAVAILABLE_CODE]);
+
+/**
+ * Did a platform route tell this guest to come back? Same `cause` walk as its
+ * peers — the throw is often wrapped by the client that made the call.
+ */
+export function isPlatformUnavailable(err: unknown): boolean {
+  return hasErrorCode(err, PLATFORM_UNAVAILABLE_CODES);
+}
+
+/**
  * Did this request fail because a hop OUT of this agent failed?
  *
  * **The failure this exists for reached a client as `500 Internal server
@@ -288,6 +328,20 @@ export function workflowApiErrorStatus(
     return {
       status: 503,
       error: "the agent is out of local resources, retry shortly",
+      retryAfter: "1",
+    };
+  }
+  if (isPlatformUnavailable(err)) {
+    // 503, and BEFORE the transport entry for the reason the resource entry is:
+    // this is the most specific of the three "a dependency said no" conditions,
+    // and it is the only one whose advice came from the DEPENDENCY rather than
+    // being inferred here. A platform 503 read as a transport failure would be
+    // the right status by luck and the wrong sentence for an operator, who
+    // should be looking at the platform replica rather than at the network
+    // between it and this sandbox.
+    return {
+      status: 503,
+      error: "the platform is at capacity, retry shortly",
       retryAfter: "1",
     };
   }

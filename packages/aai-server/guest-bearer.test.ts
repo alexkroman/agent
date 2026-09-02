@@ -122,20 +122,45 @@ describe("assertGuestBearer", () => {
     }
   });
 
-  test("the 401 wins over the 503 when BOTH would fire", async () => {
-    // The ordering, pinned by the one case where it is observable: no
-    // credential and no such agent. Swapping the two refusals answers 503,
-    // which tells an unauthenticated caller that this slug is unknown — the
-    // existence oracle the 503 exists to avoid. A/B'd: this is the only case
-    // in the file that reddens against the swapped order.
+  test("the 401 wins over the not-found answer when BOTH would fire", async () => {
+    // The ordering, pinned by the one case where it is observable: no credential
+    // and no such agent. Swapping the two refusals tells a caller who supplied
+    // NOTHING that this slug is unknown, which is the narrow line this gate does
+    // hold. A/B'd: this is the only case in the file that reddens against the
+    // swapped order, and it is unaffected by what the loser's status is.
     await expect(call({ version: null })).resolves.toBe(401);
   });
 
-  test("a well-formed bearer for an unknown agent is 503, not 404", async () => {
-    // A 404 would tell an unauthenticated caller whether a slug exists, which
-    // every other route on this surface refuses to do.
+  test("a well-formed bearer for an unknown agent is 404, not 503", async () => {
+    // The bug, and the reason its predecessor's justification did not hold.
+    //
+    // A delete leaves no tombstone — the agents row is gone and all ten tenant
+    // tables cascade off it — so there is no later, and a 503 asks a guest to
+    // come back to a row that will never return while booking the absence as a
+    // PLATFORM fault (a warn line per request, out of `error-handler.ts`). It
+    // cannot be a deploy window either: agent rows are written `on conflict
+    // (slug) do update set`, so `null` only ever means gone.
+    //
+    // The 503 was defended as refusing an existence oracle. The case below shows
+    // the oracle was open the whole time, one status over.
     const token = guestTokenFor(agentSandboxName(SLUG, VERSION));
-    await expect(call({ header: `Bearer ${token}`, version: null })).resolves.toBe(503);
+    await expect(call({ header: `Bearer ${token}`, version: null })).resolves.toBe(404);
+  });
+
+  test("the existence oracle the 503 claimed to close was open beside it", async () => {
+    // The failing-first observation for the case above, stated as the pair that
+    // makes it: ONE junk bearer, two slugs, two different statuses. Under the old
+    // code these were 401 and 503; they are 401 and 404 now. Either way a caller
+    // learns which slugs exist — so hiding it was never what the 503 bought, and
+    // this asserts the pair still DIFFERS rather than asserting it does not, so
+    // nobody reads the fix as having opened something.
+    //
+    // What actually keeps this in line with the rest of the surface is that
+    // `brokerSessionUrlOrThrow` and `upload-handler.ts`'s `assertAgentExists`
+    // already answer 404 for an unknown slug to a caller with no credential at
+    // all. Existence is public here by design; only this gate was coy about it.
+    await expect(call({ header: "Bearer junk" })).resolves.toBe(401);
+    await expect(call({ header: "Bearer junk", version: null })).resolves.toBe(404);
   });
 
   test("throws an HTTPException rather than answering itself", async () => {

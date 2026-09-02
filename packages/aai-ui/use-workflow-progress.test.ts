@@ -134,6 +134,58 @@ describe("useWorkflowProgress", () => {
     expect(result.current.supported).toBe(true);
   });
 
+  test("a TRANSIENT status is retried, and the line lands while the run is still live", async () => {
+    // The defect this pins, reported against `transcription-workflow`'s batch
+    // mode: a single 503 made the page show a bare "Transcribing…" for the whole
+    // run, and the narration then appeared all at once afterwards (from a fresh
+    // reader — a reload, or the finished run expanded in "Previous runs").
+    //
+    // Read as "this agent serves no progress route", a 503 set `supported:
+    // false` and STOPPED the loop — permanently, for a live run, on the strength
+    // of one failed request. `readOnce`'s own `catch` already said a transport
+    // failure "is not a reason to stop watching a live run" (and the spec below
+    // pins it); a 503 is that same failure with a status attached, and on the
+    // platform these reads are brokered, so it is not an exotic answer.
+    // `transcribeBatch` is where it surfaced because it is the longest-lived of
+    // that template's three runs and so makes the most reads — exposure, not
+    // anything about the flow.
+    //
+    // What is asserted is the ORDERING, not that a line eventually exists: the
+    // run answers `complete: false` throughout, so `streaming` is still true
+    // when the line arrives. A spec that only read the final list would pass
+    // against the bug, since the bug loses nothing a LATER reader cannot see.
+    fetchMock
+      .mockImplementationOnce(async () => new Response(null, { status: 503 }))
+      .mockImplementation(async (url: string) =>
+        sse(
+          new URL(url).searchParams.has("startIndex")
+            ? chunks([], false)
+            : chunks(["Uploading recording.wav to the async API."], false),
+        ),
+      );
+    const { result } = renderHook(() => useWorkflowProgress("wrun_1", { intervalMs: 1 }));
+
+    await waitFor(() =>
+      expect(result.current.progress).toEqual(["Uploading recording.wav to the async API."]),
+    );
+    // Still in flight — the whole point. The run has not settled, and the reader
+    // has not given up on it.
+    expect(result.current.streaming).toBe(true);
+    expect(result.current.supported).toBe(true);
+  });
+
+  test("a status that is NOT transient still reports the route absent", async () => {
+    // The other half, so the fix above is a classification rather than "retry
+    // everything": a 401 will answer the same way on every poll, and reading it
+    // as a live run the page cannot see would broker a request every interval
+    // for as long as the tab is open.
+    fetchMock.mockImplementation(async () => new Response(null, { status: 401 }));
+    const { result } = renderHook(() => useWorkflowProgress("wrun_1", { intervalMs: 1 }));
+
+    await waitFor(() => expect(result.current.supported).toBe(false));
+    expect(result.current.streaming).toBe(false);
+  });
+
   test("a thrown fetch is retried too, and never reads as unsupported", async () => {
     fetchMock
       .mockImplementationOnce(() => Promise.reject(new Error("network down")))

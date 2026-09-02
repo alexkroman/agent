@@ -96,17 +96,48 @@ function toSlotMap(value: unknown): Map<string, string> {
   return out;
 }
 
-/** Stored events off the wire, dropping anything malformed rather than guessing. */
+/**
+ * Stored events off the wire — and an entry this cannot read fails the PAGE.
+ *
+ * NOT dropped, which is what it used to do and is the same mistake `countEvents`
+ * below refuses to make, one step removed. A read of this stream is a CURSOR: a
+ * caller takes the page, advances past its highest index, and never asks that
+ * range again. So a dropped entry is a HOLE rather than a degraded answer — the
+ * event is gone and nothing says so, because a page missing one looks exactly
+ * like a page that never held it.
+ *
+ * `typeof` FIRST, for the reason spelled out at `countEvents`: `Number(null)` is
+ * `0` and `Number("")` is `0`, so coercing before checking turns two unreadable
+ * answers into a real index. The platform end refuses the identical shapes
+ * (`aai-server/platform-session-state.ts`, `readEvents`), so this is a second
+ * lock on the same door rather than the only one — the two used to agree by both
+ * dropping, and they agree by both refusing now.
+ *
+ * Unreachable on a healthy read (`event_index` and `event` are `not null`
+ * columns), and its one consumer is the read-only session-events surface, so a
+ * rejection costs a 500 on a diagnostic read rather than a session.
+ */
 function toEvents(value: unknown): StoredSessionEvent[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
+  if (!Array.isArray(value)) {
+    // "The read did not happen" and "there are no events" are different answers
+    // and only one is safe to act on. An empty LOG is a `[]`, which this accepts.
+    throw new Error(`session-state readEvents answered ${typeof value}, not a list`);
+  }
+  return value.map((entry) => {
     // `json`, which is the field name on `StoredSessionEvent` — the serialized
     // `SessionEvent` with its envelope. The wire calls it `event`, matching the
     // platform's column; the two are translated here rather than one being renamed,
     // because the column name is the platform's and the field name is the runtime's.
-    if (!isRecord(entry) || typeof entry.event !== "string") return [];
-    const index = Number(entry.index);
-    return Number.isInteger(index) ? [{ index, json: entry.event }] : [];
+    if (!isRecord(entry) || typeof entry.event !== "string") {
+      throw new Error("session-state readEvents answered an entry with no event");
+    }
+    const { index } = entry;
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
+      // The index only. The event body is the caller's own data and this message
+      // reaches a log line.
+      throw new Error(`session-state readEvents answered an event at ${String(index)}`);
+    }
+    return { index, json: entry.event };
   });
 }
 

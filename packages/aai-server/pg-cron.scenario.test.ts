@@ -40,6 +40,14 @@
  * `to_regclass('vault.secrets') is null`, since its Storage key comes from
  * Vault. Testing that early return is testing nothing.
  *
+ * **That was half the requirement, and the missing half made the point twice
+ * over.** The GC reads a SECRET out of Vault, not merely the schema, so an empty
+ * `vault.secrets` left `storage_key` null and the body returned anyway. `pg_net`
+ * and `storage.objects` were absent for the same reason. So the sweep with the
+ * most dangerous predicate in the repo was covered by "it did not raise", and it
+ * took writing a POSITIVE control to notice — a test asserting a deletion
+ * happens, beside the ones asserting it does not.
+ *
  * pg_cron itself is single-database (pinned to `cron.database_name`, i.e.
  * `postgres`), so the SCHEDULING half runs against the main database under
  * throwaway job names and unschedules itself.
@@ -52,6 +60,7 @@ import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import { platformCronJobs } from "./pg-cron.ts";
 import { SLUG_LOCK_NAMESPACE } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
+import { PLATFORM_STORAGE_KEY_SECRET } from "./secret-store.ts";
 import { platformMigrationSql } from "./test-utils.ts";
 
 /** Every sweep, including the blob GC — which needs a storage config to exist. */
@@ -99,6 +108,37 @@ describeWithStack("the pg_cron sweep bodies", () => {
     // Vault first: the blob GC's own guard returns early without it.
     await sql("create extension if not exists supabase_vault");
     await sql(platformMigrationSql().sql);
+    // The blob GC's other two dependencies, so its arms EXECUTE here rather than
+    // taking the early return that made "it ran" mean "it did nothing".
+    //
+    // `pg_net` is the real extension, not a stub: its worker is pinned to
+    // `pg_net.database_name` (i.e. `postgres`), so in a throwaway database a
+    // request is enqueued and never sent — which is exactly the observation this
+    // file wants. `net.http_request_queue` is then a record of every object the
+    // sweep DECIDED to delete, with no HTTP leaving the machine.
+    await sql("create extension if not exists pg_net");
+    // `storage.objects` is Supabase's, created by migrations we do not ship, so
+    // this is a stand-in carrying the three columns the sweep reads. The shape is
+    // not taken on trust — the second suite below asserts the real table still has
+    // them, which is the half a stand-in cannot prove about itself.
+    await sql("create schema if not exists storage");
+    await sql(
+      `create table if not exists storage.objects (
+         bucket_id text not null,
+         name text not null,
+         created_at timestamptz not null default now()
+       )`,
+    );
+    // And the Storage KEY, without which the body returns before either arm —
+    // which is what it had been doing. Creating the vault EXTENSION was believed
+    // to be what stopped the early return (see the module doc), but the GC reads a
+    // SECRET out of it, and nothing had ever stored one: `storage_key is null`,
+    // return, and every blob-GC assertion in this file was an assertion about an
+    // early return. The three positive controls below are what surfaced it.
+    await sql("select vault.create_secret($1, $2)", [
+      "sb_secret_probe",
+      PLATFORM_STORAGE_KEY_SECRET,
+    ]);
   });
 
   afterAll(async () => {
@@ -369,6 +409,192 @@ describeWithStack("the pg_cron sweep bodies", () => {
     const rows = await sql("select 1 from aai_platform.studio_sessions where scope = 'cron-scope'");
     expect(rows).toEqual([]);
   });
+
+  /** The GC body, and the URL prefix every delete it decides on carries. */
+  const blobGc = (): string => JOBS.find((j) => j.name === "aai-sweep-blob-gc")?.command ?? "";
+  const OBJECT_URL = "https://probe.test/storage/v1/object/blobs/";
+
+  /**
+   * Run the GC and report which OBJECT KEYS it decided to delete.
+   *
+   * The queue is cleared first so each test reads its own pass rather than the
+   * file's history, and the URL prefix is stripped so a failure names an object
+   * key — the thing under test — instead of a URL.
+   *
+   * The verb THROWS rather than asserting, for the reason
+   * `pg-cron-delete-parity.test.ts` gives about its own helper: an `expect` here is
+   * what `noMisplacedAssertion` bans, and it would be the wrong shape anyway. A
+   * queued request that is not a DELETE means this helper's whole reading of the
+   * queue is wrong — a broken harness, not a failed expectation about the sweep.
+   */
+  async function sweptKeys(): Promise<string[]> {
+    await sql("delete from net.http_request_queue");
+    await sql(blobGc());
+    const rows = await sql("select url, method from net.http_request_queue order by url");
+    for (const row of rows) {
+      if (String(row.method) !== "DELETE") {
+        throw new Error(
+          `the blob GC enqueued a ${String(row.method)}; this harness reads the queue as DELETEs`,
+        );
+      }
+    }
+    return rows.map((r) => String(r.url).replace(OBJECT_URL, ""));
+  }
+
+  /**
+   * Empty the stand-in bucket, so each pass below is about its own objects.
+   *
+   * Needed because the sweep deliberately does NOT delete `storage.objects` rows
+   * — it calls the Storage API and lets the object's disappearance come back as a
+   * row deletion — and in this database that call is only ever enqueued. So an
+   * object stays selectable after the pass that condemned it, and without this a
+   * later test reads every earlier test's verdict as its own.
+   */
+  const resetBucket = (): Promise<unknown[]> => sql("delete from storage.objects");
+
+  /** One object in the bucket, aged by hand. */
+  const putObject = async (name: string, age: string): Promise<void> => {
+    await sql(
+      `insert into storage.objects (bucket_id, name, created_at)
+       values ('blobs', $1, now() - interval '${age}')`,
+      [name],
+    );
+  };
+
+  const putAgent = async (slug: string, workerHash: string): Promise<void> => {
+    await sql(
+      `insert into aai_platform.agents (slug, credential_hashes, worker_hash, client_files, version)
+       values ($1, '[]'::jsonb, $2, '{}'::jsonb, 1) on conflict (slug) do nothing`,
+      [slug, workerHash],
+    );
+  };
+
+  /**
+   * The empty-table guard for the UPLOADS arm, asserted before any record exists.
+   *
+   * First of these tests deliberately: `workflow_uploads` is empty right now, and
+   * this is the one guard that can only be observed in that state. An upload
+   * record IS the referrer for the uploads arm, so a table that failed to load
+   * would condemn every recording in the bucket — the same catastrophe the agents
+   * guard exists for, one table over.
+   */
+  test("the uploads arm reclaims nothing while workflow_uploads reads empty", async () => {
+    await resetBucket();
+    await putAgent("gc-guard", "gc-guard-hash");
+    expect(await sql("select 1 from aai_platform.workflow_uploads")).toEqual([]);
+    // Old, unrecorded, perfectly shaped — garbage by every rule the arm applies
+    // except the one being tested.
+    await putObject("uploads/gc-guard/upl_guard/0", "30 days");
+
+    expect(await sweptKeys()).toEqual([]);
+
+    await sql("delete from aai_platform.agents where slug = 'gc-guard'");
+  });
+
+  /**
+   * The whole predicate, positives and negatives in ONE pass.
+   *
+   * One test rather than six because the assertion that matters is the SET the
+   * sweep chose: "it deleted the orphan" and "it kept the in-flight window" are
+   * the same fact read twice, and splitting them lets one pass while the other is
+   * being broken. `toEqual` on the sorted set is what makes an unexpected
+   * deletion — the failure mode that destroys a customer's recording — fail here.
+   */
+  test("the uploads arm deletes only aged, unrecorded, parsable windows", async () => {
+    await resetBucket();
+    await putAgent("gc-up-live", "gc-up-live-hash");
+    await sql(
+      `insert into aai_platform.workflow_uploads (slug, id, size, complete, parts, created_at)
+       values ('gc-up-live', 'upl_recorded', 8, true, '[]'::jsonb, now() - interval '30 days')`,
+    );
+    for (const [name, age] of [
+      // KEEP: a record names it. The record is 30 days old and the sweep does not
+      // care — a record is the referrer, and age only gates the unrecorded.
+      ["uploads/gc-up-live/upl_recorded/0", "30 days"],
+      // KEEP: no record YET. This is the one that matters — `create` writes its
+      // windows before its row, so an upload in flight looks exactly like garbage
+      // and is inside UPLOAD_ORPHAN_GRACE. Two days is past any sandbox's default
+      // life and still inside the window, which is the margin being asserted.
+      ["uploads/gc-up-live/upl_inflight/0", "2 days"],
+      // KEEP: under the prefix and not a key this sweep can decompose, so it
+      // cannot prove it is garbage and leaves it for a human.
+      ["uploads/gc-up-live/not-a-window", "30 days"],
+      ["uploads/gc-up-live/upl_x/nested/0", "30 days"],
+      // DELETE: aged past the grace window with no record — both windows of it,
+      // since the predicate is per object and they share an id.
+      ["uploads/gc-up-live/upl_orphan/0", "30 days"],
+      ["uploads/gc-up-live/upl_orphan/8388608", "30 days"],
+    ] as const) {
+      await putObject(name, age);
+    }
+
+    expect(await sweptKeys()).toEqual([
+      "uploads/gc-up-live/upl_orphan/0",
+      "uploads/gc-up-live/upl_orphan/8388608",
+    ]);
+  });
+
+  /**
+   * Deleting an agent reclaims its uploaded BYTES, and it does so without
+   * `deleteAgent` growing a step.
+   *
+   * This is the case the leak was worst in: `workflow_uploads.slug` is
+   * `on delete cascade`, so un-publishing an agent took away the only record of
+   * where its recordings were and left every byte of them in a bucket shared by
+   * every tenant. The cascade is now the SIGNAL — the arm reads a missing record
+   * as garbage — which is why the delete path in `bundle-store.ts` still has the
+   * two steps `pg-cron-delete-parity.test.ts` pins it to.
+   */
+  test("an agent's upload windows are reclaimed once the agent is deleted", async () => {
+    await resetBucket();
+    await putAgent("gc-up-gone", "gc-up-gone-hash");
+    await sql(
+      `insert into aai_platform.workflow_uploads (slug, id, size, complete, parts, created_at)
+       values ('gc-up-gone', 'upl_kept', 8, true, '[]'::jsonb, now() - interval '30 days')`,
+    );
+    await putObject("uploads/gc-up-gone/upl_kept/0", "30 days");
+    // Held by its record while the agent is live — the control that makes the
+    // second half of this test about the DELETE rather than about the age.
+    expect(await sweptKeys()).toEqual([]);
+
+    await sql("delete from aai_platform.agents where slug = 'gc-up-gone'");
+    expect(
+      await sql("select 1 from aai_platform.workflow_uploads where slug = 'gc-up-gone'"),
+    ).toEqual([]);
+
+    expect(await sweptKeys()).toEqual(["uploads/gc-up-gone/upl_kept/0"]);
+  });
+
+  /**
+   * The blobs arm, EXECUTED — which nothing had done either.
+   *
+   * It is here as the positive control for everything above: the uploads
+   * assertions are mostly "this was not deleted", and that is only evidence while
+   * something proves the sweep deletes in this harness at all. It also finally
+   * runs the `jsonb_each_text(client_files)` reference set against a real planner.
+   */
+  test("the blobs arm deletes an unreferenced blob and keeps every referenced one", async () => {
+    await resetBucket();
+    await putAgent("gc-blob", "gc-blob-worker");
+    await sql(
+      `update aai_platform.agents set client_files = $1::text::jsonb where slug = 'gc-blob'`,
+      [JSON.stringify({ "index.html": "gc-blob-client" })],
+    );
+    for (const [name, age] of [
+      ["blobs/gc-blob-worker", "30 days"],
+      // The values of `client_files`, never its keys — taking the keys would mark
+      // every client asset unreferenced.
+      ["blobs/gc-blob-client", "30 days"],
+      // Inside the blobs arm's own day of grace: a deploy could still be reaching
+      // for it.
+      ["blobs/gc-blob-fresh", "1 hour"],
+      ["blobs/gc-blob-orphan", "30 days"],
+    ] as const) {
+      await putObject(name, age);
+    }
+
+    expect(await sweptKeys()).toEqual(["blobs/gc-blob-orphan"]);
+  });
 });
 
 describeWithStack("pg_cron accepts every schedule the platform declares", () => {
@@ -394,6 +620,31 @@ describeWithStack("pg_cron accepts every schedule the platform declares", () => 
       await expect(db.query(command)).resolves.toBeDefined();
     },
   );
+
+  /**
+   * The stand-in above is only evidence while the REAL table still looks like it.
+   *
+   * The suite that exercises the blob GC's predicate runs in a throwaway database
+   * and creates its own `storage.objects`, because Supabase's storage migrations
+   * are not ours to apply. That is fine for the predicate and useless for the
+   * schema: the day Supabase renames `created_at`, every one of those assertions
+   * still passes and the sweep silently stops aging anything in production.
+   *
+   * Read-only, and against the main database on purpose — this is the only place
+   * the real table exists.
+   */
+  test("the real storage.objects still has the three columns the GC reads", async () => {
+    const rows = await db.query(
+      `select column_name from information_schema.columns
+       where table_schema = 'storage' and table_name = 'objects'
+         and column_name in ('bucket_id', 'name', 'created_at')`,
+    );
+    expect(rows.map((r) => String(r.column_name)).sort()).toEqual([
+      "bucket_id",
+      "created_at",
+      "name",
+    ]);
+  });
 
   test("each schedule expression is valid", async () => {
     // `cron.schedule` VALIDATES the schedule string (a malformed expression is

@@ -55,9 +55,16 @@
  * slug's SHAPE and its reserved names, never its existence, so
  * `PUT /no-such-agent-here/uploads/upl_x/0` answered **201** and put bytes at
  * `uploads/no-such-agent-here/upl_x/0`. Measured against production. Nothing
- * reclaims them either — `aai-sweep-blob-gc` matches `name like 'blobs/%'` — so an
+ * reclaimed them either — `aai-sweep-blob-gc` matched `name like 'blobs/%'` — so an
  * unauthenticated caller could mint unbounded prefixes in a bucket shared by every
  * tenant, and the platform had no record that any of them existed.
+ *
+ * Both halves of that are closed now. This route is the first: a prefix belongs to
+ * an agent somebody deployed. The GC is the second — it grew an UPLOADS arm that
+ * reclaims a window no `workflow_uploads` row names, so the orphans this guard
+ * bounds are also finite in TIME rather than merely in number. See
+ * {@link sweepBlobGc}; the grace window there exists for the one flow that writes
+ * bytes before its record, which is the flow below.
  *
  * So a write costs one indexed column read (`store.getAgentVersion`) and answers the
  * same 404 an unknown agent gets everywhere else. What it says is that the prefix

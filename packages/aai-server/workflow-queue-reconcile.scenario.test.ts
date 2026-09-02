@@ -14,23 +14,27 @@
  * message stalled its run permanently — the sweep's own warning said so and
  * nothing acted on it.
  *
- * ## Why every assertion is scoped to THIS slug
+ * ## Why this suite owns its DATABASE
  *
- * The pass is fleet-wide by design — it repairs every agent — so its return
- * counts include whatever a sibling suite left in the shared scenario database.
+ * The pass is fleet-wide by design — it repairs every agent — so against a shared
+ * database its answers include whatever a sibling left there.
  * `platform-workflow-journal.scenario.test.ts` seeds runs with a `created_at` of
- * `7` to test ordering, which is comfortably past the grace window, so asserting
- * a global `{ stalled: 1 }` here fails the moment the two files run together.
+ * `7` to test ordering, which is comfortably past the grace window.
  *
- * Asserting on rows for this suite's own slug is the fix, and NOT CALLING
- * `reconcileStalledRuns` is the other half: this file drives only the read-only
- * predicate, and the one queue row it writes it writes by hand and deletes in
- * `beforeEach`. A message this suite left behind for a foreign run would be
- * claimed by `workflow-queue-store.scenario.test.ts` and break a `toEqual([ids])`
- * over there. That file's own doc warns about exactly this shape — "two files
- * over one database cannot run concurrently" — and the reason this suite is
- * nonetheless separate is that it calls neither `claimDue` nor the NOTIFY
- * channel, which is the split that doc allows.
+ * Scoping every assertion to this suite's own slug was the first answer and it
+ * was not enough, because `findStalledRuns` has a `limit` as well as a filter: a
+ * sibling's older rows can fill the answer and push this suite's own run out of
+ * it, which surfaces as `expected [] to deeply equal [ 'wrun_stalled' ]` — a
+ * predicate failure in a suite that did nothing wrong, about one full scenario
+ * run in six. The slug filters below are kept because they document intent, but
+ * what makes them true is `useThrowawayPlatformDb`.
+ *
+ * A private database is also what lets the second block call
+ * `reconcileStalledRuns` at all. It WRITES, fleet-wide, so against the shared
+ * database it would enqueue a message for every stalled run in it — seeding
+ * `workflow-queue-store.scenario.test.ts`'s fleet-wide `claimDue` with foreign
+ * rows and firing the NOTIFY its "a DELAYED message does not notify" case asserts
+ * is absent.
  *
  * ```sh
  * AAI_TEST_PG_URL='postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
@@ -38,26 +42,33 @@
  * ```
  */
 
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
-import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
-import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { beforeAll, beforeEach, expect, test } from "vitest";
+import { describeWithPg } from "./_pg-test-utils.ts";
+import { useThrowawayPlatformDb } from "./_workflow-queue-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { ensurePlatformTables } from "./test-utils.ts";
-import { findStalledRuns, markReconciled, STALL_GRACE_MS } from "./workflow-queue-reconcile.ts";
+import {
+  findStalledRuns,
+  markReconciled,
+  reconcileStalledRuns,
+  STALL_GRACE_MS,
+} from "./workflow-queue-reconcile.ts";
 
 const SLUG = "reconcile-tenant";
 
 describeWithPg("re-enqueueing a stalled run", () => {
-  let db: ReturnType<typeof createPostgresDb>;
-  let sql: SqlExec;
+  // A PRIVATE database — `findStalledRuns` is fleet-wide, including its
+  // `order by created_at` and its `limit`, so a sibling suite's older rows can
+  // push this suite's own run out of the answer. That is not hypothetical: it
+  // failed here as `expected [] to deeply equal [ 'wrun_stalled' ]`, roughly one
+  // full scenario run in six, in a suite that did nothing wrong. See
+  // `useThrowawayPlatformDb`.
+  const database = useThrowawayPlatformDb("reconcile_suite");
+  const sql: SqlExec = (q, p) => database.sql()(q, p);
 
   /** Long enough ago to be past the grace window. */
   const stale = () => Date.now() - STALL_GRACE_MS - 60_000;
 
   beforeAll(async () => {
-    db = createPostgresDb({ url: pgUrl(), max: 4 });
-    sql = (q, p) => db.query(q, p);
-    await ensurePlatformTables(sql);
     await sql(
       `insert into aai_platform.agents (slug, credential_hashes, worker_hash, client_files, version)
        values ($1, '{}'::jsonb, '', '{}'::jsonb, 1) on conflict do nothing`,
@@ -78,11 +89,6 @@ describeWithPg("re-enqueueing a stalled run", () => {
     await sql("delete from aai_platform.workflow_hooks where slug = $1", [SLUG]);
     await sql("delete from aai_platform.workflow_sleeps where slug = $1", [SLUG]);
     await sql("delete from aai_platform.workflow_runs where slug = $1", [SLUG]);
-  });
-
-  afterAll(async () => {
-    await sql("delete from aai_platform.agents where slug = $1", [SLUG]);
-    await db.close();
   });
 
   const seedRun = (runId: string, status: string, createdAt = stale()) =>
@@ -282,5 +288,94 @@ describeWithPg("re-enqueueing a stalled run", () => {
     // two empty arrays, which is a legal no-op — so the check is about the round
     // trip, on a connection the claim's own doc calls briefly reserved.
     await expect(markReconciled(sql, [])).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * One un-enqueueable run must not cost the rest of the pass.
+ *
+ * Its own database again (see the file doc), built by `ensurePlatformTables` from
+ * the migrations' own `create table` text — which is what makes the FOREIGN KEY
+ * here the shipped one rather than a shape this test invented.
+ *
+ * ## The state under test cannot be seeded, only RACED
+ *
+ * `workflow_runs.slug` and `workflow_queue.slug` both reference `agents` with
+ * `on delete cascade`, so a run whose agent is gone does not exist — verified
+ * against the live catalog, and it is why there is no orphan row to seed. The
+ * production failure is a TOCTOU: the predicate reads `(slug, run_id)`, then the
+ * loop's inserts run as separate autocommit statements on a reserved (NOT
+ * transacted) connection, and a delete landing in between leaves the loop
+ * holding a slug the FK no longer accepts. The `SqlExec` wrapper below executes
+ * exactly that interleaving, so the error is Postgres's real `23503`.
+ */
+describeWithPg("a reconcile pass survives one un-enqueueable run", () => {
+  const HEALTHY = "reconcile-live-tenant";
+  const DOOMED = "reconcile-doomed-tenant";
+
+  const database = useThrowawayPlatformDb("reconcile_fk");
+  const sql: SqlExec = (q, p) => database.sql()(q, p);
+
+  beforeAll(async () => {
+    for (const slug of [HEALTHY, DOOMED]) {
+      await sql(
+        `insert into aai_platform.agents (slug, credential_hashes, worker_hash, client_files, version)
+         values ($1, '{}'::jsonb, '', '{}'::jsonb, 1)`,
+        [slug],
+      );
+    }
+  });
+
+  test("a run whose agent vanished mid-pass is skipped, and the others still land", async () => {
+    // The DOOMED run is OLDER, so `order by created_at` puts it FIRST. That is
+    // the half that makes this a regression test rather than a coincidence:
+    // before the fix the throw happened on the first iteration, so the healthy
+    // run was never enqueued at all and NOTHING was stamped.
+    await sql(
+      `insert into aai_platform.workflow_runs (slug, run_id, workflow, status, created_at)
+       values ($1, 'wrun_doomed', 'digest', 'running', $2),
+              ($3, 'wrun_healthy', 'digest', 'running', $4)`,
+      [
+        DOOMED,
+        Date.now() - STALL_GRACE_MS - 120_000,
+        HEALTHY,
+        Date.now() - STALL_GRACE_MS - 60_000,
+      ],
+    );
+
+    let statements = 0;
+    /** The real connection, with the delete spliced in after the predicate. */
+    const raced: SqlExec = async (query, params) => {
+      statements += 1;
+      const isPredicate = statements === 1;
+      const rows = await sql(query, params);
+      // The race, deliberately: the predicate has answered and named both runs,
+      // and the agent goes away before the first insert reaches the FK.
+      if (isPredicate) await sql("delete from aai_platform.agents where slug = $1", [DOOMED]);
+      return rows;
+    };
+
+    const pass = await reconcileStalledRuns(raced, { maxPerTick: 10 });
+
+    // One repaired, one skipped — and `skipped: 1` can only be reached through a
+    // real `23503`, so this is also what proves the FK is present.
+    expect(pass).toEqual({ stalled: 1, skipped: 1 });
+    // The assertion that matters: the OTHER tenant's work still happened.
+    const queued = await sql("select slug, queue_name from aai_platform.workflow_queue");
+    expect(queued.map((row) => String(row.queue_name))).toEqual(["__wkf_workflow_wrun_healthy"]);
+    expect(queued.map((row) => String(row.slug))).toEqual([HEALTHY]);
+    // And it was STAMPED, which is the throttle the pass-wide throw used to lose
+    // for every run in the batch — the boot storm, not the bad status code.
+    const stamped = await sql(
+      "select reconciled_at from aai_platform.workflow_runs where slug = $1",
+      [HEALTHY],
+    );
+    expect(stamped[0]?.reconciled_at).not.toBeNull();
+    // The doomed run went with its agent, so there is nothing left to tombstone.
+    const left = await sql(
+      "select count(*)::int as n from aai_platform.workflow_runs where slug = $1",
+      [DOOMED],
+    );
+    expect(left[0]?.n).toBe(0);
   });
 });

@@ -7661,6 +7661,7 @@ export type CreatePostgresDbOptions = {
     connectTimeoutSeconds?: number;
     queryTimeoutMs?: number;
     reservedQueryTimeoutMs?: number;
+    reserveTimeoutMs?: number;
 };
 
 // @public

@@ -57,7 +57,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { parseScriptArgs } from "./_args.mjs";
@@ -153,16 +153,66 @@ function readFingerprint() {
  * developer has been confused by, and printing which one it was is most of the
  * value this script adds.
  */
-function stale(inputs) {
-  const recorded = readFingerprint();
+function stale(inputs, io = REAL_IO) {
+  const recorded = io.readStamp();
   if (!recorded) return "no local image has been built from this checkout";
   if (recorded.inputs !== inputs) return "the harness, the SDK or a build arg changed";
-  const id = localImageId();
+  const id = io.imageId();
   if (id === undefined) return `docker has no ${LOCAL_TAG}`;
   if (id !== recorded.imageId) return `${LOCAL_TAG} was rebuilt by something else`;
 }
 
-function main(argv) {
+/** Run the real image build. True when it produced an image. */
+function buildImage() {
+  const { status, error } = spawnSync(
+    process.execPath,
+    [path.join(REPO_ROOT, "scripts", "build-guest-image.mjs"), "--msb"],
+    { cwd: REPO_ROOT, stdio: "inherit" },
+  );
+  return !error && status === 0;
+}
+
+/**
+ * Record a fingerprint, ATOMICALLY.
+ *
+ * `writeFileSync` truncates first, so a process killed mid-write leaves a short
+ * file — and while a truncated JSON object happens not to parse (so
+ * `readFingerprint` would warn and rebuild), that is a property of this
+ * particular shape rather than of the mechanism, and it stops holding the moment
+ * somebody adds a field or switches to a line format. A temp file plus a rename
+ * makes "a stamp exists" and "the stamp is complete" the same statement, which
+ * is what the read side is entitled to assume. The temp name carries the pid so
+ * two runs cannot land on each other's.
+ */
+function writeStamp(inputs, imageId) {
+  mkdirSync(path.dirname(FINGERPRINT_FILE), { recursive: true });
+  const tmp = `${FINGERPRINT_FILE}.${process.pid}.tmp`;
+  writeFileSync(
+    tmp,
+    `${JSON.stringify({ inputs, imageId: imageId ?? null, builtAt: new Date().toISOString() }, null, 2)}\n`,
+  );
+  renameSync(tmp, FINGERPRINT_FILE);
+}
+
+/**
+ * Everything `main` reaches the outside world through.
+ *
+ * A seam, not a style: the ordering `main` encodes — see the comment at the
+ * bottom of it — is invisible to any test that cannot watch the fingerprint be
+ * taken, and the real one takes ~46 seconds and needs docker. With these
+ * injected, "the recorded fingerprint is the one from AFTER the build" and "a
+ * failed build records nothing" are both unit-tier facts.
+ */
+const REAL_IO = {
+  hasHarness: () => existsSync(HARNESS),
+  fingerprint,
+  readStamp: readFingerprint,
+  imageId: localImageId,
+  build: buildImage,
+  writeStamp,
+};
+
+function main(argv, io = REAL_IO) {
   const { values: flags } = parseScriptArgs({
     script: import.meta.url,
     options: { force: { type: "boolean" }, check: { type: "boolean" } },
@@ -179,7 +229,7 @@ function main(argv) {
     return 0;
   }
 
-  if (!existsSync(HARNESS)) {
+  if (!io.hasHarness()) {
     // Ordering, not an error: `predev` runs `ensure-guest-harness.mjs` first, and
     // a caller who skipped it gets told which command produces the input.
     console.warn(
@@ -189,8 +239,7 @@ function main(argv) {
     return 0;
   }
 
-  const inputs = fingerprint();
-  const reason = force ? "--force" : stale(inputs);
+  const reason = force ? "--force" : stale(io.fingerprint(), io);
   if (!reason) {
     console.log(`ensure-guest-image: ${LOCAL_TAG} is current`);
     return 0;
@@ -201,14 +250,11 @@ function main(argv) {
   }
 
   console.log(`ensure-guest-image: rebuilding ${LOCAL_TAG} — ${reason}`);
-  const { status, error } = spawnSync(
-    process.execPath,
-    [path.join(REPO_ROOT, "scripts", "build-guest-image.mjs"), "--msb"],
-    { cwd: REPO_ROOT, stdio: "inherit" },
-  );
-  if (error || status !== 0) {
+  if (!io.build()) {
     // WARN and succeed: a developer without docker still gets a dev server, and
     // the server's own boot check names this command when a guest needs an image.
+    // Nothing is recorded — a fingerprint written for a build that failed halfway
+    // is the one thing worse than no fingerprint, because the next run would skip.
     console.warn(
       "ensure-guest-image: the image build did not succeed. `aai dev` and the " +
         "subprocess backend are unaffected; a microVM guest will fail to spawn " +
@@ -217,14 +263,26 @@ function main(argv) {
     return 0;
   }
 
-  // AFTER the build, and only on success: a fingerprint recorded for a build that
-  // failed halfway is the one thing worse than no fingerprint, because the next
-  // run would skip.
-  mkdirSync(path.dirname(FINGERPRINT_FILE), { recursive: true });
-  writeFileSync(
-    FINGERPRINT_FILE,
-    `${JSON.stringify({ inputs, imageId: localImageId() ?? null, builtAt: new Date().toISOString() }, null, 2)}\n`,
-  );
+  // The fingerprint is taken TWICE, and the second one is the one recorded.
+  //
+  // The build is not a read-only operation on the inputs this gate hashes:
+  // `build-guest-image.mjs` runs `packWorkspaceSdk`, which runs `turbo run build`
+  // over the four SDK packages and rewrites the very `dist` trees
+  // `sdkSourceDigest()` walks. So the pre-build digest — the one the staleness
+  // DECISION has to be made from, because it describes the tree as the caller
+  // found it — describes a tree that no longer exists by the time the image does.
+  //
+  // Recording it made the gate pay for itself twice: the stamp claimed a state
+  // the build had already moved past, so the NEXT run computed a different digest
+  // and rebuilt from scratch. Measured on this tree, the exact command the build
+  // spawns: eefe440a… before, 0b692d80… after, and stable at 0b692d80… across a
+  // second build — so one extra digest converges it, where the old shape cost a
+  // developer ~46s on the first run of every dev loop.
+  //
+  // Only on SUCCESS, and after the build rather than before it for both reasons
+  // at once: the value has to be current, and it has to describe something that
+  // was really built.
+  io.writeStamp(io.fingerprint(), io.imageId());
   return 0;
 }
 
@@ -237,4 +295,4 @@ if (process.argv[1] === import.meta.filename) {
   }
 }
 
-export { FINGERPRINT_FILE, fingerprint, LOCAL_TAG, stale };
+export { FINGERPRINT_FILE, fingerprint, LOCAL_TAG, main, stale };

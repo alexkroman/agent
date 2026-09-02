@@ -22,6 +22,7 @@ import type { Logger } from "./runtime-config.ts";
 import { MAX_WORKFLOW_INPUT_BYTES, numberParam, readBody, sendJson } from "./workflow-api-http.ts";
 import { waitForRun } from "./workflow-api-wait.ts";
 import { MAX_WORKFLOW_FIND_LIMIT } from "./workflow-keys.ts";
+import { readRunOnce } from "./workflow-run-reads.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
 
 /**
@@ -244,8 +245,14 @@ export async function readRun(
     sendJson(res, 400, { error: "`wait` must be a number" });
     return;
   }
+  // BOTH arms go through the shared reads — the wait loop always did, and the
+  // no-wait arm is `readRunOnce` for the reason its own doc gives: an un-shared
+  // read is a platform round trip of its own beside the ones this run's
+  // watchers are already taking.
   const run = runId
-    ? await (clampWorkflowWait(wait) > 0 ? waitForRun(engine, runId, wait, res) : engine.get(runId))
+    ? await (clampWorkflowWait(wait) > 0
+        ? waitForRun(engine, runId, wait, res)
+        : readRunOnce(engine, runId))
     : undefined;
   if (!run) {
     sendJson(res, 404, { error: `No workflow run with id ${runId}` });

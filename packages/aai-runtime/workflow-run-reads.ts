@@ -315,3 +315,50 @@ export function watchRun(reader: RunReader, runId: string): RunWatch {
   }
   return reads.watch(runId);
 }
+
+/**
+ * One read of `runId` through `reader`'s shared reads — the ONE-SHOT half of
+ * {@link watchRun}, for a route that reads a run once and answers.
+ *
+ * Two routes do exactly that and neither went through here: `streamRunOutput`
+ * opens with `engine.get(runId)` to decide `missing`/`complete`, and `readRun`
+ * takes the same read whenever `?wait=` clamps to zero. Both are the reads a
+ * WATCHED run attracts most of — `useWorkflowProgress` polls `/stream` once a
+ * second for the life of a run, and on a deployed agent every one of those is a
+ * `POST /:slug/workflow-journal` competing with that run's own journal WRITES
+ * for one of the four connections `ADMIN_POOL_MAX` allows a replica. Three tabs
+ * on one long run is three of those a second, none of them shared, next to an
+ * `/events` stream and a notify watcher that were sharing all along.
+ *
+ * ## `0`, so nothing is answered from a read that STARTED BEFORE the call
+ *
+ * The deadline is what decides both the latency and the freshness, and here they
+ * do not trade off: the shared reads retain no snapshot, so a waiter added by
+ * this call is answered by a read that starts at or after it whatever the
+ * deadline is. A larger one would only make a caller WAIT for a read somebody
+ * else is about to take — and this route's caller is a browser holding a request
+ * open, where the events stream's 1 s is latency a page can see. So `0`, which
+ * costs nothing and still collapses:
+ *
+ * - Any watcher already PENDING on this run is drained into the same read, so a
+ *   `/stream` poll answers the `/events` stream's next observation for free.
+ * - Concurrent one-shot readers collapse onto {@link createCoalescingRunner}'s
+ *   trailing run — N simultaneous requests cost TWO round trips rather than N,
+ *   which is the shape a burst of tabs (or a client's own retry) arrives in.
+ *
+ * @internal
+ */
+export async function readRunOnce(
+  reader: RunReader,
+  runId: string,
+): Promise<WorkflowRunSnapshot | undefined> {
+  const watch = watchRun(reader, runId);
+  try {
+    return await watch.next(0);
+  } finally {
+    // Whatever happened, including the read throwing: the last watcher out is
+    // what stops the shared timer and releases the entry, and a one-shot reader
+    // that forgot would keep a run's entry alive for the life of the process.
+    watch.close();
+  }
+}

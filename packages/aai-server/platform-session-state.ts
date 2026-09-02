@@ -155,7 +155,38 @@ export async function appendEvents(
   );
 }
 
-/** Events from `startIndex` inclusive, in index order, at most `limit`. */
+/**
+ * Events from `startIndex` inclusive, in index order, at most `limit`.
+ *
+ * ## A row this cannot read fails the PAGE, and is never skipped
+ *
+ * The same refusal `nextEventIndex` makes below, for a reason one step removed
+ * and just as silent. This is a CURSOR read: a caller takes the page, advances
+ * past the highest index in it, and never asks that range again. So a row
+ * dropped here is not a degraded answer, it is a HOLE — the event is gone from
+ * the stream and nothing anywhere says so, because a page it was skipped from
+ * looks exactly like a page that never held it. `flatMap` returning `[]` for an
+ * unreadable row was doing precisely that.
+ *
+ * The read is `readIndex`'s, i.e. `typeof` FIRST, and the coercion trap is
+ * WORSE here than one method over: `Number(row.event_index)` turns a NULL
+ * column into `0`, which passes `Number.isInteger` — so such a row was not even
+ * dropped, it was emitted AT INDEX 0, displacing the real first event of the
+ * session in every reader's page.
+ *
+ * A throw is safe for the reason it is safe below, plus one more. Both columns
+ * are `not null` (`20260827020000_platform_session_state.sql`) and `event::text`
+ * of a `jsonb` is always a string, so this is unreachable on a healthy request.
+ * And unlike `countEvents` this method is on no hydrate path: its one consumer
+ * is the read-only session-events surface
+ * (`aai-runtime/session-event-stream.ts` -> `session-events-api.ts`), where a
+ * rejection is a logged 500 on a diagnostic read rather than a failed session.
+ *
+ * Note what it does NOT take over. A stored event whose JSON will not PARSE is
+ * still dropped with a warning one layer up, deliberately: that is a judgement
+ * about event CONTENT, made where there is a logger to announce it. This is a
+ * judgement about whether the READ happened.
+ */
 export async function readEvents(
   sql: SqlExec,
   slug: string,
@@ -170,11 +201,15 @@ export async function readEvents(
       limit $4`,
     [slug, sessionId, startIndex, limit],
   );
-  return rows.flatMap((row) => {
-    const index = Number(row.event_index);
-    return Number.isInteger(index) && typeof row.event === "string"
-      ? [{ index, event: row.event }]
-      : [];
+  return rows.map((row) => {
+    const index = readIndex(row.event_index);
+    if (!Number.isInteger(index) || index < 0 || typeof row.event !== "string") {
+      // The INDEX only. Never the sessionId — the slug is already in
+      // `withReserved`'s `detail` — and never the event body, which is a
+      // caller's own data and would be reaching a warn line.
+      throw new Error(`session-state readEvents read a non-event at ${String(row.event_index)}`);
+    }
+    return { index, event: row.event };
   });
 }
 
@@ -189,7 +224,8 @@ export async function readEvents(
  * (keeping `Number(...)` and throwing on `!Number.isInteger`) still would not
  * have caught it. Verified: that draft answered `0` for `{ next: null }`.
  *
- * A `NaN` return means "this is not an index", which the one caller refuses.
+ * A `NaN` return means "this is not an index", which BOTH callers refuse —
+ * `readEvents` above and `nextEventIndex` below.
  */
 function readIndex(answered: unknown): number {
   // What a fake `SqlExec` and the memory-shaped arms hand back.

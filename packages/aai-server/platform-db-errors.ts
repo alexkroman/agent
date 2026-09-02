@@ -97,6 +97,38 @@ export const PLATFORM_DB_CONNECT_TIMEOUT_SECONDS = 10;
 export const PLATFORM_DB_QUERY_TIMEOUT_MS = 30_000;
 
 /**
+ * How long a guest platform route waits for one of the ADMIN pool's four
+ * connections before answering 503.
+ *
+ * The other half of the bound above, and the one that was missing.
+ * `PLATFORM_DB_QUERY_TIMEOUT_MS` bounds a statement running ON a reservation;
+ * this bounds the wait to GET one, which `reserve()` left unbounded — so at
+ * exhaustion the first deadline to fire belonged to the CALLER, four layers up
+ * and in another process. The guest's tightest is `SESSION_STATE_TIMEOUT_MS`
+ * (10s) and its journal's is 15s, and what those produce is a timeout: no
+ * status, no `Retry-After`, and a diagnosis that names the journal when nothing
+ * was wrong with the journal. `withReserved` never even ran, because the
+ * reservation is taken before its `try`.
+ *
+ * **5 seconds, chosen against the SHORTEST caller rather than the pool.** It
+ * has to fire first for the answer to be a status at all, and it has to leave
+ * the caller enough of its own budget to receive one — half of 10s does both.
+ * Nothing legitimate waits that long here: every reservation on this pool is
+ * one guest request or one queue statement (`workflow-queue-sweep.ts` reserves
+ * per STATEMENT for exactly this reason), so five seconds of queueing is a pool
+ * with nothing to give rather than a pool that is busy.
+ *
+ * **The SLUG-LOCK pool takes no such bound**, and the asymmetry is the same one
+ * `PLATFORM_DB_QUERY_TIMEOUT_MS` makes one paragraph up, only sharper: a
+ * reservation there is held for a whole deploy, so a fifth concurrent
+ * distinct-slug mutation legitimately waits minutes for a connection and a
+ * deadline would fail deploys under ordinary load. `service-config.test.ts`
+ * asserts both halves, because a future "set it everywhere" tidy-up would be
+ * invisible until production.
+ */
+export const PLATFORM_DB_RESERVE_TIMEOUT_MS = 5000;
+
+/**
  * A platform-database operation that failed because the database could not be
  * REACHED — not because the statement was wrong.
  *
@@ -145,6 +177,12 @@ const UNREACHABLE_CODES: ReadonlySet<string> = new Set([
   // established connection stops answering and no driver-level error ever
   // arrives. Treated as unreachable so the stall sheds load as a 503.
   "QUERY_TIMEOUT",
+  // The pool had no connection to reserve within
+  // `PLATFORM_DB_RESERVE_TIMEOUT_MS`. The same condition `53300` names one layer
+  // down — "there is no connection for you" — reached before the driver opens
+  // one rather than after Postgres refuses it, so it belongs to the same 503.
+  // Without this the wait was unbounded and the condition had no code at all.
+  "POOL_EXHAUSTED",
   "53300",
   "57P03",
 ]);

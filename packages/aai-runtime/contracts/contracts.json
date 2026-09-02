@@ -1,7 +1,7 @@
 {
   "db": {
-    "current": 6,
-    "supported": [5, 6],
+    "current": 7,
+    "supported": [5, 6, 7],
     "dropped": {
       "1": "additive: CreatePostgresDbOptions gains optional connectTimeoutSeconds and queryTimeoutMs (network-partition query bound); backward-compatible, and aai-runtime has no external consumer to keep an epoch-1 template for",
       "2": "Epoch 2 promised SweepSkip, which the surface no longer exports — and epoch 4 was dropped for exactly that removal. It read as supported only because its frozen example never named the type, so the retain was a claim nothing could have detected: a consumer naming SweepSkip has not compiled since it went. Dropped rather than narrowed, because aai-runtime has no external consumer to keep an epoch-2 template for.",

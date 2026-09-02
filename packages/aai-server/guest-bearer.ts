@@ -15,10 +15,36 @@
  *
  * - **No header, or an empty one → 401.** Not 400: the caller supplied no
  *   credential, which is the ordinary unauthenticated case.
- * - **No such agent → 503, not 404.** The version read is what mints the expected
- *   token, so a missing row means this route cannot form an answer — and a 404
- *   would tell an unauthenticated caller whether a slug exists, which every other
- *   route on this surface refuses to do.
+ * - **No such agent → 404.** A delete leaves NO TOMBSTONE: the agents row is gone
+ *   and all ten tenant tables cascade off it, so a deleted slug and a
+ *   never-deployed slug are the same absent row and there is no later in which
+ *   either becomes servable. This answered 503, on the ground that a 404 "would
+ *   tell an unauthenticated caller whether a slug exists, which every other route
+ *   on this surface refuses to do". Both halves of that are false, which is why
+ *   it moved:
+ *
+ *   - **The oracle was already open, one status over.** The token compare below
+ *     answers 401, so a caller sending `Authorization: Bearer x` got 401 for a
+ *     slug that exists and 503 for one that does not. The distinction was fully
+ *     legible; only its labelling was coy. (What the ORDER protects is narrower
+ *     and still holds — see the position note below.)
+ *   - **Every other route on this surface discloses it deliberately.**
+ *     `brokerSessionUrlOrThrow` answers `Not found: <slug>` to an unauthenticated
+ *     `GET /:slug/client-config`, and `upload-handler.ts`'s `assertAgentExists`
+ *     does the same. Slug existence is public here by design.
+ *
+ *   And 503 is not free: it is the platform claiming a fault of its own, so
+ *   `error-handler.ts` writes a warn line per request for a condition no operator
+ *   can act on, while telling the caller to come back. A redeploy cannot produce
+ *   it — the agents row is written `on conflict (slug) do update set`, so the row
+ *   never transiently vanishes and `null` only ever means gone.
+ *
+ *   **What the GUEST does with either is the same thing**, which is what made the
+ *   move safe rather than merely correct: `platformPost`
+ *   (`aai-runtime/platform-rpc.ts`) throws one generic `Error` naming the status
+ *   for every non-2xx, and of the four guest-called routes only the upload-records
+ *   client reads a status at all (409 and 501). Nothing on this path retries on a
+ *   5xx or gives up on a 4xx, so the status reaches a log line and no decision.
  * - **A mismatch → 401, compared in CONSTANT TIME.** `constantTimeEquals`, because
  *   an early-exit compare on a 64-hex HMAC leaks it a nibble at a time to a caller
  *   who can time the reply, and these routes are reachable from the tunnel.
@@ -45,10 +71,13 @@
  * unauthenticated case — it is what makes an empty comparison unreachable.
  *
  * What its POSITION buys is a different property, and only one case shows it:
- * moving it below the 503 answers a caller with no credential and no such agent
- * "agent unavailable", i.e. tells an unauthenticated caller whether a slug
- * exists. Moving it below the version READ alone changes nothing observable
- * (A/B'd), so the rule is about which refusal WINS, not about the query.
+ * moving it below the not-found answer tells a caller who supplied NO credential
+ * at all whether a slug exists. That is a real if narrow line to hold — every
+ * other route on this surface answers such a caller from its own policy, and this
+ * gate should not become a second, quieter way to ask — and it survives the 503 →
+ * 404 move above unchanged, because it is about which refusal WINS rather than
+ * about what the loser says. Moving the check below the version READ alone
+ * changes nothing observable (A/B'd), so the rule is about order, not the query.
  *
  * @internal
  */
@@ -71,7 +100,16 @@ export async function assertGuestBearer(c: AppContext, slug: string): Promise<vo
     throw new HTTPException(401, { message: "unauthorized" });
   }
   const version = await c.env.store.getAgentVersion(slug);
-  if (version === null) throw new HTTPException(503, { message: "agent unavailable" });
+  // 404 and not 503: there is no tombstone, so "later" is not a thing this row
+  // has. See the module doc for why the existence-oracle argument for the 503
+  // did not survive contact with the 401 one line down.
+  //
+  // The sentence matches `notFoundMessage()` in `sandbox-broker.ts` — one
+  // condition should read the same however a caller reached it — and is spelled
+  // rather than imported deliberately: that module pulls in `sandbox.ts`,
+  // `p-timeout` and the peer directory, and an auth gate every guest-called route
+  // runs first should not depend on the sandbox layer to name a status.
+  if (version === null) throw new HTTPException(404, { message: `Not found: ${slug}` });
   if (!constantTimeEquals(supplied, guestTokenFor(agentSandboxName(slug, version)))) {
     throw new HTTPException(401, { message: "unauthorized" });
   }

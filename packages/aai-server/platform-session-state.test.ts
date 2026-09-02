@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `nextEventIndex`'s READ of the driver's answer, in the unit tier.
+ * How this store READS the driver's answer, in the unit tier.
  *
  * Every other spec over this store either needs a real Postgres
  * (`platform-session-state.scenario.test.ts`,
@@ -12,20 +12,22 @@
  * arm for them.
  *
  * - **`event_index` is a `bigint`, and postgres.js hands `int8` back as a
- *   STRING.** The `Number(...)` in `nextEventIndex` is therefore load-bearing,
- *   and it is invisible to every arm except the real-Postgres one — removing it
- *   reddens six conformance cases there and nothing anywhere else. Which is
- *   exactly the shape of a conversion somebody "cleans up".
- * - **An answer this code cannot read THROWS, and never defaults to 0.** `0`
- *   means "this session has no events", so guessing it hands a resumed session
- *   an index it has already used and its appends overwrite history from the
- *   start. The runtime's client refuses the same value for the same reason
- *   (`aai-runtime/session-state-platform.ts`); this end used to do the
- *   opposite.
+ *   STRING.** The read in `nextEventIndex` and `readEvents` is therefore
+ *   load-bearing, and it is invisible to every arm except the real-Postgres one
+ *   — removing it reddens six conformance cases there and nothing anywhere
+ *   else. Which is exactly the shape of a conversion somebody "cleans up".
+ * - **An answer this code cannot read THROWS.** `nextEventIndex` never defaults
+ *   to 0: `0` means "this session has no events", so guessing it hands a
+ *   resumed session an index it has already used and its appends overwrite
+ *   history from the start. `readEvents` never skips a row: a page is a cursor
+ *   read, so a skipped row is an event silently gone from the stream. The
+ *   runtime's client refuses both for the same reasons
+ *   (`aai-runtime/session-state-platform.ts`); this end used to do the opposite
+ *   on both counts.
  */
 
 import { describe, expect, test } from "vitest";
-import { nextEventIndex } from "./platform-session-state.ts";
+import { nextEventIndex, readEvents } from "./platform-session-state.ts";
 import { createRecordingSql } from "./test-utils.ts";
 
 /** A driver answering one row's `next`, as postgres.js would shape it. */
@@ -85,6 +87,99 @@ describe("nextEventIndex reads the driver's answer", () => {
     const { sql, calls } = createRecordingSql(() => [{ next: "3" }]);
     await nextEventIndex(sql, SLUG, SESSION);
     expect(calls[0]?.params).toEqual([SLUG, SESSION]);
+    expect(calls[0]?.query).not.toContain(SLUG);
+  });
+});
+
+/** A driver answering the given `session_events` rows, as postgres.js shapes them. */
+const rowsOf = (...rows: Record<string, unknown>[]) => createRecordingSql(() => rows).sql;
+
+/** A healthy page at the given indices — `bigint` columns, so every one a string. */
+const rowsAt = (...indices: string[]) =>
+  readEvents(
+    rowsOf(...indices.map((event_index) => ({ event_index, event: '{"t":"a"}' }))),
+    SLUG,
+    SESSION,
+    0,
+    10,
+  );
+
+/**
+ * `readEvents` refuses a row it cannot read, and does NOT leave a hole.
+ *
+ * The same class as the refusal above and one step less obvious, which is why it
+ * outlived it: a page is a CURSOR read, so a skipped row is not a degraded answer
+ * but an event silently gone from the stream — the page it was dropped from is
+ * indistinguishable from a page that never held it. The `flatMap` that used to be
+ * here also had the coercion trap in its worse form, so the NULL case below is the
+ * one that mattered: `Number(null)` is `0`, which passes `Number.isInteger`, so
+ * that row was EMITTED at index 0 rather than dropped, displacing the session's
+ * real first event in every reader's page.
+ */
+describe("readEvents reads the driver's rows", () => {
+  test("a page of bigint indices arriving as STRINGS is read as numbers", async () => {
+    // The healthy path, and the whole reason a read is needed at all: `event_index`
+    // is a `bigint`, so postgres.js hands every one of these back as a string.
+    await expect(rowsAt("0", "1", "7")).resolves.toEqual([
+      { index: 0, event: '{"t":"a"}' },
+      { index: 1, event: '{"t":"a"}' },
+      { index: 7, event: '{"t":"a"}' },
+    ]);
+  });
+
+  test("an empty log is an empty page, not a refusal", async () => {
+    await expect(readEvents(rowsOf(), SLUG, SESSION, 0, 10)).resolves.toEqual([]);
+  });
+
+  test("a NULL index is REFUSED, not emitted at 0", async () => {
+    // The one that was actively wrong rather than merely lossy. Asserted as a
+    // rejection AND, below, as "no page came back with a 0 in it" — a version that
+    // only checked the throw would still pass a repair that dropped the row.
+    await expect(
+      readEvents(rowsOf({ event_index: null, event: "{}" }), SLUG, SESSION, 0, 10),
+    ).rejects.toThrow(/non-event/);
+  });
+
+  test.each([
+    ["an index that is not a number at all", { event_index: "nope", event: "{}" }],
+    ["a negative index", { event_index: "-1", event: "{}" }],
+    ["an index that is not digits", { event_index: "0x10", event: "{}" }],
+    ["a row whose event column is not text", { event_index: "0", event: 7 }],
+  ])("refuses %s rather than dropping the row", async (_label, row) => {
+    await expect(readEvents(rowsOf(row), SLUG, SESSION, 0, 10)).rejects.toThrow(/non-event/);
+  });
+
+  test("ONE unreadable row fails the whole page rather than holing it", async () => {
+    // The property, stated the way the bug would have to be re-introduced to
+    // break it: a repair that skipped the middle row would answer [0, 2] here,
+    // and a caller advancing its cursor past 2 would never see 1 again.
+    await expect(
+      readEvents(
+        rowsOf(
+          { event_index: "0", event: "{}" },
+          { event_index: null, event: "{}" },
+          { event_index: "2", event: "{}" },
+        ),
+        SLUG,
+        SESSION,
+        0,
+        10,
+      ),
+    ).rejects.toThrow(/non-event/);
+  });
+
+  test("the refusal names neither the sessionId nor the event body", async () => {
+    // Same rule as the refusal above: this string reaches a warn line. The event
+    // is a caller's own data, so it is the one thing that must not travel with it.
+    await expect(
+      readEvents(rowsOf({ event_index: null, event: '{"card":"4242"}' }), SLUG, SESSION, 0, 10),
+    ).rejects.toThrow(expect.objectContaining({ message: expect.not.stringContaining("4242") }));
+  });
+
+  test("the slug, session id, cursor and limit are all BOUND", async () => {
+    const { sql, calls } = createRecordingSql(() => []);
+    await readEvents(sql, SLUG, SESSION, 2, 50);
+    expect(calls[0]?.params).toEqual([SLUG, SESSION, 2, 50]);
     expect(calls[0]?.query).not.toContain(SLUG);
   });
 });

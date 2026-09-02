@@ -889,7 +889,8 @@ It used to be a bare tally, and one number served two budgets that pull in
 opposite directions — how many times to TRY (the author's `maxAttempts`) and how
 many workers may die holding this step. A property harness
 (`workflow-concurrent-delivery.test.ts`) shrank the defect to a ONE-node body
-under three deliveries: a `ctx.step` whose body sleeps, all three suspending
+under three deliveries: a `ctx.step` whose body sleeps — a shape the engine now
+REFUSES outright, see the section below — all three suspending
 inside it having charged one each, so the next reach found the budget spent and
 appended `{status: "failed", error: "step s0 exhausted 3 attempt(s)"}` over a
 step that then SUCCEEDED — whose own walk read that failure back out of the
@@ -902,6 +903,67 @@ because only a walk whose own body threw may write a `failed` entry.**
 residual — a charge cannot tell an abandoned attempt from a LIVE one, so
 `maxAttempts` simultaneous in-flight deliveries of one step is the most this
 tolerates, which needs a heartbeat to close.
+
+### A step body may not WAIT, and the engine refuses one that does
+
+`ctx.sleep` and `ctx.waitFor` belong to the body. The closure `ctx.step` is
+handed CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep(2000))` is
+one line away at every call site, and until `workflow-replay-wait.ts` existed the
+engine ran it — silently, and wrongly in two separate ways. Both are measured:
+
+- **The step body re-ran from the top on every delivery.** The suspend unwinds
+  out of the step, the attempt charge is released (correct — a suspend settles
+  nothing), so the step is never journaled and the next delivery re-runs the
+  closure. A one-step body logged its effect **twice** across two deliveries and
+  reported `completed`. For a step that calls a paid provider that is a duplicate
+  charge, which is how this was found.
+- **And every LATER wait in the run read the wrong record.** This is the sharper
+  half and it is not a duplicate-work problem at all. Waits are keyed
+  POSITIONALLY (`sleep!0`, `hook!0`) off a counter that advances only when a wait
+  is REACHED — and a settled step's body is not re-executed, so its wait stops
+  being reached the moment the step lands, and every wait after it slides one
+  place down the key space. Reproduced, clock unmoved between walks 2 and 3:
+
+  ```text
+  walk 1  napper enters, sleep!0 claimed                      -> suspended
+  walk 2  napper enters again, sleep!0 elapsed, napper#0
+          journaled, body-level wait claims sleep!1           -> suspended, +7 days
+  walk 3  napper answered from the journal (body NOT run),
+          body-level wait is now sleep!0 — elapsed on walk 2  -> completed
+  ```
+
+  A week-long durable wait skipped in full, reported `completed`. For
+  `ctx.waitFor` the same shift hands the body somebody else's PAYLOAD.
+
+So both methods now refuse when `currentRun()?.step` is set — which is true for
+the whole of a step's execution, including inside every helper it awaits, since
+`withStepContext` narrows the run context rather than a lexical scope. The
+refusal is a `FatalError` (a redelivery cannot make a body legal) recorded
+through `replayRun`'s `refused`, so a body that catches broadly cannot turn it
+into `completed` — the third verdict on that channel, beside a divergence and an
+abandoned step.
+
+**It cannot be a TYPE, and that is worth stating because the repo has precedent
+that looks like it transfers.** `ctx.step`'s `Literal<Name>` guard types an
+ARGUMENT; this would have to retype a CAPTURED BINDING. The outer `ctx` is
+lexically in scope inside the callback and TypeScript has no effect system, so a
+step-scoped `ctx` parameter would be advice a one-line closure ignores, not a
+gate. Runtime is the only layer that sees it. Nor is it worth making RESUMABLE:
+journaling a step's partial progress needs continuations, and the affordance for
+"work, then wait, then more work" already exists — two steps with the wait
+between them.
+
+**What the refusal cost, recorded because it is a real loss.** The property
+grammar's `nestedWait` node (`_workflow-resume-program.ts`) generated exactly
+this shape and was the 10-out-of-10 regression for the lease fix above. It is
+gone: it can no longer generate a legal body. The arm it defended — a suspend
+GIVING BACK its charge — now has a deterministic test instead
+(`workflow-replay.test.ts`, "a suspend that reaches a step's attempt loop
+anyway", driven with a hand-branded signal), and the half of the lease that is
+still reachable through `ctx` — a charge NOT given back when an attempt dies — is
+held by `flaky`. Removing the node also lowered two coverage floors in
+`workflow-resume-equivalence.test.ts`, re-measured over 20 runs with the old
+ranges kept beside the new ones.
 
 **That residual is REACHABLE, and the estimate beside it was measured wrong.**
 It read "far past what one dispatcher per deployment produces". One dispatcher

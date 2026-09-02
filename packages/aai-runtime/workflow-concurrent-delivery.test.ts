@@ -71,7 +71,7 @@
  * settling one spent from it forever.
  *
  * - **`nestedWait`** — a `ctx.step` whose body SUSPENDS, which
- *   `workflow-replay-step.ts` calls "one line away at every call site". A
+ *   `workflow-replay-step.ts` called "one line away at every call site". A
  *   suspend is "neither retried nor journaled", but the attempt was already
  *   CHARGED and never returned, so every delivery burned one and none settled
  *   it. Shrunk to a ONE-node body under three deliveries: three walks suspend on
@@ -84,14 +84,24 @@
  *   releases nothing between its two tries. The same spurious `failed`, by the
  *   other door — and the reason the delivery count used to decide the grammar.
  *
- * **Which shape a REGRESSION would be caught by, measured, because the two are
- * not equally likely.** Reverting the fix, `nestedWait` fails this property at
- * `numRuns: 40` on **10 runs out of 10** — it needs only a one-node body. The
- * `flaky` shape is the rarer one: with `nestedWait` removed from the grammar the
- * same revert survived 40 runs and took **45 generated scenarios** to hit, at
- * `[all([flaky, step]), step]` under three deliveries. So `nestedWait` is what
- * holds the line here and `flaky` is in the grammar because the fix made it
- * safe, not because 40 runs would find it.
+ * **`nestedWait` is GONE from the grammar, and what it cost is worth stating.**
+ * A wait inside a step is now a program the engine refuses outright — it also
+ * silently skipped every LATER wait in the run, which the lease fix did not
+ * touch; `workflow-replay-wait.ts` has both bugs. So the shape cannot be
+ * generated without generating an illegal body, and the measurement below is now
+ * the record of what it USED to hold rather than what holds today.
+ *
+ * **Which shape a REGRESSION would be caught by, measured, because the two were
+ * not equally likely.** Reverting the lease fix, `nestedWait` failed this
+ * property at `numRuns: 40` on **10 runs out of 10** — it needed only a one-node
+ * body. The `flaky` shape is the rarer one: with `nestedWait` removed from the
+ * grammar the same revert survived 40 runs and took **45 generated scenarios** to
+ * hit, at `[all([flaky, step]), step]` under three deliveries. `flaky` is
+ * therefore what holds the line here now, and it holds the half of the lease that
+ * is still reachable — a charge NOT given back when an attempt dies. The other
+ * half, a suspend giving one back, has a deterministic test instead:
+ * `workflow-replay.test.ts`, "a suspend that reaches a step's attempt loop
+ * anyway".
  *
  * The fix separates the two budgets the one number was serving. Tries are
  * counted in the WALK, so no delivery spends another's retries; the charge is a
@@ -146,7 +156,6 @@ function nodeArb(failing: boolean, fanOut = true): fc.Arbitrary<Node> {
     fc.constant<Node>({ t: "sleep" }),
     // A `ctx.step` whose body SUSPENDS — "one line away at every call site", and
     // the shape that found the attempt-budget defect. See the module doc.
-    fc.constant<Node>({ t: "nestedWait", name: "" }),
     fc.constantFrom(...ALL_HOOK_MODES).map((mode): Node => ({ t: "hook", token: "", mode })),
     fc
       .array(leafArb(), { minLength: 1, maxLength: 2 })
@@ -343,7 +352,6 @@ function companionArb(): fc.Arbitrary<Program> {
     leafArb(),
     fc.integer({ min: 2, max: 3 }).map((count): Node => ({ t: "loop", name: "", count })),
     fc.constant<Node>({ t: "sleep" }),
-    fc.constant<Node>({ t: "nestedWait", name: "" }),
     fc
       .array(leafArb(), { minLength: 1, maxLength: 2 })
       .map((children): Node => ({ t: "nested", name: "", children })),

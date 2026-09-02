@@ -902,16 +902,46 @@ window the platform actually runs is this surface's. The limiter itself lived in
 THIS package while the studio was its only caller, which is why `POST /deploy`
 had none — aai-server cannot import from here.
 
-The windows (`studio-rate-limit.ts`): the chat, project-create, and
-deploy windows are rows in `aai_platform.studio_rate_limits`
+The windows (`studio-rate-limit.ts`): every window the platform runs is a row
+in `aai_platform.studio_rate_limits`
 (`createPgRateLimiter`, one atomic upsert per check), so a limit holds
 platform-wide instead of multiplying by the replica count — which for an
-ABUSE limit is the whole point, since `MAX_CONTAINERS` (5) makes a
-per-replica cap a cap of five times the number written down. Fail-closed: a
+ABUSE limit is the whole point, since `MAX_CONTAINERS` (3, in
+`aai-server/modal_deploy.py`) makes a
+per-replica cap a cap of three times the number written down. Fail-closed: a
 database error propagates rather than silently unmetering the route.
 Expired rows are swept by pg_cron (`pg-cron.ts`), not in-process. The
 `studio_` table name is now a misnomer; `name` namespaces each limiter's
 rows, which is what lets a second consumer share it without a migration.
+
+**The AGENT surface's three come from one factory, and that is a fix.** This
+file is the composition root, so choosing the durable arm is its call — and for
+months it made that call for `deployRateLimiter` alone, wired by the audit that
+added it. The two workflow limiters
+(`WORKFLOW_IP_RATE_LIMIT`, `WORKFLOW_START_IP_RATE_LIMIT`) landed later with
+their own orchestrator options, their own middleware and their own specs, and
+nothing here ever passed them: `createWorkflowRateLimitMw` fell through to
+`?? createRateLimiter(…)`, so the whole `/:slug/workflows/*` surface was metered
+PER REPLICA — a 600/IP window enforcing 1,800, and the tighter start limit,
+which bounds the only route whose cost outlives its request, enforcing 180
+rather than 60. Nothing was red, because the middleware's own specs inject
+limiters and never see the default, and this entry has no spec at all.
+`createPgAgentRateLimiters(sql)` answers all three as one object the entry
+spreads whole; `rate-limit.test.ts` reads `orchestrator.ts` for a `RateLimiter`
+option the factory does not answer, so the NEXT one cannot be forgotten either,
+and `agent-rate-limits.scenario.test.ts` asserts the property a single-instance
+spec structurally cannot — two limiters over one database sharing a budget where
+two in memory do not.
+
+**With no `X-Forwarded-For` the key is the literal `unknown`** (`client-ip.ts`),
+so every such caller shares one bucket — and making these limiters durable makes
+that bucket fleet-wide rather than per-replica. Stricter, and the documented
+trade (a shared bucket over-limits rather than opening), but it also means one
+header-less caller can spend every other one's budget. Production never lands
+there: Modal's proxy always appends a hop. A deployment fronted by a proxy that
+STRIPS the header would, and the workflow surface has no better key to fall back
+to — it is credential-free by design (a static page carries no bearer), and the
+slug is the resource rather than the caller.
 
 **Every limited route is keyed TWICE — by scope and by client IP.** The
 scope key is derived from the caller's bearer, so for a raw-key caller it

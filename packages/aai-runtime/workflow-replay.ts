@@ -66,6 +66,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
+import { waitInsideStep } from "./workflow-replay-wait.ts";
 import { withRunContext } from "./workflow-run-context.ts";
 import type { StepGate } from "./workflow-step-gate.ts";
 import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
@@ -215,12 +216,13 @@ function classifyThrow(
     return { kind: "suspended", wakeAt: err instanceof SuspendSignal ? err.wakeAt : undefined };
   }
   // A REFUSAL the engine raised about this walk wins over everything below, and
-  // over whatever the body threw after swallowing it. Two raise one: a
+  // over whatever the body threw after swallowing it. Three raise one: a
   // divergence — once the walk has read a key the run never reached, every later
   // line ran against a body that had lost its place, so its own failure
-  // describes a consequence rather than the cause — and a step whose budget is
+  // describes a consequence rather than the cause — a step whose budget is
   // held by attempts that never ended (`StepAbandonedError`), where the body
-  // never ran at all and whatever it did instead is not the finding.
+  // never ran at all and whatever it did instead is not the finding — and a wait
+  // reached inside a step, where every wait AFTER it would read the wrong record.
   if (walk.refused !== undefined) return { kind: "failed", error: { message: walk.refused } };
   // A suspend went out and something ELSE came back: the body caught it. Fail
   // rather than recording the failure it happens to have thrown, because the
@@ -278,10 +280,12 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   /**
    * The message of a refusal the ENGINE raised about this walk, once one has.
    *
-   * Two raise one, and both are verdicts about the walk rather than about a
+   * Three raise one, and each is a verdict about the walk rather than about a
    * step: a DIVERGENCE (a key the run never reached, while work it has done is
-   * still unread) and an ABANDONED step (its whole budget held by attempts that
-   * never ended, so the body was not run at all).
+   * still unread), an ABANDONED step (its whole budget held by attempts that
+   * never ended, so the body was not run at all), and a WAIT INSIDE A STEP,
+   * which is a body the engine cannot execute correctly at all — see
+   * `workflow-replay-wait.ts`.
    *
    * Held rather than merely thrown, for the reason `suspendThrown` is: JavaScript
    * `catch` catches everything, and one shipped template wraps its whole body in
@@ -369,6 +373,13 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     },
 
     async sleep(until: number | Date, sleepOptions?: SleepOptions): Promise<void> {
+      // BEFORE the counter advances: a step body may not wait, and the two ways
+      // that used to go wrong are in `workflow-replay-wait.ts`.
+      const noWait = waitInsideStep("ctx.sleep");
+      if (noWait) {
+        refused = noWait.message;
+        throw noWait;
+      }
       // Sleeps get their own key space rather than sharing the step counter, so
       // an author's step LITERALLY named "sleep" (`sleep#0`) cannot alias a
       // durable wait (`sleep!0`). `!` is not producible by `${name}#${n}`.
@@ -389,6 +400,14 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     },
 
     async waitFor<T>(token: string, waitOptions?: WaitForOptions): Promise<T | undefined> {
+      // Same refusal as `sleep` above, and for the same two reasons — a hook's
+      // `hook!N` key space shifts exactly like a sleep's, and reading a
+      // predecessor's record here hands the body somebody else's PAYLOAD.
+      const noWait = waitInsideStep("ctx.waitFor");
+      if (noWait) {
+        refused = noWait.message;
+        throw noWait;
+      }
       // Its own key space again, for the reason sleeps have one.
       const occurrence = hooks;
       hooks++;

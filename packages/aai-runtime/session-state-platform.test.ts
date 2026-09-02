@@ -133,16 +133,66 @@ describe("what it makes of an answer", () => {
     expect(await backend.readEvents("sess_1", 0, 10)).toEqual([{ index: 3, json: '{"t":"a"}' }]);
   });
 
-  test("drops a malformed event rather than guessing its index", async () => {
+  /**
+   * A page is a CURSOR read, so a dropped entry is a HOLE.
+   *
+   * It used to drop, which read as the conservative choice and is not: the caller
+   * advances past the highest index it was handed and never asks that range again,
+   * so the event is gone and the page it went missing from is indistinguishable
+   * from one that never held it. Same class as the `countEvents` refusals below,
+   * and the platform end refuses the identical shapes.
+   */
+  test.each([
+    ["an index that is not a number", { index: "x", event: "{}" }],
+    ["an index arriving as a numeric STRING", { index: "1", event: "{}" }],
+    ["a fractional index", { index: 1.5, event: "{}" }],
+    ["a negative index", { index: -1, event: "{}" }],
+    ["a null index", { index: null, event: "{}" }],
+    ["an entry with no event", { index: 1 }],
+    ["an entry that is not an object", 7],
+  ])("refuses %s rather than dropping it from the page", async (_label, entry) => {
+    const { backend } = backendWith(() =>
+      Response.json({ result: [entry, { index: 1, event: "{}" }] }),
+    );
+    await expect(backend.readEvents("sess_1", 0, 10)).rejects.toThrow(/readEvents answered/);
+  });
+
+  test("ONE unreadable entry fails the whole page rather than holing it", async () => {
+    // Stated the way a regression would have to break it: a repair that skipped
+    // the middle entry answers [0, 2], and a caller advancing its cursor past 2
+    // never sees 1 again.
     const { backend } = backendWith(() =>
       Response.json({
         result: [
+          { index: 0, event: "{}" },
           { index: "x", event: "{}" },
-          { index: 1, event: "{}" },
+          { index: 2, event: "{}" },
         ],
       }),
     );
-    expect(await backend.readEvents("sess_1", 0, 10)).toEqual([{ index: 1, json: "{}" }]);
+    await expect(backend.readEvents("sess_1", 0, 10)).rejects.toThrow(/readEvents answered/);
+  });
+
+  test("an answer that is not a list at all is refused", async () => {
+    // "The read did not happen" and "there are no events" are different answers
+    // and only one is safe to act on. An empty log is a `[]`, asserted below.
+    const { backend } = backendWith(() => Response.json({ result: { events: [] } }));
+    await expect(backend.readEvents("sess_1", 0, 10)).rejects.toThrow(/not a list/);
+  });
+
+  test("an empty log reads as an empty page", async () => {
+    const { backend } = backendWith(() => Response.json({ result: [] }));
+    expect(await backend.readEvents("sess_1", 0, 10)).toEqual([]);
+  });
+
+  test("the refusal carries no event body", async () => {
+    // The message reaches a log line and the event is a caller's own data.
+    const { backend } = backendWith(() =>
+      Response.json({ result: [{ index: "x", event: '{"card":"4242"}' }] }),
+    );
+    await expect(backend.readEvents("sess_1", 0, 10)).rejects.toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining("4242") }),
+    );
   });
 
   test("takes countEvents from the platform, which computes max + 1", async () => {

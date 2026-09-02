@@ -249,8 +249,10 @@ export function createBlobUploadStore(opts: {
       const type = meta.type ?? "";
       // The windows go up FIRST and the row last, so an upload exists only once all
       // of its bytes do — the invariant the chunk store had, unchanged. A torn
-      // upload leaves objects nothing can reach; the sweep that reclaims them is
-      // not written.
+      // upload leaves objects nothing can reach; on the platform, `aai-sweep-blob-gc`'s
+      // uploads arm is the sweep that reclaims them. **This ordering is why that arm
+      // needs a grace window at all** — every other method here writes the row first,
+      // so this is the only one whose bytes ever exist unrecorded.
       const size = await putWindows(id, body, options?.limit ?? maxBytes, false);
       await records.insert(id, {
         name,

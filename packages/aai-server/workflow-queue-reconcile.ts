@@ -74,12 +74,38 @@
  *   already moved, which replay makes idempotent and which costs a sandbox boot.
  * - **A WIDTH.** Bounded per pass like the delivery fan-out beside it, because a
  *   platform-wide outage means every run in the fleet looks stalled at once.
+ * - **PER-RUN isolation of the enqueue**, which is the fifth because the first
+ *   four are all defeated without it. `markReconciled` is what makes the grace
+ *   window a THROTTLE rather than merely a first-eligibility gate, and it runs
+ *   after the loop — so one throwing enqueue meant no run in the batch was
+ *   stamped, and every one of them came back on the next tick. Observed on a dev
+ *   server as a repeating `queue pass failed` beside a re-walk logged every
+ *   second: one deleted agent switched the boot-storm guard off for the whole
+ *   fleet. See {@link reconcileStalledRuns}.
  *
  * @internal
  */
 
+import { errorMessage } from "@alexkroman1/aai";
+import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { enqueue } from "./workflow-queue-store.ts";
+
+const log = createLogger("workflow.queue.reconcile");
+
+/** Postgres `foreign_key_violation` — `workflow_queue_slug_fkey`, here. */
+const FOREIGN_KEY_VIOLATION = "23503";
+
+/**
+ * Did this enqueue fail because the agent is GONE?
+ *
+ * Read the SQLSTATE, never the message — the same argument `secret-store.ts`
+ * makes for `23505`: a driver rewording "violates foreign key constraint" would
+ * silently turn this skip back into the pass-wide throw it exists to prevent.
+ */
+function isAgentGone(err: unknown): boolean {
+  return (err as { code?: unknown } | null)?.code === FOREIGN_KEY_VIOLATION;
+}
 
 /**
  * How long a run may sit untouched before it counts as stalled — AND the minimum
@@ -117,7 +143,23 @@ const queueNameFor = (runId: string) => `__wkf_workflow_${runId}`;
  * insert, which nothing needs yet — so the honest report is how many runs this
  * pass issued an idempotent re-walk for.
  */
-export type ReconcilePass = { stalled: number };
+export type ReconcilePass = {
+  /** Runs this pass issued an idempotent re-walk for. */
+  stalled: number;
+  /**
+   * Runs it could NOT enqueue, and carried on past — almost always an agent
+   * deleted between the predicate and the insert. See {@link reconcileStalledRuns}.
+   *
+   * `workflow-queue-sweep.ts` still gates its operator-facing line on
+   * {@link ReconcilePass.stalled} rather than on this, and reports this only in
+   * the structured payload beside it. That is not an oversight: each skip is
+   * logged HERE as it happens — `debug` when an agent delete raced, which is
+   * benign and expected, `warn` when it did not — so a skip-only pass is already
+   * reported, and gating on both put `runQueuePass` over its cognitive-complexity
+   * ceiling.
+   */
+  skipped: number;
+};
 
 /** A run the queue has lost. */
 export type StalledRun = { slug: string; runId: string };
@@ -236,8 +278,12 @@ export async function reconcileStalledRuns(
   opts: { maxPerTick?: number } = {},
 ): Promise<ReconcilePass> {
   const stalled = await findStalledRuns(sql, opts);
+  /** The runs whose message really landed — the only ones {@link markReconciled} may stamp. */
+  const scheduled: StalledRun[] = [];
+  let skipped = 0;
 
-  for (const { slug, runId } of stalled) {
+  for (const run of stalled) {
+    const { slug, runId } = run;
     // Sequential because there is nothing to fan out ONTO: the caller hands in
     // one RESERVED connection (`runQueuePass`), so concurrency here would only
     // queue on it. What that does mean is that a full pass costs up to
@@ -246,15 +292,60 @@ export async function reconcileStalledRuns(
     // the reservation the claim's own doc calls brief. A batched multi-row
     // insert with one announce is the fix if a pass ever measures long; it needs
     // a bulk entry point on `workflow-queue-store.ts`, which does not exist yet.
-    await enqueue(sql, {
-      // DERIVED from the run, so two reconcile passes racing each other write
-      // one row — `enqueue` is `on conflict do nothing` on the id.
-      id: `reconcile_${runId}`,
-      slug,
-      queueName: queueNameFor(runId),
-      payload: { runId },
-    });
+    // PER-RUN, for the same reason the delivery fan-out beside it settles each
+    // message on its own: this loop is a REPAIR across tenants, so one run that
+    // cannot be repaired must cost the others nothing.
+    //
+    // The failure is a real one and it is not rare. `workflow_runs.slug` and
+    // `workflow_queue.slug` both reference `agents` with `on delete cascade`, so
+    // a run whose agent is gone cannot exist — but the predicate above and this
+    // insert are two autocommit statements on a RESERVED (not transacted)
+    // connection, and a delete landing between them leaves this loop holding a
+    // slug the FK no longer accepts. The window is the whole loop: up to
+    // `RECONCILE_MAX_PER_TICK` inserts, each with a `pg_notify` round trip.
+    //
+    // Thrown, it took the entire pass with it — and the damage was never the one
+    // run. `markReconciled` below never ran, so NO run in the batch was stamped
+    // and every one of them was re-found and re-enqueued on the very next tick,
+    // which is exactly the per-run throttle `STALL_GRACE_MS` exists to be. A
+    // deleted agent turned the boot-storm guard off fleet-wide.
+    try {
+      await enqueue(sql, {
+        // DERIVED from the run, so two reconcile passes racing each other write
+        // one row — `enqueue` is `on conflict do nothing` on the id.
+        id: `reconcile_${runId}`,
+        slug,
+        queueName: queueNameFor(runId),
+        payload: { runId },
+      });
+      scheduled.push(run);
+    } catch (err) {
+      skipped += 1;
+      if (isAgentGone(err)) {
+        // DEBUG: the run is already gone with its agent (the cascade), so there
+        // is nothing left to repair, nothing to tombstone, and no operator
+        // action. Losing the race is the ordinary outcome of deleting an agent
+        // that had work in flight.
+        log.debug("stalled run's agent was deleted mid-pass; nothing left to schedule", {
+          slug,
+          runId,
+        });
+      } else {
+        // Anything else is unexplained, so it is worth a line — but still not
+        // worth the other tenants' repairs.
+        log.warn("could not re-enqueue a stalled run; the rest of the pass continues", {
+          slug,
+          runId,
+          error: errorMessage(err),
+        });
+      }
+    }
   }
-  await markReconciled(sql, stalled);
-  return { stalled: stalled.length };
+  // Only what really landed. A run whose enqueue failed must NOT be stamped:
+  // the stamp buys a full `STALL_GRACE_MS` of silence, and for the transient
+  // half of the branch above that is a window of silence for a message nobody
+  // wrote — the same argument this function's stamp-after-enqueue ordering
+  // already makes, one case finer.
+  await markReconciled(sql, scheduled);
+  return { stalled: scheduled.length, skipped };
 }

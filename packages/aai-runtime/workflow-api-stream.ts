@@ -26,6 +26,7 @@ import type { StreamOptions } from "@alexkroman1/aai/workflow-api";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import type { RunReader } from "./workflow-api-events.ts";
 import { numberParam, SSE_HEADERS, sendJson, sseFrame } from "./workflow-api-http.ts";
+import { readRunOnce } from "./workflow-run-reads.ts";
 
 /** What this route needs of the client: the run, its stream, and the stream's end. */
 export type StreamReader = RunReader & {
@@ -70,7 +71,11 @@ export async function streamRunOutput(
   engine: StreamReader,
   runId: string,
 ): Promise<void> {
-  const run = runId ? await engine.get(runId) : undefined;
+  // Through the SHARED reads, not `engine.get` — see `readRunOnce`. This is the
+  // read a watched run attracts most of (one per `useWorkflowProgress` poll, per
+  // tab, for the life of the run) and it was the one read path in this package
+  // taking a round trip of its own beside the three that share.
+  const run = runId ? await readRunOnce(engine, runId) : undefined;
   if (!run) {
     // A `missing` FRAME on a 200, not a 404 — the same answer `/events` gives,
     // and the one `workflow-api.ts`'s route table has always advertised for this

@@ -89,6 +89,18 @@ export async function serve(opts: {
   engine: () => WorkflowClient | undefined;
   token?: string;
   uploads?: UploadStore;
+  /**
+   * Called SYNCHRONOUSLY as each request arrives, before the route runs.
+   *
+   * The one thing a spec about CONCURRENT requests cannot get any other way. A
+   * `fetch` resolves when its response does, so "all four have arrived" is not
+   * observable from the client side — and over loopback against a fake that
+   * resolves in a microtask, four requests issued together are still served one
+   * after another, each finishing before the next is parsed. A spec that
+   * needs them to overlap holds the first one's read open until this has
+   * counted the rest, which is deterministic where a delay is a guess.
+   */
+  onRequest?: () => void;
 }): Promise<Harness> {
   const logger = makeLogger();
   const api = createWorkflowApi({
@@ -97,6 +109,7 @@ export async function serve(opts: {
     logger,
   });
   const server = http.createServer((req, res) => {
+    opts.onRequest?.();
     const url = requestPath(req.url);
     if (api(req, res, url, req.method ?? "GET")) return;
     res.writeHead(404).end();

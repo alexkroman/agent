@@ -293,3 +293,78 @@ describe("createPostgresDb query timeout", () => {
     expect(settled).toBe(false);
   });
 });
+
+/**
+ * The wait to GET a connection, which the two query deadlines do not cover.
+ *
+ * `sql.reserve()` queues indefinitely at exhaustion, so the first deadline to
+ * fire belonged to whoever was waiting on the request — the guest's own 10-15s
+ * request timeouts, in another process — and the caller then reported a timeout
+ * against a layer that was never reached.
+ */
+describe("createPostgresDb reserve timeout", () => {
+  /** A reservation the pool never grants: every connection is taken. */
+  const queued = () =>
+    Promise.withResolvers<{ unsafe: typeof unsafeMock; release: typeof releaseMock }>();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("a reserve that queues past reserveTimeoutMs rejects with a POOL_EXHAUSTED code", async () => {
+    reserveMock.mockReturnValueOnce(queued().promise);
+    const db = createPostgresDb({ url: "postgres://db.example/app", reserveTimeoutMs: 5000 });
+    // The code is the whole point: `aai-server`'s `UNREACHABLE_CODES` reads it
+    // and answers 503 with a `Retry-After`, where an unbounded wait produced a
+    // caller-side timeout with no status at all.
+    const assertion = expect(db.reserve()).rejects.toMatchObject({ code: "POOL_EXHAUSTED" });
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+  });
+
+  test("the ABANDONED reservation is released when the pool finally grants it", async () => {
+    // Without this the option makes the shortage PERMANENT: `pTimeout` settles
+    // the caller and leaves the driver's promise running, so every expired wait
+    // would retire one connection from a pool of four.
+    const late = queued();
+    reserveMock.mockReturnValueOnce(late.promise);
+    const db = createPostgresDb({ url: "postgres://db.example/app", reserveTimeoutMs: 5000 });
+    const assertion = expect(db.reserve()).rejects.toMatchObject({ code: "POOL_EXHAUSTED" });
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+    expect(releaseMock).not.toHaveBeenCalled();
+
+    late.resolve({ unsafe: unsafeMock, release: releaseMock });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a reserve with no reserveTimeoutMs waits forever, which the slug lock needs", async () => {
+    // Its reservations are held for a whole deploy, so a fifth concurrent
+    // distinct-slug mutation waits minutes for one LEGITIMATELY — a deadline
+    // here would fail deploys under ordinary load.
+    reserveMock.mockReturnValueOnce(queued().promise);
+    const db = createPostgresDb({ url: "postgres://db.example/app" });
+    let settled = false;
+    void db.reserve().then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(settled).toBe(false);
+  });
+
+  test("a reserve the pool can grant is unaffected by the deadline", async () => {
+    const db = createPostgresDb({ url: "postgres://db.example/app", reserveTimeoutMs: 5000 });
+    const reserved = await db.reserve();
+    reserved.release();
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+  });
+});

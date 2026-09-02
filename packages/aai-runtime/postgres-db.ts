@@ -41,6 +41,36 @@ class DbQueryTimeoutError extends Error {
 }
 
 /**
+ * The pool had no connection to RESERVE within
+ * {@link CreatePostgresDbOptions.reserveTimeoutMs}.
+ *
+ * NOT exported, for the reason {@link DbQueryTimeoutError} is not: a platform
+ * caller maps it by its stable `code` (`"POOL_EXHAUSTED"`, in `aai-server`'s
+ * `UNREACHABLE_CODES`), never by `instanceof`.
+ *
+ * ## It is a distinct condition from a slow QUERY, and saying so is the point
+ *
+ * `sql.reserve()` queues indefinitely when every connection is taken, so at
+ * exhaustion the wait was bounded by nothing here and the first deadline to fire
+ * belonged to somebody else — the guest's 15s request timeout, four layers up.
+ * The caller then saw "the journal did not answer", which is true and names the
+ * wrong layer: nothing was wrong with the journal, the request never reached it.
+ * A bounded wait can say what actually happened, and "no connection available"
+ * is a 503 with a `Retry-After` where a timeout of unknown origin is a 500.
+ *
+ * The message names the deadline rather than the pool, matching the query
+ * errors above: which bound elapsed is the actionable half, and a pool has no
+ * name a reader would recognise.
+ */
+class DbPoolExhaustedError extends Error {
+  readonly code = "POOL_EXHAUSTED";
+  constructor(milliseconds: number) {
+    super(`No pooled database connection became available within ${milliseconds}ms`);
+    this.name = "DbPoolExhaustedError";
+  }
+}
+
+/**
  * The default notice sink: quiet, but not swallowed.
  *
  * `consoleLogger.debug` is itself a no-op unless `AAI_DEBUG=1`, so a NOTICE
@@ -157,6 +187,32 @@ export type CreatePostgresDbOptions = {
    *   pool and every other platform read on the replica queues behind them.
    */
   reservedQueryTimeoutMs?: number;
+  /**
+   * Client-side deadline, in milliseconds, for ACQUIRING a reservation — the
+   * wait BEFORE the connection is held, where the two options above bound a
+   * statement running ON one. Unset leaves the wait unbounded, which is
+   * postgres.js's own behaviour and stays the DEFAULT.
+   *
+   * Set it on a pool whose reservations are SHORT and unset it on one whose
+   * reservations are long by construction — the same split
+   * {@link CreatePostgresDbOptions.reservedQueryTimeoutMs} makes, and for a
+   * sharper reason:
+   *
+   * - `aai-server`'s ADMIN pool holds a reservation for one guest platform
+   *   request, so a wait past a few seconds means the pool is exhausted rather
+   *   than busy. Unbounded, that wait is bounded by the CALLER's deadline
+   *   instead, and the caller then reports a timeout against the wrong layer —
+   *   see `DbPoolExhaustedError` in this module.
+   * - `aai-server`'s SLUG-LOCK pool holds one for a whole deploy, so a fifth
+   *   concurrent deploy legitimately waits minutes for a reservation and a
+   *   deadline here would fail it. That pool takes neither bound.
+   *
+   * A wait that expires does NOT abandon the reservation: whichever connection
+   * the driver eventually hands over is released, because a timed-out acquire
+   * that let one leak would shrink the pool by one every time it fired — which
+   * is the failure mode this option exists to relieve, made permanent.
+   */
+  reserveTimeoutMs?: number;
 };
 
 /**
@@ -207,6 +263,37 @@ export type CloseableDb = Db & {
   /** Drain and close the connection pool. The handle must not be used after. */
   close(): Promise<void>;
 };
+
+/**
+ * Take a reservation, giving up after `timeoutMs` rather than queueing forever.
+ *
+ * Its own function because the ABANDONED reservation is the whole subtlety.
+ * `pTimeout` settles the caller and does nothing to the promise underneath, so
+ * the driver still hands a connection over whenever one frees — and with nobody
+ * left to release it, every expired wait would retire one connection from the
+ * pool permanently. The late release is what keeps a shortage transient.
+ *
+ * `undefined` is the unbounded default, spelled as the absence of a deadline
+ * rather than as a very large one: a pool that must never fail an acquire (the
+ * slug lock's) is stating a property, not choosing a number.
+ */
+async function reserveWithin(
+  sql: postgres.Sql,
+  timeoutMs: number | undefined,
+): Promise<postgres.ReservedSql> {
+  if (timeoutMs === undefined) return await sql.reserve();
+  const pending = sql.reserve();
+  return await pTimeout(pending, {
+    milliseconds: timeoutMs,
+    fallback: () => {
+      void pending.then(
+        (late) => late.release(),
+        () => undefined,
+      );
+      throw new DbPoolExhaustedError(timeoutMs);
+    },
+  });
+}
 
 /**
  * Create a {@link Db} backed by a Postgres connection pool.
@@ -260,7 +347,7 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
   return {
     query: queryOn(sql, opts.queryTimeoutMs),
     async reserve(): Promise<ReservedDb> {
-      const reserved = await sql.reserve();
+      const reserved = await reserveWithin(sql, opts.reserveTimeoutMs);
       return {
         query: queryOn(reserved, opts.reservedQueryTimeoutMs),
         release: () => reserved.release(),

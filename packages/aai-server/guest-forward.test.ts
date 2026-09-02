@@ -22,6 +22,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   forwardToGuest,
+  GUEST_API_RESPONSE_HEADERS,
   GUEST_WEBHOOK_RESPONSE_HEADERS,
   NEVER_FORWARDED,
   passThroughHeaders,
@@ -425,7 +426,93 @@ describe("NEVER_FORWARDED", () => {
 });
 
 /**
- * The RESPONSE allow-list, asserted EXHAUSTIVELY rather than sampled.
+ * The API hop's RESPONSE allow-list, and the one name it was censoring.
+ *
+ * Pinned as a whole set rather than sampled, for the reason the webhook block
+ * below gives.
+ *
+ * The pre-fix FAILING observation is `returns the guest's own Retry-After`. The
+ * guest MINTS that header — `aai-runtime/workflow-api-error-status.ts` decides
+ * per condition whether a 5xx carries one (`503` + `Retry-After: 1` for a
+ * saturated connection pool, an exhausted descriptor table, or a failed hop out
+ * of the sandbox; `507` with none for a full disk, where the ABSENCE is the
+ * signal) and `workflow-api.ts` sets it. This hop dropped every one of them, so
+ * a taxonomy written to be acted on reached a deployed caller as a bare status —
+ * while the same guest reached over the WEBHOOK hop kept it. One product, two
+ * answers, decided by which proxy the request happened to take.
+ */
+describe("GUEST_API_RESPONSE_HEADERS", () => {
+  test("returns the guest's own Retry-After, so a 503 can be honoured", () => {
+    // The readers are already shipped: `retryAfter()` in `aai/sdk/step-retry.ts`,
+    // and `sdk/_upload-retry.ts`, which a browser uploading parts through
+    // `/:slug/workflows/uploads` runs on every refusal — "the far side knows
+    // something this does not" is that module's own argument for preferring it,
+    // and the far side was being censored.
+    const fromGuest = new Headers({
+      "content-type": "application/json",
+      "retry-after": "1",
+    });
+    const returned = pickHeaders(fromGuest, GUEST_API_RESPONSE_HEADERS);
+    expect(returned.get("retry-after")).toBe("1");
+    expect(returned.get("content-type")).toBe("application/json");
+  });
+
+  test("is exactly the set a caller on this hop reads", () => {
+    // Spelled as an equality over the WHOLE list: a disappearing entry is a
+    // broken caller and an appearing one is a tenant statement made on the
+    // platform's origin, and a per-name membership test sees neither.
+    expect([...GUEST_API_RESPONSE_HEADERS]).toEqual([
+      "content-type",
+      "content-length",
+      "cache-control",
+      "x-accel-buffering",
+      "retry-after",
+      "content-range",
+      "accept-ranges",
+      "content-disposition",
+    ]);
+  });
+
+  test("every entry is lower-cased, because that is what the filter compares", () => {
+    expect([...GUEST_API_RESPONSE_HEADERS].filter((h) => h !== h.toLowerCase())).toEqual([]);
+  });
+
+  test("still drops the origin-scoped headers, which Retry-After is not one of", () => {
+    // The addition is a RETRY HINT — per-response, unpersisted, read by a retry
+    // loop — so it does not touch the criterion the webhook list is built on.
+    // Asserted beside it so a later widening cannot cite this one as precedent.
+    const fromGuest = new Headers({ "content-type": "application/json" });
+    for (const name of ["set-cookie", "location", "refresh", "content-security-policy"]) {
+      fromGuest.set(name, "tenant-supplied");
+    }
+    const returned = pickHeaders(fromGuest, GUEST_API_RESPONSE_HEADERS);
+    expect([...returned.keys()]).toEqual(["content-type"]);
+  });
+
+  test("does NOT merge with the webhook list, in either direction", () => {
+    // The two now share `content-type` and `retry-after`, which is exactly when
+    // somebody proposes one list. Their UNION is not either policy — the platform
+    // buffers the webhook reply, so a length or a range there would describe
+    // bytes the runtime re-frames — and their INTERSECTION is not either policy
+    // either, since it drops `content-range` and takes the `Range` request half
+    // with it. One list is one audience, and there are two.
+    const api = new Set<string>(GUEST_API_RESPONSE_HEADERS);
+    const webhook = new Set<string>(GUEST_WEBHOOK_RESPONSE_HEADERS);
+    expect([...webhook].filter((h) => !api.has(h))).toEqual([]);
+    expect([...api].filter((h) => !webhook.has(h))).toEqual([
+      "content-length",
+      "cache-control",
+      "x-accel-buffering",
+      "content-range",
+      "accept-ranges",
+      "content-disposition",
+    ]);
+  });
+});
+
+/**
+ * The WEBHOOK hop's RESPONSE allow-list, asserted EXHAUSTIVELY rather than
+ * sampled.
  *
  * An allow-list is only auditable if the whole set is the reviewable unit, so
  * these pin the set itself and not a few members of it — an entry silently

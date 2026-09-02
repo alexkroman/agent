@@ -6215,6 +6215,9 @@ decided ONCE. That matters because the body is replayed: computing the
 deadline from the clock on every replay would push it further out each time
 and a run could sleep forever.
 
+**Call it from the BODY, never from inside a [WorkflowCtx.step](#step)** — a
+step body that waits fails the run, and the message names the fix.
+
 ```ts no-check
 await ctx.step("draft", () => draft(input.topic));
 await ctx.sleep(6 * 60 * 60 * 1000, { correlationId: "review-window" });
@@ -6258,6 +6261,13 @@ options?: StepOptions): Promise<T>;
 
 Run `fn` once and journal what it returns; on every later replay, return
 the journaled value without running it again.
+
+**`fn` may not wait.** [WorkflowCtx.sleep](#sleep) and
+[WorkflowCtx.waitFor](#waitfor) reached inside a step fail the run, because a
+suspend unwinds out of the step without journaling it — so the body would
+re-run from the top on every delivery, and every later wait in the run would
+read the wrong record. Put the wait in the body, between two steps. For a
+plain in-step delay that is not durable, use an ordinary timer.
 
 `name` identifies the step in the journal and in `aai workflow` output, so
 make it a string LITERAL. A computed one has to produce the same string on

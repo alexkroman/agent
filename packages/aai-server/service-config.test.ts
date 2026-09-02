@@ -39,6 +39,7 @@ import { GUEST_TOKEN_SECRET_ENV } from "./guest-token.ts";
 import {
   PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
   PLATFORM_DB_QUERY_TIMEOUT_MS,
+  PLATFORM_DB_RESERVE_TIMEOUT_MS,
 } from "./platform-db-errors.ts";
 import { buildPlatformDb, buildServiceConfig } from "./service-config.ts";
 import { captureLogs } from "./test-utils.ts";
@@ -155,6 +156,20 @@ describe("buildPlatformDb pool wiring", () => {
     expect(admin.connectTimeoutSeconds).toBe(PLATFORM_DB_CONNECT_TIMEOUT_SECONDS);
   });
 
+  test("the ADMIN pool bounds the ACQUIRE too, which neither query deadline covers", () => {
+    buildPlatformDb(platformEnv());
+    const { admin } = builtPools();
+    // A statement's deadline starts once a connection is in hand, so a request
+    // that never got one was bounded by nothing on this side: `reserve()` queues
+    // indefinitely, and the first deadline to fire belonged to the guest, in
+    // another process. What that produced was a timeout with no status where the
+    // honest answer is "no connection available" — a 503.
+    expect(admin.reserveTimeoutMs).toBe(PLATFORM_DB_RESERVE_TIMEOUT_MS);
+    // Under the tightest caller's own budget (`SESSION_STATE_TIMEOUT_MS`, 10s),
+    // because a bound that fires after the caller has given up answers nobody.
+    expect(admin.reserveTimeoutMs).toBeLessThan(10_000);
+  });
+
   test("the SLUG-LOCK pool leaves a reservation UNBOUNDED", () => {
     buildPlatformDb(platformEnv());
     const { slugLock } = builtPools();
@@ -164,6 +179,11 @@ describe("buildPlatformDb pool wiring", () => {
     // `lock_timeout` on the connection (`platform-lock.ts`).
     expect(slugLock.reservedQueryTimeoutMs).toBeUndefined();
     expect(slugLock.queryTimeoutMs).toBeUndefined();
+    // And the ACQUIRE is unbounded here for a sharper reason than the queries
+    // are: a fifth concurrent distinct-slug mutation waits minutes for one of
+    // this pool's four connections LEGITIMATELY, so the deadline the admin pool
+    // takes would fail deploys under ordinary load.
+    expect(slugLock.reserveTimeoutMs).toBeUndefined();
     // The CONNECT bound it does take: nothing about establishing a connection
     // is unbounded by nature.
     expect(slugLock.connectTimeoutSeconds).toBe(PLATFORM_DB_CONNECT_TIMEOUT_SECONDS);

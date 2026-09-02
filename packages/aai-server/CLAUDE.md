@@ -327,10 +327,24 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `upload-bytes.ts` / `upload-handler.ts` — `PUT/GET/HEAD /:slug/uploads/:id/:offset`,
   one WINDOW of a workflow upload's bytes. The SAME bucket as deploy blobs, under
   `uploads/` rather than `blobs/` — which is safe only because
-  `aai-sweep-blob-gc` filters `name like 'blobs/%'`; without that clause it would
-  delete every upload in the bucket on its first run, an upload having no
-  `worker_hash` to be found by. **Anything else put in this bucket owes the same
-  check.** See "A workflow upload's bytes are the PLATFORM's" below.
+  `aai-sweep-blob-gc`'s FIRST arm filters `name like 'blobs/%'`; without that
+  clause it would delete every upload in the bucket on its first run, an upload
+  having no `worker_hash` to be found by. **Anything else put in this bucket
+  owes the same check.** See "A workflow upload's bytes are the PLATFORM's".
+
+  That job now has a SECOND arm over `uploads/%`, because nothing reclaimed
+  those bytes at all — four paths each assumed another did, and past the 7-day
+  record expiry they were unreachable as well as unreclaimed, every reader
+  resolving the record before it touches a window. Its referrer is the
+  `workflow_uploads` row rather than a hash set, which is the stronger claim: an
+  object whose `(slug, id)` has no row cannot be read by construction. Because
+  that table cascades on agent delete, a deleted agent's uploads go with it and
+  `deleteAgent` does NOT grow a step — which `pg-cron-delete-parity.test.ts`
+  would fail, pinning it to exactly two store calls. The arm deletes only a key
+  it can fully parse, carries its own empty-table guard, and waits
+  `UPLOAD_ORPHAN_GRACE` (3 days) because `create` writes bytes BEFORE the row —
+  `stream` and `beginParts` do not — a gap bounded by one guest request and so
+  by `SANDBOX_TIMEOUT_SECS`, whose 86,400s ceiling the grace is 3x.
 - `deploy.ts` / `delete.ts` — deployment lifecycle.
 
   **A delete is one row and the cascades hanging off it** —
@@ -1569,6 +1583,30 @@ streaming the body, with `brokerSessionUrl`'s taxonomy. Three decisions:
 - **Per-IP limits run BEFORE the handler**, so a refused request never brokers:
   a surface limit sized for a POLLING page plus a tighter one on `POST /runs`
   counted IN ADDITION — the one route whose cost OUTLIVES its request.
+- **A DELETED agent is a 404 here, not the booting agent's 503**, and the route
+  answered 503 at BOTH of its two exits until a user hit it. `guest-bearer.ts`
+  now answers the same way for the same condition, and its docstring's defence of
+  the 503 — that a 404 would disclose existence — failed twice: the oracle was
+  already open one status over (`Bearer x` gives **401** for a slug that exists
+  and 503 for one that does not), and the neighbouring routes disclose it
+  deliberately. A redeploy cannot reach that branch either, since agent rows are
+  written `on conflict (slug) do update`, so `null` only ever means gone. `503 agent
+  unavailable, retry shortly` is advice a caller cannot act on once the row is
+  gone: every workflow table cascades off it, so there is no run to resume and no
+  sandbox that will ever answer, while the sentence spins a client's retry loop.
+  It is reachable without any race — `resolveSandbox`'s fast path serves a live
+  resident WITHOUT reading the row, so on every replica but the deleting one the
+  broker keeps succeeding for the whole time `watchAgentInvalidation`'s Realtime
+  event takes to arrive — and again as the FORWARD's own failure, which is how it
+  was reported: a delete terminates the resident mid-request and the fetch dies
+  with `fetch failed <- aborted`, indistinguishable from a crashed guest except
+  by re-reading the row. So the failure path re-reads it (one indexed read, only
+  when the forward already failed). **The answer is 404 `notFoundMessage`, never
+  410**: a delete leaves no tombstone, so a deleted slug and a slug nobody ever
+  deployed are the same absent row, and `Gone` would claim a history the platform
+  cannot support. It is also what `brokerSessionUrlOrThrow` and
+  `upload-handler.ts`'s `assertAgentExists` already answer — the bug was one
+  upload loop being told "gone" by the byte route and "retry" by this one.
 
 ### No warm pool — every spawn boots from the snapshot image
 
@@ -1703,6 +1741,35 @@ supabase-auth / warm-harness suites.
 an object, for callers that re-encode it (gzip specs). Drop to a bare
 `fetch` only when the REQUEST is the subject — a missing header, a gzipped
 body, a raw string — which is why `deployBody` stays.
+
+### A suite over a FLEET-WIDE predicate owns its database
+
+Slugs isolate the rows a test WRITES. They do nothing about the predicate that
+READS them, and the queue's predicates are all fleet-wide: `claimDue` takes due
+messages for any slug, `WORKFLOW_QUEUE_CHANNEL` carries every tenant's enqueue,
+and `findStalledRuns` scans every run under an `order by created_at` and a
+`limit`. Two suites over one database therefore corrupt each other's ANSWERS
+while each keeps its own rows perfectly, and vitest runs files in parallel.
+
+It was live: full scenario runs failed roughly one time in two, always in
+`workflow-queue-store.scenario.test.ts`, never the same cases twice. Two
+distinct mechanisms, both measured — seeding ONE stalled run under a foreign
+slug fails four of its cases on its own, because `runQueuePass` reconciles that
+run and every count then sees a row the suite did not write; and a sibling's
+older rows can fill `findStalledRuns`'s `limit` and push a suite's own run out
+of the answer, which surfaces as `expected [] to deeply equal [ 'wrun_stalled' ]`
+in a suite that did nothing wrong.
+
+`useThrowawayPlatformDb` (`_workflow-queue-test-utils.ts`) is the fix: a private
+`create database`, `ensurePlatformTables` over it, `drop database` after. Both
+queue suites take one, which is also what lets one of them call the fleet-wide
+`reconcileStalledRuns` at all. Three things follow. The schema still comes from
+`ensurePlatformTables`, never a hand-written `create table` — that is what keeps
+the FOREIGN KEYS and the unique idempotency index the SHIPPED ones. A listener
+must dial the fixture's `url()`, not `pgUrl()`, or it waits on a channel nobody
+announces to. And this is a different fix from the `aai_test_schema_ready`
+sentinel beside it: that one stops parallel suites seeing a half-built SCHEMA,
+this one stops them seeing each other's ROWS.
 
 ### Gating a suite on a real Postgres
 

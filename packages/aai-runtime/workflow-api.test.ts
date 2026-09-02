@@ -639,4 +639,43 @@ describe("GET /runs/:id/stream", () => {
     // but with the id parsed clean of the suffix.
     expect(get).toHaveBeenCalledWith("wrun_1");
   });
+
+  test("concurrent polls of ONE run share that read rather than each taking one", async () => {
+    // The read-first above is one `POST /:slug/workflow-journal` on a deployed
+    // agent, and it is the read a watched run attracts most of: a page polls
+    // this route once a second for the life of the run. Un-shared, four tabs
+    // were four of them a second competing with that run's own journal WRITES
+    // for one of the four connections a replica's admin pool allows — measured
+    // here as four reads for four requests, two now (see `readRunOnce` for why
+    // the floor is two rather than one).
+    //
+    // The client is built ONCE and returned by the getter, which is what a real
+    // deployment does — the shared reads are keyed on the reader's identity, so
+    // a harness minting a fresh one per request would measure nothing.
+    //
+    // The read is HELD until all four requests have arrived, which is the only
+    // way they overlap: against a fake resolving in a microtask, four loopback
+    // requests are served strictly one after another and there is no concurrency
+    // to collapse. That is not an artifact of the harness — it is what makes the
+    // deployed case the interesting one, where the read is a network POST and
+    // overlap is the norm.
+    const arrived = Promise.withResolvers<void>();
+    let requests = 0;
+    const get = vi.fn(async () => {
+      await arrived.promise;
+      return run();
+    });
+    const client = fakeClient({ get, streamTail: async () => -1 });
+    harness = await serve({
+      engine: () => client,
+      onRequest: () => {
+        requests += 1;
+        if (requests === 4) arrived.resolve();
+      },
+    });
+    const url = `${harness.url}/workflows/runs/wrun_1/stream`;
+    const answers = await Promise.all([fetch(url), fetch(url), fetch(url), fetch(url)]);
+    expect(answers.map((res) => res.status)).toEqual([200, 200, 200, 200]);
+    expect(get.mock.calls.length).toBe(2);
+  });
 });

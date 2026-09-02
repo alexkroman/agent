@@ -320,7 +320,13 @@ describe("the progress cursor", () => {
     // original weight, which is why that weight is 3 — a floor that is sometimes
     // right by luck is a flake, and the remedy is a generator that reaches the
     // state rather than a floor that tolerates missing it.
-    expect(reached.staleCursors, "no cursor survived a cap drop").toBeGreaterThan(3); // 6-10
+    // 3-10 over 40 runs. Floored at `> 0` rather than under the minimum: the
+    // recorded 6-10 was measured on too few runs and this counter has a long
+    // left tail, so the floor tripped on `expected 3 to be greater than 3` in 1
+    // run of 20 — a flake in the one tier that carries no `retry`. Its whole
+    // range is small, so what it is worth flooring for is the state being
+    // reached AT ALL, never how often.
+    expect(reached.staleCursors, "no cursor survived a cap drop").toBeGreaterThan(0);
   });
 
   test("the eval adapter answers what the memory store answers, for every cursor", async () => {

@@ -16,7 +16,7 @@ import { createLogger } from "./logger.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
 import { findPeerSession } from "./sandbox-peers.ts";
-import { type ResolveSandboxOpts, resolveSandbox } from "./sandbox-resolve.ts";
+import { DrainingError, type ResolveSandboxOpts, resolveSandbox } from "./sandbox-resolve.ts";
 import { isLive } from "./sandbox-slots.ts";
 
 const log = createLogger("sandbox.broker");
@@ -60,9 +60,57 @@ export async function brokerSessionUrl(
       return { ok: false, status: 503 };
     }
   }
-  const sandbox = await resolveSandbox(slug, opts);
+  const sandbox = await resolveWhileDraining(slug, opts);
+  if (sandbox === "draining") return { ok: false, status: 503 };
   if (!sandbox) return { ok: false, status: 404 };
   return await awaitBrokeredUrl(slug, sandbox, opts);
+}
+
+/**
+ * {@link resolveSandbox}, with the CONSTRUCTION guard's refusal turned into this
+ * module's own answer instead of an exception.
+ *
+ * `DrainingError`'s doc says it exists "so the broker can turn it into a
+ * retryable 503 while `handoverSlot` can treat it as leave the old resident
+ * alone — the two callers want opposite things from the same refusal." Only the
+ * second half was ever written. It is not a `SandboxUnavailableError`, so
+ * `error-handler.ts` did not classify it either, and it left this function as an
+ * unhandled rejection: `500 Internal server error`, logged as `unhandled error
+ * on /<slug>/client-config`. Both halves are wrong in the same direction — a
+ * draining replica is the most retryable condition the platform has, and a 500
+ * tells a client the request can never succeed. The studio client is the worked
+ * case: it retries 5xx and then shows "Internal server error", which is what
+ * `reportUnavailable`'s own doc records paying for once already.
+ *
+ * The early guard in {@link brokerSessionUrl} does not make this unreachable,
+ * and there are two independent ways past it:
+ *
+ * - **The flag flips inside the window.** That guard runs before an `await` on
+ *   the peer lookup AND before `resolveSandbox`'s per-slug lock, which a deploy
+ *   or a blue-green handover can hold for the length of a guest boot. Draining
+ *   is a state that begins during exactly that kind of wait.
+ * - **The guard does not run at all.** It is inside `if (!(resident &&
+ *   isLive(resident)))`, so a slug whose resident is live at this module's read
+ *   skips it — and a guest self-exiting on idle is the normal end of a sandbox's
+ *   life, so `resolveSandbox` re-reads, finds it dead, and rebuilds. That rebuild
+ *   hits the construction guard with no polite 503 anywhere ahead of it.
+ *
+ * The `"draining"` sentinel rather than a third `BrokeredSession` shape: the
+ * answer is the same 503 the early guard already returns, and giving one
+ * condition two spellings on the wire is how the taxonomy this module owns starts
+ * disagreeing with itself.
+ */
+async function resolveWhileDraining(
+  slug: string,
+  opts: ResolveSandboxOpts,
+): Promise<Sandbox | null | "draining"> {
+  try {
+    return await resolveSandbox(slug, opts);
+  } catch (err) {
+    if (!(err instanceof DrainingError)) throw err;
+    log.debug("Sandbox construction refused while draining; answering 503", { slug });
+    return "draining";
+  }
 }
 
 /**

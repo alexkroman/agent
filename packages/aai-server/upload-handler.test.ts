@@ -192,7 +192,9 @@ describe("a window of upload bytes", () => {
     // `uploads/no-such-agent-here/upl_x/0`. `slugMw` validates a slug's shape and its
     // reserved names, never its existence — so an unauthenticated caller could mint
     // unbounded prefixes in a bucket shared by every tenant, and `aai-sweep-blob-gc`
-    // matches `blobs/%` so nothing reclaims them.
+    // matched `blobs/%` so nothing reclaimed them. That second half is closed too
+    // now — the GC has an uploads arm — but this guard is what keeps the number of
+    // prefixes bounded rather than merely the lifetime of each.
     const { bytes, call } = await serve();
     const res = await call("/never-deployed/uploads/upl_abc/0", { method: "PUT", body: ramp(4) });
     expect(res.status).toBe(404);

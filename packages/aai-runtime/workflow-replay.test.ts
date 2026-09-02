@@ -11,6 +11,7 @@
 import type { WorkflowCtx } from "@alexkroman1/aai";
 import { isWorkflowSuspend } from "@alexkroman1/aai";
 import { publishStepReporter } from "@alexkroman1/aai/host-internal";
+import { WORKFLOW_SUSPEND_BRAND } from "@alexkroman1/aai/internal";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
@@ -585,57 +586,46 @@ describe("a body that swallows its own suspend", () => {
   });
 });
 
-describe("a suspend thrown from INSIDE a step", () => {
-  // Out of contract — a step cannot wait, which is what makes it the unit this
-  // engine can neither interrupt nor un-journal — and trivially reachable
-  // anyway, because the closure a step is handed captures `ctx`. Before this the
-  // attempt loop read a `SuspendSignal` as an ordinary retryable error: the body
-  // ran once per attempt, each run minted a DISTINCT sleep record (the wait's
-  // identity diverging with the counter), and the loop journaled
-  // `{status: "failed", error: "workflow suspended"}` — an entry that is
-  // authoritative forever, so every later replay answers the wait as a failure.
+describe("a suspend that reaches a step's attempt loop anyway", () => {
+  // A step CANNOT wait: `ctx.sleep` and `ctx.waitFor` refuse inside one, because
+  // a suspend unwinds out of the step without journaling it and the body then
+  // re-runs from the top on every delivery — see `workflow-replay-wait.ts`, and
+  // `workflow-replay-wait.test.ts` for the refusal itself.
+  //
+  // So no shipped path reaches the attempt loop's suspend arm any more, and it
+  // stays as depth: a suspend is not a verdict, and the one thing that must never
+  // happen is journaling it. Before either fix the loop read it as an ordinary
+  // retryable error and appended `{status: "failed", error: "workflow suspended"}`
+  // — an entry authoritative FOREVER, so every later replay answered the wait as
+  // a failure. Driven here with a hand-branded signal rather than through `ctx`,
+  // which is the only way in now.
 
-  test("propagates untouched, journaling nothing and running the body ONCE", async () => {
+  /** A suspend as the engine's own predicate sees it — brand, not class. */
+  function brandedSuspend(): Error {
+    const err = new Error("workflow suspended");
+    Object.defineProperty(err, WORKFLOW_SUSPEND_BRAND, { value: true, enumerable: false });
+    return err;
+  }
+
+  test("propagates untouched, journaling nothing and giving the attempt back", async () => {
     const { journal } = await seed();
-    const claimSleep = vi.spyOn(journal, "claimSleep");
-    const waiting = vi.fn(async (ctx: WorkflowCtx) => {
-      await ctx.sleep(60_000);
+    const waiting = vi.fn(() => {
+      throw brandedSuspend();
     });
 
-    const outcome = await replay(journal, async (_input, ctx) =>
-      ctx.step("waiting", () => waiting(ctx)),
-    );
+    const outcome = await replay(journal, async (_input, ctx) => ctx.step("waiting", waiting));
 
     expect(outcome.kind).toBe("suspended");
-    // Once, not once per attempt — and so ONE wait rather than `sleep!0/1/2`.
+    // Once, not once per attempt.
     expect(waiting).toHaveBeenCalledTimes(1);
-    expect(claimSleep.mock.calls.map((call) => call[1])).toEqual(["sleep!0"]);
     // Nothing journaled. A `failed` entry here would answer the wait as a
     // failure on every replay from now on.
     expect(await journal.readSteps("wrun_1")).toEqual([]);
     // And the attempt is GIVEN BACK, so this delivery consumed none of the
-    // budget: the next claim is 1, as it would be on a step never reached.
-    //
-    // It used to be 2, and that one number was the defect. A charge is only ever
-    // spent by an attempt that never ENDED — see "An attempt is a LEASE" in
-    // `workflow-replay-step.ts`. A suspend ends one, so three deliveries of a
-    // step whose body sleeps used to burn three of a budget of three, and the
-    // fourth reach journaled `failed` over a step that then succeeded.
+    // budget: the next claim is 1, as it would be on a step never reached. A
+    // charge is only ever spent by an attempt that never ENDED — see "An attempt
+    // is a LEASE" in `workflow-replay-step.ts`.
     expect(await journal.claimAttempt("wrun_1", "waiting#0")).toBe(1);
-  });
-
-  test("resumes on the next delivery instead of failing the run", async () => {
-    const { journal } = await seed();
-    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) =>
-      ctx.step("waiting", async () => {
-        await ctx.sleep(60_000);
-        return "waited";
-      });
-
-    expect((await replay(journal, body)).kind).toBe("suspended");
-    expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(1);
-    // The SAME wait key, so the wake reaches it and the step settles.
-    expect(await replay(journal, body)).toEqual({ kind: "completed", output: "waited" });
   });
 });
 

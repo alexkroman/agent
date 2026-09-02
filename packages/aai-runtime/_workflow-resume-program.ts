@@ -14,7 +14,7 @@
  *
  * ## What the grammar deliberately does NOT generate
  *
- * Three shapes whose non-determinism belongs to the AUTHOR rather than to the
+ * Four shapes whose non-determinism belongs to the AUTHOR rather than to the
  * engine, and which would therefore produce false findings. A wait inside a
  * FAN-OUT: sleeps and hooks are keyed positionally (`sleep!N` by reach order),
  * so two branches racing to reach one key the same wait differently on two
@@ -24,9 +24,20 @@
  * by `workflow-replay.test.ts`, but a generated one would swallow the abort a
  * simulated crash is made of and turn it into a run failure.
  *
+ * The fourth is a wait inside a STEP, which used to be generated as `nestedWait`
+ * and is now a program the engine REFUSES — `workflow-replay-wait.ts` carries
+ * both bugs it produced. It is the same positional-key argument as the fan-out
+ * exclusion above, arriving by the other door: a settled step's body is not
+ * re-executed, so its wait stops being reached and every later wait in the run
+ * slides one place down the key space. What that node was the 10-out-of-10
+ * regression for — a suspend RELEASING its attempt charge — is now covered
+ * deterministically instead, in `workflow-replay.test.ts` under "a suspend that
+ * reaches a step's attempt loop anyway", because no generated body can reach
+ * that arm through `ctx` any more.
+ *
  * ## An orchestrating step body is not COUNTED work
  *
- * `nested` and `nestedWait` wrap other steps in an outer `ctx.step`, whose entry
+ * `nested` wraps other steps in an outer `ctx.step`, whose entry
  * is not written until its children's are — so a crash inside one re-runs the
  * outer body on resume. That is honest at-least-once behaviour of nesting rather
  * than a defect, so the outer body performs no counted work: the exactly-once
@@ -59,8 +70,7 @@ export type Node =
   | { readonly t: "hook"; readonly token: string; readonly mode: HookMode }
   | { readonly t: "all"; readonly children: readonly Leaf[] }
   | { readonly t: "map"; readonly width: number; readonly children: readonly Leaf[] }
-  | { readonly t: "nested"; readonly name: string; readonly children: readonly Leaf[] }
-  | { readonly t: "nestedWait"; readonly name: string };
+  | { readonly t: "nested"; readonly name: string; readonly children: readonly Leaf[] };
 
 /** A whole generated body. */
 export type Program = readonly Node[];
@@ -94,7 +104,6 @@ export function label(program: Program): Program {
       case "flaky":
       case "boom":
       case "loop":
-      case "nestedWait":
         return { ...node, name: next() };
       case "sleep":
         return node;
@@ -142,7 +151,6 @@ function nodeValue(node: Node): unknown {
     case "loop":
       return Array.from({ length: node.count }, (_unused, i) => i);
     case "sleep":
-    case "nestedWait":
       return null;
     case "hook":
       return node.mode === "timeout" ? undefined : { ok: node.token };
@@ -245,11 +253,6 @@ async function runNode(node: Node, ctx: GeneratedCtx, rec: Recorder): Promise<un
         const inner: unknown[] = [];
         for (const child of node.children) inner.push(await runLeaf(child, ctx, rec));
         return inner;
-      });
-    case "nestedWait":
-      return ctx.step(node.name, async () => {
-        await ctx.sleep(WAIT_MS);
-        return null;
       });
     default:
       return unreachable(node);

@@ -26,7 +26,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { type EventSink, streamRunEvents } from "./workflow-api-events.ts";
 import { WORKFLOW_WAIT_POLL_MS, waitForRun } from "./workflow-api-wait.ts";
 import { createRunNotifier } from "./workflow-notify.ts";
-import { createRunReads, isRunWatchClosed, type RunReader } from "./workflow-run-reads.ts";
+import {
+  createRunReads,
+  isRunWatchClosed,
+  type RunReader,
+  readRunOnce,
+} from "./workflow-run-reads.ts";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -356,5 +361,53 @@ describe("the registry crosses copies of this package", () => {
     expect(second.get).toHaveBeenCalledTimes(1);
     a.close();
     b.close();
+  });
+});
+
+/**
+ * The ONE-SHOT half. Three loops were sharing; the two ROUTES that read a run
+ * once and answer were not, and they are the reads a watched run attracts most
+ * of — `useWorkflowProgress` polls `GET /runs/:id/stream` once a second for the
+ * life of a run, and every one of those was a platform round trip of its own
+ * beside the ones the loops above were already collapsing.
+ */
+describe("readRunOnce", () => {
+  test("six concurrent one-shot reads of a run cost TWO round trips, not six", async () => {
+    // TWO rather than one because that is what the coalescing runner promises:
+    // a trigger arriving mid-run cannot be vouched for by a run that started
+    // before it, so the batch after the first read shares ONE trailing read
+    // however many of them there are. The number that matters is that it does
+    // not grow with the readers — six before, two now, and the same two at
+    // sixty.
+    const runs = { get: vi.fn(async () => snapshot()) };
+    const answers = await Promise.all(Array.from({ length: 6 }, () => readRunOnce(runs, "wrun_1")));
+    expect(answers).toEqual(Array.from({ length: 6 }, () => snapshot()));
+    expect(runs.get).toHaveBeenCalledTimes(2);
+  });
+
+  test("it answers a watching stream's next observation for free", async () => {
+    // The deployed shape: a page holding an SSE stream open AND polling the
+    // output route beside it. The poll's read is taken on this call, and the
+    // stream's pending waiter is drained into it rather than costing a tick of
+    // its own — which is what "answered EARLY than asked is always legal" buys.
+    const runs = { get: vi.fn(async () => snapshot()) };
+    const stream = streamRunEvents(sink(), runs, "wrun_1");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs.get).toHaveBeenCalledTimes(1);
+
+    await readRunOnce(runs, "wrun_1");
+    expect(runs.get).toHaveBeenCalledTimes(2);
+    // And the stream did not then take one anyway.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs.get).toHaveBeenCalledTimes(2);
+    stream.close();
+  });
+
+  test("a failed read reaches the caller rather than the watch's own teardown", async () => {
+    // The `finally` closes the watch on this path too, and a close rejects any
+    // waiter still pending — so a one-shot reader that closed before reading
+    // its own answer would report `Run watch closed` for every lost database.
+    const runs = { get: vi.fn(async () => Promise.reject(new Error("journal 503"))) };
+    await expect(readRunOnce(runs, "wrun_1")).rejects.toThrow("journal 503");
   });
 });
