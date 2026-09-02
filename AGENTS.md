@@ -1162,16 +1162,26 @@ flag is OFF. So "it is private, therefore it owes an empty changeset" is wrong
 — and it was believed for a whole session's worth of `aai-server` work, which
 matters because of what that version gates.
 
-**`ship.yml`'s deploy used to fire only on a server VERSION bump**, and both
-server packages bump only as DEPENDENTS of an SDK release
-(`updateInternalDependencies: "patch"`). So a commit touching only
-`aai-server` moved no version line and shipped nothing: #1341 rewrote most of
-the platform, took `deploy=false`, and reached production only because a
-Version Packages commit happened to land behind it. The gate now also arms on
-a change under `packages/aai-server/**` or `packages/aai-studio-server/**` —
-the version bump was a proxy, that is the thing itself. Any branch arming
-`deploy` must arm `migrate` with it, since the deploy job waits on migrate with
-a plain condition; `ship-workflow-gate.test.ts` pins both halves.
+**`ship.yml`'s deploy fires on a server VERSION bump, and NOT on a server
+source change.** A source-diff arm over `packages/aai-server/**` /
+`packages/aai-studio-server/**` was added (#1343) and is reverted: it made a
+production rollout the consequence of a MERGE rather than of a RELEASE, so
+every server PR deployed on its own, several times a day — a rolling Modal
+rollout plus a migration job each, with no release to name in an incident.
+The symptom it was written for is real (#1341 rewrote most of the platform,
+moved no version line, and reached production only because a Version Packages
+commit happened to land behind it) and the remedy is a CHANGESET: both server
+packages are `private`, `privatePackages: { version: true }` means a changeset
+may name them and the version really moves, so a server-only change ships the
+way everything else does. That is the same model `guard-invariants` rule 20's
+`SHIPS_VIA` table is built on, which is why an `aai-studio-client` or
+`aai-guest` change must already name a carrier — a server-source diff would
+not have covered either. To ship a merged server change without waiting for a
+release, dispatch `ship.yml` with `deploy: true`.
+
+Any branch arming `deploy` must arm `migrate` with it, since the deploy job
+waits on migrate with a plain condition; `ship-workflow-gate.test.ts` pins that
+and that the reverted arm stays reverted.
 
 ### Testing
 

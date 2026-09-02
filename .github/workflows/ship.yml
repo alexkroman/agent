@@ -416,6 +416,32 @@ jobs:
   # reason to deploy: aai-server is the platform core the app is built from, and
   # aai-studio-server is the entry it actually runs. Gating on aai-server alone
   # would silently strand every studio-only release.
+  #
+  # ## A VERSION BUMP is what arms a deploy — not a source change
+  #
+  # An arm on `git diff --name-only … packages/aai-server/**
+  # packages/aai-studio-server/**` was added (#1343) and is REVERTED. It was
+  # correct about the symptom — #1341 rewrote most of the platform, moved no
+  # version line, and reached production only because a Version Packages commit
+  # happened to land behind it — and wrong about the remedy: it made a
+  # production rollout the consequence of a MERGE rather than of a RELEASE.
+  # Every server PR then deployed on its own, several times a day, each one a
+  # rolling Modal rollout plus a migration job, with no release to name in an
+  # incident and nothing batching them.
+  #
+  # So a version bump is the gate, and it is a DECISION rather than a proxy:
+  # shipping the platform is something a release does. A server-only change
+  # reaches production the same way every other change does — a changeset naming
+  # `aai-server` or `aai-studio-server` (both are `private`, and
+  # `privatePackages: { version: true }` means a changeset may name them and the
+  # version really moves), then the Version Packages PR. `guard-invariants`
+  # rule 20's `SHIPS_VIA` table is built on exactly this model, which is why
+  # `aai-studio-client` and `aai-guest` changes are already required to name a
+  # carrier: neither is covered by a server-source diff either.
+  #
+  # To ship a merged server change WITHOUT waiting for a release, dispatch this
+  # workflow with `deploy: true`. That is the escape hatch, and it is one a
+  # human chose.
   changed:
     runs-on: ubuntu-latest
     outputs:
@@ -455,31 +481,6 @@ jobs:
           # applied. Otherwise a schema-only PR lands, deploys nothing, migrates
           # nothing, and the next unrelated release is what discovers it.
           if git diff --name-only HEAD^ HEAD -- 'supabase/migrations/**' | grep -q .; then
-            migrate=true
-          fi
-          # ...and a SERVER SOURCE change still has to be deployed, which the
-          # version check above cannot see. Both server packages are `private`,
-          # so changesets bumps them only as DEPENDENTS of an SDK release
-          # (`updateInternalDependencies: patch`) — so a pull request touching
-          # only `aai-server` moves no version line, takes `deploy=false`, and
-          # never ships. The version bump is a PROXY for "the server needs
-          # deploying"; this is the thing itself. It is not hypothetical: every
-          # platform fix in #1341 — the rate limiters that were passed to
-          # nothing, the upload-bytes GC, the 404 taxonomy, the queue-pass
-          # isolation — deployed on the Version Packages commit BEHIND it
-          # rather than on its own merit, and would not have deployed at all
-          # had that release not been sitting there.
-          #
-          # `migrate=true` with it, for the reason the bump branch states: the
-          # deploy job waits on `migrate` with a plain condition and no
-          # run-regardless escape, so a SKIPPED migrate skips the deploy
-          # whatever this output says. Setting only `deploy` here would be a
-          # silent no-op. (Spelled in prose deliberately — `ship-workflow-gate`
-          # forbids the escape hatch's literal name anywhere in this file, and
-          # a text scan cannot tell a comment from a condition.)
-          if git diff --name-only HEAD^ HEAD -- \
-               'packages/aai-server/**' 'packages/aai-studio-server/**' | grep -q .; then
-            deploy=true
             migrate=true
           fi
           echo "deploy=$deploy" >> "$GITHUB_OUTPUT"

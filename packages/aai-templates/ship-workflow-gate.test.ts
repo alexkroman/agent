@@ -108,23 +108,54 @@ describe("the ordering is declared, not polled", () => {
 
 describe("what arms a deploy", () => {
   /**
-   * The `changed` job decides whether the platform ships, and a VERSION BUMP is
-   * only a proxy for that. Both server packages are `private`, so changesets
-   * bumps them exclusively as dependents of an SDK release
-   * (`updateInternalDependencies: patch`) — so a commit touching only
-   * `aai-server` moves no version line. Measured on the real history:
-   * `dd699c71`, which merged #1341 and rewrote most of the platform, took
-   * `deploy=false` and shipped nothing of its own; it deployed only because a
-   * Version Packages commit happened to land behind it.
+   * The `changed` job's `diff` step, which is the whole decision.
+   *
+   * The STEP, not the job — the header comment above it argues at length about
+   * the source-path arm and names the very globs the assertion below forbids,
+   * which is the comment-versus-condition problem this file already works
+   * around for the deleted waiters. Every caller therefore asserts something
+   * PRESENT as well, since an empty slice satisfies a `not.toContain` for free.
    */
-  test("a server SOURCE change arms the deploy, not just a version bump", () => {
+  function diffStep(): string {
     const source = workflow ?? "";
     const diff = source.slice(source.indexOf("      - id: diff"));
-    const step = diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
-    for (const pkg of ["packages/aai-server/**", "packages/aai-studio-server/**"]) {
-      expect(step, `${pkg} does not arm a deploy, so a server-only change never ships`).toContain(
-        pkg,
-      );
+    return diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
+  }
+
+  /**
+   * A version bump is what ships the platform, and BOTH server packages count.
+   * There is one Modal app serving both surfaces from the aai-studio-server
+   * entry, so gating on `aai-server` alone strands every studio-only release.
+   */
+  test("a version bump to either server package arms the deploy", () => {
+    const step = diffStep();
+    expect(step).toContain("deploy=false");
+    expect(step).toContain("bumped aai-server");
+    expect(step).toContain("bumped aai-studio-server");
+  });
+
+  /**
+   * #1343 armed the deploy off a source diff over `packages/aai-server/**` and
+   * `packages/aai-studio-server/**`, and it is reverted: it made a production
+   * rollout the consequence of a MERGE rather than of a RELEASE, so every
+   * server PR deployed on its own, several times a day, with no release to
+   * name. The remedy is a changeset naming a server package — which is the
+   * model `guard-invariants` rule 20's `SHIPS_VIA` table is already built on,
+   * and why an `aai-studio-client` or `aai-guest` change must name a carrier.
+   *
+   * Asserted because the symptom it was written for is real and documented, so
+   * the arm is the first thing a reader of that history re-adds.
+   */
+  test("a server SOURCE change alone does not arm the deploy", () => {
+    const step = diffStep();
+    expect(step, "the diff step no longer slices out — the shape of this job moved").toContain(
+      "deploy=false",
+    );
+    for (const glob of ["packages/aai-server/**", "packages/aai-studio-server/**"]) {
+      expect(
+        step,
+        `${glob} arms a deploy, so every server merge ships instead of every release`,
+      ).not.toContain(glob);
     }
   });
 
@@ -136,13 +167,11 @@ describe("what arms a deploy", () => {
    * ABSENT line rather than a wrong one.
    */
   test("every branch that arms a deploy also arms the migration", () => {
-    const source = workflow ?? "";
-    const diff = source.slice(source.indexOf("      - id: diff"));
-    const step = diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
+    const step = diffStep();
     const arms = step.match(/^ *deploy=true$/gm) ?? [];
     const migrates = step.match(/^ *migrate=true$/gm) ?? [];
     expect(arms.length, "no branch arms a deploy — the scan has stopped matching").toBeGreaterThan(
-      1,
+      0,
     );
     expect(
       migrates.length,
