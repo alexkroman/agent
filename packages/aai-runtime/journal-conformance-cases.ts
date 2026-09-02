@@ -184,6 +184,39 @@ export function journalRunConformance(arm: JournalArm): void {
         expect(run?.input).toBeNull();
       });
 
+      test("a run started under a bundle reads that version back", async () => {
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        const codeVersion = "a".repeat(64);
+        await journal.createRun(runOf({ runId, codeVersion }));
+        expect((await journal.getRun(runId))?.codeVersion).toBe(codeVersion);
+      });
+
+      test("a run started with NO bundle version reads back ABSENT, not empty", async () => {
+        // The distinction the divergence message rests on. Off the platform
+        // there is no bundle hash at all, so a backend answering `""` or `null`
+        // here would compare unequal to every real version and have the message
+        // report a redeploy on a run that never had one — asserting as a fact
+        // the one cause it should have ruled out.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId, codeVersion: undefined }));
+        expect((await journal.getRun(runId))?.codeVersion).toBeUndefined();
+      });
+
+      test("listRuns carries the bundle version, not only getRun", async () => {
+        // Its own case because the two reads are two SQL statements per backend
+        // and only one of them is exercised by everything else here: a column
+        // added to the `getRun` select and forgotten in `listRuns` reads back as
+        // absent from the listing, which is indistinguishable from a run that
+        // never had one. Caught exactly that way while writing this.
+        const journal = arm.journal();
+        const { runId, workflow } = keysFor(arm);
+        const codeVersion = "b".repeat(64);
+        await journal.createRun(runOf({ runId, workflow, codeVersion }));
+        expect((await journal.listRuns(workflow, 10))[0]?.codeVersion).toBe(codeVersion);
+      });
+
       test("a VOID workflow completes: an undefined output is not a driver error", async () => {
         // postgres.js refuses an undefined parameter outright, so a body that
         // returns nothing — ordinary, for one that exists to do side effects —

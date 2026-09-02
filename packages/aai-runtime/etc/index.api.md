@@ -459,6 +459,7 @@ type RunRecord = {
     error?: {
         message: string;
     } | undefined;
+    codeVersion?: string | undefined;
 };
 
 // @public

@@ -70,7 +70,7 @@ import {
 } from "./journal-conformance.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { createPlatformJournal } from "./workflow-journal-platform.ts";
-import type { JournalStore, RunStatus } from "./workflow-journal-types.ts";
+import type { JournalStore, RunRecord, RunStatus } from "./workflow-journal-types.ts";
 import { JournalConflictError } from "./workflow-journal-types.ts";
 
 /* -------------------------------------------------------------------------- */
@@ -184,6 +184,28 @@ function statuses(body: Body, key: string): readonly RunStatus[] | undefined {
  * `?? null` on an absent answer, the same booleans and numbers. What it does NOT
  * mirror is the SQL below it — see this file's header for why.
  */
+/**
+ * One run on the wire, the shape `platform-workflow-journal.ts`'s `toRun` builds.
+ *
+ * ONE function for both read arms, because the real store has one and this fake
+ * had the field list written out twice — so a field added to `getRun` and
+ * forgotten in `listRuns` made this arm report a listing that drops it as green.
+ * `codeVersion` was exactly that, caught by the conformance case that asserts
+ * `listRuns` carries it.
+ */
+function runRow(run: RunRecord): Record<string, unknown> {
+  return {
+    runId: run.runId,
+    workflow: run.workflow,
+    status: run.status,
+    createdAt: run.createdAt,
+    input: text(run.input),
+    output: text(run.output),
+    error: run.error?.message,
+    codeVersion: run.codeVersion,
+  };
+}
+
 function serve(store: JournalStore, method: string, body: Body): Promise<unknown> {
   switch (method) {
     case "createRun":
@@ -196,34 +218,15 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
           // The ENCODED text, stored verbatim the way a `jsonb` column does. The
           // platform never sees a decoded value and this fake must not either.
           input: optStr(body, "input"),
+          codeVersion: optStr(body, "codeVersion"),
         })
         .then(() => null);
     case "getRun":
-      return store.getRun(str(body, "runId")).then((run) =>
-        run
-          ? {
-              runId: run.runId,
-              workflow: run.workflow,
-              status: run.status,
-              createdAt: run.createdAt,
-              input: text(run.input),
-              output: text(run.output),
-              error: run.error?.message,
-            }
-          : null,
-      );
+      return store.getRun(str(body, "runId")).then((run) => (run ? runRow(run) : null));
     case "listRuns":
-      return store.listRuns(str(body, "workflow"), int(body, "limit")).then((runs) =>
-        runs.map((run) => ({
-          runId: run.runId,
-          workflow: run.workflow,
-          status: run.status,
-          createdAt: run.createdAt,
-          input: text(run.input),
-          output: text(run.output),
-          error: run.error?.message,
-        })),
-      );
+      return store
+        .listRuns(str(body, "workflow"), int(body, "limit"))
+        .then((runs) => runs.map(runRow));
     case "setStatus": {
       const error = optStr(body, "error");
       // The route always builds a patch object, and the statement under it

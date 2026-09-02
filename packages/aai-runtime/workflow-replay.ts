@@ -64,6 +64,7 @@
 
 import { DEFAULT_STEP_MAX_ATTEMPTS, type StepOptions, type WorkflowCtx } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { describeCodeChange } from "./workflow-code-version.ts";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { createDeterminismReads } from "./workflow-replay-determinism.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
@@ -108,6 +109,15 @@ export type ReplayOptions = {
   input: Record<string, unknown>;
   /** The body. Looked up by the caller, which owns the registry. */
   run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown;
+  /**
+   * The run record's `codeVersion` — which bundle the run was STARTED against.
+   *
+   * Read for one purpose: a divergence message that states whether the code
+   * moved instead of handing the reader a test. Absent means unknown (a run
+   * predating the field, or a server with no bundle hash), and an unknown must
+   * never read as unchanged — `workflow-code-version.ts` carries why.
+   */
+  startedUnder?: string | undefined;
   journal: JournalStore;
   /**
    * This walk's step snapshot, already in flight.
@@ -234,7 +244,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // What this walk has read out of the journal, and whether reaching a key the
   // run never reached is evidence the body has lost its place. Seeded from the
   // read above and from nothing this walk appends — see the module.
-  const divergence = watchDivergence(entries);
+  const divergence = watchDivergence(entries, describeCodeChange(options.startedUnder));
 
   // How many times each NAME has been reached in this execution. Reset per call
   // because it is a property of the walk, not of the run — a replay walks the

@@ -104,7 +104,20 @@ describe("every jsonb binding casts through text", () => {
       createdAt: 1,
       input: { topic: "otters" },
     });
-    expect(issued[0]?.params.at(-1)).toBe('{"topic":"otters"}');
+    // By MEMBERSHIP rather than by position. This read `params.at(-1)` and
+    // broke the day `code_version` was appended to the insert — a false failure
+    // about a parameter this test is not about. `toContain` compares with
+    // `Object.is`, so a re-parsed object still would not match the string, which
+    // is the whole claim.
+    expect(issued[0]?.params).toContain('{"topic":"otters"}');
+    // Stated POSITIVELY — every parameter is something the driver binds as-is.
+    // The negative spelling (`typeof p === "object" && p !== null`) is an
+    // open-coded record guard, which `guard-invariants` rule 17 counts, and
+    // `isRecord` is not the remedy here: it excludes arrays, and an array
+    // parameter would be just as wrong as an object.
+    const bindable = (value: unknown) =>
+      value === null || typeof value === "string" || typeof value === "number";
+    expect(issued[0]?.params.every(bindable)).toBe(true);
   });
 });
 

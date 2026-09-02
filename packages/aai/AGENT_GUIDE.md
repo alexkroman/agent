@@ -600,10 +600,10 @@ Five things worth knowing:
   closing window is an outcome to branch on, not a failure, and the engine closes
   the hook as it shuts so a late answer cannot change what already happened.
 - **Racing the two WORKS, and is still not how to put a deadline on a wait.** A
-  wait no longer unwinds the stack — it hands back a promise that never settles —
-  so the body reaches every wait a `race` or an `all` puts in front of it and the
-  run suspends once, on the earliest deadline among them. Reach for a race when
-  the two waits are genuinely independent (a review window beside a retry
+  wait no longer unwinds the stack — it hands back a promise that never settles
+  — so the body reaches every wait a `race` or an `all` puts in front of it and
+  the run suspends once, on the earliest deadline among them. Reach for a race
+  when the two waits are genuinely independent (a review window beside a retry
   backoff). For a deadline ON a wait, use `timeoutMs`: it is journaled WITH the
   hook, so one decision fixes the window, and its timeout arm CLOSES the hook
   before the body continues — a race has no such moment, and a signal landing

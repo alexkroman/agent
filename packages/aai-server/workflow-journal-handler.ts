@@ -268,6 +268,7 @@ function plan(method: Method, slug: string, body: Record<string, unknown>): Plat
         status: requiredString(body, "status"),
         createdAt: requiredInt(body, "createdAt"),
         input: optionalString(body, "input"),
+        codeVersion: optionalString(body, "codeVersion"),
       };
       return async (sql) => {
         await journal.createRun(sql, slug, run);

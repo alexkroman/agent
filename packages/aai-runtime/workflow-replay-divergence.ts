@@ -75,6 +75,7 @@
  * `sdk/map-concurrent.ts` owns that rule and states it in place.
  */
 
+import type { CodeChange } from "./workflow-code-version.ts";
 import type { StepEntry } from "./workflow-journal-types.ts";
 
 /**
@@ -100,6 +101,44 @@ export class ReplayDivergenceError extends Error {
 }
 
 /**
+ * The second half of the diagnosis: which of the two causes the RUN RECORD rules
+ * out.
+ *
+ * `divergedMessage` below names both keys and then hands the reader a test to
+ * run against their own source, because the engine cannot tell a renamed step
+ * from a computed one — determinism is a fact about how a value was PRODUCED and
+ * a journal holds only what it was. What the record CAN settle is whether the
+ * code moved at all, and each of the three answers is worth a different
+ * sentence: `changed` states the redeploy and names both bundles, `same`
+ * eliminates it and leaves non-determinism as the only remaining cause, and
+ * `unknown` says nothing — which is the honest answer for a run started before
+ * the field existed, or walked by a server with no bundle hash, and is why
+ * `describeCodeChange` answers a verdict rather than a boolean.
+ */
+function codeSentence(code: CodeChange): string {
+  if (code.kind === "changed") {
+    return (
+      "\nThe run record settles which cause this is: this run STARTED against " +
+      `bundle ${code.startedUnder} and is being walked by ${code.current}, so ` +
+      "the code changed while it was in flight. Drain in-flight runs before " +
+      "deploying a change to a workflow body, or let them fail."
+    );
+  }
+  if (code.kind === "same") {
+    return (
+      "\nThe run record RULES OUT a redeploy: this run started against bundle " +
+      `${code.version} and is being walked by the same one, so the body itself ` +
+      "is non-deterministic. Look for the computed name."
+    );
+  }
+  return (
+    "\nThe run record cannot say which cause this is — it carries no code " +
+    "version (a run started before the field existed, or a server with no " +
+    "bundle hash, such as `aai dev`)."
+  );
+}
+
+/**
  * What to say when a walk minted a key the run has never reached.
  *
  * **Names BOTH keys, because that is the whole diagnosis.** The engine cannot
@@ -107,8 +146,19 @@ export class ReplayDivergenceError extends Error {
  * value was PRODUCED, and a journal holds only what it was — but the reader can,
  * in one look at their own source, and the two causes want opposite fixes. So
  * the message states the pair and hands over the test rather than guessing.
+ *
+ * The guess is NARROWER than it was: {@link codeSentence} appends what the run
+ * record knows about the code, which eliminates one of the two causes whenever
+ * the version is recorded on both sides. The two-cause fork stays in the text
+ * regardless, because it is what tells the reader what to look FOR.
  */
-function divergedMessage(key: string, name: string, displaced: string, remaining: number): string {
+function divergedMessage(
+  key: string,
+  name: string,
+  displaced: string,
+  remaining: number,
+  code: CodeChange,
+): string {
   return (
     `Workflow replay diverged: this walk reached step "${name}" as journal key ` +
     `${key}, which no earlier walk ever reached, while ${remaining} journaled ` +
@@ -123,7 +173,8 @@ function divergedMessage(key: string, name: string, displaced: string, remaining
     "as a literal, the name was COMPUTED and the BODY is non-deterministic — a " +
     "clock, a random number, a uuid or a network read ran outside a ctx.step and " +
     "answered differently on this walk. Move it inside a step and use the " +
-    "journaled value."
+    "journaled value." +
+    codeSentence(code)
   );
 }
 
@@ -176,7 +227,14 @@ export type DivergenceWatch = {
  * about the PREVIOUS walk rather than about this one, and why a FIRST execution
  * cannot false-positive: its journal is empty, so every call answers `undefined`.
  */
-export function watchDivergence(entries: readonly StepEntry[]): DivergenceWatch {
+export function watchDivergence(
+  entries: readonly StepEntry[],
+  // The default is the UNKNOWN verdict rather than a read of the environment: a
+  // caller that has no run record — a spec driving a body, a harness — must get
+  // silence about the code, never a comparison against a version it never
+  // recorded. `replayRun` is the one production caller and it always passes one.
+  code: CodeChange = { kind: "unknown" },
+): DivergenceWatch {
   const unread = [...entries];
   const unreadKeys = new Set(unread.map((entry) => entry.key));
   /** The latest `finishedAt` among the entries this walk has ANSWERED, or -1. */
@@ -217,7 +275,9 @@ export function watchDivergence(entries: readonly StepEntry[]): DivergenceWatch 
       }
       const skipped = displaced();
       if (skipped === undefined) return;
-      return new ReplayDivergenceError(divergedMessage(key, name, skipped.key, unreadKeys.size));
+      return new ReplayDivergenceError(
+        divergedMessage(key, name, skipped.key, unreadKeys.size, code),
+      );
     },
     answeredLate(entry) {
       readThrough = Math.max(readThrough, entry.finishedAt);

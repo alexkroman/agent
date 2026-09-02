@@ -189,6 +189,11 @@ function toRun(value: unknown): RunRecord | undefined {
     input: decode(value.input),
     output: decode(value.output),
     error: errorOf(value.error),
+    // A DIAGNOSTIC, so an absent or non-string value reads as unknown rather
+    // than being coerced: `String(undefined)` is `"undefined"`, which would
+    // compare unequal to every real bundle hash and make the divergence message
+    // report a redeploy on a run that never had one.
+    ...(typeof value.codeVersion === "string" ? { codeVersion: value.codeVersion } : {}),
   };
 }
 
@@ -262,6 +267,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
         status: record.status,
         createdAt: record.createdAt,
         input: encode(record.input),
+        codeVersion: record.codeVersion,
       });
     },
 

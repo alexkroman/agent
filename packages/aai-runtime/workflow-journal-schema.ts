@@ -57,7 +57,8 @@ const CREATE_RUNS = (t: string) => `create table if not exists ${t} (
   created_at bigint not null,
   input jsonb,
   output jsonb,
-  error text
+  error text,
+  code_version text
 )`;
 
 /**
@@ -83,6 +84,9 @@ const CREATE_STEPS = (t: string) => `create table if not exists ${t} (
 /**
  * `started_at` on a table that already exists.
  *
+ * The FIRST of these, so it carries the argument both share; see
+ * {@link ALTER_RUNS_CODE_VERSION} for the second.
+ *
  * `create table if not exists` is a NO-OP once the table is there, so a column
  * added to {@link CREATE_STEPS} reaches a fresh deployment and no existing one —
  * which for a self-hoster is the deployment that matters. `add column if not
@@ -100,6 +104,18 @@ const CREATE_STEPS = (t: string) => `create table if not exists ${t} (
  */
 const ALTER_STEPS_STARTED_AT = (t: string) =>
   `alter table ${t} add column if not exists started_at bigint`;
+
+/**
+ * `code_version` on a runs table that already exists.
+ *
+ * Same mechanism, same nullability and the same residual as
+ * {@link ALTER_STEPS_STARTED_AT} — read that one. Nullable here is not merely a
+ * migration concession: only a deployed guest has a bundle hash at all, so a
+ * self-hosted run legitimately has none for the life of the column, and
+ * `RunRecord.codeVersion` says what a reader owes an absent value.
+ */
+const ALTER_RUNS_CODE_VERSION = (t: string) =>
+  `alter table ${t} add column if not exists code_version text`;
 
 const CREATE_ATTEMPTS = (t: string) => `create table if not exists ${t} (
   run_id text not null,
@@ -138,10 +154,10 @@ const CREATE_HOOKS = (t: string) => `create table if not exists ${t} (
 /**
  * The five tables, for whoever owns the database.
  *
- * Not purely `create table` statements any more: one `alter table … add column
- * if not exists` follows the steps table, because a column added to a `create
+ * Not purely `create table` statements any more: two `alter table … add column
+ * if not exists` follow their tables, because a column added to a `create
  * … if not exists` reaches only a database that does not exist yet. See
- * {@link ALTER_STEPS_STARTED_AT}.
+ * {@link ALTER_STEPS_STARTED_AT}, which carries the argument.
  *
  * @internal
  */
@@ -149,6 +165,7 @@ export function workflowJournalDdl(schema?: string): string[] {
   const q = (table: string) => (schema ? `"${schema}".${table}` : table);
   return [
     CREATE_RUNS(q(WORKFLOW_RUN_TABLE)),
+    ALTER_RUNS_CODE_VERSION(q(WORKFLOW_RUN_TABLE)),
     CREATE_RUNS_INDEX(q(WORKFLOW_RUN_TABLE)),
     CREATE_STEPS(q(WORKFLOW_STEP_TABLE)),
     ALTER_STEPS_STARTED_AT(q(WORKFLOW_STEP_TABLE)),

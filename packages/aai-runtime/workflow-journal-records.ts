@@ -40,6 +40,21 @@ export type RunRecord = {
   output?: unknown;
   /** Set once `status` is `failed`. */
   error?: { message: string } | undefined;
+  /**
+   * The bundle this run was STARTED against — `AAI_BUNDLE_SHA256`, or absent
+   * off the platform and for a row that predates the column.
+   *
+   * A run outlives the bundle that started it, which is what makes the
+   * divergence message's two-cause fork ("the CODE changed while this run was in
+   * flight" versus "the BODY is non-deterministic") unanswerable from the
+   * journal alone. One version here settles half of it: compared at each walk,
+   * an inequality states the redeploy and an equality eliminates it.
+   *
+   * It is a DIAGNOSTIC and never a gate — `workflow-code-version.ts` carries
+   * why a mismatch does not refuse the run, and why the value has to come from
+   * the process environment rather than the agent's.
+   */
+  codeVersion?: string | undefined;
 };
 
 /**

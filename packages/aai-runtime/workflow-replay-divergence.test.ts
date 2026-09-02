@@ -120,6 +120,76 @@ describe("a body whose non-determinism reaches a step NAME", () => {
   });
 });
 
+/**
+ * The half the RUN RECORD settles.
+ *
+ * The message above states two causes and hands the reader a test to run against
+ * their own source, because a journal holds what a value WAS and never how it
+ * was produced. `RunRecord.codeVersion` closes half of that: recorded at `start`
+ * and compared here, it says whether the code moved. Each case asserts the
+ * verdict AND that the two-cause fork survives — the fork is what tells a reader
+ * what to look for, so eliminating a cause must not delete it.
+ */
+describe("what the run record says about the CODE", () => {
+  /** The same divergence every time; only the two versions differ. */
+  async function divergeUnder(startedUnder: string | undefined): Promise<string> {
+    const journal = await seed();
+    let coin = "h";
+    const body: Body = async (_input, ctx) => {
+      await ctx.step(`charge-${coin}`, () => "receipt");
+      await ctx.sleep("nap", 1000);
+    };
+    const walk = () =>
+      replayRun({ runId: RUN, workflow: "billing", input: {}, run: body, journal, startedUnder });
+    await walk();
+    coin = "t";
+    await journal.wakeSleeps(RUN, undefined);
+    return failure(await walk());
+  }
+
+  const A = "a".repeat(64);
+  const B = "b".repeat(64);
+
+  test("a version that MOVED states the redeploy as a fact, naming both bundles", async () => {
+    vi.stubEnv("AAI_BUNDLE_SHA256", B);
+    const message = await divergeUnder(A);
+
+    expect(message).toContain("settles which cause this is");
+    expect(message).toContain(`STARTED against bundle ${A}`);
+    expect(message).toContain(`walked by ${B}`);
+    // The fork stays: it is what names the thing to look for.
+    expect(message).toContain("BODY is non-deterministic");
+  });
+
+  test("a version that did NOT move rules the redeploy out", async () => {
+    vi.stubEnv("AAI_BUNDLE_SHA256", A);
+    const message = await divergeUnder(A);
+
+    expect(message).toContain("RULES OUT a redeploy");
+    expect(message).toContain("Look for the computed name");
+    expect(message).not.toContain("settles which cause this is");
+  });
+
+  test("a walk with no bundle hash says it cannot tell, rather than agreeing", async () => {
+    // `aai dev` and a self-hosted server have no hash. An absent current version
+    // must not read as "unchanged": that would rule out the cause that, on a
+    // server whose code changes on every file save, is the likeliest one.
+    vi.stubEnv("AAI_BUNDLE_SHA256", undefined);
+    const message = await divergeUnder(A);
+
+    expect(message).toContain("cannot say which cause this is");
+    expect(message).not.toContain("RULES OUT");
+  });
+
+  test("a run started before the field existed says the same", async () => {
+    vi.stubEnv("AAI_BUNDLE_SHA256", B);
+    const message = await divergeUnder(undefined);
+
+    expect(message).toContain("cannot say which cause this is");
+    expect(message).not.toContain(`walked by ${B}`);
+  });
+});
+
 describe("what the check must NOT accuse", () => {
   test("a FIRST walk, whose journal is empty, however many steps it mints", async () => {
     const journal = await seed();

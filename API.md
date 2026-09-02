@@ -8063,6 +8063,7 @@ type RunRecord = {
     error?: {
         message: string;
     } | undefined;
+    codeVersion?: string | undefined;
 };
 
 // @public
@@ -8780,6 +8781,7 @@ type RunRecord = {
     error?: {
         message: string;
     } | undefined;
+    codeVersion?: string | undefined;
 };
 
 // @public

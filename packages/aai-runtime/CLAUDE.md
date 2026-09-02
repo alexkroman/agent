@@ -866,8 +866,8 @@ Three things not to relitigate:
 - **`correlationId` is NOT defaulted from `label`.** They answer different
   questions: `label` decides which journal ROW this wait is, `correlationId`
   decides which waits one `wakeUp` ends. A polled schedule wants one label and one
-  id across every iteration; two independent waits want two labels and may want a
-  shared id.
+  id across every iteration; two independent waits want two labels and may
+  want a shared id.
 - **The three determinism reads stay positional** (`now!0`, `random!0`,
   `uuid!0`). They take no argument to name, and they journal through `appendStep`
   so a reach is at least recorded for the divergence check. `sdk/workflow-ctx.ts`
@@ -976,35 +976,32 @@ want a heartbeat on the RUN so a ceiling cannot abandon a walk that is alive.
 The platform's own half — a slow delivery starving every OTHER tenant's claim —
 is fixed separately in `aai-server/workflow-queue-budget.ts`.
 
+### A run record names the CODE it was started against
+
+`RunRecord.codeVersion` is `AAI_BUNDLE_SHA256`, recorded at `start` and compared
+at each walk, and it exists for one reader: the divergence message. That message
+states two causes — a redeploy mid-flight, or a non-deterministic body — and then
+hands the reader a test to run against their own source, because a journal holds
+what a value WAS and never how it was produced. The version settles half of it:
+an inequality states the redeploy and names both bundles, an equality ELIMINATES
+it. The fork stays in the text either way, being what says what to look for.
+
+**A DIAGNOSTIC, never a gate**, and read from THIS PROCESS's environment rather
+than the agent's — an agent may set any other `AAI_*` key as a secret, so a
+tenant read would let it pin its own version and have the message assert as a
+fact the one cause it had ruled out. Absence therefore means UNKNOWN in both
+directions and may never read as "unchanged"; only a deployed guest has a hash.
+`workflow-code-version.ts` carries the rest, including why an inequality does not
+refuse the run.
+
 ### A failure of the JOURNAL is not a failure of the RUN
 
-`replayRun` has always documented that it propagates a store failure rather than
-marking a run failed on a database blip. **That was true only of `readSteps`** —
-the one journal call made before the body starts. Every other one is reached FROM
-the body, so its rejection unwound through the body like any other throw and
-`classifyThrow` could not tell it from an exception the body raised. It answered
-`{ kind: "failed" }`, which `setStatus` writes as a TERMINAL status, so one
-unavailable moment killed a healthy run permanently, discarded a step that had
-already SUCCEEDED (unjournaled, so a retry has nothing to answer from), and
-showed a caller the store's "connection reset" as their own workflow's error.
-
-**`workflow-replay-journal-failure.ts` closes it and carries the argument** — why
-a wrapper around the store rather than a check at each of seven methods across
-five files, why the body SWALLOWING the rejection is the quieter half, and why
-its one exemption is `JournalConflictError` (`claimHook`'s token conflict: a
-verdict about the run, so it must still fail it — without the exemption
-`workflow-engine-waits.test.ts` retries a conflicted run forever). Every backend
-owes that type for that case; the platform arm maps its route's 409, scoped to
-`claimHook` because postgres refuses a duplicate run id with a raw primary-key
-violation and a type only one arm keeps is worse than none.
-
-Two things this found are worth more than the fix. The unit platform conformance
-arm's fake transport answered **500 for every throw**, under a comment reasoning
-that status could not matter because the client propagates either way — true when
-written, false the moment status began deciding a type, and it made that arm
-structurally unable to see the mapping. And the conformance table asserted the
-conflict with a bare `toThrow()`, which cannot see an arm refusing with the wrong
-type at all.
+`replayRun` propagates a store failure rather than marking a run failed on a
+database blip — and that was true only of `readSteps` until
+`workflow-replay-journal-failure.ts` existed. **The account, its one
+`JournalConflictError` exemption, and the two blind test arms it found are in
+[`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md)**; that module carries the argument.
+This guide is at its cap.
 
 ### A step body can read its own ATTEMPT
 

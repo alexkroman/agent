@@ -106,14 +106,19 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       // A plain insert: the primary key is what refuses a collision, so two
       // starts racing on one id cannot both win.
       await db.query(
-        `insert into ${WORKFLOW_RUN_TABLE} (run_id, workflow, status, created_at, input)
-         values ($1, $2, $3, $4, $5::text::jsonb)`,
+        `insert into ${WORKFLOW_RUN_TABLE}
+           (run_id, workflow, status, created_at, input, code_version)
+         values ($1, $2, $3, $4, $5::text::jsonb, $6)`,
         [
           record.runId,
           record.workflow,
           record.status,
           record.createdAt,
           encodedOrNull(record.input),
+          // `null`, never `undefined`: postgres.js refuses an undefined
+          // parameter outright — see `encodedOrNull`'s doc for the run this
+          // stalled the first time.
+          record.codeVersion ?? null,
         ],
       );
     },
@@ -121,7 +126,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
     async getRun(runId: string): Promise<RunRecord | undefined> {
       const rows = await db.query<RunRow>(
         `select run_id, workflow, status, created_at, input::text as input,
-                output::text as output, error
+                output::text as output, error, code_version
          from ${WORKFLOW_RUN_TABLE} where run_id = $1`,
         [runId],
       );
@@ -132,7 +137,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
     async listRuns(workflow: string, limit: number): Promise<RunRecord[]> {
       const rows = await db.query<RunRow>(
         `select run_id, workflow, status, created_at, input::text as input,
-                output::text as output, error
+                output::text as output, error, code_version
          from ${WORKFLOW_RUN_TABLE}
          where workflow = $1
          order by created_at desc, run_id desc

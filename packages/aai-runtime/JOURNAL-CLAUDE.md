@@ -12,7 +12,7 @@ what its contract does and does not promise, belong here.
 Start from "A run's journal has THREE homes" in that guide — it is what these
 three sections qualify.
 
-### What the tiers of test each cover, and why none substitutes
+## What the tiers of test each cover, and why none substitutes
 
 The claims are of four different kinds, which is why there are four files:
 
@@ -43,7 +43,7 @@ postgres.js JSON-serializes a parameter bound to a jsonb position, and the
 self-hosted twin shipped with a bare cast that stored a JSON string containing
 the JSON, found only by a real server.
 
-### The FOURTH arm is the platform's own SQL, and it lives in `aai-server`
+## The FOURTH arm is the platform's own SQL, and it lives in `aai-server`
 
 `journal-conformance.ts` declares ONE case list and `JOURNAL_BACKENDS` registers
 the backends. Three arms run it from this package; the fourth cannot, and it is
@@ -87,7 +87,7 @@ references in `dist/internal.js`) and is loaded only by the caller that asks.
 Same rule as `/eval/vitest` and `@alexkroman1/aai/testing/vitest`, but as a
 function because `/internal` cannot afford to be split in two.
 
-### Three `JournalStore` contract points the suite refused to decide, decided
+## Three `JournalStore` contract points the suite refused to decide, decided
 
 A conformance table can only assert what the interface actually promises, and
 three points were underspecified — each with two backends doing one thing and the
@@ -126,3 +126,33 @@ third doing another, and no case able to name a winner. The decisions:
   (`fetch#0`, `sleep!0`). It is unobservable in practice: a tie needs two steps
   settling in one millisecond, and the engine indexes what `readSteps` returns by
   `key`. Do not tighten it to a byte order without `collate "C"` on the column.
+
+## A failure of the JOURNAL is not a failure of the RUN
+
+`replayRun` has always documented that it propagates a store failure rather than
+marking a run failed on a database blip. **That was true only of `readSteps`** —
+the one journal call made before the body starts. Every other one is reached FROM
+the body, so its rejection unwound through the body like any other throw and
+`classifyThrow` could not tell it from an exception the body raised. It answered
+`{ kind: "failed" }`, which `setStatus` writes as a TERMINAL status, so one
+unavailable moment killed a healthy run permanently, discarded a step that had
+already SUCCEEDED (unjournaled, so a retry has nothing to answer from), and
+showed a caller the store's "connection reset" as their own workflow's error.
+
+**`workflow-replay-journal-failure.ts` closes it and carries the argument** — why
+a wrapper around the store rather than a check at each of seven methods across
+five files, why the body SWALLOWING the rejection is the quieter half, and why
+its one exemption is `JournalConflictError` (`claimHook`'s token conflict: a
+verdict about the run, so it must still fail it — without the exemption
+`workflow-engine-waits.test.ts` retries a conflicted run forever). Every backend
+owes that type for that case; the platform arm maps its route's 409, scoped to
+`claimHook` because postgres refuses a duplicate run id with a raw primary-key
+violation and a type only one arm keeps is worse than none.
+
+Two things this found are worth more than the fix. The unit platform conformance
+arm's fake transport answered **500 for every throw**, under a comment reasoning
+that status could not matter because the client propagates either way — true when
+written, false the moment status began deciding a type, and it made that arm
+structurally unable to see the mapping. And the conformance table asserted the
+conflict with a bare `toThrow()`, which cannot see an arm refusing with the wrong
+type at all.
