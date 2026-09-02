@@ -8,30 +8,28 @@
  */
 
 import { hash } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
-import { createTestStore } from "./test-utils.ts";
+import { createTestStore, spawnedAgent } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({
-  mockSpawnAgentServer: vi.fn().mockResolvedValue({
-    sessionUrl: "wss://tunnel.test:443/websocket",
-    activeSessions: vi.fn().mockResolvedValue(0),
-    drain: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined),
-    alive: () => true,
-    onExit: vi.fn(),
-  }),
+  mockSpawnAgentServer: vi.fn(),
 }));
 
 vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
   spawnAgentServer: mockSpawnAgentServer,
 }));
+
+// Armed here rather than in the `vi.hoisted` factory above — see `spawnedAgent`.
+beforeEach(() => {
+  mockSpawnAgentServer.mockReset().mockResolvedValue(spawnedAgent());
+});
 
 /**
  * Which way the worker bundle reaches the guest. The URL path is the reason

@@ -81,6 +81,7 @@ import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createWorkflowClient } from "../workflow-client.ts";
 import { createMemoryKeyStore } from "../workflow-keys.ts";
+import { credentialVerdict } from "./_credential-verdict.ts";
 import { type EvalCredentials, silentLogger } from "./session.ts";
 import {
   createEvalWorkflowEngine,
@@ -131,13 +132,7 @@ export function evalWorkflowCredentials(
   const missing = [...needed].filter((name) => env[name] === undefined);
   return {
     env: withHostCredentialFallback(env, {}),
-    missing,
-    ready: missing.length === 0,
-    reason:
-      missing.length === 0
-        ? undefined
-        : `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set — ` +
-          "export it, or put it in the project's .env and run `aai eval`",
+    ...credentialVerdict(missing),
   };
 }
 

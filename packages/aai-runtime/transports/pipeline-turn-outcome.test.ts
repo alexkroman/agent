@@ -11,9 +11,9 @@
  * (`session-core-history.test.ts`, `session-event-history.test.ts`).
  */
 
-import type { TtsSession, Unsubscribe } from "@alexkroman1/aai/host-internal";
 import type { SessionEventBody } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
+import { recordingTts } from "../_pipeline-test-fakes.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import type { PipelineProviderSessions } from "./pipeline-providers.ts";
 import { createTurnGate } from "./pipeline-turn-gate.ts";
@@ -24,16 +24,6 @@ const ERROR_PHRASE = "Sorry, I had a problem just then.";
 const START_FAILURE_PHRASE = "I cannot start this call.";
 
 /** Records and synthesizes nothing — written out rather than cast. */
-function recordingTts(spoken: string[]): TtsSession {
-  return {
-    sendText: (text: string) => spoken.push(text),
-    flush: () => undefined,
-    cancel: () => undefined,
-    on: (): Unsubscribe => () => undefined,
-    close: () => Promise.resolve(),
-  };
-}
-
 function harness(opts?: { tts?: boolean }) {
   const reported: SessionEventBody[] = [];
   const spoken: string[] = [];

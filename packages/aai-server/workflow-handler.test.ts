@@ -24,7 +24,13 @@ import type { RateLimiter } from "./rate-limit.ts";
 import { notFoundMessage } from "./sandbox-broker.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { createTestOrchestrator, deployAgent, fakeSandbox, type TestFetch } from "./test-utils.ts";
+import {
+  createTestOrchestrator,
+  deployAgent,
+  fakeSandbox,
+  spawnedAgent,
+  type TestFetch,
+} from "./test-utils.ts";
 import { GUEST_PROXY_TOKEN_HEADER } from "./workflow-proxy-constants.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({ mockSpawnAgentServer: vi.fn() }));
@@ -84,15 +90,7 @@ function get(fetch: TestFetch, path: string, init: RequestInit = {}): Promise<Re
 
 beforeEach(() => {
   resetLiveStreams();
-  mockSpawnAgentServer.mockResolvedValue({
-    sessionUrl: "wss://tunnel.test:443/websocket",
-    guestOrigin: "wss://tunnel.test:443",
-    activeSessions: vi.fn().mockResolvedValue(0),
-    drain: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined),
-    alive: () => true,
-    onExit: vi.fn(),
-  });
+  mockSpawnAgentServer.mockResolvedValue(spawnedAgent());
 });
 
 describe("routing", () => {

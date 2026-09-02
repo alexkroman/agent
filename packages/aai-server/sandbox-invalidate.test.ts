@@ -9,23 +9,16 @@
  * — the same cut the source made.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { captureLogs, createTestStore } from "./test-utils.ts";
+import { captureLogs, createTestStore, spawnedAgent } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => {
-  const mockSpawnAgentServer = vi.fn().mockResolvedValue({
-    sessionUrl: "wss://tunnel.test:443/websocket",
-    activeSessions: vi.fn().mockResolvedValue(0),
-    drain: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined),
-    alive: () => true,
-    onExit: vi.fn(),
-  });
+  const mockSpawnAgentServer = vi.fn();
   return { mockSpawnAgentServer };
 });
 
@@ -33,6 +26,11 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
   spawnAgentServer: mockSpawnAgentServer,
 }));
+
+// Armed here rather than in the `vi.hoisted` factory above — see `spawnedAgent`.
+beforeEach(() => {
+  mockSpawnAgentServer.mockReset().mockResolvedValue(spawnedAgent());
+});
 
 async function seedAgent(slug: string) {
   const memory = createMemoryPlatformEvents();

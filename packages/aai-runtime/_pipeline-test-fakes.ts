@@ -25,6 +25,7 @@ import type {
   TtsOpenOptions,
   TtsSession,
   TtsWordTiming,
+  Unsubscribe,
 } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { SttProvider } from "@alexkroman1/aai/stt";
@@ -105,6 +106,26 @@ export function createFakeSttProvider(): FakeSttProvider {
 // ─── Fake TTS ───────────────────────────────────────────────────────────────
 
 type TtsErrorCode = "tts_stream_error" | "tts_connect_failed" | "tts_auth_failed";
+
+/**
+ * A `TtsSession` that only records the text it was told to speak.
+ *
+ * The cut-down sibling of {@link createFakeTtsProvider}: a spec whose claim is
+ * "these words reached TTS in this order" wants the list and none of the
+ * lifecycle — and the four inert members are exactly what makes it look small
+ * enough to re-type, which two suites did, byte for byte. It hands back the
+ * SESSION rather than an opener because both callers hold the transport's
+ * `tts` slot directly.
+ */
+export function recordingTts(spoken: string[]): TtsSession {
+  return {
+    sendText: (text: string) => spoken.push(text),
+    flush: () => undefined,
+    cancel: () => undefined,
+    on: (): Unsubscribe => () => undefined,
+    close: () => Promise.resolve(),
+  };
+}
 
 export type FakeTtsSession = TtsSession & {
   readonly emitter: Emitter<TtsEvents>;

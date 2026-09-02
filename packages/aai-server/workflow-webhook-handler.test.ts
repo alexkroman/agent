@@ -20,6 +20,7 @@ import {
   createTestOrchestrator,
   deployAgent,
   fakeSandbox,
+  spawnedAgent,
   type TestFetch,
 } from "./test-utils.ts";
 
@@ -83,15 +84,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
     // a statement about how many earlier tests in this file spawned rather
     // than about the case making the assertion.
     mockSpawnAgentServer.mockClear();
-    mockSpawnAgentServer.mockResolvedValue({
-      sessionUrl: "wss://tunnel.test:443/websocket",
-      guestOrigin: "wss://tunnel.test:443",
-      activeSessions: vi.fn().mockResolvedValue(0),
-      drain: vi.fn().mockResolvedValue(undefined),
-      shutdown: vi.fn().mockResolvedValue(undefined),
-      alive: () => true,
-      onExit: vi.fn(),
-    });
+    mockSpawnAgentServer.mockResolvedValue(spawnedAgent());
   });
 
   test("forwards the delivery to the guest's own webhook endpoint, token included", async () => {

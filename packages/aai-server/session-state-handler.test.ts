@@ -14,6 +14,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   bearerFor,
   createTestOrchestrator,
+  deployAgent,
   fakeAdminDbOver,
   type TestFetch,
 } from "./test-utils.ts";
@@ -36,23 +37,8 @@ async function platform(countAnswer: Record<string, unknown>[] = [{ next: 4 }]) 
     return sql.includes("coalesce(max(event_index)") ? countAnswer : [];
   });
   const harness = await createTestOrchestrator({ adminDb });
-  for (const slug of [MINE, THEIRS]) await deploy(harness.fetch, slug);
+  for (const slug of [MINE, THEIRS]) await deployAgent(harness.fetch, slug);
   return { ...harness, seen, adminDb };
-}
-
-async function deploy(fetch: TestFetch, slug: string): Promise<void> {
-  const res = await fetch("/deploy", {
-    method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-    body: JSON.stringify({
-      slug,
-      env: { ASSEMBLYAI_API_KEY: "k" },
-      worker:
-        'export default { name: "a", systemPrompt: "p", greeting: "", maxSteps: 1, tools: {} };',
-      clientFiles: {},
-    }),
-  });
-  if (!res.ok) throw new Error(`deploy ${slug} answered ${res.status}`);
 }
 
 function callRoute(
@@ -239,7 +225,7 @@ describe("POST /:slug/session-state", () => {
 
   test("answers 501 with no platform database, because a retry will not make one", async () => {
     const harness = await createTestOrchestrator();
-    await deploy(harness.fetch, MINE);
+    await deployAgent(harness.fetch, MINE);
     const res = await callRoute(
       harness.fetch,
       MINE,

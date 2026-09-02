@@ -10,6 +10,8 @@
  * one-thing-per-module split is what `tool-def.ts` beside it already does.
  */
 
+import { missingEnvMessage } from "./_missing-env.ts";
+
 /**
  * Read a variable off {@link ToolContext.env}, failing by NAME when it is not set.
  *
@@ -40,10 +42,7 @@ export function requireEnv(
 ): string {
   const value = ctx.env[name];
   if (!value) {
-    throw new Error(
-      `Missing ${name} in the agent env. Add it to .env for \`aai dev\`, or run \`aai secret put ${name}\`, ` +
-        "and list it in `requiredEnv` so a deploy checks it.",
-    );
+    throw new Error(missingEnvMessage(name));
   }
   return value;
 }

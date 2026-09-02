@@ -68,8 +68,9 @@
 
 import { workflow } from "@alexkroman1/aai";
 import { vi } from "vitest";
-import { byCodeUnit, type Scenario, silent } from "./_workflow-resume-harness.ts";
+import { type Scenario, silent } from "./_workflow-resume-harness.ts";
 import { type Program, type Recorder, runProgram, WAIT_MS } from "./_workflow-resume-program.ts";
+import { createTally, journalOutcome } from "./_workflow-tally-harness.ts";
 import { createInProcessWorkflowEngine } from "./workflow-in-process.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { isTerminalStatus, type JournalStore } from "./workflow-journal-types.ts";
@@ -201,18 +202,10 @@ async function driveRebuilds(
  */
 export async function runRebuildScenario(program: Program): Promise<RebuildScenario> {
   const journal = createMemoryJournal();
-  const counts = new Map<string, number>();
-  let started = 0;
+  const steps = createTally();
 
   const rec: Recorder = {
-    count(name) {
-      started++;
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-      return started;
-    },
-    runs(name) {
-      return counts.get(name) ?? 0;
-    },
+    ...steps.counted,
     // This model interrupts BETWEEN deliveries, never inside a body — see the
     // module doc's table. Nothing to inject at a step boundary.
     after: async () => undefined,
@@ -234,19 +227,13 @@ export async function runRebuildScenario(program: Program): Promise<RebuildScena
   vi.useFakeTimers();
   let runId: string;
   try {
-    runId = await driveRebuilds(journal, make, () => started, tally);
+    runId = await driveRebuilds(journal, make, () => steps.total, tally);
   } finally {
     vi.useRealTimers();
   }
 
-  const record = await journal.getRun(runId);
   return {
-    status: record?.status,
-    output: record?.output,
-    error: record?.error?.message,
-    keys: (await journal.readSteps(runId)).map((entry) => entry.key).sort(byCodeUnit),
-    counts: Object.fromEntries(counts),
-    total: started,
+    ...(await journalOutcome(journal, runId, steps)),
     // One delivery per engine, as this model counts them.
     deliveries: tally.rebuilds + 1,
     suspends: tally.rebuilds,
@@ -254,6 +241,6 @@ export async function runRebuildScenario(program: Program): Promise<RebuildScena
     crashed: false,
     rebuilds: tally.rebuilds,
     resumedOffJournal: tally.resumedOffJournal,
-    stepsAfterRebuild: started - (tally.startedAtFirstRebuild ?? started),
+    stepsAfterRebuild: steps.total - (tally.startedAtFirstRebuild ?? steps.total),
   };
 }

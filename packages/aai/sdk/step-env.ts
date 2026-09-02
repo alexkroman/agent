@@ -43,6 +43,8 @@
  * `process.env`, which is what such a caller already controls.
  */
 
+import { missingEnvMessage } from "./_missing-env.ts";
+
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
  * this SDK in the same process (a linked workspace, a mismatched install) shares
@@ -158,10 +160,7 @@ export function stepEnv(name: string): string | undefined {
 export function requireStepEnv(name: string): string {
   const value = stepEnv(name);
   if (!value) {
-    throw new Error(
-      `Missing ${name} in the agent env. Add it to .env for \`aai dev\`, or run \`aai secret put ${name}\`, ` +
-        "and list it in `requiredEnv` so a deploy checks it.",
-    );
+    throw new Error(missingEnvMessage(name));
   }
   return value;
 }

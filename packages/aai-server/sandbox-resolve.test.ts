@@ -10,24 +10,17 @@
  * because several cases below depend on a resident not being disturbed.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import { createMemorySandboxDirectory, SandboxNameTakenError } from "./sandbox-directory.ts";
 import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { captureLogs, createTestStore } from "./test-utils.ts";
+import { captureLogs, createTestStore, spawnedAgent } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => {
-  const mockSpawnAgentServer = vi.fn().mockResolvedValue({
-    sessionUrl: "wss://tunnel.test:443/websocket",
-    activeSessions: vi.fn().mockResolvedValue(0),
-    drain: vi.fn().mockResolvedValue(undefined),
-    shutdown: vi.fn().mockResolvedValue(undefined),
-    alive: () => true,
-    onExit: vi.fn(),
-  });
+  const mockSpawnAgentServer = vi.fn();
   return { mockSpawnAgentServer };
 });
 
@@ -35,6 +28,11 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
   spawnAgentServer: mockSpawnAgentServer,
 }));
+
+// Armed here rather than in the `vi.hoisted` factory above — see `spawnedAgent`.
+beforeEach(() => {
+  mockSpawnAgentServer.mockReset().mockResolvedValue(spawnedAgent());
+});
 
 async function seedAgent(slug: string) {
   const memory = createMemoryPlatformEvents();
@@ -252,10 +250,6 @@ describe("broker readiness cap", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
-  afterEach(() => {
-    mockSpawnAgentServer.mockReset();
-  });
-
   it("answers 503 while a boot is still running, without spawning a second sandbox", async () => {
     // A spawn that never resolves — the hung-boot case.
     let releaseBoot: ((handle: unknown) => void) | undefined;
@@ -287,15 +281,7 @@ describe("broker readiness cap", () => {
       expect(mockSpawnAgentServer.mock.calls.length).toBe(afterFirst);
 
       // And when the boot finally lands, the next call serves it.
-      releaseBoot?.({
-        sessionUrl: "wss://tunnel.test:443/websocket",
-        guestOrigin: "wss://tunnel.test:443",
-        activeSessions: vi.fn().mockResolvedValue(0),
-        drain: vi.fn().mockResolvedValue(undefined),
-        shutdown: vi.fn().mockResolvedValue(undefined),
-        alive: () => true,
-        onExit: vi.fn(),
-      });
+      releaseBoot?.(spawnedAgent());
       await expect(brokerSessionUrl("hung", deps)).resolves.toMatchObject({
         ok: true,
         sessionUrl: "wss://tunnel.test:443/websocket",
@@ -311,21 +297,6 @@ describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
   beforeEach(() => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    // Re-arm the hoisted factory's default. NOT because of `restoreMocks`,
-    // which this comment used to blame: that registers `vi.spyOn` mocks only
-    // and touches neither the history nor the implementation of a plain
-    // `vi.fn()`. What strips the default is the `afterEach(mockReset)` in the
-    // "broker readiness cap" describe above — and the `mockReset()` here is
-    // what clears the calls `restoreMocks` likewise leaves behind.
-    mockSpawnAgentServer.mockReset().mockResolvedValue({
-      sessionUrl: "wss://tunnel.test:443/websocket",
-      guestOrigin: "wss://tunnel.test:443",
-      activeSessions: vi.fn().mockResolvedValue(0),
-      drain: vi.fn().mockResolvedValue(undefined),
-      shutdown: vi.fn().mockResolvedValue(undefined),
-      alive: () => true,
-      onExit: vi.fn(),
-    });
   });
 
   it("routes a cold broker to a live peer instead of spawning a duplicate", async () => {

@@ -40,9 +40,9 @@ import { normalizeLlm, resolveAllBuiltins } from "@alexkroman1/aai/host-internal
 import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type LanguageModel, stepCountIs, ToolLoopAgent } from "ai";
-import { resolveLlm } from "./providers/resolve.ts";
+import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 import { createToolDispatcher, executeToolCall, type SubagentRunner } from "./tool-executor.ts";
@@ -97,24 +97,18 @@ export const NESTED_DELEGATE_MESSAGE =
  */
 export function createSubagentRunner(opts: CreateSubagentRunnerOptions): SubagentRunner {
   const logger = opts.logger ?? consoleLogger;
-  const models = new WeakMap<LlmProvider, LanguageModel>();
+  const modelFor = createLlmModelCache(opts.env);
 
   const resolveModel = (sub: SubagentDef): LanguageModel => {
     const descriptor = sub.llm ? normalizeLlm(sub.llm) : opts.llm;
-    // `isRecord(undefined)` is already false, so the `kind` check is the whole
-    // narrowing — same shape as `createGenerateFn`'s `isDescriptor`.
-    if (!(isRecord(descriptor) && typeof descriptor.kind === "string")) {
+    if (!isLlmDescriptor(descriptor)) {
       throw new Error(
         `subagent "${sub.name}": no LLM configured. Give the subagent an \`llm\` ` +
           "(a descriptor from @alexkroman1/aai/llm, or a model-id string), or run " +
           "the agent in pipeline mode.",
       );
     }
-    const cached = models.get(descriptor);
-    if (cached) return cached;
-    const model = resolveLlm(descriptor, opts.env);
-    models.set(descriptor, model);
-    return model;
+    return modelFor(descriptor);
   };
 
   return async (sub, delegateOptions, parent) => {
