@@ -54,7 +54,7 @@
  *
  * A throw stopped the body at the FIRST unelapsed wait, which is why
  * `WorkflowCtx.waitFor`'s deadline is a parameter and why its doc used to say a
- * `Promise.race([ctx.waitFor(t), ctx.sleep(ms))]` does not compose: the race
+ * `Promise.race([ctx.waitFor(t), ctx.sleep(l, ms))]` does not compose: the race
  * rejected on whichever suspended first and the body stopped before the other
  * side had been reached. With a promise that merely parks, the body walks on and
  * reaches BOTH — so the suspension has to describe both.

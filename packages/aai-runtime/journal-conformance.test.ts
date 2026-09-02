@@ -70,7 +70,8 @@ import {
 } from "./journal-conformance.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { createPlatformJournal } from "./workflow-journal-platform.ts";
-import type { JournalStore, RunStatus } from "./workflow-journal-types.ts";
+import type { JournalStore, RunRecord, RunStatus } from "./workflow-journal-types.ts";
+import { JournalConflictError } from "./workflow-journal-types.ts";
 
 /* -------------------------------------------------------------------------- */
 /* The memory arm                                                             */
@@ -116,6 +117,23 @@ function int(body: Body, key: string): number {
   const value = body[key];
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`${key} must be a number`);
+  }
+  return value;
+}
+
+/**
+ * `optionalInt`, as `_body-fields.ts` spells it: absent or `null` means ABSENT,
+ * and a present non-integer is a 400 rather than a coerced value.
+ *
+ * The fake has to make that distinction because `StepEntry.startedAt` is the
+ * first optional NUMBER on this wire — `int` above would turn an absent one into
+ * `NaN`, which is exactly the "invented answer" this arm exists to catch.
+ */
+function optInt(body: Body, key: string): number | undefined {
+  const value = body[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new Error(`${key} must be an integer when present`);
   }
   return value;
 }
@@ -166,6 +184,28 @@ function statuses(body: Body, key: string): readonly RunStatus[] | undefined {
  * `?? null` on an absent answer, the same booleans and numbers. What it does NOT
  * mirror is the SQL below it — see this file's header for why.
  */
+/**
+ * One run on the wire, the shape `platform-workflow-journal.ts`'s `toRun` builds.
+ *
+ * ONE function for both read arms, because the real store has one and this fake
+ * had the field list written out twice — so a field added to `getRun` and
+ * forgotten in `listRuns` made this arm report a listing that drops it as green.
+ * `codeVersion` was exactly that, caught by the conformance case that asserts
+ * `listRuns` carries it.
+ */
+function runRow(run: RunRecord): Record<string, unknown> {
+  return {
+    runId: run.runId,
+    workflow: run.workflow,
+    status: run.status,
+    createdAt: run.createdAt,
+    input: text(run.input),
+    output: text(run.output),
+    error: run.error?.message,
+    codeVersion: run.codeVersion,
+  };
+}
+
 function serve(store: JournalStore, method: string, body: Body): Promise<unknown> {
   switch (method) {
     case "createRun":
@@ -178,34 +218,15 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
           // The ENCODED text, stored verbatim the way a `jsonb` column does. The
           // platform never sees a decoded value and this fake must not either.
           input: optStr(body, "input"),
+          codeVersion: optStr(body, "codeVersion"),
         })
         .then(() => null);
     case "getRun":
-      return store.getRun(str(body, "runId")).then((run) =>
-        run
-          ? {
-              runId: run.runId,
-              workflow: run.workflow,
-              status: run.status,
-              createdAt: run.createdAt,
-              input: text(run.input),
-              output: text(run.output),
-              error: run.error?.message,
-            }
-          : null,
-      );
+      return store.getRun(str(body, "runId")).then((run) => (run ? runRow(run) : null));
     case "listRuns":
-      return store.listRuns(str(body, "workflow"), int(body, "limit")).then((runs) =>
-        runs.map((run) => ({
-          runId: run.runId,
-          workflow: run.workflow,
-          status: run.status,
-          createdAt: run.createdAt,
-          input: text(run.input),
-          output: text(run.output),
-          error: run.error?.message,
-        })),
-      );
+      return store
+        .listRuns(str(body, "workflow"), int(body, "limit"))
+        .then((runs) => runs.map(runRow));
     case "setStatus": {
       const error = optStr(body, "error");
       // The route always builds a patch object, and the statement under it
@@ -232,6 +253,7 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
           output: text(step.output),
           error: step.error?.message,
           attempts: step.attempts,
+          startedAt: step.startedAt,
           finishedAt: step.finishedAt,
         })),
       );
@@ -291,6 +313,7 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
           output: optStr(row, "output"),
           error: failure === undefined ? undefined : { message: failure },
           attempts: int(row, "attempts"),
+          startedAt: optInt(row, "startedAt"),
           finishedAt: int(row, "finishedAt"),
         })
         .then((step) => ({
@@ -300,6 +323,7 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
           output: text(step.output),
           error: step.error?.message,
           attempts: step.attempts,
+          startedAt: step.startedAt,
           finishedAt: step.finishedAt,
         }));
     }
@@ -325,10 +349,22 @@ function platformJournalOver(store: JournalStore): JournalStore {
         headers: { "content-type": "application/json" },
       });
     } catch (err: unknown) {
-      // Everything the route cannot serve is a 5xx or a 409, and the client's
-      // only correct behaviour for either is to propagate. Which status it is
-      // does not change that, so one arm covers both.
-      return new Response(err instanceof Error ? err.message : "failed", { status: 500 });
+      // **The STATUS is part of the contract now, and this used to flatten it.**
+      // The comment here read "which status it is does not change that, so one
+      // arm covers both" — true while the client's only behaviour for a non-2xx
+      // was to propagate, and false since it began mapping a 409 to a
+      // `JournalConflictError`: the engine reads that type to decide between
+      // failing the run and retrying the delivery
+      // (`workflow-replay-journal-failure.ts`). Answering 500 for a conflict
+      // made this arm structurally unable to see the mapping — the typed-refusal
+      // case failed here and passed everywhere else.
+      //
+      // So the fake mirrors the real route's `statusFor` hook: a refusal that is
+      // a verdict about the RUN is a 409, everything else a 500.
+      const conflict = JournalConflictError.is(err);
+      return new Response(err instanceof Error ? err.message : "failed", {
+        status: conflict ? 409 : 500,
+      });
     }
   };
   return createPlatformJournal({

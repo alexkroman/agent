@@ -227,7 +227,7 @@ export async function dailyDigestFlow(
 
     // Not after the last one: a run that has delivered everything it owes
     // should end, not sleep for a day and then end.
-    if (digestNumber < totalDigests) await ctx.sleep(intervalMs);
+    if (digestNumber < totalDigests) await ctx.sleep("nextDigest", intervalMs);
   }
 
   return {
@@ -284,7 +284,7 @@ async function waitForTranscripts(
       if (state.transcriptStatus !== "submitted") settled.set(state.id, state);
     }
     pending = polled.filter((state) => state.transcriptStatus === "submitted");
-    if (pending.length > 0) await ctx.sleep(POLL_DELAY_MS);
+    if (pending.length > 0) await ctx.sleep("poll", POLL_DELAY_MS);
   }
 
   for (const job of pending) settled.set(job.id, gaveUpOn(job));

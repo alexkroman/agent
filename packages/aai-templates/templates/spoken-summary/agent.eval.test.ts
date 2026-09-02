@@ -271,7 +271,10 @@ describeWorkflowEval(
       expect(run.output?.transcript).toBe(TRANSCRIPT);
       // Two waits for three polls: asked for and — this being an eval rather
       // than a deployment — recorded rather than taken.
-      expect(run.slept).toEqual([{ duration: POLL_INTERVAL_MS }, { duration: POLL_INTERVAL_MS }]);
+      expect(run.slept).toEqual([
+        { label: "poll", duration: POLL_INTERVAL_MS },
+        { label: "poll", duration: POLL_INTERVAL_MS },
+      ]);
       expect(provider.calls.filter((call) => call.leg === "poll")).toHaveLength(3);
       // The expensive half happened ONCE, which is the whole reason the upload
       // and the submit are separate steps.

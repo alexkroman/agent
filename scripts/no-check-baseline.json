@@ -12,7 +12,7 @@
     "packages/aai-runtime/internal.ts": 2,
     "packages/aai-runtime/providers/stt/_assemblyai-test-utils.ts": 1,
     "packages/aai-runtime/workflow-notify.ts": 1,
-    "packages/aai-runtime/workflow-replay-divergence.ts": 1,
+    "packages/aai-runtime/workflow-replay-divergence.ts": 2,
     "packages/aai-runtime/ws-session-lifecycle.ts": 1,
     "packages/aai-templates/scaffold/CLAUDE.md": 30,
     "packages/aai-ui/README.md": 1,

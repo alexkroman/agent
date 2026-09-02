@@ -47,7 +47,7 @@
  *       stepTranscribePoll(id).catch(throwStepError),
  *     );
  *     if (progress.done) return progress.transcript;
- *     await ctx.sleep(10_000);
+ *     await ctx.sleep("poll", 10_000);
  *   }
  *   throw new Error(`Transcript ${id} is still unfinished.`);
  * }

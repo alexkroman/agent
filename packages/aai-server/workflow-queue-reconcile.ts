@@ -212,7 +212,8 @@ export async function findStalledRuns(
   // message is lost, the deadline elapses with an open hook and nothing
   // scheduled, and the open-hook arm alone would hide that run forever. Any
   // unwoken sleep past the cutoff says so, with no dependence on the runtime's
-  // `hook!<n>` / `hookTimeout!<n>` key grammar — a coupling this side could not
+  // `hook!<token>#<n>` / `hookTimeout!<token>#<n>` key grammar — a coupling this
+  // side could not
   // see break — and it picks up a plain `ctx.sleep` whose wake was lost too.
   const rows = await sql(
     `select r.slug, r.run_id, r.reconciles

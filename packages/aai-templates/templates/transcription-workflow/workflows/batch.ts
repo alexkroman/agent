@@ -98,7 +98,7 @@ export async function transcribeBatchFlow(
       pollTranscript(input.recording, job.id, startedAt),
     );
     if (progress.done) return progress.transcript;
-    await ctx.sleep(POLL_INTERVAL_MS);
+    await ctx.sleep("poll", POLL_INTERVAL_MS);
   }
   // A plain throw: this is the BODY, where the fatal/retryable distinction has
   // nothing to apply to — see `stream.ts`'s `abandon` for the same reasoning.

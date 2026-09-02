@@ -45,6 +45,18 @@ export type RunContext = {
         /** 1-based, and it counts attempts burned by failed boots. */
         attempt: number;
         /**
+         * The ceiling this step was given — `StepOptions.maxAttempts`, or its
+         * default.
+         *
+         * Here rather than left to the body to restate, because `isLastAttempt`
+         * is the useful predicate and computing it from a hard-coded number is
+         * two literals in two files with a silent failure between them: a body
+         * that thinks attempt 3 is its last when the call site was given 5
+         * degrades early on every run. See `stepInfo` in
+         * `@alexkroman1/aai/step`.
+         */
+        maxAttempts: number;
+        /**
          * The WALK's signal, aborted when this delivery is cancelled or the
          * caller hangs up — `undefined` for a walk that has none (a spec).
          *

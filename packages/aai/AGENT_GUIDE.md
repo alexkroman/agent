@@ -439,7 +439,10 @@ export async function digestFlow(input: { url: string }, ctx: WorkflowCtx) {
 
   // Suspended, not blocked: the container is free to exit here and the run
   // resumes when it comes due. Six hours works the same as ten seconds.
-  await ctx.sleep(10_000);
+  //
+  // The first argument NAMES the wait, exactly as a step's name does, and for
+  // the same reason: it is the wait's identity in the journal.
+  await ctx.sleep("settle", 10_000);
 
   const filedAt = await ctx.step("file", () => file(digest));
   return { ...digest, filedAt };
@@ -494,6 +497,29 @@ const digest = await ctx.step("summarize", () => summarize(input.url), {
 });
 ```
 
+**And a step body can read which attempt it is on**, so a step may degrade rather
+than fail — a smaller model on the last try beats a failed run:
+
+```ts
+import { stepInfo } from "@alexkroman1/aai/step";
+
+declare function callModel(url: string, model: string): Promise<string>;
+
+export async function summarize(url: string) {
+  const step = stepInfo();
+  // `undefined` outside a run — a spec calling this directly — which reads as
+  // "not retrying", the same branch a first attempt takes.
+  const model = step?.isLastAttempt === true ? "small" : "large";
+  return await callModel(url, model);
+}
+```
+
+Read `isLastAttempt` rather than comparing `attempt` against a number you have
+written down: the ceiling lives at the `ctx.step` call site, and a body that
+restates it degrades early on every run once the two disagree — silently, since
+it still returns an answer. `stubStepInfo` from `@alexkroman1/aai/testing` is how
+a test reaches the retry branch.
+
 ### A clock, a random number and a uuid: `ctx.now`, `ctx.random`, `ctx.uuid`
 
 The three undurable reads a body most often wants, each journaled — read once at
@@ -543,8 +569,8 @@ process. Under `aai dev` without a `DATABASE_URL` the store is memory, so a wait
 lives only as long as the dev server. The boot line reports which one is in play.
 
 ```ts no-check
-// A duration in milliseconds, or an absolute Date.
-await ctx.sleep(6 * 60 * 60 * 1000, { correlationId: "review-window" });
+// A label, then a duration in milliseconds or an absolute Date.
+await ctx.sleep("review-window", 6 * 60 * 60 * 1000, { correlationId: "review" });
 
 // Until somebody outside the run answers, via `ctx.workflows.signal(token, …)`
 // from a tool, or by a delivery to `publicWebhookUrl` — both hops reach the
@@ -555,8 +581,15 @@ const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id
 if (approval === undefined) return { published: false, reason: "nobody approved" };
 ```
 
-Four things worth knowing:
+Five things worth knowing:
 
+- **A wait's NAME is its identity, exactly like a step's.** A sleep's `label` and
+  a `waitFor`'s token are what the journal keys the wait on
+  (`sleep!<label>#<occurrence>`, `hook!<token>#<occurrence>`), so make a label a
+  string literal, give two call sites two labels, and let a loop reuse one — the
+  occurrence count separates the iterations. This is what makes a wait behind an
+  `if` safe: the body can reach a different NUMBER of waits on two walks and each
+  one still finds its own record.
 - **A hook's token must be DERIVED, not random.** Whoever signals is usually a
   tool, and a tool cannot see the body's local variables — so export one function
   that computes the token from the run's own input and import it in both places.
@@ -566,10 +599,15 @@ Four things worth knowing:
 - **`timeoutMs` resolves `undefined` when the window closes unanswered.** A
   closing window is an outcome to branch on, not a failure, and the engine closes
   the hook as it shuts so a late answer cannot change what already happened.
-- **Do NOT race the two.** `Promise.race([ctx.waitFor(t), ctx.sleep(ms)])` does
-  not work: both suspend, and a suspend unwinds the stack, so the race stops the
-  body before the other side has been reached. That is why the deadline is a
-  parameter.
+- **Racing the two WORKS, and is still not how to put a deadline on a wait.** A
+  wait no longer unwinds the stack — it hands back a promise that never settles
+  — so the body reaches every wait a `race` or an `all` puts in front of it and
+  the run suspends once, on the earliest deadline among them. Reach for a race
+  when the two waits are genuinely independent (a review window beside a retry
+  backoff). For a deadline ON a wait, use `timeoutMs`: it is journaled WITH the
+  hook, so one decision fixes the window, and its timeout arm CLOSES the hook
+  before the body continues — a race has no such moment, and a signal landing
+  just after it would make the next replay answer a window this one timed out.
 - **`ctx.workflows.wakeUp(runId, { correlationIds: [id] })`** ends a sleep early,
   which is how a "send it now" tool cuts a scheduled wait short. Naming no ids
   wakes every outstanding SLEEP and deliberately not a `waitFor` deadline, so

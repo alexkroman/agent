@@ -152,7 +152,7 @@ describeWorkflowEval(agentDef, (test) => {
     expect(run.reported).toContain("Filing the digest.");
     // The one thing this harness cannot do, stated as an assertion rather than
     // left implied: the durable wait was ASKED FOR and not taken.
-    expect(run.slept).toEqual([{ duration: SETTLE_MS }]);
+    expect(run.slept).toEqual([{ label: "settle", duration: SETTLE_MS }]);
   });
 
   test("fails terminally on a page with no readable text", async ({ app, mode }) => {

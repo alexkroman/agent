@@ -31,7 +31,7 @@
  * nothing to key a map on, and sharing would let an author's own
  * `ctx.step("now")` alias a journaled clock read. `!` is not producible by
  * `name#occurrence`, which is what makes the two spaces disjoint by construction
- * rather than by convention — the same trick `sleep!N` and `hook!N` use, and they
+ * rather than by convention — the same trick the waits' `sleep!`/`hook!` prefixes use, and they
  * are disjoint from THOSE too because a sleep lives in `claimSleep`'s records and
  * these live in `appendStep`'s entries.
  *
@@ -242,6 +242,11 @@ export function createDeterminismReads(
     divergence.reach(key, kind, answered);
     if (answered !== undefined) return answered.output as T;
 
+    // Read BEFORE `produce()` so the entry's span covers the read itself, which
+    // is the same rule `attemptLoop` follows. It is microseconds here — these
+    // have no body — and the point is that a reader can treat every entry's
+    // `startedAt` the same way rather than having to know which kind it is.
+    const startedAt = Date.now();
     const stored = await hold(() =>
       journal.appendStep(runId, {
         key,
@@ -250,6 +255,7 @@ export function createDeterminismReads(
         output: produce(),
         // No attempt was charged. Decision 2 in the module doc.
         attempts: 0,
+        startedAt,
         finishedAt: Date.now(),
       }),
     );

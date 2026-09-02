@@ -11,7 +11,7 @@
  * **A suspension cannot reach this loop at all, and there is no arm for one.**
  * That is true twice over now. A step cannot wait: `ctx.sleep` and `ctx.waitFor`
  * belong to the body and both REFUSE when reached inside a step — the closure a
- * step is handed CAPTURES `ctx`, so `ctx.step("waiting", () => ctx.sleep(60_000))`
+ * step is handed CAPTURES `ctx`, so `ctx.step("waiting", () => ctx.sleep("nap", 60_000))`
  * was one line away at every call site, and `workflow-replay-wait.ts` carries the
  * check and the two bugs it ends. And a body-level wait no longer THROWS: it
  * parks on a promise that never settles and the walk suspends out of band
@@ -319,6 +319,20 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
    */
   let tries = 0;
 
+  /**
+   * When this walk began working on the step, for the entry's `startedAt`.
+   *
+   * Taken here rather than in {@link runStepAttempts}, so it is AFTER the gate:
+   * `finishedAt - startedAt` is then what the step itself cost — its own
+   * attempts and their backoff — rather than that plus however long the process
+   * was too busy to start it. Gate contention is real and worth seeing, and this
+   * is not where it belongs: attributing it to the step would report a fast step
+   * on a loaded worker as a slow step. It shows instead in the GAP between one
+   * entry's `finishedAt` and the next's `startedAt`, which is the reading
+   * `StepEntry.startedAt` documents as delivery latency.
+   */
+  const startedAt = Date.now();
+
   // ONE charge for the whole reach, taken before the body and given back only
   // if the reach ends in a durable WAIT. A retry below re-runs the body without
   // re-taking it, which is what makes the charge unbroken: every window in which
@@ -342,16 +356,40 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
       // helper it calls is attributed to THIS step and this attempt — and so
       // that `stepFetch` can reach the WALK's signal without the body having to
       // thread one down to it. See `RunContext["step"].signal`.
-      const output = await withStepContext({ name, key, attempt: tries, signal }, async () => fn());
+      const output = await withStepContext(
+        { name, key, attempt: tries, maxAttempts, signal },
+        async () => fn(),
+      );
       // No release: the entry below is authoritative from now on, so every later
       // walk answers from `readSteps` and nothing reads the charge again. That
       // is what keeps the happy path at one journal round trip per step.
+      //
+      // `return`, NEVER `return await`, and that is load-bearing rather than a
+      // style choice. A bare `return` inside a `try` hands the pending promise
+      // out without settling it here, so the `catch` below cannot see it; add
+      // `await` and a journal write that REJECTS becomes a value this loop
+      // classifies as the step body's own failure — so it would either retry the
+      // body (up to `maxAttempts`, re-running whatever the body was paid to do)
+      // or journal `failed` over a step that SUCCEEDED, which is the one thing
+      // "An attempt is a LEASE" says must never happen.
+      //
+      // Unawaited, the rejection propagates out of `replayRun` instead, which is
+      // exactly the documented contract: a failure of the JOURNAL means the
+      // run's state is unknown, so the delivery fails and is retried rather than
+      // the run being marked failed on a database blip.
+      //
+      // The `catch`-swallows-a-`return` interaction is not hypothetical here.
+      // The same shape, in the other direction, is why `deadlineOutcome` in
+      // `workflow-replay-waits.ts` answers a descriptor rather than parking: a
+      // bare `return` there ran the `finally` first and closed the slot the park
+      // needed, and `replayRun` never returned.
       return journal.appendStep(runId, {
         key,
         name,
         status: "ok",
         output,
         attempts: tries,
+        startedAt,
         finishedAt: Date.now(),
       });
     } catch (err: unknown) {
@@ -383,12 +421,17 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
         await backOff(options, tries, err);
         continue;
       }
+      // Unawaited for the reason the `ok` arm above is — though here it is the
+      // weaker half of the same rule, this `return` being outside any `try`. It
+      // stays unawaited so both arms read the same and neither invites the
+      // `await` the other cannot afford.
       return journal.appendStep(runId, {
         key,
         name,
         status: "failed",
         error: { message: errorMessage(err) },
         attempts: tries,
+        startedAt,
         finishedAt: Date.now(),
       });
     }

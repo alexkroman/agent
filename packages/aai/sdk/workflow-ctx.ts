@@ -72,21 +72,32 @@
  *   all 10 reporting `completed`). It is the only layer that sees a name read
  *   from a config table, so it is necessary regardless of the other two.
  *
- * What NONE of them sees is a wait's identity. `ctx.sleep` and
- * {@link WorkflowCtx.waitFor} are keyed POSITIONALLY (`sleep!0`, `hook!0`), so a
- * body reaching a different NUMBER of waits reads another wait's record — and a
- * pure-sleep divergence reaches no step name for any layer to catch.
+ * A wait's identity used to be the thing NONE of them saw. `ctx.sleep` and
+ * {@link WorkflowCtx.waitFor} were keyed POSITIONALLY (`sleep!0`, `hook!0`), so
+ * a body reaching a different NUMBER of waits read another wait's record — and a
+ * pure-sleep divergence reaches no step name for any layer to catch. **A wait is
+ * keyed by NAME now**, exactly as a step is: `ctx.sleep` takes a `label` and
+ * {@link WorkflowCtx.waitFor} already had a token, so the keys are
+ * `sleep!<label>#<occurrence>` and `hook!<token>#<occurrence>` and a wait that
+ * moves keeps its own record. What is left is stated at
+ * `aai-runtime/workflow-replay-divergence.ts` rather than here: a label or token
+ * that is itself non-deterministic mints a fresh key on every walk, which HANGS
+ * the run instead of answering it wrongly — a worse-looking, better failure, and
+ * still nothing's job to catch.
  *
- * **The one shape that GUARANTEES it is a wait inside a step, and the engine
- * refuses that outright.** A settled step's body is not re-executed, so its wait
- * stops being reached the moment the step lands and every later wait in the run
- * slides one place down the key space — measured, a week-long `ctx.sleep` after a
- * sleeping step was skipped in full and the run reported `completed`. The same
- * body also re-ran its step from the top on every delivery, side effects
- * included. A fourth layer therefore fails the run on the spot, naming the fix:
- * `aai-runtime/workflow-replay-wait.ts`. It has to be the ENGINE and not a type,
- * because the callback captures the outer `ctx` and no step-scoped parameter can
- * take a binding out of lexical scope.
+ * **A wait inside a step is refused outright, and that was true before the
+ * keying changed.** Two of its three reasons survive it. A suspend unwinds out
+ * of the step without journaling it, so the body re-runs from the top on every
+ * delivery, side effects included — measured, a one-step body ran its effect
+ * twice and reported `completed`. And a wait parks on a promise that never
+ * settles, so a step awaiting one holds the walk open against the very check
+ * that would suspend it and the delivery never returns. (The third reason was
+ * the key slide above: settling the step stops its wait being reached, which
+ * shifted every later wait one place down a positional key space. Naming the
+ * waits closed that one.) A fourth layer therefore fails the run on the spot,
+ * naming the fix: `aai-runtime/workflow-replay-wait.ts`. It has to be the ENGINE
+ * and not a type, because the callback captures the outer `ctx` and no
+ * step-scoped parameter can take a binding out of lexical scope.
  *
  * ## A clock, a random number and a uuid are AFFORDANCES, not prohibitions
  *
@@ -101,11 +112,22 @@
  * comment at every call site is a missing affordance.
  *
  * **They are keyed in their own POSITIONAL space** — `now!0`, `random!0`,
- * `uuid!0`, per kind — for the reason `ctx.sleep` is: the call takes no name, so
- * there is nothing to key a map on, and `!` is not producible by
- * `${name}#${occurrence}` so an author's own `ctx.step("now")` cannot alias one.
- * The counters are per KIND rather than shared, so inserting a `ctx.now()` shifts
- * no `ctx.uuid()`.
+ * `uuid!0`, per kind. These three take no argument at all, so unlike
+ * {@link WorkflowCtx.sleep} — which was positional and is not any more — there is
+ * nothing to key a map on and nothing an author could be asked to name. `!` is
+ * not producible by `${name}#${occurrence}`, so an author's own `ctx.step("now")`
+ * cannot alias one, and the counters are per KIND rather than shared, so
+ * inserting a `ctx.now()` shifts no `ctx.uuid()`.
+ *
+ * **So the positional hazard the waits shed is still theirs**: a body reaching a
+ * different NUMBER of `ctx.now()` calls reads a predecessor's timestamp. It is
+ * narrower than the wait version was, because these journal through `appendStep`
+ * and so a reach is recorded for the divergence check rather than invisible to
+ * it, and because the value they carry is a clock rather than a week-long
+ * schedule or somebody's approval. Naming them is the obvious next move and is
+ * deliberately not made: it would put a required literal on the three calls
+ * whose whole point is that they are cheaper to reach for than the hand-rolled
+ * `ctx.step("startClock", …)` they replaced.
  *
  * **And a positional key is what makes them illegal inside a
  * {@link WorkflowCtx.step}**, which the engine refuses exactly as it refuses a
@@ -151,6 +173,18 @@
  * @module
  */
 
+import type { SleepOptions, StepOptions, WaitForOptions } from "./workflow-ctx-options.ts";
+
+// Re-exported so `workflow-ctx.ts` stays the one module an author (or a reader
+// following a `{@link}`) needs for the whole authoring surface — the split is a
+// file-length decision, not a change to where these names live.
+export {
+  DEFAULT_STEP_MAX_ATTEMPTS,
+  type SleepOptions,
+  type StepOptions,
+  type WaitForOptions,
+} from "./workflow-ctx-options.ts";
+
 /**
  * A string LITERAL — the same type, unless it has widened to `string`.
  *
@@ -180,41 +214,6 @@
  * the mistake. Three layers, none a substitute for another.
  */
 type Literal<S extends string> = string extends S ? never : S;
-
-/**
- * Per-step overrides. Everything here has a default that is right for most
- * steps; passing nothing is the common case.
- *
- * @public
- */
-export type StepOptions = {
-  /**
-   * How many times to run this step before the run fails, counting the first
-   * attempt.
-   *
-   * Only a `RetryableError` (or an unclassified throw) consumes an attempt — a
-   * `FatalError` fails the run on the spot, which is the point of the
-   * distinction. See `@alexkroman1/aai/step-errors`.
-   *
-   * Defaults to {@link DEFAULT_STEP_MAX_ATTEMPTS}. It is a per-step number
-   * rather than a global because the right answer is a property of what the
-   * step DOES: a model call worth retrying three times and a payment capture
-   * worth retrying never are both ordinary.
-   */
-  maxAttempts?: number;
-};
-
-/**
- * Attempts a step gets when {@link StepOptions.maxAttempts} says nothing.
- *
- * Three, which is what the DevKit's queue hardcoded — kept deliberately so the
- * migration changes no retry behaviour it does not have to. Note attempts ARE
- * burned by failed boots, so a step can reach its ceiling without ever having
- * run its body; that was true before this change and is unchanged by it.
- *
- * @public
- */
-export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
 
 /**
  * The handle a workflow body receives as its second argument.
@@ -358,6 +357,22 @@ export type WorkflowCtx = {
    * run when the time comes — which is what makes "check back tomorrow" a thing a
    * workflow can express at all.
    *
+   * ## `label` is the wait's IDENTITY, exactly as a step's name is
+   *
+   * It is journaled as `sleep!<label>#<occurrence>`, so a `label` is what makes
+   * a wait survive a body that reaches a different NUMBER of waits than the walk
+   * that journaled them — a wait behind a condition, a wait added or removed
+   * while a run is in flight. Waits used to be keyed by POSITION alone, and then
+   * every wait after the one that moved read its predecessor's record: measured,
+   * a week-long `ctx.sleep` was skipped in full and the run reported
+   * `completed`, with the clock unmoved. `aai-runtime/workflow-replay-divergence.ts`
+   * carries that reproduction.
+   *
+   * So the same rules apply as to {@link WorkflowCtx.step}'s name, and the
+   * `Literal` constraint says so at the call site: make it a string literal,
+   * give two call sites two labels, and let a loop reuse one — the occurrence
+   * count is what separates the iterations.
+   *
    * **How long it really survives is a property of the JOURNAL**, which the
    * DEPLOYMENT picks and the runtime's boot line names. On the platform and
    * against a Postgres it is durable — a wait outlives the body, the worker and
@@ -375,10 +390,13 @@ export type WorkflowCtx = {
    *
    * ```ts no-check
    * await ctx.step("draft", () => draft(input.topic));
-   * await ctx.sleep(6 * 60 * 60 * 1000, { correlationId: "review-window" });
+   * await ctx.sleep("review-window", 6 * 60 * 60 * 1000, { correlationId: "review" });
    * await ctx.step("publish", () => publish(input.topic));
    * ```
    *
+   * @param label - This wait's identity in the journal. A string LITERAL, for
+   *   the reason above; it is also what `aai workflow` prints for a suspended
+   *   run, so "review-window" reads where `sleep!0` did not.
    * @param until - Milliseconds to wait, or the `Date` to wait until. A value
    *   already in the past returns immediately rather than erroring — a deadline
    *   that has passed HAS been reached, and a run resuming after a long outage
@@ -389,8 +407,18 @@ export type WorkflowCtx = {
    *   naming no ids wakes every outstanding SLEEP on the run — and deliberately
    *   not a `waitFor`'s deadline, so cutting a schedule short cannot also close
    *   an approval window.
+   *
+   *   Deliberately NOT defaulted from `label`, which is a different question:
+   *   `label` decides which JOURNAL ROW this wait is, and `correlationId`
+   *   decides which waits one `wakeUp` ends. A schedule polled in a loop wants
+   *   one label and one correlation id across every iteration; two independent
+   *   waits want two labels and may well want one shared id.
    */
-  sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+  sleep<const Label extends string>(
+    label: Label & Literal<Label>,
+    until: number | Date,
+    options?: SleepOptions,
+  ): Promise<void>;
   /**
    * Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
    *
@@ -453,47 +481,16 @@ export type WorkflowCtx = {
    * moment. So reach for a race when the two waits are genuinely independent (a
    * review window beside a retry backoff), not to put a deadline on one wait.
    *
-   * @param token - Who is being waited for. Two concurrent waits in one body
-   *   must use different tokens, or a single signal resolves whichever the
-   *   journal registered first and the other waits forever.
+   * @param token - Who is being waited for, and also this wait's IDENTITY in
+   *   the journal — it is keyed `hook!<token>#<occurrence>`, which is what makes
+   *   a wait survive a body that reaches a different number of them (see the
+   *   module doc). Two concurrent waits in one body must use different tokens,
+   *   or a single signal resolves whichever the journal registered first and the
+   *   other waits forever.
    * @param options - `timeoutMs` closes the window. Measured from the first time
    *   the wait is REACHED and journaled there, so a replay does not extend it.
    * @typeParam T - What the signaller is expected to send.
    */
   waitFor<T = unknown>(token: string): Promise<T>;
   waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
-};
-
-/**
- * Per-wait options.
- *
- * @public
- */
-export type WaitForOptions = {
-  /**
-   * How long to wait before giving up, in milliseconds.
-   *
-   * Resolves `undefined` when it elapses unanswered — not a throw, because a
-   * window closing is an ordinary outcome a body branches on rather than a
-   * failure. A signal that arrives after it is answered `false`, so a caller
-   * cannot be told their answer was taken when it was not.
-   */
-  timeoutMs: number;
-};
-
-/**
- * Per-sleep options.
- *
- * @public
- */
-export type SleepOptions = {
-  /**
-   * A name for this wait, so it can be ended early by name.
-   *
-   * Not required, and the default is deliberately the broad one: a `wake` naming
-   * no ids ends every outstanding wait on the run. An id is what lets a run with
-   * two concurrent waits — a review window and a retry backoff — have one of them
-   * cut short without the other.
-   */
-  correlationId?: string;
 };

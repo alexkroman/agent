@@ -564,6 +564,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   | 29 | no `globalThis.fetch` as a runtime egress default | `egressFetch()` |
   | 30 | no non-deterministic read in a shipped `workflows/` body | move it inside `ctx.step` |
   | 31 | no hand-rolled jittered backoff | `jitteredBackoff()` |
+  | 32 | no computed journal identity (a template-literal step/wait name) | a plain string literal |
 
   Hand-kept, and it keeps going stale — it stopped at 23, then at 28, and
   `--rules` is the derived source to read instead. The recurrence IS the
@@ -851,9 +852,10 @@ reference, and the `typescript@6` pin — **and, because they answer three
 versions of one question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
-A second file sits outside the table for a different reason:
-`packages/aai-server/MODAL-CLAUDE.md`, a SIBLING of that package's guide rather
-than a second package guide. `check:claude-md` measures it (its pathspec is
+Two files sit outside the table for a different reason:
+`packages/aai-server/MODAL-CLAUDE.md` and
+`packages/aai-runtime/JOURNAL-CLAUDE.md`, SIBLINGS of their package's guide
+rather than second package guides. `check:claude-md` measures it (its pathspec is
 `*CLAUDE.md`) and konsistent permits it (`workspace-package-layout` requires a
 `CLAUDE.md` and forbids nothing else), but Claude Code auto-loads only
 `CLAUDE.md`, so a sibling is read on demand and is only the right shape for

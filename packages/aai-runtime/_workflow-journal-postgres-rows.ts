@@ -28,6 +28,8 @@ export type RunRow = {
   input: string | null;
   output: string | null;
   error: string | null;
+  /** NULL off the platform, and for a row written before the column existed. */
+  code_version: string | null;
 };
 
 /** A step row. */
@@ -38,6 +40,8 @@ export type StepRow = {
   output: string | null;
   error: string | null;
   attempts: number;
+  /** NULL for a row written before the column existed — see `StepEntry.startedAt`. */
+  started_at: string | number | null;
   finished_at: string | number;
 };
 
@@ -84,6 +88,7 @@ export function toRunRecord(row: RunRow): RunRecord {
     input: row.input === null ? undefined : decodeStorageJson(row.input),
     ...(row.output === null ? {} : { output: decodeStorageJson(row.output) }),
     ...(row.error === null ? {} : { error: { message: row.error } }),
+    ...(row.code_version === null ? {} : { codeVersion: row.code_version }),
   };
 }
 
@@ -95,6 +100,11 @@ export function toStepEntry(row: StepRow): StepEntry {
     ...(row.output === null ? {} : { output: decodeStorageJson(row.output) }),
     ...(row.error === null ? {} : { error: { message: row.error } }),
     attempts: row.attempts,
+    // Absent rather than 0 when the column is NULL: a row predating this field
+    // has no start, and reporting one as instant is worse than reporting it as
+    // unknown. The conditional spread is the presence test rule 2's remedy
+    // exists for, and the value is not the guard — `millis` still has to run.
+    ...(row.started_at === null ? {} : { startedAt: millis(row.started_at) }),
     finishedAt: millis(row.finished_at),
   };
 }

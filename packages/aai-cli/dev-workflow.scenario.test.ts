@@ -100,7 +100,7 @@ export async function researchFlow(input: { topic: string }, ctx: WorkflowCtx) {
   const findings = await ctx.step("gather", () => gather(input.topic));
   // The suspension is the point: it is what a tool cannot do, and it is what
   // makes the resume path (a second delivery) part of this test.
-  await ctx.sleep(${SLEEP_MS});
+  await ctx.sleep("settle", ${SLEEP_MS});
   await ctx.step("file", () => file(findings.topic));
   return { topic: findings.topic, sources: findings.sources };
 }

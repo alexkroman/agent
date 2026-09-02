@@ -444,7 +444,7 @@ export async function awaitTranscript(
       // read at the top of the next turn is what establishes the fact.
       await ctx.waitFor(nudge, { timeoutMs: CALLBACK_WINDOW_MS });
     } else {
-      await ctx.sleep(POLL_INTERVAL_MS);
+      await ctx.sleep("poll", POLL_INTERVAL_MS);
     }
   }
   throw new Error(`Gave up on that recording after ${MAX_POLLS} checks.`);

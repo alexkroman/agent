@@ -247,7 +247,10 @@ describeWorkflowEval(agentDef, (test) => {
     // a run that has delivered everything it owes should end rather than sleep
     // for two hours and then end.
     const interval = scheduleIntervalMs(2, "hours");
-    expect(run.slept).toEqual([{ duration: interval }, { duration: interval }]);
+    expect(run.slept).toEqual([
+      { label: "nextDigest", duration: interval },
+      { label: "nextDigest", duration: interval },
+    ]);
     expect(run.slept).toHaveLength(output.digestsScheduled - 1);
     // And no poll waits are mixed in: every job finished on its first poll, so
     // every recorded sleep above is a SCHEDULE sleep.
@@ -320,9 +323,9 @@ describeWorkflowEval(agentDef, (test) => {
     expect(world.calls.filter((call) => call.url.includes("/v2/transcript/"))).toHaveLength(5);
     // Three waits for four rounds — asked for, and recorded rather than taken.
     expect(run.slept).toEqual([
-      { duration: POLL_DELAY_MS },
-      { duration: POLL_DELAY_MS },
-      { duration: POLL_DELAY_MS },
+      { label: "poll", duration: POLL_DELAY_MS },
+      { label: "poll", duration: POLL_DELAY_MS },
+      { label: "poll", duration: POLL_DELAY_MS },
     ]);
 
     // And the digest is in PUBLICATION order, not completion order. The feed is

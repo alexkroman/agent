@@ -28,7 +28,7 @@
  *   step, which is what keeps that ceiling a bound on abandonment rather than on
  *   reaches; a retried release is harmless for the mirror reason, being floored.
  * - **`claimSleep` and `appendStep` answer with what is STORED**, not with what
- *   was sent. First write wins; a replay that recomputes `ctx.sleep(60_000)` must
+ *   was sent. First write wins; a replay that recomputes `ctx.sleep("poll", 60_000)` must
  *   read back the original deadline or the run never wakes.
  *
  * ## The codec runs HERE, and the platform never sees a decoded value
@@ -87,6 +87,7 @@ import type {
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-types.ts";
+import { JournalConflictError } from "./workflow-journal-types.ts";
 import { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 
 /**
@@ -100,7 +101,30 @@ import { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
  */
 const JOURNAL_TIMEOUT_MS = 15_000;
 
-/** One call to the platform's journal route. */
+/**
+ * Methods whose 409 is a {@link JournalConflictError} rather than the store.
+ *
+ * **Scoped to `claimHook`, and the narrowness is the decision.** That is the one
+ * method whose refusal `JournalStore` documents as typed, and the only one of
+ * the two 409s reachable from a workflow BODY — which is where the distinction
+ * is read: the engine treats a journal rejection as "the store is unavailable,
+ * retry the delivery" unless it is a conflict, so a conflicted run needs the
+ * type or it is retried until its delivery budget runs out.
+ *
+ * The route's other 409 is `createRun`'s duplicate run id, and mapping it here
+ * would be dishonest rather than generous: the postgres arm refuses that with a
+ * raw primary-key violation, so the type would be a promise only one arm keeps.
+ * `createRun` is reached from `engine.start` and never from a body, so nothing
+ * reads the difference. Type it in all three arms first, or not at all.
+ */
+const CONFLICT_METHODS = new Set(["claimHook"]);
+
+/**
+ * One call to the platform's journal route.
+ *
+ * `errorFor` is what keeps a refusal a refusal: every other non-2xx is the
+ * store, and a retryable status already carries `PLATFORM_UNAVAILABLE_CODE`.
+ */
 async function call(
   opts: PlatformEndpoint,
   method: string,
@@ -111,6 +135,10 @@ async function call(
     label: `workflow-journal ${method}`,
     timeoutMs: JOURNAL_TIMEOUT_MS,
     body: JSON.stringify({ method, ...body }),
+    errorFor: (status, detail) =>
+      status === 409 && CONFLICT_METHODS.has(method)
+        ? new JournalConflictError(`workflow-journal ${method} refused: ${detail.slice(0, 500)}`)
+        : undefined,
   });
 }
 
@@ -161,6 +189,11 @@ function toRun(value: unknown): RunRecord | undefined {
     input: decode(value.input),
     output: decode(value.output),
     error: errorOf(value.error),
+    // A DIAGNOSTIC, so an absent or non-string value reads as unknown rather
+    // than being coerced: `String(undefined)` is `"undefined"`, which would
+    // compare unequal to every real bundle hash and make the divergence message
+    // report a redeploy on a run that never had one.
+    ...(typeof value.codeVersion === "string" ? { codeVersion: value.codeVersion } : {}),
   };
 }
 
@@ -183,6 +216,14 @@ function toStep(value: unknown): StepEntry | undefined {
   const attempts = Number(value.attempts);
   const finishedAt = Number(value.finishedAt);
   if (!(Number.isFinite(attempts) && Number.isFinite(finishedAt))) return undefined;
+  // NOT part of the refusal above, unlike `attempts` and `finishedAt`. An
+  // absent start is legitimate — a row written before the column existed — so a
+  // missing one must read as unknown rather than sink the whole entry, which is
+  // the answer that makes a double execution deterministic. A present-but-junk
+  // value is dropped the same way for the same reason: nothing downstream reads
+  // it to make a decision, so refusing the entry over it would trade a durable
+  // answer for a diagnostic.
+  const startedAt = value.startedAt === undefined ? undefined : Number(value.startedAt);
   return {
     key: value.key,
     name: value.name,
@@ -190,6 +231,7 @@ function toStep(value: unknown): StepEntry | undefined {
     output: decode(value.output),
     error: errorOf(value.error),
     attempts,
+    ...(startedAt !== undefined && Number.isFinite(startedAt) ? { startedAt } : {}),
     finishedAt,
   };
 }
@@ -225,6 +267,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
         status: record.status,
         createdAt: record.createdAt,
         input: encode(record.input),
+        codeVersion: record.codeVersion,
       });
     },
 
@@ -345,6 +388,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
           output: encode(entry.output),
           error: entry.error?.message,
           attempts: entry.attempts,
+          startedAt: entry.startedAt,
           finishedAt: entry.finishedAt,
         },
       });

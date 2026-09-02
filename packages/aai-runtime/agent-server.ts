@@ -92,6 +92,19 @@ export interface AgentServerOptions extends PassthroughServerOptions {
   /** SQL handle exposed to tool code as `ctx.db` — see `RuntimeOptions.db`. */
   db?: Db | undefined;
   /**
+   * The durable-run journal this deployment OWNS — see `RuntimeOptions.journal`.
+   * Absent, the runtime resolves its own and the boot line names which.
+   *
+   * The FOURTH silent drop through this door, and the one that says the pattern
+   * needs a check rather than more vigilance: `telephony` mounted an
+   * unauthenticated surface nobody could switch off, `page` served a static
+   * agent the voice routes, `env` left `AAI_WORKFLOW_API_TOKEN` doing nothing,
+   * and this left a deployment that owns a database unable to say so — its runs
+   * went wherever the runtime guessed. Each was found by somebody needing the
+   * option, which is the wrong detector. {@link ForwardingGap} is the right one.
+   */
+  journal?: RuntimeOptions["journal"];
+  /**
    * Where this server is reachable from outside — see `RuntimeOptions.publicUrl`.
    * `ctx.workflows.publicWebhookUrl()` is the only reader; without it, it throws.
    *
@@ -169,6 +182,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     providerEnv,
     clientDir,
     db,
+    journal,
     publicUrl,
     page,
     telephony,
@@ -178,7 +192,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   const runtime = createRuntime({
     agent,
     env,
-    ...omitUndefined({ providerEnv, db, publicUrl, logger: hooks.logger }),
+    ...omitUndefined({ providerEnv, db, journal, publicUrl, logger: hooks.logger }),
   });
 
   const server = createServer({

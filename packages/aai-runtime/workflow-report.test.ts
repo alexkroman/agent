@@ -16,8 +16,8 @@
 
 import { beforeEach, describe, expect, test } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
-import { createStepReporter } from "./workflow-report.ts";
-import { type RunContext, withRunContext } from "./workflow-run-context.ts";
+import { createStepInfoReader, createStepReporter } from "./workflow-report.ts";
+import { type RunContext, withRunContext, withStepContext } from "./workflow-run-context.ts";
 import { DEFAULT_STREAM_NAMESPACE, streamNamespace } from "./workflow-streams.ts";
 
 /** The step this run is inside, which the reporter reads for the suffix. */
@@ -60,7 +60,7 @@ function inRun<T>(fn: () => Promise<T> | T): Promise<T> {
 const defaultStream = () => streams.get(DEFAULT_STREAM_NAMESPACE) ?? [];
 
 beforeEach(() => {
-  step = { name: "transcribeSegment", key: "step_1", attempt: 1 };
+  step = { name: "transcribeSegment", key: "step_1", attempt: 1, maxAttempts: 3 };
   streams = new Map();
   onWrite = undefined;
 });
@@ -79,7 +79,7 @@ describe("createStepReporter", () => {
   test("NAMES the attempt past the first, in the line a page renders", async () => {
     // A fan-out that is retrying looks identical to one that is succeeding —
     // the same sentence, sixty times — unless the attempt is in the line.
-    step = { name: "transcribeSegment", key: "s", attempt: 3 };
+    step = { name: "transcribeSegment", key: "s", attempt: 3, maxAttempts: 3 };
     await inRun(() => createStepReporter(makeLogger())("Transcribing 0:00–0:58."));
     expect(defaultStream()).toEqual(["Transcribing 0:00–0:58. (attempt 3)"]);
   });
@@ -140,7 +140,7 @@ describe("a chunk emitted into a named stream", () => {
     // The suffix is what tells a human reader a fan-out is retrying. Appended to
     // a value it is either lost or corruption, and the narration beside it is
     // where a retry is already visible.
-    step = { name: "transcribeSegment", key: "s", attempt: 3 };
+    step = { name: "transcribeSegment", key: "s", attempt: 3, maxAttempts: 3 };
     await inRun(() =>
       createStepReporter(makeLogger())({ text: "hello" }, { namespace: "transcript", log: false }),
     );
@@ -163,10 +163,63 @@ describe("a chunk emitted into a named stream", () => {
     // The other half of the same reporter: `report()` passes no namespace, and
     // an absent one IS the default stream — `streamNamespace` owns that
     // resolution, which is why `write` takes it unresolved.
-    step = { name: "transcribeSegment", key: "s", attempt: 2 };
+    step = { name: "transcribeSegment", key: "s", attempt: 2, maxAttempts: 3 };
     const log = makeLogger();
     await inRun(() => createStepReporter(log)("Transcribing 0:00–0:58.", { log: true }));
     expect(defaultStream()).toEqual(["Transcribing 0:00–0:58. (attempt 2)"]);
     expect(log.info).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The step-info reader, which is `createStepReporter`'s sibling: both are the
+ * published half of a `@alexkroman1/aai/step` slot over the same
+ * `AsyncLocalStorage`.
+ *
+ * These are the reader's own claims. That the number it reads is the REAL
+ * attempt across a retry is `workflow-replay-step.test.ts`'s, because only the
+ * engine can say so.
+ */
+describe("createStepInfoReader", () => {
+  test("answers undefined outside a step, which a body reads as not retrying", async () => {
+    const read = createStepInfoReader();
+    expect(read()).toBeUndefined();
+    // A workflow BODY is in a run and is not a step, and that is the case a
+    // bare "is there a run" test would get wrong.
+    await withRunContext({ runId: "wrun_1", workflow: "digest", write: async () => 1 }, async () =>
+      expect(read()).toBeUndefined(),
+    );
+  });
+
+  test("derives isLastAttempt with `>=`, so a burned boot cannot hide the last try", async () => {
+    // `===` reads attempt 4 of 3 as "not the last one", and an attempt can be
+    // burned by a failed boot — which is exactly when a body most wants to
+    // degrade rather than fail.
+    const read = createStepInfoReader();
+    // Inside a RUN as well as a step: `withStepContext` narrows an existing
+    // context and is a no-op without one, which is what makes a step's helpers
+    // land in the step's own run rather than inventing one.
+    await withRunContext({ runId: "wrun_1", workflow: "digest", write: async () => 1 }, async () =>
+      withStepContext({ name: "charge", key: "charge#0", attempt: 4, maxAttempts: 3 }, () => {
+        expect(read()).toEqual({
+          name: "charge",
+          key: "charge#0",
+          attempt: 4,
+          maxAttempts: 3,
+          isLastAttempt: true,
+        });
+        return Promise.resolve();
+      }),
+    );
+  });
+
+  test("carries the KEY, so a loop's rounds are distinguishable", async () => {
+    const read = createStepInfoReader();
+    await withRunContext({ runId: "wrun_1", workflow: "digest", write: async () => 1 }, async () =>
+      withStepContext({ name: "tick", key: "tick#2", attempt: 1, maxAttempts: 3 }, () => {
+        expect(read()).toMatchObject({ key: "tick#2", isLastAttempt: false });
+        return Promise.resolve();
+      }),
+    );
   });
 });

@@ -171,14 +171,24 @@ export async function createRun(
     status: string;
     createdAt: number;
     input?: string | undefined;
+    codeVersion?: string | undefined;
   },
 ): Promise<void> {
   const rows = await sql(
-    `insert into ${RUNS} (slug, run_id, workflow, status, created_at, input)
-     values ($1, $2, $3, $4, $5, $6::text::jsonb)
+    `insert into ${RUNS}
+       (slug, run_id, workflow, status, created_at, input, code_version)
+     values ($1, $2, $3, $4, $5, $6::text::jsonb, $7)
      on conflict (slug, run_id) do nothing
      returning run_id`,
-    [slug, run.runId, run.workflow, run.status, run.createdAt, run.input ?? null],
+    [
+      slug,
+      run.runId,
+      run.workflow,
+      run.status,
+      run.createdAt,
+      run.input ?? null,
+      run.codeVersion ?? null,
+    ],
   );
   if (rows.length === 0) throw new PlatformWorkflowRunTakenError(run.runId);
 }
@@ -191,7 +201,7 @@ export async function getRun(
 ): Promise<JournalRunRow | undefined> {
   const rows = await sql(
     `select run_id, workflow, status, created_at, input::text as input,
-            output::text as output, error
+            output::text as output, error, code_version
        from ${RUNS} where slug = $1 and run_id = $2`,
     [slug, runId],
   );
@@ -216,7 +226,7 @@ export async function listRuns(
 ): Promise<JournalRunRow[]> {
   const rows = await sql(
     `select run_id, workflow, status, created_at, input::text as input,
-            output::text as output, error
+            output::text as output, error, code_version
        from ${RUNS} where slug = $1 and workflow = $2
       order by created_at desc, run_id desc limit $3`,
     [slug, workflow, limit],
@@ -291,7 +301,8 @@ export async function readSteps(
   runId: string,
 ): Promise<JournalStepRow[]> {
   const rows = await sql(
-    `select key, name, status, output::text as output, error, attempts, finished_at
+    `select key, name, status, output::text as output, error, attempts,
+            started_at, finished_at
        from ${STEPS} where slug = $1 and run_id = $2 order by finished_at, key`,
     [slug, runId],
   );
@@ -437,16 +448,18 @@ export async function appendStep(
       const rows = await sql(
         `with mine as (
            insert into ${STEPS}
-             (slug, run_id, key, name, status, output, error, attempts, finished_at)
-           values ($1, $2, $3, $4, $5, $6::text::jsonb, $7, $8, $9)
+             (slug, run_id, key, name, status, output, error, attempts, started_at,
+              finished_at)
+           values ($1, $2, $3, $4, $5, $6::text::jsonb, $7, $8, $9, $10)
            on conflict (slug, run_id, key) do nothing
            returning key, name, status, output::text as output, error, attempts,
-                     finished_at
+                     started_at, finished_at
          )
-         select key, name, status, output, error, attempts, finished_at from mine
+         select key, name, status, output, error, attempts, started_at, finished_at
+           from mine
          union all
          select key, name, status, output::text as output, error, attempts,
-                finished_at
+                started_at, finished_at
            from ${STEPS} where slug = $1 and run_id = $2 and key = $3`,
         [
           slug,
@@ -457,6 +470,7 @@ export async function appendStep(
           entry.output ?? null,
           entry.error ?? null,
           entry.attempts,
+          entry.startedAt ?? null,
           entry.finishedAt,
         ],
       );

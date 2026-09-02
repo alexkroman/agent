@@ -57,7 +57,7 @@ describe("a body whose non-determinism reaches a step NAME", () => {
     let coin = "h";
     const body: Body = async (_input, ctx) => {
       await ctx.step(`charge-${coin}`, charge);
-      await ctx.sleep(1000);
+      await ctx.sleep("nap", 1000);
       return "done";
     };
 
@@ -79,7 +79,7 @@ describe("a body whose non-determinism reaches a step NAME", () => {
     let coin = "h";
     const body: Body = async (_input, ctx) => {
       await ctx.step(`charge-${coin}`, () => "receipt");
-      await ctx.sleep(1000);
+      await ctx.sleep("nap", 1000);
     };
     await replay(journal, body);
     coin = "t";
@@ -107,7 +107,7 @@ describe("a body whose non-determinism reaches a step NAME", () => {
       } catch {
         return "recovered";
       }
-      await ctx.sleep(1000);
+      await ctx.sleep("nap", 1000);
       return "done";
     };
     await replay(journal, body);
@@ -117,6 +117,76 @@ describe("a body whose non-determinism reaches a step NAME", () => {
     const outcome = await replay(journal, body);
     expect(outcome.kind).toBe("failed");
     expect(failure(outcome)).toContain("Workflow replay diverged");
+  });
+});
+
+/**
+ * The half the RUN RECORD settles.
+ *
+ * The message above states two causes and hands the reader a test to run against
+ * their own source, because a journal holds what a value WAS and never how it
+ * was produced. `RunRecord.codeVersion` closes half of that: recorded at `start`
+ * and compared here, it says whether the code moved. Each case asserts the
+ * verdict AND that the two-cause fork survives — the fork is what tells a reader
+ * what to look for, so eliminating a cause must not delete it.
+ */
+describe("what the run record says about the CODE", () => {
+  /** The same divergence every time; only the two versions differ. */
+  async function divergeUnder(startedUnder: string | undefined): Promise<string> {
+    const journal = await seed();
+    let coin = "h";
+    const body: Body = async (_input, ctx) => {
+      await ctx.step(`charge-${coin}`, () => "receipt");
+      await ctx.sleep("nap", 1000);
+    };
+    const walk = () =>
+      replayRun({ runId: RUN, workflow: "billing", input: {}, run: body, journal, startedUnder });
+    await walk();
+    coin = "t";
+    await journal.wakeSleeps(RUN, undefined);
+    return failure(await walk());
+  }
+
+  const A = "a".repeat(64);
+  const B = "b".repeat(64);
+
+  test("a version that MOVED states the redeploy as a fact, naming both bundles", async () => {
+    vi.stubEnv("AAI_BUNDLE_SHA256", B);
+    const message = await divergeUnder(A);
+
+    expect(message).toContain("settles which cause this is");
+    expect(message).toContain(`STARTED against bundle ${A}`);
+    expect(message).toContain(`walked by ${B}`);
+    // The fork stays: it is what names the thing to look for.
+    expect(message).toContain("BODY is non-deterministic");
+  });
+
+  test("a version that did NOT move rules the redeploy out", async () => {
+    vi.stubEnv("AAI_BUNDLE_SHA256", A);
+    const message = await divergeUnder(A);
+
+    expect(message).toContain("RULES OUT a redeploy");
+    expect(message).toContain("Look for the computed name");
+    expect(message).not.toContain("settles which cause this is");
+  });
+
+  test("a walk with no bundle hash says it cannot tell, rather than agreeing", async () => {
+    // `aai dev` and a self-hosted server have no hash. An absent current version
+    // must not read as "unchanged": that would rule out the cause that, on a
+    // server whose code changes on every file save, is the likeliest one.
+    vi.stubEnv("AAI_BUNDLE_SHA256", undefined);
+    const message = await divergeUnder(A);
+
+    expect(message).toContain("cannot say which cause this is");
+    expect(message).not.toContain("RULES OUT");
+  });
+
+  test("a run started before the field existed says the same", async () => {
+    vi.stubEnv("AAI_BUNDLE_SHA256", B);
+    const message = await divergeUnder(undefined);
+
+    expect(message).toContain("cannot say which cause this is");
+    expect(message).not.toContain(`walked by ${B}`);
   });
 });
 
@@ -138,7 +208,7 @@ describe("what the check must NOT accuse", () => {
     const body: Body = async (_input, ctx) => {
       await ctx.step("head", () => 1);
       if (!tail) {
-        await ctx.sleep(1000);
+        await ctx.sleep("nap", 1000);
         return "waited";
       }
       return await ctx.step("tail", () => 2);
@@ -194,7 +264,7 @@ describe("what the check must NOT accuse", () => {
     let reachedTail = false;
     const body: Body = async (_input, ctx) => {
       await ctx.step("outer", () => ctx.step("inner", inner));
-      await ctx.sleep(1000);
+      await ctx.sleep("nap", 1000);
       reachedTail = true;
       return await ctx.step("tail", tail);
     };
@@ -210,5 +280,90 @@ describe("what the check must NOT accuse", () => {
     // The inner step is answered by its parent's entry, so it never re-runs.
     expect(inner).toHaveBeenCalledTimes(1);
     expect(tail).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The wait half, which is a different claim from every case above.
+ *
+ * A step's refusal is INFERRED — an unreached key plus unread work, two facts
+ * neither of which is proof on its own. A wait's is stated by the journal: the
+ * record carries the token of whichever `ctx.waitFor` registered it, so a
+ * mismatch is the store saying outright that this walk is reading somebody
+ * else's answer.
+ *
+ * The keys name their token, so `replayRun` cannot be driven into this through
+ * its own `ctx` — which is the assertion, and why the check is exercised through
+ * a journal that answers the way a POSITIONAL key space did. See
+ * `waitTokenDiverged`.
+ */
+describe("a wait whose journaled record belongs to a DIFFERENT wait", () => {
+  /** A journal that answers every `claimHook` with `token`, whatever was asked. */
+  function withHookToken(journal: JournalStore, token: string): JournalStore {
+    return {
+      ...journal,
+      claimHook: async (runId, key, asked) => ({
+        ...(await journal.claimHook(runId, key, asked)),
+        token,
+      }),
+    };
+  }
+
+  test("fails the run rather than handing the body the other wait's payload", async () => {
+    const journal = await seed();
+    const paid = vi.fn();
+    const body: Body = async (_input, ctx) => {
+      const answer = await ctx.waitFor<{ ok: boolean }>("final");
+      paid(answer);
+      return answer;
+    };
+
+    const outcome = await replay(withHookToken(journal, "late"), body);
+
+    expect(outcome.kind).toBe("failed");
+    // The body never ran past the wait, so nothing acted on the wrong payload.
+    expect(paid).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Both tokens, for `divergedMessage`'s reason: the reader recognises the two
+   * names in their own source, where the key alone (`hook!…`) says nothing.
+   */
+  test("names the token it reached AND the token that holds the record", async () => {
+    const journal = await seed();
+    const body: Body = async (_input, ctx) => ctx.waitFor("final");
+
+    const message = failure(await replay(withHookToken(journal, "late"), body));
+
+    expect(message).toContain('ctx.waitFor("final")');
+    expect(message).toContain('ctx.waitFor("late")');
+    expect(message).toContain("another wait's record");
+  });
+
+  /**
+   * The refusal is a verdict about the WALK, so a body that catches broadly must
+   * not be able to turn it into `completed` — the same property every other
+   * refusal on `replayRun`'s `refused` channel has.
+   */
+  test("still fails the run when the body SWALLOWS the refusal", async () => {
+    const journal = await seed();
+    const body: Body = async (_input, ctx) => {
+      try {
+        await ctx.waitFor("final");
+      } catch {
+        return "swallowed";
+      }
+      return "answered";
+    };
+
+    expect((await replay(withHookToken(journal, "late"), body)).kind).toBe("failed");
+  });
+
+  test("passes a wait whose record is its own, which is every correctly-keyed wait", async () => {
+    const journal = await seed();
+    const body: Body = async (_input, ctx) => ctx.waitFor("final");
+
+    // No wrapper: the real journal answers the token the key names.
+    expect((await replay(journal, body)).kind).toBe("suspended");
   });
 });

@@ -270,44 +270,12 @@ the re-export clause does not help, for the API Extractor reason above.
 
 ### What writing the templates found
 
-Four things the surface cannot currently demonstrate about itself. None is a bug;
-each is a decision worth making rather than inheriting.
-
-- **`uploads` publishes a store TYPE and two blob implementations with no
-  contracted way to join them** — `createUploadStore` and `resolveUploadBlobs`
-  are `@internal`, so they are on `/internal` and the template has to take the
-  store as a parameter. Honest for an embedder handed one by `createServer`, and
-  it means the capability cannot show its own end-to-end wiring.
-- **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
-  contracted and `createWorkflowClient` is on `/internal`, so a template can
-  assemble the bag and not hand it to anything. Its `logger` field is required
-  and both shipped `Logger` values (`consoleLogger`, `createConsoleLogger`) are
-  on `/internal` too — only the `Logger` type is contracted.
-
-  It is at **epoch 2** for a reason worth knowing, because it is the SIBLING
-  version of the `TextTurnResult` hazard below: the export list did not move and
-  neither did a signature, only the PROVENANCE line in the rollup —
-  `WORKFLOW_API_PREFIX` reaches this package from `@alexkroman1/aai/internal`
-  now rather than `/workflow-api`, since the prefix is the server's half of that
-  API. A host that takes the constant from `@alexkroman1/aai-runtime` — every
-  host — sees nothing.
-- **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
-  the honest template is fifty lines of skeleton and anything in the wild will either
-  be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way
-  `aai` publishes `createToolContext` — would remove the incentive to launder it.
-- **`TextTurnResult` is `ReturnType<typeof streamText<ToolSet>>`**, so this
-  capability's contract hash moves when the `ai` package's `StreamTextResult`
-  moves. An upstream minor can force an epoch classification here with no change
-  of ours.
-
-And one real defect the templates caught, now FIXED: **`PassthroughServerOptions`
-could not be spread into `ServerOptions`.** Its fields were optional WITHOUT
-`| undefined`, so under `exactOptionalPropertyTypes` `{...hooks}` widens each to
-`T | undefined` and `createServer` rejected it (TS2379) — while the three wrapper
-doors exist precisely so one hook bag can reach all of them. The fix is on the
-TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
-`upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
-bag. Do not narrow them back.
+Four things this surface cannot demonstrate about itself (two capabilities
+publishing a type whose constructor is `@internal`, `WdkAdapter`'s nine methods
+with no partial-implementation affordance, `TextTurnResult` letting an upstream
+minor force an epoch), plus the one real defect they caught. **In
+[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "What writing the `aai-runtime` epoch
+templates found"** — that guide owns the epochs; this one is at its cap.
 
 ### Self-hosted durable workflows: there is no world to start any more
 
@@ -401,7 +369,37 @@ covered, by a spec that called `createServer` directly, which is exactly why the
 wrapper's version survived it. A forwarding spec has to take the door a caller
 takes.
 
-`uploadBroker` came with them; the remaining gaps are deliberate.
+**`journal` was the fourth, and it is why this is a CHECK now rather than a
+rule.** `RuntimeOptions.journal` takes a host-supplied `JournalStore` — the whole
+point being that a deployment which already owns a database keeps its durable
+runs there — and this door did not forward it, so the only way to supply one was
+to drop back to `createRuntime` + `createServer` and restate by hand every field
+the wrapper derives. Found writing `contracts/compatibility/server/v8.ts`, which
+could not name `AgentServerOptions["journal"]` while the option was nonetheless
+IN this capability's report (the `agent: RuntimeOptions["agent"]` rollup).
+
+**`agent-server-forwarding.ts` is what stops a fifth.** Every `RuntimeOptions`
+member is either on `AgentServerOptions` or on an explicit
+`UnforwardedRuntimeOption` deny-list with its reason, and `ForwardingGap` is the
+subtraction — `never` today, and the NAME of the offending member the moment one
+is added. That fails `turbo run typecheck` AND the build, because the module is
+compiled by `tsconfig.build.json` and a build failure cannot be skipped by a test
+filter. It is the same shape as `AgentConfigSchema`'s
+`HOST_ONLY_AGENT_FIELDS` subtraction one package over, and for the same reason:
+every field here is optional, so an omission is valid TypeScript and presents as
+a working server quietly ignoring part of its own configuration.
+
+Two things about it worth knowing. It is checked in BOTH directions — a
+`StaleExcuse` (an entry naming a member `RuntimeOptions` no longer has) and a
+`RedundantExcuse` (one the door now forwards) each fail the same way, and the
+first direction caught THREE wrong entries on its first run: a draft excused
+`name`, `greeting` and `hostBaseAgent`, none of which is a `RuntimeOptions`
+member at all. And the enforcement really is `tsc` rather than the suite — the
+spec beside it is type-level, so a gap reports three passing tests; that file
+says so rather than implying otherwise.
+
+`uploadBroker` came with the three above; the remaining absences are now
+DECISIONS, each with a reason at its deny-list entry rather than in this guide.
 `name` and `greeting` are derived, which is the whole point.
 And of `RuntimeOptions`' twenty, the fourteen unreachable ones are the testing
 and sandbox seams (`executeTool`, `toolSchemas`, `createWebSocket`,
@@ -709,44 +707,11 @@ replaces. A MISSING directory throws for the same reason.
 
 ## Rendering this package is a docs decision, and it cannot be half-made
 
-There is no `typedoc.json` here, and its absence is now a measured decision
-rather than an oversight. Two things make it one.
-
-**A package-local config alone turns the suite red.**
-`packages/aai-templates/docs-markdown-gate.test.ts` globs `packages/*/typedoc.json`
-and asserts that every package holding one has committed markdown under
-`docs/api/` — so the file cannot land before the render that produces its page.
-The coupling is deliberate and it is wider than that one test: flipping this on
-means `docs/typedoc.json`'s `entryPoints`, the `include` in
-`docs/tsconfig.typedoc.json`, the `dependsOn` + `inputs` of turbo's `docs` task,
-the retraction of `UNDOCUMENTED_SUBPATHS["aai-runtime"]["."]` in
-`scripts/docs-markdown.mjs` (which errors on a subpath that is both documented
-AND excused), and the regenerated `docs/api/` — one change, or a red gate.
-
-**And the answer today is no.** `docs/CLAUDE.md` argues it: a ~220-export
-surface aimed at somebody EMBEDDING an agent, rendered beside the SDK, rebuilds
-the two-thirds-of-a-combined-reference the runtime split undid. The deny-list
-entry says what would change the answer — "revisit if embedders ask for a
-rendered page, then it gets its own, not a share of the SDK's".
-
-What is worth not rediscovering is that the config is a five-line file plus two
-options, both earned by a warning an actual render produced, and that with them
-this package renders CLEAN — zero warnings under `treatWarningsAsErrors`, one
-~7,100-line `@alexkroman1/aai-runtime.md`, against `aai` and `aai-ui` in the
-same project:
-
-- `entryPoints: ["dist/runtime-barrel.d.ts"]` — the only documentable subpath,
-  since `./internal` is deny-listed for the reason its own module doc gives.
-- `intentionallyNotExported: ["EventsNamed"]` — the `Extract` helper
-  `TransportEventBody` is written as. Same call as `DistributiveOmit` in
-  `packages/aai/typedoc.json`: a reader gets the resolved union in the rendered
-  signature and can never name the helper.
-- `externalSymbolLinkMappings` for `ai`'s `LanguageModel`, which `resolveLlm`
-  returns and `LlmRegistryEntry.create` builds.
-
-Rendered in ISOLATION it reports seven more, all `{@link Db}`-shaped links into
-`@alexkroman1/aai`. Those are an artifact of the SDK not being in the project,
-not a defect in these comments — do not "fix" them by deleting links.
+There is no `typedoc.json` here, and the absence is measured rather than an
+oversight: a package-local config alone turns the docs gate red, and the answer
+today is no. **[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "Rendering
+`aai-runtime` is a docs decision"** has the five files one change must touch
+together, what a real render measured, and what would change the answer.
 
 ## A run's journal has THREE homes, and the order between them is a decision
 
@@ -787,80 +752,18 @@ carries the rest.
 the log reads as a bug, and this is the one an author is most likely to hit by
 accident.
 
-### What the tiers of test each cover, and why none substitutes
+### The journal's test topology and its decided contract points
 
-The claims are of four different kinds, which is why there are four files:
-
-- **`workflow-journal-platform.test.ts`** — our side of the wire. The CODEC (a
-  `Uint8Array` in a step's output crosses as an envelope, not as an index map,
-  which `JSON.stringify` produces with no error), and three answers REFUSED
-  rather than invented: `claimAttempt` on a non-number (a made-up ceiling does
-  not hold), `appendStep` on an unreadable answer (the STORED entry is what makes
-  a double execution deterministic), `claimSleep` likewise.
-- **`aai-server/platform-workflow-journal.test.ts`** — SHAPE, over all twelve
-  methods as a TABLE rather than a case each: every statement binds the slug as
-  `$1`, no statement binds a bare `$n::jsonb`, `claimAttempt` issues exactly one
-  query. A table because the interesting failure is one method forgetting, and a
-  hand-written case per method is what a thirteenth method would not get.
-- **`aai-server/platform-workflow-journal.scenario.test.ts`** — the only place
-  TENANCY is testable, that being a claim about column values in a shared table.
-  Two tenants' rows, and every cross-tenant read comes back empty.
-- **`aai-server/journal-conformance-platform.scenario.test.ts`** — the shared
-  CONTRACT, answered by the real route over a real database. The three above each
-  assert a property somebody thought to write down; this one asserts the same
-  cases every other backend answers, which is a different job. See below.
-
-Two things the scenario tier taught. **`jsonb` NORMALIZES**, so a value survives
-by MEANING and not by bytes — the memory journal preserves bytes and these do
-not, a divergence a spec might reasonably have asserted, so the cases compare
-parsed values. And the **`::text::jsonb`** binding is deliberate on both stores:
-postgres.js JSON-serializes a parameter bound to a jsonb position, and the
-self-hosted twin shipped with a bare cast that stored a JSON string containing
-the JSON, found only by a real server.
-
-### The FOURTH arm is the platform's own SQL, and it lives in `aai-server`
-
-`journal-conformance.ts` declares ONE case list and `JOURNAL_BACKENDS` registers
-the backends. Three arms run it from this package; the fourth cannot, and it is
-the one that finds platform bugs:
-
-| Arm | Tier | What it can see |
-| --- | --- | --- |
-| memory | unit | the reference |
-| platform over a FAKE transport | unit | THIS side of the wire — the codec, `toRun`/`toStep` |
-| postgres, real database | scenario | `on conflict`, a row count, a unique index |
-| **platform over the REAL route and a real Postgres** | scenario, in `aai-server` | the platform's own statements |
-
-The unit platform arm delegates every SEMANTIC to the memory reference (its own
-header says so), so a divergence in the platform's SQL is invisible to it. One
-was shipped: `createRun` was `on conflict (slug, run_id) do nothing` with no
-`returning`, so a duplicate run id was answered with SUCCESS — against an
-interface that says "rejects if `runId` already exists", a memory backend that
-throws, and a self-hosted store that trips its primary key. Two racing starts on
-one id both believed they had won and the loser's `input` was discarded, on the
-platform arm only, i.e. for every deployed agent. A/B'd: with that SQL in place
-the unit suite reports **123 passed** and the fourth arm fails the shared case.
-
-`aai-server/journal-conformance-platform.scenario.test.ts` is that arm. The
-refusal it now gets is a typed `PlatformWorkflowRunTakenError` mapped to a
-**409** by `withReserved`'s `statusFor` hook — the same shape as `claimHook`'s
-token conflict, and for the same reason: every plain `Error` there becomes a
-retryable **503**, so the engine spends the message's whole attempt budget on a
-refusal that cannot change.
-
-**The case list crosses the boundary through a LOADER, not a re-export clause.**
-`loadJournalConformance()` on `/internal` dynamically imports the case modules.
-They `import { describe, expect, test } from "vitest"`, which is an OPTIONAL peer
-of this package, and a static clause is bundled INTO `dist/internal.js` —
-measured: `import … from "vitest"` on line 4. `@alexkroman1/aai-cli`'s published
-`dist` imports a VALUE from that exact module (`consoleLogger`, in `_dev-env.ts`)
-with every bare specifier external, so the plain clause makes `aai dev`
-unrunnable in any install without the test runner: `ERR_MODULE_NOT_FOUND` from
-inside a published package, invisible to `publint` and to `attw`. Behind the
-dynamic import the same code splits into its own chunk (verified: zero `vitest`
-references in `dist/internal.js`) and is loaded only by the caller that asks.
-Same rule as `/eval/vitest` and `@alexkroman1/aai/testing/vitest`, but as a
-function because `/internal` cannot afford to be split in two.
+Three things that are REFERENCE rather than rules to keep resident, and they are
+in **[`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md)** beside this file: what each of
+the four tiers of journal test can see and why none substitutes for another; why
+the FOURTH conformance arm (the platform's own SQL, over a real route and a real
+Postgres) lives in `aai-server` and the shipped bug it caught; and the three
+`JournalStore` contract points the suite refused to decide — `setStatus`'s
+ADDITIVE patch, the four methods left under-specified for a run that does not
+exist, and `readSteps`'s tie order. Read that file when you are changing a
+backend or the conformance table; nothing in it is needed to work elsewhere in
+this package.
 
 ### A journal read is a round trip, and three shapes issued it N times
 
@@ -932,12 +835,62 @@ a healthy resume, and raising is unsound without `claimAttempt`'s corroboration.
 **Inside a `ctx.step` they are REFUSED**, by the same `currentRun()?.step` test
 and for the same key-shift reason as the section below.
 
+### A wait is keyed by NAME, and `ctx.sleep` takes a label for it
+
+`ctx.sleep(label, until, options?)` and `ctx.waitFor(token, options?)` journal
+their waits as `sleep!<label>#<occurrence>` and `hook!<token>#<occurrence>` —
+name plus occurrence, exactly like `ctx.step`. The occurrence counters are PER
+NAME, so a loop is one label and N rows, and inserting a wait shifts nothing.
+
+They were two bare ordinals, and then a body reaching a different NUMBER of waits
+read its predecessor's record. Two shapes, both legal code with no author mistake
+in them beyond a condition:
+
+```ts no-check
+if (somethingAboutTheClock) await ctx.sleep("early", 1000);
+await ctx.sleep("schedule", WEEK_MS); // sleep!1 on walk 1, sleep!0 on walk 2
+```
+
+Positionally, walk 2 read the elapsed `early` record and the week-long wait
+resolved instantly, reporting `completed` with the clock unmoved. The hook
+version is worse: the body is handed the other wait's PAYLOAD.
+`workflow-replay-wait.test.ts`'s "a body that reaches a different NUMBER of
+waits" pins all three cases and A/Bs green against positional keys.
+
+Three things not to relitigate:
+
+- **`label` is REQUIRED, and `Literal<Label>` types it.** The same constraint
+  `ctx.step`'s name carries, for the same reason — an identity computed at run
+  time is the hazard the whole scheme exists to remove. It was a breaking
+  signature change, taken while there are no external consumers.
+- **`correlationId` is NOT defaulted from `label`.** They answer different
+  questions: `label` decides which journal ROW this wait is, `correlationId`
+  decides which waits one `wakeUp` ends. A polled schedule wants one label and one
+  id across every iteration; two independent waits want two labels and may
+  want a shared id.
+- **The three determinism reads stay positional** (`now!0`, `random!0`,
+  `uuid!0`). They take no argument to name, and they journal through `appendStep`
+  so a reach is at least recorded for the divergence check. `sdk/workflow-ctx.ts`
+  carries why requiring a literal there is the worse trade.
+
+What is left is one shape, and it is strictly better than what it replaced: a
+label or token that is ITSELF non-deterministic mints a key no walk has reached,
+so the run registers a fresh wait and PARKS on something nobody can signal. That
+hangs rather than answering wrongly, and nothing detects it —
+`workflow-replay-divergence.ts` states the residual and why the NEW-key report
+that would catch it is not built. `waitTokenDiverged` there is the nearest thing:
+it compares the token `claimHook` hands back against the one the walk reached, so
+it is an assertion about the KEY SCHEME (unreachable while a key names its token)
+rather than about the body, and it is what caught the positional case.
+
 ### A step body may not WAIT, and the engine refuses one that does
 
 `ctx.sleep` and `ctx.waitFor` belong to the body. The closure `ctx.step` is
-handed CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep(2000))` is
-one line away at every call site, and until `workflow-replay-wait.ts` existed the
-engine ran it — silently, and wrongly in two separate ways. Both are measured:
+handed CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep("nap",
+2000))` is one line away at every call site, and until `workflow-replay-wait.ts`
+existed the engine ran it — silently, and wrongly in three separate ways. Two of
+them are measured below and both still stand; the third was the key slide, which
+naming the waits closed independently (see "A wait is keyed by NAME").
 
 - **The step body re-ran from the top on every delivery.** The suspend unwinds
   out of the step, the attempt charge is released (correct — a suspend settles
@@ -945,23 +898,11 @@ engine ran it — silently, and wrongly in two separate ways. Both are measured:
   closure. A one-step body logged its effect **twice** across two deliveries and
   reported `completed`. For a step that calls a paid provider that is a duplicate
   charge, which is how this was found.
-- **And every LATER wait in the run read the wrong record.** This is the sharper
-  half and it is not a duplicate-work problem at all. Waits are keyed
-  POSITIONALLY (`sleep!0`, `hook!0`) off a counter that advances only when a wait
-  is REACHED — and a settled step's body is not re-executed, so its wait stops
-  being reached the moment the step lands, and every wait after it slides one
-  place down the key space. Reproduced, clock unmoved between walks 2 and 3:
-
-  ```text
-  walk 1  napper enters, sleep!0 claimed                      -> suspended
-  walk 2  napper enters again, sleep!0 elapsed, napper#0
-          journaled, body-level wait claims sleep!1           -> suspended, +7 days
-  walk 3  napper answered from the journal (body NOT run),
-          body-level wait is now sleep!0 — elapsed on walk 2  -> completed
-  ```
-
-  A week-long durable wait skipped in full, reported `completed`. For
-  `ctx.waitFor` the same shift hands the body somebody else's PAYLOAD.
+- **And every LATER wait in the run READ the wrong record.** That half is CLOSED,
+  and not by this check — see "A wait is keyed by NAME" above, which carries the
+  transcript. It is listed here because it was one of three reasons for the
+  refusal rather than the whole of it, and because `workflow-replay-wait.ts`'s
+  own doc is still the clearest statement of what positional keys cost.
 
 So both methods now refuse when `currentRun()?.step` is set — which is true for
 the whole of a step's execution, including inside every helper it awaits, since
@@ -971,15 +912,10 @@ through `replayRun`'s `refused`, so a body that catches broadly cannot turn it
 into `completed` — the third verdict on that channel, beside a divergence and an
 abandoned step.
 
-**It cannot be a TYPE, and that is worth stating because the repo has precedent
-that looks like it transfers.** `ctx.step`'s `Literal<Name>` guard types an
-ARGUMENT; this would have to retype a CAPTURED BINDING. The outer `ctx` is
-lexically in scope inside the callback and TypeScript has no effect system, so a
-step-scoped `ctx` parameter would be advice a one-line closure ignores, not a
-gate. Runtime is the only layer that sees it. Nor is it worth making RESUMABLE:
-journaling a step's partial progress needs continuations, and the affordance for
-"work, then wait, then more work" already exists — two steps with the wait
-between them.
+**It cannot be a TYPE**, and it is not worth making RESUMABLE either;
+`workflow-replay-wait.ts`'s module doc argues both (a captured binding is not an
+argument, and TypeScript has no effect system; "work, then wait, then more work"
+is already two steps with the wait between them).
 
 **What the refusal cost, recorded because it is a real loss.** The property
 grammar's `nestedWait` node (`_workflow-resume-program.ts`) generated exactly
@@ -1040,6 +976,93 @@ want a heartbeat on the RUN so a ceiling cannot abandon a walk that is alive.
 The platform's own half — a slow delivery starving every OTHER tenant's claim —
 is fixed separately in `aai-server/workflow-queue-budget.ts`.
 
+### A run record names the CODE it was started against
+
+`RunRecord.codeVersion` is `AAI_BUNDLE_SHA256`, recorded at `start` and compared
+at each walk, and it exists for one reader: the divergence message. That message
+states two causes — a redeploy mid-flight, or a non-deterministic body — and then
+hands the reader a test to run against their own source, because a journal holds
+what a value WAS and never how it was produced. The version settles half of it:
+an inequality states the redeploy and names both bundles, an equality ELIMINATES
+it. The fork stays in the text either way, being what says what to look for.
+
+**A DIAGNOSTIC, never a gate**, and read from THIS PROCESS's environment rather
+than the agent's — an agent may set any other `AAI_*` key as a secret, so a
+tenant read would let it pin its own version and have the message assert as a
+fact the one cause it had ruled out. Absence therefore means UNKNOWN in both
+directions and may never read as "unchanged"; only a deployed guest has a hash.
+`workflow-code-version.ts` carries the rest, including why an inequality does not
+refuse the run.
+
+### A failure of the JOURNAL is not a failure of the RUN
+
+`replayRun` propagates a store failure rather than marking a run failed on a
+database blip — and that was true only of `readSteps` until
+`workflow-replay-journal-failure.ts` existed. **The account, its one
+`JournalConflictError` exemption, and the two blind test arms it found are in
+[`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md)**; that module carries the argument.
+This guide is at its cap.
+
+### A step body can read its own ATTEMPT
+
+`stepInfo()` on `@alexkroman1/aai/step` answers
+`{ name, key, attempt, maxAttempts, isLastAttempt }` inside a step and
+`undefined` everywhere else. The engine already tracked the number and nothing
+could read it, so the one decision a retry policy cannot make for an author was
+unavailable: degrade rather than fail. **`sdk/step-attempt.ts` carries the
+argument** — the two differences from the DevKit's `getStepMetadata()`, and why
+`maxAttempts` has to travel with the attempt rather than be restated at the body.
+
+What is this package's: `installWorkflowSupport` publishes the reader
+(`createStepInfoReader` in `workflow-report.ts`) into a `Symbol.for` slot like
+`report()`'s, because the answer lives in this package's `AsyncLocalStorage` and
+`/step` rides the browser bundle. It derives `isLastAttempt` with `>=` and not
+`===`, since a burned boot can push the count past the ceiling and that is
+exactly the try a body most wants to degrade on. And the EVAL engine fills the
+slot with a first-and-only attempt rather than leaving it empty — unfilled means
+`undefined`, which a body reads as "no run", so a step that degrades on its last
+attempt would be measured on that branch.
+
+### A step entry records when it STARTED
+
+`StepEntry.startedAt`, so `finishedAt - startedAt` is what the step cost. An
+entry carried `attempts` and `finishedAt` and no start, so the only elapsed time
+derivable from a run's history was the gap between one step's finish and the
+next's — which is the previous step's cost PLUS whatever the body did between
+them, and is nothing at all for the first step of a run or the first after a
+wait. The park-curve section below is the evidence: its production numbers
+(`walkingForSeconds: 285`, "~45 behind it at 12 a minute") came off a log line,
+because the journal could not be asked.
+
+An absolute instant rather than a duration — the difference is derivable and the
+instant is not, and a gap between one entry's `finishedAt` and the next's
+`startedAt` is DELIVERY latency, a different question from step cost and the one
+that tells a slow step from a slow queue. It spans the whole reach, retries and
+backoff included, and excludes time queued behind `StepGate`; the field's own doc
+argues both.
+
+**OPTIONAL, and absence means the row predates the column.** The journal is
+append-only over tables that already hold rows, so a reader owes an absent start
+"unknown" and never zero — which would report a long step as instant. The
+conformance table pins that in both directions, including that a start of `0` is
+KEPT: an arm reading `startedAt ?? undefined` would satisfy the absence case
+while silently dropping a real value.
+
+**No reader surfaces it yet**, and that is worth saying rather than implying: the
+public workflow API carries a run SNAPSHOT and no step history, so this is
+queryable from the database and from nowhere else. A route and a CLI verb over
+`readSteps` are the obvious next move and are not built.
+
+Two things the change found, both about the DDL-parity gate. It read the ONE
+migration that CREATES these tables, so a column added by a later one was
+uncompared — which made it blind to exactly the drift it exists to catch, and
+had already hidden `workflow_runs.reconciled_at` plus two reconcile indexes. It
+reads every migration in filename order now, applies `alter table … add column`
+on both sides, and scopes the parse to the five tables the pairing derives. And
+its column-ORDER assertion had to go: a column added by an `alter` lands last, so
+the two sides diverge in position the moment either adds one. Sets are compared
+instead; every claim that matters is asserted by name.
+
 ### A parked delivery asks to come back PROPORTIONATELY
 
 `workflow-queue-dispatch.ts` refuses a delivery whose run is already being
@@ -1076,46 +1099,6 @@ guest-owned" — the idle reaper counted HTTP responses, so the 60s abort read a
 an idle guest and a step longer than the idle window never completed. Parking is
 what made that reachable, because before it the redundant walks were the thing
 holding the guest open.
-
-### Three `JournalStore` contract points the suite refused to decide, decided
-
-A conformance table can only assert what the interface actually promises, and
-three points were underspecified — each with two backends doing one thing and the
-third doing another, and no case able to name a winner. The decisions:
-
-- **`setStatus`'s patch is ADDITIVE.** A field the patch does not carry is not
-  written, and an explicit `undefined` is the same as absent — so a stored
-  `output` can never be CLEARED. The platform already behaves this way (the
-  handler builds `{output, error}` and the SQL `coalesce`s), which makes memory's
-  and postgres's `"output" in patch` distinction dead code. Adopted rather than
-  fixed the other way for three reasons. It is what `error` has always done in
-  ALL THREE backends (`coalesce($6, error)`, `if (patch?.error)`), so the
-  alternative leaves two fields of one patch with two rules. Reaching the
-  distinction over HTTP needs a new wire field — the client sends
-  `output: encode(patch?.output)` and `JSON.stringify` drops an `undefined` key,
-  so "no patch" and "clear it" are already the same bytes — i.e. a protocol
-  change to serve a caller that does not exist: the engine passes either a
-  defined output or no patch at all. And clearing a terminal payload is a
-  mutation primitive in disguise, which this interface says outright it does not
-  have ("no `updateStep` and no `deleteRun`: the journal is APPEND-ONLY").
-- **`claimAttempt`, `claimSleep`, `claimHook` and `appendStep` are defined only
-  for a run that EXISTS, and a backend MAY throw.** Memory throws; both
-  databases insert a row with no run to belong to and answer normally. Left
-  under-specified ON PURPOSE, out loud, so nobody writes a caller that depends on
-  either: mandating the throw costs the databases a read (or a foreign key) per
-  step to detect a state the engine cannot reach — it calls these only after
-  `createRun` — and mandating the answer would have memory invent a slot, i.e.
-  resurrect a run, which is the worse of the two.
-- **`readSteps` is ordered by `finishedAt`, ties broken by `key`.** Both
-  databases already do exactly that (`order by finished_at, key`); memory returns
-  insertion order, which agrees except on a same-millisecond tie. The one-line
-  change memory owes: sort a COPY of `steps` by `finishedAt` then `key` before
-  mapping. One limit worth stating rather than pretending away — a database
-  breaks the tie in the column's COLLATION, which for `text` under a non-C
-  collation is not code-unit order, and step keys are punctuation-heavy
-  (`fetch#0`, `sleep!0`). It is unobservable in practice: a tie needs two steps
-  settling in one millisecond, and the engine indexes what `readSteps` returns by
-  `key`. Do not tighten it to a byte order without `collate "C"` on the column.
 
 ## An upload's bytes are OBJECTS, and its record has two homes
 

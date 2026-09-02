@@ -9,7 +9,6 @@
     "packages/aai-studio-server/studio-secret-routes.ts": 30.7,
     "packages/aai-templates/templates/call-audit/workflows/ingest.ts": 46.8,
     "packages/aai-templates/templates/dispatch-center/tools/ops_dashboard.ts": 0,
-    "packages/aai-templates/templates/health-assistant/fda.ts": 44.8,
-    "packages/aai/sdk/testing.ts": 34
+    "packages/aai-templates/templates/health-assistant/fda.ts": 44.8
   }
 }

@@ -272,6 +272,7 @@ export {
   type StandardSchemaIssue,
   type StandardSchemaV1,
 } from "./sdk/standard-schema.ts";
+export { publishStepInfoReader, type StepInfoReader } from "./sdk/step-attempt.ts";
 export { publishStepEnv } from "./sdk/step-env.ts";
 export {
   publishStepFetch,
@@ -283,10 +284,7 @@ export {
   STEP_FETCH_KEEP_ALIVE_MS,
   STEP_FETCH_PIPELINING,
 } from "./sdk/step-fetch-constants.ts";
-export {
-  publishStepReporter,
-  type StepReporter,
-} from "./sdk/step-report.ts";
+export { publishStepReporter, type StepReporter } from "./sdk/step-report.ts";
 export {
   publishSpeechSynthesizer,
   SPEECH_UNAVAILABLE_MESSAGE,

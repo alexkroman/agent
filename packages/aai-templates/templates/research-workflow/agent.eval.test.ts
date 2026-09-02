@@ -250,7 +250,7 @@ describeEval(
         // durable `sleep` rather than suspending, so what a case can honestly
         // claim is that the body asked — and that is the assertion that fails
         // if the suspension is ever deleted.
-        expect(run?.slept).toEqual([{ duration: REVIEW_DELAY_MS }]);
+        expect(run?.slept).toEqual([{ label: "reviewWindow", duration: REVIEW_DELAY_MS }]);
 
         // Six model calls, all through the step slot: the fan-out's width came
         // from a journaled stage rather than from anything the body recomputed.

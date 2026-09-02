@@ -184,6 +184,39 @@ export function journalRunConformance(arm: JournalArm): void {
         expect(run?.input).toBeNull();
       });
 
+      test("a run started under a bundle reads that version back", async () => {
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        const codeVersion = "a".repeat(64);
+        await journal.createRun(runOf({ runId, codeVersion }));
+        expect((await journal.getRun(runId))?.codeVersion).toBe(codeVersion);
+      });
+
+      test("a run started with NO bundle version reads back ABSENT, not empty", async () => {
+        // The distinction the divergence message rests on. Off the platform
+        // there is no bundle hash at all, so a backend answering `""` or `null`
+        // here would compare unequal to every real version and have the message
+        // report a redeploy on a run that never had one — asserting as a fact
+        // the one cause it should have ruled out.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId, codeVersion: undefined }));
+        expect((await journal.getRun(runId))?.codeVersion).toBeUndefined();
+      });
+
+      test("listRuns carries the bundle version, not only getRun", async () => {
+        // Its own case because the two reads are two SQL statements per backend
+        // and only one of them is exercised by everything else here: a column
+        // added to the `getRun` select and forgotten in `listRuns` reads back as
+        // absent from the listing, which is indistinguishable from a run that
+        // never had one. Caught exactly that way while writing this.
+        const journal = arm.journal();
+        const { runId, workflow } = keysFor(arm);
+        const codeVersion = "b".repeat(64);
+        await journal.createRun(runOf({ runId, workflow, codeVersion }));
+        expect((await journal.listRuns(workflow, 10))[0]?.codeVersion).toBe(codeVersion);
+      });
+
       test("a VOID workflow completes: an undefined output is not a driver error", async () => {
         // postgres.js refuses an undefined parameter outright, so a body that
         // returns nothing — ordinary, for one that exists to do side effects —
@@ -322,145 +355,6 @@ export function journalRunConformance(arm: JournalArm): void {
         await journal.setStatus(runId, "completed", { output: { kept: true } });
         expect(await journal.setStatus(runId, "cancelled")).toBe(true);
         expect((await journal.getRun(runId))?.output).toEqual({ kept: true });
-      });
-    });
-
-    describe("the journal is APPEND-ONLY and idempotent on a step's key", () => {
-      test("the loser of a double execution adopts the WINNER's value", async () => {
-        // The whole reason `appendStep` answers with the stored entry rather than
-        // with what it was handed: two executions that both ran the step have to
-        // agree on what it returned, or the two replays diverge.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        const first = await journal.appendStep(
-          runId,
-          stepOf({ key: "charge#0", output: "first", attempts: 1, finishedAt: 1000 }),
-        );
-        const second = await journal.appendStep(
-          runId,
-          stepOf({ key: "charge#0", output: "second", attempts: 4, finishedAt: 2000 }),
-        );
-        expect(first.output).toBe("first");
-        expect(second).toEqual(first);
-        expect(await journal.readSteps(runId)).toHaveLength(1);
-      });
-
-      test("two concurrent appends of one key agree on one entry", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        const [a, b] = await Promise.all([
-          journal.appendStep(runId, stepOf({ key: "ship#0", output: "a", finishedAt: 1000 })),
-          journal.appendStep(runId, stepOf({ key: "ship#0", output: "b", finishedAt: 1001 })),
-        ]);
-        expect(a).toEqual(b);
-        expect(await journal.readSteps(runId)).toHaveLength(1);
-      });
-
-      test("readSteps answers every settled step, in the order they settled", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        for (const [n, key] of ["one#0", "two#0", "three#0"].entries()) {
-          await journal.appendStep(runId, stepOf({ key, finishedAt: 1000 + n }));
-        }
-        expect((await journal.readSteps(runId)).map((s) => s.key)).toEqual([
-          "one#0",
-          "two#0",
-          "three#0",
-        ]);
-      });
-
-      test("readSteps is empty for a run with no steps, and for one nobody started", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        const missing = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        expect(await journal.readSteps(runId)).toEqual([]);
-        expect(await journal.readSteps(missing.runId)).toEqual([]);
-      });
-
-      test("a step's name and attempt count are what was stored", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        const entry = stepOf({ key: "poll#3", name: "poll", attempts: 4, finishedAt: 1234 });
-        expect(await journal.appendStep(runId, entry)).toEqual(entry);
-      });
-    });
-
-    describe("claimAttempt is MONOTONIC, per run and per key", () => {
-      test("the first claim is 1 and every later one is the next number", async () => {
-        // Claimed BEFORE the body runs, so a process that dies mid-step has
-        // already burned the attempt and a step that wedges the guest cannot be
-        // redelivered forever.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(1);
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(2);
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(3);
-      });
-
-      test("two keys on one run are counted independently", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimAttempt(runId, "charge#0");
-        await journal.claimAttempt(runId, "charge#0");
-        expect(await journal.claimAttempt(runId, "ship#0")).toBe(1);
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(3);
-      });
-
-      test("two runs sharing a key are counted independently", async () => {
-        const journal = arm.journal();
-        const one = keysFor(arm);
-        const two = keysFor(arm);
-        await journal.createRun(runOf({ runId: one.runId }));
-        await journal.createRun(runOf({ runId: two.runId }));
-        await journal.claimAttempt(one.runId, "charge#0");
-        expect(await journal.claimAttempt(two.runId, "charge#0")).toBe(1);
-      });
-
-      test("two concurrent claims never hand out the same number", async () => {
-        // Anything that READS then WRITES gives both deliveries the same number
-        // and lets a step exceed its ceiling. One statement is the remedy, and
-        // this is the assertion that can tell the two apart.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        const claimed = await Promise.all([
-          journal.claimAttempt(runId, "charge#0"),
-          journal.claimAttempt(runId, "charge#0"),
-          journal.claimAttempt(runId, "charge#0"),
-        ]);
-        expect([...claimed].sort((a, b) => a - b)).toEqual([1, 2, 3]);
-      });
-
-      test("a release gives one back, and the next claim re-takes it", async () => {
-        // A charge is a LEASE — see `JournalStore.releaseAttempt`. Only an
-        // attempt that never ENDED keeps one, which is what makes the ceiling a
-        // bound on abandonment rather than on reaches.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimAttempt(runId, "charge#0");
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(2);
-        await journal.releaseAttempt(runId, "charge#0");
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(2);
-      });
-
-      test("a release can never take the count below zero", async () => {
-        // Floored, so a release that lands twice may only under-charge a budget
-        // the next claim re-takes — where a negative count is an unbounded budget
-        // for a step that wedges the guest.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.releaseAttempt(runId, "charge#0");
-        await journal.releaseAttempt(runId, "charge#0");
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(1);
       });
     });
   });

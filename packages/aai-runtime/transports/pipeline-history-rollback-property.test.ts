@@ -390,43 +390,68 @@ describe("an injected prompt rolled back leaves the history as it found it", () 
           doors.map(() => null),
         );
       }),
-      { numRuns: 20 },
+      // 80 rather than fast-check's default, and rather than the 20 this ran at
+      // for its first month. The counters below AGGREGATE over the property's
+      // runs, so `numRuns` is what decides how heavy their left tail is — and at
+      // 20 the tail reached states this suite exists to require. Measured over
+      // 24 consecutive runs at 20: `toolHealedAtCap` came out **0 twice**
+      // against a floor of `> 10`, i.e. an ~8% failure rate on a green tree, and
+      // `atCapConversation` produced the 144 that failed a real CI job against a
+      // floor of 200 whose recorded range started at 442. Neither number was
+      // wrong when it was taken; 20 draws was too few for the range to describe
+      // the unluckiest run.
+      //
+      // Four times the draws costs 635ms -> ~2.6s against the unit tier's 5s
+      // budget, and it is the fix that makes the floors mean something rather
+      // than lowering them until they stop firing: a floor under a distribution
+      // whose minimum is zero cannot be set at all.
+      { numRuns: 80 },
     );
 
     // `ROLLBACK_FUZZ_COVERAGE=1` prints the table, the way the pipeline, S2S and
     // replay-equivalence properties do. It is how the actuals below were taken,
     // and how the next person re-takes them.
     if (process.env.ROLLBACK_FUZZ_COVERAGE === "1") console.log(JSON.stringify(reached));
-    // Every range below was taken over 20 consecutive runs with
-    // `ROLLBACK_FUZZ_COVERAGE=1`, and each floor sits under the OBSERVED
-    // MINIMUM of its range — never a fraction of the mean, because what one
-    // script reaches is correlated across all 260 of its steps rather than
-    // independent per step, so these distributions have long left tails.
+    // Every range below was RE-TAKEN over 14 consecutive runs at `numRuns: 80`,
+    // and each floor sits under the OBSERVED MINIMUM of its range — never a
+    // fraction of the mean, because what one script reaches is correlated across
+    // all 260 of its steps rather than independent per step, so these
+    // distributions have long left tails.
     //
-    // This first one is DETERMINISTIC on a green run — 20
+    // **The previous ranges were taken at `numRuns: 20` and two of these floors
+    // were unsatisfiable there**, which is why the count moved rather than the
+    // numbers alone. Measured over 24 consecutive runs at 20: `toolHealedAtCap`
+    // came out **0 twice** against a floor of `> 10` — a state the corpus simply
+    // failed to reach on ~8% of green runs, so no positive floor was settable at
+    // all — and `atCapConversation` produced the **144** that failed a CI job
+    // against a floor of 200 whose recorded range started at 442. Neither
+    // recorded range was wrong when taken; 20 draws was too few to describe the
+    // unluckiest run. See the `numRuns` comment above.
+    //
+    // This first one is DETERMINISTIC on a green run — 80
     // `numRuns` x 2 doors x 260 steps — so it is a wiring check rather than a
-    // reach claim: it fails if the loop, the door list or the step count is
-    // edited without the four floors below being re-taken.
-    expect(reached.rollbacks, "no prompt was ever rolled back").toBeGreaterThan(10_000); // 10400-10400 over 20 runs (deterministic)
+    // reach claim: it fails if the loop, the door list, `numRuns` or the step
+    // count is edited without the four floors below being re-taken.
+    expect(reached.rollbacks, "no prompt was ever rolled back").toBeGreaterThan(40_000); // 41600-41600 over 14 runs (deterministic)
     // The whole defect lives here: a rollback whose push had to trim. Without
     // these two floors the equality is satisfied by a corpus that never fills a
     // window, which is every corpus anybody writes by hand.
     expect(reached.atCapConversation, "no rollback ever landed at the text cap").toBeGreaterThan(
-      200,
-    ); // 442-1788 over 20 runs
-    expect(reached.atCapLlm, "no rollback ever landed at the LLM cap").toBeGreaterThan(700); // 1380-3562 over 20 runs
-    // The longest left tail of the five by an order of magnitude — it needs the
-    // `tools` fill AND a full LLM window AND the trim to land on the call rather
-    // than the result, so the floor sits far under the minimum rather than near
-    // it (mean ~400 against a minimum of 38).
+      1200,
+    ); // 2822-5170 over 14 runs
+    expect(reached.atCapLlm, "no rollback ever landed at the LLM cap").toBeGreaterThan(4000); // 8072-11344 over 14 runs
+    // Still the longest left tail of the five — it needs the `tools` fill AND a
+    // full LLM window AND the trim to land on the call rather than the result —
+    // so the floor sits under a THIRD of the minimum rather than near it. At
+    // `numRuns: 20` this was the one that reached zero.
     expect(
       reached.toolHealedAtCap,
       "no rollback at the cap ever had a healed tool pair to restore",
-    ).toBeGreaterThan(10); // 38-878 over 20 runs
+    ).toBeGreaterThan(200); // 672-3230 over 14 runs
     // The control: a script that resets on every step never fills anything, so
     // most rollbacks are the ordinary below-the-cap kind the unit suite pins. A
     // corpus that lost this would be one where the equality is only ever
     // checked at the boundary.
-    expect(reached.belowCap, "every rollback landed at a full window").toBeGreaterThan(4000); // 6838-9020 over 20 runs
+    expect(reached.belowCap, "every rollback landed at a full window").toBeGreaterThan(20_000); // 30210-33528 over 14 runs
   });
 });

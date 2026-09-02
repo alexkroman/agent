@@ -24,6 +24,13 @@
  * synthesizer needs a WebSocket client, which this subpath may not carry — and
  * the WAV framing is the zero-dependency half.
  *
+ * `stepInfo` is the one member that reads the ENGINE rather than doing work: it
+ * says which attempt of a step this is and whether it is the last, which is what
+ * lets a body degrade instead of failing. Its `maxAttempts` travels with the
+ * attempt on purpose — see `sdk/step-attempt.ts` — so a signature change here
+ * breaks bodies that branch on a retry, which are the ones whose failure is
+ * quietest.
+ *
  * `stepWebhookUrl` is the one member of this capability whose value LEAVES the
  * system: it is the callback URL a step hands a third party, and the same URL
  * `ctx.workflows.publicWebhookUrl` mints for a tool. A signature change here
@@ -56,11 +63,13 @@ export {
   StepGenerateError,
   type StepGenerateJsonOptions,
   type StepGenerateOptions,
+  type StepInfo,
   StepTransportError,
   stepEnv,
   stepFetch,
   stepGenerate,
   stepGenerateJson,
+  stepInfo,
   stepSpeak,
   stepWebhookUrl,
   stripJsonFence,

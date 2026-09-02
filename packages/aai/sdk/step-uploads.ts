@@ -60,7 +60,7 @@
  *     const { size, complete } = await ctx.step("arrived", () => uploadInfo(input.recording));
  *     // … work on every segment whose `end` is inside `size` …
  *     if (complete) break;
- *     await ctx.sleep(5000);
+ *     await ctx.sleep("poll", 5000);
  *   }
  * }
  * ```

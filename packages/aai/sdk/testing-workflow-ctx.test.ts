@@ -14,7 +14,7 @@ import type { WorkflowCtx } from "./workflow-ctx.ts";
 /** A body exercising all three ctx methods, as a real `workflows/` module would. */
 async function body(input: { topic: string }, ctx: WorkflowCtx): Promise<unknown> {
   const notes = await ctx.step("research", () => `notes on ${input.topic}`, { maxAttempts: 6 });
-  await ctx.sleep(10_000, { correlationId: "settle" });
+  await ctx.sleep("settle", 10_000, { correlationId: "settle" });
   const approved = await ctx.waitFor<{ ok: boolean }>("tok_gate", { timeoutMs: 5000 });
   const filed = await ctx.step("file", () => "filed");
   return { notes, approved, filed };
@@ -86,22 +86,28 @@ describe("sleeps", () => {
   test("are RECORDED rather than taken, so a schedule is assertable in milliseconds", async () => {
     const before = Date.now();
     const ctx = createWorkflowCtx();
-    await ctx.sleep(6 * 60 * 60 * 1000);
+    await ctx.sleep("review-window", 6 * 60 * 60 * 1000);
     // Not waited out — the whole reason a case can assert a six-hour schedule.
     expect(Date.now() - before).toBeLessThan(1000);
-    expect(ctx.slept).toEqual([{ until: 21_600_000, correlationId: undefined }]);
+    expect(ctx.slept).toEqual([
+      { label: "review-window", until: 21_600_000, correlationId: undefined },
+    ]);
   });
 
   test("carry the correlation id the body named", async () => {
     const ctx = createWorkflowCtx();
-    await ctx.sleep(10_000, { correlationId: "settle" });
+    await ctx.sleep("cooldown", 10_000, { correlationId: "settle" });
     expect(ctx.slept[0]?.correlationId).toBe("settle");
+    // Two different questions: `label` is which journal row the wait IS,
+    // `correlationId` is which waits one `wakeUp` ends. Neither defaults
+    // from the other.
+    expect(ctx.slept[0]?.label).toBe("cooldown");
   });
 
   test("keep an absolute Date as given", async () => {
     const at = new Date("2030-01-01T00:00:00.000Z");
     const ctx = createWorkflowCtx();
-    await ctx.sleep(at);
+    await ctx.sleep("deadline", at);
     expect(ctx.slept[0]?.until).toEqual(at);
   });
 });

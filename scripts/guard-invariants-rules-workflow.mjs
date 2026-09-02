@@ -1,5 +1,5 @@
 /**
- * The two rules over a shipped `workflows/` body — 26 and 30.
+ * The three rules over a shipped `workflows/` body — 26, 30 and 32.
  *
  * They lived in `-rules-timing.mjs`, whose own doc had already conceded the
  * seam: "**26 and 30 are a PAIR and are here together.** Neither is about
@@ -14,10 +14,21 @@
  * corpus and leaves the legitimate case to the baseline WITH a reason recorded
  * at the occurrence — never in the baseline JSON, which `--update` rewrites.
  *
+ * **32 is the one that needs no baseline, and that is what distinguishes it.**
+ * It bans the computed step or wait NAME rather than the read that feeds one,
+ * so there is nothing undecidable about it: a template-literal identity is
+ * wrong wherever it appears, because identity is `(name, occurrence)` and the
+ * per-name counter already distinguishes a fan-out's calls. It stands at zero
+ * across all fourteen templates. It is also the shape `Literal<Name>` provably
+ * misses — see its remedy — which is why a rule exists at all, and
+ * `aai-cli/_workflow-determinism.ts` is the same check pointed at a USER's
+ * project.
+ *
  * Rule IDs are STABLE across this move, as they were across the last one: 30
  * arrived here from `-rules-shape.mjs` and kept its number, and `LINE_RULES` is
  * sorted by id rather than by module order, so nothing downstream can tell
- * which file a rule lives in.
+ * which file a rule lives in. 32 rather than 31 because 31 was taken while this
+ * one was being written, by the jittered-backoff rule in `-rules-timing.mjs`.
  *
  * This module is in `guard-invariants.mjs`'s `SELF_REFERENTIAL` set with its
  * four siblings, because every `label` and `re` here describes the thing it
@@ -69,6 +80,26 @@ const NONDETERMINISTIC_READS = [
  * method (rule 26's step callers) and wrong for `fetch`.
  */
 const NOT_MEMBER_BEFORE = "(^|[^A-Za-z0-9_$.])";
+
+/**
+ * Rule 31's three journal identities.
+ *
+ * `ctx.step`, `ctx.sleep` and `ctx.waitFor` all key a journal ROW by their
+ * first argument — `name#occurrence`, `sleep!<label>#<n>`, `hook!<token>#<n>` —
+ * so a computed one mints a row no earlier walk reached, whichever it is.
+ */
+const IDENTITY_CALLS = ["step", "sleep", "waitFor"].join("|");
+
+/**
+ * A template placeholder as SOURCE text: `interp("base")` is `${base}`.
+ *
+ * Composed rather than written out because biome reads a literal `${` inside a
+ * plain string as a mistaken template — true in general, and rule 31's samples
+ * are source lines whose whole subject is one. A template literal is not the
+ * escape either: with no REAL placeholder biome rewrites it back to a quoted
+ * string. This one has one, so it stays.
+ */
+const interp = (expr) => `\${${expr}}`;
 
 /** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
 export const WORKFLOW_BODY_RULES = [
@@ -222,5 +253,63 @@ export const WORKFLOW_BODY_RULES = [
       "subtractions). Anything at BODY level is the bug. The `startClock`/`now`\n" +
       "helpers that used to head that list are GONE: they were the hand-rolled\n" +
       "`ctx.now()` the methods above replaced.",
+  },
+  {
+    id: 32,
+    key: "rule32_computedIdentity",
+    label: "computed journal identity (a template-literal step/wait name)",
+    // A BACKTICK immediately after the paren, then an interpolation somewhere
+    // after it. Both halves are needed: a backtick-quoted name with no `${` is
+    // a literal and fine, and an interpolation with no backtick is somebody
+    // else's string.
+    re: `\\.(${IDENTITY_CALLS})\\(\`[^\`]*\\$\\{`,
+    paths: WORKFLOW_BODY_PATHSPECS,
+    skipComments: true,
+    samples: {
+      matches: IDENTITY_CALLS.split("|").map((m) => `  await ctx.${m}(\`k-\${i}\`, f);`),
+      ignores: [
+        // The remedy, and what every shipped body already does.
+        ...IDENTITY_CALLS.split("|").map((m) => `  await ctx.${m}("k", f);`),
+        // A backtick-quoted name with nothing interpolated IS a literal.
+        "  await ctx.step(`fetchArticle`, f);",
+        // A bare identifier is the TYPE system's job: `Literal<Name>` refuses
+        // one that widened to `string`, and one that did not is a const literal.
+        "  await ctx.step(STEP_NAME, f);",
+        // The name is a literal; it is the CALLBACK that interpolates.
+        `  await ctx.step("post", () => post(\`${interp("base")}/x\`));`,
+        // A different ctx method, and a plain template literal.
+        "  const t = await ctx.now();",
+        `  const url = \`${interp("base")}/x\`;`,
+      ],
+    },
+    remedy:
+      "Name a step or a wait with a plain string LITERAL. A journal identity is\n" +
+      "a KEY and a body is replayed, so a computed one mints a key no earlier\n" +
+      "walk reached — after which the engine either re-executes the step or\n" +
+      "refuses the run.\n" +
+      "\n" +
+      "This is the hole `Literal<Name>` leaves open, which is why a rule is\n" +
+      "needed at all. That constraint is `string extends Name ? never : Name`,\n" +
+      "so it refuses a name that WIDENED — and a template literal's type is a\n" +
+      "template-literal type rather than `string`, so a name written as a\n" +
+      "template literal with an interpolation in it compiles cleanly. Verified\n" +
+      "against the real `WorkflowCtx`; the samples below carry the shape.\n" +
+      "\n" +
+      "It is also rule 30's own headline defect, from the other end: that rule\n" +
+      "bans the READ that feeds such a name and pays for the breadth with six\n" +
+      "baselined step helpers, because a line cannot see the `ctx.step` callback\n" +
+      "boundary. This one bans the NAME, needs no baseline, and stands at zero —\n" +
+      "every step in all fourteen shipped templates is a plain literal.\n" +
+      "\n" +
+      "A fan-out does NOT need a computed name, which is the case an author will\n" +
+      "think they need one for. Identity is (name, occurrence) and the counter is\n" +
+      "per name, so N calls under one name are N distinct rows:\n" +
+      '`ctx.step("transcribeSegment", …)` inside the loop is the shipped\n' +
+      'seven-way fan-out. A label works the same way — one `ctx.sleep("poll", …)\n' +
+      "across every iteration of a polling loop.\n" +
+      "\n" +
+      "`aai-cli/_workflow-determinism.ts` is this rule pointed at a USER's\n" +
+      "project, warning at `aai build` and `aai deploy`; its module doc carries\n" +
+      "why rule 30's reads half does not port there.",
   },
 ];

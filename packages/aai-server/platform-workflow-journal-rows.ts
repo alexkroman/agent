@@ -36,6 +36,13 @@ export type JournalRunRow = {
   input: string | undefined;
   output: string | undefined;
   error: string | undefined;
+  /**
+   * The bundle the run was STARTED against, absent off the platform and for a
+   * row that predates the column — see `RunRecord.codeVersion` in
+   * `@alexkroman1/aai-runtime/internal`, which is the shape this crosses the
+   * wire as.
+   */
+  codeVersion: string | undefined;
 };
 
 /** One settled step. */
@@ -46,6 +53,11 @@ export type JournalStepRow = {
   output: string | undefined;
   error: string | undefined;
   attempts: number;
+  /**
+   * When the walk REACHED this step, absent for a row written before the
+   * column existed — see `StepEntry.startedAt`.
+   */
+  startedAt: number | undefined;
   finishedAt: number;
 };
 
@@ -66,6 +78,10 @@ export function toRun(row: Record<string, unknown>): JournalRunRow {
     input: text(row.input),
     output: text(row.output),
     error: text(row.error),
+    // A DIAGNOSTIC, so an absent value stays absent rather than being coerced:
+    // `String(undefined)` is `"undefined"`, which compares unequal to every
+    // real bundle hash and would report a redeploy on a run that never had one.
+    codeVersion: text(row.code_version),
   };
 }
 
@@ -77,6 +93,10 @@ export function toStep(row: Record<string, unknown>): JournalStepRow {
     output: text(row.output),
     error: text(row.error),
     attempts: Number(row.attempts),
+    // Absent rather than 0 when the column is NULL: a row predating this field
+    // has no start, and `0` would report a long step as instant.
+    startedAt:
+      row.started_at === null || row.started_at === undefined ? undefined : millis(row.started_at),
     finishedAt: millis(row.finished_at),
   };
 }

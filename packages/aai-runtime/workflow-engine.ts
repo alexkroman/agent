@@ -36,8 +36,9 @@
  */
 
 import type { WorkflowDef } from "@alexkroman1/aai";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
+import { guestCodeVersion } from "./workflow-code-version.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./workflow-journal-types.ts";
 import { type ReplayOptions, type ReplayOutcome, replayRun } from "./workflow-replay.ts";
 import { createStepGate, resolveStepConcurrency, type StepGate } from "./workflow-step-gate.ts";
@@ -233,7 +234,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
    */
   async function runWalk(
     runId: string,
-    walk: Pick<ReplayOptions, "workflow" | "input" | "run" | "steps">,
+    walk: Pick<ReplayOptions, "workflow" | "input" | "run" | "steps" | "startedUnder">,
     callerSignal: AbortSignal | undefined,
   ): Promise<RunRecord["status"] | undefined> {
     // One controller per WALK, registered before the body can run, so `cancel`
@@ -293,6 +294,11 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
         status: "pending",
         createdAt: Date.now(),
         input: args[0],
+        // Which CODE this run is starting against, so a walk after a redeploy can
+        // say so rather than making the divergence message guess. Read from THIS
+        // process's environment — `workflow-code-version.ts` carries why a
+        // forgeable version is worse than none.
+        ...omitUndefined({ codeVersion: guestCodeVersion() }),
       });
       // After the record exists, never before: a dispatcher that delivered first
       // would race a worker against `createRun` and report "no such run" for a
@@ -352,7 +358,16 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
 
       return runWalk(
         runId,
-        { workflow: record.workflow, input: record.input, run: def.run, steps },
+        {
+          workflow: record.workflow,
+          input: record.input,
+          run: def.run,
+          steps,
+          // The version this run STARTED against, for the divergence message to
+          // compare against this process's. Passed even when absent: the field
+          // takes `undefined` and the comparison reads it as unknown.
+          startedUnder: record.codeVersion,
+        },
         signal,
       );
     },

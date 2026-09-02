@@ -50,7 +50,7 @@ describe("a wait reached inside a step", () => {
     const journal = await seed();
     const outcome = await replay(journal, async (_input, ctx) =>
       ctx.step("napper", async () => {
-        await ctx.sleep(2000);
+        await ctx.sleep("nap", 2000);
         return "x";
       }),
     );
@@ -71,7 +71,7 @@ describe("a wait reached inside a step", () => {
     const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) =>
       ctx.step("napper", async () => {
         enters.push("napper");
-        await ctx.sleep(2000);
+        await ctx.sleep("nap", 2000);
         return "x";
       });
 
@@ -87,26 +87,33 @@ describe("a wait reached inside a step", () => {
   });
 
   test("cannot let a LATER wait in the run read the sleeping step's record", async () => {
-    // The sharper half, and not a duplicate-work problem at all. Waits are keyed
-    // positionally off a counter that advances only when a wait is REACHED, and
-    // a settled step's body is not re-executed — so once `napper#0` landed, the
-    // body-level wait slid from `sleep!1` to `sleep!0` and read a record that
-    // had already elapsed. Measured before the refusal, clock unmoved between
-    // walks 2 and 3:
+    // The sharper half of the original finding, and not a duplicate-work
+    // problem at all. Waits were keyed POSITIONALLY off a counter that advances
+    // only when a wait is REACHED, and a settled step's body is not
+    // re-executed — so once `napper#0` landed, the body-level wait slid from
+    // `sleep!1` to `sleep!0` and read a record that had already elapsed.
+    // Measured before the refusal, clock unmoved between walks 2 and 3:
     //
     //   walk 1 -> suspended                      walk 2 -> suspended, +7 days
     //   walk 3 -> completed
     //
     // A week-long durable wait skipped in full, reported `completed`.
+    //
+    // Named keys close that independently — the body-level wait is
+    // `sleep!schedule#0` whether or not the step's wait was reached — so this
+    // case now pins the REFUSAL rather than the only thing standing between it
+    // and a skipped schedule. Kept, because the refusal is still owed for the
+    // duplicate execution above and for liveness, and because a regression that
+    // un-named the keys should fail here as well as in the case below.
     vi.useFakeTimers();
     const journal = await seed();
     const claimSleep = vi.spyOn(journal, "claimSleep");
     const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
       await ctx.step("napper", async () => {
-        await ctx.sleep(2000);
+        await ctx.sleep("nap", 2000);
         return "x";
       });
-      await ctx.sleep(WEEK_MS);
+      await ctx.sleep("schedule", WEEK_MS);
       return "done";
     };
 
@@ -118,12 +125,14 @@ describe("a wait reached inside a step", () => {
     // Refused on the first walk, so the week-long wait is never mis-keyed and
     // no walk can reach the `completed` that used to end this run.
     expect([first.kind, second.kind, third.kind]).toEqual(["failed", "failed", "failed"]);
-    // And no wait ever entered the key space, so there is nothing for a later
-    // one to slide onto — the refusal lands BEFORE the positional counter moves.
+    // And no wait ever entered the key space at all: the refusal lands BEFORE
+    // the wait is claimed, which is what keeps the walk LIVE — a claimed wait
+    // inside a step parks on a promise that cannot settle, and the delivery
+    // never returns.
     expect(claimSleep).not.toHaveBeenCalled();
   });
 
-  test("refuses ctx.waitFor too, where the shifted key hands over a PAYLOAD", async () => {
+  test("refuses ctx.waitFor too, for the same two reasons", async () => {
     const journal = await seed();
     const outcome = await replay(journal, async (_input, ctx) =>
       ctx.step("approver", () => ctx.waitFor("tok_review")),
@@ -137,7 +146,7 @@ describe("a wait reached inside a step", () => {
     // is exactly where an accidental one hides.
     const journal = await seed();
     const poll = async (ctx: WorkflowCtx) => {
-      await ctx.sleep(1000);
+      await ctx.sleep("nap", 1000);
     };
     const outcome = await replay(journal, async (_input, ctx) =>
       ctx.step("outer", async () => {
@@ -153,7 +162,7 @@ describe("a wait reached inside a step", () => {
     const outcome = await replay(journal, async (_input, ctx) =>
       ctx.step("outer", () =>
         ctx.step("inner", async () => {
-          await ctx.sleep(1000);
+          await ctx.sleep("nap", 1000);
           return "x";
         }),
       ),
@@ -170,7 +179,7 @@ describe("a wait reached inside a step", () => {
     const outcome = await replay(journal, async (_input, ctx) => {
       try {
         await ctx.step("napper", async () => {
-          await ctx.sleep(2000);
+          await ctx.sleep("nap", 2000);
           return "x";
         });
       } catch {
@@ -190,7 +199,7 @@ describe("a wait reached inside a step", () => {
         "napper",
         async () => {
           enters.push("napper");
-          await ctx.sleep(2000);
+          await ctx.sleep("nap", 2000);
           return "x";
         },
         { maxAttempts: 5 },
@@ -204,7 +213,7 @@ describe("the guard is invisible to a legal body", () => {
   test("a body-level sleep still suspends", async () => {
     const journal = await seed();
     const outcome = await replay(journal, async (_input, ctx) => {
-      await ctx.sleep(60_000);
+      await ctx.sleep("nap", 60_000);
       return "done";
     });
     expect(outcome.kind).toBe("suspended");
@@ -216,7 +225,7 @@ describe("the guard is invisible to a legal body", () => {
     const journal = await seed();
     const outcome = await replay(journal, async (_input, ctx) => {
       await ctx.step("work", () => 1);
-      await ctx.sleep(60_000);
+      await ctx.sleep("nap", 60_000);
       return "done";
     });
     expect(outcome.kind).toBe("suspended");
@@ -232,5 +241,94 @@ describe("the guard is invisible to a legal body", () => {
     const journal = await seed();
     const outcome = await replay(journal, async (_input, ctx) => ctx.step("work", () => 41 + 1));
     expect(outcome).toEqual({ kind: "completed", output: 42 });
+  });
+});
+
+/**
+ * The half that named keys closed, asserted as the state that no longer happens.
+ *
+ * These bodies are all LEGAL — no wait inside a step anywhere — so the refusal
+ * above cannot reach them, and until the keys carried a label a positional
+ * counter handed each of them another wait's record.
+ */
+describe("a body that reaches a different NUMBER of waits", () => {
+  test("keeps each wait's own record when an earlier one is not reached", async () => {
+    // The shape: a wait behind a condition that answers differently across two
+    // walks. Positionally the second walk's `schedule` was `sleep!0` — the key
+    // `early` had claimed and elapsed on walk 1 — so a week-long wait resolved
+    // instantly. Named, it is `sleep!schedule#0` on both walks.
+    vi.useFakeTimers();
+    const journal = await seed();
+    let takeEarly = true;
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      if (takeEarly) await ctx.sleep("early", 1000);
+      await ctx.sleep("schedule", WEEK_MS);
+      return "done";
+    };
+
+    expect((await replay(journal, body)).kind).toBe("suspended");
+    vi.advanceTimersByTime(2000);
+    // The early wait has elapsed, so walk 2 walks past it — and then drops it.
+    expect((await replay(journal, body)).kind).toBe("suspended");
+    takeEarly = false;
+
+    // Still waiting a week. Positionally this walk answered `completed`.
+    expect(await replay(journal, body)).toEqual({ kind: "suspended", wakeAt: expect.any(Number) });
+  });
+
+  test("hands a hook its OWN payload when an earlier wait is not reached", async () => {
+    // Same shape, and the cost is worse: a payload rather than a schedule. Walk
+    // 2 reached `final` as `hook!0` — the key `late` held — so the body was
+    // handed the wrong answer with nothing raised anywhere.
+    const journal = await seed();
+    let takeLate = true;
+    const seen: unknown[] = [];
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      if (takeLate) seen.push(await ctx.waitFor("late"));
+      seen.push(await ctx.waitFor("final"));
+      return "done";
+    };
+
+    expect((await replay(journal, body)).kind).toBe("suspended");
+    await journal.deliverHook("late", { which: "late" });
+    expect((await replay(journal, body)).kind).toBe("suspended");
+    takeLate = false;
+
+    // `final` is still unanswered, so the body parks rather than reading
+    // `late`'s payload — which is what it used to be handed.
+    expect((await replay(journal, body)).kind).toBe("suspended");
+    await journal.deliverHook("final", { which: "final" });
+    expect((await replay(journal, body)).kind).toBe("completed");
+    expect(seen.at(-1)).toEqual({ which: "final" });
+  });
+
+  test("separates two waits sharing a label by occurrence, so a loop still works", async () => {
+    // The property the `#${occurrence}` suffix carries over from `ctx.step`: one
+    // call site reached N times is N journal rows, not one.
+    vi.useFakeTimers();
+    const journal = await seed();
+    const keys: string[] = [];
+    // A WRAPPER, not a `vi.spyOn` — the obvious spelling of that reads the
+    // original off the object AFTER `spyOn` has replaced it, so the fake calls
+    // itself. (Measured: `Maximum call stack size exceeded`, as a failed run.)
+    const watched: JournalStore = {
+      ...journal,
+      claimSleep: (runId, key, wakeAt, correlationId, kind) => {
+        keys.push(key);
+        return journal.claimSleep(runId, key, wakeAt, correlationId, kind);
+      },
+    };
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
+      for (let round = 0; round < 3; round++) await ctx.sleep("poll", 1000);
+      return "done";
+    };
+
+    for (let delivery = 0; delivery < 3; delivery++) {
+      await replay(watched, body);
+      vi.advanceTimersByTime(2000);
+    }
+
+    expect(await replay(watched, body)).toEqual({ kind: "completed", output: "done" });
+    expect([...new Set(keys)]).toEqual(["sleep!poll#0", "sleep!poll#1", "sleep!poll#2"]);
   });
 });

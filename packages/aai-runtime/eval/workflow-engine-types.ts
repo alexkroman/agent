@@ -47,6 +47,15 @@ export type EvalEmitted = {
  * case CAN assert is that the body asked, and for how long.
  */
 export type EvalSleep = {
+  /**
+   * The wait's `label` — its identity in a real run's journal, and here the only
+   * thing telling two of a body's waits apart.
+   *
+   * A case asserting a SCHEDULE wants this: `podcast-digest` sleeps between
+   * digests and again while polling, and a duration alone cannot say which of
+   * them the body reached.
+   */
+  readonly label: string;
   /** Exactly what the body passed `sleep()` — `"10 seconds"`, a number of ms, a date. */
   readonly duration: string | number | Date;
 };

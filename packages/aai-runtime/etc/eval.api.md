@@ -100,6 +100,7 @@ export type EvalSessionOptions = {
 
 // @public
 export type EvalSleep = {
+    readonly label: string;
     readonly duration: string | number | Date;
 };
 

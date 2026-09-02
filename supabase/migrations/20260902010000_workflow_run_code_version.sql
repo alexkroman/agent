@@ -1,0 +1,56 @@
+-- `aai_platform.workflow_runs.code_version` — which BUNDLE a run was started
+-- against.
+--
+-- A durable run outlives the process that started it, which is the whole point,
+-- and therefore outlives the bundle: a `ctx.sleep("nextDigest", DAY_MS)` parks
+-- for a day, deploys land, and the delivery that wakes it replays the body from
+-- whatever bundle the sandbox now runs. The engine has always been honest that
+-- resuming a run against a CHANGED body is unsupported, and had no way to say
+-- whether that is what happened.
+--
+-- The cost of not knowing shows up in the sharpest error this engine produces.
+-- `workflow-replay-divergence.ts`'s message ends by handing the reader a test to
+-- run against their own source, because the two causes of an unreached step key
+-- — a redeploy mid-flight, or a non-deterministic body — want opposite fixes and
+-- a journal holds what a value WAS and never how it was produced. One version
+-- per run settles half of it: compared at each walk, an inequality states the
+-- redeploy as a fact and names both versions, and an equality ELIMINATES it.
+--
+-- ── Why NULLABLE, twice over ──
+--
+-- The rows already in this table have no version, and no value stands in for
+-- one. But nullability is not only a migration concession here: the value is
+-- `AAI_BUNDLE_SHA256`, which only a DEPLOYED guest has, so a run journaled by a
+-- self-hosted `createServer` legitimately carries none for the life of the
+-- column. A reader owes an absent value "unknown" and must never read it as
+-- "unchanged" — that is the one mistake that would make the divergence message
+-- rule out the cause that actually happened. `RunRecord.codeVersion` and
+-- `workflow-code-version.ts` state it on the type and at the comparison.
+--
+-- ── Why it is `text` and not a hash type ──
+--
+-- It is compared for EQUALITY and never ordered, parsed or joined on, and it is
+-- the same string the guest verifies its downloaded bundle against
+-- (`aai-guest/harness-agent-mode.ts`), so widening it to a hash-shaped domain
+-- would buy nothing and would refuse a future identity that is not a sha256.
+--
+-- ── Why this is a DIAGNOSTIC column and not a gate ──
+--
+-- Nothing refuses a run whose version moved. Almost every such run resumes
+-- correctly — a deploy touching a page, a tool, a prompt or an unrelated
+-- workflow leaves this body's step sequence identical, while the bundle hash
+-- changes on every deploy — so refusing on inequality would fail nearly all of
+-- them to catch the few that really diverged. The divergence check already
+-- catches those precisely, at the step that proves it.
+--
+-- RLS and grants are per-TABLE and unchanged: `20260901000000_platform_workflow_
+-- journal.sql` enabled row level security on `workflow_runs` with no policies,
+-- and a new column inherits that posture. Nothing here re-states it.
+--
+-- Everything else mirrors `aai-runtime/workflow-journal-schema.ts`, deliberately,
+-- so the two stores stay the same contract; `aai-server/journal-ddl-parity.test.ts`
+-- holds them to it and reads every migration in filename order, which is what
+-- makes an ALTER on either side visible to it.
+
+alter table aai_platform.workflow_runs
+  add column if not exists code_version text;

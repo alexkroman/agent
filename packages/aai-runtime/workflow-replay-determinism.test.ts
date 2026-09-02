@@ -161,7 +161,7 @@ describe("a second walk of the same body", () => {
     const seen: unknown[] = [];
     const body: Body = async (_input, ctx) => {
       seen.push(await ctx[kind]());
-      await ctx.sleep(60_000);
+      await ctx.sleep("nap", 60_000);
       return "done";
     };
 
@@ -193,7 +193,7 @@ describe("a second walk of the same body", () => {
     const appended = vi.spyOn(journal, "appendStep");
     const body: Body = async (_input, ctx) => {
       await ctx.random();
-      await ctx.sleep(60_000);
+      await ctx.sleep("nap", 60_000);
     };
 
     const { first, second } = await twoWalks(journal, body);
@@ -329,7 +329,7 @@ describe("the divergence check", () => {
     const body: Body = async (_input, ctx) => {
       await ctx.now();
       await ctx.step(`charge-${coin}`, charge);
-      await ctx.sleep(60_000);
+      await ctx.sleep("nap", 60_000);
     };
 
     expect((await replay(journal, body)).kind).toBe("suspended");
@@ -369,10 +369,10 @@ describe("the property, over bodies nobody wrote by hand", () => {
             const seen: unknown[] = [];
             walks.push(seen);
             for (const [index, kind] of kinds.entries()) {
-              if (index === split) await ctx.sleep(60_000);
+              if (index === split) await ctx.sleep("mid", 60_000);
               seen.push(await ctx[kind]());
             }
-            if (split === kinds.length) await ctx.sleep(60_000);
+            if (split === kinds.length) await ctx.sleep("tail", 60_000);
             return seen;
           };
 

@@ -249,7 +249,7 @@ const output = await digestFlow({ url: "https://example.com/a" }, ctx);
 
 expect(output.headline).toBe("…");
 expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
-expect(ctx.slept).toEqual([{ until: 10_000 }]);
+expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
 ```
 
 ***
@@ -911,32 +911,6 @@ const model = stubGenerate({ object: { steps: ["Only step"] } });
 function stubReporter(): StubReporter;
 ```
 
-Capture what a step narrates and emits.
-
-`report()` and `emit()` both go through a published slot, and with nothing
-published they fall back to the console — which is right for a step under test
-that nobody is asserting on, and useless the moment the narration IS the
-subject. It is for a step whose partial results are part of its contract: a
-fan-out that emits each segment as it lands has a page depending on the shape
-of those chunks, and nothing else in a spec can see them.
-
-The two are separated the way the streams are, so a spec asserting a chunk
-never has to filter the sentences out of it.
-
-```ts no-check
-const reported = stubReporter();
-afterEach(reported.restore);
-
-await transcribeSegment(uploadId, format, segment);
-expect(reported.emitted).toEqual([
-  { namespace: "transcript", chunk: { index: 0, text: "hello there" } },
-]);
-```
-
-Publishing REPLACES, so a spec that forgets to restore leaves this one
-answering the next file's steps — the same rule [stubStepFetch](#stubstepfetch-1) follows,
-and the same remedy.
-
 #### Returns
 
 [`StubReporter`](#stubreporter)
@@ -1021,6 +995,87 @@ const sync = stubStepFetch(() => ({ body: { text: "hello there" } }));
 // … call the step …
 expect(sync.calls[0]?.headers.Authorization).toBe("sk-test");
 sync.restore();
+```
+
+***
+
+### stubStepInfo()
+
+```ts
+function stubStepInfo(step: {
+  attempt?: number;
+  maxAttempts?: number;
+  name?: string;
+}): {
+  restore: () => void;
+};
+```
+
+Answer `stepInfo()` for the step under test, so a body's RETRY branch is
+reachable from a spec.
+
+A step that degrades on its last attempt has two paths and a spec could only
+ever take one: outside a run `stepInfo()` answers `undefined`, which a body
+reads as "not retrying". So the branch that exists precisely for the case that
+goes wrong was the branch no test could enter — and it is the one whose
+failure is quiet, since a body that mis-reads the ceiling degrades early on
+every run and still returns an answer.
+
+```ts
+import { stubStepInfo } from "@alexkroman1/aai/testing";
+import { onTestFinished, expect, test } from "vitest";
+
+declare function summarizeChapter(text: string): Promise<string>;
+
+test("falls back to the cheap model on the last attempt", async () => {
+  const stub = stubStepInfo({ attempt: 3, maxAttempts: 3 });
+  onTestFinished(stub.restore);
+  expect(await summarizeChapter("…")).toContain("…");
+});
+```
+
+`isLastAttempt` is DERIVED from the two numbers rather than accepted, for the
+reason the real reader derives it: a fake that let a spec set `attempt: 1` and
+`isLastAttempt: true` would let a body pass against a state no run can be in.
+
+Publishing REPLACES, so a spec that forgets to restore leaves this answering
+the next file's steps — the same rule [stubReporter](#stubreporter-1) follows, and the
+same remedy.
+
+#### Parameters
+
+##### step
+
+###### attempt?
+
+`number`
+
+1-based. Defaults to 1.
+
+###### maxAttempts?
+
+`number`
+
+Defaults to whichever is larger of 3 (the SDK's own default) and `attempt`.
+
+###### name?
+
+`string`
+
+Defaults to `"step"`.
+
+#### Returns
+
+```ts
+{
+  restore: () => void;
+}
+```
+
+##### restore
+
+```ts
+() => void
 ```
 
 ***
@@ -1635,6 +1690,7 @@ an error, not a no-op: see [deployedAgent](#deployedagent).
 ```ts
 type RecordedSleep = {
   correlationId?: string;
+  label: string;
   until: number | Date;
 };
 ```
@@ -1648,6 +1704,16 @@ One wait the body asked for — and did NOT take.
 ```ts
 optional correlationId?: string;
 ```
+
+##### label
+
+```ts
+label: string;
+```
+
+The wait's `label` — its identity in a real run's journal, and the field a
+case asserting a SCHEDULE actually wants: a body with two waits is telling
+you WHICH one it reached, which a duration cannot.
 
 ##### until
 

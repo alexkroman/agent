@@ -27,7 +27,7 @@ describe("durable sleep", () => {
     // not executing. That is the status a caller polling it should see.
     const { engine, dispatch } = harness({
       digest: async (_input, ctx) => {
-        await ctx.sleep(60_000);
+        await ctx.sleep("nap", 60_000);
         return "eventually";
       },
     });
@@ -45,7 +45,7 @@ describe("durable sleep", () => {
     const { engine, journal, dispatch } = harness({
       digest: async (_input, ctx) => {
         await journal.setStatus("wrun_1", "cancelled", undefined, ["running"]);
-        await ctx.sleep(60_000);
+        await ctx.sleep("nap", 60_000);
         return "unreachable";
       },
     });
@@ -59,7 +59,7 @@ describe("durable sleep", () => {
     const after = vi.fn(() => "ran");
     const { engine, dispatch } = harness({
       digest: async (_input, ctx) => {
-        await ctx.sleep(60_000);
+        await ctx.sleep("nap", 60_000);
         return ctx.step("after", after);
       },
     });
@@ -91,7 +91,7 @@ describe("durable sleep", () => {
   test("a wake naming a correlation id ends only that wait", async () => {
     const { engine } = harness({
       digest: async (_input, ctx) => {
-        await ctx.sleep(60_000, { correlationId: "review" });
+        await ctx.sleep("review", 60_000, { correlationId: "review" });
         return "published";
       },
     });
@@ -105,7 +105,7 @@ describe("durable sleep", () => {
     const { engine } = harness({
       digest: async (_input, ctx) => {
         // Already elapsed, so the second delivery walks straight through.
-        await ctx.sleep(-1);
+        await ctx.sleep("past", -1);
         return "through";
       },
     });

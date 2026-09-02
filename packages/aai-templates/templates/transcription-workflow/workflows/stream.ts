@@ -381,7 +381,7 @@ export async function transcribeStreamFlow(input: { recording: string }, ctx: Wo
     // Sleep until the next segment should HAVE landed, rather than for a fixed
     // interval — see `nextPollDelay`. Both arguments are journaled step results,
     // so a replay computes the same delay from the same two samples.
-    await ctx.sleep(nextPollDelay(at, previous, plan, done));
+    await ctx.sleep("poll", nextPollDelay(at, previous, plan, done));
     previous = at;
   }
 

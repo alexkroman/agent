@@ -11,6 +11,7 @@ import { projectNameFromDir } from "./_studio.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { fmtUrl, log, notify } from "./_ui.ts";
 import { errorMessage } from "./_utils.ts";
+import { determinismWarnings, scanWorkflowDeterminism } from "./_workflow-determinism.ts";
 
 type DeployData = { slug: string; url: string; warnings?: string[] };
 
@@ -59,7 +60,13 @@ export async function executeDeploy(opts: {
   // `notify`, not `log.warn`: JSON mode is auto-detected on a pipe and
   // silences `log` entirely, and a pipe is how studio Publish runs this. The
   // message also rides the result below, which is the channel Publish reads.
-  const warnings = missing.length > 0 ? [missingCredentialMessage(missing)] : [];
+  // Joined to `warnings` rather than only notified, so a body-level clock or
+  // fetch reaches studio Publish's channel too — that surface reads the result
+  // and never stdout. A warning and not a gate: see `_workflow-determinism.ts`.
+  const warnings = [
+    ...(missing.length > 0 ? [missingCredentialMessage(missing)] : []),
+    ...determinismWarnings(await scanWorkflowDeterminism(cwd)),
+  ];
   for (const warning of warnings) notify("warn", warning);
 
   log.step(`Deploying${slug ? ` ${slug}` : ""}…`);

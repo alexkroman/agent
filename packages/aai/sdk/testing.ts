@@ -38,7 +38,9 @@
  * @module testing
  */
 
+import { publishStepInfoReader } from "./step-attempt.ts";
 import { publishStepReporter } from "./step-report.ts";
+import { DEFAULT_STEP_MAX_ATTEMPTS } from "./workflow-ctx-options.ts";
 
 export {
   createStubWorkflows,
@@ -180,6 +182,61 @@ export type StubReporter = {
  *
  * @public
  */
+/**
+ * Answer `stepInfo()` for the step under test, so a body's RETRY branch is
+ * reachable from a spec.
+ *
+ * A step that degrades on its last attempt has two paths and a spec could only
+ * ever take one: outside a run `stepInfo()` answers `undefined`, which a body
+ * reads as "not retrying". So the branch that exists precisely for the case that
+ * goes wrong was the branch no test could enter — and it is the one whose
+ * failure is quiet, since a body that mis-reads the ceiling degrades early on
+ * every run and still returns an answer.
+ *
+ * ```ts
+ * import { stubStepInfo } from "@alexkroman1/aai/testing";
+ * import { onTestFinished, expect, test } from "vitest";
+ *
+ * declare function summarizeChapter(text: string): Promise<string>;
+ *
+ * test("falls back to the cheap model on the last attempt", async () => {
+ *   const stub = stubStepInfo({ attempt: 3, maxAttempts: 3 });
+ *   onTestFinished(stub.restore);
+ *   expect(await summarizeChapter("…")).toContain("…");
+ * });
+ * ```
+ *
+ * `isLastAttempt` is DERIVED from the two numbers rather than accepted, for the
+ * reason the real reader derives it: a fake that let a spec set `attempt: 1` and
+ * `isLastAttempt: true` would let a body pass against a state no run can be in.
+ *
+ * Publishing REPLACES, so a spec that forgets to restore leaves this answering
+ * the next file's steps — the same rule {@link stubReporter} follows, and the
+ * same remedy.
+ *
+ * @public
+ */
+export function stubStepInfo(step: {
+  /** 1-based. Defaults to 1. */
+  attempt?: number | undefined;
+  /** Defaults to whichever is larger of 3 (the SDK's own default) and `attempt`. */
+  maxAttempts?: number | undefined;
+  /** Defaults to `"step"`. */
+  name?: string | undefined;
+}): { restore: () => void } {
+  const attempt = step.attempt ?? 1;
+  const maxAttempts = step.maxAttempts ?? Math.max(DEFAULT_STEP_MAX_ATTEMPTS, attempt);
+  const name = step.name ?? "step";
+  publishStepInfoReader(() => ({
+    name,
+    key: `${name}#0`,
+    attempt,
+    maxAttempts,
+    isLastAttempt: attempt >= maxAttempts,
+  }));
+  return { restore: () => publishStepInfoReader(undefined) };
+}
+
 export function stubReporter(): StubReporter {
   const lines: string[] = [];
   const emitted: StubEmitted[] = [];

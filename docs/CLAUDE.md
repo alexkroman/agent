@@ -558,3 +558,85 @@ most-read example in the project taught the thing the type system exists to
 prevent, and contradicted `packages/aai/README.md` two screens away. Nothing
 downstream regenerates when it changes: the markdown rendering sets
 `readme: "none"`, so `home.md` reaches `docs/dist` only.
+
+## Rendering `aai-runtime` is a docs decision, and it cannot be half-made
+
+There is no `typedoc.json` in `packages/aai-runtime`, and its absence is now a
+measured decision rather than an oversight. Two things make it one.
+
+**A package-local config alone turns the suite red.**
+`packages/aai-templates/docs-markdown-gate.test.ts` globs `packages/*/typedoc.json`
+and asserts that every package holding one has committed markdown under
+`docs/api/` — so the file cannot land before the render that produces its page.
+The coupling is deliberate and it is wider than that one test: flipping this on
+means `docs/typedoc.json`'s `entryPoints`, the `include` in
+`docs/tsconfig.typedoc.json`, the `dependsOn` + `inputs` of turbo's `docs` task,
+the retraction of `UNDOCUMENTED_SUBPATHS["aai-runtime"]["."]` in
+`scripts/docs-markdown.mjs` (which errors on a subpath that is both documented
+AND excused), and the regenerated `docs/api/` — one change, or a red gate.
+
+**And the answer today is no.** `docs/CLAUDE.md` argues it: a ~220-export
+surface aimed at somebody EMBEDDING an agent, rendered beside the SDK, rebuilds
+the two-thirds-of-a-combined-reference the runtime split undid. The deny-list
+entry says what would change the answer — "revisit if embedders ask for a
+rendered page, then it gets its own, not a share of the SDK's".
+
+What is worth not rediscovering is that the config is a five-line file plus two
+options, both earned by a warning an actual render produced, and that with them
+this package renders CLEAN — zero warnings under `treatWarningsAsErrors`, one
+~7,100-line `@alexkroman1/aai-runtime.md`, against `aai` and `aai-ui` in the
+same project:
+
+- `entryPoints: ["dist/runtime-barrel.d.ts"]` — the only documentable subpath,
+  since `./internal` is deny-listed for the reason its own module doc gives.
+- `intentionallyNotExported: ["EventsNamed"]` — the `Extract` helper
+  `TransportEventBody` is written as. Same call as `DistributiveOmit` in
+  `packages/aai/typedoc.json`: a reader gets the resolved union in the rendered
+  signature and can never name the helper.
+- `externalSymbolLinkMappings` for `ai`'s `LanguageModel`, which `resolveLlm`
+  returns and `LlmRegistryEntry.create` builds.
+
+Rendered in ISOLATION it reports seven more, all `{@link Db}`-shaped links into
+`@alexkroman1/aai`. Those are an artifact of the SDK not being in the project,
+not a defect in these comments — do not "fix" them by deleting links.
+
+## What writing the `aai-runtime` epoch templates found
+
+Four things the surface cannot currently demonstrate about itself. None is a bug;
+each is a decision worth making rather than inheriting.
+
+- **`uploads` publishes a store TYPE and two blob implementations with no
+  contracted way to join them** — `createUploadStore` and `resolveUploadBlobs`
+  are `@internal`, so they are on `/internal` and the template has to take the
+  store as a parameter. Honest for an embedder handed one by `createServer`, and
+  it means the capability cannot show its own end-to-end wiring.
+- **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
+  contracted and `createWorkflowClient` is on `/internal`, so a template can
+  assemble the bag and not hand it to anything. Its `logger` field is required
+  and both shipped `Logger` values (`consoleLogger`, `createConsoleLogger`) are
+  on `/internal` too — only the `Logger` type is contracted.
+
+  It is at **epoch 2** for a reason worth knowing, because it is the SIBLING
+  version of the `TextTurnResult` hazard below: the export list did not move and
+  neither did a signature, only the PROVENANCE line in the rollup —
+  `WORKFLOW_API_PREFIX` reaches this package from `@alexkroman1/aai/internal`
+  now rather than `/workflow-api`, since the prefix is the server's half of that
+  API. A host that takes the constant from `@alexkroman1/aai-runtime` — every
+  host — sees nothing.
+- **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
+  the honest template is fifty lines of skeleton and anything in the wild will either
+  be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way
+  `aai` publishes `createToolContext` — would remove the incentive to launder it.
+- **`TextTurnResult` is `ReturnType<typeof streamText<ToolSet>>`**, so this
+  capability's contract hash moves when the `ai` package's `StreamTextResult`
+  moves. An upstream minor can force an epoch classification here with no change
+  of ours.
+
+And one real defect the templates caught, now FIXED: **`PassthroughServerOptions`
+could not be spread into `ServerOptions`.** Its fields were optional WITHOUT
+`| undefined`, so under `exactOptionalPropertyTypes` `{...hooks}` widens each to
+`T | undefined` and `createServer` rejected it (TS2379) — while the three wrapper
+doors exist precisely so one hook bag can reach all of them. The fix is on the
+TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
+`upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
+bag. Do not narrow them back.

@@ -888,6 +888,9 @@ export function publishStepEnv(env: Readonly<Record<string, string | undefined>>
 export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 
 // @internal
+export function publishStepInfoReader(reader: StepInfoReader | undefined): void;
+
+// @internal
 export function publishStepReporter(reporter: StepReporter | undefined): void;
 
 // @internal
@@ -1144,6 +1147,18 @@ type StepFetchInit = {
     body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
     signal?: AbortSignal | undefined;
 };
+
+// @public
+type StepInfo = {
+    readonly name: string;
+    readonly key: string;
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly isLastAttempt: boolean;
+};
+
+// @internal
+export type StepInfoReader = () => StepInfo | undefined;
 
 // @public
 type StepOptions = {
@@ -1453,7 +1468,7 @@ type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };

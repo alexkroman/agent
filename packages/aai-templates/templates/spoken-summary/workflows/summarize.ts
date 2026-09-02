@@ -172,7 +172,7 @@ async function transcribe(recording: string, ctx: WorkflowCtx): Promise<Transcri
     // rather than starting the wait over.
     const progress = await ctx.step("pollTranscript", () => pollTranscript(recording, job.id));
     if (progress.done) return progress.transcript;
-    await ctx.sleep(POLL_INTERVAL_MS);
+    await ctx.sleep("poll", POLL_INTERVAL_MS);
   }
   // A plain throw: this is the BODY, where the fatal/retryable distinction has
   // nothing to apply to. The transcript is not lost, so the message says where

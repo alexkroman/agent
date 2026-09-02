@@ -801,7 +801,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
     // Three reads: the one before the park, the one the delivery woke, and the
     // one after the ordinary fifteen-second wait that followed it.
     expect(polls()).toBe(3);
-    expect(ctx.slept).toEqual([{ until: 15_000, correlationId: undefined }]);
+    expect(ctx.slept).toEqual([{ label: "poll", until: 15_000, correlationId: undefined }]);
   });
 
   test("parks ONCE and then polls, because a token cannot be claimed twice", async () => {
@@ -837,7 +837,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
     expect(polls()).toBe(3);
     // It asked, and then it stopped counting on the answer.
     expect(ctx.waited).toEqual([NUDGE]);
-    expect(ctx.slept).toEqual([{ until: 15_000, correlationId: undefined }]);
+    expect(ctx.slept).toEqual([{ label: "poll", until: 15_000, correlationId: undefined }]);
   });
 
   test("says 'still transcribing' after ONE closed window, not after nine", async () => {

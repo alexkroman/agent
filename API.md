@@ -1174,6 +1174,9 @@ export function publishStepEnv(env: Readonly<Record<string, string | undefined>>
 export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 
 // @internal
+export function publishStepInfoReader(reader: StepInfoReader | undefined): void;
+
+// @internal
 export function publishStepReporter(reporter: StepReporter | undefined): void;
 
 // @internal
@@ -1430,6 +1433,18 @@ type StepFetchInit = {
     body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
     signal?: AbortSignal | undefined;
 };
+
+// @public
+type StepInfo = {
+    readonly name: string;
+    readonly key: string;
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly isLastAttempt: boolean;
+};
+
+// @internal
+export type StepInfoReader = () => StepInfo | undefined;
 
 // @public
 type StepOptions = {
@@ -1739,7 +1754,7 @@ type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
@@ -2774,7 +2789,7 @@ export type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
@@ -3232,7 +3247,7 @@ type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
@@ -4049,7 +4064,7 @@ type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
@@ -4675,6 +4690,18 @@ export type StepGenerateOptions = {
     temperature?: number;
     maxTokens?: number;
 };
+
+// @public
+export type StepInfo = {
+    readonly name: string;
+    readonly key: string;
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly isLastAttempt: boolean;
+};
+
+// @public
+export function stepInfo(): StepInfo | undefined;
 
 // @public
 export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
@@ -5337,6 +5364,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 
 // @public
 export type RecordedSleep = {
+    label: string;
     until: number | Date;
     correlationId?: string | undefined;
 };
@@ -5738,7 +5766,7 @@ export type StubReporter = {
     restore: () => void;
 };
 
-// @public
+// @public (undocumented)
 export function stubReporter(): StubReporter;
 
 // @public
@@ -5780,6 +5808,15 @@ export type StubStepFetch = {
 
 // @public
 export function stubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public
+export function stubStepInfo(step: {
+    attempt?: number | undefined;
+    maxAttempts?: number | undefined;
+    name?: string | undefined;
+}): {
+    restore: () => void;
+};
 
 // @public
 export type StubStepRequest = {
@@ -5985,7 +6022,7 @@ type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
@@ -6354,7 +6391,7 @@ type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
@@ -6875,7 +6912,7 @@ export type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
@@ -7160,6 +7197,7 @@ export type EvalSessionOptions = {
 
 // @public
 export type EvalSleep = {
+    readonly label: string;
     readonly duration: string | number | Date;
 };
 
@@ -7430,6 +7468,7 @@ type EvalSessionOptions = {
 
 // @public
 type EvalSleep = {
+    readonly label: string;
     readonly duration: string | number | Date;
 };
 
@@ -7647,6 +7686,7 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     clientDir?: string;
     db?: Db | undefined;
     env: AgentEnv;
+    journal?: RuntimeOptions["journal"];
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
@@ -8023,6 +8063,7 @@ type RunRecord = {
     error?: {
         message: string;
     } | undefined;
+    codeVersion?: string | undefined;
 };
 
 // @public
@@ -8230,6 +8271,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
+    startedAt?: number | undefined;
     finishedAt: number;
 };
 
@@ -8739,6 +8781,7 @@ type RunRecord = {
     error?: {
         message: string;
     } | undefined;
+    codeVersion?: string | undefined;
 };
 
 // @public
@@ -8936,6 +8979,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
+    startedAt?: number | undefined;
     finishedAt: number;
 };
 
@@ -9116,6 +9160,7 @@ type RunRecord = {
     error?: {
         message: string;
     } | undefined;
+    codeVersion?: string | undefined;
 };
 
 // @public
@@ -9151,6 +9196,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
+    startedAt?: number | undefined;
     finishedAt: number;
 };
 

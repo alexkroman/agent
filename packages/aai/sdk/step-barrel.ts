@@ -46,7 +46,11 @@
  *   {@link stepTranscribePoll} for the async job API or
  *   {@link stepTranscribeSync} for the one-request one, back in.
  * - **Retry classification** — {@link isTransientStatus} / {@link retryAfter},
- *   for a body deciding whether a failure is worth another round.
+ *   for a body deciding whether a failure is worth another round, and
+ *   {@link stepInfo}, which says which ATTEMPT this is and whether it is the
+ *   last. That is what lets a step degrade rather than fail — a smaller model on
+ *   the final try beats a failed run — and it is the DevKit's `getStepMetadata()`
+ *   with the two differences its own module doc gives.
  *
  * The zod-free budget still applies here and is now a property of BOTH
  * subpaths rather than the reason one of them exists: a `workflows/*.ts` module
@@ -77,6 +81,7 @@ export {
   type TranscribeRequestOptions,
 } from "./_transcribe-shared.ts";
 export { mapConcurrent } from "./map-concurrent.ts";
+export { type StepInfo, stepInfo } from "./step-attempt.ts";
 export { requireStepEnv, stepEnv } from "./step-env.ts";
 export {
   type MultipartBody,

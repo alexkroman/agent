@@ -288,6 +288,7 @@ type RunRecord = {
     error?: {
         message: string;
     } | undefined;
+    codeVersion?: string | undefined;
 };
 
 // @public
@@ -485,6 +486,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
+    startedAt?: number | undefined;
     finishedAt: number;
 };
 

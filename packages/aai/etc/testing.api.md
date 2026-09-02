@@ -181,6 +181,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 
 // @public
 export type RecordedSleep = {
+    label: string;
     until: number | Date;
     correlationId?: string | undefined;
 };
@@ -582,7 +583,7 @@ export type StubReporter = {
     restore: () => void;
 };
 
-// @public
+// @public (undocumented)
 export function stubReporter(): StubReporter;
 
 // @public
@@ -624,6 +625,15 @@ export type StubStepFetch = {
 
 // @public
 export function stubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public
+export function stubStepInfo(step: {
+    attempt?: number | undefined;
+    maxAttempts?: number | undefined;
+    name?: string | undefined;
+}): {
+    restore: () => void;
+};
 
 // @public
 export type StubStepRequest = {
@@ -829,7 +839,7 @@ type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };

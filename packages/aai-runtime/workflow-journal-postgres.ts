@@ -92,7 +92,7 @@ import type {
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-types.ts";
-import { isTerminalStatus } from "./workflow-journal-types.ts";
+import { isTerminalStatus, JournalConflictError } from "./workflow-journal-types.ts";
 import { decodeStorageJson } from "./workflow-typed-json.ts";
 
 /**
@@ -108,14 +108,19 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       // A plain insert: the primary key is what refuses a collision, so two
       // starts racing on one id cannot both win.
       await db.query(
-        `insert into ${WORKFLOW_RUN_TABLE} (run_id, workflow, status, created_at, input)
-         values ($1, $2, $3, $4, $5::text::jsonb)`,
+        `insert into ${WORKFLOW_RUN_TABLE}
+           (run_id, workflow, status, created_at, input, code_version)
+         values ($1, $2, $3, $4, $5::text::jsonb, $6)`,
         [
           record.runId,
           record.workflow,
           record.status,
           record.createdAt,
           encodedOrNull(record.input),
+          // `null`, never `undefined`: postgres.js refuses an undefined
+          // parameter outright — see `encodedOrNull`'s doc for the run this
+          // stalled the first time.
+          record.codeVersion ?? null,
         ],
       );
     },
@@ -123,7 +128,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
     async getRun(runId: string): Promise<RunRecord | undefined> {
       const rows = await db.query<RunRow>(
         `select run_id, workflow, status, created_at, input::text as input,
-                output::text as output, error
+                output::text as output, error, code_version
          from ${WORKFLOW_RUN_TABLE} where run_id = $1`,
         [runId],
       );
@@ -134,7 +139,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
     async listRuns(workflow: string, limit: number): Promise<RunRecord[]> {
       const rows = await db.query<RunRow>(
         `select run_id, workflow, status, created_at, input::text as input,
-                output::text as output, error
+                output::text as output, error, code_version
          from ${WORKFLOW_RUN_TABLE}
          where workflow = $1
          order by created_at desc, run_id desc
@@ -197,7 +202,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
 
     async readSteps(runId: string): Promise<StepEntry[]> {
       const rows = await db.query<StepRow>(
-        `select key, name, status, output::text as output, error, attempts, finished_at
+        `select key, name, status, output::text as output, error, attempts, started_at, finished_at
          from ${WORKFLOW_STEP_TABLE} where run_id = $1 order by finished_at, key`,
         [runId],
       );
@@ -353,7 +358,11 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
           if (!owner) return;
           const mine = rows.find((row) => row.run_id === runId && row.key === key);
           if (!mine) {
-            throw new Error(
+            // TYPED, and every arm owes this type for this case: a token
+            // conflict is a verdict about the RUN, so `watchJournalFailure`
+            // must let it fail the run rather than reading it as a store
+            // outage and retrying forever. See `JournalConflictError`.
+            throw new JournalConflictError(
               `workflow hook token ${JSON.stringify(token)} is already held by run ${owner.run_id}`,
             );
           }
@@ -444,16 +453,18 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
           const rows = await db.query<StepRow>(
             `with mine as (
                insert into ${WORKFLOW_STEP_TABLE}
-                 (run_id, key, name, status, output, error, attempts, finished_at)
-               values ($1, $2, $3, $4, $5::text::jsonb, $6, $7, $8)
+                 (run_id, key, name, status, output, error, attempts, started_at,
+                  finished_at)
+               values ($1, $2, $3, $4, $5::text::jsonb, $6, $7, $8, $9)
                on conflict (run_id, key) do nothing
                returning key, name, status, output::text as output, error, attempts,
-                         finished_at
+                         started_at, finished_at
              )
-             select key, name, status, output, error, attempts, finished_at from mine
+             select key, name, status, output, error, attempts, started_at, finished_at
+               from mine
              union all
              select key, name, status, output::text as output, error, attempts,
-                    finished_at
+                    started_at, finished_at
                from ${WORKFLOW_STEP_TABLE} where run_id = $1 and key = $2`,
             [
               runId,
@@ -463,6 +474,9 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
               encodedOrNull(entry.output),
               entry.error?.message ?? null,
               entry.attempts,
+              // `null`, never `undefined`: postgres.js refuses an undefined
+              // parameter outright — see `encodedOrNull`.
+              entry.startedAt ?? null,
               entry.finishedAt,
             ],
           );

@@ -68,7 +68,7 @@ export async function labSleepFlow(input: { seconds: number }, ctx: WorkflowCtx)
   // green-looking assertion about nothing. This line is the only signal that
   // the sleep is actually registered.
   report(\`lab-sleeping \${input.seconds}\`);
-  await ctx.sleep(input.seconds * 1000);
+  await ctx.sleep("labSleep", input.seconds * 1000);
   const after = await ctx.step("labNowAfter", () => labNow());
   return { before, after, elapsedMs: after - before };
 }
@@ -78,7 +78,7 @@ export async function labCountFlow(input: { steps: number }, ctx: WorkflowCtx) {
   for (let i = 0; i < input.steps; i += 1) {
     total = await ctx.step("labInc", () => labInc(total));
     report(\`lab-count \${total}\`);
-    await ctx.sleep(1000);
+    await ctx.sleep("labTick", 1000);
   }
   return { total };
 }
