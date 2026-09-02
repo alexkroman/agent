@@ -265,7 +265,7 @@ changed since the default branch (also `test:coverage`, same reason);
 ### Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.mjs` **and the CI check job** run
-ten **gates** (all also runnable standalone) that hold the line on technical
+eleven **gates** (all also runnable standalone) that hold the line on technical
 debt. Two compare against a COMMITTED PER-FILE BASELINE
 (`check:hatches`, `check:invariants`); the rest are absolute. They must stay
 wired into BOTH: for a long time they lived only in `check.mjs`, which CI never
@@ -283,6 +283,15 @@ gate); and with no `origin/main` to resolve, it printed "skipping ratchet" and
 exited 0, which is the shape of failure this repo keeps finding, a gate
 reporting success while checking nothing, in exactly the environments that get
 one commit of history. A file in the tree has no merge base and no such modes.
+
+**`check:deploy-changeset` is the ONE exception, and it does not weaken the
+rule.** What it checks is a property of a BRANCH rather than of the tree — did
+this change to platform source bring a changeset that ships it — so there is no
+tree-scoped spelling of it available. What generalizes from the paragraph above
+is not "never resolve a ref", it is **never report success over a comparison you
+could not make**: an unresolvable base FAILS there, naming `--base` and
+`git fetch`, where the escape-hatch gate printed a checkmark. Read that as the
+bar any future diff-scoped gate has to clear, not as a precedent for skipping.
 
 - **`pnpm check:hatches`** (`scripts/check-escape-hatches.mjs`) — counts
   static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
@@ -644,6 +653,46 @@ one commit of history. A file in the tree has no merge base and no such modes.
   Two things any new rule must respect — a dead pattern prints the same
   checkmark as a rule upheld, and the rules module matches its own rules.
   `guard-invariants-gate.test.ts` specs both; aai-templates' guide argues it.
+
+- **`pnpm check:deploy-changeset`** (`scripts/check-deploy-changeset.mjs`) — a
+  branch that changes code the PLATFORM DEPLOY carries must add a changeset that
+  ships it. `ship.yml` arms its deploy on a version bump to `aai-server` or
+  `aai-studio-server` and NOT on a source change (see "Fixed release coupling"),
+  while `changeset status` is satisfied by an EMPTY changeset — so a branch could
+  rewrite the platform, pass every other gate in this list, merge, and ship
+  nothing. **That is #1341**, the failure the version gate is accused of causing
+  and a changeset is the answer to; this is what says so at push time instead of
+  leaving it to whoever notices production is a release behind.
+
+  Four packages are in scope, because four reach production only through a
+  deploy: the two server packages, plus `aai-studio-client` (its `dist/` is baked
+  into the Modal image) and `aai-guest` (its harness is baked into the guest
+  image, whose tag the server PINS at deploy time). Two of them are CARRIERS —
+  the ones whose version bump actually arms the deploy — and a satisfying
+  changeset has to name one. `guard-invariants` rule 20's `SHIPS_VIA` is the same
+  model from the other side and the two COMPOSE: that rule catches a changeset
+  naming `aai-studio-client` without a carrier, this one catches a branch that
+  named neither, which is the case a rule reading changeset CONTENT cannot see.
+
+  **It is deliberately stricter than the mechanism.** An SDK changeset bumps both
+  carriers as dependents (`updateInternalDependencies: "patch"`), so it would
+  ship the platform anyway — and accepting that would have passed #1341, which
+  shipped precisely because something else was being released. Naming a carrier
+  means the platform ships because the author said so. For the same reason only
+  the changesets the BRANCH adds or edits count; a pending one on `main` bumps a
+  carrier for any branch cut while it sat there, which is the accident.
+
+  Two mechanical notes. The diff is **merge-base to WORKING TREE**, untracked
+  files included — `base...HEAD` compares two commits, so `pnpm check` would
+  print a checkmark over uncommitted work, and a brand-new module and a
+  brand-new changeset are both invisible to `git diff`. And a **carrier version
+  bump satisfies it directly**, using `ship.yml`'s own `bumped()` predicate:
+  that is what keeps the Version Packages PR green, since that branch deletes
+  the changesets and writes the version lines, and reading the mechanism beats
+  exempting a branch NAME. There is no opt-out and no allowlist — a path that
+  does not ship is a fact about the PATH, so it belongs in `isShippedSource`.
+  `aai-templates` has the same shape by the npm route and is deliberately out of
+  scope.
 
 - **`pnpm check:agent-guide`** (`scripts/sync-agent-guide.mjs`) — asserts
   `packages/aai/AGENT_GUIDE.md` is the current copy of
@@ -1162,16 +1211,37 @@ flag is OFF. So "it is private, therefore it owes an empty changeset" is wrong
 — and it was believed for a whole session's worth of `aai-server` work, which
 matters because of what that version gates.
 
-**`ship.yml`'s deploy used to fire only on a server VERSION bump**, and both
-server packages bump only as DEPENDENTS of an SDK release
-(`updateInternalDependencies: "patch"`). So a commit touching only
-`aai-server` moved no version line and shipped nothing: #1341 rewrote most of
-the platform, took `deploy=false`, and reached production only because a
-Version Packages commit happened to land behind it. The gate now also arms on
-a change under `packages/aai-server/**` or `packages/aai-studio-server/**` —
-the version bump was a proxy, that is the thing itself. Any branch arming
-`deploy` must arm `migrate` with it, since the deploy job waits on migrate with
-a plain condition; `ship-workflow-gate.test.ts` pins both halves.
+**`ship.yml`'s deploy fires on a server VERSION bump, and NOT on a server
+source change.** A source-diff arm over `packages/aai-server/**` /
+`packages/aai-studio-server/**` was added (#1343) and is reverted: it made a
+production rollout the consequence of a MERGE rather than of a RELEASE, so
+every server PR deployed on its own, several times a day — a rolling Modal
+rollout plus a migration job each, with no release to name in an incident.
+The symptom it was written for is real (#1341 rewrote most of the platform,
+moved no version line, and reached production only because a Version Packages
+commit happened to land behind it) and the remedy is a CHANGESET: both server
+packages are `private`, `privatePackages: { version: true }` means a changeset
+may name them and the version really moves, so a server-only change ships the
+way everything else does. That is the same model `guard-invariants` rule 20's
+`SHIPS_VIA` table is built on, which is why an `aai-studio-client` or
+`aai-guest` change must already name a carrier — a server-source diff would
+not have covered either. To ship a merged server change without waiting for a
+release, dispatch `ship.yml` with `deploy: true`.
+
+Any branch arming `deploy` must arm `migrate` with it, since the deploy job
+waits on migrate with a plain condition; `ship-workflow-gate.test.ts` pins that
+and that the reverted arm stays reverted.
+
+**The half a version gate needs is `check:deploy-changeset`** (see "Quality
+ratchets"), because `changeset status` accepts an EMPTY changeset: without it a
+branch can change platform source, satisfy every gate, merge, and ship nothing
+— which is #1341 reachable again by the front door.
+
+**And every `ship.yml` checkout resolves `github.sha`, never `github.ref`** —
+that gate pins this too. A ~20-minute release workflow whose jobs each fetch the
+BRANCH TIP ships whatever landed while it ran, and one run published a guest
+image from one commit while deploying a server built from another. That file's
+header carries the account; the rule is the gate's.
 
 ### Testing
 

@@ -108,23 +108,54 @@ describe("the ordering is declared, not polled", () => {
 
 describe("what arms a deploy", () => {
   /**
-   * The `changed` job decides whether the platform ships, and a VERSION BUMP is
-   * only a proxy for that. Both server packages are `private`, so changesets
-   * bumps them exclusively as dependents of an SDK release
-   * (`updateInternalDependencies: patch`) — so a commit touching only
-   * `aai-server` moves no version line. Measured on the real history:
-   * `dd699c71`, which merged #1341 and rewrote most of the platform, took
-   * `deploy=false` and shipped nothing of its own; it deployed only because a
-   * Version Packages commit happened to land behind it.
+   * The `changed` job's `diff` step, which is the whole decision.
+   *
+   * The STEP, not the job — the header comment above it argues at length about
+   * the source-path arm and names the very globs the assertion below forbids,
+   * which is the comment-versus-condition problem this file already works
+   * around for the deleted waiters. Every caller therefore asserts something
+   * PRESENT as well, since an empty slice satisfies a `not.toContain` for free.
    */
-  test("a server SOURCE change arms the deploy, not just a version bump", () => {
+  function diffStep(): string {
     const source = workflow ?? "";
     const diff = source.slice(source.indexOf("      - id: diff"));
-    const step = diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
-    for (const pkg of ["packages/aai-server/**", "packages/aai-studio-server/**"]) {
-      expect(step, `${pkg} does not arm a deploy, so a server-only change never ships`).toContain(
-        pkg,
-      );
+    return diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
+  }
+
+  /**
+   * A version bump is what ships the platform, and BOTH server packages count.
+   * There is one Modal app serving both surfaces from the aai-studio-server
+   * entry, so gating on `aai-server` alone strands every studio-only release.
+   */
+  test("a version bump to either server package arms the deploy", () => {
+    const step = diffStep();
+    expect(step).toContain("deploy=false");
+    expect(step).toContain("bumped aai-server");
+    expect(step).toContain("bumped aai-studio-server");
+  });
+
+  /**
+   * #1343 armed the deploy off a source diff over `packages/aai-server/**` and
+   * `packages/aai-studio-server/**`, and it is reverted: it made a production
+   * rollout the consequence of a MERGE rather than of a RELEASE, so every
+   * server PR deployed on its own, several times a day, with no release to
+   * name. The remedy is a changeset naming a server package — which is the
+   * model `guard-invariants` rule 20's `SHIPS_VIA` table is already built on,
+   * and why an `aai-studio-client` or `aai-guest` change must name a carrier.
+   *
+   * Asserted because the symptom it was written for is real and documented, so
+   * the arm is the first thing a reader of that history re-adds.
+   */
+  test("a server SOURCE change alone does not arm the deploy", () => {
+    const step = diffStep();
+    expect(step, "the diff step no longer slices out — the shape of this job moved").toContain(
+      "deploy=false",
+    );
+    for (const glob of ["packages/aai-server/**", "packages/aai-studio-server/**"]) {
+      expect(
+        step,
+        `${glob} arms a deploy, so every server merge ships instead of every release`,
+      ).not.toContain(glob);
     }
   });
 
@@ -136,13 +167,11 @@ describe("what arms a deploy", () => {
    * ABSENT line rather than a wrong one.
    */
   test("every branch that arms a deploy also arms the migration", () => {
-    const source = workflow ?? "";
-    const diff = source.slice(source.indexOf("      - id: diff"));
-    const step = diff.slice(0, diff.indexOf('$GITHUB_OUTPUT"\n\n'));
+    const step = diffStep();
     const arms = step.match(/^ *deploy=true$/gm) ?? [];
     const migrates = step.match(/^ *migrate=true$/gm) ?? [];
     expect(arms.length, "no branch arms a deploy — the scan has stopped matching").toBeGreaterThan(
-      1,
+      0,
     );
     expect(
       migrates.length,
@@ -216,16 +245,65 @@ describe("a rollback can name its commit", () => {
   test("every checkout honours the ref input", () => {
     const source = workflow ?? "";
     const checkouts = source.match(/uses: actions\/checkout@/g) ?? [];
-    const refs = source.match(/ref: \$\{\{ inputs\.ref \|\| github\.ref \}\}/g) ?? [];
+    const refs = source.match(/ref: \$\{\{ inputs\.ref \|\| github\.sha \}\}/g) ?? [];
     // A checkout that ignored the input would ship main's head under a rollback
     // dispatch — the one outcome a rollback must never produce. There are as
     // many honouring checkouts as there are checkouts.
     expect(checkouts.length).toBeGreaterThan(0);
     expect(refs).toHaveLength(checkouts.length);
   });
+
+  /**
+   * The fallback is `github.sha` and never `github.ref`, which is a MUTABLE
+   * branch pointer on a push. This assertion used to pin the `github.ref` form
+   * — it was written to check that a checkout honours the rollback input and
+   * was indifferent to what the other half of the `||` named, so it locked in
+   * the bug and would have rejected the fix.
+   *
+   * The failure needs a second push mid-release to appear at all, so no run of
+   * this workflow reproduces it on demand: run 33660483457 checked out four
+   * different commits across six jobs, published a guest image built from one
+   * tree, deployed a server built from another, and took every sandbox spawn
+   * down for ~50 minutes on a content-addressed tag nothing had built. The
+   * workflow's own header carries the full account.
+   */
+  test("no checkout resolves a mutable branch ref", () => {
+    const source = workflow ?? "";
+    // Anchored on `ref:` — `github.ref` is legitimate in the concurrency GROUP,
+    // where one group per branch is exactly what is wanted, and asserting on the
+    // bare expression would forbid that too.
+    expect(source).not.toMatch(/\n\s*ref: .*github\.ref/);
+    // And the concurrency group still uses it, so this spec cannot pass by the
+    // expression disappearing from the file altogether.
+    expect(source).toMatch(/group: ship-\$\{\{ github\.ref \}\}/);
+  });
 });
 
 describe("the rollout is observed, not only predicted", () => {
+  /**
+   * `needs: guest-image` proves the PUBLISHER went green; it cannot prove the
+   * registry serves what it pushed. Modal pulls a guest image at SPAWN time, so
+   * an unpullable one is otherwise discovered by the smoke step — which runs
+   * after the rollout has already replaced production.
+   *
+   * Two properties, and both are load-bearing. It reads the publisher's own job
+   * OUTPUT rather than recomputing the tag, because two producers computing one
+   * content hash from two trees is the incident this file's rollback specs now
+   * describe. And it runs BEFORE `modal deploy`, since a check that runs after
+   * the traffic moved is a report and not a gate.
+   */
+  test("deploy preflights the guest image before it moves any traffic", () => {
+    const source = workflow ?? "";
+    expect(source).toContain("name: Preflight the guest image");
+    expect(source).toMatch(/GUEST_IMAGE_REF: \$\{\{ needs\.guest-image\.outputs\.ref \}\}/);
+    // The publisher has to expose it, or the expression above is an empty
+    // string and the preflight checks nothing.
+    expect(source).toMatch(/ref: \$\{\{ steps\.push\.outputs\.ref \}\}/);
+    expect(source.indexOf("name: Preflight the guest image")).toBeLessThan(
+      source.indexOf("name: Deploy platform"),
+    );
+  });
+
   test("deploy verifies the rollout and then spawns a real sandbox", () => {
     const source = workflow ?? "";
     expect(source).toContain("verify_modal_deploy.py");
