@@ -553,6 +553,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   | 29 | no `globalThis.fetch` as a runtime egress default | `egressFetch()` |
   | 30 | no non-deterministic read in a shipped `workflows/` body | move it inside `ctx.step` |
   | 31 | no hand-rolled jittered backoff | `jitteredBackoff()` |
+  | 32 | no computed journal identity (a template-literal step/wait name) | a plain string literal |
 
   Hand-kept, and it keeps going stale — it stopped at 23, then at 28, and
   `--rules` is the derived source to read instead. The recurrence IS the

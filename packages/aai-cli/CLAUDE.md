@@ -701,6 +701,56 @@ code regardless: `buildAgentBundle` does NOT pass `configFile: false` (only
 the guest's untrusted-workspace builds do), so the project's `vite.config.ts`
 runs at build time either way.
 
+## `aai build` warns about a COMPUTED step name
+
+`_workflow-determinism.ts` scans the project's `workflows/*.ts` for a
+`ctx.step`/`ctx.sleep`/`ctx.waitFor` whose identity is a template literal, and
+`build` and `deploy` print one line per finding plus the remedy. It is
+`guard-invariants` rule 31 (`scripts/guard-invariants-rules-workflow.mjs`)
+pointed at a USER's project — that rule holds this repo's shipped bodies to the
+same thing, and no project written from them was held to anything.
+
+**It exists because the TYPE system provably misses this shape.** All three
+methods constrain their identity with `Literal<Name>`
+(`string extends Name ? never : Name`), which refuses a name that has widened to
+`string` — and a template literal's type is a template-literal type, not
+`string`, so ``ctx.step(`charge-${coin}`, charge)`` compiles cleanly. Verified
+against the real `WorkflowCtx`. It is also the engine's own measured defect: a
+coin flip interpolated into a step name ran the side effect twice in **7 of 10
+runs, with all 10 reporting `completed`**.
+
+Three properties are decisions:
+
+- **It WARNS rather than failing the build**, same posture and same call site as
+  `agentConfigWarnings` ("Legal, and worth saying"), because one shape is
+  legitimate — a name interpolating a `const` string is the same on every walk.
+  On `deploy` the findings join `warnings` rather than only being notified, so
+  they reach studio Publish, which reads the result and never stdout.
+- **Rule 30's OTHER half is deliberately not ported.** That half scans for the
+  non-deterministic READS themselves and pays for the breadth with seven
+  baselined occurrences here. Measured before deciding: a faithful port reports
+  all seven and nothing else, and all seven are correct code — a read inside a
+  step-called helper, which `link-digest`'s own comment explains ("the `ctx.step`
+  callback boundary is not decidable from a line"). A user's project has no
+  baseline, so that port is a 100% false-positive rate on the only measurable
+  corpus, and a checker that is always wrong is one an author scrolls past. The
+  boundary needs a real parse; the repo does that with `oxc-parser`, and a native
+  parser cannot join a published CLI's runtime dependencies — a new one fails the
+  artifact-size budget on its own, regardless of bytes.
+- **A FALSE-POSITIVE FLOOR is a test.** `_workflow-determinism.test.ts` runs the
+  scan over all fourteen shipped templates and requires ZERO findings, because
+  every template is a project somebody scaffolds and then builds. It holds by
+  construction: identity is `(name, occurrence)` and the counter is per name, so
+  a fan-out reuses one literal — `ctx.step("transcribeSegment", …)` inside the
+  loop is the shipped seven-way one. The template count is floored too, a glob
+  that stopped resolving being that assertion passing over nothing.
+
+The pattern is DUPLICATED from the gate script rather than shared, and the
+duplication is inherent: that file is plain node run over this repo, this ships
+in a published CLI, and neither can import the other. What closes it is a test
+that reads `IDENTITY_CALLS` out of the gate's source and probes this module with
+each name — so a method added to one is a failure rather than a divergence.
+
 ## A step that uses ffmpeg wants a LOCAL ffmpeg under `aai dev`
 
 `@alexkroman1/aai/ffmpeg` spawns `ffmpeg`/`ffprobe` by name, and a deployed

@@ -19,6 +19,7 @@ import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log, notify } from "./_ui.ts";
+import { determinismWarnings, scanWorkflowDeterminism } from "./_workflow-determinism.ts";
 import { classifyVitestError, runVitest } from "./test.ts";
 
 /**
@@ -77,6 +78,13 @@ export async function executeBuild(opts: {
   // whole failure mode is that nothing says anything until the agent is live
   // and silent. See `agentConfigWarnings`.
   for (const warning of agentConfigWarnings(agentDef)) notify("warn", warning);
+  // Same posture, one directory over: a clock or a fetch at workflow BODY level
+  // is legal code whose failure mode is a step executing twice on a replay, with
+  // the run reporting `completed`. A warning rather than a gate — see
+  // `_workflow-determinism.ts` on why a line scan may not stop a build.
+  for (const warning of determinismWarnings(await scanWorkflowDeterminism(cwd))) {
+    notify("warn", warning);
+  }
 
   // Written AFTER the evaluation, which is the bundle's smoke test: a worker
   // whose top level throws must not be left on disk as the thing `npm start`

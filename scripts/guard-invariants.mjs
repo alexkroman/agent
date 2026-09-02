@@ -103,15 +103,15 @@ const SELF_REFERENTIAL = new Map([
   // the thing it bans, so these files match most of their own rules — and the
   // set has to name ALL of them. `guard-invariants-rules.mjs` was one 649-line
   // module until it passed the source cap; the split into a barrel plus an ERE
-  // vocabulary, a scopes module and three rule groups multiplies this trap by
-  // five, which AGENTS.md records having already been paid for four times.
+  // vocabulary, a scopes module and FOUR rule groups multiplies this trap by
+  // six, which AGENTS.md records having already been paid for four times.
   ["scripts/guard-invariants-rules.mjs", "*"],
   ["scripts/guard-invariants-ere.mjs", "*"],
   ["scripts/guard-invariants-scopes.mjs", "*"],
   ["scripts/guard-invariants-rules-timing.mjs", "*"],
+  ["scripts/guard-invariants-rules-workflow.mjs", "*"],
   ["scripts/guard-invariants-rules-shape.mjs", "*"],
   ["scripts/guard-invariants-rules-state.mjs", "*"],
-  ["scripts/guard-invariants-rules-workflow.mjs", "*"],
   ["scripts/guard-invariants-baseline.json", "*"],
   // The spec that proves each rule still matches. Its samples ARE the
   // anti-patterns, spelled out on purpose — it exists because a pattern
