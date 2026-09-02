@@ -393,6 +393,13 @@ export async function spawnSubprocessAgentServer(
         bundle: opts.worker.kind === "url" ? { url: opts.worker.url } : { path: bundlePath },
         bundleSha256: opts.worker.sha256,
         envPath,
+        // No `TMPDIR`, and nothing here has to ask for that any more: it moved to
+        // `guestExecBaseEnv()` (`guest-exec-env.ts`), which this backend
+        // deliberately does not use. `/var/tmp` is a fact about the guest IMAGE —
+        // a host's default temp directory is already a real disk rather than a
+        // tmpfs, and on Windows a `/var/tmp` literal is drive-relative and breaks
+        // every step. Same reason the containment flag is absent: what is true of
+        // a sandbox is not true of a child.
       }),
     });
     // Before the readiness poll: a bundle that throws at load exits here, and

@@ -43,7 +43,6 @@ import {
 import {
   cancelRun,
   HOSTILE_TARGETS,
-  hookUrlFor,
   installWorkflowLab,
   isSleeping,
   readRun,
@@ -231,13 +230,14 @@ describe("self-hosted server: durable workflows", () => {
    * "Can a user `aai init` a workflow template and run something DURABLE under
    * `npm start`" — and until this test existed, no.
    *
-   * The gap it closes was structural rather than a bug in one line. Running a
-   * durable workflow takes two things the self-hosted door never did: a WORLD
-   * (`configureWorkflowWorld` + `startWorkflowWorldIfDeclared`, which nothing but
-   * `aai dev` and the guest harness called) and the DevKit's `flow`/`step`
-   * callback routes, which the world dispatches every hop to. `createAgentServer`
-   * now does both, off the compiled `workflowCode`/`stepCode` the scaffold reads
-   * off its own built worker.
+   * The gap it closes was structural rather than a bug in one line. Under the
+   * DevKit, running a durable workflow took two things the self-hosted door
+   * never did: a WORLD (`configureWorkflowWorld` + `startWorkflowWorldIfDeclared`,
+   * which nothing but `aai dev` and the guest harness called) and the `flow`/
+   * `step` callback routes the world dispatched every hop to. The replay engine
+   * needs neither — `createRuntime` builds it off the agent's own `workflows`
+   * declaration and walks a run in this process — so what this leg now proves is
+   * that the door a self-hoster goes through gets one at all.
    *
    * Nothing else can ask this. The `aai dev` leg below drives the same lab
    * through a different front door, and the "boots and serves it" leg above uses
@@ -261,16 +261,21 @@ describe("self-hosted server: durable workflows", () => {
 
     const server = await startSelfHostedServer(projectDir);
     try {
-      // The callback route the world dispatches to. Unmounted it 404s, and every
-      // run then stalls forever with nothing logged — which is exactly how this
-      // door behaved before. A 404 here is the assertion that matters; the body
-      // is nonsense, so anything BUT 404 means the route is mounted.
-      const flow = await fetch(`${server.url}/.well-known/workflow/v1/flow`, {
+      // The PLATFORM's delivery door, which replaced the DevKit's `flow` and
+      // `step` callbacks. Unmounted it 404s and the request falls through — which
+      // is exactly how this door behaved before it was wired — so anything BUT
+      // 404 means the route is mounted.
+      //
+      // 401 is the RIGHT answer here and not a disappointment: a self-hosted
+      // server supplies no `allowRemote`, having no queue outside its own
+      // process, so it refuses a caller it cannot vouch for. The run below is
+      // what proves the engine actually works; this proves the route exists.
+      const delivery = await fetch(`${server.url}/workflow-queue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
-      expect(flow.status).not.toBe(404);
+      expect(delivery.status).toBe(401);
 
       // And the run itself, which is the whole point: started through the public
       // API and polled to a terminal status, the way a `curl` script would.
@@ -354,16 +359,20 @@ describe("aai dev: a scaffolded workflow template", () => {
     return server.url;
   }
 
-  test("boots and mounts the DevKit's queue callbacks", async ({ skip }) => {
-    // Booting at all is most of it: `loadWorker` compiles `workflows/` BEFORE
-    // the server listens. Unmounted, this 404s and every run stalls forever
-    // with nothing logged — exactly how it behaved before the routes existed.
-    const res = await fetch(`${await settled(skip)}/.well-known/workflow/v1/flow`, {
+  test("boots and mounts the platform's delivery door", async ({ skip }) => {
+    // Booting at all is most of it. The door replaced the DevKit's `flow` and
+    // `step` callbacks; unmounted it 404s and the request falls through.
+    //
+    // 401 rather than 200 because `aai dev` supplies no `allowRemote` — its
+    // engine dispatches on a `setTimeout` in this process, so there is no queue
+    // outside it and no caller to vouch for. That the route ANSWERS is the
+    // claim; the two cases below are what prove runs actually advance.
+    const res = await fetch(`${await settled(skip)}/workflow-queue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
     });
-    expect(res.status).not.toBe(404);
+    expect(res.status).toBe(401);
   });
 
   test("a run reaches a terminal status, and its sleep is REALLY taken", async ({ skip }) => {
@@ -415,40 +424,13 @@ describe("aai dev: a scaffolded workflow template", () => {
     expect(await cancelRun(url, "wrun_e2e_never_started")).toBe(false);
   });
 
-  test("a webhook URL handed OUT resumes the run parked on it", async ({ skip }) => {
-    // The waitpoint whose caller is a third party on the public internet. The
-    // in-tree fixture delivers its callback from INSIDE a step, so the request
-    // never leaves the process; this one is delivered the way a provider would.
-    const url = await settled(skip);
-    const runId = await startRun(url, "labWebhook", { tag: "e2e" });
-    const hookUrl = await vi.waitFor(
-      () => {
-        const found = hookUrlFor(server?.lines() ?? [], "e2e");
-        expect(found).toBeTruthy();
-        return found as string;
-      },
-      { timeout: 30_000, interval: 250 },
-    );
-
-    const delivered = await fetch(hookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: "from outside" }),
-    });
-    expect(delivered.ok).toBe(true);
-    const run = await waitForRun(url, runId);
-    expect(run.status).toBe("completed");
-    expect(run.output).toMatchObject({ tag: "e2e", note: "from outside" });
-
-    // A token nothing is listening on is an ANSWER: a 5xx tells a payment
-    // provider to RETRY an expired callback forever.
-    const stale = await fetch(`${url}/.well-known/workflow/v1/webhook/no-such-token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    expect(stale.status).toBe(404);
-  });
+  // **There is no webhook test any more.** It parked a run on `createWebhook()`
+  // and delivered the callback the way a payment provider would — the only tier
+  // that ever could. The engine's waitpoint is `ctx.waitFor`, ended by
+  // `ctx.workflows.signal`, and `/.well-known/workflow/v1/webhook/:token` still
+  // routes to the DevKit's hook table, which knows nothing about the journal. So
+  // this covers webhooks with nothing, deliberately: see the note in
+  // `dev-workflow.scenario.test.ts` for what closes it.
 
   test("`aai test` names the spec files it did NOT run", async ({ skip }) => {
     // The lab leaves a spec `aai test` does not run and no `agent.test.ts`, so

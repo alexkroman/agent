@@ -37,10 +37,16 @@
  * moves where those bytes land — it does not widen what a stranger holding a slug
  * can do.
  *
- * What it does NOT do is make the object count for anything. A window in the bucket
- * that no `recordParts` ever named is invisible to every reader: `size` comes from the
- * agent's own row, and the store asks the bucket for a part's length before it
- * records one. So the worst an unrecorded write achieves is an orphan.
+ * What a write does NOT do is make a NEW object count for anything. A window in the
+ * bucket that no `recordParts` ever named is invisible to every reader: `size` comes
+ * from the upload's own record, and the store asks the bucket for a part's length
+ * before it records one. So the worst an unrecorded write at a FRESH key achieves is
+ * an orphan.
+ *
+ * A write at a key some record already names is a different thing entirely, and it
+ * is the one this route has to refuse — see {@link assertUploadOpen}. That paragraph
+ * used to end here, and "the worst is an orphan" was read as covering the whole
+ * verb.
  *
  * ## A WRITE requires the agent to exist, which is what bounds that orphan
  *
@@ -49,16 +55,28 @@
  * slug's SHAPE and its reserved names, never its existence, so
  * `PUT /no-such-agent-here/uploads/upl_x/0` answered **201** and put bytes at
  * `uploads/no-such-agent-here/upl_x/0`. Measured against production. Nothing
- * reclaims them either — `aai-sweep-blob-gc` matches `name like 'blobs/%'` — so an
+ * reclaimed them either — `aai-sweep-blob-gc` matched `name like 'blobs/%'` — so an
  * unauthenticated caller could mint unbounded prefixes in a bucket shared by every
  * tenant, and the platform had no record that any of them existed.
  *
- * So a write now costs one indexed column read (`store.getAgentVersion`) and answers the
- * same 404 an unknown agent gets everywhere else. That is the STRONGEST check
- * available at this layer and deliberately not the one you would want: the upload
- * RECORD lives in the app's own database, which only the guest can reach, so the
- * platform cannot ask whether this id was ever claimed. What it can say is that the
- * prefix belongs to an agent somebody deployed.
+ * Both halves of that are closed now. This route is the first: a prefix belongs to
+ * an agent somebody deployed. The GC is the second — it grew an UPLOADS arm that
+ * reclaims a window no `workflow_uploads` row names, so the orphans this guard
+ * bounds are also finite in TIME rather than merely in number. See
+ * {@link sweepBlobGc}; the grace window there exists for the one flow that writes
+ * bytes before its record, which is the flow below.
+ *
+ * So a write costs one indexed column read (`store.getAgentVersion`) and answers the
+ * same 404 an unknown agent gets everywhere else. What it says is that the prefix
+ * belongs to an agent somebody deployed.
+ *
+ * **And a second indexed read says whether the upload is FINISHED**, which this
+ * layer could not ask when the paragraph above was written — the record lived in the
+ * app's own database and only the guest could reach it. It is
+ * `aai_platform.workflow_uploads` now (`platform-uploads.ts`), keyed by the same
+ * `(slug, id)` this route already holds, so the question is a primary-key lookup on
+ * a connection the platform has. {@link assertUploadOpen} carries what it refuses
+ * and why the condition is "complete" rather than "the object exists".
  *
  * **Reads are NOT gated, and that is a cost decision.** A read is the fan-out — sixty
  * steps each taking their own window — so a lookup there is sixty extra queries per
@@ -80,10 +98,16 @@ import { UploadTooLargeError } from "@alexkroman1/aai-runtime";
 import { UPLOAD_TOKEN_RE } from "@alexkroman1/aai-runtime/internal";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { withReserved } from "./_platform-route.ts";
 import type { HonoEnv } from "./context.ts";
+import { createLogger } from "./logger.ts";
 import { callerReachableUrl } from "./microsandbox-network.ts";
+import type { AdminDb } from "./platform-lock.ts";
+import { readUpload } from "./platform-uploads.ts";
 import { notFoundMessage } from "./sandbox-broker.ts";
 import { UPLOAD_READ_URL_TTL_SECONDS, type UploadBytes, uploadKey } from "./upload-bytes.ts";
+
+const log = createLogger("uploads.bytes");
 
 /** The path an upload window lives at, under `/:slug`. */
 export const UPLOAD_BYTES_ROUTE = "/uploads/:id/:offset";
@@ -112,7 +136,7 @@ export const MAX_UPLOAD_WINDOW_BYTES = 64 * 1024 * 1024;
 const OFFSET_RE = /^\d{1,16}$/;
 
 /** The window a caller named, or the reason it is not one. */
-function windowKey(c: Context<HonoEnv>): string {
+function windowTarget(c: Context<HonoEnv>): { id: string; key: string } {
   const id = c.req.param("id") ?? "";
   const raw = c.req.param("offset") ?? "";
   if (!UPLOAD_TOKEN_RE.test(id)) {
@@ -122,8 +146,19 @@ function windowKey(c: Context<HonoEnv>): string {
   if (!(OFFSET_RE.test(raw) && Number.isSafeInteger(offset))) {
     throw new HTTPException(400, { message: "A window is named by the byte it starts at." });
   }
-  return uploadKey(c.var.slug, id, offset);
+  return { id, key: uploadKey(c.var.slug, id, offset) };
 }
+
+/** What this route needs besides the bytes. */
+export type UploadBytesHandlerOptions = {
+  /**
+   * The platform database, for the ONE question a write has to ask of the record —
+   * see {@link assertUploadOpen}. Absent on a deployment with no platform database
+   * (the memory stores, and every test that does not pass one), where there is no
+   * record to consult and the write proceeds as it always did.
+   */
+  adminDb?: AdminDb | undefined;
+};
 
 /**
  * The handler for all three methods.
@@ -131,16 +166,81 @@ function windowKey(c: Context<HonoEnv>): string {
  * One function rather than three, because the three share the key derivation and
  * that is the part that must not be got wrong twice.
  */
-export function createUploadBytesHandler(bytes: UploadBytes) {
+export function createUploadBytesHandler(bytes: UploadBytes, opts: UploadBytesHandlerOptions = {}) {
   return async (c: Context<HonoEnv>): Promise<Response> => {
-    const key = windowKey(c);
+    const { id, key } = windowTarget(c);
     if (c.req.method === "PUT") {
       await assertAgentExists(c);
+      await assertUploadOpen(c, opts.adminDb, id);
       return await storeWindow(c, bytes, key);
     }
     if (c.req.method === "HEAD") return await measureWindow(c, bytes, key);
     return await serveWindow(c, bytes, key);
   };
+}
+
+/**
+ * Refuse a write to a window of an upload that is already FINISHED.
+ *
+ * **A `PUT` here REPLACES an object, and this is the only thing that bounds what it
+ * may replace.** The key is `uploads/<slug>/<id>/<offset>`, which is exactly where
+ * every window of every upload of that agent lives — a `create`d one, a streamed
+ * one, a part — so a second `PUT` at a window a run is about to read swapped the
+ * bytes under it and answered 201. Measured: longer, shorter or the same length, all
+ * 201, and nothing in the RECORD moved, so `size` and `complete` still described the
+ * file that used to be there and no reader had anything to notice. The route is as
+ * unauthenticated as `/client-config` beside it and an upload id is the caller's own
+ * choice, so this needed no credential and no tenancy mistake — only a slug from a
+ * URL and an id from a page.
+ *
+ * The store's own refusal (`UploadCompleteError`, 409 on `PUT …/parts?offset=`) does
+ * not reach this: that one guards the RECORD, and a rewrite here changes no record
+ * at all. So both layers refuse, and this is the one that makes a finished upload's
+ * bytes immutable.
+ *
+ * ## Why COMPLETE and not "the object exists"
+ *
+ * Refusing every overwrite is the stronger rule and it breaks two flows the client
+ * genuinely takes, both documented in `aai/sdk/_upload-parts-send.ts`: a window is
+ * re-sent as ONE unit after a transport failure or a 5xx, whose response may have
+ * been lost after the object landed; and a resumed upload re-sends a window whose
+ * bytes are stored but whose CLAIM was lost, that being the only repair that leaves
+ * the record and the bucket agreeing. Both act on an upload that is still arriving.
+ * A 409 is not in `RETRYABLE_STATUS` and `isResumableFailure` declines it too, so
+ * getting this wrong does not degrade an upload — it ends one.
+ *
+ * A finished upload has no such flow: `storedRanges` reads `complete` as full
+ * coverage, so a resume of one sends nothing at all.
+ *
+ * ## An ABSENT record permits the write, deliberately
+ *
+ * `POST /workflows/uploads` writes its windows FIRST and its record LAST — an
+ * upload does not exist until all of its bytes do — so during that upload there is
+ * no row to consult, and a rule of "no record, no write" would refuse the whole
+ * route. The same answer covers a deployment whose records live somewhere else.
+ * What this closes is the DURABLE hole: once a record says the file is whole, its
+ * windows stop being writable, and before that a window is as contended as any
+ * other in-flight upload.
+ */
+async function assertUploadOpen(
+  c: Context<HonoEnv>,
+  adminDb: AdminDb | undefined,
+  id: string,
+): Promise<void> {
+  if (!adminDb) return;
+  const held = await withReserved(
+    adminDb,
+    { log, failure: "upload lookup failed", detail: { slug: c.var.slug, id } },
+    async (sql) => await readUpload(sql, c.var.slug, id),
+  );
+  if (!held?.complete) return;
+  // The store's own wording for the same refusal, so a client meets one sentence
+  // whichever route it took to the bytes. 409 for the reason it is there: the
+  // request is well formed and the resource is closed, which a client must not
+  // retry.
+  throw new HTTPException(409, {
+    message: `Upload ${id} is complete; its bytes may not be rewritten.`,
+  });
 }
 
 /**

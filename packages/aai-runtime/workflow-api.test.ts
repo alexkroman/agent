@@ -1,9 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Specs for the workflow HTTP API.
+ * Specs for the workflow HTTP API's five RUN endpoints — start, list, read,
+ * cancel, wake — and the output stream beside them.
  *
  * Driven through a REAL `node:http` server rather than fake request/response
- * objects, because half of what this module decides is HTTP: the status code a
+ * objects, because half of what these routes decide is HTTP: the status code a
  * caller's mistake gets (400, never 500), the one a body over the cap gets (413,
  * from the router rather than the route), and the fact that a claimed request
  * always receives exactly one answer.
@@ -13,18 +14,17 @@
  * route that needed more than a client would not compile.
  *
  * The harness lives in `workflow-api-test-utils.ts`, shared with
- * `workflow-api-sync.test.ts` (the `?wait=` mode, split out at the 700-line
- * test cap).
+ * `workflow-api-sync.test.ts` (the `?wait=` mode) and
+ * `workflow-api-router.test.ts` (the router's own decisions — claiming, the
+ * token gate, engine resolution, route ordering, the catch). Both splits were
+ * made at the 700-line test cap.
  */
 
-import type http from "node:http";
-import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/host-internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeLogger } from "./_test-utils.ts";
 import { WorkflowRequestError } from "./_workflow-request-error.ts";
-import { createWorkflowApi, MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api.ts";
+import { MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api.ts";
+import { MAX_WORKFLOW_KEY_LENGTH } from "./workflow-api-runs.ts";
 import { chunkStream, fakeClient, type Harness, run, serve } from "./workflow-api-test-utils.ts";
-import type { UploadStore } from "./workflow-uploads.ts";
 
 /**
  * A `WorkflowRequestError` as a SECOND copy of its module would construct one:
@@ -57,195 +57,6 @@ beforeEach(() => {
 
 afterEach(async () => {
   await harness?.close();
-});
-
-describe("routing", () => {
-  test("does not claim a request outside the prefix", async () => {
-    const claimed = createWorkflowApi({ engine: () => fakeClient(), logger: makeLogger() })(
-      {} as http.IncomingMessage,
-      {} as http.ServerResponse,
-      "/workflowsomething",
-      "GET",
-    );
-    expect(claimed).toBe(false);
-  });
-
-  test("claims the bare prefix and lists the declared workflows", async () => {
-    harness = await serve({ engine: () => fakeClient() });
-    const res = await fetch(`${harness.url}/workflows`);
-    expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({
-      workflows: [{ name: "digest", description: "Research a topic" }],
-    });
-  });
-
-  test("a claimed path with no matching method answers 404", async () => {
-    harness = await serve({ engine: () => fakeClient() });
-    const res = await fetch(`${harness.url}/workflows`, { method: "DELETE" });
-    expect(res.status).toBe(404);
-    await expect(res.json()).resolves.toEqual({ error: "Not found" });
-  });
-
-  test("`/runs/:id/events` is matched before the bare `/runs/:id` GET", async () => {
-    // The ordering bug this pins reads "<id>/events" as a run id, so the
-    // giveaway is a 404 for a run that exists — and an SSE content type is the
-    // only thing that distinguishes the two routes from outside.
-    const engine = fakeClient({ get: vi.fn(async () => run({ status: "completed", output: 1 })) });
-    harness = await serve({ engine: () => engine });
-    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/events`, {
-      headers: { Accept: "text/event-stream" },
-    });
-    expect(res.headers.get("content-type")).toBe("text/event-stream");
-    await res.text();
-  });
-
-  test("a run id is percent-decoded out of the path", async () => {
-    // The vehicle used to be `a/b`, which a decoded slash now fails at the
-    // router — see the unsafe-id cases below. The SUBJECT is unchanged and is
-    // still worth pinning: an escape that decodes to something legal has to
-    // reach the engine decoded, not raw.
-    const get = vi.fn(async () => run());
-    harness = await serve({ engine: () => fakeClient({ get }) });
-    await fetch(`${harness.url}/workflows/runs/${encodeURIComponent("wrun_café")}`);
-    expect(get).toHaveBeenCalledWith("wrun_café");
-  });
-
-  test("a malformed upload id is a 400 rather than reaching the store", async () => {
-    const info = vi.fn(() => Promise.resolve(undefined));
-    const uploads: UploadStore = {
-      info,
-      read: () => Promise.resolve(new Uint8Array()),
-      create: () => Promise.resolve({ id: "upl_1", name: "", type: "", size: 0, complete: true }),
-      stream: (id: string) => Promise.resolve({ id, name: "", type: "", size: 0, complete: true }),
-      beginParts: (id: string) =>
-        Promise.resolve({ id, name: "", type: "", size: 0, complete: false }),
-      recordParts: (id: string) =>
-        Promise.resolve({ id, name: "", type: "", size: 0, complete: false }),
-      writePart: (id: string) =>
-        Promise.resolve({ id, name: "", type: "", size: 0, complete: false }),
-    };
-    harness = await serve({ engine: () => fakeClient(), uploads });
-    const res = await fetch(`${harness.url}/workflows/uploads/%`);
-    expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({ error: "Malformed upload id" });
-    expect(info).not.toHaveBeenCalled();
-  });
-});
-
-describe("availability", () => {
-  test("an undefined engine answers 404 naming BOTH causes", async () => {
-    harness = await serve({ engine: () => undefined });
-    const res = await fetch(`${harness.url}/workflows`);
-    expect(res.status).toBe(404);
-    await expect(res.json()).resolves.toEqual({ error: WORKFLOWS_UNAVAILABLE_MESSAGE });
-  });
-
-  test("an engine resolver that THROWS answers 500 carrying the reason", async () => {
-    // The distinction that matters: a runtime that could not be BUILT is a
-    // misconfigured agent, and answering 404 would deny that its workflows exist.
-    harness = await serve({
-      engine: () => {
-        throw new Error("AssemblyAI LLM: missing API key");
-      },
-    });
-    const res = await fetch(`${harness.url}/workflows`);
-    expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toEqual({
-      error: "Workflow API unavailable: AssemblyAI LLM: missing API key",
-    });
-  });
-});
-
-describe("token", () => {
-  test("no token leaves every route open", async () => {
-    harness = await serve({ engine: () => fakeClient() });
-    expect((await fetch(`${harness.url}/workflows`)).status).toBe(200);
-  });
-
-  test("a token refuses a request that does not carry it", async () => {
-    harness = await serve({ engine: () => fakeClient(), token: "s3cret" });
-    const res = await fetch(`${harness.url}/workflows`);
-    expect(res.status).toBe(401);
-    await expect(res.json()).resolves.toEqual({
-      error: "Missing or invalid workflow API token",
-    });
-  });
-
-  test("a token admits a request carrying it", async () => {
-    harness = await serve({ engine: () => fakeClient(), token: "s3cret" });
-    const res = await fetch(`${harness.url}/workflows`, {
-      headers: { Authorization: "Bearer s3cret" },
-    });
-    expect(res.status).toBe(200);
-  });
-
-  test("the engine is not resolved for an unauthorized caller", async () => {
-    // Resolving builds the runtime in the guest, which is work an
-    // unauthenticated caller must not be able to trigger.
-    const engine = vi.fn(() => fakeClient());
-    harness = await serve({ engine, token: "s3cret" });
-    await fetch(`${harness.url}/workflows`);
-    expect(engine).not.toHaveBeenCalled();
-  });
-
-  /**
-   * The block above only ever drove `GET /workflows` — the cheapest, most
-   * harmless route on the surface — so the token gate was pinned on the one
-   * verb whose exposure nobody worries about, and on none of the three #1309
-   * flagged: the run listing that hands out ids, and the two verbs that change a
-   * run somebody else started. A token check that moved inside a route (or a
-   * table entry that dispatched before the gate) would leave cancel and wake
-   * open with this suite green.
-   *
-   * Driven as a table because the claim is identical for each and the point is
-   * COVERAGE of the verb set — a loop here would report "workflow API token"
-   * and not which route leaked.
-   */
-  test.each([
-    {
-      what: "the run listing (enumerates ids)",
-      path: "/workflows/runs?workflow=digest",
-      method: "GET",
-    },
-    { what: "cancel", path: "/workflows/runs/wrun_1", method: "DELETE" },
-    { what: "wake", path: "/workflows/runs/wrun_1/wake", method: "POST" },
-  ])("a token closes $what", async ({ path, method }) => {
-    const client = fakeClient();
-    harness = await serve({ engine: () => client, token: "s3cret" });
-
-    const refused = await fetch(`${harness.url}${path}`, { method });
-    expect(refused.status).toBe(401);
-    // And it was refused BEFORE reaching the engine — a 401 that still ran the
-    // call would have cancelled the run it was refusing.
-    expect(client.recent).not.toHaveBeenCalled();
-    expect(client.cancel).not.toHaveBeenCalled();
-    expect(client.wakeUp).not.toHaveBeenCalled();
-
-    const admitted = await fetch(`${harness.url}${path}`, {
-      method,
-      headers: { Authorization: "Bearer s3cret" },
-    });
-    expect(admitted.status).toBe(200);
-  });
-
-  test("with no token those same three routes are OPEN — the documented default", async () => {
-    // Pinned deliberately, and not as an endorsement: `workflow-api-auth.ts`
-    // argues the posture and names closing the enumeration arm as the open
-    // question. If that decision is taken, THIS is the test that has to change,
-    // which is the point of writing it down as a test rather than as prose.
-    const client = fakeClient();
-    harness = await serve({ engine: () => client });
-    for (const [path, method] of [
-      ["/workflows/runs?workflow=digest", "GET"],
-      ["/workflows/runs/wrun_1", "DELETE"],
-      ["/workflows/runs/wrun_1/wake", "POST"],
-    ] as const) {
-      expect((await fetch(`${harness.url}${path}`, { method })).status).toBe(200);
-    }
-    expect(client.recent).toHaveBeenCalled();
-    expect(client.cancel).toHaveBeenCalled();
-    expect(client.wakeUp).toHaveBeenCalled();
-  });
 });
 
 describe("POST /runs", () => {
@@ -299,6 +110,107 @@ describe("POST /runs", () => {
     });
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: '"key" must be a string when present' });
+  });
+
+  /**
+   * An unknown top-level key is REFUSED, and the alternative was the worst of
+   * the three.
+   *
+   * The FAILING observation: the handler destructures `{ workflow, input, key,
+   * wait }` and drops everything else, so `POST /runs` answered **202** to a body
+   * carrying `notify: true` — a real `StartOptions` field this route does not
+   * serve — and did not notify. A caller misspelling `key` as `keys` is indexed
+   * under nothing and finds no run later, with a 202 in hand and nothing to
+   * read. Silent-drop is indistinguishable from success at every level a caller
+   * can look at.
+   *
+   * The cost of refusing is stated rather than hidden: a client sending a field
+   * a NEWER server understands now gets a 400 from an older one, where before it
+   * degraded to a working request minus the extra. That trade is taken because
+   * every caller of this route in the tree goes through
+   * `createWorkflowApiClient`, which sends exactly these four keys — so the
+   * refusal has no reachable false positive today, and a future field is a
+   * server change that ships with the client that sends it.
+   */
+  test("a body carrying an unknown key is REFUSED, not accepted and dropped", async () => {
+    const start = vi.fn(async () => "wrun_9");
+    harness = await serve({ engine: () => fakeClient({ start }) });
+    const res = await fetch(`${harness.url}/workflows/runs`, {
+      method: "POST",
+      body: JSON.stringify({ workflow: "digest", notify: true }),
+    });
+    expect(res.status).toBe(400);
+    // The message NAMES the key, because the whole failure this replaces is a
+    // caller unable to see which of its fields went nowhere.
+    expect(((await res.json()) as { error: string }).error).toContain("notify");
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test("a body that is not an OBJECT is a 400 rather than a body naming no workflow", async () => {
+    // `JSON.parse("[1,2]")` succeeds and destructures to all-undefined, so an
+    // array used to reach the `workflow` check and be reported as a missing
+    // field. The key check above has to see a record before it can talk about
+    // its keys, which is what makes this its own answer.
+    harness = await serve({ engine: () => fakeClient() });
+    const res = await fetch(`${harness.url}/workflows/runs`, {
+      method: "POST",
+      body: JSON.stringify([1, 2]),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  /**
+   * The correlation key is BOUNDED, and it is not logged.
+   *
+   * Two FAILING observations on one field. `key` was length-unbounded — capped
+   * only by `MAX_WORKFLOW_INPUT_BYTES`, so a 64 kB key was accepted, written to
+   * the `aai_workflow_run_keys` index and indexed there — and it was written to
+   * the operator's log verbatim, on a surface that is OPEN unless the operator
+   * sets `AAI_WORKFLOW_API_TOKEN`. A caller-controlled string of unbounded
+   * length in a log line is an unbounded write; that the same string is
+   * routinely a phone number (`StartOptions.key`'s own example) makes it a
+   * retention question as well. `runId` is beside it and is the identifier every
+   * later line of the run carries, and `GET /runs?workflow=&key=` is what
+   * answers "which run belongs to this key" — so the log loses nothing it was
+   * the only source of.
+   */
+  test("a key past the cap is a 400 rather than an unbounded index write", async () => {
+    const start = vi.fn(async () => "wrun_9");
+    harness = await serve({ engine: () => fakeClient({ start }) });
+    const res = await fetch(`${harness.url}/workflows/runs`, {
+      method: "POST",
+      body: JSON.stringify({ workflow: "digest", key: "k".repeat(MAX_WORKFLOW_KEY_LENGTH + 1) }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("key");
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test("a key AT the cap is accepted — the bound has to admit the longest legal one", async () => {
+    const key = "k".repeat(MAX_WORKFLOW_KEY_LENGTH);
+    const start = vi.fn(async () => "wrun_9");
+    harness = await serve({ engine: () => fakeClient({ start }) });
+    const res = await fetch(`${harness.url}/workflows/runs`, {
+      method: "POST",
+      body: JSON.stringify({ workflow: "digest", key }),
+    });
+    expect(res.status).toBe(202);
+    expect(start).toHaveBeenCalledWith("digest", undefined, { key });
+  });
+
+  test("the caller's key never reaches the log", async () => {
+    const start = vi.fn(async () => "wrun_9");
+    harness = await serve({ engine: () => fakeClient({ start }) });
+    await fetch(`${harness.url}/workflows/runs`, {
+      method: "POST",
+      body: JSON.stringify({ workflow: "digest", key: "+15550001111" }),
+    });
+    // The opening line still names the run — that is what every later line is
+    // read against — and it carries nothing the caller wrote.
+    expect(harness.logger.info).toHaveBeenCalledWith("Workflow run started", {
+      workflow: "digest",
+      runId: "wrun_9",
+    });
   });
 
   /**
@@ -505,7 +417,57 @@ describe("POST /runs/:id/wake", () => {
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1/wake`, { method: "POST" });
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ runId: "wrun_1", woken: 2 });
-    expect(wakeUp).toHaveBeenCalledWith("wrun_1");
+    // `undefined` rather than no second argument at all: a BARE wake is what
+    // deliberately cannot reach a `hookTimeout`, so the absence has to be
+    // passed on rather than lost — see the ids case below.
+    expect(wakeUp).toHaveBeenCalledWith("wrun_1", undefined);
+  });
+
+  /**
+   * The FAILING observation, and the most consequential defect on this surface:
+   * the handler called `ctx.engine.wakeUp(runId)` against a signature of
+   * `wakeUp(runId, options?: WakeUpOptions)`, so **the correlation ids were
+   * discarded**. Two consequences, the second sharper than the first. A caller
+   * asking to end one particular wait ended every `sleep` on the run. And
+   * because a BARE wake deliberately cannot reach `kind: "hookTimeout"` (the
+   * journal filters it — `journal-conformance-waits.ts`, "a bare wake reaches
+   * ordinary sleeps and NOT a hook's deadline", written after journaling a hook
+   * deadline as an ordinary sleep let one `wakeUp()` close every approval
+   * window on a run), a hook's approval deadline could not be cut short over
+   * HTTP AT ALL — there was no reachable spelling of the request.
+   *
+   * Named ids DO reach a `hookTimeout`, and that is the journal's own rule
+   * rather than a widening added here: `wakeSleeps(runId, ["review"])` counts a
+   * wait declared `correlationId: "review"` whatever its kind. The exclusion is
+   * scoped to the bare call because a bare call is the blunt "send it now"
+   * button, where closing an approval window is a SIDE EFFECT; naming the id of
+   * the wait you mean is not a side effect, it is the caller identifying exactly
+   * one wait. So the narrow, explicit spelling is the query parameter, and the
+   * blunt one still cannot reach a deadline.
+   */
+  test("passes the caller's correlation ids through to the engine", async () => {
+    const wakeUp = vi.fn(async () => 1);
+    harness = await serve({ engine: () => fakeClient({ wakeUp }) });
+    const res = await fetch(
+      `${harness.url}/workflows/runs/wrun_1/wake?correlationId=review&correlationId=audit`,
+      { method: "POST" },
+    );
+    expect(res.status).toBe(200);
+    expect(wakeUp).toHaveBeenCalledWith("wrun_1", { correlationIds: ["review", "audit"] });
+  });
+
+  test("a BLANK correlation id is refused rather than read as `no id`", async () => {
+    // The journal is explicit that an empty-string id is not the same as none —
+    // two backends used to fold them together and woke every uncorrelated sleep
+    // on the run. `?correlationId=` is a caller that meant to send one and sent
+    // nothing, so it is a malformed request, not a bare wake.
+    const wakeUp = vi.fn(async () => 1);
+    harness = await serve({ engine: () => fakeClient({ wakeUp }) });
+    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/wake?correlationId=`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(400);
+    expect(wakeUp).not.toHaveBeenCalled();
   });
 
   test("a run that was not sleeping is 200 with 0, not an error", async () => {
@@ -574,11 +536,12 @@ describe("GET /runs/:id/stream", () => {
   });
 
   test("a budget of zero opens NO stream", async () => {
-    // The poll a caught-up page makes once a second: `useWorkflowProgress`
-    // advances `startIndex` by what it has consumed, so a run mid-step answers
-    // this shape for as long as the step writes nothing. Opening a world read to
-    // take no chunks from it is the read that leaked a listener pair per
-    // request — see `workflow-stream-readers.test.ts`.
+    // The poll a caught-up page makes once a second: `startIndex` is the first
+    // index the reader has NOT seen (an INCLUSIVE floor), so a reader that has
+    // consumed chunks 0-2 sends 3 against a tail of 2 and the budget is zero —
+    // for as long as the step writes nothing. Opening a world read to take no
+    // chunks from it is the read that leaked a listener pair per request — see
+    // `workflow-stream-readers.test.ts`.
     const stream = vi.fn(async () => chunkStream([]));
     harness = await serve({ engine: () => fakeClient({ stream, streamTail: async () => 2 }) });
     const body = await (
@@ -602,14 +565,36 @@ describe("GET /runs/:id/stream", () => {
     expect(body).toContain('"complete":true');
   });
 
-  test("an unknown run is a 404 rather than an empty 200 stream", async () => {
-    // The client stream is lazy, so without the read-first this would open a
-    // 200 event stream and fail on the first pull — which a page cannot tell
-    // apart from a dropped connection.
+  /**
+   * An unknown run is a `missing` FRAME on a 200, not a 404.
+   *
+   * The FAILING observation: `/events` and `/stream` are two questions about one
+   * run and answered the same question two ways — 200 with a `missing` frame,
+   * and 404. Four things say the 404 is the wrong one. `workflow-api.ts`'s route
+   * table already advertises `GET /runs/:id/stream → SSE: chunk | done |
+   * missing`, and the code emitted no `missing` ever. Both SDK readers already
+   * handle one — `outputOnce` in `sdk/workflow-api-follow.ts` and
+   * `consumeFrames` in `aai-ui/use-workflow-progress.ts`, the latter having
+   * classified the 404 as "this agent does not serve this route" and hidden the
+   * progress UI for what is really an unknown id. An SSE endpoint cannot 404 a
+   * run that vanishes MID-stream, so a status-coded answer makes "the run is
+   * gone" depend on when you asked. And 404 on this route already means
+   * something else — `WORKFLOWS_UNAVAILABLE_MESSAGE`, an agent with no workflow
+   * API — which is the ambiguity `WorkflowApi.get`'s doc records as having no
+   * second signal to read. Now it has one.
+   *
+   * The read-FIRST stays, and it was never about the status: `ctx.workflows.stream`
+   * is lazy, so an id that reaches it opens a 200 and fails on the first pull,
+   * which a page cannot tell from a dropped connection.
+   */
+  test("an unknown run is a 200 carrying `missing`, not a 404", async () => {
     const stream = vi.fn();
     harness = await serve({ engine: () => fakeClient({ get: async () => undefined, stream }) });
     const res = await fetch(`${harness.url}/workflows/runs/gone/stream`);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    expect(await res.text()).toBe('event: missing\ndata: {"runId":"gone"}\n\n');
+    // Still never opened: the frame is what the read-first buys, not a status.
     expect(stream).not.toHaveBeenCalled();
   });
 
@@ -627,11 +612,20 @@ describe("GET /runs/:id/stream", () => {
     expect(stream).toHaveBeenCalledWith("wrun_1", {});
   });
 
-  test("a non-integer startIndex is a 400", async () => {
-    harness = await serve({ engine: () => fakeClient() });
-    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/stream?startIndex=half`);
+  test.each(["half", "", "%20%20"])("a startIndex of %j is a 400", async (value) => {
+    // The FAILING observation is the EMPTY one. `Number("")` is `0`, not `NaN`,
+    // so `?startIndex=` passed the integer check as a legitimate `0` — and
+    // `startIndex` is an INCLUSIVE floor, so `0` is the whole stream. A caller
+    // that meant to send a cursor and sent nothing was answered with a full
+    // replay of every chunk it had already read, once per poll. An empty
+    // parameter is a malformed request, not a default, which is the same call
+    // `?limit=` already gets one route over.
+    const stream = vi.fn(async () => chunkStream([]));
+    harness = await serve({ engine: () => fakeClient({ stream }) });
+    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/stream?startIndex=${value}`);
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "`startIndex` must be an integer" });
+    expect(stream).not.toHaveBeenCalled();
   });
 
   test("is matched before the bare `/runs/:id` GET", async () => {
@@ -645,18 +639,43 @@ describe("GET /runs/:id/stream", () => {
     // but with the id parsed clean of the suffix.
     expect(get).toHaveBeenCalledWith("wrun_1");
   });
-});
 
-describe("failure handling", () => {
-  test("a route that throws answers 500 rather than hanging or crashing", async () => {
-    const get = vi.fn(() => Promise.reject(new Error("boom")));
-    harness = await serve({ engine: () => fakeClient({ get }) });
-    const res = await fetch(`${harness.url}/workflows/runs/wrun_1`);
-    expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toEqual({ error: "Internal server error" });
-    expect(harness.logger.error).toHaveBeenCalledWith(
-      "Workflow API request failed",
-      expect.objectContaining({ error: "boom" }),
-    );
+  test("concurrent polls of ONE run share that read rather than each taking one", async () => {
+    // The read-first above is one `POST /:slug/workflow-journal` on a deployed
+    // agent, and it is the read a watched run attracts most of: a page polls
+    // this route once a second for the life of the run. Un-shared, four tabs
+    // were four of them a second competing with that run's own journal WRITES
+    // for one of the four connections a replica's admin pool allows — measured
+    // here as four reads for four requests, two now (see `readRunOnce` for why
+    // the floor is two rather than one).
+    //
+    // The client is built ONCE and returned by the getter, which is what a real
+    // deployment does — the shared reads are keyed on the reader's identity, so
+    // a harness minting a fresh one per request would measure nothing.
+    //
+    // The read is HELD until all four requests have arrived, which is the only
+    // way they overlap: against a fake resolving in a microtask, four loopback
+    // requests are served strictly one after another and there is no concurrency
+    // to collapse. That is not an artifact of the harness — it is what makes the
+    // deployed case the interesting one, where the read is a network POST and
+    // overlap is the norm.
+    const arrived = Promise.withResolvers<void>();
+    let requests = 0;
+    const get = vi.fn(async () => {
+      await arrived.promise;
+      return run();
+    });
+    const client = fakeClient({ get, streamTail: async () => -1 });
+    harness = await serve({
+      engine: () => client,
+      onRequest: () => {
+        requests += 1;
+        if (requests === 4) arrived.resolve();
+      },
+    });
+    const url = `${harness.url}/workflows/runs/wrun_1/stream`;
+    const answers = await Promise.all([fetch(url), fetch(url), fetch(url), fetch(url)]);
+    expect(answers.map((res) => res.status)).toEqual([200, 200, 200, 200]);
+    expect(get.mock.calls.length).toBe(2);
   });
 });

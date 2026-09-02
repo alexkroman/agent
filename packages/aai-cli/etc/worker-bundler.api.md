@@ -15,16 +15,6 @@ export type BuildWorkerOptions = {
     configFile?: false;
     plugins?: PluginOption[];
     runtime?: boolean;
-    workflows?: WorkflowBundleOutput | undefined;
-};
-
-// @public
-type WorkflowBundleOutput = {
-    workflowCode: string;
-    stepCode: string;
-    manifest: unknown;
-    inputFiles: readonly string[];
-    warnings: readonly string[];
 };
 
 // (No @packageDocumentation comment for this package)

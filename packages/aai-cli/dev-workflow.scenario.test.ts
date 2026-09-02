@@ -5,8 +5,6 @@
  * This is the one test that exercises the whole chain rather than a link of it,
  * and every link in it has already been wrong once:
  *
- * - the WDK client transform, without which the agent's own copy of a body
- *   carries no `workflowId` and `ctx.workflows.start` throws;
  * - the two builder outputs being ROUTE MODULES, not raw workflow code — handing
  *   the flow module to `workflowEntrypoint` compiles it in a `node:vm` Script
  *   and every run dies at replay;
@@ -19,11 +17,18 @@
  * neighbouring one does: a run that never completes is the only symptom the
  * chain has, and it is invisible to every layer's own suite.
  *
- * The run is driven through the DevKit's own `start`, not through a voice
+ * Runs are driven through the workflow HTTP API rather than through a voice
  * session — a session would add STT/LLM/TTS credentials to a test about
- * durability. It is the same call `ctx.workflows.start` makes (`workflow-wdk.ts`),
- * with the id read off the built bundle exactly as `createWorkflowClient` reads
- * it, so the seam between them is asserted rather than assumed.
+ * durability.
+ *
+ * **A block asserting the COMPILER's `workflowId` was here and is gone.** It
+ * read the id off the built bundle the way `createWorkflowClient` used to, and
+ * started a run with the DevKit's own `start({ workflowId })`. There is no such
+ * id any more: a workflow is identified by the key it is declared under in
+ * `agent({ workflows })`, which cannot go missing because the declaration IS the
+ * registration. Nothing behavioural went with it — the HTTP suite below starts
+ * runs, waits them out and reads their output through the routes a real caller
+ * uses, which is the stronger claim.
  */
 
 import fs from "node:fs/promises";
@@ -31,8 +36,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import getPort, { portNumbers } from "get-port";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { createWorkerEvaluator } from "./_bundler.ts";
-import { loadWorker, startDevServer } from "./_dev-server.ts";
+import { startDevServer } from "./_dev-server.ts";
 
 /**
  * The fixture lives INSIDE this package, not in `os.tmpdir()`.
@@ -45,27 +49,20 @@ import { loadWorker, startDevServer } from "./_dev-server.ts";
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), ".dev-workflow-fixture");
 
 /** Short enough to wait out in a test; the mechanism is identical at six hours. */
-const SLEEP = "1 second";
+const SLEEP_MS = 1000;
 
 const AGENT_TS = `
 import { agent, tool, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
 import { researchFlow } from "./workflows/research.ts";
-import { callbackFlow } from "./workflows/callback.ts";
 import { fanOutFlow } from "./workflows/fan-out.ts";
 import { secretFlow } from "./workflows/secret.ts";
 import { narrateFlow } from "./workflows/narrate.ts";
 
 export const research = workflow({
   description: "Research a topic",
-  input: z.object({ topic: z.string() }),
+  input: z.object({ topic: z.string().min(1).describe("What to research") }),
   run: researchFlow,
-});
-
-export const callback = workflow({
-  description: "Park on a webhook and echo what it delivers",
-  input: z.object({ label: z.string().min(1).describe("Echoed back in upper case") }),
-  run: callbackFlow,
 });
 
 export const fanOut = workflow({
@@ -90,108 +87,67 @@ export default agent({
   name: "dev-workflow-fixture",
   greeting: "hi",
   systemPrompt: "fixture",
-  workflows: { research, callback, fanOut, secret, narrate },
+  workflows: { research, fanOut, secret, narrate },
   requiredEnv: ["FIXTURE_STEP_TOKEN"],
 });
 `;
 
 const WORKFLOW_TS = `
-import { getWritable, sleep } from "workflow";
+import type { WorkflowCtx } from "@alexkroman1/aai";
+import { report } from "@alexkroman1/aai/step";
 
-export async function researchFlow(input: { topic: string }) {
-  "use workflow";
-  const findings = await gather(input.topic);
+export async function researchFlow(input: { topic: string }, ctx: WorkflowCtx) {
+  const findings = await ctx.step("gather", () => gather(input.topic));
   // The suspension is the point: it is what a tool cannot do, and it is what
-  // makes the resume path (a second flow-route call) part of this test.
-  await sleep(${JSON.stringify(SLEEP)});
-  await file(findings.topic);
+  // makes the resume path (a second delivery) part of this test.
+  await ctx.sleep(${SLEEP_MS});
+  await ctx.step("file", () => file(findings.topic));
   return { topic: findings.topic, sources: findings.sources };
 }
 
 async function gather(topic: string) {
-  "use step";
   await report("gathering " + topic);
   return { topic, sources: 3 };
 }
 
 // A step AFTER the sleep, so the progress assertion covers a stream written
-// across a suspension — the run resumes in a fresh flow-route call and has to
-// append to the same stream rather than starting a new one.
+// across a suspension — the run resumes in a fresh delivery and has to append to
+// the same stream rather than starting a new one.
 async function file(topic: string) {
-  "use step";
   await report("filed " + topic);
-}
-
-// The same best-effort helper both page templates ship. Called from steps only:
-// the body replays from the top, so a line written there is re-emitted on every
-// resume.
-async function report(line: string) {
-  try {
-    const writer = getWritable().getWriter();
-    try {
-      await writer.write(line);
-    } finally {
-      writer.releaseLock();
-    }
-  } catch {}
 }
 `;
 
 /**
- * A run that PARKS on a webhook.
+ * **The webhook fixture is GONE, and its absence is now a HOLE rather than a
+ * gap.**
  *
- * This is the one thing no unit test can reach: `createWebhook()` throws outside
- * a run, so a spec cannot call a body that opens one. Only a real world, a real
- * queue and a real HTTP delivery exercise it — and no template demonstrates the
- * shape any more (`transcription-workflow` used to, against a stub provider), so
- * this fixture is the only place it is exercised at all.
+ * It parked on `createWebhook()` and was resumed by a real HTTP delivery — the
+ * one thing no unit test can reach. It was dropped while the engine's
+ * equivalent, `ctx.waitFor(token)` ended by `ctx.workflows.signal(token,
+ * payload)`, had no route in front of it: the note here used to say
+ * `/.well-known/workflow/v1/webhook/:token` still reached the DevKit's own hook
+ * table and answered `HookNotFound`, which was true when it was written.
  *
- * The step delivers its own callback, which makes this a test of the ORDERING as
- * much as of the round trip: `createWebhook()` registers nothing, so without the
- * `getConflict()` claim above it the delivery races a token nothing is listening
- * on yet.
+ * It is not true any more. `createWebhookHandler` (aai-runtime's
+ * `workflow-webhook.ts`) answers that path from `WorkflowClient.signal`, and
+ * `createServer` mounts it — so `aai dev` serves it and this tier can reach it
+ * with a plain POST. Restoring a `waitFor` fixture and delivering to that URL is
+ * the missing case, and it is the ONE thing in the durable path that no cheaper
+ * tier can cover.
  */
-const CALLBACK_TS = `
-import { createWebhook } from "workflow";
-
-export async function callbackFlow(input: { label: string }) {
-  "use workflow";
-
-  using hook = createWebhook();
-  // Claim the token BEFORE the URL is handed out.
-  await hook.getConflict();
-  await deliver(hook.url, input.label);
-
-  const request = await hook;
-  const payload = await request.json();
-  // \`hook.url\` is returned so a spec can assert WHERE the DevKit points it. Every
-  // reachable path here rests on that answer being guest-local.
-  return { label: input.label, echoed: payload.echoed, hookUrl: hook.url };
-}
-
-async function deliver(url: string, label: string) {
-  "use step";
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ echoed: label.toUpperCase() }),
-  });
-  if (!response.ok) throw new Error("callback delivery failed: " + response.status);
-}
-`;
 
 /**
  * A fan-out through `mapConcurrent` — the SDK primitive `transcription-workflow`
  * maps its segments with.
  *
  * This is the only tier that can say whether that primitive is legal at all.
- * `mapConcurrent` passes a `"use step"` function to a helper in ANOTHER MODULE as
- * a callback, and whether that still dispatches a real step depends on what the
- * WDK transform rewrites: a declaration-side rewrite (what `createUseStep`'s
- * shape implies) keeps working through a callback, while a call-site rewrite
- * would leave the step running inline — undurable, unjournaled, and completely
- * silent about it. Reading the transform's output is inference; running one is
- * not.
+ * `mapConcurrent` calls `ctx.step` from inside a helper in ANOTHER MODULE, so
+ * what this checks is that the journal really sees nine distinct entries when the
+ * calls are issued from a callback rather than written out in the body. Under the
+ * DevKit the same fixture asked a harder question — whether the transform's
+ * rewrite was declaration-side or call-site — which `ctx.step` makes unaskable:
+ * a step is a call, and a call is a call wherever it is written.
  *
  * Two things about the shape are deliberate, and both are about the CURSOR that
  * makes the window replay-safe: **more items than the width** (nine against
@@ -210,15 +166,18 @@ async function deliver(url: string, label: string) {
  * inside an SDK helper.
  */
 const FAN_OUT_TS = `
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 
-export async function fanOutFlow(input: { words: string[] }) {
-  "use workflow";
-  return { shouted: await mapConcurrent(input.words, 3, (word, index) => shout(word, index)) };
+export async function fanOutFlow(input: { words: string[] }, ctx: WorkflowCtx) {
+  return {
+    shouted: await mapConcurrent(input.words, 3, (word, index) =>
+      ctx.step("shout", () => shout(word, index)),
+    ),
+  };
 }
 
 async function shout(word: string, index: number) {
-  "use step";
   // Neither issue order nor its reverse: the settle order is shuffled against
   // both, which is what a replay's different timings look like.
   const delays = [90, 30, 60, 10, 5, 70, 20, 50, 40];
@@ -240,16 +199,17 @@ async function shout(word: string, index: number) {
  * real template calls them from.
  */
 const NARRATE_TS = `
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { emit, mapConcurrent, report } from "@alexkroman1/aai/step";
 
-export async function narrateFlow(input: { items: string[] }) {
-  "use workflow";
-  const seen = await mapConcurrent(input.items, 2, (item, index) => handle(item, index));
+export async function narrateFlow(input: { items: string[] }, ctx: WorkflowCtx) {
+  const seen = await mapConcurrent(input.items, 2, (item, index) =>
+    ctx.step("handle", () => handle(item, index)),
+  );
   return { seen };
 }
 
 async function handle(item: string, index: number) {
-  "use step";
   await report("handling " + item);
   await emit("results", { index, shouted: item.toUpperCase() });
   return item.toUpperCase();
@@ -271,15 +231,14 @@ async function handle(item: string, index: number) {
  * — if the global does not cross the bundle boundary this run fails.
  */
 const SECRET_TS = `
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { requireStepEnv, stepEnv } from "@alexkroman1/aai/step";
 
-export async function secretFlow() {
-  "use workflow";
-  return await readSecret();
+export async function secretFlow(_input: Record<string, unknown>, ctx: WorkflowCtx) {
+  return await ctx.step("readSecret", () => readSecret());
 }
 
 async function readSecret() {
-  "use step";
   return {
     token: requireStepEnv("FIXTURE_STEP_TOKEN"),
     undeclared: stepEnv("FIXTURE_ABSENT_KEY") ?? "absent",
@@ -292,7 +251,6 @@ async function writeFixture(): Promise<void> {
   await fs.mkdir(path.join(FIXTURE, "workflows"), { recursive: true });
   await fs.writeFile(path.join(FIXTURE, "agent.ts"), AGENT_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "research.ts"), WORKFLOW_TS);
-  await fs.writeFile(path.join(FIXTURE, "workflows", "callback.ts"), CALLBACK_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "fan-out.ts"), FAN_OUT_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "secret.ts"), SECRET_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "narrate.ts"), NARRATE_TS);
@@ -306,12 +264,11 @@ async function writeFixture(): Promise<void> {
 }
 
 /**
- * ONE dev server for the whole file, at module scope rather than inside a
- * `describe` — the HTTP suite below needs the same running server, and a
- * `beforeAll` nested in the first block tears it down before the second starts.
+ * ONE dev server for the whole file, at module scope rather than inside the
+ * `describe` — building the fixture and booting it is the expensive part, and a
+ * `beforeAll` nested in a block would have to be repeated by the next one added.
  */
 let stop: (() => Promise<void>) | undefined;
-let workflowId: string | undefined;
 let origin = "";
 
 /**
@@ -345,52 +302,18 @@ afterAll(async () => {
   await fs.rm(FIXTURE, { recursive: true, force: true });
 });
 
-describe("aai dev serves a durable workflow", () => {
-  test("the built agent bundle carries the compiler's workflowId", async () => {
-    // What `ctx.workflows.start` reads. Undefined here means the client
-    // transform did not run, which is a bundle that serves every workflow route
-    // and cannot start a run.
-    const worker = await loadWorker(FIXTURE, createWorkerEvaluator());
-    const def = worker.agent.workflows?.research;
-    workflowId = def?.run.workflowId;
-    expect(workflowId).toBeTruthy();
-    // Both halves present, or the guest mounts no surface at all.
-    expect(typeof worker.workflowCode).toBe("string");
-    expect(typeof worker.stepCode).toBe("string");
-  });
-
-  test("a run started against that id completes with the workflow's output", async () => {
-    expect(workflowId).toBeTruthy();
-    // The world is process-global and the dev server configured it, so this
-    // reaches the same local world the server's routes serve.
-    const { getRun, start } = await import("workflow/api");
-    const { getWorld } = await import("workflow/runtime");
-
-    const run = await start({ workflowId: workflowId as string }, [{ topic: "otters" }]);
-
-    // Polled rather than `vi.waitFor`ed on a fixed delay: the run's own
-    // one-second sleep dominates, and the statuses in between are what a
-    // half-wired chain gets stuck in ("pending" forever with nothing logged).
-    await expect
-      .poll(async () => (await getWorld().runs.get(run.runId, { resolveData: "none" })).status, {
-        timeout: 25_000,
-        interval: 250,
-      })
-      .toBe("completed");
-
-    expect(await getRun(run.runId).returnValue).toEqual({ topic: "otters", sources: 3 });
-  });
-});
-
 /**
  * The workflow HTTP API, over the same dev server.
  *
  * This is the only tier that can exercise it end to end. `host/workflow-api.
  * test.ts` drives the routes against a STUB `ctx.workflows`; here every link is
- * real — the CLI's two bundlers, the DevKit transform, the world, the queue, the
- * routes — and the run genuinely parks on a webhook and is brought back by an
- * HTTP delivery. A break anywhere in that chain shows up as a run that never
- * completes, which is invisible to every layer's own suite.
+ * real — the CLI's bundlers, the replay engine, its journal, the in-process
+ * dispatcher and the routes — and a run genuinely suspends on a `sleep` and is
+ * walked again when its timer fires. A break anywhere in that chain shows up as
+ * a run that never completes, which is invisible to every layer's own suite.
+ *
+ * What it does NOT reach is a run parked on a WEBHOOK — see the stated gap in
+ * this file's module doc.
  */
 describe("aai dev serves the workflow HTTP API", () => {
   /** `fetch` + parse, always — an unread body holds its socket open. */
@@ -409,7 +332,6 @@ describe("aai dev serves the workflow HTTP API", () => {
     expect(status).toBe(200);
     const workflows = body.workflows as { name: string; inputSchema?: unknown }[];
     expect(workflows.map((w) => w.name).sort((a, b) => a.localeCompare(b))).toEqual([
-      "callback",
       "fanOut",
       "narrate",
       "research",
@@ -417,59 +339,35 @@ describe("aai dev serves the workflow HTTP API", () => {
     ]);
     // The zod schema, converted at listing time because the reader is a browser.
     // `<WorkflowFields>` renders one control per property of this.
-    expect(workflows.find((w) => w.name === "callback")?.inputSchema).toMatchObject({
+    expect(workflows.find((w) => w.name === "research")?.inputSchema).toMatchObject({
       type: "object",
-      properties: { label: { description: "Echoed back in upper case" } },
+      properties: { topic: { description: "What to research" } },
     });
   });
 
-  test("`wait` returns the finished run — a webhook round trip inside one POST", async () => {
-    // One request in, one result out. The run parks on a webhook in the middle
-    // of that request and is resumed by an HTTP delivery to the agent's own
-    // endpoint; `wait` is what turns the whole round trip into a single call.
+  test("`wait` returns the finished run in ONE POST", async () => {
+    // One request in, one result out: the run is started, executed and settled
+    // while the request is held open. It used to park on a webhook mid-request,
+    // which made it a round-trip test too — see the webhook note above for why
+    // that half is gone.
     const { status, body } = await api("/workflows/runs", {
       method: "POST",
       headers: JSON_POST,
-      body: JSON.stringify({ workflow: "callback", input: { label: "otters" }, wait: 30_000 }),
+      body: JSON.stringify({ workflow: "secret", input: {}, wait: 30_000 }),
     });
 
     expect(status).toBe(200);
     expect(body.run).toMatchObject({
       status: "completed",
-      output: { label: "otters", echoed: "OTTERS" },
+      output: { token: "from-dot-env", undeclared: "absent" },
     });
-  }, 40_000);
-
-  test("the URL the DevKit mints is GUEST-LOCAL — the premise publicWebhookUrl rests on", async () => {
-    // The whole reason `ctx.workflows.publicWebhookUrl` exists, pinned against the
-    // real installed DevKit rather than taken on trust. `createWebhook()` composes
-    // `hook.url` from `getWorkflowMetadata().url`, which is `http://localhost:<port>`
-    // off the running process (its only other branch is `https://$VERCEL_URL`) — so
-    // deployed, it names the inside of a sandbox that has self-exited by the time a
-    // third party calls back. Only this tier can see it: the mint happens inside the
-    // workflow VM, and outside a run `createWebhook()` throws.
-    //
-    // If this ever fails because the URL grew a public origin, the SDK accessor
-    // becomes a supplement to something usable rather than the only usable answer —
-    // read the note in `packages/aai/CLAUDE.md` before deleting anything.
-    const { body } = await api("/workflows/runs", {
-      method: "POST",
-      headers: JSON_POST,
-      body: JSON.stringify({ workflow: "callback", input: { label: "kelp" }, wait: 30_000 }),
-    });
-    const output = (body.run as { output: { hookUrl: string } }).output;
-    expect(output.hookUrl).toMatch(/^http:\/\/localhost:\d+\//);
-    // And the PATH is the one both ends derive from `WORKFLOW_WEBHOOK_PREFIX`, which
-    // is what makes composing a public URL out of a token legitimate rather than a
-    // guess about someone else's routing.
-    expect(output.hookUrl).toContain("/.well-known/workflow/v1/webhook/");
   }, 40_000);
 
   test("the run id it hands back reads the same run afterwards", async () => {
     const started = await api("/workflows/runs", {
       method: "POST",
       headers: JSON_POST,
-      body: JSON.stringify({ workflow: "callback", input: { label: "seals" }, wait: 30_000 }),
+      body: JSON.stringify({ workflow: "secret", input: {}, wait: 30_000 }),
     });
     const runId = started.body.runId as string;
 
@@ -647,10 +545,10 @@ describe("aai dev serves the workflow HTTP API", () => {
     const { status, body } = await api("/workflows/runs", {
       method: "POST",
       headers: JSON_POST,
-      body: JSON.stringify({ workflow: "callback", input: { label: "" } }),
+      body: JSON.stringify({ workflow: "research", input: { topic: "" } }),
     });
     expect(status).toBe(400);
-    expect(String(body.error)).toContain("label");
+    expect(String(body.error)).toContain("topic");
   });
 
   test("404s a run id nothing knows, rather than waiting the budget out", async () => {

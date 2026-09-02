@@ -1,9 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * One model call, from inside a `"use step"` function.
+ * One model call, from inside a step.
  *
  * `ctx.generate` is the SDK's answer for tool code, and a step cannot use it: a
- * step is bundled and dispatched separately from the agent bundle and is handed
+ * workflow body is replayed and may hold nothing live, so a step is handed
  * no `ToolContext`. So every workflow that wanted a model hand-rolled the same
  * forty lines — the gateway URL, the bearer, the message array, the reasoning
  * setting, a deadline, the retryable/terminal split, and the "the gateway
@@ -13,13 +13,12 @@
  *
  * ## Why this is a `fetch` and not `ctx.generate`'s AI SDK client
  *
- * A step artifact is built by the Workflow DevKit's builder, which externalizes
- * only `workflow` and `@workflow/*` and bundles everything else — so it is ~7 KB
- * today, and pulling `ai` plus an `@ai-sdk/*` provider into it would be
- * megabytes on every deploy for one chat completion. The AssemblyAI LLM Gateway
- * is OpenAI-compatible, so one `fetch` covers it, and this module stays
- * dependency-free (which is also what keeps it on `@alexkroman1/aai/utils`,
- * the subpath a step imports from — see `sdk/utils.ts`'s own doc).
+ * Everything a `workflows/*.ts` module names at module scope rides into the
+ * agent bundle, which is built and shipped on every deploy. Pulling `ai` plus an
+ * `@ai-sdk/*` provider in for one chat completion would be megabytes of it. The
+ * AssemblyAI LLM Gateway is OpenAI-compatible, so one `fetch` covers it, and
+ * this module stays dependency-free — the budget `@alexkroman1/aai/step` keeps
+ * for every one of its exports, see `sdk/step-barrel.ts`'s own doc.
  *
  * The cost is that this is deliberately NOT `ctx.generate`: no tools, no
  * structured output, no provider choice beyond the gateway's own catalog. A step
@@ -82,14 +81,15 @@ export type StepGenerateOptions = {
 /**
  * A model call that failed, with the one thing a step has to decide from.
  *
- * `retryable` is the whole point. The Workflow DevKit retries a step that throws
+ * `retryable` is the whole point. The engine retries a step that throws
  * and a caller has to choose between letting it (a rate limit, a 5xx) and
  * refusing (a bad key, a rejected request) — and getting that backwards is
  * either five pointless attempts against a 401 or one attempt against a blip.
  *
  * It is a BOOLEAN on the error rather than a `FatalError` thrown for you,
- * because `FatalError` belongs to `workflow` and importing it here would put the
- * DevKit on the CLI's zero-dependency startup path. The mapping is one line at
+ * because `FatalError` lives on `@alexkroman1/aai/step-errors` and reaching for
+ * it is the caller's opt-in: whether a terminal failure should burn a step's
+ * remaining attempts is not this module's call. The mapping is one line at
  * the call site:
  *
  * ```ts no-check
@@ -112,7 +112,7 @@ export class StepGenerateError extends Error {
    * When the gateway asked to be called back, from its own `Retry-After`.
    *
    * Present on a rate limit that named a delay, and what a caller should hand
-   * to `RetryableError` — the DevKit's default backoff is a guess, and this is
+   * to `RetryableError` — the engine's default delay is a guess, and this is
    * the number the far side chose.
    */
   readonly retryAfter: Date | undefined;
@@ -137,8 +137,8 @@ export class StepGenerateError extends Error {
 /**
  * Ask the AssemblyAI LLM Gateway one question and return its reply.
  *
- * **From a `"use step"` body, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
- * It is this call plus `throwStepError`, and the DevKit decides its retry policy
+ * **From a step, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
+ * It is this call plus `throwStepError`, and the engine decides its retry policy
  * from WHICH error a step throws: raw, a terminal failure burns every remaining
  * attempt and a rate limit backs off for one second while the delay the far side
  * named sits unread. Reach for the raw call where the failure is not simply a
@@ -147,10 +147,9 @@ export class StepGenerateError extends Error {
  * @example
  * ```ts
  * import { stepGenerate, StepGenerateError } from "@alexkroman1/aai/step";
- * import { FatalError } from "workflow";
+ * import { FatalError } from "@alexkroman1/aai/step-errors";
  *
  * export async function summarize(text: string): Promise<string> {
- *   "use step";
  *   try {
  *     return await stepGenerate(text, { system: "Summarize in two sentences." });
  *   } catch (err) {

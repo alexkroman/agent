@@ -225,15 +225,38 @@ describeWithStack("the platform migration applies and the stores work against it
       "studio_rate_limits",
       "studio_sessions",
       "studio_workspaces",
+      // The REPLAY ENGINE's journal, owned by the platform
+      // (`20260901000000_platform_workflow_journal.sql`) — five tables, and the
+      // note above `workflow_queue` used to say why there was only one of it:
+      // the journal was the DevKit's, in its own `workflow` schema. It is ours
+      // now, and these are the only durable home a DEPLOYED run has, the
+      // platform provisioning no tenant database.
+      //
+      // Tenancy is the leading column of every primary key, so a guessed run id
+      // reaches nothing — same design as `session_slots` above, and the reason
+      // the `workflow_run_owner` mapping table below had to exist at all.
+      "workflow_attempts",
+      "workflow_hooks",
       // The platform-owned durable-workflow QUEUE
-      // (`20260827000000_workflow_world.sql`). One table, not seven: the journal
-      // stays the DevKit's, in its own `workflow` schema — see that migration.
+      // (`20260827000000_workflow_world.sql`), which holds a DEPLOYED run's
+      // SCHEDULE: that guest's own timers die with a sandbox that self-exits, so
+      // a due message here is what boots it and re-walks the journal above.
       "workflow_queue",
-      // Which agent owns a durable run
-      // (`20260827010000_workflow_run_owner.sql`). The DevKit's schema has no
-      // tenant column, so this is what scopes every storage read once that world
-      // runs on the platform's database rather than in each guest.
+      // RETIRED, and still here on purpose: which agent owns a durable run
+      // (`20260827010000_workflow_run_owner.sql`), scoping every storage read
+      // back when the DevKit's tenant-column-less world ran on this database.
+      // Nothing reads or writes it now, and dropping it is owed to a LATER
+      // release — `20260901010000_drop_workflow_devkit_schema.sql` renames that
+      // world's schemas rather than dropping them, and a rollback of the rename
+      // needs this table to say whose runs those rows are. The entry in
+      // `platform-schema.test.ts`'s retired-object ledger is what fails if the
+      // drop is forgotten; delete this line in the same commit as that drop.
       "workflow_run_owner",
+      // The journal's own three remaining tables, alphabetically after the owner
+      // row — see the block above `workflow_attempts` for the whole account.
+      "workflow_runs",
+      "workflow_sleeps",
+      "workflow_steps",
       // Workflow upload RECORDS (`20260828000000_platform_uploads.sql`) — the last
       // piece of a guest's durable state that lived on local disk. The BYTES are
       // not here; they are the bucket's. Tenancy is in the primary key, like

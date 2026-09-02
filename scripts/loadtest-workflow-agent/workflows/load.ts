@@ -5,22 +5,20 @@
 // is why this lives under `scripts/` rather than in a template: it is bench
 // scaffolding, and a starter that measures itself is not a starter.
 //
-// **These bodies are only DURABLE after the WDK builder has transformed them**,
-// and the builder transforms exactly the files under a project's `workflows/`
-// directory. So this agent is served by `aai dev` (or `npm start`), never by the
-// single-process host the stub VOICE agent uses — there a `"use workflow"` body
-// runs inline as an ordinary async function, with no journal to measure.
+// **These bodies are durable only where an ENGINE runs them**, which is `aai dev`
+// (or `npm start`) rather than the single-process host the stub VOICE agent uses.
+// A body reached without one is an ordinary async function with no journal to
+// measure.
 //
 // Nothing here reaches a vendor. That is the point: a step's cost is the
 // journal, the queue and the resume, and a provider's latency buried in the same
 // number makes all three unreadable.
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { mapConcurrent, stepFetch } from "@alexkroman1/aai/step";
 import { stepFetchOk } from "@alexkroman1/aai/step-errors";
 
 /** One journaled step whose work is a fixed, tiny amount of CPU. */
 async function tick(index: number, spin: number) {
-  "use step";
-
   // A real number rather than nothing, so a step is never optimized into a
   // no-op — and small, because what is being measured is the round trip
   // AROUND the step, not the body.
@@ -36,13 +34,14 @@ async function tick(index: number, spin: number) {
  * concurrency, no I/O and no suspension in it. Everything else is read against
  * this.
  */
-export async function chainFlow(input: { steps: number; spin?: number }) {
-  "use workflow";
-
+export async function chainFlow(input: { steps: number; spin?: number }, ctx: WorkflowCtx) {
   const spin = input.spin ?? 1000;
   let last = 0;
   for (let i = 0; i < input.steps; i++) {
-    const result = await tick(i, spin);
+    // ONE call site in a loop, which is what `(name, occurrence)` identity is
+    // for: `tick#0`, `tick#1`, … so the journal really holds N entries, which is
+    // the thing this benchmark is counting.
+    const result = await ctx.step("tick", () => tick(i, spin));
     last = result.acc;
   }
   return { steps: input.steps, last };
@@ -63,8 +62,6 @@ export async function chainFlow(input: { steps: number; spin?: number }) {
  * a harness wants to be able to see the difference.
  */
 async function fetchOne(url: string, index: number, classify: boolean) {
-  "use step";
-
   const target = `${url}?i=${index}`;
   // A deadline of its own either way: a hung request inside a step is a run that
   // never finishes rather than one that retries.
@@ -83,18 +80,19 @@ async function fetchOne(url: string, index: number, classify: boolean) {
  * replay hands the Nth journal entry to the Nth call however they settle. A
  * shuffled stub delay is what puts that under pressure.
  */
-export async function fanoutFlow(input: {
-  url: string;
-  items: number;
-  width?: number;
-  classify?: boolean;
-}) {
-  "use workflow";
-
+export async function fanoutFlow(
+  input: {
+    url: string;
+    items: number;
+    width?: number;
+    classify?: boolean;
+  },
+  ctx: WorkflowCtx,
+) {
   const indices = Array.from({ length: input.items }, (_, i) => i);
   const classify = input.classify === true;
   const results = await mapConcurrent(indices, input.width ?? 8, (index) =>
-    fetchOne(input.url, index, classify),
+    ctx.step("fetchOne", () => fetchOne(input.url, index, classify)),
   );
   const ok = results.filter((one) => one.status >= 200 && one.status < 300).length;
   return { items: input.items, ok, bytes: results.reduce((sum, one) => sum + one.bytes, 0) };
@@ -108,15 +106,11 @@ export async function fanoutFlow(input: {
  * resume is against the sleep it asked for. A `sleep` shorter than the queue's
  * own poll interval reports that interval, which is the number worth knowing.
  */
-export async function napFlow(input: { ms: number }) {
-  "use workflow";
-
-  // Imported HERE rather than at module scope: `sleep` is the DevKit's, and a
-  // module-scope import that a surviving top-level binding named would ride
-  // into the step bundle. Nothing outside this body names it.
-  const { sleep } = await import("workflow");
-  const before = await tick(0, 100);
-  await sleep(`${Math.max(1, Math.round(input.ms))} milliseconds`);
-  const after = await tick(1, 100);
+export async function napFlow(input: { ms: number }, ctx: WorkflowCtx) {
+  // Two names for one function, so a run's history says WHICH side of the sleep
+  // an entry is — `tick#0`/`tick#1` would say the same thing and read worse.
+  const before = await ctx.step("tickBefore", () => tick(0, 100));
+  await ctx.sleep(Math.max(1, Math.round(input.ms)));
+  const after = await ctx.step("tickAfter", () => tick(1, 100));
   return { sleptMs: input.ms, before: before.acc, after: after.acc };
 }

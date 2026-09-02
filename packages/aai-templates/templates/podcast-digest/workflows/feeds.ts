@@ -45,9 +45,8 @@
  */
 
 import { report } from "@alexkroman1/aai/step";
-import { stepFetchOk } from "@alexkroman1/aai/step-errors";
+import { FatalError, stepFetchOk } from "@alexkroman1/aai/step-errors";
 import { decodeHtmlEntities, isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
-import { FatalError } from "workflow";
 
 /** How long any one of these lookups may take before it is a failure. */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -93,8 +92,6 @@ export async function discoverEpisodes(
   podcastChannels: string,
   maxEpisodes: number,
 ): Promise<Episode[]> {
-  "use step";
-
   await report("Finding recent podcast episodes.");
   const links = parsePodcastChannels(podcastChannels);
   if (links.length === 0) throw new FatalError("Add at least one podcast link.");

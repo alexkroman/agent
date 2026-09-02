@@ -43,7 +43,21 @@ export const sole = <T>(module: Record<string, T>): T | undefined => Object.valu
  * A gate named in `package.json` but in neither runner is a script nobody runs;
  * one named only in `scripts/check.mjs` is enforced by the pre-push hook alone,
  * which `git push --no-verify` skips — the repo has been there, for every
- * ratchet at once. So a spec asserts its gate's name appears in all three.
+ * ratchet at once. So a spec asserts its gate's name appears in both.
+ *
+ * **`.github/workflows/check.yml` was a third entry, and it is gone because the
+ * assertion got STRONGER, not because it was dropped.** CI used to restate the
+ * `GATES` table as a shell block of `pnpm run check:*` lines, so "my gate's
+ * name appears in check.yml" was the only way to ask whether CI ran it — and
+ * the second copy drifted exactly once, fatally: a deleted gate's line survived
+ * there, and `pnpm run <missing>` under `bash -e` would have failed the
+ * required check on every push. CI now RUNS the table (`node scripts/check.mjs
+ * --gates ci`), so a gate name in that file is the DEFECT rather than the
+ * evidence. `gate-wiring.test.ts` owns that half now: it asserts every row of
+ * the table is enforced by CI, that none is hand-restated as a step, and that
+ * every `pnpm run …` still in the workflow names a real root script. Do not add
+ * the entry back — it would fail for every gate at once, and asking eight specs
+ * to assert a duplicate is what produced the drift.
  *
  * Keyed by repo-relative path so a failure names the file the way a developer
  * would, and typed as possibly-absent so an unreadable source fails the caller's
@@ -59,13 +73,6 @@ export const GATE_WIRING: Record<string, string | undefined> = {
   ),
   "scripts/check.mjs": sole(
     import.meta.glob<string>("../../scripts/check.mjs", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-  ),
-  ".github/workflows/check.yml": sole(
-    import.meta.glob<string>("../../.github/workflows/check.yml", {
       query: "?raw",
       import: "default",
       eager: true,

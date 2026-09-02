@@ -9,11 +9,12 @@
  * an upload byte never touches a guest.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { UPLOAD_PART_BYTES } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestStore } from "./test-utils.ts";
+import { createTestStore, fakeAdminDbOver } from "./test-utils.ts";
 import { createMemoryUploadBytes, type UploadBytes, uploadKey } from "./upload-bytes.ts";
 import { MAX_UPLOAD_WINDOW_BYTES } from "./upload-handler.ts";
 
@@ -24,9 +25,26 @@ import { MAX_UPLOAD_WINDOW_BYTES } from "./upload-handler.ts";
  * `assertAgentExists`. Nothing brokers as a result: an agents-row read is not a
  * sandbox, which is the property the last spec here pins.
  */
-async function serve(bytes: UploadBytes = createMemoryUploadBytes()) {
+async function serve(
+  bytes: UploadBytes = createMemoryUploadBytes(),
+  record: Record<string, unknown> | null = null,
+) {
   const store = createTestStore();
-  const { app } = createOrchestrator({ slots: createSlotCache(), store, uploadBytes: bytes });
+  // `null` is the ordinary case here and means NO platform database, which is what
+  // every spec below the record ones is written against — see
+  // `UploadBytesHandlerOptions.adminDb`.
+  const adminDb =
+    record === null
+      ? undefined
+      : fakeAdminDbOver((sql) =>
+          sql.includes("from aai_platform.workflow_uploads") ? [record] : [],
+        );
+  const { app } = createOrchestrator({
+    slots: createSlotCache(),
+    store,
+    uploadBytes: bytes,
+    ...omitUndefined({ adminDb }),
+  });
   for (const slug of DEPLOYED) {
     await store.putAgent({
       slug,
@@ -47,6 +65,11 @@ const DEPLOYED = ["desk", "digest-desk"] as const;
 /** `n` bytes counting up, so a window's CONTENT identifies its offset. */
 function ramp(n: number, from = 0): Uint8Array {
   return Uint8Array.from({ length: n }, (_, at) => (from + at) % 251);
+}
+
+/** One buffer as the iterable `UploadBlobs.put` takes. */
+async function* once(value: Uint8Array): AsyncGenerator<Uint8Array> {
+  yield value;
 }
 
 describe("a window of upload bytes", () => {
@@ -169,12 +192,89 @@ describe("a window of upload bytes", () => {
     // `uploads/no-such-agent-here/upl_x/0`. `slugMw` validates a slug's shape and its
     // reserved names, never its existence — so an unauthenticated caller could mint
     // unbounded prefixes in a bucket shared by every tenant, and `aai-sweep-blob-gc`
-    // matches `blobs/%` so nothing reclaims them.
+    // matched `blobs/%` so nothing reclaimed them. That second half is closed too
+    // now — the GC has an uploads arm — but this guard is what keeps the number of
+    // prefixes bounded rather than merely the lifetime of each.
     const { bytes, call } = await serve();
     const res = await call("/never-deployed/uploads/upl_abc/0", { method: "PUT", body: ramp(4) });
     expect(res.status).toBe(404);
     // And nothing landed — the refusal is BEFORE the write, not a status over one.
     expect(await bytes.size(uploadKey("never-deployed", "upl_abc", 0))).toBeUndefined();
+  });
+
+  test("REFUSES a write to a window of a COMPLETE upload", async () => {
+    // The rewrite primitive, measured before this guard: a second PUT at a window a
+    // run is about to read answered 201 and swapped the bytes under it — longer,
+    // shorter or the same length — while the RECORD kept its `size` and `complete`,
+    // so no reader had anything to notice. Unauthenticated, and an upload id is the
+    // caller's own choice, so it needed only a slug from a URL.
+    const { bytes, call } = await serve(createMemoryUploadBytes(), {
+      name: "clip.wav",
+      type: "audio/wav",
+      size: "4",
+      complete: true,
+      expected: "4",
+      parts: [{ at: 0, bytes: 4 }],
+    });
+    const key = uploadKey("desk", "upl_abc", 0);
+    // The window as the finished upload holds it. Written straight to the store,
+    // because the route is what this spec is about.
+    await bytes.put(key, once(ramp(4)), { limit: 64 });
+    const res = await call("/desk/uploads/upl_abc/0", { method: "PUT", body: ramp(64, 100) });
+    // 409 rather than 403: the request is well formed and the resource is closed,
+    // which is also what keeps a client from retrying it — 409 is in neither
+    // `RETRYABLE_STATUS` nor the resume vocabulary.
+    expect(res.status).toBe(409);
+    expect(await bytes.size(key)).toBe(4);
+    expect([...(await bytes.read(key, 0, 4))]).toEqual([...ramp(4)]);
+  });
+
+  test("still writes a window while the upload is ARRIVING", async () => {
+    // The flow a blanket refusal would have broken, and it is the documented one: a
+    // window is re-sent as ONE unit after a transport failure whose response may have
+    // been lost, and a resumed upload re-sends a window whose bytes landed but whose
+    // CLAIM did not — the only repair that leaves the record and the bucket agreeing.
+    // Both act on an upload that is not complete.
+    const { bytes, call } = await serve(createMemoryUploadBytes(), {
+      name: "clip.wav",
+      type: "audio/wav",
+      size: "0",
+      complete: false,
+      expected: "8",
+      parts: [{ at: 0, bytes: 4 }],
+    });
+    const key = uploadKey("desk", "upl_abc", 0);
+    await bytes.put(key, once(ramp(4)), { limit: 64 });
+    const res = await call("/desk/uploads/upl_abc/0", { method: "PUT", body: ramp(4, 100) });
+    expect(res.status).toBe(201);
+    expect([...(await bytes.read(key, 0, 4))]).toEqual([...ramp(4, 100)]);
+  });
+
+  test("a completed upload's window is still READABLE", async () => {
+    // The refusal is on the WRITE only. A read of a finished upload is the ordinary
+    // case — it is what every step does — so a guard that touched GET or HEAD would
+    // break the feature rather than protect it.
+    const { bytes, call } = await serve(createMemoryUploadBytes(), {
+      name: "clip.wav",
+      type: "",
+      size: "4",
+      complete: true,
+      expected: "4",
+      parts: [{ at: 0, bytes: 4 }],
+    });
+    await bytes.put(uploadKey("desk", "upl_abc", 0), once(ramp(4)), { limit: 64 });
+    expect((await call("/desk/uploads/upl_abc/0")).status).toBe(200);
+    expect((await call("/desk/uploads/upl_abc/0", { method: "HEAD" })).status).toBe(200);
+  });
+
+  test("writes when there is NO record, because `create` writes its row last", async () => {
+    // `POST /workflows/uploads` stores every window before it inserts anything, so
+    // during that upload there is no row to consult. A rule of "no record, no write"
+    // would refuse the whole route for it.
+    const { bytes, call } = await serve(createMemoryUploadBytes(), null);
+    const res = await call("/desk/uploads/upl_new/0", { method: "PUT", body: ramp(4) });
+    expect(res.status).toBe(201);
+    expect(await bytes.size(uploadKey("desk", "upl_new", 0))).toBe(4);
   });
 
   test("still READS without a lookup, because a miss already answers", async () => {

@@ -15,11 +15,7 @@ import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { SessionRuntime } from "@alexkroman1/aai-runtime";
-import {
-  createWorkflowSurface,
-  publishStepEnv,
-  type WorkflowSurface,
-} from "@alexkroman1/aai-runtime/internal";
+import { publishStepEnv, publishWorkflowWebhookUrl } from "@alexkroman1/aai-runtime/internal";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
 import type { StudioSession } from "./studio-session.ts";
 import { runCode } from "./trial.ts";
@@ -111,6 +107,29 @@ async function importBundleModule(code: string): Promise<Record<string, unknown>
   }
 }
 
+/**
+ * The deployment's public origin, out of the EXEC env — what a THIRD PARTY dials.
+ *
+ * One reader for two consumers ({@link loadBundle}'s webhook minter and
+ * {@link ensureRuntime}'s `publicUrl`), because they must not be able to
+ * disagree about what this sandbox's callback origin is. It is the SPAWNER's
+ * parameter and not the agent's: `AAI_PUBLIC_BASE_URL` is set in the exec env
+ * (`agentBootEnv` in aai-server/warm-harness.ts) and never appears in the agent
+ * env file, so a tenant cannot set it and `requireStepEnv` cannot read it.
+ *
+ * Blank-trimmed to `undefined` rather than passed through: an exec env built
+ * from a template can carry an empty string, and an empty base composes
+ * `/.well-known/…` — a relative URL nothing can call back on — where
+ * `undefined` makes both consumers say so by name.
+ *
+ * Not `AAI_PLATFORM_BASE_URL`, which is the other claim entirely: "the platform
+ * is dialable here", from INSIDE the sandbox. See
+ * `aai-runtime/CLAUDE.md`, "`AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials".
+ */
+function publicBaseUrl(): string | undefined {
+  return process.env.AAI_PUBLIC_BASE_URL?.trim() || undefined;
+}
+
 // ---- Harness state ----------------------------------------------------------
 
 /** Mutable state shared across requests within a single harness instance. */
@@ -134,14 +153,6 @@ export type HarnessState = {
   /** Live client-session connections (host idle eviction asks). */
   activeSessions: number;
   /**
-   * The bundle's durable-workflow surface, or null when it declares none.
-   *
-   * Built at LOAD rather than lazily like the runtime: the DevKit's queue can
-   * call back the moment a run starts, and a route that 404s because the surface
-   * had not been built yet would look to the world like a lost message.
-   */
-  workflows: WorkflowSurface | null;
-  /**
    * The studio coding-agent session, installed by `studio/session-init` —
    * workspace dir, the caller's key (chat bearer + LLM credential), and
    * turn config. Null on non-studio sandboxes; `/studio/chat` answers 409.
@@ -157,7 +168,6 @@ export function emptyHarnessState(): HarnessState {
     env: Object.freeze({}),
     runtime: null,
     activeSessions: 0,
-    workflows: null,
     studio: null,
   };
 }
@@ -222,16 +232,20 @@ export async function loadBundle(
   // the identical wiring.
   publishStepEnv(params.env);
 
-  // The compiled workflow surface rides the bundle as two string exports (see
-  // `aai-cli/workflow-bundler.ts`). Absent for a project with no `workflows/`
-  // directory, which is most of them.
-  const workflowCode = (mod as { __aaiWorkflowCode?: unknown }).__aaiWorkflowCode;
-  const stepCode = (mod as { __aaiStepCode?: unknown }).__aaiStepCode;
-  state.workflows =
-    (await createWorkflowSurface(
-      typeof workflowCode === "string" ? workflowCode : undefined,
-      typeof stepCode === "string" ? stepCode : undefined,
-    )) ?? null;
+  // How a step mints THIS run's public callback URL, which closes the other half
+  // of the same gap: a workflow body and the steps it calls hold no
+  // `ToolContext`, so `ctx.workflows.publicWebhookUrl` is out of reach — and a
+  // `workflowApp()` with no tools at all had nothing that could mint one, so a
+  // run had to poll a provider instead of being woken by it. The value is the
+  // spawner's rather than the agent's (see {@link publicBaseUrl}), so it cannot
+  // ride the env published above.
+  //
+  // Published HERE for the reason the env is: before the surface is built, so a
+  // run the platform's queue delivers the moment this process boots cannot race
+  // it — `ensureRuntime` is too late, being lazy and possibly never called for a
+  // static app. Absent, it UNPUBLISHES, so a repeat load in a process that lost
+  // the variable cannot leave a stale origin behind.
+  publishWorkflowWebhookUrl(publicBaseUrl());
 
   const config = (mod as { __aaiConfig?: unknown }).__aaiConfig;
   return config === undefined ? {} : { config };
@@ -258,10 +272,10 @@ export async function loadBundle(
  */
 export function ensureRuntime(state: HarnessState): GuestRuntime {
   if (!(state.agent && state.createRuntime)) throw new Error("Agent not loaded");
-  // Blank-trimmed rather than passed through: an exec env built from a template
-  // can carry an empty string, and `publicUrl: ""` would mint `/.well-known/…`
-  // — a relative URL nothing can call back on — instead of throwing.
-  const publicUrl = process.env.AAI_PUBLIC_BASE_URL?.trim();
+  // Through {@link publicBaseUrl}, which is also what the step slot's minter is
+  // built from — one reader, so a tool's callback URL and a step's cannot name
+  // different origins.
+  const publicUrl = publicBaseUrl();
   state.runtime ??= state.createRuntime({
     env: { ...state.env },
     runCode,
@@ -328,6 +342,16 @@ export function lazyRuntime(
      */
     get workflows() {
       return ensureRuntime(state).workflows as SessionRuntime["workflows"];
+    },
+    /**
+     * The delivery hook, a GETTER for the same lazy-runtime reason as `workflows`.
+     *
+     * A bundle predating the replay engine has none, and `undefined` is the
+     * honest answer there rather than a throwing stub: that bundle's runs belong
+     * to the DevKit's own world, which holds their schedule itself.
+     */
+    get deliverWorkflow() {
+      return ensureRuntime(state).deliverWorkflow as SessionRuntime["deliverWorkflow"];
     },
     shutdown: async () => {
       await state.runtime?.shutdown();

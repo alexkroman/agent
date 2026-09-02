@@ -19,6 +19,12 @@
  * `/:slug/websocket` upgrade, so a still-booting agent is a retryable 503 rather
  * than a 404 denying that the workflow exists.
  *
+ * **Both directions of that taxonomy are load-bearing, and the 404 half was
+ * missing.** A DELETED agent reached this route twice over — once before the
+ * forward, once as the forward's own failure — and left it as the booting
+ * agent's 503, telling a caller to retry something that can never succeed. See
+ * {@link gone}.
+ *
  * **Bodies STREAM through; they are never buffered.** This process is
  * memory-bounded — `DEPLOY_BODY_CONCURRENCY` exists because the deploy path
  * buffers — and passing `c.req.raw.body` straight to `fetch` keeps peak memory
@@ -48,7 +54,11 @@ import {
   WORKFLOW_IP_RATE_LIMIT,
   WORKFLOW_START_IP_RATE_LIMIT,
 } from "./rate-limit.ts";
-import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrlOrThrow } from "./sandbox-broker.ts";
+import {
+  AGENT_UNAVAILABLE_MESSAGE,
+  brokerSessionUrlOrThrow,
+  notFoundMessage,
+} from "./sandbox-broker.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import {
@@ -60,6 +70,37 @@ import {
 /** The 503 the forward answers with — the broker's own sentence, not a second one. */
 function unavailable(cause?: unknown): HTTPException {
   return new HTTPException(503, { message: AGENT_UNAVAILABLE_MESSAGE, cause });
+}
+
+/**
+ * The 404 for a slug whose agent is GONE — terminal, where {@link unavailable}
+ * invites a retry.
+ *
+ * A deleted agent and a still-booting sandbox used to leave this route saying the
+ * same thing: `503 agent unavailable, retry shortly`. Only one of them is
+ * retryable. A delete drops the agents row and every workflow table cascades off
+ * it (`workflow_queue`, `workflow_runs`, `workflow_uploads`, …), so there is no
+ * run left to resume and no sandbox that will ever answer — while the sentence
+ * tells the caller, and any retrying client, to come back and ask again.
+ *
+ * The reported case was an UPLOAD, where the split is visible inside one feature:
+ * the byte windows go to `/:slug/uploads/:id/:offset`, whose `assertAgentExists`
+ * answers 404 for this very condition, and the `?stored=1` notification that
+ * follows each window comes through HERE and answered 503. So one half of one
+ * upload loop was told "gone" and the other "try again", and the retry never
+ * stopped.
+ *
+ * **404 with `notFoundMessage`, not a 410.** `Gone` claims the resource existed
+ * and was removed, and nothing here can support that claim: a delete leaves no
+ * tombstone, so a deleted slug and a slug nobody ever deployed are the same
+ * absent row — the platform cannot tell them apart and should not pretend to. It
+ * is also what the routes on either side of this one already answer
+ * (`brokerSessionUrlOrThrow` for a slug with no bundle, `assertAgentExists` for
+ * the upload bytes), which is what keeps "there is nothing of yours here" one
+ * sentence on this surface rather than three.
+ */
+function gone(slug: string): HTTPException {
+  return new HTTPException(404, { message: notFoundMessage(slug) });
 }
 
 /**
@@ -112,10 +153,17 @@ export function createAgentWorkflowsHandler(
     // forge; see GUEST_PROXY_TOKEN_HEADER and the guest's gate in
     // aai-guest/harness-agent-mode.ts. `getAgentVersion` is one indexed read and
     // gives the version the running guest's token was derived from (as
-    // agent-logs.ts does for `/manage/*`); a null here is a delete/redeploy race,
-    // answered as the same retryable 503 as an unreachable guest.
+    // agent-logs.ts does for `/manage/*`).
+    //
+    // A null here is the agent being GONE, and it is reached without any race at
+    // all: `resolveSandbox`'s fast path serves a live resident WITHOUT consulting
+    // the row, and a delete's resident is terminated by the change stream and
+    // drained over minutes — so for that whole window the broker above succeeds
+    // for a slug whose row is already deleted, and every request through this
+    // route lands here. It used to answer the retryable 503, which is advice
+    // nothing can act on.
     const version = await c.env.store.getAgentVersion(slug);
-    if (version === null) throw unavailable();
+    if (version === null) throw gone(slug);
     const requestHeaders = pickHeaders(request.headers, GUEST_API_REQUEST_HEADERS);
     requestHeaders.set(GUEST_PROXY_TOKEN_HEADER, guestTokenFor(agentSandboxName(slug, version)));
 
@@ -152,6 +200,18 @@ export function createAgentWorkflowsHandler(
         bound: "activity",
       });
     } catch (cause) {
+      // A DELETE landing mid-forward is the other thing that unreaches a guest,
+      // and it is not retryable at all: it terminates the resident, so the
+      // forward fails exactly as a crashed guest's does — `fetch failed <-
+      // aborted`, which is the cause chain the reported 503 carried — and the row
+      // is the only thing that tells the two apart. One indexed read, on the
+      // FAILURE path only, so the forward that works pays nothing.
+      //
+      // A peer replica can still serve this slug's version out of its cache and
+      // answer 503 once more; that window is one second (`VERSION_CACHE_TTL_MS`)
+      // and is the staleness every route on this surface already has, where the
+      // retry loop it replaces was bounded by nothing.
+      if ((await c.env.store.getAgentVersion(slug)) === null) throw gone(slug);
       // The sandbox was ready a moment ago, so an unreachable guest is one that
       // went away between the broker and the forward — the same retryable
       // condition as a still-booting one, not a platform 500.

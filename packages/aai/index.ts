@@ -38,7 +38,7 @@
  * | --- | --- |
  * | `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
  * | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
- * | `@alexkroman1/aai/step`, `/step-errors` | writing a `"use step"` body inside a workflow |
+ * | `@alexkroman1/aai/step`, `/step-errors` | writing a step inside a workflow |
  * | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |
  * | `@alexkroman1/aai/tools` | calling `fetchJson`/`webSearch`/`visitWebpage` from your own tool code |
  * | `@alexkroman1/aai/utils` | small helpers written inside a tool body |
@@ -142,15 +142,18 @@ export type {
  * a tool: an author writes both in `agent.ts`. Everything about the RUN it
  * starts — the option bags, the snapshot union, its guard, `WorkflowOutputOf`,
  * the wait cap — is on `@alexkroman1/aai/workflow-api`, whose reader is a page,
- * a script, or a tool annotating a result. Seventeen names, none of which an
- * `agent.ts` ever writes, and the barrel's membership test is exactly that.
+ * a script, or a tool annotating a result — and the barrel's membership test is
+ * exactly that.
  *
  * `WorkflowClient` stays because `ToolContext.workflows` names it.
  *
- * The engine behind all of it (the Workflow DevKit) is not re-exported from
- * anywhere here: an author imports `sleep`, `defineHook` and the directives from
- * `workflow` directly, which keeps this SDK from having to track that package's
- * surface.
+ * What a BODY is written against joins it, because that is authoring too:
+ * {@link WorkflowCtx} (an author annotates a body's second parameter with it),
+ * the three option bags its methods take, {@link DEFAULT_STEP_MAX_ATTEMPTS}, and
+ * {@link isWorkflowSuspend}. Those replaced the Workflow DevKit's `"use step"` /
+ * `"use workflow"` directives and its `sleep`/`defineHook` imports — the engine
+ * lives in this repo now, so the durability an author reaches for is a method on
+ * `ctx` rather than a package this SDK had to track the surface of.
  */
 /**
  * Reading a credential off `ctx.env`.
@@ -211,11 +214,14 @@ export * from "./sdk/spoken.ts";
 export * from "./sdk/subagent.ts";
 export * from "./sdk/types.ts";
 /**
- * The utilities written INSIDE a tool body — all fifteen of them, which is the
- * whole of `@alexkroman1/aai/utils`.
+ * The utilities written INSIDE a tool body — all fifteen of them, which is
+ * `@alexkroman1/aai/utils` minus the five whose reader is not a tool body:
+ * `decodeHtmlEntities` and the four narration formatters (`formatBytes`,
+ * `formatDuration`, `countWords`, `plural`), which a step and a `client.tsx`
+ * both reach for and which are therefore reachable ONLY on that subpath.
  *
- * **The rule is that the two lists agree**, because the split they used to
- * describe was not one anybody could apply: `safeJsonParse` was here and
+ * **The rule is that the two lists agree for everything else**, because the
+ * split they used to describe was not one anybody could apply: `safeJsonParse` was here and
  * `isRecord` — the guard you call on what it returns — was not, so a tool body
  * needing both wrote two import lines for one line of helpers, and templates
  * routed around it by taking the root's own names off `/utils` instead. That
@@ -245,4 +251,19 @@ export {
   toolFailure,
   withLock,
 } from "./sdk/utils.ts";
-export { type WorkflowClient, type WorkflowDef, workflow } from "./sdk/workflow.ts";
+export {
+  DEFAULT_STEP_MAX_ATTEMPTS,
+  // What a body's `catch` must test before doing cleanup — see the module doc
+  // for the shipped bug that makes this part of the authoring surface rather
+  // than an engine internal.
+  isWorkflowSuspend,
+  type SleepOptions,
+  type StepOptions,
+  type WaitForOptions,
+  type WorkflowClient,
+  // What a workflow BODY is handed. An author annotates a body's second
+  // parameter with it, which is the membership test this barrel applies.
+  type WorkflowCtx,
+  type WorkflowDef,
+  workflow,
+} from "./sdk/workflow.ts";

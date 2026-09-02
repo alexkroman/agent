@@ -120,3 +120,36 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
     expect(emits[0]?.[0]).toMatchObject({ type: "tool.called", toolCallId: "tc-1" });
   });
 });
+
+/**
+ * The relay pair is `executeTool` + `toolSchemas`, and `setupTools` dispatches on
+ * BOTH — so half a pair does not half-work, it silently selects the other mode
+ * and discards the option that was passed. That is the shape this PR paid for
+ * four times over (a dropped `options.signal`, a deleted `dataDir`, `streams`
+ * falling back to memory, a removed `workflowWorldStarted` guard), and the doc on
+ * `RuntimeOptions.toolSchemas` has said "Required when `executeTool` is provided"
+ * the whole time.
+ */
+describe("createRuntime — the relay pair must be whole", () => {
+  test("executeTool without toolSchemas is REFUSED, not silently ignored", () => {
+    expect(() =>
+      createRuntime({
+        agent: makeAgent(),
+        env: {},
+        executeTool: vi.fn(async () => "relayed"),
+        logger: silentLogger,
+      }),
+    ).toThrow(/toolSchemas/);
+  });
+
+  test("toolSchemas without executeTool is REFUSED, not silently ignored", () => {
+    expect(() =>
+      createRuntime({
+        agent: makeAgent(),
+        env: {},
+        toolSchemas: [{ type: "function", name: "lookup", description: "Look up", parameters: {} }],
+        logger: silentLogger,
+      }),
+    ).toThrow(/executeTool/);
+  });
+});

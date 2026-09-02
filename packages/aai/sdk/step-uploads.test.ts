@@ -16,6 +16,7 @@ import {
   type UploadWriteMeta,
   uploadInfo,
 } from "./step-uploads.ts";
+import { requireCompleteUpload } from "./step-uploads-complete.ts";
 import { UPLOAD_WRITES_UNAVAILABLE_MESSAGE, writeUpload } from "./step-uploads-write.ts";
 
 /** Publish a reader over one in-memory file, recording the windows it is asked for. */
@@ -286,5 +287,38 @@ describe("writeUpload", () => {
 
   test("reports an absent store the way every other reader here does", async () => {
     await expect(writeUpload(new Uint8Array([1]))).rejects.toThrow(/No upload store/);
+  });
+});
+
+describe("requireCompleteUpload", () => {
+  test("answers with the record when every byte is in", async () => {
+    publish(new Uint8Array([1, 2, 3]));
+    expect(await requireCompleteUpload("upl_1")).toMatchObject({ size: 3, complete: true });
+  });
+
+  test("refuses one that is still arriving, and names the fix", async () => {
+    publish(new Uint8Array([1, 2, 3]), {
+      info: async (id) => ({ id, name: "", type: "", size: 3, complete: false }),
+    });
+
+    // The sentence is the whole product here: the reader is a step author whose
+    // run started a moment too early, and the two supported orders — wait for the
+    // upload, or poll it from the body — are what the message has to name.
+    await expect(requireCompleteUpload("upl_1")).rejects.toMatchObject({
+      name: "UploadIncompleteError",
+      // NOT retryable: `toStepError` reads this structurally, so a step ending
+      // `.catch(throwStepError)` fails the run rather than spending the budget of
+      // the most expensive step in the flow on an upload that will not be there.
+      retryable: false,
+      // The PREFIX at the moment of the check, which is the number a reader needs
+      // to tell "nothing has arrived" from "we were one window short".
+      stored: 3,
+    });
+    await expect(requireCompleteUpload("upl_1")).rejects.toThrow(/ctx\.sleep/);
+  });
+
+  test("reports an id that names nothing exactly as uploadInfo does", async () => {
+    publish(new Uint8Array([1]));
+    await expect(requireCompleteUpload("nope")).rejects.toThrow(/No upload with id nope/);
   });
 });

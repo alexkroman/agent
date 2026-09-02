@@ -16,13 +16,12 @@
  *
  * | Route | Caller | Authorization |
  * | --- | --- | --- |
- * | `…/webhook/:token` | a third party | the DevKit's path token |
+ * | `…/webhook/:token` | a third party | the path token, on POST alone |
  * | `/workflows/*` | a page, or a script | the agent's own `AAI_WORKFLOW_API_TOKEN`, forwarded |
  * | `…/uploads/:id/:offset` | a browser, or the guest | an unguessable upload id |
  * | `/workflow-enqueue` | **this agent's guest** | the per-sandbox bearer, bound to one slug |
- * | `/workflow-storage` | **this agent's guest** | the same, plus per-run ownership both ways |
- * | `/workflow-stream` | **this agent's guest** | the same, plus a namespaced stream name |
  * | `/session-state` | **this agent's guest** | the same, and every statement is slug-scoped |
+ * | `/workflow-journal` | **this agent's guest** | the same, and every statement is slug-scoped |
  * | `/upload-records` | **this agent's guest** | the same |
  *
  * The split in that table is the point: the first three are open by design and each
@@ -63,12 +62,10 @@ import {
 } from "./workflow-enqueue-handler.ts";
 import { createAgentWorkflowsHandler, createWorkflowRateLimitMw } from "./workflow-handler.ts";
 import {
-  createWorkflowStorageHandler,
-  MAX_STORAGE_BODY_BYTES,
-  WORKFLOW_STORAGE_ROUTE,
-} from "./workflow-storage-handler.ts";
-import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
-import { createWorkflowStreamHandler, WORKFLOW_STREAM_ROUTE } from "./workflow-stream-handler.ts";
+  createWorkflowJournalHandler,
+  MAX_WORKFLOW_JOURNAL_BODY_BYTES,
+  WORKFLOW_JOURNAL_ROUTE,
+} from "./workflow-journal-handler.ts";
 import {
   createWorkflowWebhookHandler,
   MAX_WEBHOOK_BODY_BYTES,
@@ -82,11 +79,7 @@ export type AgentWorkflowRouteOptions = {
   guestFetch?: typeof fetch | undefined;
   /** The platform's admin connection. Absent means there is no queue. */
   adminDb?: AdminDb | undefined;
-  /**
-   * The DevKit's world on the platform's database. Absent means this deployment
-   * serves no run storage, which the route answers 501 for.
-   */
-  runStorage?: PlatformWorldStorage | undefined;
+  /** Where an upload's bytes go — the platform's bucket, never a guest's disk. */
   uploadBytes: UploadBytes;
   workflowRateLimiter?: RateLimiter | undefined;
   workflowStartRateLimiter?: RateLimiter | undefined;
@@ -109,13 +102,19 @@ export function registerAgentWorkflowRoutes(
   agents: Hono<HonoEnv>,
   opts: AgentWorkflowRouteOptions,
 ): void {
-  // Durable-run webhook delivery. No auth of ours — the DevKit's path token is
-  // the only authorization on this endpoint, at the guest and here.
+  // Durable-run webhook delivery. No auth of ours — the path token is the only
+  // authorization on this endpoint, at the guest and here.
   //
   // The methods come STRAIGHT off the exposure declaration rather than being
-  // restated: the guest answers any verb the third party chose, and a platform
-  // route serving a subset of them is the exact bug guest-routes.ts exists to
-  // catch (a `DELETE` that worked in dev and 404'd deployed).
+  // restated, and that declaration is POST alone. It used to be all five, on
+  // "the guest answers any verb the third party chose" — which was true and was
+  // the bug: a delivery is permanent, so a crawler's `GET` on a leaked callback
+  // URL resolved a run's waitpoint with `{}`. The guest gates POST now, and
+  // narrowing here matters more than usual because this handler BROKERS — a
+  // forwarded `GET` boots a Modal sandbox before the guest can refuse it. The
+  // subset-of-the-guest's-verbs bug guest-routes.ts exists to catch (a `DELETE`
+  // that worked in dev and 404'd deployed) is guarded from the other side:
+  // guest-routes.test.ts pins this list against the runtime's route table.
   const handleWorkflowWebhook = createWorkflowWebhookHandler(opts.guestFetch);
   agents.on(
     [...GUEST_ROUTE_EXPOSURE.workflowWebhook.methods],
@@ -135,27 +134,10 @@ export function registerAgentWorkflowRoutes(
     createWorkflowEnqueueHandler(opts.adminDb),
   );
 
-  // The guest's run-storage calls, scoped to this agent and forwarded to the
-  // DevKit's world running on the platform's own database. Same bearer as the
-  // enqueue route beside it, and the same reason it is neither `existingOwnerMw`
-  // nor open: the caller is this agent's guest, and what it reaches is run state.
-  agents.post(
-    WORKFLOW_STORAGE_ROUTE,
-    limit(MAX_STORAGE_BODY_BYTES),
-    createWorkflowStorageHandler({
-      ...omitUndefined({ adminDb: opts.adminDb }),
-      ...omitUndefined({ storage: opts.runStorage }),
-    }),
-  );
-
-  // The seventh Streamer member: a LIVE read, which is a streaming response rather
-  // than one request and one reply, so it cannot share the RPC route above. Its
-  // tenant boundary is the qualified stream NAME rather than a run check — that
-  // method has no run id — see `workflow-stream-handler.ts`.
-  agents.get(
-    WORKFLOW_STREAM_ROUTE,
-    createWorkflowStreamHandler(omitUndefined({ storage: opts.runStorage })),
-  );
+  // Two routes used to sit here: the guest's run-storage RPC and the live stream
+  // read beside it, both forwarding to the DevKit's world on the platform's own
+  // database. They went with that world — the replay engine's journal is
+  // `/workflow-journal` below, and its progress streams are the guest's own.
 
   // The guest's session slots and event log — turn-level durability with no tenant
   // database. Same bearer as the routes above, and its scoping is simpler than run
@@ -165,6 +147,17 @@ export function registerAgentWorkflowRoutes(
     SESSION_STATE_ROUTE,
     limit(MAX_SESSION_STATE_BODY_BYTES),
     createSessionStateHandler(omitUndefined({ adminDb: opts.adminDb })),
+  );
+
+  // The replay engine's JOURNAL — what makes a deployed durable run durable at
+  // all. The engine's other two backends are a `Map` and a store over the agent's
+  // own `DATABASE_URL`, and the platform provisions neither, so before this route
+  // every deployed run journaled into a sandbox that self-exits. Same bearer and
+  // the same slug-in-every-statement scoping as session state.
+  agents.post(
+    WORKFLOW_JOURNAL_ROUTE,
+    limit(MAX_WORKFLOW_JOURNAL_BODY_BYTES),
+    createWorkflowJournalHandler(omitUndefined({ adminDb: opts.adminDb })),
   );
 
   // The guest's workflow UPLOAD records — the last piece of a guest's durable state
@@ -208,6 +201,10 @@ export function registerAgentWorkflowRoutes(
   agents.on(
     [...UPLOAD_BYTES_METHODS],
     UPLOAD_BYTES_ROUTE,
-    createUploadBytesHandler(opts.uploadBytes),
+    // The admin connection, because a WRITE asks the upload's own record one
+    // question: is this upload already finished, in which case its windows are
+    // immutable. See `assertUploadOpen` there for why that read is worth a round
+    // trip and why "the object exists" is the wrong condition.
+    createUploadBytesHandler(opts.uploadBytes, omitUndefined({ adminDb: opts.adminDb })),
   );
 }

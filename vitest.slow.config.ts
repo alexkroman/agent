@@ -1,7 +1,7 @@
 // By SOURCE path, not package name: the repo root declares no dependency on
 // the SDK, and this config is repo tooling rather than something we ship.
 
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { aaiAgentPlugin } from "./packages/aai/host/testing-vite.ts";
 import { sharedConfig, sharedSetupFiles } from "./vitest.shared.ts";
 
@@ -72,6 +72,32 @@ export default defineConfig({
     hookTimeout: profile.hookTimeout,
     include: process.env.VITEST_INCLUDE?.split(",") ?? ["**/*.test.ts"],
     /**
+     * Vitest's defaults, plus the worktree directory — and the addition is not
+     * housekeeping.
+     *
+     * This config's `root` is wherever it is invoked from, and a package script
+     * (`pnpm --filter aai-server test:scenario`) makes that the package
+     * directory. Run from the REPO ROOT, though — which is what a bare
+     * `vitest run -c vitest.slow.config.ts <pattern>` does, and AGENTS.md notes
+     * `--dir` does not scope a run here — the scenario glob also matches
+     * every git worktree checked out under it. Measured on this tree: 41 scenario
+     * files at the root and 111 more across 20 worktrees.
+     *
+     * For the scenario tier that is not merely slow, it is WRONG: the duplicate
+     * copies are the same suites with the same hard-coded slugs, running
+     * concurrently against the same database, so each pair races the other. It
+     * cost real time diagnosing a queue flake that turned out to include a second
+     * copy of the suite from `.worktrees/tts-sandbox-truncation/`.
+     *
+     * Spelled with `configDefaults.exclude` because declaring `exclude` REPLACES
+     * the defaults rather than extending them — losing the node_modules default
+     * here would collect every dependency's tests.
+     *
+     * (Globs are described rather than quoted in this comment: a literal
+     * star-slash inside a block comment ENDS it, which cost one debugging round.)
+     */
+    exclude: [...configDefaults.exclude, "**/.worktrees/**"],
+    /**
      * Setup files are SELECTED per run, the same way `include` is, because this
      * one config serves every package's slow tiers and a package's setup file is
      * not safe to impose on the others. `aai-cli/_test-setup.ts` deletes every
@@ -133,8 +159,11 @@ export default defineConfig({
      * declines to gate, so wall clock is the cheapest thing it has to trade.
      *
      * The other two profiles keep parallel files: `integration` touches no
-     * network, and `scenario`'s external resource is a database with its own
-     * per-suite isolation.
+     * network, and `scenario`'s external resource is a database whose suites
+     * isolate themselves — by slug where the predicate under test is per-tenant,
+     * and by a private database (`useThrowawayPlatformDb`) where it is
+     * FLEET-WIDE, which slugs cannot isolate and which flaked for as long as
+     * they were asked to.
      */
     ...(profileKey === "e2e" || profileKey === "eval" ? { fileParallelism: false } : {}),
   },

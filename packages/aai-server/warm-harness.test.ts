@@ -128,6 +128,22 @@ describe("agentBootEnv", () => {
     });
   });
 
+  /**
+   * `TMPDIR` is a property of the CONTAINER, not of agent mode, and this is what
+   * keeps it from coming back here.
+   *
+   * It used to be built here — with a `scratchDir` option whose one non-default
+   * caller was `subprocess`, passing `null` to opt OUT — because
+   * `guestExecBaseEnv()`, where a contained guest's ambient keys belong, was one
+   * line from its file's length cap. The cost was three copies of one value: this
+   * one plus both studio spawn sites. It is `guest-exec-env.ts` now, spread by the
+   * four contained exec sites and by no other, so this env is `AAI_*` boot
+   * parameters and nothing else. `guest-exec-env.test.ts` owns the other half.
+   */
+  it("names no TMPDIR: a scratch directory is the container's, not the mode's", () => {
+    expect(agentBootEnv(boot, {})).not.toHaveProperty("TMPDIR");
+  });
+
   // The two bundle shapes are mutually exclusive on the wire, not merely
   // preferred one over the other: a guest handed both a path that was never
   // written and a URL would have a precedence rule to get wrong, and a v1

@@ -15,24 +15,34 @@
  * under the cap. Splitting the TESTS was tried instead — a `workflow-queue-claim`
  * suite mirroring the source split — and it must not be: `claimDue` and
  * `WORKFLOW_QUEUE_CHANNEL` are both GLOBAL. The claim takes due messages for ANY
- * slug and the NOTIFY channel carries every tenant's enqueue, so two files over
- * one database cannot run concurrently, and vitest runs files in parallel. Each
- * suite passed alone and 20-odd tests failed with both present: a foreign slug's
+ * slug and the NOTIFY channel carries every tenant's enqueue. Each suite passed
+ * alone and 20-odd tests failed with both present: a foreign slug's
  * rows arriving in an `toEqual([ids])`, and a sibling's `enqueue` incrementing the
  * notification count that "a DELAYED message does not notify" asserts is zero.
  * Per-suite slugs do not help — that isolates the ROWS a test writes, not the
  * claim that reads them.
  *
- * So the seam here is the HARNESS, not the subject. If this file has to shrink
- * again, extract more setup or move a group whose tests touch neither `claimDue`
- * nor the channel; do not create a second suite that shares this database.
+ * **What DOES help is a per-suite DATABASE, and the fixture takes one now.** The
+ * paragraph above used to end "do not create a second suite that shares this
+ * database", which was the right rule for a shared one and left the real problem
+ * standing: this suite was flaky against the OTHER files already in the tier.
+ * `workflow-queue-reconcile.scenario.test.ts` seeds stalled runs, `runQueuePass`
+ * reconciles every stalled run in the database, and the resulting `reconcile_*`
+ * rows landed in this file's counts — a full scenario run failed here roughly one
+ * time in two, never the same cases twice. `useThrowawayPlatformDb` carries the
+ * measurement. Two listeners in this file therefore dial `fx.url()` rather than
+ * `pgUrl()`: the channel is only private if you listen on the right database.
+ *
+ * So the seam here is still the HARNESS, not the subject. If this file has to
+ * shrink again, extract more setup or move a group whose tests touch neither
+ * `claimDue` nor the channel.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { createPlatformQueueSend } from "@alexkroman1/aai-runtime/internal";
 import { expect, test, vi } from "vitest";
-import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { describeWithPg } from "./_pg-test-utils.ts";
 import { useQueueFixture } from "./_workflow-queue-test-utils.ts";
 import { guestTokenFor } from "./guest-token.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
@@ -589,7 +599,7 @@ describeWithPg("workflow queue store", () => {
    */
   test("enqueuing a DUE message notifies a listener", async () => {
     const fired: number[] = [];
-    const listener = createPostgresDb({ url: pgUrl(), max: 1 });
+    const listener = createPostgresDb({ url: fx.url(), max: 1 });
     try {
       const unlisten = await listener.listen(WORKFLOW_QUEUE_CHANNEL, () => {
         fired.push(1);
@@ -635,7 +645,7 @@ describeWithPg("workflow queue store", () => {
     const BARRIER = "aai_test_queue_barrier";
     let queueNotifications = 0;
     let barrierFired = false;
-    const listener = createPostgresDb({ url: pgUrl(), max: 2 });
+    const listener = createPostgresDb({ url: fx.url(), max: 2 });
     try {
       const stopQueue = await listener.listen(WORKFLOW_QUEUE_CHANNEL, () => {
         queueNotifications += 1;

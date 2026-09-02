@@ -181,6 +181,38 @@ describe("readUploadToFile", () => {
       expect(new Uint8Array(await readFile(path))).toEqual(arrived);
     });
   });
+
+  // The gap the test above only LOOKS like it covers: it passes a size, so the
+  // walk can come back short and say so. Defaulting the size instead reads the
+  // upload's `size`, which is the contiguous PREFIX — so the count returned
+  // equalled the prefix by construction and the "a caller polling a streamed
+  // upload has to notice" contract could not fire. A truncated local file then
+  // goes to ffmpeg, and a run reports a transcript of most of a recording.
+  test("REFUSES to default the size off an upload that is still arriving", async () => {
+    const arrived = pattern(4096, 5);
+    uploadStore({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
+
+    await withTempDir(async (dir) => {
+      const path = join(dir, "source");
+      await expect(readUploadToFile(UPLOAD_ID, path, { windowBytes: 1024 })).rejects.toMatchObject({
+        name: "UploadIncompleteError",
+        retryable: false,
+      });
+    });
+  });
+
+  test("an explicit size still reads the prefix — the caller has said what it wants", async () => {
+    // The other half of the same decision: `size` MEANS "I have already read the
+    // record", so passing one moves the completeness judgement to the caller,
+    // which is what lets a polling body copy the windows that have landed.
+    const arrived = pattern(2048, 5);
+    uploadStore({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
+
+    await withTempDir(async (dir) => {
+      const path = join(dir, "source");
+      expect(await readUploadToFile(UPLOAD_ID, path, { size: 2048, windowBytes: 512 })).toBe(2048);
+    });
+  });
 });
 
 describe("writeUploadFromFile", () => {

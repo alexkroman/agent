@@ -1,45 +1,41 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The authoring surface for durable workflows.
+ * The authoring surface for durable workflows: what a workflow IS, as opposed to
+ * how one runs.
  *
- * **The engine is the Workflow Development Kit; none of it is here.** Replay,
- * the event log, step retries, suspension and recovery all belong to
- * `workflow@4`, and this module holds only what WDK's compile-time directives
- * cannot carry:
+ * A workflow is a declaration — a description, an input schema, and a body — and
+ * nothing here executes anything. The engine lives in
+ * `@alexkroman1/aai-runtime`, and the seam between them is {@link WorkflowCtx},
+ * which the engine constructs and hands to the body. That split is what lets an
+ * `agent.ts` import this module without pulling a journal, a queue client or a
+ * database driver into the agent bundle.
+ *
+ * What the declaration carries, and why none of it can live on the function:
  *
  * - an **input schema**, so a run started from a tool call or an HTTP request is
  *   validated at the call site rather than crashing three steps in, and so a
  *   page can render a form from it;
- * - a **description**, for the same page and for `aai workflow`;
- * - a **name**, which is the key the workflow is declared under in
- *   `agent({ workflows })`.
- *
- * A `"use workflow"` function is a plain async function with a compiler-attached
- * `workflowId`. It takes positional arguments and no context object, so there is
- * nowhere on it to hang any of the three. Hence {@link workflow} — a declaration
- * wrapper, not an executor.
+ * - a **description**, for that page and for `aai workflow`;
+ * - **`uploads`**, naming the input properties that carry an upload id rather
+ *   than bytes;
+ * - a **name**, the key it is declared under in `agent({ workflows })` — and,
+ *   since the Workflow DevKit was removed, the workflow's identity everywhere
+ *   else too.
  *
  * ## What an author writes
  *
- * The body is a real directive function, in its own module under `workflows/`
- * (the directory the WDK builder scans):
+ * The body is an ordinary exported async function in its own module under
+ * `workflows/`. No directive and no compile step of its own — the agent
+ * bundle's Vite pass compiles it like any other source file:
  *
  * ```ts no-check
  * // workflows/digest.ts
- * import { sleep } from "workflow";
+ * import type { WorkflowCtx } from "@alexkroman1/aai/workflow";
  *
- * export async function digestFlow(input: { topic: string }) {
- *   "use workflow";
- *   const notes = await research(input.topic);
- *   await sleep("6 hours");
- *   await save(input.topic, notes);
+ * export async function digestFlow(input: { topic: string }, ctx: WorkflowCtx) {
+ *   const notes = await ctx.step("research", () => research(input.topic));
+ *   await ctx.step("save", () => save(input.topic, notes));
  *   return { topic: input.topic };
- * }
- *
- * async function research(topic: string) {
- *   "use step";
- *   // Full Node access, and the place ctx.db / ctx.generate work moved to.
- *   return await callTheModel(topic);
  * }
  * ```
  *
@@ -53,23 +49,24 @@
  * });
  * ```
  *
- * ## What moved, and why it could not stay
+ * ## The rule that outlived the engine
  *
- * `ctx.step(name, fn)` is gone: `"use step"` is the same idea with the retry
- * policy and the event log behind it, and a context method cannot be a compile
- * target. `ctx.waitFor` is gone in favour of WDK's `defineHook()` /
- * `createWebhook()`, which are strictly more capable (a hook is typed and can be
- * resumed more than once). `ctx.db` and `ctx.generate` are gone from the
- * workflow BODY — a body is replayed from the top on every resume, so it may
- * hold no live handle; both belong inside a `"use step"` function, which runs
- * once per successful execution and has the whole Node runtime.
+ * A body is REPLAYED from the top on every resume, so it may hold no live handle
+ * and may do nothing non-deterministic outside a step. That was true of the
+ * DevKit's `"use step"` and is true of `ctx.step`: the mechanism changed, the
+ * constraint did not. `ctx.db` and `ctx.generate` are absent from a body for
+ * exactly that reason — both belong inside a step, which runs at most once per
+ * successful execution and has the whole Node runtime.
  *
- * That last one is the change most likely to bite, because the old shape
- * compiled and the new one has to be moved by hand. It is also the one that was
- * never sound: a `ctx.db.query` in a replayed body re-ran on every resume.
+ * {@link WorkflowCtx} carries the rest, including why step identity is a name
+ * plus an occurrence count — and that nothing checks the replay rule for you.
  */
 
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+// The body's second argument. Type-only here, but re-exported below: an author
+// writing a body needs to name it, and `workflow.ts` is the one module they
+// already import from.
+import type { WorkflowCtx } from "./workflow-ctx.ts";
 // Type-only, so the cycle with `workflow-run.ts` (which names `WorkflowClient`
 // in its own docs) is erased rather than real. `WorkflowRunOf` composes the
 // snapshot with a def's output type, and the composition belongs beside the
@@ -88,32 +85,41 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
  * was seventeen names on the root barrel whose reader is never `agent.ts`.
  */
 export type { WorkflowClient } from "./workflow-client.ts";
+export {
+  DEFAULT_STEP_MAX_ATTEMPTS,
+  type SleepOptions,
+  type StepOptions,
+  type WaitForOptions,
+  type WorkflowCtx,
+} from "./workflow-ctx.ts";
+export { isWorkflowSuspend } from "./workflow-suspend.ts";
 
 /**
- * A `"use workflow"` function, as the compiler leaves it.
+ * A workflow body: an ordinary async function of its input and a
+ * {@link WorkflowCtx}.
  *
- * The `workflowId` property is what the WDK's transform attaches and what
- * `start()` reads; it is the whole reason a declaration can name a workflow body
- * without importing the engine. Typed as optional-but-present rather than
- * required because the property does not exist until the transform runs, and a
- * required field would make an untransformed function a compile error at the
- * declaration site — which is the wrong place to report it. `ctx.workflows.start`
- * checks it instead, at the point the id is actually needed, where the error can
- * say that the bundler plugin did not run.
+ * **There is no `workflowId` any more, and its absence is the point.** Under the
+ * Workflow DevKit this type carried one, attached by a compile-time transform,
+ * and `start()` read it — so a body that the bundler plugin had not reached
+ * looked perfectly valid at the declaration site and failed at the first
+ * `start()` with `MISSING_WORKFLOW_ID`. An agent that builds, deploys, boots and
+ * answers the phone but cannot start a run is a bad failure to design in. A
+ * workflow is now identified by the key it is declared under in
+ * `agent({ workflows })`, which cannot go missing because the declaration IS the
+ * registration.
  *
- * @typeParam I - The body's single input argument.
+ * The body is REPLAYED — see {@link WorkflowCtx} for what that forbids.
+ *
+ * @typeParam I - The body's validated input.
  * @typeParam R - What the body returns.
  *
  * @public
  */
-export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-  /** Attached by the WDK compiler: `workflow//{file}//{export}`. */
-  workflowId?: string;
-};
+export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 /**
  * Definition of one durable workflow: its schema, its description, and the
- * `"use workflow"` function that is its body.
+ * function that is its body.
  *
  * @typeParam P - Input schema (any Standard Schema, Zod by convention),
  *   validated at `start()`. The input is serialized into the run record, so it
@@ -147,11 +153,11 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
    */
   uploads?: readonly string[];
   /**
-   * The workflow body: a function carrying `"use workflow"`.
+   * The workflow body.
    *
-   * Takes ONE argument, the validated input. WDK bodies are variadic
-   * (`start(fn, [a, b, c])`), and this narrows that to a single object on
-   * purpose — the input is schema-validated, and a schema describes one value.
+   * Takes the validated input and a {@link WorkflowCtx}. The input is ONE
+   * object rather than a positional list on purpose — it is schema-validated,
+   * and a schema describes one value.
    */
   run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
@@ -245,8 +251,7 @@ export type WorkflowOutputOf<D> =
  * import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
  * import type { digest } from "../agent.ts";
  *
- * export async function digestFlow(input: WorkflowInputOf<typeof digest>) {
- *   "use workflow";
+ * export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowCtx) {
  *   // `limit` is `number`, not `number | undefined` — the default already ran.
  *   return await research(input.topic, input.limit);
  * }
@@ -329,14 +334,10 @@ export type WorkflowSummary = {
  * OF WORK inside a single tool call, never stored. A {@link workflow} runs
  * DURABLY, outliving the session.
  *
- * It deliberately does NOT check that `run` carries the compiler's `workflowId`.
- * That check belongs where the id is USED (`ctx.workflows.start`, which throws
- * naming the build), because a declaration-time throw makes merely IMPORTING an
- * agent module fail wherever the Workflow DevKit transform has not run — which
- * includes every unit test of a tool that starts a workflow, since vitest loads
- * `agent.ts` as source with no bundler in the path. The first template to declare
- * one is what surfaced this: the throw made the module unimportable by its own
- * spec.
+ * It validates nothing at declaration time, and there is nothing left to
+ * validate: a body is an ordinary function and a workflow's identity is the key
+ * it is declared under, so the `workflowId` a compiler used to attach — and the
+ * check that used to look for it — are both gone. See {@link WorkflowBody}.
  *
  * @example
  * `agent.ts` — declare the workflow beside the agent. A tool is a FILE, so

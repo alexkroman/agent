@@ -69,6 +69,7 @@
  * @module tools
  */
 
+import { invariant } from "../sdk/invariant.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { DefaultToolResult } from "../sdk/types.ts";
 import type { ToolFailure } from "../sdk/utils.ts";
@@ -109,7 +110,10 @@ async function callBuiltin(
   options?: CallOptions,
 ) {
   const def = resolveBuiltin(name, options?.fetch ? { fetch: options.fetch } : undefined);
-  if (!def?.execute) throw new Error(`Builtin "${name}" is unavailable`);
+  // `name` is one of three literals this module writes itself, and all three are
+  // in `builtin-tools.ts`'s own fetch table with an `execute` — so a miss is that
+  // table having lost an entry, never a caller naming a builtin that is gated off.
+  invariant(def?.execute !== undefined, "builtin.callable", () => ({ name }));
   // `ctx` is unused by all three — they close over their fetch — so the cast
   // keeps callers from having to synthesize a ToolContext they do not have.
   return await def.execute(args as never, undefined as never);

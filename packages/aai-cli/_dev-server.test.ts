@@ -13,6 +13,7 @@ import {
   mockCreateServer,
   mockEnsureApiKey,
   mockEnsureSessionStateSchema,
+  mockEnsureWorkflowJournalSchema,
   mockListen,
   mockResolveServerEnv,
   mockValidateAgentExport,
@@ -47,7 +48,6 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { createDevLogger } from "./_dev-env.ts";
 import { loadWorker, startDevServer, watchDirectory } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
 
@@ -120,6 +120,11 @@ beforeEach(() => {
   // suites exercise the watcher, so they turn it on. `unstubEnvs` in
   // vitest.shared.ts undoes this before each test; no manual cleanup.
   vi.stubEnv("AAI_DEV_WATCH", "1");
+  // The workflow data dir is set by `startDevServer` with a plain assignment —
+  // it has to be, since `localWorkflowDataDir()` reads `process.env` — so
+  // `unstubEnvs` cannot undo it on its own. Stubbing it to unset here RECORDS
+  // the original, which the runner then restores before the next test.
+  vi.stubEnv("AAI_WORKFLOW_DATA_DIR", undefined);
   // Clears the shared mocks' CALL HISTORY as well as re-priming them — see the
   // note on `primeDevServerMocks`. Without it every `toHaveBeenCalledWith` in
   // this file could be satisfied by an earlier test's call.
@@ -152,6 +157,11 @@ describe("startDevServer", () => {
         // The runtime logs through a logger this command chooses, so its
         // diagnostics can be kept off stdout in JSON mode (createDevLogger).
         logger: expect.objectContaining({ info: expect.any(Function) }),
+        // The run store, built once for the process and handed to every build:
+        // a rebuild replaces the workflow ENGINE (that is what reloads a body)
+        // and must not replace the runs underneath it. Identity across rebuilds
+        // is asserted in `_dev-server-restart.test.ts`, which drives one.
+        journal: expect.anything(),
         // What `ctx.workflows.publicWebhookUrl` mints from. The BACKEND port —
         // which with no `client.tsx` is the port passed in — because the DevKit's
         // `/.well-known/workflow/v1/*` routes are deliberately absent from Vite's
@@ -287,6 +297,42 @@ describe("startDevServer", () => {
       });
     });
 
+    test("the JOURNAL's tables are ensured on the same boot", async () => {
+      // `applyWorkflowJournalDdl` existed from the start with NO production
+      // caller, so a project with a `DATABASE_URL` printed `runStore: "postgres"`
+      // and then died on its first run with `42P01 relation
+      // "aai_workflow_runs" does not exist`. The boot line said durable and
+      // nothing was — which is the shape this whole pairing exists to prevent,
+      // one table set over from where it was already solved.
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+        mockResolveServerEnv.mockResolvedValue({
+          ASSEMBLYAI_API_KEY: "k",
+          DATABASE_URL: "postgres://u:p@127.0.0.1:5432/db",
+        });
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        expect(mockEnsureWorkflowJournalSchema).toHaveBeenCalledWith(
+          expect.objectContaining({ url: "postgres://u:p@127.0.0.1:5432/db" }),
+        );
+        await cleanup();
+      });
+    });
+
+    test("neither DDL runs without a DATABASE_URL, there being no database to own", async () => {
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+        mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "k" });
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        expect(mockEnsureSessionStateSchema).not.toHaveBeenCalled();
+        expect(mockEnsureWorkflowJournalSchema).not.toHaveBeenCalled();
+        await cleanup();
+      });
+    });
+
     test("is NOT ensured without one — that agent is on memory state", async () => {
       await withTempDir(async (dir) => {
         await writeAgentTs(dir);
@@ -321,6 +367,36 @@ describe("startDevServer", () => {
         const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
         expect(order).toEqual(["ddl", "runtime"]);
+        await cleanup();
+      });
+    });
+  });
+
+  describe("workflow data directory", () => {
+    test("points at the PROJECT's .workflow-data, so a save is not a new deployment", async () => {
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        // What `localWorkflowDataDir()` reads (`AAI_WORKFLOW_DATA_DIR` in
+        // `aai-runtime/workflow-data-dir.ts`). Unset, every upload under
+        // `aai dev` lands in a fresh `tmpdir()/aai-workflow-data-<pid>` and is
+        // gone on the next `aai dev` — the exact case that module's doc records
+        // as MEASURED to survive here, and which had no writer at all.
+        expect(process.env.AAI_WORKFLOW_DATA_DIR).toBe(path.join(dir, ".workflow-data"));
+        await cleanup();
+      });
+    });
+
+    test("honours one the developer already exported", async () => {
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+        vi.stubEnv("AAI_WORKFLOW_DATA_DIR", "/somewhere/else");
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        expect(process.env.AAI_WORKFLOW_DATA_DIR).toBe("/somewhere/else");
         await cleanup();
       });
     });
@@ -520,72 +596,12 @@ describe("file watcher filtering", () => {
   });
 });
 
-describe("dev server bind host", () => {
-  test("binds loopback by default (no host argument)", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      expect(mockListen).toHaveBeenCalledWith(3000, undefined);
-      await cleanup();
-    });
-  });
-
-  test("AAI_DEV_HOST exposes the server on the requested interface", async () => {
-    vi.stubEnv("AAI_DEV_HOST", "0.0.0.0");
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      expect(mockListen).toHaveBeenCalledWith(3000, "0.0.0.0");
-      await cleanup();
-    });
-  });
-
-  // Node treats listen(port, "") as 0.0.0.0, so an empty value must read as
-  // "unset" rather than silently undoing the loopback default.
-  test.each(["", "   "])("treats AAI_DEV_HOST=%o as unset", async (value: string) => {
-    vi.stubEnv("AAI_DEV_HOST", value);
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      expect(mockListen).toHaveBeenCalledWith(3000, undefined);
-      await cleanup();
-    });
-  });
-});
-
-describe("dev server host mode gate", () => {
-  // resolveServerEnv only surfaces keys declared in `.env`, so without an
-  // explicit pass-through the shell-exported gate would never reach
-  // isHostAllowed and host mode would be unreachable in `aai dev`.
-  test("passes AAI_ALLOW_HOST through from the shell", async () => {
-    vi.stubEnv("AAI_ALLOW_HOST", "1");
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      expect(mockCreateServer).toHaveBeenCalledWith(
-        expect.objectContaining({ env: expect.objectContaining({ AAI_ALLOW_HOST: "1" }) }),
-      );
-      await cleanup();
-    });
-  });
-
-  test("omits the gate entirely when unset", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      const opts = mockCreateServer.mock.calls.at(-1)?.[0] as { env: Record<string, string> };
-      expect(opts.env).not.toHaveProperty("AAI_ALLOW_HOST");
-      await cleanup();
-    });
-  });
-});
-
 describe("loadWorker", () => {
-  const fakeWorker = (name: string) => ({
-    agent: { name, tools: {} } as AgentDef,
-    workflowCode: undefined,
-    stepCode: undefined,
-  });
+  const fakeWorker = (name: string) =>
+    ({
+      name,
+      tools: {},
+    }) as AgentDef;
 
   test("hands the Vite-built worker to the evaluator", async () => {
     await withTempDir(async (dir) => {
@@ -595,7 +611,7 @@ describe("loadWorker", () => {
         evaluated.push(code);
         return fakeWorker("built-agent");
       });
-      expect(worker.agent.name).toBe("built-agent");
+      expect(worker.name).toBe("built-agent");
       expect(evaluated[0]).toContain("built-agent");
     });
   });
@@ -610,52 +626,18 @@ describe("loadWorker", () => {
     });
   });
 
-  test("a project with no workflows/ directory carries no workflow code", async () => {
+  test("emits no workflow exports, the DevKit's two strings being gone", async () => {
+    // The wrapper entry used to carry `__aaiWorkflowCode`/`__aaiStepCode` — the
+    // DevKit's per-tenant compiled surface, which the guest read back off the
+    // bundle. The replay engine reads the agent's own `workflows` declaration,
+    // so nothing is embedded and the guest has nothing to read.
     await withTempDir(async (dir) => {
       await writeAgentTs(dir, "no-workflows");
-      const worker = await loadWorker(dir, async (code) => {
-        // The wrapper entry only emits the two exports when the build produced
-        // them, so their absence from the SOURCE is what the guest-side
-        // "declares no workflows" check reads.
+      await loadWorker(dir, async (code) => {
         expect(code).not.toContain("__aaiWorkflowCode");
+        expect(code).not.toContain("__aaiStepCode");
         return fakeWorker("no-workflows");
       });
-      expect(worker.workflowCode).toBeUndefined();
     });
-  });
-});
-
-describe("createDevLogger", () => {
-  // `aai dev` writes its one JSON result line and then keeps running, so the
-  // runtime's own diagnostics have to go somewhere that isn't stdout. They
-  // were going to stdout: the SDK's default logger is console-backed, and the
-  // multi-line "Session mode resolved" dump landed above the result line — in
-  // the NORMAL case, since JSON mode is auto-detected on a pipe.
-  test("routes the runtime's diagnostics to stderr once output is silenced", () => {
-    const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-    const logger = createDevLogger(true);
-
-    logger.info("Session mode resolved", { mode: "pipeline" });
-    logger.warn("something drifted");
-    logger.error("something broke");
-
-    expect(out).not.toHaveBeenCalled();
-    expect(err).toHaveBeenCalledTimes(3);
-    // The structured context survives rather than being dropped.
-    expect(String(err.mock.calls[0]?.[0])).toContain('{"mode":"pipeline"}');
-  });
-
-  test("debug stays off in silenced mode", () => {
-    const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-    createDevLogger(true).debug("hot path", { chunk: 1 });
-    expect(err).not.toHaveBeenCalled();
-  });
-
-  test("human mode hands back the SDK's own console logger untouched", () => {
-    const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-    createDevLogger(false).info("Session mode resolved");
-    // A TTY has nothing to parse, so human mode must not be rerouted.
-    expect(err).not.toHaveBeenCalled();
   });
 });

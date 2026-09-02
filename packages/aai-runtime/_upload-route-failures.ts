@@ -13,6 +13,7 @@ import type http from "node:http";
 import { sendJson } from "./workflow-api-http.ts";
 import {
   UnknownUploadError,
+  UploadCompleteError,
   UploadIdTakenError,
   UploadPartError,
   UploadsUnavailableError,
@@ -48,6 +49,15 @@ export function sendUploadFailure(res: http.ServerResponse, err: unknown): boole
     return true;
   }
   if (err instanceof UploadIdTakenError) {
+    sendJson(res, 409, { error: err.message });
+    return true;
+  }
+  // 409 for the same reason one line up, and it is the same fact from the other
+  // end: `stream` refuses an id already taken, and this refuses a window of an
+  // upload already finished. A client must not read either as a transport failure —
+  // `RETRYABLE_STATUS` excludes 409, so a re-send stops here rather than spending
+  // four attempts on an answer that cannot change.
+  if (err instanceof UploadCompleteError) {
     sendJson(res, 409, { error: err.message });
     return true;
   }

@@ -16,12 +16,33 @@
 //     `sleep()` is RECORDED rather than taken — so the poll loop below runs at
 //     full speed and the only way to observe a run in flight is to hold the
 //     provider's answer, which is what `hold` does.
-//   * **`createHook()` throws untransformed**, so the RETENTION GATE — this
-//     template's headline port of Temporal's `expense` — cannot be reached at
-//     all here, and neither can `keep_transcript`'s signal: a run that gets past
-//     `summarize` fails on the hook. Nothing below asserts the gate, its three
-//     outcomes, or its safe default; `agent.test.ts` drives
-//     `askWhetherToKeep` directly for those, and it is the only tier that can.
+//   * **Nobody can answer a hook here**, which reaches the RETENTION GATE — this
+//     template's headline port of Temporal's `expense` — through exactly ONE of
+//     its three branches. `ctx.waitFor` carrying a `timeoutMs` resolves
+//     `undefined` in this engine, which IS the closed window, so every run that
+//     gets past `summarize` takes the gate's safe default: it deletes the
+//     transcript it made and completes. That branch is asserted below. The two
+//     ANSWERED branches are the unreachable ones — `signal()` answers `false`
+//     for every token, there being nothing in process to deliver a payload — so
+//     an approval, a decline and `keep_transcript` itself are `agent.test.ts`'s
+//     to drive against `askWhetherToKeep`, and it is the only tier that can.
+//   * **Every run here takes the NO-CALLBACK arm, and that must not be read as
+//     coverage of the webhook path.** The eval publishes no webhook minter, so
+//     `stepWebhookUrl` throws, the template's `callbackUrl` degrades to
+//     `undefined`, the job is submitted with no `webhook_url`, and
+//     `awaitTranscript` never parks on a hook at all — it polls, exactly as it
+//     did before the provider could call back. That is worth having rather than
+//     working around: it is the arm a deployment with no public URL takes, it is
+//     the arm a dropped delivery lands on, and it is the one that must never
+//     hang. A case below asserts it POSITIVELY — that the submitted job carries
+//     no `webhook_url` — so an eval runtime that later publishes a minter fails
+//     here instead of silently changing what all of these cases measure.
+//
+//     What no eval here can show is a delivery RESUMING a run, so no case claims
+//     it. The answered arm is `agent.test.ts`'s, through
+//     `createWorkflowCtx({ hooks })`, which is the only tier that can send a
+//     payload at all; a real HTTP POST to the public callback route is
+//     `aai-cli`'s `dev-workflow.scenario.test.ts`'s, and is not yet written.
 //   * **The provider is scripted, in BOTH modes**, through `stepFetch`'s
 //     published slot — so the transcription, the recap's model call and the
 //     compensating DELETE are all deterministic and free, while the SESSION's
@@ -186,7 +207,10 @@ const START_TURN = [
  * Not tidiness: the scripted provider is unpublished when the test that
  * installed it finishes, so a body still mid-flight would make its next request
  * against whatever the next case publishes — or against the real provider, with
- * a real key. Every run here ends FAILED, on `createHook()`; see the header.
+ * a real key. A run drained here COMPLETES rather than failing, and the last
+ * thing it does on the way is delete its own transcript: the retention gate's
+ * window closes with nobody having answered, which is the safe default. See the
+ * header, and the case that pins it.
  */
 async function drain(workflows: EvalWorkflows | undefined, provider: ScriptedProvider) {
   provider.release();
@@ -226,10 +250,18 @@ describeEval(
         expect(posts).toHaveLength(1);
         // And it submitted the recording the DESK supplies, because a phone
         // caller cannot read a URL aloud.
-        expect(JSON.parse(String(posts[0]?.body))).toMatchObject({
+        const submitted = JSON.parse(String(posts[0]?.body));
+        expect(submitted).toMatchObject({
           audio_url: SAMPLE_RECORDING,
           speaker_labels: true,
         });
+        // NO `webhook_url`, asserted positively — see the third boundary in this
+        // file's header. Nothing publishes a webhook minter here, so
+        // `stepWebhookUrl` throws, `callbackUrl` degrades, and every run in this
+        // file polls rather than parking on a callback. Pinning it here is what
+        // stops an eval runtime that later publishes one from silently changing
+        // which arm all of these cases measure.
+        expect(Object.keys(submitted)).not.toContain("webhook_url");
 
         await drain(workflows, provider);
       },
@@ -327,6 +359,38 @@ describeEval(
         ],
       },
     );
+
+    test("nobody answers the retention gate, so the transcript is not kept", async ({
+      workflows,
+    }) => {
+      // The gate's SAFE DEFAULT, and the branch of it this tier really does
+      // reach: `ctx.waitFor` here carries a `timeoutMs` and no one can send a
+      // payload, which is the closed window rather than a missing feature. So
+      // this is the ordinary ending of every run in this file, and it is worth
+      // an assertion of its own — a gate whose no-answer branch KEPT the data
+      // would be a prompt with a grace period, and nothing else here would
+      // notice the difference.
+      const provider = stubProvider();
+
+      const run = await workflows?.run(recap, {
+        url: SAMPLE_RECORDING,
+        requestedBy: "eval-session",
+      });
+
+      expect(run?.status).toBe("completed");
+      // `answered: false` is the half that separates this from a caller who
+      // said no: the desk reports which of the two happened rather than only
+      // what it did.
+      expect(run?.output).toMatchObject({ kept: false, answered: false });
+      // And the default really is DELETE — the same request the compensation
+      // makes, reached by the opposite path: this run succeeded.
+      expect(requests(provider, "DELETE").map((one) => one.url)).toEqual([
+        `https://api.assemblyai.com/v2/transcript/${TRANSCRIPT_ID}`,
+      ]);
+      // The caller was ASKED first, which is what makes two minutes of silence
+      // an answer at all.
+      expect(run?.reported.join("\n")).toMatch(/Keep the transcript on file/);
+    });
 
     test("a run that fails after creating a transcript deletes it again", async ({ workflows }) => {
       // Started from the CASE rather than through a tool, because the subject

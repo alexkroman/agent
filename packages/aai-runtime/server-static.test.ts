@@ -19,6 +19,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
 import { isPathInside, serveStatic } from "./server-static.ts";
@@ -64,6 +65,120 @@ describe("isPathInside", () => {
   test("refuses a sibling sharing the prefix", () => {
     // The classic containment bug a bare `startsWith` has.
     expect(isPathInside("/app/static", "/app/static-secrets/keys")).toBe(false);
+  });
+
+  test("refuses an UNCOLLAPSED traversal in the target", () => {
+    // Fail-OPEN in the pure-string version: `"/app/../etc/passwd"` starts with
+    // `"/app/"`, and `startsWith` has no notion of a segment. Every caller
+    // happened to `path.join` first, which collapsed the `..` before it got
+    // here — so the hole was masked by caller discipline, not closed.
+    expect(isPathInside("/app", "/app/../etc/passwd")).toBe(false);
+    expect(isPathInside("/app", "/app/../app-evil/x")).toBe(false);
+    // A `..` that stays inside is still inside.
+    expect(isPathInside("/app", "/app/sub/../x")).toBe(true);
+  });
+
+  test("the verdict does not depend on how the ROOT is spelled", () => {
+    // The fail-CLOSED half, and the one the three open-coded copies shipped:
+    // `isPathInside("/a/b/", "/a/b/c.ts")` was `false`, so
+    // `resolveInside("/a/b/", "c.ts")` threw "Path escapes the workspace" for a
+    // path plainly inside the workspace.
+    for (const root of ["/a/b", "/a/b/", "/a/b/.", "/a/b//", "/a/./b", "/a/x/../b"]) {
+      expect(isPathInside(root, "/a/b/c.ts")).toBe(true);
+      expect(isPathInside(root, "/a/b-evil/c.ts")).toBe(false);
+    }
+  });
+
+  test("a filesystem root contains everything under it", () => {
+    // `root + path.sep` is `"//"` when the root IS the separator, which nothing
+    // starts with — so the naive prefix made every absolute path OUTSIDE `/`.
+    expect(isPathInside("/", "/etc/passwd")).toBe(true);
+    expect(isPathInside("/", "/")).toBe(true);
+  });
+
+  test("a relative root resolves against cwd rather than never matching", () => {
+    expect(isPathInside("static", path.join(process.cwd(), "static", "a.js"))).toBe(true);
+    expect(isPathInside("static", path.join(process.cwd(), "static-evil", "a.js"))).toBe(false);
+  });
+});
+
+/**
+ * The containment predicate against an INDEPENDENT decision procedure.
+ *
+ * `path.relative(path.resolve(dir), path.resolve(abs))` is neither absolute nor
+ * `..`-prefixed exactly when `abs` is inside `dir` — a different mechanism from
+ * the prefix test under scrutiny, so agreement between the two is evidence
+ * rather than a restatement. Segments include the whole family a traversal is
+ * spelled with (`..`, `.`, empty, the percent-encoded `%2e%2e`, a backslash, a
+ * NUL, a non-ASCII char), and the ROOT's spelling is generated beside them —
+ * that metamorphic half is what nothing covered, and it is where all three
+ * copies of this predicate were wrong.
+ *
+ * Note `%2e%2e` and `a\b` are ordinary FILENAMES on POSIX: decoding is
+ * `serveStatic`'s job, before the join, and a predicate that treated them as
+ * traversals would be wrong in the other direction.
+ */
+describe("isPathInside vs. an independent oracle", () => {
+  /** Inside iff the relative path neither leaves the root nor is absolute. */
+  const oracle = (dir: string, target: string): boolean => {
+    const rel = path.relative(path.resolve(dir), path.resolve(target));
+    if (rel === "") return true;
+    return !(path.isAbsolute(rel) || rel.split(path.sep).includes(".."));
+  };
+
+  const SEGMENT = fc.constantFrom(
+    "..",
+    ".",
+    "",
+    "%2e%2e",
+    "a\\b",
+    "é",
+    "a\0b",
+    "sub",
+    "static",
+    "static-secrets",
+  );
+  /** Spellings of ONE logical root — the verdict may not vary across them. */
+  const ROOT_SPELLINGS = ["/app/static", "/app/static/", "/app/static/.", "/app/static//"];
+
+  test("agrees with the oracle, whatever the root's spelling", () => {
+    let inside = 0;
+    let outside = 0;
+    fc.assert(
+      fc.property(fc.array(SEGMENT, { minLength: 1, maxLength: 6 }), (segments) => {
+        // Joined RAW, not through `path.join`: a pre-collapsed target cannot
+        // exercise the uncollapsed-traversal case at all, which is precisely the
+        // one the string version got wrong.
+        const target = `/app/static/${segments.join("/")}`;
+        const want = oracle("/app/static", target);
+        if (want) inside++;
+        else outside++;
+        for (const root of ROOT_SPELLINGS) {
+          expect(isPathInside(root, target), `root=${root} target=${target}`).toBe(want);
+        }
+      }),
+      { numRuns: 400 },
+    );
+    // Floors, because an all-green property proves nothing about a state the
+    // generator never entered — and both verdicts have to be reached or this is
+    // asserting one branch. `> 0` rather than a measured range: what matters is
+    // that neither state is unreachable, not how often each is drawn.
+    expect(inside).toBeGreaterThan(0);
+    expect(outside).toBeGreaterThan(0);
+  });
+
+  test("agrees with the oracle on a relative root too", () => {
+    fc.assert(
+      fc.property(fc.array(SEGMENT, { minLength: 1, maxLength: 4 }), (segments) => {
+        const target = path.join(process.cwd(), "static", segments.join("/"));
+        for (const root of ["static", "./static", "static/", path.join(process.cwd(), "static")]) {
+          expect(isPathInside(root, target), `root=${root} target=${target}`).toBe(
+            oracle(root, target),
+          );
+        }
+      }),
+      { numRuns: 200 },
+    );
   });
 });
 

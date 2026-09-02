@@ -3,9 +3,9 @@
  * The pure half of the transcription desk: reading a WAV header, deciding where
  * to cut, and writing a header back over each cut.
  *
- * No directive in this file, and that is legal — the Workflow DevKit's builder
- * scans `workflows/` and transforms only what carries a `"use workflow"` /
- * `"use step"` body, so an ordinary module can sit beside them. It is a separate
+ * Nothing in this file is a step or a body, and that is legal — a body is
+ * whatever is handed a `ctx`, so an ordinary module can sit beside one. It is a
+ * separate
  * file because everything here is a pure function of a journaled value, which is
  * what makes it testable without a run at all: `transcribe.ts`'s spec drives
  * these directly.
@@ -43,7 +43,18 @@
  *   so they keep naming the `ffmpeg` line that fixes the file.
  */
 
-/** What the sync endpoint will accept in one request. */
+/**
+ * What the sync endpoint will accept in one request.
+ *
+ * **Measured against the live endpoint, the binding limit is a 30-second WALL
+ * CLOCK budget rather than this**, and that budget covers the upload as well as
+ * the transcription: a 92-second segment that is 17.66 MB comes back
+ * `504 — request exceeded 30.0s` well inside the documented cap. The constant is
+ * left alone because it is what the service DOCUMENTS and the discrepancy is
+ * unconfirmed; what closes the gap today is `downsample.ts`, which makes each
+ * request six times lighter so the deadline stops binding. Revisit both together
+ * once the real cap is settled — this number is what `planSegments` cuts to.
+ */
 export const MAX_SEGMENT_SECONDS = 120;
 
 /**

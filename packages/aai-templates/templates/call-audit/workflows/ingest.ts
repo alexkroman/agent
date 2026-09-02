@@ -63,7 +63,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
-import { pcmDurationMs, report, uploadInfo } from "@alexkroman1/aai/step";
+import { pcmDurationMs, report, requireCompleteUpload } from "@alexkroman1/aai/step";
 import { throwFatalStepError, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration, plural } from "@alexkroman1/aai/utils";
@@ -120,10 +120,21 @@ export type Ingested = {
  * normalization writes a file, so journaling the id means a resumed run reads the
  * file that already exists instead of paying to make a second one.
  */
+// This file sits in `scripts/coverage-per-file-baseline.json` at 46.8%, and the
+// reason is worth having in place. What is uncovered is `ingestRecording`'s HAPPY
+// path — three ffmpeg invocations — which needs a real binary and so belongs to
+// the scenario tier, not here; the two failure paths ARE covered, and every
+// decision the step makes lives in `media.ts` as a pure function at 95%.
+//
+// It measured exactly 50.0% before the DevKit removal, and the two statements it
+// lost were `"use step";` and `ingestRecording.maxRetries = 5;` — both of which
+// the two failure tests EXECUTED, so both counted as covered while testing
+// nothing. Removing them is what took the file under the floor: a directive
+// propping a coverage number up is the least useful statement in the tree.
 export async function ingestRecording(uploadId: string): Promise<Ingested> {
-  "use step";
-
-  const stored = await uploadInfo(uploadId);
+  // `requireCompleteUpload`, not `uploadInfo`: `size` is the readable PREFIX, so
+  // an upload still arriving would be copied short and levelled as the whole call.
+  const stored = await requireCompleteUpload(uploadId);
   await report(`Reading ${stored.name || uploadId} (${formatBytes(stored.size)}).`);
 
   return await withTempDir(
@@ -205,17 +216,6 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
     { prefix: "aai-call-audit-" },
   );
 }
-
-/**
- * Retries beyond the default 3.
- *
- * Not because a conversion is flaky — a corrupt file fails identically forever,
- * and `throwFfmpegStepError` is what stops the DevKit retrying that. It is the
- * two I/O halves that are worth another attempt: this step reads a whole
- * recording out of the store and writes a whole one back, and either can lose a
- * connection on a file this size.
- */
-ingestRecording.maxRetries = 5;
 
 /**
  * Run a `media.ts` reader, turning "I cannot read this analysis" into a terminal

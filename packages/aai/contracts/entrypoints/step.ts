@@ -2,17 +2,16 @@
 /**
  * Capability contract: `step`.
  *
- * The vocabulary a `"use step"` body is written against — `@alexkroman1/aai/step`
+ * The vocabulary a step is written against — `@alexkroman1/aai/step`
  * whole, minus the two neighbouring capabilities that own their own halves of it
  * (`transcribe` for the four transcription entry points and their types,
  * `uploads` for the byte round trip).
  *
  * Its own capability rather than half of `utils` because it is its own AUDIENCE:
- * a step body has no `ToolContext`, no session and no root barrel — it is
- * bundled separately — so what it may name is a different question from what a
- * tool body may name, and a signature change here breaks a different set of
- * files. That split is the whole reason the subpath exists; see
- * `sdk/step-barrel.ts`.
+ * a step body has no `ToolContext` and no session, so what it may name is a
+ * different question from what a tool body may name, and a signature change here
+ * breaks a different set of files. That split is the whole reason the subpath
+ * exists; see `sdk/step-barrel.ts`.
  *
  * `stepFetch`/`multipartBody`/`StepTransportError` are the ones an author must
  * not be steered off: a step that reaches for `fetch` instead speaks HTTP/2, and
@@ -24,6 +23,11 @@
  * put what it made. `stepSpeak` is a slot the way `stepFetch` is — the
  * synthesizer needs a WebSocket client, which this subpath may not carry — and
  * the WAV framing is the zero-dependency half.
+ *
+ * `stepWebhookUrl` is the one member of this capability whose value LEAVES the
+ * system: it is the callback URL a step hands a third party, and the same URL
+ * `ctx.workflows.publicWebhookUrl` mints for a tool. A signature change here
+ * breaks a body that had no other way to be woken — see `sdk/step-webhook.ts`.
  *
  * Re-exported from `@alexkroman1/aai/step`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report for
@@ -58,6 +62,7 @@ export {
   stepGenerate,
   stepGenerateJson,
   stepSpeak,
+  stepWebhookUrl,
   stripJsonFence,
   WAV_HEADER_BYTES,
 } from "../../sdk/step-barrel.ts";

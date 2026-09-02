@@ -8,9 +8,9 @@
  * What a RUN is — the option bags, the status union, the snapshot a caller polls
  * and its guard, `WorkflowOutputOf` — is the `workflow-api` capability now.
  * The line is who READS it: an `agent.ts` declares a workflow, and a page, a
- * script or a tool annotating a result reads a run. Those seventeen names were
- * on the root barrel, whose membership test is "would an `agent.ts`, a tool
- * module, or a `workflow()` NAME it", and none of them passes it.
+ * script or a tool annotating a result reads a run. Those names were on the
+ * root barrel, whose membership test is "would an `agent.ts`, a tool module, or
+ * a `workflow()` NAME it", and none of them passes it.
  *
  * `WorkflowClient` stays because `ToolContext.workflows` is typed as one, so a
  * tool body annotating its context names it without reaching for a subpath.
@@ -21,4 +21,29 @@
  * `scripts/api-contracts.mjs`.
  */
 
-export { type WorkflowClient, type WorkflowDef, workflow } from "../../index.ts";
+export {
+  DEFAULT_STEP_MAX_ATTEMPTS,
+  // What a body's `catch` must test before running its failure path. On the
+  // declaring surface rather than an engine internal because a body is where it
+  // is called, and because getting it wrong shipped once: `recap-workflow`'s
+  // saga swallowed a suspend and deleted the transcript it was waiting for.
+  isWorkflowSuspend,
+  // `WorkflowCtx.sleep`'s options. Durable sleep is what makes a replay engine
+  // worth having, so its option bag is part of the declaring surface.
+  type SleepOptions,
+  type StepOptions,
+  // `ctx.waitFor`'s options. A hook's DEADLINE is a parameter rather than a race
+  // against `ctx.sleep`, because both suspend and a suspend unwinds the stack —
+  // so the deadline belongs to the declaring surface too.
+  type WaitForOptions,
+  type WorkflowClient,
+  // What a BODY is handed, and the per-step overrides it may pass. They join
+  // this capability rather than `workflow-api` by that same test: `ctx.step` is
+  // what an author WRITES inside a `workflows/*.ts` module, where a run snapshot
+  // is what a page READS. They arrived with the engine that replaced the
+  // Workflow DevKit's `"use step"` directive — the durability an author reaches
+  // for is a method call now, so it is part of the declaring surface.
+  type WorkflowCtx,
+  type WorkflowDef,
+  workflow,
+} from "../../index.ts";

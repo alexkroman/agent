@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * A fake LLM gateway, for testing a `"use step"` function that calls one.
+ * A fake LLM gateway, for testing a step that calls one.
  *
  * `stepGenerate` is one `fetch` to an OpenAI-compatible endpoint, which makes it
  * trivially testable — and made every workflow template write the same fake:
@@ -46,7 +46,7 @@ export interface StubGatewayCall {
 export interface StubGatewayOptions {
   /**
    * HTTP status to answer with. Defaults to 200. A non-2xx answers with an
-   * error body, which is what `stepGenerate` (`@alexkroman1/aai/utils`)
+   * error body, which is what `stepGenerate` (`@alexkroman1/aai/step`)
    * quotes back in its `StepGenerateError`.
    */
   status?: number;

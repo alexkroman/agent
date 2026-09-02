@@ -237,7 +237,11 @@ function setupSubagents(deps: ToolSetupDeps): SubagentRunner {
 }
 
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
-function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): ToolSetup {
+function setupSandboxTools(
+  deps: ToolSetupDeps,
+  rpcExecuteTool: ExecuteTool,
+  schemas: ToolSchema[],
+): ToolSetup {
   const { agent, opts, env, workflows, notifier, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
@@ -246,7 +250,9 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
     agent,
     builtinFetchOpt,
     {
-      schemas: opts.toolSchemas ?? [],
+      // Never absent — `setupTools` refuses this mode without it, so the `?? []`
+      // here defaulted an unreachable path and read as a sanction for a drop.
+      schemas,
       ...omitUndefined({ guidance: opts.toolGuidance }),
     },
     logger,
@@ -460,10 +466,34 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   };
 }
 
-/** Pick the tool path: RPC-backed sandbox mode when overrides are provided. */
+/**
+ * Pick the tool path: RPC-backed sandbox mode when the relay PAIR is provided.
+ *
+ * **Half a pair is REFUSED, because it used to select the other mode silently.**
+ * `RuntimeOptions.toolSchemas` has always documented itself "required when
+ * `executeTool` is provided", and what a lone half got was `setupSelfHostedTools`:
+ * `createRuntime({ executeTool })` answered `{"error":"Unknown tool: …"}` to every
+ * call, relay never invoked and `toolSchemas` empty, so the model was told it had
+ * no tools; a lone `toolSchemas` was discarded in favour of `agent.tools`. Both are
+ * a mis-wiring in OUR code (the pair is `@internal`, reached only from
+ * `host-mode.ts` and the platform harness), so a construction throw naming the
+ * absent option is the one failure a caller can act on — `host-mode.ts` already
+ * turns it into a handshake rejection quoting it. A discriminated union on
+ * `RuntimeOptions` was the candidate and is worse at both ends: it rejects a bag
+ * built through `omitUndefined` (this repo's idiom widens both fields to
+ * `| undefined`, matching neither arm — a compile error on a CORRECT site), and it
+ * guards neither boundary that really carries them, the CLI wrapper's
+ * `Record<string, unknown>` and the platform's stored JSON.
+ */
 export function setupTools(deps: ToolSetupDeps): ToolSetup {
   const { executeTool, toolSchemas } = deps.opts;
+  // `toolSchemas: []` is a legal relay with no tools, so the test is PRESENCE.
+  if (Boolean(executeTool) !== Boolean(toolSchemas)) {
+    throw new Error(
+      `createRuntime: the relay pair is \`executeTool\` + \`toolSchemas\`, and \`${executeTool ? "toolSchemas" : "executeTool"}\` is absent. Pass both (\`toolSchemas: []\` for a relay with no tools) or neither.`,
+    );
+  }
   return executeTool && toolSchemas
-    ? setupSandboxTools(deps, executeTool)
+    ? setupSandboxTools(deps, executeTool, toolSchemas)
     : setupSelfHostedTools(deps);
 }

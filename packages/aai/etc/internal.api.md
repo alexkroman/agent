@@ -21,12 +21,6 @@ export const APP_DB_POOL_MAX = 3;
 // @public
 export const APP_DB_PRESENCE_LOCK = 1;
 
-// @public
-export const APP_DB_WORLD_POOL_MAX = 4;
-
-// @public
-export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
-
 // @internal
 export function capToolResult(result: string): string;
 
@@ -179,6 +173,9 @@ export function isTextAssetPath(assetPath: string): boolean;
 export function linkConfirmationCode(code: string): string;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 
 // @public
@@ -207,9 +204,6 @@ export const MIC_SEND_MAX_BUFFERED_BYTES: number;
 
 // @internal
 export const MIC_SILENCE_PROBE_MS = 1500;
-
-// @internal
-export const MISSING_WORKFLOW_ID_MESSAGE: string;
 
 // @public
 export function normalizeSpeechText(text: string): string;
@@ -282,10 +276,15 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
+export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
 
 // @internal
-export type SleepOptions = {
+export type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
@@ -329,6 +328,11 @@ type StartOptions = {
 };
 
 // @public
+type StepOptions = {
+    maxAttempts?: number;
+};
+
+// @public
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
@@ -353,6 +357,11 @@ type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 export const VALID_SLUG_RE: RegExp;
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -360,10 +369,11 @@ type WakeUpOptions = {
 // @public
 export const WORKFLOW_API_PREFIX = "/workflows";
 
+// @internal
+export const WORKFLOW_SUSPEND_BRAND: unique symbol;
+
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -384,6 +394,16 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public

@@ -36,31 +36,42 @@ function recordingDb(rows: Record<string, unknown>[] = []) {
 const backendOn = (db: Db) => createPostgresStateBackend({ db });
 
 describe("discard", () => {
-  test("deletes SLOTS and nothing else", async () => {
+  test("deletes BOTH tables in ONE statement", async () => {
+    // A recorder's own question: not WHETHER both tables are reclaimed — that is
+    // the contract, asserted on every arm by `session-state-conformance.ts` —
+    // but whether it takes one round trip. A single statement is what makes the
+    // pair atomic with respect to a concurrent `appendEvents`: two awaited
+    // deletes on an unwrapped connection are two implicit transactions, so an
+    // append landing between them leaves orphan event rows for a session that no
+    // longer has slots. Only a statement COUNT can see that, and only here.
     const { db, calls } = recordingDb();
 
     await backendOn(db).discard("s1");
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.sql).toContain(`delete from ${SESSION_STATE_TABLE}`);
+    expect(calls[0]?.sql).toContain(`delete from ${SESSION_EVENT_TABLE}`);
     expect(calls[0]?.params).toEqual(["s1"]);
   });
 
-  // A log a tool can delete is not a log. This used to say the event table was
-  // append-only "to the app's own role by grant (`grantSessionTables` in
-  // aai-server)", so a delete would fail at the database and take the discard
-  // with it — that role and that function went with per-app databases, and the
-  // table is now reached only on an admin connection. So the database no longer
-  // refuses the delete and THIS assertion is the only thing standing between a
-  // discard and the audit trail. Asserted separately from the count above
-  // because it is the regression: a `delete from aai_session_events` used to run
-  // beside it.
-  test("issues no statement against the event table", async () => {
+  // **This case used to assert the OPPOSITE** — "issues no statement against the
+  // event table", on the rule that a log a tool can delete is not a log. That
+  // rested on an append-only GRANT (`grantSessionTables` in aai-server) which
+  // went with per-app databases, leaving the assertion as the only thing keeping
+  // the two backends apart — and what they were apart ON was the meaning of
+  // "discarded". Decided the other way; see `session-state-conformance.ts`. What
+  // is kept from it is the SCOPING, which is the risk a widened delete carries:
+  // both arms have to name the session.
+  test("scopes both deletes to the one session", async () => {
     const { db, calls } = recordingDb();
 
     await backendOn(db).discard("s1");
 
-    expect(calls.some((c) => c.sql.includes(SESSION_EVENT_TABLE))).toBe(false);
+    const sql = calls[0]?.sql ?? "";
+    expect(sql.match(/where session_id = \$1/g)).toHaveLength(2);
+    // One parameter, used twice — so the two arms cannot come to name different
+    // sessions.
+    expect(calls[0]?.params).toEqual(["s1"]);
   });
 });
 

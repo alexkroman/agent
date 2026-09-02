@@ -50,17 +50,13 @@ export { WORKFLOW_API_PREFIX } from "./sdk/_workflow-api-envelope.ts";
 // composed, so no `agent.ts` names it — while a client rendering it before a
 // socket exists does.
 export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
-// The app-database connection budget: what one workflow guest may hold against
-// its app role. Here because `aai-server` PROVISIONS that role's
-// `connection limit` and has to size it against this sum — two halves of one
-// number, in two packages, which is exactly the shape that drifts. Pure
+// Pool SIZES for a database a guest was GIVEN — an author's own `DATABASE_URL`,
+// on a self-hosted `createServer` or under `aai dev`. Here rather than in the
+// runtime because both ends of that number have to agree and the platform
+// provisions no database of its own to derive it from; `sdk/app-db-budget.ts`
+// carries each measurement and why the `APP_DB_` prefix is now a misnomer. Pure
 // constants, so nothing host-only rides in behind them.
-export {
-  APP_DB_POOL_MAX,
-  APP_DB_PRESENCE_LOCK,
-  APP_DB_WORLD_POOL_MAX,
-  APP_DB_WORLD_WORKER_CONCURRENCY,
-} from "./sdk/app-db-budget.ts";
+export { APP_DB_POOL_MAX, APP_DB_PRESENCE_LOCK } from "./sdk/app-db-budget.ts";
 // The `aai login` confirmation code and the slug shape: the two contracts BOTH
 // ends of a platform interaction must derive identically. They were on `/utils`,
 // which is a published subpath an agent author reads — a platform contract is
@@ -170,11 +166,14 @@ export {
   PIPELINE_PLAYBACK_GRACE_MS,
 } from "./sdk/playback-timing-constants.ts";
 export { requestPath, requestQuery } from "./sdk/request-url.ts";
-// The one `sleep`. Here rather than on `/utils` because that subpath is where a
-// `workflows/*.ts` module imports its step surface from, and the DevKit's own
-// DURABLE `sleep` is imported from "workflow" in those same files — see the
+// The one `sleep`, and it is the WALL-CLOCK one. Off the authoring subpaths so
+// it cannot be mistaken for the durable wait a workflow body wants, which is
+// `ctx.sleep` — that one SUSPENDS the run, where this one holds a timer open.
+// Its options are `SleepTimerOptions` for the same reason one name over: the
+// root barrel's `SleepOptions` is `ctx.sleep`'s, and two option types one
+// `sleep` apart is a collision an auto-import resolves silently. See the
 // module doc.
-export { type SleepOptions, sleep } from "./sdk/sleep.ts";
+export { type SleepTimerOptions, sleep } from "./sdk/sleep.ts";
 export {
   MAX_SLUG_LENGTH,
   PREVIEW_SLUG_SUFFIX,
@@ -211,13 +210,19 @@ export {
   MAX_WORKFLOW_WAIT_MS,
   TERMINAL_WORKFLOW_STATUSES,
 } from "./sdk/workflow-run.ts";
+// The engine's suspend BRAND, and only the brand — only `@alexkroman1/aai-runtime`
+// may set it. `isWorkflowSuspend` is deliberately NOT here: it was on both this
+// subpath and the root, one declaration published twice, and a body's `catch` is
+// where it is tested — so it belongs to the AUTHORING barrel. A name on two
+// surfaces is a name whose audience nobody decided.
+export { WORKFLOW_SUSPEND_BRAND } from "./sdk/workflow-suspend.ts";
+
 // The unavailable-workflows trio. Here rather than on the root barrel because all
 // three are `@internal`: their readers are the tool executor, the two
 // test-context builders, and the guest harness. Keeping them off the root also
 // keeps them out of the docs surface, which a `@public` `{@link}` to an
 // `@internal` symbol would otherwise fail the docs build over.
 export {
-  MISSING_WORKFLOW_ID_MESSAGE,
   rejectingWorkflows,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
 } from "./sdk/workflow-unavailable.ts";

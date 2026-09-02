@@ -38,7 +38,7 @@ IT:
 | --- | --- |
 | `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
 | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
-| `@alexkroman1/aai/step`, `/step-errors` | writing a `"use step"` body inside a workflow |
+| `@alexkroman1/aai/step`, `/step-errors` | writing a step inside a workflow |
 | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |
 | `@alexkroman1/aai/tools` | calling `fetchJson`/`webSearch`/`visitWebpage` from your own tool code |
 | `@alexkroman1/aai/utils` | small helpers written inside a tool body |
@@ -339,7 +339,7 @@ export const claim = dialog("claim", {
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
 DURABLY, outliving the session.
 
 #### Call Signature
@@ -434,6 +434,47 @@ function readStatus(body: string): string | undefined {
   return typeof parsed.status === "string" ? parsed.status : undefined;
 }
 ```
+
+***
+
+### isWorkflowSuspend()
+
+```ts
+function isWorkflowSuspend(value: unknown): boolean;
+```
+
+Is this the engine asking the body to stop, rather than something failing?
+
+**A `catch` inside a workflow body must ask this first and re-throw.** The wait
+has not failed — the run is suspended, and the engine will deliver it again.
+
+```ts no-check
+try {
+  const job = await ctx.step("submit", () => submit(input.url));
+  undo.push(() => ctx.step("discard", () => discard(job.id)));
+  await ctx.sleep(60_000);
+  return await ctx.step("collect", () => collect(job.id));
+} catch (err) {
+  // Not a failure: the run is waiting, and everything above it still stands.
+  if (isWorkflowSuspend(err)) throw err;
+  await unwind(undo);
+  throw err;
+}
+```
+
+A body with no `try` around its waits never needs this. Reach for it only where
+cleanup runs on the failure path — which is exactly where swallowing a suspend
+does damage.
+
+#### Parameters
+
+##### value
+
+`unknown`
+
+#### Returns
+
+`boolean`
 
 ***
 
@@ -554,7 +595,7 @@ export default tool({
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
 DURABLY, outliving the session.
 
 ***
@@ -1000,17 +1041,13 @@ under, so this takes no `name`.
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
 DURABLY, outliving the session.
 
-It deliberately does NOT check that `run` carries the compiler's `workflowId`.
-That check belongs where the id is USED (`ctx.workflows.start`, which throws
-naming the build), because a declaration-time throw makes merely IMPORTING an
-agent module fail wherever the Workflow DevKit transform has not run — which
-includes every unit test of a tool that starts a workflow, since vitest loads
-`agent.ts` as source with no bundler in the path. The first template to declare
-one is what surfaced this: the throw made the module unimportable by its own
-spec.
+It validates nothing at declaration time, and there is nothing left to
+validate: a body is an ordinary function and a workflow's identity is the key
+it is declared under, so the `workflowId` a compiler used to attach — and the
+check that used to look for it — are both gone. See [WorkflowBody](workflow-api.md#workflowbody).
 
 #### Examples
 
@@ -1544,9 +1581,9 @@ Deploys check that every listed name is present in the agent's stored env,
 so a missing key surfaces at deploy time instead of as a runtime failure on
 the first tool call.
 
-A tool reads them from [ToolContext.env](#env-1); a `"use step"` body has no
+A tool reads them from [ToolContext.env](#env-1); a step has no
 tool context and reads them with `stepEnv` / `requireStepEnv` from
-`@alexkroman1/aai/utils`, which resolve the same record.
+`@alexkroman1/aai/step`, which resolve the same record.
 
 ##### resumeFalseInterruption?
 
@@ -1816,8 +1853,10 @@ The tools the agent may invoke, keyed by the name the model calls.
 `tools` argument outright (`InlineToolsMisuse`); the table is filled by
 `withTools`, over a registry built from a `tools/` directory. The build is
 what enumerates that directory — a deployed agent is handed one ESM string
-and has no filesystem to scan — and a spec does the same lowering with
-`withDiscoveredTools(def, import.meta.glob("./tools/*.ts", { eager: true }))`.
+and has no filesystem to scan — and a spec imports the same lowering
+ready-made: `import agentDef from "virtual:aai/agent"` under vitest, or
+`deployedAgent(def, { tools, systemPrompt })` from
+`@alexkroman1/aai/testing` under any other runner.
 So a tool's name is its FILE name and nothing else records it.
 
 ###### Remarks
@@ -4265,11 +4304,14 @@ type KeyedLock = (key: string, opts?: KeyedLockOptions) => Promise<() => void> &
 };
 ```
 
-The utilities written INSIDE a tool body — all fifteen of them, which is the
-whole of `@alexkroman1/aai/utils`.
+The utilities written INSIDE a tool body — all fifteen of them, which is
+`@alexkroman1/aai/utils` minus the five whose reader is not a tool body:
+`decodeHtmlEntities` and the four narration formatters (`formatBytes`,
+`formatDuration`, `countWords`, `plural`), which a step and a `client.tsx`
+both reach for and which are therefore reachable ONLY on that subpath.
 
-**The rule is that the two lists agree**, because the split they used to
-describe was not one anybody could apply: `safeJsonParse` was here and
+**The rule is that the two lists agree for everything else**, because the
+split they used to describe was not one anybody could apply: `safeJsonParse` was here and
 `isRecord` — the guard you call on what it returns — was not, so a tool body
 needing both wrote two import lines for one line of helpers, and templates
 routed around it by taking the root's own names off `/utils` instead. That
@@ -4302,11 +4344,14 @@ type KeyedLockOptions = {
 };
 ```
 
-The utilities written INSIDE a tool body — all fifteen of them, which is the
-whole of `@alexkroman1/aai/utils`.
+The utilities written INSIDE a tool body — all fifteen of them, which is
+`@alexkroman1/aai/utils` minus the five whose reader is not a tool body:
+`decodeHtmlEntities` and the four narration formatters (`formatBytes`,
+`formatDuration`, `countWords`, `plural`), which a step and a `client.tsx`
+both reach for and which are therefore reachable ONLY on that subpath.
 
-**The rule is that the two lists agree**, because the split they used to
-describe was not one anybody could apply: `safeJsonParse` was here and
+**The rule is that the two lists agree for everything else**, because the
+split they used to describe was not one anybody could apply: `safeJsonParse` was here and
 `isRecord` — the guard you call on what it returns — was not, so a tool body
 needing both wrote two import lines for one line of helpers, and templates
 routed around it by taking the root's own names off `/utils` instead. That
@@ -4768,6 +4813,33 @@ FILE, so this is typed as the message that names the one to create.
 
 ***
 
+### SleepOptions
+
+```ts
+type SleepOptions = {
+  correlationId?: string;
+};
+```
+
+Per-sleep options.
+
+#### Properties
+
+##### correlationId?
+
+```ts
+optional correlationId?: string;
+```
+
+A name for this wait, so it can be ended early by name.
+
+Not required, and the default is deliberately the broad one: a `wake` naming
+no ids ends every outstanding wait on the run. An id is what lets a run with
+two concurrent waits — a review window and a retry backoff — have one of them
+cut short without the other.
+
+***
+
 ### SlotHolder
 
 ```ts
@@ -4908,8 +4980,8 @@ What it keeps is the surface a page and a deploy actually read: `name` and
 `greeting` (both served by `GET /client-config`, so a page can render its
 shell from the agent — `page()` does not fetch it the way `client()` does, so
 a page that wants them calls `fetchClientConfig()` itself), `workflows`, and
-`requiredEnv` (a `"use step"` body reads keys with `stepEnv` from
-`@alexkroman1/aai/utils`, and a deploy still checks they are present).
+`requiredEnv` (a step reads keys with `stepEnv` from
+`@alexkroman1/aai/step`, and a deploy still checks they are present).
 
 `workflows` is REQUIRED here, unlike on [AgentDef](#agentdef): a workflow app whose
 whole API is `/workflows/*` and which declares none serves a form with nothing
@@ -4921,6 +4993,39 @@ The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
 not values this arm accepts. Setting one of those fields makes `tsc` print the
 sentence in place of a bare excess-property error, so the diagnostic names the
 rule and what to do about it. Never pass one as a string.
+
+***
+
+### StepOptions
+
+```ts
+type StepOptions = {
+  maxAttempts?: number;
+};
+```
+
+Per-step overrides. Everything here has a default that is right for most
+steps; passing nothing is the common case.
+
+#### Properties
+
+##### maxAttempts?
+
+```ts
+optional maxAttempts?: number;
+```
+
+How many times to run this step before the run fails, counting the first
+attempt.
+
+Only a `RetryableError` (or an unclassified throw) consumes an attempt — a
+`FatalError` fails the run on the spot, which is the point of the
+distinction. See `@alexkroman1/aai/step-errors`.
+
+Defaults to [DEFAULT\_STEP\_MAX\_ATTEMPTS](#default_step_max_attempts). It is a per-step number
+rather than a global because the right answer is a property of what the
+step DOES: a model call worth retrying three times and a payment capture
+worth retrying never are both ordinary.
 
 ***
 
@@ -5432,6 +5537,33 @@ readonly optional __stage?: "tts";
 ```
 
 Compile-time stage tag; never present at runtime.
+
+***
+
+### WaitForOptions
+
+```ts
+type WaitForOptions = {
+  timeoutMs: number;
+};
+```
+
+Per-wait options.
+
+#### Properties
+
+##### timeoutMs
+
+```ts
+timeoutMs: number;
+```
+
+How long to wait before giving up, in milliseconds.
+
+Resolves `undefined` when it elapses unanswered — not a throw, because a
+window closing is an ordinary outcome a body branches on rather than a
+failure. A signal that arrives after it is answered `false`, so a caller
+cannot be told their answer was taken when it was not.
 
 ***
 
@@ -6024,6 +6156,289 @@ in the run is interrupted.
 
 ***
 
+### WorkflowCtx
+
+```ts
+type WorkflowCtx = {
+  runId: string;
+  workflow: string;
+  sleep: Promise<void>;
+  step: Promise<T>;
+  waitFor: Promise<T>;
+};
+```
+
+The handle a workflow body receives as its second argument.
+
+```ts no-check
+// workflows/research.ts
+export async function researchFlow(
+  input: { topic: string },
+  ctx: WorkflowCtx,
+) {
+  const brief = await ctx.step("writeBrief", () => writeBrief(input.topic));
+  const notes = await ctx.step("investigate", () => investigate(brief));
+  return { topic: input.topic, notes };
+}
+```
+
+Deliberately NOT the same object as a tool's `ToolContext`. A tool's `execute`
+runs once, inside a live session, and may hold a database handle; a workflow
+body is replayed and may hold nothing live at all. Sharing one type would put
+`ctx.db` in reach of a body that re-runs it on every resume, which is the bug
+the DevKit migration removed and which this must not reintroduce.
+
+#### Methods
+
+##### sleep()
+
+```ts
+sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+```
+
+Wait, durably — for a duration in milliseconds, or until an absolute `Date`.
+
+**This is not `setTimeout`, and the difference is the whole point.** The run
+SUSPENDS: the body stops, the process is free, and the engine re-delivers the
+run when the time comes — which is what makes "check back tomorrow" a thing a
+workflow can express at all.
+
+**How long it really survives is a property of the JOURNAL**, which the
+DEPLOYMENT picks and the runtime's boot line names. On the platform and
+against a Postgres it is durable — a wait outlives the body, the worker and
+the process, so a multi-day schedule is a thing to write. With neither the
+journal is in memory, which is `aai dev`'s default and where a restart loses
+every outstanding wait.
+
+A sleep is journaled the first time it is reached, so its wake time is
+decided ONCE. That matters because the body is replayed: computing the
+deadline from the clock on every replay would push it further out each time
+and a run could sleep forever.
+
+**Call it from the BODY, never from inside a [WorkflowCtx.step](#step)** — a
+step body that waits fails the run, and the message names the fix.
+
+```ts no-check
+await ctx.step("draft", () => draft(input.topic));
+await ctx.sleep(6 * 60 * 60 * 1000, { correlationId: "review-window" });
+await ctx.step("publish", () => publish(input.topic));
+```
+
+###### Parameters
+
+###### until
+
+`number` \| `Date`
+
+Milliseconds to wait, or the `Date` to wait until. A value
+  already in the past returns immediately rather than erroring — a deadline
+  that has passed HAS been reached, and a run resuming after a long outage
+  meets that case legitimately.
+
+###### options?
+
+[`SleepOptions`](#sleepoptions)
+
+`correlationId` names this wait so
+  `ctx.workflows.wakeUp(runId, { correlationIds: [id] })` can end it early,
+  which is how a "send it now" tool cuts a scheduled wait short. A `wakeUp`
+  naming no ids wakes every outstanding SLEEP on the run — and deliberately
+  not a `waitFor`'s deadline, so cutting a schedule short cannot also close
+  an approval window.
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### step()
+
+```ts
+step<T, Name>(
+   name: Name & Literal<Name>, 
+   fn: () => T | Promise<T>, 
+options?: StepOptions): Promise<T>;
+```
+
+Run `fn` once and journal what it returns; on every later replay, return
+the journaled value without running it again.
+
+**`fn` may not wait.** [WorkflowCtx.sleep](#sleep) and
+[WorkflowCtx.waitFor](#waitfor) reached inside a step fail the run, because a
+suspend unwinds out of the step without journaling it — so the body would
+re-run from the top on every delivery, and every later wait in the run would
+read the wrong record. Put the wait in the body, between two steps. For a
+plain in-step delay that is not durable, use an ordinary timer.
+
+`name` identifies the step in the journal and in `aai workflow` output, so
+make it a string LITERAL. A computed one has to produce the same string on
+every replay or the walk reads a key that was never written — and a name
+built from the run's own data is unreadable in that run's history besides.
+A loop needs no name of its own per round: the occurrence count is what
+separates the iterations.
+
+The `Literal` constraint is what makes "a string LITERAL" a compile error
+rather than a sentence in this paragraph. It is deliberately not exported —
+an author meets it as the message tsc prints, never by name — so its doc,
+carrying the two shapes it cannot reach and which layer catches each, is in
+`sdk/workflow-ctx.ts` beside the declaration. A harness that means
+to pass an unbounded name narrows `ctx.step` through one typed alias rather
+than casting at each site.
+
+###### Type Parameters
+
+###### T
+
+`T`
+
+###### Name
+
+`Name` *extends* `string`
+
+###### Parameters
+
+###### name
+
+`Name` & `Literal`\<`Name`\>
+
+###### fn
+
+() => `T` \| `Promise`\<`T`\>
+
+###### options?
+
+[`StepOptions`](#stepoptions)
+
+###### Returns
+
+`Promise`\<`T`\>
+
+##### waitFor()
+
+###### Call Signature
+
+```ts
+waitFor<T>(token: string): Promise<T>;
+```
+
+Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
+
+Suspends like [WorkflowCtx.sleep](#sleep) and with no deadline at all: the run
+waits until `ctx.workflows.signal(token, payload)` is called. That is how a
+run parks on a human approval, a review that may take a week, or anything
+else somebody else decides.
+
+**The WEBHOOK route reaches this.** `ctx.workflows.publicWebhookUrl(token)`
+mints a URL that `createServer` serves, and a delivery to it resolves the
+wait: the route calls `WorkflowClient.signal`, which writes the payload
+against this hook's own journal row and re-walks the body. So a
+payment-callback flow is a supported shape.
+
+It was NOT, until recently, and the note here said so — the URL was served
+by the DevKit's own hook table, which knew nothing about this wait and
+answered `HookNotFound`. Both hops are covered now: the route→`signal` hop
+by `server-workflow-app.test.ts`, and `signal`→resume by
+`workflow-in-process.test.ts`.
+
+```ts no-check
+// The token is the AUTHOR's, derived so the body and the tool that hands it
+// out agree — see below.
+const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id));
+if (!approval.approved) return { published: false };
+```
+
+**The token must be DERIVED, not random.** Whoever hands the URL out is
+usually a tool, and a tool cannot see the body's local variables — so a
+random token leaves the run waiting on something nobody can name. Export one
+function that computes the token from the run's own input and import it in
+both places. This replaced the DevKit's `createHook()`, whose token was
+generated body-side for exactly this reason a problem.
+
+**A payload is UNTRUSTED.** It arrives over public HTTP, so validate it with
+a schema before acting on it; the type parameter is a claim about what you
+expect, not a check.
+
+## A deadline is an OPTION, never a race
+
+"Wait for an answer, but not forever" is the common case — Temporal's
+`timeoutOrUserAction`, and what a retention gate or an approval window is.
+Write it as `waitFor(token, { timeoutMs })`, which resolves `undefined` when
+the window closes unanswered.
+
+**Do NOT reach for `Promise.race([ctx.waitFor(t), ctx.sleep(ms)])`.** Both
+suspend, and a suspend unwinds the stack — so the race rejects on whichever
+suspends first and the body stops before the other has been reached. That
+composes under an engine whose waits are real promises and does not compose
+here, which is why the deadline is a parameter: one call the engine can
+journal as one decision.
+
+###### Type Parameters
+
+###### T
+
+`T` = `unknown`
+
+What the signaller is expected to send.
+
+###### Parameters
+
+###### token
+
+`string`
+
+Who is being waited for. Two concurrent waits in one body
+  must use different tokens, or a single signal resolves whichever the
+  journal registered first and the other waits forever.
+
+###### Returns
+
+`Promise`\<`T`\>
+
+###### Call Signature
+
+```ts
+waitFor<T>(token: string, options: WaitForOptions): Promise<T | undefined>;
+```
+
+###### Type Parameters
+
+###### T
+
+`T` = `unknown`
+
+###### Parameters
+
+###### token
+
+`string`
+
+###### options
+
+[`WaitForOptions`](#waitforoptions)
+
+###### Returns
+
+`Promise`\<`T` \| `undefined`\>
+
+#### Properties
+
+##### runId
+
+```ts
+readonly runId: string;
+```
+
+This run's id — the same value `ctx.workflows.start()` resolved to.
+
+##### workflow
+
+```ts
+readonly workflow: string;
+```
+
+Key the workflow is declared under in `agent({ workflows })`.
+
+***
+
 ### WorkflowDef
 
 ```ts
@@ -6036,7 +6451,7 @@ type WorkflowDef<P, R> = {
 ```
 
 Definition of one durable workflow: its schema, its description, and the
-`"use workflow"` function that is its body.
+function that is its body.
 
 #### Type Parameters
 
@@ -6081,11 +6496,11 @@ Schema for the run input, validated at `start()` so a bad payload fails at the c
 run: WorkflowBody<InferSchemaOutput<P>, R>;
 ```
 
-The workflow body: a function carrying `"use workflow"`.
+The workflow body.
 
-Takes ONE argument, the validated input. WDK bodies are variadic
-(`start(fn, [a, b, c])`), and this narrows that to a single object on
-purpose — the input is schema-validated, and a schema describes one value.
+Takes the validated input and a [WorkflowCtx](#workflowctx). The input is ONE
+object rather than a positional list on purpose — it is schema-validated,
+and a schema describes one value.
 
 ##### uploads?
 
@@ -6123,6 +6538,21 @@ checkable — so an author reaching for the field this barrel documents had to
 import from `@alexkroman1/aai/tts` to name either. The TTS subpath keeps
 them too: it is where an explicit `assemblyAITts({ voice })` stage is
 written.
+
+***
+
+### DEFAULT\_STEP\_MAX\_ATTEMPTS
+
+```ts
+const DEFAULT_STEP_MAX_ATTEMPTS: 3 = 3;
+```
+
+Attempts a step gets when [StepOptions.maxAttempts](#maxattempts) says nothing.
+
+Three, which is what the DevKit's queue hardcoded — kept deliberately so the
+migration changes no retry behaviour it does not have to. Note attempts ARE
+burned by failed boots, so a step can reach its ceiling without ever having
+run its body; that was true before this change and is unchanged by it.
 
 ***
 

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Reading — and writing — a file from inside a `"use step"` function.
+ * Reading — and writing — a file from inside a step.
  *
  * A workflow's input is journaled and replayed on every resume, so a file's
  * BYTES cannot live in it: they would be re-read for the life of the run, and
@@ -16,7 +16,6 @@
  * import { readUpload } from "@alexkroman1/aai/step";
  *
  * export async function readHeader(uploadId: string) {
- *   "use step";
  *   const { bytes, info } = await readUpload(uploadId, { end: 64 * 1024 });
  *   return parseHeader(bytes, info.size);
  * }
@@ -31,8 +30,6 @@
  * caller that already has `{ start, end }` byte offsets — which is what planning
  * a fan-out over a file produces — passes them unchanged, and the off-by-one
  * that an inclusive API invites cannot be written.
- *
- * ## Why a published slot rather than an HTTP call
  *
  * ## An upload can be read WHILE it is still arriving
  *
@@ -52,23 +49,18 @@
  * So a body polls `uploadInfo` in a step and transcribes whatever windows are
  * fully present, exactly as it would over a finished file:
  *
- * ```ts no-check
+ * ```ts
  * import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
- * import { sleep } from "workflow";
+ * import type { WorkflowCtx } from "@alexkroman1/aai/workflow-api";
  *
- * async function arrived(id: string) {
- *   "use step";
- *   const { size, complete } = await uploadInfo(id);
- *   return { size, complete };
- * }
- *
- * export async function transcribeStream(input: { recording: string }) {
- *   "use workflow";
+ * export async function transcribeStream(input: { recording: string }, ctx: WorkflowCtx) {
  *   for (;;) {
- *     const { size, complete } = await arrived(input.recording);
+ *     // In a step, so each poll's answer is journaled rather than re-read on
+ *     // every replay — `arrived#0`, `arrived#1`, … one per round of the loop.
+ *     const { size, complete } = await ctx.step("arrived", () => uploadInfo(input.recording));
  *     // … work on every segment whose `end` is inside `size` …
  *     if (complete) break;
- *     await sleep("5s");
+ *     await ctx.sleep(5000);
  *   }
  * }
  * ```
@@ -103,9 +95,9 @@
  * ## Why a published slot rather than an HTTP call
  *
  * A step runs in the SAME process as the server that stored the upload: the
- * DevKit's queue dispatches it to that server's own `/step` route. So the
+ * engine walks the body in the process serving the run. So the
  * reader is handed over in-process through a `Symbol.for` slot — the mechanism
- * {@link stepEnv} uses and for the same reason (the step artifact bundles its
+ * {@link stepEnv} uses and for the same reason (the agent bundle carries its
  * own copy of this module, so publisher and reader are two instances in one
  * realm). Going out over HTTP instead would mean a loopback port to discover, a
  * bearer to present, and on the platform a round trip through the broker for
@@ -279,7 +271,7 @@ const UPLOAD_READER_SLOT = Symbol.for("@alexkroman1/aai.uploadReader");
 type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadAccess };
 
 /**
- * Publish the upload store for this process's `"use step"` functions.
+ * Publish the upload store for this process's steps.
  *
  * `createServer` does this, which is what makes uploads work identically under
  * `aai dev`, on a self-hosted server and in a deployed guest. Pass `undefined`
@@ -366,13 +358,11 @@ export async function uploadInfo(id: string): Promise<UploadInfo> {
  * import { readUpload, writeUpload } from "@alexkroman1/aai/step";
  *
  * export async function store(bytes: Uint8Array): Promise<string> {
- *   "use step";
  *   const { id } = await writeUpload(bytes, { name: "summary.wav" });
  *   return id;
  * }
  *
  * export async function firstSecond(uploadId: string): Promise<Uint8Array> {
- *   "use step";
  *   const { bytes } = await readUpload(uploadId, { start: 44, end: 44 + 32_000 });
  *   return bytes;
  * }

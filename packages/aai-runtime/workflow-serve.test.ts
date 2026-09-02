@@ -1,243 +1,32 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Specs for the guest's workflow loading.
+ * Specs for the PLATFORM's delivery door.
  *
- * The rewriting is what these are really about. It is the one piece here that
- * fails SILENTLY when it is subtly wrong — a specifier rewritten to a path that
- * does not exist, or one left bare that needed rewriting, both surface as
- * `ERR_MODULE_NOT_FOUND` from `/tmp` with nothing pointing back at this file.
+ * This file used to be mostly about the DevKit's module loading — rewriting bare
+ * specifiers so a bundle written to `/tmp` could resolve them — and that went with
+ * the DevKit. What is left is one route and its gate, driven through a REAL http
+ * server for the reason `serving` gives.
  */
 
 import { createServer, type IncomingMessage } from "node:http";
 import { networkInterfaces } from "node:os";
-import { requestPath } from "@alexkroman1/aai/host-internal";
+import { requestPath, STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/host-internal";
+import { stepWebhookUrl } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import type { Logger } from "./runtime-config.ts";
 import { WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
 import {
-  createWorkflowSurface,
   handleWorkflowRequest,
   isLoopbackAddress,
-  loadWorkflowModule,
-  rewriteWorkflowImports,
-  WORKFLOW_FLOW_PATH,
-  WORKFLOW_STEP_PATH,
+  MAX_QUEUE_DELIVERY_BODY_BYTES,
+  publishWorkflowWebhookUrl,
   WORKFLOW_WEBHOOK_PREFIX,
-  type WorkflowSurface,
-  webhookToken,
+  workflowWebhookUrl,
 } from "./workflow-serve.ts";
-import { createWebhookHandler } from "./workflow-webhook.ts";
-
-describe("rewriteWorkflowImports", () => {
-  test("rewrites a bare DevKit import to an absolute file URL", () => {
-    const out = rewriteWorkflowImports(`import { sleep } from "workflow";\n`);
-    expect(out).toMatch(/^import \{ sleep \} from "file:\/\/\//);
-    expect(out).toContain("/workflow/");
-  });
-
-  test("rewrites every specifier the builder actually emits", () => {
-    // Measured against real artifacts: the step bundle imports exactly
-    // `workflow`, `workflow/internal/private` and `workflow/runtime`, and the
-    // flow bundle only `workflow/runtime`. Everything else is inlined.
-    for (const spec of ["workflow", "workflow/internal/private", "workflow/runtime"]) {
-      const out = rewriteWorkflowImports(`import x from "${spec}";`);
-      expect(out, spec).toMatch(/from "file:\/\/\//);
-    }
-  });
-
-  test("rewrites a side-effect import, which is the shape the step bundle uses", () => {
-    // `import "workflow/internal/private"` has no `from`, so a rewrite keyed
-    // only on `from` would miss the one form that matters most here.
-    const out = rewriteWorkflowImports(`import "workflow/internal/builtins";`);
-    expect(out).toMatch(/^import "file:\/\/\//);
-  });
-
-  test("leaves the agent's own bundled imports alone", () => {
-    // Everything but the DevKit is inlined by the builder, so a bare specifier
-    // that is NOT the DevKit means a bundling bug — rewriting it would hide one.
-    const code = `import a from "node:fs";\nimport b from "./local.js";\nimport c from "zod";`;
-    expect(rewriteWorkflowImports(code)).toBe(code);
-  });
-
-  test("leaves a matching string that is not an import specifier alone", () => {
-    // The transform emits step ids as string literals, and they contain the
-    // word. A blunter replace would corrupt the registry keys.
-    const code = `registerStepFunction("step//./workflows/x//go", go);`;
-    expect(rewriteWorkflowImports(code)).toBe(code);
-  });
-
-  test("leaves an unresolvable specifier as-is rather than mangling it", () => {
-    // `@workflow/*` is in the rewritable set defensively — the builder does not
-    // emit one today, and those packages are not direct dependencies here. If it
-    // ever starts, this is the behaviour that makes it diagnosable: the import
-    // survives and fails at load with Node's own error naming the module, rather
-    // than being rewritten to a path that resolves to nothing.
-    const code = `import x from "@workflow/not-installed-here";`;
-    expect(rewriteWorkflowImports(code)).toBe(code);
-  });
-
-  test("resolves the root entry the way an IMPORT does, not a require", async () => {
-    // `workflow`'s root maps `require` to its TypeScript plugin, so resolving
-    // with require semantics rewrites to a CJS module that dies on
-    // `typescript/lib/tsserverlibrary`. Importing the rewritten URL is the only
-    // assertion that catches it.
-    const out = rewriteWorkflowImports(`import x from "workflow";`);
-    const url = /"(file:\/\/[^"]+)"/.exec(out)?.[1];
-    expect(url).toBeDefined();
-    expect(url).not.toContain("typescript-plugin");
-    await expect(import(url as string)).resolves.toBeDefined();
-  });
-
-  test("handles single quotes and irregular spacing", () => {
-    const out = rewriteWorkflowImports(`import {a} from  'workflow/api'`);
-    expect(out).toMatch(/from {2}'file:\/\/\//);
-  });
-});
-
-describe("loadWorkflowModule", () => {
-  test("evaluates the bundle, which is what registers its steps", async () => {
-    // Registration is a top-level side effect and the module's exports are
-    // never read, so evaluation IS the contract.
-    const marker = `aai-step-load-${Date.now()}`;
-    await loadWorkflowModule(`globalThis[${JSON.stringify(marker)}] = true;`, "steps");
-    expect((globalThis as Record<string, unknown>)[marker]).toBe(true);
-    delete (globalThis as Record<string, unknown>)[marker];
-  });
-
-  test("loads a bundle whose DevKit import had to be rewritten", async () => {
-    // The end-to-end shape: a bare import that would fail from /tmp untouched.
-    const marker = `aai-step-wdk-${Date.now()}`;
-    await loadWorkflowModule(
-      `import { sleep } from "workflow";\n` +
-        `globalThis[${JSON.stringify(marker)}] = typeof sleep;`,
-      "steps",
-    );
-    expect((globalThis as Record<string, unknown>)[marker]).toBe("function");
-    delete (globalThis as Record<string, unknown>)[marker];
-  });
-
-  test("a second load of different code is not served from the module cache", async () => {
-    const a = `aai-step-a-${Date.now()}`;
-    const b = `aai-step-b-${Date.now()}`;
-    await loadWorkflowModule(`globalThis[${JSON.stringify(a)}] = 1;`, "steps");
-    await loadWorkflowModule(`globalThis[${JSON.stringify(b)}] = 2;`, "steps");
-    // Node caches by URL, so a fixed temp path would silently serve the first
-    // bundle for the rest of the process — which in the studio's build→load
-    // loop means testing the code you just replaced.
-    expect((globalThis as Record<string, unknown>)[b]).toBe(2);
-    delete (globalThis as Record<string, unknown>)[a];
-    delete (globalThis as Record<string, unknown>)[b];
-  });
-
-  test("returns the module's exports, which is where the route handler is", async () => {
-    // Both builder outputs are ROUTE MODULES exporting POST — see the module
-    // doc. Handing the flow module's own source to `workflowEntrypoint` instead
-    // compiles it in a `node:vm` Script and every run dies at replay on
-    // "Cannot use import statement outside a module".
-    const mod = await loadWorkflowModule(`export const POST = () => "ok";`, "flows");
-    expect(typeof mod.POST).toBe("function");
-  });
-});
-
-describe("createWorkflowSurface", () => {
-  test("mounts nothing when the agent declares no workflows", async () => {
-    // Both halves are required: a project with no `workflows/` directory gets
-    // neither export, and half of one would be a bundling bug rather than an
-    // agent that should serve routes answering 500.
-    await expect(createWorkflowSurface(undefined, undefined)).resolves.toBeUndefined();
-    await expect(
-      createWorkflowSurface("export const POST = () => 1;", undefined),
-    ).resolves.toBeUndefined();
-  });
-
-  test("fails naming the bundle when a route module exports no POST", async () => {
-    await expect(
-      createWorkflowSurface("export const NOPE = 1;", "export const POST = () => 1;"),
-    ).rejects.toThrow(/flow bundle exported no POST/);
-  });
-});
-
-describe("createWebhookHandler", () => {
-  const req = () => new Request("http://agent.example/hook", { method: "POST" });
-
-  test("a token nothing is listening on answers 404, not 500", async () => {
-    // The caller here is a THIRD PARTY on the public internet — a payment
-    // provider, an approval mail — and a 5xx tells it to retry. Reaching
-    // `serveFetch`'s catch (whose 500 is right for the queue's own callbacks)
-    // meant an expired callback was retried forever. Observed under `aai dev`:
-    // `POST /.well-known/workflow/v1/webhook/nosuchtoken` answered
-    // `500 {"error":"workflow route failed"}`.
-    const handler = createWebhookHandler(
-      () => Promise.reject(new Error("Hook not found")),
-      () => true,
-    );
-    const res = await handler("gone", req());
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "No workflow hook for this token" });
-  });
-
-  test("any OTHER failure still throws, so the queue's retry survives", async () => {
-    // Only the one expected class is an answer. A lost world is a real fault and
-    // must still reach the 500 that gets it another attempt.
-    const boom = new Error("world unreachable");
-    const handler = createWebhookHandler(
-      () => Promise.reject(boom),
-      () => false,
-    );
-    await expect(handler("live", req())).rejects.toBe(boom);
-  });
-
-  test("a delivered webhook is passed through untouched", async () => {
-    const ok = new Response("delivered", { status: 202 });
-    const handler = createWebhookHandler(
-      () => Promise.resolve(ok),
-      () => true,
-    );
-    const res = await handler("live", req());
-    expect(res).toBe(ok);
-    expect(res.status).toBe(202);
-  });
-});
-
-describe("webhookToken", () => {
-  test("extracts the token from a webhook path", () => {
-    expect(webhookToken("/.well-known/workflow/v1/webhook/abc123")).toBe("abc123");
-  });
-
-  test("percent-decodes it", () => {
-    expect(webhookToken("/.well-known/workflow/v1/webhook/a%2Fb")).toBe("a/b");
-  });
-
-  test("rejects an empty trailing segment", () => {
-    // A webhook URL is handed out of the system, so the token IS the
-    // authorization; an empty one must not reach the DevKit as a lookup.
-    expect(webhookToken("/.well-known/workflow/v1/webhook/")).toBeUndefined();
-  });
-
-  test("rejects a multi-segment tail rather than joining it", () => {
-    expect(webhookToken("/.well-known/workflow/v1/webhook/a/b")).toBeUndefined();
-  });
-
-  test("returns undefined for any other path", () => {
-    expect(webhookToken("/.well-known/workflow/v1/flow")).toBeUndefined();
-    expect(webhookToken("/health")).toBeUndefined();
-  });
-
-  test.each([
-    ["a lone percent", "%"],
-    ["a truncated escape", "%A"],
-    ["a non-hex escape", "%zz"],
-    ["an overlong UTF-8 sequence", "%C0%80"],
-  ])("declines %s instead of throwing", (_label, token) => {
-    // `decodeURIComponent` raises URIError on every one of these, and this whole
-    // call chain is synchronous — see the module doc on `_path-decode.ts`.
-    expect(() => webhookToken(`${WORKFLOW_WEBHOOK_PREFIX}${token}`)).not.toThrow();
-    expect(webhookToken(`${WORKFLOW_WEBHOOK_PREFIX}${token}`)).toBeUndefined();
-  });
-});
 
 /**
- * Serve `surface` from a REAL http server and return its base URL.
+ * Serve the door from a REAL http server and return its base URL.
  *
  * A real server rather than fakes for node's `IncomingMessage`/`ServerResponse`:
  * the adapter's whole job is turning those into a `Request` and a `Response`
@@ -246,24 +35,40 @@ describe("webhookToken", () => {
  * signal that the fake is the wrong tool.
  */
 async function serving(
-  surface: WorkflowSurface | null | undefined,
+  // Re-walk one run. Absent is an agent that declares no workflows, and the door
+  // then DECLINES rather than answering.
+  deliver: ((runId: string) => Promise<unknown>) | undefined,
   // Every interface, for the one spec that has to arrive from off-box. Loopback
   // otherwise, which is what the rest of these are about.
   host = "127.0.0.1",
   // What a composition WITH a platform supplies. Absent is the default because
   // absent is what `aai dev`, host mode and a self-hosted server all pass.
   allowRemote?: (req: IncomingMessage) => boolean,
+  // Where a failed handler is reported. Injected rather than spied on, because
+  // `consoleLogger` captures `console.error` BY REFERENCE at module load — a
+  // `vi.spyOn(console, "error")` installed by a test replaces the global
+  // afterwards and the captured reference never sees it.
+  logger?: Logger,
+  // Stands in for the guest's `ensureRuntime` getter, so a spec can observe WHEN
+  // it is read and make it throw. Absent, `deliver` is handed over directly.
+  onResolve?: () => void,
 ): Promise<{ url: string; port: number; close: () => Promise<void> }> {
   const server = createServer((req, res) => {
     const url = requestPath(req.url);
     if (
       !handleWorkflowRequest(
-        surface,
         req,
         res,
         url,
         req.method ?? "GET",
-        omitUndefined({ allowRemote }),
+        omitUndefined({
+          allowRemote,
+          logger,
+          deliver: () => {
+            onResolve?.();
+            return deliver;
+          },
+        }),
       )
     ) {
       res.writeHead(404);
@@ -298,122 +103,128 @@ function firstExternalIpv4(): string | undefined {
   return undefined;
 }
 
-function surfaceOf(over: Partial<WorkflowSurface> = {}): WorkflowSurface {
-  return {
-    flow: vi.fn(async () => new Response("flow", { status: 200 })),
-    step: vi.fn(async () => new Response("step", { status: 200 })),
-    webhook: vi.fn(async () => new Response("hook", { status: 200 })),
-    ...over,
-  };
-}
-
 describe("handleWorkflowRequest", () => {
-  // Mounting routes that answer 500 would be worse than not mounting them:
-  // the queue retries a 5xx, so it would retry forever.
-  test.each([
-    ["undefined", undefined],
-    ["null", null],
-  ])(
-    "declines every request when the agent declares no workflows (%s)",
-    async (_label, surface) => {
-      const s = await serving(surface);
-      const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST" });
-      expect(res.status).toBe(404);
-      await s.close();
-    },
-  );
+  /** A door with a platform vouching for its caller — the deployed shape. */
+  const vouched = () => true;
 
-  test("routes POST /flow to the flow handler and writes its response back", async () => {
-    const surface = surfaceOf();
-    const s = await serving(surface);
-    const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST", body: "{}" });
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("flow");
-    expect(surface.flow).toHaveBeenCalled();
+  test("declines when the agent declares no workflows, rather than answering", async () => {
+    // DECLINED and not answered: no engine here is indistinguishable from an
+    // agent with no workflows, and claiming the request would shadow whatever
+    // else the host serves on that path.
+    const s = await serving(undefined, undefined, vouched);
+    expect((await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, { method: "POST" })).status).toBe(404);
     await s.close();
   });
 
-  test("passes the request body through to the handler", async () => {
-    // The queue's payload is the whole message — a dropped body is a run that
-    // never advances, with a 200 saying it did.
-    let seen: string | undefined;
+  test("re-walks the run the delivery names, and answers 200", async () => {
+    const walked: string[] = [];
     const s = await serving(
-      surfaceOf({
-        flow: async (req) => {
-          seen = await req.text();
-          return new Response("ok");
-        },
-      }),
+      async (runId) => {
+        walked.push(runId);
+      },
+      undefined,
+      vouched,
     );
-    await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST", body: `{"runId":"abc"}` });
-    expect(seen).toBe(`{"runId":"abc"}`);
-    await s.close();
-  });
-
-  test("routes a webhook by token, whatever verb the far side used", async () => {
-    // The URL went to a third party, which picks its own method.
-    const surface = surfaceOf();
-    const s = await serving(surface);
-    const res = await fetch(`${s.url}${WORKFLOW_WEBHOOK_PREFIX}tok123`);
+    const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+      method: "POST",
+      headers: { "x-vqs-queue-name": "__wkf_workflow_wrun_7" },
+      body: `{"runId":"wrun_7"}`,
+    });
     expect(res.status).toBe(200);
-    expect(surface.webhook).toHaveBeenCalledWith("tok123", expect.any(Request));
+    expect(walked).toEqual(["wrun_7"]);
     await s.close();
   });
 
-  test("declines flow and step on a non-POST", async () => {
-    // They are queue callbacks, not a browsable surface.
-    const s = await serving(surfaceOf());
-    expect((await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`)).status).toBe(404);
+  test("REFUSES a delivery when the composition vouches for nobody", async () => {
+    // Fails closed, which is every composition with no platform: `aai dev`, host
+    // mode and a self-hosted server all have their queue inside the process, so a
+    // delivery arriving from outside is a caller none of them can vouch for.
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver);
+    expect((await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, { method: "POST" })).status).toBe(401);
+    expect(deliver).not.toHaveBeenCalled();
+    await s.close();
+  });
+
+  test("resolves the engine only AFTER the bearer, so an unvouched caller builds nothing", async () => {
+    // The guest supplies `deliver` as a getter over `ensureRuntime`, so reading
+    // it BUILDS the runtime. Evaluated as an argument — which it was — an
+    // unauthenticated request on the public sandbox tunnel forced that work.
+    let resolved = 0;
+    const s = await serving(
+      async () => undefined,
+      undefined,
+      () => false,
+      undefined,
+      () => {
+        resolved++;
+      },
+    );
+    expect((await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, { method: "POST" })).status).toBe(401);
+    expect(resolved).toBe(0);
+    await s.close();
+  });
+
+  test("a resolver that THROWS answers 500 instead of killing the process", async () => {
+    // `ensureRuntime` throws for a bundle that has not loaded or a missing
+    // provider credential. This runs inside `createServer`'s request hook, which
+    // is called with no `try`, so an escaping throw was an `uncaughtException` —
+    // and the guest's guard exits the process, taking every live voice session
+    // with it. Driven through a real server because an ANSWER is the proof.
+    const error = vi.fn();
+    const s = await serving(
+      async () => undefined,
+      undefined,
+      () => true,
+      { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error },
+      () => {
+        throw new Error("Agent not loaded");
+      },
+    );
+    const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, { method: "POST" });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain("Agent not loaded");
+    expect(error).toHaveBeenCalledWith(
+      "Workflow delivery unavailable",
+      expect.objectContaining({ error: "Agent not loaded" }),
+    );
+    await s.close();
+  });
+
+  test("declines a non-POST, which is not a browsable surface", async () => {
+    const s = await serving(async () => undefined, undefined, vouched);
+    expect((await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`)).status).toBe(404);
     await s.close();
   });
 
   test("declines an unrelated path so it falls through to the rest of the server", async () => {
-    const s = await serving(surfaceOf());
+    const s = await serving(async () => undefined, undefined, vouched);
     expect((await fetch(`${s.url}/health`)).status).toBe(404);
     await s.close();
   });
 
-  test("answers a malformed webhook path instead of killing the process", async () => {
-    // The regression for the worst finding of the 2026-08 sweep. `GET
-    // /.well-known/workflow/v1/webhook/%` is an unauthenticated request whose raw
-    // `%` clears the ""/"/" guards and reached `decodeURIComponent`. Nothing in
-    // `webhookToken` → `pickWorkflowHandler` → `handleWorkflowRequest` is async
-    // and `createServer` calls them from its `request` hook with no `try`, so the
-    // URIError surfaced as an uncaughtException — `process.exit(4)` in the guest,
-    // taking every concurrent voice session with it.
-    //
-    // Driven through a real server (the `serving` harness reproduces exactly that
-    // untried synchronous call), so an answer is proof the throw is gone: a
-    // handler that threw here would destroy the socket, not answer 404.
-    const surface = surfaceOf();
-    const s = await serving(surface);
-    for (const token of ["%", "%A", "%zz", "%C0%80"]) {
-      const res = await fetch(`${s.url}${WORKFLOW_WEBHOOK_PREFIX}${token}`);
-      expect(res.status, token).toBe(404);
-      expect(await res.text()).toBe("unclaimed");
-    }
-    // Declined rather than delivered: a token nobody can decode identifies no run.
-    expect(surface.webhook).not.toHaveBeenCalled();
-    await s.close();
-  });
-
-  test("answers 500 when a handler throws, rather than taking the guest down", async () => {
-    // These run off a node request event, so an unhandled rejection would kill
-    // the process mid-run. A 5xx is also what makes the world retry.
-    const errors: unknown[] = [];
-    // No `mockRestore()` below: `restoreMocks` in `vitest.shared.ts` restores
-    // every `vi.spyOn` before each test, so the call was dead code.
-    vi.spyOn(console, "error").mockImplementation((...a) => errors.push(a));
+  test("answers 500 when a replay throws, rather than taking the guest down", async () => {
+    // This runs off a node request event, so an unhandled rejection would kill
+    // the process mid-run. 500 is also what makes the platform retry — which is
+    // right here: a guest that was up and could not finish is what a retry is for.
+    const error = vi.fn();
     const s = await serving(
-      surfaceOf({
-        flow: async () => {
-          throw new Error("boom");
-        },
-      }),
+      async () => {
+        throw new Error("boom");
+      },
+      undefined,
+      vouched,
+      { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error },
     );
-    const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST" });
+    const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+      method: "POST",
+      headers: { "x-vqs-queue-name": "__wkf_workflow_r1" },
+    });
     expect(res.status).toBe(500);
-    expect(errors.length).toBeGreaterThan(0);
+    expect(error).toHaveBeenCalledWith(
+      "Workflow delivery failed",
+      expect.objectContaining({ error: "boom" }),
+    );
     await s.close();
   });
 });
@@ -450,91 +261,29 @@ describe("isLoopbackAddress", () => {
   });
 });
 
-describe("the queue callbacks are guest-internal", () => {
-  // Both were reachable UNAUTHENTICATED on every deployed agent's public Modal
-  // tunnel, which `GET /:slug/client-config` hands to any browser that asks:
-  // `step` executes one of the tenant's registered step functions with the
-  // caller's own arguments. See the block comment on `handleWorkflowRequest`.
-  test.each([
-    ["flow", WORKFLOW_FLOW_PATH],
-    ["step", WORKFLOW_STEP_PATH],
-  ])("refuses %s from an off-box peer, and does not invoke the handler", async (_l, path) => {
-    const external = firstExternalIpv4();
-    if (!external) {
-      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
-    }
-    const surface = surfaceOf();
-    // Bound to every interface, exactly as a deployed guest is.
-    const s = await serving(surface, "0.0.0.0");
-    try {
-      const res = await fetch(`http://${external}:${s.port}${path}`, { method: "POST" });
-      expect(res.status).toBe(403);
-      // The gate CLAIMED the request — a 404 here would mean it merely fell
-      // through, and the next handler to match the path would serve it.
-      expect(await res.json()).toEqual({ error: "workflow queue callbacks are guest-internal" });
-      expect(surface.flow).not.toHaveBeenCalled();
-      expect(surface.step).not.toHaveBeenCalled();
-    } finally {
-      await s.close();
-    }
-  });
-
-  test.each([
-    ["flow", WORKFLOW_FLOW_PATH],
-    ["step", WORKFLOW_STEP_PATH],
-  ])("still serves %s to the guest's own queue on loopback", async (_l, path) => {
-    const surface = surfaceOf();
-    // Same `0.0.0.0` bind as above, so the only difference is the peer.
-    const s = await serving(surface, "0.0.0.0");
-    try {
-      const res = await fetch(`${s.url}${path}`, { method: "POST" });
-      expect(res.status).toBe(200);
-    } finally {
-      await s.close();
-    }
-  });
-
-  // The webhook URL is handed OUT of the system — to a payment provider, an
-  // approval mail — so the platform proxies it and the DevKit's path token is
-  // its authorization. Gating it on network position would break every one.
-  test("does not gate the webhook route, which is public by design", async () => {
-    const external = firstExternalIpv4();
-    if (!external) {
-      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
-    }
-    const surface = surfaceOf();
-    const s = await serving(surface, "0.0.0.0");
-    try {
-      const res = await fetch(`http://${external}:${s.port}${WORKFLOW_WEBHOOK_PREFIX}tok`, {
-        method: "POST",
-      });
-      expect(res.status).toBe(200);
-      expect(surface.webhook).toHaveBeenCalledTimes(1);
-    } finally {
-      await s.close();
-    }
-  });
-});
-
 describe("the platform's delivery door", () => {
   const BEARER = "sandbox-token";
   const vouched = (req: IncomingMessage) => req.headers.authorization === `Bearer ${BEARER}`;
+  const QUEUE_NAME = "__wkf_workflow_wrun_7";
 
   test("serves a vouched-for caller from OFF-BOX, which is the whole point", async () => {
+    // The door exists for a caller OUTSIDE the container — the platform's queue,
+    // holding the schedule of a run whose guest self-exited. A gate on network
+    // position would refuse the only legitimate caller there is.
     const external = firstExternalIpv4();
     if (!external) {
       expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
     }
-    const surface = surfaceOf();
-    const s = await serving(surface, "0.0.0.0", vouched);
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver, "0.0.0.0", vouched);
     try {
       const res = await fetch(`http://${external}:${s.port}${WORKFLOW_QUEUE_PATH}`, {
         method: "POST",
-        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": "__wkf_step_r1" },
-        body: "bytes",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": QUEUE_NAME },
+        body: `{"runId":"wrun_7"}`,
       });
       expect(res.status).toBe(200);
-      expect(surface.step).toHaveBeenCalledTimes(1);
+      expect(deliver).toHaveBeenCalledWith("wrun_7");
     } finally {
       await s.close();
     }
@@ -543,20 +292,67 @@ describe("the platform's delivery door", () => {
   test.each([
     ["no bearer", undefined],
     ["the wrong bearer", "Bearer nope"],
-  ])("answers 401 for %s, and runs nothing", async (_label, authorization) => {
-    const surface = surfaceOf();
-    const s = await serving(surface, "0.0.0.0", vouched);
+  ])("answers 401 for %s, and re-walks nothing", async (_label, authorization) => {
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver, "0.0.0.0", vouched);
     try {
       const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
         method: "POST",
         headers: {
-          "x-vqs-queue-name": "__wkf_step_r1",
+          "x-vqs-queue-name": QUEUE_NAME,
           ...omitUndefined({ authorization }),
         },
-        body: "bytes",
+        body: `{"runId":"wrun_7"}`,
       });
       expect(res.status).toBe(401);
-      expect(surface.step).not.toHaveBeenCalled();
+      expect(deliver).not.toHaveBeenCalled();
+    } finally {
+      await s.close();
+    }
+  });
+
+  test("refuses an oversized delivery WITHOUT buffering it or reaching the handler", async () => {
+    // `allowRemote` is not "trusted with unbounded memory". The door read its
+    // body with no cap at all, so the platform's bearer — or anything holding a
+    // sandbox's manage token — chose how many bytes of a guest's heap to spend,
+    // on a process that is also serving live voice sessions.
+    //
+    // The assertion that matters is `deliver`, not the status: `readBody` counts
+    // per chunk and DROPS the overflow, so the refusal happens as the bytes
+    // arrive and `toFetchRequest` throws before `deliverQueueMessage` is ever
+    // called. A 413 with the handler reached would mean the whole body was
+    // buffered and only then measured, which is not a cap.
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver, undefined, vouched);
+    try {
+      const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": QUEUE_NAME },
+        body: "x".repeat(MAX_QUEUE_DELIVERY_BODY_BYTES + 4096),
+      });
+      expect(res.status).toBe(413);
+      expect(deliver).not.toHaveBeenCalled();
+    } finally {
+      await s.close();
+    }
+  });
+
+  test("delivers a body at the cap, so the bound cannot refuse a real message", async () => {
+    // The other half: a cap nothing legitimate can reach is a cap nobody
+    // notices is wrong. The platform's enqueue route stores at most
+    // `MAX_ENQUEUE_BODY_BYTES`, so a real delivery's payload fits under this by
+    // construction — and a body exactly AT the limit must pass, since
+    // `readBody` refuses on `>` rather than `>=`.
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver, undefined, vouched);
+    try {
+      const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": QUEUE_NAME },
+        body: "x".repeat(MAX_QUEUE_DELIVERY_BODY_BYTES),
+      });
+      expect(res.status).toBe(200);
+      expect(deliver).toHaveBeenCalledWith("wrun_7");
     } finally {
       await s.close();
     }
@@ -565,52 +361,77 @@ describe("the platform's delivery door", () => {
   /**
    * FAILS CLOSED with no predicate, and LOOPBACK IS NOT ENOUGH.
    *
-   * This is the door's difference from `flow`/`step`: those are guest-internal
-   * and loopback is their whole gate, while this one exists for a caller outside
-   * the container and is therefore refused unless the composition vouches for it.
    * `aai dev`, host mode and a self-hosted server supply no predicate and have no
-   * queue outside the process, so a door that opened on loopback there would be
-   * an unauthenticated way to drive a run — reachable by any local process, and
-   * on a self-hosted server bound to `0.0.0.0`, by the network.
+   * queue outside the process — their dispatcher is a `setTimeout` in it — so a
+   * door that opened on loopback there would be an unauthenticated way to drive a
+   * run: reachable by any local process, and on a self-hosted server bound to
+   * `0.0.0.0`, by the network.
+   *
+   * This used to be stated against `flow`/`step`, which were guest-internal and
+   * for which loopback WAS the whole gate. They are gone, so the contrast is now
+   * with nothing — which makes the property easier to lose, not harder, and is
+   * why it keeps its own case.
    */
   test("is refused when the composition vouches for nobody, even on loopback", async () => {
-    const surface = surfaceOf();
-    const s = await serving(surface);
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver);
     try {
       const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
         method: "POST",
-        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": "__wkf_step_r1" },
-        body: "bytes",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": QUEUE_NAME },
+        body: `{"runId":"wrun_7"}`,
       });
       expect(res.status).toBe(401);
-      expect(surface.step).not.toHaveBeenCalled();
+      expect(deliver).not.toHaveBeenCalled();
     } finally {
       await s.close();
     }
   });
+});
 
-  test("vouching for a caller does NOT open the loopback-only callbacks", async () => {
-    // The door and the two callbacks are separate gates. A predicate that also
-    // admitted `flow`/`step` from off-box would reopen the hole the door exists
-    // to avoid reopening.
-    const external = firstExternalIpv4();
-    if (!external) {
-      expect.fail("no non-loopback IPv4 interface: cannot produce an off-box peer here");
-    }
-    const surface = surfaceOf();
-    const s = await serving(surface, "0.0.0.0", () => true);
-    try {
-      for (const path of [WORKFLOW_FLOW_PATH, WORKFLOW_STEP_PATH]) {
-        const res = await fetch(`http://${external}:${s.port}${path}`, {
-          method: "POST",
-          headers: { authorization: `Bearer ${BEARER}` },
-        });
-        expect(res.status).toBe(403);
-      }
-      expect(surface.flow).not.toHaveBeenCalled();
-      expect(surface.step).not.toHaveBeenCalled();
-    } finally {
-      await s.close();
-    }
+describe("workflowWebhookUrl", () => {
+  test("composes the base with the route this package serves", () => {
+    // Composed here rather than by the caller, so the URL handed out and the
+    // path that answers it come from the same constant.
+    expect(workflowWebhookUrl("https://agent.example.com", "approval:9")).toBe(
+      `https://agent.example.com${WORKFLOW_WEBHOOK_PREFIX}approval%3A9`,
+    );
+  });
+
+  test("encodes the token, because the route is ONE segment", () => {
+    // `webhookToken` refuses a path with a second slash in it, so an unencoded
+    // token would 404 at the far end days later.
+    expect(workflowWebhookUrl("https://x", "a/b")).toBe(`https://x${WORKFLOW_WEBHOOK_PREFIX}a%2Fb`);
+  });
+
+  test("trims a trailing slash off the base", () => {
+    // A copied-in origin ending in `/` is the ordinary shape of every source
+    // this value arrives from — a boot env var, a container's PUBLIC_URL, an
+    // author's own string.
+    expect(workflowWebhookUrl("https://x//", "t")).toBe(`https://x${WORKFLOW_WEBHOOK_PREFIX}t`);
+  });
+});
+
+describe("publishWorkflowWebhookUrl", () => {
+  // Back to "nothing has published", so a spec here cannot leave a minter
+  // behind for one in another file.
+  afterEach(() => publishWorkflowWebhookUrl(undefined));
+
+  test("fills the step slot, so a step can mint its own callback", () => {
+    publishWorkflowWebhookUrl("https://agent.example.com/");
+    expect(stepWebhookUrl("approval:9")).toBe(
+      `https://agent.example.com${WORKFLOW_WEBHOOK_PREFIX}approval%3A9`,
+    );
+  });
+
+  test("a blank or absent public URL UNPUBLISHES rather than minting a relative URL", () => {
+    // `publicUrl: ""` would compose `/.well-known/…` — a URL nothing can call
+    // back on — and the step helper's own throw names the configuration.
+    publishWorkflowWebhookUrl("https://agent.example.com");
+    publishWorkflowWebhookUrl("   ");
+    expect(() => stepWebhookUrl("t")).toThrow(STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE);
+    publishWorkflowWebhookUrl("https://agent.example.com");
+    publishWorkflowWebhookUrl(undefined);
+    expect(() => stepWebhookUrl("t")).toThrow(STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE);
   });
 });

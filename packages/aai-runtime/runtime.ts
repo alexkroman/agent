@@ -12,6 +12,7 @@ import {
   createOwnedMap,
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
+import { invariant } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
@@ -182,8 +183,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // makes the executor's rejecting stub name the right reason.
   // A caller-supplied client wins, and exactly one has one: an eval, whose
   // bodies were never through the WDK compiler. See `RuntimeOptions.workflows`.
-  const workflows =
-    opts.workflows ?? buildWorkflowClient(agent, resolvedDb, opts.publicUrl, logger);
+  // `opts.journal` reaches the MEMORY arm of the choice below and no other: a
+  // runtime rebuilt per save must not rebuild the runs under it.
+  const builtWorkflows = opts.workflows
+    ? undefined
+    : buildWorkflowClient(agent, resolvedDb, opts.publicUrl, logger, opts.journal);
+  const workflows = opts.workflows ?? builtWorkflows?.client;
 
   // Watches runs a tool asked to be told about (`start(…, { notify })`) and
   // makes the agent say so — see `workflow-notify.ts`. The session map is the
@@ -305,7 +310,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // so we capture a reference and fill it in below.
     let core: SessionCore | null = null;
     function bindCore(): SessionCore {
-      if (!core) throw new Error("SessionCore not yet created");
+      // An invariant rather than a validation: `core` is this closure's own
+      // local, filled in below and readable by nobody else, so a null here is a
+      // mis-ordering in THIS function and never anything a caller did.
+      invariant(core !== null, "session.core.bound");
       return core;
     }
 
@@ -415,6 +423,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // Watches outlive nothing: every session they could announce to is gone,
     // and a poll loop left running would hold the process past shutdown.
     notifier?.stop();
+    // The workflow engine's pending deliveries, for the same reason: a rebuilt
+    // runtime would otherwise leave the previous engine's timers executing
+    // bodies from a build that is gone. Only an engine THIS runtime built —
+    // a caller-supplied `opts.workflows` is the caller's to stop.
+    builtWorkflows?.stop();
     // Force-close on timeout skips the per-session stop wrapper's state cleanup
     // (its sink-identity check fails against the cleared map), so clear the cache
     // here too or timed-out sessions leak their slot values permanently. Only the
@@ -476,5 +489,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // page and a `curl` reach the same runs a tool does. One client per runtime,
     // not one per surface — two would index correlation keys separately.
     workflows,
+    // The DELIVERY hook, separate from the client on purpose — see its own doc on
+    // `AgentRuntime`. Present only when THIS runtime built the engine: a caller
+    // that supplied its own `workflows` client supplied a client and not an
+    // engine, so there is nothing here to re-walk a run with, and answering a
+    // delivery from someone else's client would be a guess.
+    deliverWorkflow: builtWorkflows?.execute,
   };
 }

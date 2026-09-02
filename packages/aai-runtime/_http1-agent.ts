@@ -13,9 +13,12 @@
  * `TypeError: fetch failed`, for every request in flight at once.
  *
  * Everything else a caller passes is sizing, because the two pools are sized for
- * different jobs: a step owns its own deadline and turns undici's timeouts off,
- * while the runtime's egress wants them as the backstop its own bounds do not
- * cover.
+ * different jobs: a step's outbound call may legitimately move a multi-gigabyte
+ * body, so it raises undici's timeouts to a bound that catches a STALL without
+ * truncating a slow transfer (`STEP_FETCH_INACTIVITY_MS`), while the runtime's
+ * egress leaves the defaults as the backstop its own bounds do not cover. Note
+ * both pools have a bound: the step pool set both to `0` — off — until the
+ * "DevKit's step budget" half of that argument was retired with the DevKit.
  *
  * @internal
  */
@@ -54,9 +57,15 @@ export type Http1PoolOptions = {
   keepAliveTimeout: number;
   /** Requests queued on one connection — 1 everywhere, see {@link createHttp1Pool}. */
   pipelining: number;
-  /** undici's header timeout; `0` disables it. */
+  /**
+   * undici's header timeout. Omit for its default (300s).
+   *
+   * `0` disables it, and no caller here passes that any more: with both timers
+   * off, a request making no progress is bounded by nothing at all unless the
+   * caller passed a signal — see `STEP_FETCH_INACTIVITY_MS`.
+   */
   headersTimeout?: number | undefined;
-  /** undici's body-inactivity timeout; `0` disables it. */
+  /** undici's body-inactivity timeout. Omit for its default; see above on `0`. */
   bodyTimeout?: number | undefined;
 };
 
@@ -76,9 +85,10 @@ export function createHttp1Pool(opts: Http1PoolOptions): Http1Pool {
     keepAliveTimeout: opts.keepAliveTimeout,
     pipelining: opts.pipelining,
     // Omitted rather than passed as `undefined`, because the two pools differ in
-    // exactly this: a step turns undici's timeouts OFF (it owns its own deadline)
-    // and the runtime's egress leaves them at undici's defaults, which are the only
-    // bound its own body reads have. `{ bodyTimeout: undefined }` is not the same
+    // exactly this: a step RAISES undici's timeouts (its bodies can be gigabytes,
+    // so the bound has to catch a stall rather than a slow transfer) and the
+    // runtime's egress leaves them at undici's defaults, which are the only bound
+    // its own body reads have. `{ bodyTimeout: undefined }` is not the same
     // request as no key at all.
     ...omitUndefined({ headersTimeout: opts.headersTimeout, bodyTimeout: opts.bodyTimeout }),
   });

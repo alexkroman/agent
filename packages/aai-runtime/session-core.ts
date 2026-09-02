@@ -30,6 +30,7 @@ import { createCommandDispatcher } from "./session-commands.ts";
 // into scope, and `createSessionCore`'s signature needs both. Same trap the
 // root guide records for `ToolContext` in `sdk/types.ts`.
 import type { SessionCore, SessionCoreOptions } from "./session-core-types.ts";
+import { historyMessageOf } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createIdleWatchdog } from "./session-idle.ts";
 import { dispatchReplyDone } from "./session-reply-done.ts";
@@ -127,6 +128,20 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     idle.reset();
   }
 
+  /**
+   * Append whatever conversation message a reported event contributes.
+   *
+   * `historyMessageOf` rather than a `{ role, content }` per case: this dispatch
+   * was the THIRD copy of that rule (`session-event-history.ts` holds the other
+   * two, and the argument), and the copy that put a failure phrase into
+   * `ctx.messages` on the same call the caller heard it — against the "history /
+   * `ctx.messages`: never" its own emitter documents.
+   */
+  function pushConversation(event: TransportEventBody): void {
+    const message = historyMessageOf(event);
+    if (message) pushMessages(message);
+  }
+
   function pushMessages(...msgs: Message[]): void {
     history.push(...msgs);
     if (history.length > DEFAULT_MAX_HISTORY) {
@@ -203,7 +218,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       case "user-transcript.committed":
         resetIdle();
         emit(event);
-        pushMessages({ role: "user", content: event.text });
+        pushConversation(event);
         return;
       case "user-transcript.updated":
         // Partials too, not just the committed turn: one long utterance would
@@ -218,8 +233,10 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
         // The COMMITTED event only, which is what makes the stream's assistant
         // turns the session's own rather than a re-derivation. An INTERRUPTED
         // reply is reported as `.updated` and enters no history — see the event's
-        // own doc, and "History records what was HEARD" in the SDK guide.
-        pushMessages({ role: "assistant", content: event.text });
+        // own doc, and "History records what was HEARD" in the SDK guide. A
+        // committed RECOVERY phrase is the third case and the one this used to
+        // get wrong: emitted, because the caller heard it, and never recorded.
+        pushConversation(event);
         return;
       case "agent-transcript.updated":
         resetIdle();

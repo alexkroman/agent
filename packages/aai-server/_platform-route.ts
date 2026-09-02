@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * What the five guest-called platform routes do AROUND their own work.
+ * What the four guest-called platform routes do AROUND their own work.
  *
- * `_body-fields.ts` took the field readers off those five handlers. What was left
+ * `_body-fields.ts` took the field readers off those handlers. What was left
  * duplicated is the frame every one of them is written inside, and it is the same
  * four decisions each time: the slug comes off the path and the sandbox bearer is
  * what proves it, a deployment that cannot serve the route at all answers 501
@@ -10,9 +10,28 @@
  * whatever happens, and everything the work throws that is not already an answer
  * becomes a 503 with one warn line naming the slug.
  *
+ * ## Validation runs OUTSIDE the reservation, and that is {@link PlatformCall}
+ *
+ * A malformed body is refused by `requiredString` and its siblings, which throw a
+ * 400 — and for as long as those reads sat inside the `run` callback, they threw
+ * with one of `ADMIN_POOL_MAX` connections reserved and idle. So a caller sending
+ * bodies nothing could execute took the whole admin pool out of service for the
+ * duration of four `HTTPException` constructions, and a legitimate enqueue queued
+ * behind them. It is invisible to the specs that already assert "before any
+ * statement": those read a statement RECORDER, which stays empty either way — the
+ * cost was the door, not the query (`session-state-handler.test.ts` has the spy
+ * that can see it).
+ *
+ * The shape is one per route: a `plan(method, ctx, body)` that reads every
+ * caller-supplied field and returns the work as a {@link PlatformCall}, called
+ * before {@link withReserved} and never inside it. Nothing about the four routes'
+ * validation needs a connection — every check is a pure function over the parsed
+ * body — so the split costs nothing and the ordering is then structural rather
+ * than remembered.
+ *
  * ## It had already drifted, and in the direction that costs a run
  *
- * Three of the four database routes rethrow an `HTTPException` before reaching
+ * Three of the four routes rethrow an `HTTPException` before reaching
  * their 503; `workflow-enqueue-handler.ts` did not. An `HTTPException` raised
  * inside the work is a DECISION the route already made — a 400 naming a field, a
  * 501 for a method the world does not expose — and flattening one into a 503 tells
@@ -22,14 +41,15 @@
  * expose answers 501, not 500"); the enqueue route had the same code path and no
  * guard.
  *
- * ## The stream route takes the preamble and NOT the reservation
+ * ## {@link guestSlug} and {@link withReserved} are two functions, not one wrapper
  *
- * A live read holds its response open for up to ten minutes, so it must not hold a
- * pooled connection for that long — it reads through the world's own streamer
- * instead. That is why {@link guestSlug} and {@link withReserved} are two functions
- * rather than one wrapper: the shared part of a route is its DOOR, and how it
- * reaches a database is a separate question that one of the five answers
- * differently.
+ * The shared part of a route is its DOOR; how it reaches a database is a separate
+ * question. There used to be a fifth route making that concrete — the DevKit's
+ * run-stream read (`workflow-stream-handler.ts`, deleted with the DevKit), which
+ * took the preamble and NOT the reservation, because a live read holds its
+ * response open for up to ten minutes and must not hold a pooled connection for
+ * that long. It is worth keeping the seam: the next route with a response longer
+ * than a query takes the door and reaches its data some other way.
  *
  * ## Why not zod, which this package already uses
  *
@@ -104,6 +124,18 @@ export async function guestSlug(c: AppContext): Promise<string> {
 export function notConfigured(what: string): HTTPException {
   return new HTTPException(501, { message: `${what} not configured` });
 }
+
+/**
+ * One route's work, with every caller-supplied field ALREADY READ.
+ *
+ * A route's `plan(method, ctx, body)` returns one of these: the reads that can
+ * throw a 400 have happened, and what is left needs nothing but a connection. That
+ * is what lets {@link withReserved} be the LAST thing a handler does — see the
+ * module doc for what it cost when it was the first.
+ *
+ * @internal
+ */
+export type PlatformCall<T = unknown> = (sql: SqlExec) => Promise<T>;
 
 /** How one route reports work that failed for a reason it has no answer for. */
 export type ReservedCall = {

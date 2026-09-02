@@ -1,16 +1,20 @@
 {
   "db": {
-    "current": 4,
-    "supported": [2, 4],
+    "current": 7,
+    "supported": [5, 6, 7],
     "dropped": {
       "1": "additive: CreatePostgresDbOptions gains optional connectTimeoutSeconds and queryTimeoutMs (network-partition query bound); backward-compatible, and aai-runtime has no external consumer to keep an epoch-1 template for",
-      "3": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
+      "2": "Epoch 2 promised SweepSkip, which the surface no longer exports — and epoch 4 was dropped for exactly that removal. It read as supported only because its frozen example never named the type, so the retain was a claim nothing could have detected: a consumer naming SweepSkip has not compiled since it went. Dropped rather than narrowed, because aai-runtime has no external consumer to keep an epoch-2 template for.",
+      "3": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
+      "4": "SweepSkip is REMOVED. It described what the graphile-worker lock sweep reports when it declines, and that sweep went with the Workflow DevKit — there is no mechanism left for the name to describe. A consumer naming the type no longer compiles, which is what makes this a drop rather than a retain."
     }
   },
   "eval": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The eval workflow engine's WorkflowCtx gained sleep (recorded, not taken) and waitFor (refused with a named message, a hook's payload coming from outside the run). Its types also moved to workflow-engine-types.ts under the 500-line cap, which the rollup's provenance shows."
+    }
   },
   "keys": {
     "current": 2,
@@ -30,20 +34,23 @@
     "dropped": {}
   },
   "runtime": {
-    "current": 3,
-    "supported": [3],
-    "dropped": {
-      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
-    }
-  },
-  "server": {
-    "current": 4,
-    "supported": [4],
+    "current": 6,
+    "supported": [3, 4, 6],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
-      "3": "Additive only: AgentServerOptions gained two OPTIONAL fields (workflowCode, stepCode) so that the self-hosted door can configure a workflow world and mount the DevKit's flow/step callback routes — durable workflows did not run through this door at all before. Nothing in epoch 3 stops compiling. It is dropped rather than retained on the same pre-release grounds as epoch 1: this package has no external consumers, so no superseded authoring style is owed a frozen compiling example."
+      "5": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
+    }
+  },
+  "server": {
+    "current": 8,
+    "supported": [4, 6, 8],
+    "dropped": {
+      "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
+      "3": "Additive only: AgentServerOptions gained two OPTIONAL fields (workflowCode, stepCode) so that the self-hosted door can configure a workflow world and mount the DevKit's flow/step callback routes — durable workflows did not run through this door at all before. Nothing in epoch 3 stops compiling. It is dropped rather than retained on the same pre-release grounds as epoch 1: this package has no external consumers, so no superseded authoring style is owed a frozen compiling example.",
+      "5": "AgentServerOptions loses workflowCode and stepCode. They carried the DevKit's compiled surface as two strings the CLI left on the bundle, and nothing reads them now: the replay engine runs a run off the agent's own workflows declaration. Optional fields, but a TS caller that passed either gets an excess-property error, so an epoch-5 call site does not compile.",
+      "7": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
     }
   },
   "session": {
@@ -57,9 +64,11 @@
     "dropped": {}
   },
   "telephony": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Its frozen example imported 5 of the 13 names epoch 1 promised, and the one name whose signature moved into epoch 2 — startTelephonySession, which is how this capability's report reaches the runtime facade — is one that example did not name. So the retain documented a compatibility it structurally could not test. Dropped rather than backed by a second example, because aai-runtime has no external consumer to keep an epoch-1 template for."
+    }
   },
   "text": {
     "current": 4,
@@ -81,8 +90,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 1,
-    "supported": [1],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   }
 }

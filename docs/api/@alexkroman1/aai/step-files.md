@@ -24,7 +24,6 @@ import { runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 
 export async function toWav(uploadId: string): Promise<string> {
-  "use step";
   return await withTempDir(async (dir) => {
     const source = join(dir, "source");
     const converted = join(dir, "converted.wav");
@@ -39,27 +38,20 @@ export async function toWav(uploadId: string): Promise<string> {
 Nothing here holds a whole recording in memory at any point, which is the
 property that makes a step written on it work on the input it was written for.
 
-## Import this INSIDE a step body, never at module scope
+## Why this is a subpath of its own, and not three more names on `/step`
 
-Same rule as `@alexkroman1/aai/ffmpeg`, and it is the reason this is a subpath
-of its own rather than three more names on `@alexkroman1/aai/step`.
+Same rule as `@alexkroman1/aai/ffmpeg`: this module imports
+`node:fs/promises`, `node:os` and `node:path`, and `@alexkroman1/aai/step` is
+an `sdk/` barrel, which is the half of this package that must stay runnable in
+a browser and in Deno. `sdk/tsconfig.json` compiles with `types: []` so the
+boundary is a compile error rather than a convention, and
+`step-files.import-graph.test.ts` holds the `/step` barrel's whole transitive
+graph free of `node:` — a `node:` import three modules below a name somebody
+added to that barrel is how this regresses.
 
-The Workflow Development Kit's builder rewrites the `"use step"` bodies in a
-`workflows/*.ts` module and leaves everything else at MODULE scope — the whole
-point of the transform is to leave a stub that enqueues. An import a surviving
-function still names therefore rides into the workflow bundle, which is
-compiled as a `node:vm` Script with no `require` in its context. This module
-imports `node:fs/promises`, `node:os` and `node:path`.
-
-**The symptom is a `ReferenceError: require is not defined` at REPLAY**,
-thrown from a line of generated code inside the SDK, with nothing pointing back
-at the import that caused it — so it reads as a broken framework rather than a
-misplaced import. It is also invisible until the workflow runs: the bundle
-builds, the types check, and `aai dev` may well serve the route.
-
-So: name these three inside a `"use step"` function, or from a module only a
-step body reaches. `@alexkroman1/aai/step` stays free of `node:` imports for
-exactly this reason, and `step-files.import-graph.test.ts` holds it there.
+These three names live in `host/` for the same reason and are reached by their
+own subpath, so a `client.tsx` cannot pull them in by importing the step
+vocabulary.
 
 ## A temp file may not outlive its step
 
@@ -95,6 +87,13 @@ short chunk and then resumes a whole window later, silently leaving a hole in
 the middle of the file. Advancing by `slice.end` cannot: a short answer ends
 the walk, and the returned count is how the caller learns it was short.
 
+**With no `size`, an upload that is still arriving is REFUSED.** That count was
+documented as how a caller learns the store came back short, and against a
+defaulted size it could never say so: the default was `uploadInfo(id).size`,
+the contiguous readable PREFIX, so the walk copied the prefix and returned a
+number equal to it. What reached ffmpeg was a truncated recording with nothing
+anywhere reporting it. See `sdk/step-uploads-complete.ts`.
+
 #### Parameters
 
 ##### uploadId
@@ -121,6 +120,11 @@ See [ReadUploadToFileOptions](#readuploadtofileoptions).
 
 Bytes written — equal to the upload's size unless the store came back
   short, which is the case a caller polling a streamed upload has to notice.
+
+#### Throws
+
+when no `size` was given and the upload is
+  still arriving.
 
 ***
 
@@ -233,13 +237,20 @@ Options for [readUploadToFile](#readuploadtofile).
 optional size?: number;
 ```
 
-How many bytes the upload holds. Defaults to what `uploadInfo` reports.
+How many bytes the upload holds. Defaults to what `requireCompleteUpload`
+reports — so with no size, an upload that is still ARRIVING is refused.
 
 Pass it only when you already have the record — a step that reported the
 file's name and size before starting has one, and this saves a second look.
 Passing a size LARGER than the store holds is not an error: `readUpload`
 clamps its window to what has arrived, and this walk stops at what it was
 actually given rather than at what it asked for.
+
+**Passing one moves the completeness judgement to the CALLER**, which is
+what makes a polling body expressible: this option means "I have read the
+record", and a caller who has read it can see `complete` for itself. It
+therefore has to read it — `uploadInfo(id).size` threaded in here is the
+whole bug this default now refuses, since that number IS the prefix.
 
 ##### windowBytes?
 

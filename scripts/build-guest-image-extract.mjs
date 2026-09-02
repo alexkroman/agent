@@ -19,6 +19,14 @@
  * `build-guest-image-sdk.mjs` — and the alternative was a circular import between
  * those two.
  *
+ * WHICH module declares each constant is {@link GUEST_IMAGE_CONSTANTS}, one table
+ * rather than a `path.join(SERVER_DIR, …)` spelled at each of the five call sites
+ * across three scripts. That spread is what made a constant MOVING expensive:
+ * `GUEST_ROOT` left `modal-harness-image.ts` for `guest-exec-env.ts`, the old
+ * module kept a re-export so every TypeScript import and the one spec that
+ * imports them stayed green, and the only thing that noticed was `predev` failing
+ * a developer's `pnpm dev:aai-server`.
+ *
  * @module build-guest-image-extract
  */
 
@@ -26,6 +34,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
+const SERVER_DIR = path.join(REPO_ROOT, "packages", "aai-server");
 
 export function read(file) {
   try {
@@ -36,8 +45,9 @@ export function read(file) {
 }
 
 /**
- * Pull one `const NAME = "value"` string out of a module (exported or not:
- * SDK_PACKAGES is module-private while the other three are exported).
+ * Pull one `const NAME = "value"` string out of a module, exported or not — the
+ * `export` keyword is optional in the pattern because whether a constant is part
+ * of the package's own surface is unrelated to whether the image build needs it.
  *
  * Throws rather than returning a default: a silent miss here builds an image on
  * the wrong base, which is invisible until a guest behaves differently from
@@ -70,4 +80,63 @@ export function extractStringArray(file, name) {
     throw new Error(`${name} in ${path.relative(REPO_ROOT, file)} parsed as empty`);
   }
   return items;
+}
+
+/**
+ * Every guest-image build input, and the `packages/aai-server` module that
+ * DECLARES it — the one place a constant's home is written down.
+ *
+ * A re-export does not count and must not: these readers are regexes over source
+ * text, so they see the `const`, never the name. That asymmetry is the whole
+ * hazard — TypeScript follows a re-export and this does not, so a constant can
+ * move with every import site and every spec still resolving it while the image
+ * build stops resolving it at all. `guest-image-extractors.test.ts` is what
+ * turns that into a red test: it resolves this table and compares each value
+ * against the constant IMPORTED from TypeScript, so a move fails there rather
+ * than in someone's `predev`.
+ *
+ * Keyed by the CONSTANT rather than by the Dockerfile ARG it feeds: `SDK_PACKAGES`
+ * supplies `SDK_SPECS` only after version resolution, and one entry per declared
+ * name is what the spec can iterate.
+ */
+export const GUEST_IMAGE_CONSTANTS = {
+  DEFAULT_SANDBOX_IMAGE: { module: "modal-context.ts", kind: "string" },
+  GUEST_ROOT: { module: "guest-exec-env.ts", kind: "string" },
+  GUEST_SYSTEM_PACKAGES: { module: "modal-system-packages.ts", kind: "array" },
+  SDK_PACKAGES: { module: "modal-harness-image.ts", kind: "array" },
+};
+
+/**
+ * One declared build input, read out of the module {@link GUEST_IMAGE_CONSTANTS}
+ * names.
+ *
+ * Throws on an undeclared name for the same reason the two readers throw on a
+ * miss: a typo'd constant answering `undefined` would build an image on an empty
+ * base or with no SDK, and neither is visible until a guest misbehaves.
+ *
+ * @param {keyof typeof GUEST_IMAGE_CONSTANTS | string} name
+ * @returns {string | string[]}
+ */
+export function guestImageConstant(name) {
+  const entry = GUEST_IMAGE_CONSTANTS[name];
+  if (!entry) {
+    throw new Error(
+      `${name} is not a declared guest-image build input — add it to ` +
+        "GUEST_IMAGE_CONSTANTS in scripts/build-guest-image-extract.mjs",
+    );
+  }
+  const file = path.join(SERVER_DIR, entry.module);
+  return entry.kind === "array" ? extractStringArray(file, name) : extractString(file, name);
+}
+
+/** {@link guestImageConstant}, narrowed to the string-valued inputs. */
+export function guestImageString(name) {
+  return String(guestImageConstant(name));
+}
+
+/** {@link guestImageConstant}, narrowed to the array-valued inputs. */
+export function guestImageStringArray(name) {
+  const value = guestImageConstant(name);
+  if (!Array.isArray(value)) throw new Error(`${name} is not an array-valued build input`);
+  return value;
 }

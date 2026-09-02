@@ -49,6 +49,7 @@
  * expensive one.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { report, stepSpeak, TRANSCRIBE_API, writeUpload } from "@alexkroman1/aai/step";
 import { stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
 import { countWords, omitUndefined } from "@alexkroman1/aai/utils";
@@ -56,13 +57,12 @@ import { countWords, omitUndefined } from "@alexkroman1/aai/utils";
 // a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
 // for `WorkflowOutputOf`.
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
-import { sleep } from "workflow";
 import { z } from "zod";
 import type { spokenSummary } from "../agent.ts";
 import {
   createJob,
   MAX_POLLS,
-  POLL_INTERVAL,
+  POLL_INTERVAL_MS,
   pollTranscript,
   type Transcript,
   uploadToProvider,
@@ -128,12 +128,11 @@ export type SpokenSummary = {
 /** Transcribe a recording, summarize it, and read the summary back. */
 export async function spokenSummaryFlow(
   input: WorkflowInputOf<typeof spokenSummary>,
+  ctx: WorkflowCtx,
 ): Promise<SpokenSummary> {
-  "use workflow";
-
-  const transcript = await transcribe(input.recording);
-  const summary = await summarize(transcript.text);
-  const spoken = await speak(summary.spoken, input.voice);
+  const transcript = await transcribe(input.recording, ctx);
+  const summary = await ctx.step("summarize", () => summarize(transcript.text));
+  const spoken = await ctx.step("speak", () => speak(summary.spoken, input.voice));
 
   return {
     source: transcript.source,
@@ -151,20 +150,29 @@ export async function spokenSummaryFlow(
 /**
  * The whole first leg, factored out of the body.
  *
- * A plain async function rather than a step, and NOT because it is small: it
- * calls steps and it `sleep`s durably between polls, neither of which a step
- * may do. So it runs as part of the BODY and is replayed with it — which is
- * legal here for the ordinary reason, that everything it does is either a step
- * call or a `sleep`, so a replay re-derives exactly the same sequence.
+ * Part of the BODY rather than a step, and NOT because it is small: it CALLS
+ * steps and it sleeps durably between polls, neither of which may happen inside
+ * one. So it is replayed with the body — which is legal for the ordinary reason,
+ * that everything it does is either a `ctx.step` or a `ctx.sleep`, so a replay
+ * re-derives exactly the same sequence. It takes the `ctx` for that reason: a
+ * helper that reaches the journal has to be handed the handle.
  */
-async function transcribe(recording: string): Promise<Transcript> {
-  const { audioUrl } = await uploadToProvider(recording);
-  const job = await createJob(audioUrl);
+async function transcribe(recording: string, ctx: WorkflowCtx): Promise<Transcript> {
+  // `maxAttempts: 6` was `uploadToProvider.maxRetries = 5` — five retries after
+  // the first attempt. It is the one step here worth extra patience: it streams
+  // the whole recording, so a transient failure is expensive to reach again.
+  const { audioUrl } = await ctx.step("uploadToProvider", () => uploadToProvider(recording), {
+    maxAttempts: 6,
+  });
+  const job = await ctx.step("createJob", () => createJob(audioUrl));
 
   for (let poll = 0; poll < MAX_POLLS; poll += 1) {
-    const progress = await pollTranscript(recording, job.id);
+    // One call site in a loop, so each poll is its own journal entry
+    // (`pollTranscript#0`, `#1`, …) and a resume replays the polls already made
+    // rather than starting the wait over.
+    const progress = await ctx.step("pollTranscript", () => pollTranscript(recording, job.id));
     if (progress.done) return progress.transcript;
-    await sleep(POLL_INTERVAL);
+    await ctx.sleep(POLL_INTERVAL_MS);
   }
   // A plain throw: this is the BODY, where the fatal/retryable distinction has
   // nothing to apply to. The transcript is not lost, so the message says where
@@ -179,8 +187,6 @@ async function transcribe(recording: string): Promise<Transcript> {
 export async function summarize(
   text: string,
 ): Promise<{ headline: string; points: string[]; spoken: string }> {
-  "use step";
-
   await report("Summarizing the transcript.");
   const reply = await stepGenerateJsonClassified(
     "Summarize this transcript of a recording.\n\n" +
@@ -219,8 +225,6 @@ export async function speak(
   script: string,
   voice?: string,
 ): Promise<{ audio: string; durationMs: number }> {
-  "use step";
-
   const spoken = await stepSpeak(script, omitUndefined({ voice }));
   const stored = await writeUpload(spoken.audio, {
     // Named, because this is what a person sees on the download link rather

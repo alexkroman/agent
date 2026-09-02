@@ -299,6 +299,9 @@ export async function spawnMicrosandboxWarm(
       // A studio guest carries no tenant DSNs, so there is nothing to rewrite
       // and no host port to open.
       env: {
+        // `TMPDIR` is in here, and this is the backend that needs it most: `/tmp`
+        // in this VM is a 512 MiB RAM DISK, and a studio guest is where the
+        // in-guest build runs. See `guestExecBaseEnv`.
         ...guestExecBaseEnv(),
         ...GUEST_BUILD_ENV,
         AAI_GUEST_TOKEN: token,

@@ -1,168 +1,74 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Durable workflows inside the guest: loading the compiled surface out of the
- * bundle and serving the three routes the Workflow DevKit's queue calls back on.
+ * The PLATFORM's delivery door: `POST /workflow-queue`.
  *
- * The agent's workflows arrive as DATA — two strings on the bundle
- * (`__aaiWorkflowCode`, `__aaiStepCode`), compiled per tenant by the CLI at
- * deploy time. They cannot be compiled here: this image is baked once and serves
- * every tenant, so there is no `workflows/` directory in existence when it is
- * built. See `aai-cli/workflow-bundler.ts` for the other half.
+ * One route now, where there were three. `flow` and `step` were the Workflow
+ * DevKit's own queue callbacks and went with it — the replay engine executes a
+ * step INLINE during the walk rather than as its own message, so there is nothing
+ * left for a per-step callback to do. The webhook route moved to `createServer`
+ * (`workflow-webhook.ts`), which is the only place it could actually be reached.
  *
- * ## Both halves are ROUTE MODULES, and neither is raw workflow code
+ * What remains is the door a deployed guest needs and no other deployment has: a
+ * deployed guest's own timers die with a sandbox that self-exits, so the
+ * platform's queue holds each run's schedule and a due message arrives here to
+ * re-walk it. `workflow-queue-dispatch.ts` is the handler.
  *
- * This is the thing to know before changing anything here, because the naming
- * suggests otherwise and the failure is late and unhelpful. What
- * `createWorkflowsBundle`/`createStepsBundle` emit is what the DevKit's own
- * framework integrations mount as HTTP handlers: an ESM module exporting
- * `POST`. The flow module holds the real workflow bundle as a STRING and calls
- * `workflowEntrypoint(...)` on it itself; the step module ends in
- * `export { stepEntrypoint as POST }` above its `registerStepFunction(...)`
- * calls.
+ * ## The gate on this door is a CREDENTIAL, and it always was
  *
- * So both are imported and both contribute their `POST`, and calling
- * `workflowEntrypoint(workflowCode)` here is a DOUBLE WRAP: the route module's
- * own source goes into the `node:vm` `Script` that expects the inner bundle,
- * and every run fails at replay with `SyntaxError: Cannot use import statement
- * outside a module` pointing at a line of generated code. `bundleFinalOutput:
- * false` does not change this — it means "do not bundle the route module's
- * imports", not "do not emit one".
+ * `allowRemote` is the platform's own bearer, injected because the credential is
+ * the platform's and this package is also what a self-hoster runs. It fails
+ * CLOSED: absent, the door is refused, which is right for `aai dev`, host mode
+ * and a self-hosted server — none of them has a queue outside the process.
  *
- * ## Why they cannot just go in /tmp
+ * ## Why `isLoopbackAddress` survives the routes it guarded
  *
- * `harness-bundle.ts` writes the worker bundle to `/tmp/aai-bundle-*.mjs` and
- * imports it by file URL, which works because that bundle is FULLY INLINED —
- * `ssr.noExternal: true`, so it imports nothing but `node:` builtins.
+ * It gated `flow` and `step`, which were unauthenticated BECAUSE loopback was
+ * meant to be the whole gate — and for a while nothing checked, which is worth
+ * keeping written down because it is the failure mode of a security property held
+ * as a comment. A deployed agent guest binds `0.0.0.0` (Modal publishes the port
+ * as a public HTTPS tunnel) and the public `GET /:slug/client-config` hands that
+ * origin to every browser that asks, so
+ * `POST <tunnel>/.well-known/workflow/v1/step` executed one of that tenant's
+ * registered step functions, with the caller's arguments, for anyone on the
+ * internet.
  *
- * These two are the opposite by design: the DevKit is left external so the
- * artifacts stay ~69 KB and ~7 KB instead of 3.7 MB and 12 MB (they resolve from
- * this image instead). So they carry real bare imports — and a module at
- * `/tmp/x.mjs` resolves those against `/tmp/node_modules` and `/node_modules`,
- * neither of which exists. The failure is `ERR_MODULE_NOT_FOUND` on `workflow`,
- * from a path that looks nothing like the guest.
+ * Both routes are gone, so that hole is closed by CONSTRUCTION rather than by a
+ * predicate. {@link isLoopbackAddress} survives them, and has NO reader today —
+ * its own spec is the only caller. It is kept because the reasoning outlived the
+ * routes: a caller's network POSITION is a fact this process can establish where
+ * a header is not, and tunnel traffic arrives from outside the sandbox's network
+ * namespace so it is never a loopback peer. The next door that has to tell a
+ * loopback dial from a tunnel one should take this rather than write a fourth
+ * spelling of the IPv4-mapped case. If none arrives, delete it and its spec.
  *
- * Rewriting the specifiers to absolute URLs is the fix that does not depend on
- * where the file lands or on the image's directory layout — the alternative,
- * writing next to the harness so Node's walk-up finds its `node_modules`, bets
- * on a writable install directory that nothing else here needs.
+ * @internal
  */
 
-import { rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import {
+  PUBLIC_URL_UNCONFIGURED_MESSAGE,
+  publishStepWebhookUrl,
+} from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { decodePathSegment } from "./_path-decode.ts";
-import { dispatchQueueMessage, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
-import { resolveImportSpecifier } from "./workflow-resolve.ts";
-import { createWebhookHandler } from "./workflow-webhook.ts";
+import { consoleLogger, type Logger } from "./runtime-config.ts";
+import { sendJson } from "./workflow-api-http.ts";
+import { serveFetch } from "./workflow-http-adapter.ts";
+import { deliverQueueMessage, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
 
-/** Distinct temp file per load — Node's module registry caches by URL. */
-let moduleSeq = 0;
-
-/**
- * Bare specifiers the step bundle may import, rewritten to this image's copies.
- *
- * Deliberately a fixed list rather than "every bare specifier": the agent's own
- * dependencies are BUNDLED into the step artifact, so anything still bare is the
- * DevKit, which the builder externalized on purpose. Rewriting an unknown
- * specifier would paper over a bundling bug that should surface as a missing
- * module instead.
- */
-const REWRITABLE = /^(workflow(\/[\w./-]+)?|@workflow\/[\w./-]+)$/;
-
-/**
- * Rewrite the step bundle's external imports to absolute file URLs.
- *
- * Matches only the specifier position of a static `import … from "x"` /
- * `export … from "x"`, so a matching string anywhere in the agent's own code is
- * left alone.
- *
- * A specifier this image cannot resolve is left AS IS rather than dropped: it
- * then fails at import with Node's own error naming the module, which is a far
- * better report than a silently rewritten path that resolves to nothing.
- *
- * @internal
- */
-export function rewriteWorkflowImports(code: string): string {
-  return code.replace(
-    /(\bfrom\s*|\bimport\s*)(["'])([^"']+)\2/g,
-    (whole, prefix: string, quote: string, specifier: string) => {
-      if (!REWRITABLE.test(specifier)) return whole;
-      // One helper for the whole class — see `workflow-resolve.ts`. It keeps the
-      // import/require distinction in one place rather than at each call site,
-      // which is where it was got wrong before.
-      const resolved = resolveImportSpecifier(specifier);
-      return resolved === undefined ? whole : `${prefix}${quote}${resolved}${quote}`;
-    },
-  );
-}
-
-/**
- * Write one of the builder's route modules to a temp file and import it.
- *
- * Both modules matter for their side effects as well as their exports — the
- * step module's top-level `registerStepFunction(...)` calls are what make a step
- * id dispatchable — so this always evaluates, and the caller decides what to
- * read off the result.
- *
- * @internal
- */
-export async function loadWorkflowModule(
-  code: string,
-  label: string,
-): Promise<Record<string, unknown>> {
-  // `tmpdir()`, not a literal `/tmp`: on Windows that string is drive-relative
-  // and resolves to `D:\tmp`, which does not exist — every workflow load failed
-  // with ENOENT there. The DIRECTORY is not load-bearing (see "Why they cannot
-  // just go in /tmp" above: it is the specifier rewriting that makes the
-  // location irrelevant, and `tmpdir()` has no `node_modules` either), so this
-  // preserves the reasoning rather than working around it.
-  const file = join(tmpdir(), `aai-${label}-${process.pid}-${++moduleSeq}.mjs`);
-  await writeFile(file, rewriteWorkflowImports(code), "utf-8");
-  try {
-    return (await import(pathToFileURL(file).href)) as Record<string, unknown>;
-  } finally {
-    // Deleted once it is IN the module registry, which is keyed by URL and holds
-    // the evaluated module — nothing re-reads the file, and `moduleSeq` exists
-    // precisely so a later load cannot want this URL back. Without this, every
-    // `createWorkflowSurface` left two files behind: two per `aai dev` save, and
-    // in a long studio build→load loop that is the tmpdir filling up with dead
-    // bundles nothing ever collects. Best effort — a failed unlink is a stale
-    // temp file, not a failed load.
-    await rm(file, { force: true }).catch(() => undefined);
-  }
-}
-
-/** The `POST` export a builder route module owes, or a failure naming which one. */
-function routeHandler(mod: Record<string, unknown>, label: string): FetchHandler {
-  const post = mod.POST;
-  if (typeof post !== "function") {
-    // Reachable only if the builder's output shape changes, which is exactly
-    // when a bare `undefined is not a function` three layers down would cost
-    // the most to diagnose.
-    throw new Error(`Workflow ${label} bundle exported no POST handler`);
-  }
-  return post as FetchHandler;
-}
-
-/**
- * The three paths the DevKit's queue calls back on.
- *
- * @internal
- */
-export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
-/** @internal */
-export const WORKFLOW_STEP_PATH = "/.well-known/workflow/v1/step";
-/** @internal */
 /**
  * The webhook ROUTE, and the prefix `webhookToken` slices a token off after it.
  *
  * Two names because the platform must register the slash-less path plus a token
- * segment while the parser needs the trailing slash — derived from one another
- * so the two cannot drift, which they did while `aai-server` spelled the
- * slash-less form as its own literal. See `server-routes.ts`.
+ * segment while the parser needs the trailing slash — derived from one another so
+ * the two cannot drift, which they did while `aai-server` spelled the slash-less
+ * form as its own literal. See `server-routes.ts`.
+ *
+ * They stay in this module rather than moving to `workflow-webhook.ts` with the
+ * handler because that module reaches the runtime's `Logger` and a
+ * `WorkflowClient` — a dependency `server-routes.ts` has no business acquiring in
+ * order to learn a path, and it is what `aai-server` reads the route table from.
+ * The three readers are all in this package: `server-routes.ts`,
+ * `workflow-webhook.ts` and `workflow-client.ts`.
  *
  * @internal
  */
@@ -171,16 +77,100 @@ export const WORKFLOW_WEBHOOK_PATH = "/.well-known/workflow/v1/webhook";
 export const WORKFLOW_WEBHOOK_PREFIX = `${WORKFLOW_WEBHOOK_PATH}/` as const;
 
 /**
- * Is this one of the two QUEUE CALLBACKS — the routes only the guest's own
- * queue may call?
+ * The URL a third party POSTs to in order to resolve one waitpoint — an origin
+ * plus {@link WORKFLOW_WEBHOOK_PREFIX} plus the token, as ONE segment.
  *
- * The webhook route deliberately is not one: its URL is handed to a third party
- * and has to work from the public internet, which is why the platform proxies
- * it and the DevKit's token in the path is its whole authorization.
+ * Here rather than at its callers because the composition has three parts that
+ * are each wrong in a way nothing can see. The PREFIX has to be the constant
+ * this router parses, or the URL handed out and the path answering it drift —
+ * and a run waiting on a hook that never arrives reports as healthily
+ * suspended, so the 404 lands weeks later on somebody else's server. The token
+ * has to be ENCODED, because the parser refuses a path carrying a second slash.
+ * And the base has to be de-slashed: it arrives from a boot env var, a
+ * container's `PUBLIC_URL` or an author's own string, and a copied-in origin
+ * ending in `/` is the ordinary shape of all three.
+ *
+ * A blank base THROWS the same message `ctx.workflows.publicWebhookUrl` throws,
+ * rather than composing a relative `/.well-known/…` that nothing can call back
+ * on. `workflow-client.ts` still spells this composition inline and should be
+ * folded onto this function — one behaviour, one copy.
+ *
+ * @internal
  */
-function isQueueCallbackPath(url: string): boolean {
-  return url === WORKFLOW_FLOW_PATH || url === WORKFLOW_STEP_PATH;
+export function workflowWebhookUrl(publicUrl: string, token: string): string {
+  const base = publicUrl.trim().replace(/\/+$/, "");
+  if (!base) throw new Error(PUBLIC_URL_UNCONFIGURED_MESSAGE);
+  return `${base}${WORKFLOW_WEBHOOK_PREFIX}${encodeURIComponent(token)}`;
 }
+
+/**
+ * Publish how this process mints a run's public webhook URL, for the STEP slot
+ * (`stepWebhookUrl` on `@alexkroman1/aai/step`).
+ *
+ * The gap it closes: `ctx.workflows.publicWebhookUrl` needs a `ToolContext`, and
+ * a workflow BODY and the steps it calls are handed none — so a `workflowApp()`
+ * with no tools could not mint a callback at all and had to poll. A step's
+ * env cannot supply the value either: the public URL is a boot parameter of the
+ * DEPLOYMENT rather than one of the agent's own secrets. See
+ * `sdk/step-webhook.ts` in `@alexkroman1/aai` for the slot and the rest of the
+ * argument.
+ *
+ * What is published is a MINTER rather than the origin, so the route stays in
+ * the package that answers it and the SDK never spells this path.
+ *
+ * A blank or absent `publicUrl` UNPUBLISHES: the deployment cannot mint one, and
+ * the step helper's own throw then names the configuration — where a published
+ * minter over an empty base would hand out a relative URL and fail at the far
+ * end. Publishing again REPLACES, which is what a redeploy or a repeat bundle
+ * load means.
+ *
+ * @internal
+ */
+export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void {
+  const base = publicUrl?.trim();
+  publishStepWebhookUrl(base ? (token) => workflowWebhookUrl(base, token) : undefined);
+}
+
+/**
+ * The delivery door's body cap.
+ *
+ * This door had NO cap, which is not the same severity as the unauthenticated
+ * webhook beside it — `allowRemote` has to vouch for the caller first — but
+ * "authenticated" is not "trusted with unbounded memory". The credential is a
+ * per-sandbox manage bearer, and the process it spends is a guest also serving
+ * live voice sessions, so an unbounded read makes one leaked or misbehaving
+ * caller the author of this container's heap usage.
+ *
+ * ## Why this number
+ *
+ * The delivery body is the queue envelope's payload, and the platform's own
+ * enqueue route is what decides how large one can ever be:
+ * `MAX_ENQUEUE_BODY_BYTES` in `aai-server/workflow-enqueue-handler.ts` refuses a
+ * larger message before it is stored, so nothing above this can be enqueued and
+ * therefore nothing above it can be delivered. The cap is the same number,
+ * RESTATED rather than imported — `aai-runtime` may not depend on `aai-server`,
+ * and this package is also what a self-hoster runs, where there is no platform
+ * enqueue route at all. A delivery that starts being refused here is the signal
+ * that the two have drifted.
+ *
+ * `deliverQueueMessage` in fact reads nothing but the `x-vqs-queue-name` header
+ * — the run id comes from the name and from nothing else — so today a cap of
+ * almost zero would serve. That is deliberately not the number: it would bind
+ * this constant to one implementation detail of the handler rather than to the
+ * contract, and the first reader of the payload would silently start refusing
+ * every real message.
+ *
+ * ## Not `MAX_WEBHOOK_BODY_BYTES`, though it is the same size today
+ *
+ * That one bounds a THIRD PARTY's notification on the public, credential-free
+ * webhook route, and its number is a product statement ("a payload is a
+ * notification, never a file"). Borrowing it would couple the two: a decision to
+ * tighten the public surface would silently start refusing legitimate queue
+ * deliveries, on an unrelated door, with the failure appearing as stalled runs.
+ *
+ * @internal
+ */
+export const MAX_QUEUE_DELIVERY_BODY_BYTES = 1_048_576;
 
 /**
  * Is `address` a loopback peer — i.e. did this request originate INSIDE this
@@ -193,8 +183,8 @@ function isQueueCallbackPath(url: string): boolean {
  * Three spellings, all of which a real server produces: `127.0.0.0/8` (the
  * whole block, not just `127.0.0.1` — `localhost` resolves elsewhere in it on
  * some hosts), `::1`, and the IPv4-MAPPED form a dual-stack listener reports
- * for an IPv4 loopback dial. Missing the third would refuse the guest's own
- * queue on any host that binds `::`.
+ * for an IPv4 loopback dial. Missing the third would refuse an in-container
+ * caller on any host that binds `::`.
  *
  * @internal
  */
@@ -206,256 +196,120 @@ export function isLoopbackAddress(address: string | undefined): boolean {
 }
 
 /**
- * The token from a webhook path, or undefined when the path is not one.
+ * Serve the platform's delivery door, in the shape `createServer`'s `request`
+ * hook wants: `true` when this handler claimed the request.
  *
- * A webhook URL is handed OUT of the system — it goes to a payment provider, an
- * approval email — so the token is the only thing identifying the run, and an
- * empty trailing segment must not read as a valid one.
- *
- * **A segment that will not decode is "not a webhook path" too**, and that is
- * the load-bearing part: this whole call chain is synchronous and
- * `createServer` invokes it from the `request` hook with no `try`, so a
- * `URIError` from a raw `%` here reached the guest's `uncaughtException` guard
- * and exited the process — from an unauthenticated `GET`. See
- * `_path-decode.ts`.
- *
- * @internal
- */
-export function webhookToken(pathname: string): string | undefined {
-  if (!pathname.startsWith(WORKFLOW_WEBHOOK_PREFIX)) return;
-  const token = pathname.slice(WORKFLOW_WEBHOOK_PREFIX.length);
-  // A token with a slash in it is not one: the route is a single segment, and
-  // accepting more would let `…/webhook/a/b` reach the DevKit as the token "a/b".
-  if (token === "" || token.includes("/")) return;
-  return decodePathSegment(token);
-}
-
-/**
- * A fetch-style handler, which is what every DevKit entrypoint is.
- *
- * @internal
- */
-export type FetchHandler = (req: Request) => Promise<Response>;
-
-/**
- * The workflow surface one loaded bundle exposes.
- *
- * @internal
- */
-export type WorkflowSurface = {
-  /** `POST /.well-known/workflow/v1/flow` — replays a run. */
-  flow: FetchHandler;
-  /** `POST /.well-known/workflow/v1/step` — executes one step. */
-  step: FetchHandler;
-  /**
-   * `/.well-known/workflow/v1/webhook/:token` — delivers a webhook to a run.
-   *
-   * Takes the token as its own argument because `resumeWebhook` does: the DevKit
-   * does not parse it out of the URL, so whoever routes the request owns
-   * extracting it. See `webhookToken`.
-   */
-  webhook: (token: string, req: Request) => Promise<Response>;
-};
-
-/**
- * Build the workflow surface for a loaded bundle, or `undefined` when the agent
- * declares none.
- *
- * Takes the two code strings rather than the bundle so the caller decides what
- * "has workflows" means — the CLI omits both exports entirely for a project with
- * no `workflows/` directory, and an agent with no workflow surface must mount no
- * routes rather than mount ones that answer 500.
- *
- * @internal
- */
-export async function createWorkflowSurface(
-  workflowCode: string | undefined,
-  stepCode: string | undefined,
-): Promise<WorkflowSurface | undefined> {
-  if (!(workflowCode && stepCode)) return;
-
-  // Imported lazily, like the two route modules below: `workflow/api` resolves a
-  // World from the environment as it loads, and a guest serving an agent with no
-  // workflows must not pay that — nor fail on it when no world is configured.
-  // `workflow/errors` rides along in the same lazy step so the webhook route can
-  // classify its one expected failure without this module importing the DevKit
-  // eagerly — see `workflow-wdk.ts`'s module doc for why that matters.
-  const [{ resumeWebhook }, { HookNotFoundError }] = await Promise.all([
-    import("workflow/api"),
-    import("workflow/errors"),
-  ]);
-
-  // Steps first: a flow replay can dispatch a step immediately, and an
-  // unregistered step id is a hard failure rather than a retry.
-  const steps = await loadWorkflowModule(stepCode, "steps");
-  const flows = await loadWorkflowModule(workflowCode, "flows");
-
-  return {
-    flow: routeHandler(flows, "flow"),
-    step: routeHandler(steps, "step"),
-    webhook: createWebhookHandler(resumeWebhook, (err) => HookNotFoundError.is(err)),
-  };
-}
-
-/**
- * Serve the three workflow routes, in the shape `createServer`'s `request` hook
- * wants: `true` when this handler claimed the request.
- *
- * A node↔fetch adapter lives here because every DevKit entrypoint is fetch-style
- * while `createServer` is `node:http`. It is small and it is temporary — once
- * the session server is on Hono (`c.req.raw` is already a `Request`) these
- * handlers mount directly and this function goes away.
- *
- * ## `flow` and `step` are refused from off-box, and they were NOT
- *
- * Both are unauthenticated by design — aai-server's `GUEST_ROUTE_EXPOSURE`
- * declares them `guest-internal` and says so outright: "these two are
- * unauthenticated precisely BECAUSE loopback is the whole gate", and
- * `aai-guest/harness-workflow-gate.ts` said they were "loopback-gated". Nothing
- * checked. A deployed agent guest binds `0.0.0.0` (Modal publishes the port as a
- * public HTTPS tunnel) and the PUBLIC `GET /:slug/client-config` hands that
- * tunnel origin to every browser that asks — so on any deployed agent with
- * workflows, `POST <tunnel>/.well-known/workflow/v1/step` executed one of that
- * tenant's registered step functions, with the caller's arguments, for anyone on
- * the internet: their tools, their `ctx.db`, their provider spend. `flow` beside
- * it starts and replays runs. The exposure table's own reasoning was sound; the
- * gate it assumed did not exist, which is the failure mode of a security
- * property held as a comment.
- *
- * A SECRET would be the stronger gate and is not reachable: the caller is the
- * DevKit's own queue, which builds this URL from `WORKFLOW_LOCAL_BASE_URL` and
- * offers no header hook — and undici refuses to construct a `Request` from a URL
- * carrying credentials ("Request cannot be constructed from a URL that includes
- * credentials"), so smuggling one through the base URL breaks the queue outright
- * rather than authenticating it. Network position is what is left, and it is
- * sound for the reason `harness.ts` binds every interface in the first place:
- * tunnel traffic arrives from OUTSIDE the sandbox's network namespace, so it is
- * never a loopback peer. In-container callers are inside the security boundary
- * already — the Modal container is that boundary.
- *
- * It is here, in the module that SERVES the routes, rather than in the deployed
- * guest's request hook beside `gateDirectWorkflowDial`: `aai dev`, host mode,
- * studio mode and a self-hosted `createAgentServer` all reach these two through
- * this function, and a self-hoster who binds `0.0.0.0` has exactly the same hole.
- *
- * The one thing this closes off is a queue running somewhere other than in this
- * process, and that is correct rather than incidental: such a queue needs its own
- * authenticated door — an authenticity check AND a route — not a hole where one
- * should be.
+ * A node↔fetch adapter sits behind it (`workflow-http-adapter.ts`) because the
+ * handler is fetch-style while `createServer` is `node:http`; that module's own
+ * doc says why it is temporary.
  *
  * @internal
  */
 export function handleWorkflowRequest(
-  // `null` as well as `undefined`: `HarnessState` uses null for "loaded, has
-  // none" (matching its other slots) while `createWorkflowSurface` returns
-  // undefined, and making the caller normalize is a conversion with no meaning.
-  surface: WorkflowSurface | null | undefined,
   req: IncomingMessage,
   res: ServerResponse,
   url: string,
   method: string,
   opts: {
     /**
-     * May this off-box caller reach the PLATFORM's delivery door
-     * (`WORKFLOW_QUEUE_PATH`)?
+     * May this off-box caller reach the delivery door?
      *
      * Injected because the credential is the platform's and this package is also
-     * what a self-hoster runs. Absent means the door is refused — which is
-     * right for `aai dev`, host mode and a self-hosted server, none of which
-     * have a queue outside the process. It does NOT open `flow`/`step`: those
-     * stay loopback-only, and the whole point of the door is that they can.
+     * what a self-hoster runs. Absent means the door is REFUSED — which is right
+     * for `aai dev`, host mode and a self-hosted server, none of which have a
+     * queue outside the process.
      */
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
+    /**
+     * Where a failed delivery is reported.
+     *
+     * Optional with a console fallback because that is the behaviour it
+     * replaced, and every caller here is a composition root that already has a
+     * logger — a required field would be a breaking change to three doors for a
+     * line that only prints on a fault.
+     */
+    logger?: Logger | undefined;
+    /**
+     * Resolves `AgentRuntime.deliverWorkflow` — re-walk one run.
+     *
+     * A THUNK, and that is load-bearing rather than a style. The guest supplies
+     * it as a getter over `ensureRuntime`, so READING it builds the runtime; as a
+     * plain value it was evaluated as an argument to this function, on every
+     * request that reached the hook. Two consequences, both real: an
+     * unauthenticated `GET /` on the public sandbox tunnel forced runtime
+     * construction, and `ensureRuntime` THROWS for a bundle that has not loaded
+     * or a missing provider credential — into `createServer`'s request hook,
+     * which is called with no `try`, so it surfaced as an `uncaughtException` and
+     * the guest's guard exited the process, taking every live voice session with
+     * it.
+     *
+     * So it is resolved LAST: after the path, after the method, and after the
+     * bearer. `createWorkflowApi`'s `engine` getter has had this shape all along.
+     *
+     * Resolving to `undefined` means this deployment has no engine — an agent
+     * that declares no workflows — and the door then DECLINES, so the request
+     * falls through rather than answering for a feature the agent lacks.
+     */
+    deliver?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
   } = {},
 ): boolean {
-  if (!surface) return false;
+  if (method !== "POST" || url !== WORKFLOW_QUEUE_PATH) return false;
 
-  // The two queue callbacks are GUEST-INTERNAL, and this is what makes that
-  // true rather than merely intended. See the block comment above.
-  if (isQueueCallbackPath(url) && !isLoopbackAddress(req.socket?.remoteAddress)) {
-    res.writeHead(403, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "workflow queue callbacks are guest-internal" }));
+  // HOST-ONLY, and checked BEFORE the engine is resolved: resolving builds the
+  // runtime in a guest, which is work an unauthenticated caller must not be able
+  // to trigger. Fails closed when no predicate was supplied, which is every
+  // composition that has no platform.
+  if (!opts.allowRemote?.(req)) {
+    sendJson(res, 401, { error: "unauthorized" });
     return true;
   }
 
-  // The platform's door, and it is HOST-ONLY: a caller the composition does not
-  // vouch for is refused even on loopback. Fails closed when no predicate was
-  // supplied, which is every composition that has no platform.
-  if (url === WORKFLOW_QUEUE_PATH && !opts.allowRemote?.(req)) {
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "unauthorized" }));
-    return true;
-  }
-
-  const handler = pickWorkflowHandler(surface, url, method);
-  if (!handler) return false;
-
-  void serveFetch(handler, req, res);
-  return true;
-}
-
-/**
- * Which handler serves this request, if any.
- *
- * Only POST reaches flow and step — they are queue callbacks, not a browsable
- * surface — while a webhook takes whatever verb the far side sends, because the
- * URL was handed to a third party that chooses its own.
- */
-function pickWorkflowHandler(
-  surface: WorkflowSurface,
-  url: string,
-  method: string,
-): FetchHandler | undefined {
-  if (method === "POST" && url === WORKFLOW_FLOW_PATH) return surface.flow;
-  if (method === "POST" && url === WORKFLOW_STEP_PATH) return surface.step;
-  // The platform's delivery door dispatches to one of the two above by queue
-  // name; its gate has already run in `handleWorkflowRequest`.
-  if (method === "POST" && url === WORKFLOW_QUEUE_PATH) {
-    return (request: Request) => dispatchQueueMessage(surface, request);
-  }
-  const token = webhookToken(url);
-  if (token !== undefined) return (request: Request) => surface.webhook(token, request);
-}
-
-/** Run a fetch-style handler against a node request/response pair. */
-async function serveFetch(
-  handler: FetchHandler,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
+  // A resolver that THREW could not build the runtime — a misconfigured agent
+  // rather than one without workflows — so it answers 500 with the reason. The
+  // catch is the point: this runs inside `createServer`'s request hook, which is
+  // called with no `try`, so an escaping throw is an `uncaughtException` and the
+  // guest's guard exits the process mid-call.
+  // Resolved once, above the try: three readers now — the resolver's own
+  // failure, `serveFetch`, and the delivery door's PARK report.
+  const logger = opts.logger ?? consoleLogger;
+  let deliver: ((runId: string) => Promise<unknown>) | undefined;
   try {
-    const response = await handler(await toFetchRequest(req));
-    res.writeHead(response.status, Object.fromEntries(response.headers));
-    res.end(Buffer.from(await response.arrayBuffer()));
+    deliver = opts.deliver?.();
   } catch (err: unknown) {
-    // These are queue callbacks: the world RETRIES a 5xx, so failing loudly
-    // here is how a transient fault gets another attempt. Throwing instead
-    // would surface as an unhandled rejection and take the guest down mid-run.
-    console.error("Workflow route failed:", errorMessage(err));
-    if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "workflow route failed" }));
+    logger.error("Workflow delivery unavailable", { error: errorMessage(err) });
+    sendJson(res, 500, { error: `Workflow delivery unavailable: ${errorMessage(err)}` });
+    return true;
   }
-}
+  // Nothing to deliver to. DECLINED rather than answered: this is
+  // indistinguishable from an agent that declares no workflows, and claiming the
+  // request would shadow whatever else the host serves on that path.
+  if (!deliver) return false;
 
-/** One node header entry as zero or more `[name, value]` pairs. */
-function toHeaderPairs(key: string, value: string | string[] | undefined): [string, string][] {
-  if (value === undefined) return [];
-  if (Array.isArray(value)) return value.map((one) => [key, one]);
-  return [[key, value]];
-}
-
-/** Build a `Request` from a node request, body included. */
-async function toFetchRequest(req: IncomingMessage): Promise<Request> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
-  const body = Buffer.concat(chunks);
-  // The absolute URL is required by `Request` and is otherwise unused — the
-  // DevKit routes on the payload, not the host.
-  return new Request(`http://guest.local${req.url ?? "/"}`, {
-    method: req.method ?? "GET",
-    headers: Object.entries(req.headers).flatMap(([key, value]) => toHeaderPairs(key, value)),
-    // A GET/HEAD may carry no body at all, and `duplex` is required whenever
-    // one is present.
-    ...(body.length > 0 ? { body, duplex: "half" } : {}),
-  } as RequestInit);
+  const run = deliver;
+  void serveFetch((request: Request) => deliverQueueMessage(run, request, { logger }), req, res, {
+    logger,
+    label: "Workflow delivery",
+    // The platform RETRIES a 5xx, which is how a guest that was up and could not
+    // finish gets another attempt. An unroutable message is a 400 decided inside
+    // the handler and never reaches here — see `deliverQueueMessage`.
+    failureStatus: 500,
+    // Bounded AS IT IS READ. `readBody` counts per chunk and drops the overflow,
+    // so `serveFetch` answers 413 before `deliverQueueMessage` sees a `Request`
+    // at all — which is the property that makes this a cap rather than a
+    // measurement taken after the damage. Applied here and not in the adapter
+    // because the limit is this door's contract, not the shim's.
+    //
+    // **A 413 is TERMINAL, and the platform does not yet know that.** The
+    // sender is `workflow-queue-deliver.ts`, whose caller
+    // (`workflow-queue-sweep.ts`) throws on any non-2xx and lets the sweep back
+    // off — so an oversized message is re-sent until the attempt budget runs
+    // out, exactly as `deliverQueueMessage`'s 400 already is, despite its doc
+    // saying a 400 means "do not retry this, it can never route". Classifying a
+    // 4xx as abandon-now belongs on that side and is owed there. What this
+    // change does buy in the meantime is that the retries are cheap: the body is
+    // discarded as it arrives instead of being buffered whole, so a resend costs
+    // bandwidth rather than another copy of the payload in a guest's heap.
+    maxBodyBytes: MAX_QUEUE_DELIVERY_BODY_BYTES,
+  });
+  return true;
 }

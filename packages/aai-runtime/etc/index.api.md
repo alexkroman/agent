@@ -55,6 +55,7 @@ import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 export { AgentEnv }
 
@@ -64,6 +65,7 @@ export type AgentRuntime = {
     shutdown(): Promise<void>;
     readonly readyConfig: ReadyConfig;
     readonly workflows?: WorkflowClient | undefined;
+    readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
     readonly sessionEvents?: SessionEventStream | undefined;
 };
 
@@ -83,10 +85,8 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
-    stepCode?: string | undefined;
     telephony?: boolean | undefined;
     uploadBroker?: string | undefined;
-    workflowCode?: string | undefined;
 }
 
 // @public
@@ -179,6 +179,8 @@ export type CreatePostgresDbOptions = {
     onNotice?: (notice: unknown) => void;
     connectTimeoutSeconds?: number;
     queryTimeoutMs?: number;
+    reservedQueryTimeoutMs?: number;
+    reserveTimeoutMs?: number;
 };
 
 // @public
@@ -227,6 +229,12 @@ export function ensureSessionStateSchema(opts: {
 }): Promise<boolean>;
 
 // @public
+export function ensureWorkflowJournalSchema(opts: {
+    url: string;
+    logger: Logger;
+}): Promise<boolean>;
+
+// @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
     type: T;
 }>;
@@ -254,6 +262,14 @@ type HeaderWebSocket = {
     }) => void): void;
 };
 
+// @public
+type HookRecord = {
+    token: string;
+    delivered: boolean;
+    payload?: unknown;
+    closed?: boolean;
+};
+
 export { HostCredentialEnv }
 
 // @internal
@@ -277,6 +293,29 @@ export type HttpUploadBlobsOptions = {
     serviceKey: string;
     bucket: string;
     fetch?: typeof globalThis.fetch | undefined;
+};
+
+// @public
+type JournalStore = {
+    createRun(record: RunRecord): Promise<void>;
+    getRun(runId: string): Promise<RunRecord | undefined>;
+    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
+    setStatus(runId: string, next: RunStatus, patch?: {
+        output?: unknown;
+        error?: {
+            message: string;
+        };
+    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    readSteps(runId: string): Promise<StepEntry[]>;
+    claimAttempt(runId: string, key: string): Promise<number>;
+    releaseAttempt(runId: string, key: string): Promise<void>;
+    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
+    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+    closeHook(runId: string, key: string): Promise<boolean>;
+    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
+    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
 };
 
 // @public
@@ -400,7 +439,29 @@ export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
 // @public
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
 
+// @public
+type ResumableRun = {
+    runId: string;
+    wakeAt?: number | undefined;
+};
+
 export { RunCodeExecutor }
+
+// @public
+type RunRecord = {
+    runId: string;
+    workflow: string;
+    status: RunStatus;
+    createdAt: number;
+    input: unknown;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+type RunStatus = WorkflowRunStatus;
 
 // @public
 export type Runtime = AgentRuntime & {
@@ -421,6 +482,7 @@ export type RuntimeOptions = {
     providerEnv?: ProviderEnv | undefined;
     db?: Db | undefined;
     workflows?: WorkflowClient | undefined;
+    journal?: JournalStore | undefined;
     createWebSocket?: CreateS2sWebSocket | undefined;
     createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
     publicUrl?: string | undefined;
@@ -511,7 +573,7 @@ export type SessionEventStream = {
 };
 
 // @public
-export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents">;
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow">;
 
 // @public
 export type SessionStartOptions = {
@@ -573,6 +635,14 @@ export type SessionWebSocket = {
 export type SkipGreeting = boolean | (() => boolean);
 
 // @public
+type SleepRecord = {
+    wakeAt: number;
+    woken: boolean;
+    correlationId?: string | undefined;
+    kind: "sleep" | "hookTimeout";
+};
+
+// @public
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, opts: {
     carrier: CarrierCodec;
     logger?: Logger;
@@ -583,6 +653,19 @@ export type StateSyncSession = {
     read(key: string): unknown;
     lastPush(): string | undefined;
     recordPush(json: string): void;
+};
+
+// @public
+type StepEntry = {
+    key: string;
+    name: string;
+    status: "ok" | "failed";
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    attempts: number;
+    finishedAt: number;
 };
 
 // @public
@@ -602,13 +685,6 @@ export { SttOpenOptions }
 export { SttSession }
 
 export { SttTurnMeta }
-
-// @public
-export type SweepSkip =
-/** Another pool holds presence, so its locks are live and not ours to clear. */
-"another-pool-is-live"
-/** Presence is ours and there was nothing locked. The healthy case. */
-| "no-orphaned-locks";
 
 // @public
 export const TELEPHONY_PATH = "/phone";
@@ -770,6 +846,7 @@ export type WdkRunRecord = {
     workflowName: string;
     status: "pending" | "running" | "completed" | "failed" | "cancelled";
     createdAt: Date | number;
+    output?: unknown;
     error?: {
         message: string;
     } | undefined;

@@ -2,8 +2,7 @@
 /**
  * `cbor-x`'s native-accelerator guard must check the FUNCTION, not the module.
  *
- * The durable Postgres workflow world decodes its event rows with `cbor-x`
- * (`@workflow/world-postgres` → `cbor-x`), and `cbor-x`'s Node entry loads an
+ * The Modal SDK decodes with `cbor-x`, and `cbor-x`'s Node entry loads an
  * optional native string extractor. Its own guard was
  * `if (extractor) setExtractor(extractor.extractStrings)`, and `setExtractor`
  * is NOT a no-op on a bad argument: it sets `isNativeAccelerationEnabled` and
@@ -13,13 +12,16 @@
  * `try`/`catch` only covers a failed `require`), and fails LATER — at decode
  * time, and only on the branch where the string cache misses.
  *
- * That deferred, data-dependent shape is what made it expensive: production
- * served an intermittent 503 on `POST /:slug/workflow-storage`
- * (`method: 'events.list'`, `error: 'extractStrings is not a function'`) with
- * the immediate retry succeeding — i.e. it read as a transient service
- * problem, not a hard bug. `patches/cbor-x@1.6.0.patch` and its `1.6.5` twin
- * add the `typeof … === 'function'` half so the documented "native module is
- * optional" fallback is actually fail-safe.
+ * That deferred, data-dependent shape is what made it expensive. It was FOUND
+ * through the durable Postgres workflow world, which decoded its event rows the
+ * same way: production served an intermittent 503 on
+ * `POST /:slug/workflow-storage` (`method: 'events.list'`,
+ * `error: 'extractStrings is not a function'`) with the immediate retry
+ * succeeding — i.e. it read as a transient service problem, not a hard bug.
+ * That world went with the Workflow DevKit and its `cbor-x@1.6.0` copy with it;
+ * the Modal SDK's `1.6.5` is the one that remains, and the same latent bug is
+ * in it. `patches/cbor-x@1.6.5.patch` adds the `typeof … === 'function'` half so
+ * the documented "native module is optional" fallback is actually fail-safe.
  *
  * This is a test rather than a note because a pnpm patch lapses SILENTLY in
  * one direction that matters: bump `cbor-x` and the `patchedDependencies` key
@@ -37,10 +39,10 @@ import { describe, expect, test } from "vitest";
  * Every `cbor-x` file that carries the guard, across every copy reachable from
  * this package.
  *
- * Two dimensions, and missing either one leaves the bug live:
+ * One dimension left, and missing it leaves the bug live. There were two: a
+ * second VERSION, `cbor-x@1.6.0`, reached through `@workflow/world-postgres`,
+ * which is gone with the DevKit along with its patch.
  *
- * - **Two VERSIONS.** `@workflow/world-postgres` pins 1.6.0 and the Modal SDK
- *   pins 1.6.5, so they are separate copies with separate module state.
  * - **Two CONDITION halves.** `cbor-x`'s exports map sends `import` to
  *   `node-index.js` and `require` to `dist/node.cjs`, and the guard is written
  *   out in BOTH. The first version of this patch did only the ESM half — the
@@ -50,7 +52,7 @@ import { describe, expect, test } from "vitest";
 function guardFiles(): { label: string; source: string }[] {
   const require = createRequire(import.meta.url);
   const found: { label: string; source: string }[] = [];
-  for (const root of ["@workflow/world-postgres", "modal"]) {
+  for (const root of ["modal"]) {
     // `package.json` is not an exported subpath on either package, so walk up
     // from the resolved entry to the directory that owns it.
     let dir = path.dirname(require.resolve(root));
@@ -74,13 +76,8 @@ describe("cbor-x native accelerator guard", () => {
   // Without this the loop below is vacuous: a rename upstream, or a package
   // that stops depending on cbor-x, would make every assertion pass by
   // checking nothing — the failure shape this repo keeps paying for.
-  test("resolves both condition halves of both live cbor-x copies", () => {
-    expect(entries.map((e) => e.label)).toEqual([
-      "@workflow/world-postgres -> node.cjs",
-      "@workflow/world-postgres -> node-index.js",
-      "modal -> node.cjs",
-      "modal -> node-index.js",
-    ]);
+  test("resolves both condition halves of the live cbor-x copy", () => {
+    expect(entries.map((e) => e.label)).toEqual(["modal -> node.cjs", "modal -> node-index.js"]);
   });
 
   test.each(entries.map((e) => [e.label, e] as const))(

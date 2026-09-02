@@ -15,11 +15,24 @@ import {
   type WorkspaceSnapshot,
   walkWorkspaceFiles,
 } from "@alexkroman1/aai/workspace-files";
+import { isPathInside } from "@alexkroman1/aai-runtime/internal";
 
-/** Resolve a workspace-relative path, refusing escapes from the root. */
+/**
+ * Resolve a workspace-relative path, refusing escapes from the root.
+ *
+ * The containment test is {@link isPathInside}, not a fourth copy of the line.
+ * It was open-coded here byte for byte — as it was in `aai-cli/studio.ts` — even
+ * though `aai-runtime` exports it from `/internal` with a comment saying it is
+ * shared BECAUSE the guest harness needs it. The copies were only correct for an
+ * absolute, normalized, trailing-slash-free root, which nothing stated: this
+ * function threw "Path escapes the workspace" for `resolveInside("/a/b/",
+ * "c.ts")`. Only the ERROR SENTENCE is this module's — the callers' surfaces
+ * differ (a coding-agent tool result here, a CLI failure there), which is
+ * exactly why the predicate is shared and the message is not.
+ */
 export function resolveInside(dir: string, rel: string): string {
   const abs = path.resolve(dir, rel);
-  if (abs !== dir && !abs.startsWith(dir + path.sep)) {
+  if (!isPathInside(dir, abs)) {
     throw new Error(`Path escapes the workspace: ${rel}`);
   }
   return abs;

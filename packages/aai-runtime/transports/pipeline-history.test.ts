@@ -388,6 +388,42 @@ describe("createPipelineHistory — dropTrailingUser", () => {
     expect(h.conversation).toEqual([]);
     expect(h.llm).toEqual([]);
   });
+
+  // Two regression pins beside the property in
+  // `pipeline-history-rollback-property.test.ts`: a pin says "this shape still
+  // works", the property says "no depth breaks it".
+  test("restores the message its own push trimmed at the text cap", () => {
+    const h = createPipelineHistory();
+    for (let i = 0; i < DEFAULT_MAX_HISTORY; i++) {
+      h.pushConversation({ role: "user", content: `turn ${i}` });
+    }
+    h.pushConversation({ role: "user", content: "RESUME_PROMPT" });
+    // The push evicted the oldest turn to stay at the cap.
+    expect(h.conversation[0]).toEqual({ role: "user", content: "turn 1" });
+
+    h.dropTrailingUser("RESUME_PROMPT");
+
+    // A rollback that undid the append and not the eviction would leave 199
+    // messages starting at `turn 1` — the oldest real turn gone for good.
+    expect(h.conversation).toHaveLength(DEFAULT_MAX_HISTORY);
+    expect(h.conversation[0]).toEqual({ role: "user", content: "turn 0" });
+  });
+
+  test("restores the tool-pair half `capLlm` healed at the LLM cap", () => {
+    const h = createPipelineHistory();
+    for (let i = 0; i < DEFAULT_MAX_HISTORY / 2; i++) {
+      h.pushLlm(toolCallMsg(`c${i}`), toolResultMsg(`c${i}`));
+    }
+    h.pushLlm({ role: "user", content: "RESUME_PROMPT" });
+    // The trim dropped `c0`'s call and exposed its result at the front, which
+    // `capLlm` then shifted as well: TWO messages left on this one push.
+    expect(h.llm).toHaveLength(DEFAULT_MAX_HISTORY - 1);
+
+    h.dropTrailingUser("RESUME_PROMPT");
+
+    expect(h.llm).toHaveLength(DEFAULT_MAX_HISTORY);
+    expect(orphanToolResults(h.llm)).toEqual([]);
+  });
 });
 
 describe("persistInterruptedTurn — the record is what was HEARD", () => {

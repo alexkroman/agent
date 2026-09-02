@@ -24,7 +24,7 @@
  * the binaries are on this machine — and the three budgets are what the runner
  * spends when a caller names nothing. A `.d.ts` an agent author imports is the
  * wrong place to publish either; `@alexkroman1/aai/ffmpeg` keeps the four
- * things a `"use step"` body actually calls.
+ * things a step actually calls.
  */
 export {
   DEFAULT_FFMPEG_TIMEOUT_MS,
@@ -65,12 +65,7 @@ export type {
   ExecuteToolOptions,
 } from "./sdk/agent-config.ts";
 export { AGENT_CSP } from "./sdk/agent-csp.ts";
-export {
-  APP_DB_POOL_MAX,
-  APP_DB_PRESENCE_LOCK,
-  APP_DB_WORLD_POOL_MAX,
-  APP_DB_WORLD_WORKER_CONCURRENCY,
-} from "./sdk/app-db-budget.ts";
+export { APP_DB_POOL_MAX, APP_DB_PRESENCE_LOCK } from "./sdk/app-db-budget.ts";
 export {
   CLIENT_AUDIO_LEAD_MS,
   PACER_BURST_MS,
@@ -284,6 +279,7 @@ export {
 } from "./sdk/step-fetch.ts";
 export {
   STEP_FETCH_CONNECTIONS,
+  STEP_FETCH_INACTIVITY_MS,
   STEP_FETCH_KEEP_ALIVE_MS,
   STEP_FETCH_PIPELINING,
 } from "./sdk/step-fetch-constants.ts";
@@ -306,6 +302,17 @@ export {
   type UploadWriter,
 } from "./sdk/step-uploads.ts";
 export { UPLOAD_WRITES_UNAVAILABLE_MESSAGE } from "./sdk/step-uploads-write.ts";
+// The publisher half of a step's webhook URL — the READER (`stepWebhookUrl`) is
+// authoring API on `@alexkroman1/aai/step`. Only a host calls this, and it
+// publishes a MINTER rather than an origin because the route belongs to whoever
+// answers it: `aai-runtime`'s `publishWorkflowWebhookUrl` is the one caller, and
+// `sdk/step-webhook.ts` carries why the path may not be spelled a second time
+// here. The message is exported for that publisher's own specs.
+export {
+  publishStepWebhookUrl,
+  STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE,
+  type StepWebhookMinter,
+} from "./sdk/step-webhook.ts";
 export { buildSystemPrompt } from "./sdk/system-prompt.ts";
 export {
   MAX_UPLOAD_BYTES_ENV,
@@ -317,7 +324,6 @@ export {
   UPLOAD_TOKEN_RE,
 } from "./sdk/upload-constants.ts";
 export {
-  MISSING_WORKFLOW_ID_MESSAGE,
   PUBLIC_URL_UNCONFIGURED_MESSAGE,
   rejectingWorkflows,
   WORKFLOWS_UNAVAILABLE_MESSAGE,

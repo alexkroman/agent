@@ -4,7 +4,7 @@
  *
  * Testing a tool's `execute` in a user's own project: a `ToolContext` with
  * inert defaults and a recording `send`, the fakes its collaborators are driven
- * by (a model, a workflow client, a gateway), the three slots a `"use step"`
+ * by (a model, a workflow client, a gateway), the three slots a step
  * body reaches through — the upload store, the HTTP `stepFetch` makes its
  * request with, and the synthesizer `stepSpeak` speaks through — and
  * `deployedAgent`, which is how a spec gets the def a DEPLOYED
@@ -59,12 +59,15 @@ export {
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
+  createWorkflowCtx,
   deployedAgent,
   ok,
   okPosition,
   type ProjectFiles,
   parseSchemaInput,
   parseToolInput,
+  type RecordedSleep,
+  type RecordedStep,
   type RunSnapshotOverrides,
   runTool,
   type SentEvent,
@@ -115,6 +118,8 @@ export {
   toolInputIssues,
   toolOf,
   toolRunner,
+  type WorkflowCtxOptions,
+  type WorkflowCtxRecorder,
 } from "../../sdk/testing.ts";
 export {
   installStubGateway,

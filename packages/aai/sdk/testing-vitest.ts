@@ -166,7 +166,7 @@ export function installStubStepFetch(
 }
 
 /**
- * Capture what a `"use step"` function narrates and emits, restored when this
+ * Capture what a step narrates and emits, restored when this
  * test finishes.
  *
  * `stubReporter` with the bookkeeping done — see it for why `report()` and

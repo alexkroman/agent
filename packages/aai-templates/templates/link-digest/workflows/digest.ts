@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The durable half of the link digest: a `"use workflow"` body and its steps,
- * and the steps really read the page and really call a model.
+ * The durable half of the link digest: a workflow body and its steps, and the
+ * steps really read the page and really call a model.
  *
  * The rules are the same ones `research-workflow/workflows/research.ts` spells out
  * — the body is replayed from the top on every resume, so it holds no live
@@ -24,14 +24,19 @@
  * fetched text crosses a queue between them, which is what the cap on it is for.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { report } from "@alexkroman1/aai/step";
-import { stepFetchOk, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import { FatalError, stepFetchOk, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
 import { decodeHtmlEntities } from "@alexkroman1/aai/utils";
-import { FatalError, sleep } from "workflow";
 import { z } from "zod";
 
-/** How long the digest sits before it is filed, so the wait is visible in dev. */
-const SETTLE = "10 seconds";
+/**
+ * How long the digest sits before it is filed, so the wait is visible in dev.
+ *
+ * Milliseconds. `ctx.sleep` takes a number or a `Date` and no duration STRING —
+ * one more parser to own, and no call site in the repo passed one.
+ */
+export const SETTLE_MS = 10_000;
 
 /**
  * Characters of article text carried between the two steps.
@@ -86,31 +91,36 @@ export type Article = {
  * literally the page's render model, and `WorkflowOutputOf<typeof digest>` in
  * `client.tsx` is that type, derived rather than restated.
  */
-export async function digestFlow(input: { url: string }) {
-  "use workflow";
-
-  const article = await fetchArticle(input.url);
-  const digest = await summarize(article);
+export async function digestFlow(input: { url: string }, ctx: WorkflowCtx) {
+  const article = await ctx.step("fetchArticle", () => fetchArticle(input.url));
+  // `maxAttempts: 6` was `summarize.maxRetries = 5` — five retries AFTER the
+  // first attempt, so six in all. The retry policy moved from a property on the
+  // function to the CALL, which is where it belongs: the same function called
+  // from two places may deserve different patience, and a property could not say
+  // so. A rate limit and a model that ignored the format are both expected here.
+  const digest = await ctx.step("summarize", () => summarize(article), { maxAttempts: 6 });
 
   // Suspended, not blocked: the sandbox is free to exit here and the run
-  // resumes when it comes due. Nothing about the code changes if it is
-  // `"6 hours"` — which is the interesting version, and the one that makes an
+  // resumes when it comes due. Nothing about the code changes if it is six
+  // hours — which is the interesting version, and the one that makes an
   // overnight digest a digest rather than a slow request.
-  await sleep(SETTLE);
+  await ctx.sleep(SETTLE_MS);
 
-  return { ...digest, filedAt: await file(digest) };
+  const filedAt = await ctx.step("file", () => file(digest));
+  return { ...digest, filedAt };
 }
 
 /**
  * Read the page.
  *
- * A step, so it runs once per successful execution and its result is journaled;
- * a replay returns that result instead of fetching again — which matters here
- * more than usual, because the far side is somebody else's web server.
+ * An ORDINARY exported async function — what makes it a step is the
+ * `ctx.step("fetchArticle", …)` that calls it, so it runs once per successful
+ * execution and its result is journaled; a replay returns that result instead of
+ * fetching again, which matters here more than usual because the far side is
+ * somebody else's web server. Being ordinary is also what lets `agent.test.ts`
+ * call it directly with no engine in the path.
  */
 export async function fetchArticle(url: string): Promise<Article> {
-  "use step";
-
   const { hostname } = new URL(url);
   await report(`Reading ${hostname}…`);
 
@@ -124,7 +134,7 @@ export async function fetchArticle(url: string): Promise<Article> {
   // `stepFetchOk` rather than `stepFetch` + an `ok` check: it makes the
   // retryable/terminal split for us — a 404 or a 403 answers the same way on
   // the fourth attempt, while a rate limit is exactly what retries are for, and
-  // its `Retry-After` reaches the DevKit's schedule instead of the default
+  // its `Retry-After` reaches the engine's schedule instead of the default
   // backoff. It also puts the server's own error text in the message.
   const response = await stepFetchOk(url, {
     // Some sites answer a bare request with a challenge page; asking for HTML
@@ -156,8 +166,6 @@ export async function fetchArticle(url: string): Promise<Article> {
  * whole Node runtime is available here, unlike in the body.
  */
 export async function summarize(article: Article): Promise<Digest> {
-  "use step";
-
   await report("Pulling out the claims worth keeping.");
 
   // `stepGenerateJsonClassified` unwraps the fence a model puts around JSON,
@@ -183,9 +191,6 @@ export async function summarize(article: Article): Promise<Digest> {
   };
 }
 
-/** A rate limit — and a model that ignored the format — are both expected here. */
-summarize.maxRetries = 5;
-
 /**
  * File the digest.
  *
@@ -193,11 +198,16 @@ summarize.maxRetries = 5;
  * replays the expensive half for free and re-issues only the cheap one.
  * Returning the timestamp rather than reading a clock in the BODY is the same
  * rule — a step's result is journaled and therefore stable across replays,
- * where `Date.now()` in the body would change on every one.
+ * where the same read in the body would change on every one.
+ *
+ * The `new Date()` below is therefore a BASELINED occurrence of
+ * `guard-invariants` rule 30, and this is the reason: it is inside a step, not
+ * inside a body. The rule bans a clock read anywhere in a shipped `workflows/`
+ * file because the `ctx.step` callback boundary is not decidable from a line;
+ * `digestFlow` is what reaches this one, as `ctx.step("file", () =>
+ * file(digest))`. Anything at BODY level is the bug, not an exception.
  */
 export async function file(_digest: Digest): Promise<string> {
-  "use step";
-
   await report("Filing the digest.");
   // A real desk would write the digest to its database here. The stub writes
   // nothing, which is what the `_` says — and it is a stub because `ctx.db` is

@@ -41,10 +41,10 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { invariant } from "@alexkroman1/aai/internal";
 import { build, type PluginOption, type Rollup } from "vite";
 import { errorCode } from "./_utils.ts";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
-import { type WorkflowBundleOutput, workflowClientPlugin } from "./workflow-bundler.ts";
 
 /**
  * Options for worker bundling.
@@ -71,19 +71,6 @@ export type BuildWorkerOptions = {
    * rebuild would turn the watch loop from sub-second into multi-second.
    */
   runtime?: boolean;
-  /**
-   * The project's compiled workflows, when it declares any.
-   *
-   * Embedded in the worker as two string exports rather than shipped as extra
-   * files, because the guest's `bundle/load` contract is ONE ESM string. See
-   * `wrapperEntrySource`.
-   *
-   * It also switches on the client transform (`workflowClientPlugin`), which is
-   * what puts a `workflowId` on the agent's own copy of each body. Passing the
-   * strings without it produces a bundle that serves every workflow route and
-   * cannot start a run.
-   */
-  workflows?: WorkflowBundleOutput | undefined;
 };
 
 /**
@@ -182,7 +169,6 @@ async function hasSystemPromptFile(cwd: string): Promise<boolean> {
 
 function wrapperEntrySource(
   runtime: boolean,
-  workflows: WorkflowBundleOutput | undefined,
   toolFiles: readonly string[],
   systemPromptFile: boolean,
 ): string {
@@ -226,16 +212,6 @@ ${
   createRuntime({ ...opts, agent: __aaiAgent });
 `
     : ""
-}${
-  workflows
-    ? `// The compiled workflow surface, carried as DATA. \`__aaiWorkflowCode\` goes to
-// \`workflowEntrypoint(code)\` and \`__aaiStepCode\` is evaluated by the guest so its
-// \`registerStepFunction\` calls run. Strings rather than modules because the guest
-// receives exactly one ESM string and never sees this project's filesystem.
-export const __aaiWorkflowCode = ${JSON.stringify(workflows.workflowCode)};
-export const __aaiStepCode = ${JSON.stringify(workflows.stepCode)};
-`
-    : ""
 }`;
 }
 
@@ -261,14 +237,15 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   ]);
   await fs.writeFile(
     wrapperPath,
-    wrapperEntrySource(opts.runtime !== false, opts.workflows, toolFiles, systemPromptFile),
+    wrapperEntrySource(opts.runtime !== false, toolFiles, systemPromptFile),
     "utf-8",
   );
 
-  const plugins: PluginOption[] = [
-    ...(opts.plugins ?? []),
-    ...(opts.workflows ? [workflowClientPlugin(cwd, opts.workflows.inputFiles)] : []),
-  ];
+  // Whatever the caller supplied and nothing else — this used to merge in the
+  // DevKit's client transform, which is gone. The key stays ABSENT when the
+  // caller supplied none, so a project's own `vite.config.ts` plugins are
+  // untouched rather than overwritten with an empty list.
+  const plugins = opts.plugins ?? [];
 
   let result: Awaited<ReturnType<typeof build>>;
   try {
@@ -277,10 +254,6 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
         root: cwd,
         logLevel: "silent",
         ...(opts.configFile === false && { configFile: false }),
-        // The client transform runs alongside whatever the caller supplied (the
-        // studio's import allowlist), not instead of it. The key stays absent
-        // when there is nothing to add, so a project's own `vite.config.ts`
-        // plugins are unaffected either way.
         ...(plugins.length > 0 && { plugins }),
         // Bundle everything (the guest sandbox has no node_modules) EXCEPT
         // `node:` builtins, which the SSR build keeps external. Without the
@@ -315,8 +288,14 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   }
 
   const output = Array.isArray(result) ? result[0] : (result as Rollup.RollupOutput);
-  if (!output) throw new Error("Vite produced no output for agent.ts");
+  // Both are properties of the config a few lines up rather than of anything a
+  // caller passed: one `input`, `codeSplitting: false`, and a `build()` (not a
+  // watch), so exactly one output carrying exactly one entry chunk. A miss is
+  // this module having mis-built its own config.
+  invariant(output !== undefined, "bundle.worker.output");
   const chunk = output.output.find((o): o is Rollup.OutputChunk => o.type === "chunk" && o.isEntry);
-  if (!chunk) throw new Error("Vite produced no entry chunk for agent.ts");
+  invariant(chunk !== undefined, "bundle.worker.entry-chunk", () => ({
+    kinds: output.output.map((o) => o.type),
+  }));
   return chunk.code;
 }

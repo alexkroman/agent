@@ -35,8 +35,6 @@ export { type DialGuest, dialGuest } from "./guest-dial.ts";
 
 const log = createLogger("guest");
 
-/** Per-request cap on the manage-surface probes (status/drain). */
-
 /**
  * Ask the OS for a free loopback port, which the subprocess backend's harness
  * binds directly. Racy by nature — the port is released before the guest
@@ -209,8 +207,15 @@ export function startGuestLogging(proc: GuestProcLike, label: string): void {
 
 /**
  * The exec env selecting agent mode and naming the boot artifacts — one
- * builder so the two backends cannot drift on the key names the guest reads
+ * builder so the three backends cannot drift on the key names the guest reads
  * (see aai-guest/harness-agent-mode.ts).
+ *
+ * Every key here is an `AAI_*` boot parameter, and that is now the rule rather
+ * than an observation. `TMPDIR` was the exception: it is a property of the
+ * CONTAINER, not of agent mode, so it belongs to `guestExecBaseEnv()`
+ * (`guest-exec-env.ts`) — which the two contained backends spread over this env
+ * and `subprocess` deliberately does not. It was here because that file was one
+ * line from its length cap, and the cost was three copies of one value.
  *
  * `AAI_GUEST_IDLE_EXIT_MS` is forwarded from the SERVER's env when set. The
  * guest documents it as the override for its idle self-exit, but the guest

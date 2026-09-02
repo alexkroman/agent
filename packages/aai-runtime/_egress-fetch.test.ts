@@ -39,7 +39,6 @@ const { closeEgressFetch, egressFetch } = await import("./_egress-fetch.ts");
 const { createBrokeredUploadBlobs } = await import("./_upload-blobs-brokered.ts");
 const { createHttpUploadBlobs } = await import("./_upload-blobs-http.ts");
 const { platformPost } = await import("./platform-rpc.ts");
-const { createPlatformStreamReader } = await import("./workflow-platform-storage.ts");
 
 /** Forget any pool a previous test built, so `agentOptions` counts this test's. */
 async function fresh(): Promise<void> {
@@ -60,7 +59,7 @@ describe("egressFetch", () => {
   test("LEAVES undici's timeouts alone, unlike the step pool", async () => {
     await fresh();
     await egressFetch("https://platform.test/a");
-    // The step pool sets both to 0 because a step owns its own deadline. Here the
+    // The step pool RAISES both, its bodies being potentially gigabytes. Here the
     // callers bound the REQUEST and nothing bounds draining the body afterwards,
     // which is exactly what a window `read` does — so undici's body-inactivity
     // timeout is the only limit that path has, and turning it off would remove it.
@@ -146,23 +145,18 @@ describe("the runtime's own callers default to it", () => {
     const global = forbidGlobalFetch();
     await platformPost(
       { base: "https://platform.test/slug", token: "t" },
-      { route: "/workflow-storage", body: "{}", label: "storage", timeoutMs: 1000 },
+      { route: "/workflow-journal", body: "{}", label: "journal", timeoutMs: 1000 },
     );
     expect(global).not.toHaveBeenCalled();
     expect(agentOptions[0]).toMatchObject({ allowH2: false });
   });
 
-  test("the run-event STREAM read, which holds the connection open across all of it", async () => {
-    await fresh();
-    const global = forbidGlobalFetch();
-    const read = createPlatformStreamReader({ base: "https://platform.test/slug", token: "t" });
-    await read("runs/wrun_1/events");
-    expect(global).not.toHaveBeenCalled();
-    expect(agentOptions[0]).toMatchObject({ allowH2: false });
-    // The one the report showed failing beside the claim's 500s: a long-lived
-    // stream and a burst of byte probes on ONE multiplexed connection.
-    expect(String(requests[0]?.url)).toContain("name=runs%2Fwrun_1%2Fevents");
-  });
+  // A fifth caller used to be asserted here: the DevKit world's run-event STREAM
+  // read, the worst case of the set — a long-lived stream sharing one multiplexed
+  // connection with a burst of byte probes, which is what the incident report
+  // showed failing beside the claim's 500s. It went with that world, and the
+  // engine's progress streams are the guest's own rather than an HTTP read, so
+  // there is no replacement caller to assert.
 
   test("an explicit fetch still wins, so a spec can fake one", async () => {
     await fresh();

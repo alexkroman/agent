@@ -222,6 +222,61 @@ describe("createPostgresDb query timeout", () => {
     expect(settled).toBe(false);
   });
 
+  test("a RESERVED query IS bounded once reservedQueryTimeoutMs is set", async () => {
+    // The hole this closes: every guest journal / session-state / uploads /
+    // enqueue call runs on a RESERVED connection (`_platform-route.ts`'s
+    // `withReserved`) and takes no advisory lock, so the exemption above left
+    // them with no deadline at all — four hung reads exhaust `ADMIN_POOL_MAX`
+    // and every other platform read on the replica queues behind them.
+    unsafeMock.mockReturnValueOnce(pending());
+    const db = createPostgresDb({
+      url: "postgres://db.example/app",
+      queryTimeoutMs: 5000,
+      reservedQueryTimeoutMs: 5000,
+    });
+    const reserved = await db.reserve();
+    // The same `QUERY_TIMEOUT` code the pooled path raises, which is what puts
+    // it in `aai-server`'s `UNREACHABLE_CODES` and answers 503.
+    const assertion = expect(reserved.query("select 1")).rejects.toMatchObject({
+      code: "QUERY_TIMEOUT",
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+  });
+
+  test("a fast RESERVED query resolves normally under reservedQueryTimeoutMs", async () => {
+    unsafeMock.mockResolvedValueOnce([{ ok: 1 }]);
+    const db = createPostgresDb({
+      url: "postgres://db.example/app",
+      reservedQueryTimeoutMs: 5000,
+    });
+    const reserved = await db.reserve();
+    await expect(reserved.query("select 1")).resolves.toEqual([{ ok: 1 }]);
+  });
+
+  test("the SLUG-LOCK pool's own options leave a reservation unbounded", async () => {
+    // Exactly what `service-config.ts` builds that pool with, and the reason the
+    // bound above is per-pool rather than a blanket: this reservation holds
+    // `pg_advisory_lock` for a whole deploy — blob uploads and a sandbox spawn,
+    // i.e. seconds to minutes — and a client-side deadline on it would abort
+    // deploys. Its acquire wait is bounded by `lock_timeout` instead
+    // (`platform-lock.ts`), which is the deadline that belongs there.
+    unsafeMock.mockReturnValueOnce(pending());
+    const db = createPostgresDb({ url: "postgres://db.example/app", connectTimeoutSeconds: 10 });
+    const reserved = await db.reserve();
+    let settled = false;
+    void reserved.query("select pg_advisory_lock(1, 2)").then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(settled).toBe(false);
+  });
+
   test("a query is unbounded when queryTimeoutMs is unset", async () => {
     unsafeMock.mockReturnValueOnce(pending());
     const db = createPostgresDb({ url: "postgres://db.example/app" });
@@ -236,5 +291,80 @@ describe("createPostgresDb query timeout", () => {
     );
     await vi.advanceTimersByTimeAsync(60_000);
     expect(settled).toBe(false);
+  });
+});
+
+/**
+ * The wait to GET a connection, which the two query deadlines do not cover.
+ *
+ * `sql.reserve()` queues indefinitely at exhaustion, so the first deadline to
+ * fire belonged to whoever was waiting on the request — the guest's own 10-15s
+ * request timeouts, in another process — and the caller then reported a timeout
+ * against a layer that was never reached.
+ */
+describe("createPostgresDb reserve timeout", () => {
+  /** A reservation the pool never grants: every connection is taken. */
+  const queued = () =>
+    Promise.withResolvers<{ unsafe: typeof unsafeMock; release: typeof releaseMock }>();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("a reserve that queues past reserveTimeoutMs rejects with a POOL_EXHAUSTED code", async () => {
+    reserveMock.mockReturnValueOnce(queued().promise);
+    const db = createPostgresDb({ url: "postgres://db.example/app", reserveTimeoutMs: 5000 });
+    // The code is the whole point: `aai-server`'s `UNREACHABLE_CODES` reads it
+    // and answers 503 with a `Retry-After`, where an unbounded wait produced a
+    // caller-side timeout with no status at all.
+    const assertion = expect(db.reserve()).rejects.toMatchObject({ code: "POOL_EXHAUSTED" });
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+  });
+
+  test("the ABANDONED reservation is released when the pool finally grants it", async () => {
+    // Without this the option makes the shortage PERMANENT: `pTimeout` settles
+    // the caller and leaves the driver's promise running, so every expired wait
+    // would retire one connection from a pool of four.
+    const late = queued();
+    reserveMock.mockReturnValueOnce(late.promise);
+    const db = createPostgresDb({ url: "postgres://db.example/app", reserveTimeoutMs: 5000 });
+    const assertion = expect(db.reserve()).rejects.toMatchObject({ code: "POOL_EXHAUSTED" });
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+    expect(releaseMock).not.toHaveBeenCalled();
+
+    late.resolve({ unsafe: unsafeMock, release: releaseMock });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a reserve with no reserveTimeoutMs waits forever, which the slug lock needs", async () => {
+    // Its reservations are held for a whole deploy, so a fifth concurrent
+    // distinct-slug mutation waits minutes for one LEGITIMATELY — a deadline
+    // here would fail deploys under ordinary load.
+    reserveMock.mockReturnValueOnce(queued().promise);
+    const db = createPostgresDb({ url: "postgres://db.example/app" });
+    let settled = false;
+    void db.reserve().then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(settled).toBe(false);
+  });
+
+  test("a reserve the pool can grant is unaffected by the deadline", async () => {
+    const db = createPostgresDb({ url: "postgres://db.example/app", reserveTimeoutMs: 5000 });
+    const reserved = await db.reserve();
+    reserved.release();
+    expect(releaseMock).toHaveBeenCalledTimes(1);
   });
 });

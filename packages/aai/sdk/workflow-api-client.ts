@@ -66,6 +66,7 @@ import { omitUndefined } from "./omit-undefined.ts";
 import type { WorkflowSummary } from "./workflow.ts";
 import { followRun, followRunOutput } from "./workflow-api-follow.ts";
 import type { WorkflowApi, WorkflowApiClientOptions } from "./workflow-api-types.ts";
+import type { WakeUpOptions } from "./workflow-options.ts";
 import {
   clampWorkflowWait,
   MAX_WORKFLOW_WAIT_MS,
@@ -285,8 +286,9 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
     // No `deadline()`: like an upload, its duration is a function of the FILE.
     download: (id, options) => downloadUpload(base, auth, failure, id, options?.signal),
 
-    async wake(runId: string): Promise<number> {
-      const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}/wake`, {
+    async wake(runId: string, options?: WakeUpOptions): Promise<number> {
+      const query = wakeQuery(options?.correlationIds);
+      const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}/wake${query}`, {
         method: "POST",
         headers: auth,
         ...deadline(),
@@ -312,4 +314,48 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
   };
 
   return api;
+}
+
+/**
+ * Longest correlation id `POST /runs/:id/wake` accepts.
+ *
+ * The route's own `MAX_WORKFLOW_KEY_LENGTH` (`aai-runtime/workflow-api-runs.ts`),
+ * restated rather than imported: this package may not import `aai-runtime`, and
+ * publishing a bound the SERVER enforces onto `@alexkroman1/aai/workflow-api`
+ * would put a route's implementation detail on the surface a CALLER is written
+ * against — the split `workflow-api-barrel.ts`'s module doc argues at length.
+ * What keeps the two honest is a test rather than a shared constant:
+ * `workflow-api-runs.test.ts` drives this client against the real route at
+ * exactly the boundary in both directions, in the one package that legitimately
+ * depends on both halves.
+ */
+const MAX_WORKFLOW_KEY_LENGTH = 256;
+
+/**
+ * The `?correlationId=` query for a targeted wake, or `""` for a bare one.
+ *
+ * REFUSES what the route refuses, and refuses it before the request rather than
+ * after. A blank id is a 400 there because the journal is explicit that an
+ * empty-string correlation id is not the same as an absent one — two backends
+ * used to fold them together and woke every uncorrelated sleep on the run — so a
+ * caller that meant to send an id and computed nothing must not be served the
+ * blunt wake by accident, and must not have to read a status code to learn it.
+ *
+ * An EMPTY list is a bare wake, deliberately: `correlationIds: []` is "no ids",
+ * which is the absence, and encoding it as a query with nothing in it would send
+ * the one shape the route reads as malformed.
+ */
+function wakeQuery(correlationIds: readonly string[] | undefined): string {
+  if (!correlationIds || correlationIds.length === 0) return "";
+  const params = new URLSearchParams();
+  for (const id of correlationIds) {
+    if (id.trim() === "") throw new Error("A workflow `correlationId` must not be empty");
+    if (id.length > MAX_WORKFLOW_KEY_LENGTH) {
+      throw new Error(
+        `A workflow \`correlationId\` must be at most ${MAX_WORKFLOW_KEY_LENGTH} characters`,
+      );
+    }
+    params.append("correlationId", id);
+  }
+  return `?${params.toString()}`;
 }

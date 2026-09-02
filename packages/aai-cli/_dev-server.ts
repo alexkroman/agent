@@ -20,23 +20,23 @@ import {
   createRuntime,
   createServer,
   ensureSessionStateSchema,
+  ensureWorkflowJournalSchema,
   type Logger,
   requiredProviderEnvVars,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
 import {
-  configureWorkflowWorld,
-  createWorkflowSurface,
+  createMemoryJournal,
   handleWorkflowRequest,
   publishStepEnv,
-  startWorkflowWorldIfDeclared,
+  WORKFLOW_DATA_DIR_ENV,
 } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
 import type { ViteDevServer } from "vite";
-import { createWorkerEvaluator, type EvaluatedWorker } from "./_bundler.ts";
+import { createWorkerEvaluator } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
@@ -46,7 +46,6 @@ import { resolveServerEnv } from "./_server-common.ts";
 import { notify, outputSilenced } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
-import { buildWorkflows } from "./workflow-bundler.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
@@ -154,27 +153,15 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
  * keeps the old server. Evaluation goes through the memoizing evaluator so
  * a no-op save doesn't leak another module into the ESM registry.
  *
- * The project's `workflows/` directory is compiled by the same pass deploy
- * runs (`buildWorkflows`) and rides the bundle as two string exports, which is
- * how `aai dev` serves a workflow at all: nothing here hands the bundle to a
- * guest, so the CLI is both ends of that contract locally. A project with no
- * `workflows/` directory pays nothing — `buildWorkflows` resolves `undefined`
- * without starting a builder.
  */
 export async function loadWorker(
   cwd: string,
-  evaluate: (code: string) => Promise<EvaluatedWorker>,
-): Promise<EvaluatedWorker> {
-  const workflows = await buildWorkflows(cwd);
-  // Replay-safety findings, printed on every reload that produces one: `aai dev`
-  // is where a workflow body is written, and the failure they name — a body
-  // that reads the clock, so a resume sees a different value than the first
-  // pass did — does not show up in a dev run at all. See `replayWarnings`.
-  for (const warning of workflows?.warnings ?? []) notify("warn", warning);
+  evaluate: (code: string) => Promise<AgentDef>,
+): Promise<AgentDef> {
   // `runtime: false`: the dev server builds its runtime in-process from the
   // same installed SDK the wrapper would bundle, and inlining the runtime +
   // provider SDKs on every file-watch rebuild would make reloads multi-second.
-  return evaluate(await buildWorker(cwd, { runtime: false, workflows }));
+  return evaluate(await buildWorker(cwd, { runtime: false }));
 }
 
 // ─── File watching ──────────────────────────────────────────────────────────
@@ -259,6 +246,23 @@ export type DevServerOptions = {
 export async function startDevServer(opts: DevServerOptions): Promise<() => Promise<void>> {
   const { cwd, port } = opts;
 
+  // Where this project's local workflow state lives — the uploads a databaseless
+  // agent's runs read (`aai-runtime/workflow-data-dir.ts`).
+  //
+  // Set HERE, once, before anything builds a server: `installWorkflowSupport`
+  // reads it out of `process.env` on every `createServer`, and unset it falls
+  // back to a per-PROCESS `tmpdir()/aai-workflow-data-<pid>`. The directory
+  // beside the project is what makes a restart a SAVE rather than a new
+  // deployment — the same upload's bytes come back byte-identical, which that
+  // module documents as measured and which nothing had set since
+  // `configureWorkflowWorld` (which wrote this for us) went with the DevKit.
+  //
+  // An exported value WINS, like `PUBLIC_URL` below: a developer pointing
+  // several checkouts at one directory has said so deliberately.
+  if (!process.env[WORKFLOW_DATA_DIR_ENV]?.trim()) {
+    process.env[WORKFLOW_DATA_DIR_ENV] = path.join(cwd, ".workflow-data");
+  }
+
   const hasClient = existsSync(path.join(cwd, "client.tsx"));
   // With a client, Vite owns the user-requested port and proxies to the
   // backend. Prefer port+1 for the backend but fall back to any nearby free
@@ -276,25 +280,33 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   const devLogger: Logger = createDevLogger(outputSilenced());
 
-  // The world is process-wide (`getWorld()` memoizes on first resolve) and its
-  // queue is a long-lived subscription, so it is started once for the lifetime
-  // of the dev server rather than per restart — a rebuild replaces the routes,
-  // not the storage behind them.
-  let workflowWorldStarted = false;
-
   /**
    * Whether the session-state tables have been ensured this process.
    *
-   * Once, like the workflow world above and for the same reason: a rebuild
-   * replaces the routes, not the storage behind them, and re-running the DDL on
-   * every file save would be two round trips per keystroke burst.
+   * Once per dev server rather than per restart: a rebuild replaces the routes,
+   * not the storage behind them, and re-running the DDL on every file save would
+   * be two round trips per keystroke burst.
    */
   let sessionSchemaEnsured = false;
 
+  /**
+   * Where a databaseless project's durable runs live for this whole `aai dev`.
+   *
+   * STORAGE per PROCESS, CODE per BUILD — the split the deleted DevKit world
+   * made on our behalf. Every save rebuilds the runtime (that is what reloads a
+   * workflow BODY) and a rebuild handed no journal builds a fresh one inside the
+   * engine, so a run started before a save was gone after it and
+   * `GET /workflows/runs/:id` 404'd for a run the page was still polling.
+   * Deliberately NOT the whole client: reusing build 1's would freeze every body
+   * at build 1. `RuntimeOptions.journal` carries the rest, including what this
+   * does NOT restore (a `ctx.sleep` parked across the save still needs a
+   * delivery) and why it cannot demote a postgres or platform journal.
+   */
+  const journal = createMemoryJournal();
+
   /** Full build sequence, shared by initial startup and every restart. */
   async function buildServer(): Promise<AgentServer> {
-    const worker = await loadWorker(cwd, evaluateWorker);
-    const agentDef = worker.agent;
+    const agentDef = await loadWorker(cwd, evaluateWorker);
     const env = await resolveAgentEnv(cwd, agentDef);
 
     // A project with a `DATABASE_URL` puts session state in Postgres, and the
@@ -307,27 +319,17 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     if (env.DATABASE_URL && !sessionSchemaEnsured) {
       sessionSchemaEnsured = true;
       await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: devLogger });
+      // And the durable-run JOURNAL, which had no creator at all: the boot line
+      // said `runStore: "postgres"` and the first run died on `42P01 relation
+      // "aai_workflow_runs" does not exist`.
+      await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: devLogger });
     }
 
-    // BEFORE `createWorkflowSurface`, which imports `workflow/runtime` and
-    // resolves a world from the environment as it loads — configured after, a
-    // project with a `DATABASE_URL` would silently take the local world and
-    // write its runs to `.workflow-data/` instead.
-    const world = configureWorkflowWorld({
-      databaseUrl: env.DATABASE_URL,
-      port: backendPort,
-      dataDir: path.join(cwd, ".workflow-data"),
-    });
     // What a `"use step"` body reads with `stepEnv()`. The AGENT env, not
     // `providerEnv` below: a step must see exactly what `.env` and
     // `aai secret put` declare, or a shell-exported key would make a workflow
     // work here and fail after a deploy with nothing having said so.
     publishStepEnv(env);
-    const workflows = await createWorkflowSurface(worker.workflowCode, worker.stepCode);
-    if (workflows && !workflowWorldStarted) {
-      workflowWorldStarted = true;
-      await startWorkflowWorldIfDeclared(true, world);
-    }
 
     // Self-hosted only: let provider credentials exported in the shell reach
     // the resolvers without entering `ctx.env`. Keeping them out of `ctx.env`
@@ -340,6 +342,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       env,
       providerEnv,
       logger: devLogger,
+      // The one thing a rebuild must NOT rebuild — see the declaration above.
+      journal,
       // What `ctx.workflows.publicWebhookUrl(token)` mints from. The BACKEND
       // port, not the port the developer opens: with a `client.tsx` Vite owns
       // that one and proxies only the browser-facing surface, and the DevKit's
@@ -350,6 +354,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // to reach a webhook on this machine.
       publicUrl: process.env.PUBLIC_URL?.trim() || `http://localhost:${backendPort}`,
     });
+
     return createServer({
       runtime,
       name: agentDef.name,
@@ -373,11 +378,26 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // page mounted with `client()` by mistake fails identically in both places
       // instead of only after a deploy.
       ...omitUndefined({ page: agentDef.page }),
-      // The DevKit's queue calls these back to replay a run and to execute a
-      // step; unclaimed they fall through to the 404 and every run stalls with
-      // nothing saying why. Returns false with no workflows, so an ordinary
-      // agent mounts nothing.
-      request: (req, res, url, method) => handleWorkflowRequest(workflows, req, res, url, method),
+      // The PLATFORM's delivery door, and `aai dev` deliberately supplies no
+      // `allowRemote`, so it answers 401. That is correct rather than an
+      // omission: there is no queue outside this process — the engine's
+      // dispatcher is a `setTimeout` here — so a delivery arriving from anywhere
+      // would be a caller this composition cannot vouch for.
+      //
+      // Mounted anyway, rather than skipped, so the route ANSWERS on the same
+      // door it answers on when deployed. A path that 404s in dev and 401s in
+      // production is the kind of difference a feature is developed against.
+      //
+      // `deliver` is a THUNK and `logger` is `devLogger`, both spelled the way
+      // `agent-server.ts` and the guest's `harness-manage.ts` spell them so the
+      // three mounts of this one door cannot drift. The logger matters here in
+      // particular: the door's fallback is `consoleLogger`, whose `info` is
+      // `console.log`, and `aai dev --json` owes stdout exactly one line.
+      request: (req, res, url, method) =>
+        handleWorkflowRequest(req, res, url, method, {
+          deliver: () => runtime.deliverWorkflow,
+          logger: devLogger,
+        }),
       ...clientDirOpt,
     });
   }

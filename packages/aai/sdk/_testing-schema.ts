@@ -127,8 +127,10 @@ export async function schemaInputIssues(
  *   that tool declares no `inputSchema`, or when the schema refuses `value`.
  *
  * @example
- * ```ts no-check
- * import { parseToolInput, withDiscoveredTools } from "@alexkroman1/aai/testing";
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
+ * import { parseToolInput } from "@alexkroman1/aai/testing";
+ * import { expect } from "vitest";
  *
  * const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza", {
  *   size: "small",

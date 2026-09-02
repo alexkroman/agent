@@ -15,7 +15,6 @@
 import { workflow } from "@alexkroman1/aai";
 import { emit, report, stepEnv } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { sleep } from "workflow";
 import { z } from "zod";
 import { createEvalWorkflowEngine, type EvalWorkflowEngine } from "./workflow-engine.ts";
 
@@ -27,13 +26,16 @@ afterEach(async () => {
   engine = undefined;
 });
 
+/** How long `narrator` asks to wait. Recorded, never taken — see `EvalSleep`. */
+const SLEEP_MS = 10_000;
+
 /** A body that narrates, emits, sleeps and returns — one of each. */
 const narrator = workflow({
   input: z.object({ topic: z.string() }),
-  run: async (input: { topic: string }) => {
+  run: async (input: { topic: string }, ctx) => {
     await report(`reading ${input.topic}`);
     await emit("results", { topic: input.topic });
-    await sleep("10 seconds");
+    await ctx.sleep(SLEEP_MS);
     await report("done");
     return { topic: input.topic, key: stepEnv("FIXTURE_KEY") };
   },
@@ -66,40 +68,10 @@ function open(
   return engine;
 }
 
-/**
- * The id the engine stamped onto a body, which is what `start` is addressed by.
- *
- * A plain throw rather than `expect.fail`: Biome's `noMisplacedAssertion` matches
- * the callee identifier, so an assertion in a helper is an error — and a helper
- * that cannot do its job is not the claim a case is making anyway.
- */
-function idOf(def: { run: { workflowId?: string } }): string {
-  const id = def.run.workflowId;
-  if (id === undefined) throw new Error("the engine did not stamp a workflowId");
-  return id;
-}
-
 describe("createEvalWorkflowEngine", () => {
-  test("stamps a synthetic workflowId, because the compiler's transform never ran", async () => {
-    const active = open({ narrator });
-    // This is the whole reason the engine exists: `createWorkflowClient` refuses
-    // a def with no id, and an untransformed body has none.
-    expect(idOf(narrator)).toContain("narrator");
-    const runId = await active.adapter.start(idOf(narrator), [{ topic: "otters" }]);
-    expect(runId).toBeTypeOf("string");
-  });
-
-  test("gives the id back on release, so a second engine can stamp its own", async () => {
-    open({ narrator });
-    expect(narrator.run.workflowId).toBeTypeOf("string");
-    await engine?.release();
-    engine = undefined;
-    expect(narrator.run.workflowId).toBeUndefined();
-  });
-
   test("runs the body and records what it returned, narrated, emitted and slept", async () => {
     const active = open({ narrator });
-    const runId = await active.adapter.start(idOf(narrator), [{ topic: "otters" }]);
+    const runId = await active.adapter.start("narrator", [{ topic: "otters" }]);
     const record = active.record(runId);
     if (record === undefined) expect.fail("the engine did not record the run it started");
     await record.settled;
@@ -112,13 +84,13 @@ describe("createEvalWorkflowEngine", () => {
     expect(record.emitted).toEqual([{ namespace: "results", chunk: { topic: "otters" } }]);
     // RECORDED, not taken: a ten-second wait in a unit test would be the harness
     // pretending it can suspend.
-    expect(record.slept).toEqual([{ duration: "10 seconds" }]);
+    expect(record.slept).toEqual([{ duration: SLEEP_MS }]);
     expect(record.elapsedMs).toBeTypeOf("number");
   });
 
   test("a body that throws fails the run with its message, and keeps the narration", async () => {
     const active = open({ thrower });
-    const runId = await active.adapter.start(idOf(thrower), [{}]);
+    const runId = await active.adapter.start("thrower", [{}]);
     const record = active.record(runId);
     if (record === undefined) expect.fail("no record");
     await record.settled;
@@ -131,8 +103,8 @@ describe("createEvalWorkflowEngine", () => {
 
   test("attributes each run's narration to that run, with two running at once", async () => {
     const active = open({ narrator });
-    const first = await active.adapter.start(idOf(narrator), [{ topic: "otters" }]);
-    const second = await active.adapter.start(idOf(narrator), [{ topic: "badgers" }]);
+    const first = await active.adapter.start("narrator", [{ topic: "otters" }]);
+    const second = await active.adapter.start("narrator", [{ topic: "badgers" }]);
     await Promise.all([active.record(first)?.settled, active.record(second)?.settled]);
 
     expect(active.record(first)?.reported).toEqual(["reading otters", "done"]);
@@ -141,7 +113,7 @@ describe("createEvalWorkflowEngine", () => {
 
   test("keeps a fan-out's concurrent lines on their own run", async () => {
     const active = open({ fanOut });
-    const runId = await active.adapter.start(idOf(fanOut), [{ items: ["a", "b", "c"] }]);
+    const runId = await active.adapter.start("fanOut", [{ items: ["a", "b", "c"] }]);
     const record = active.record(runId);
     if (record === undefined) expect.fail("no record");
     await record.settled;
@@ -153,19 +125,19 @@ describe("createEvalWorkflowEngine", () => {
 
   test("lists a workflow's own runs, newest first", async () => {
     const active = open({ narrator, thrower });
-    const first = await active.adapter.start(idOf(narrator), [{ topic: "one" }]);
-    await active.adapter.start(idOf(thrower), [{}]);
-    const third = await active.adapter.start(idOf(narrator), [{ topic: "two" }]);
+    const first = await active.adapter.start("narrator", [{ topic: "one" }]);
+    await active.adapter.start("thrower", [{}]);
+    const third = await active.adapter.start("narrator", [{ topic: "two" }]);
     await Promise.all(active.records().map((record) => record.settled));
 
-    const listed = await active.adapter.listRuns(idOf(narrator), 10);
+    const listed = await active.adapter.listRuns("narrator", 10);
     expect(listed.map((one) => one.runId)).toEqual([third, first]);
-    expect(await active.adapter.listRuns(idOf(narrator), 1)).toHaveLength(1);
+    expect(await active.adapter.listRuns("narrator", 1)).toHaveLength(1);
   });
 
   test("serves the report lines as the run's stream, tail included", async () => {
     const active = open({ narrator });
-    const runId = await active.adapter.start(idOf(narrator), [{ topic: "otters" }]);
+    const runId = await active.adapter.start("narrator", [{ topic: "otters" }]);
     await active.record(runId)?.settled;
 
     expect(await active.adapter.streamTail(runId, {})).toBe(1);
@@ -173,6 +145,16 @@ describe("createEvalWorkflowEngine", () => {
     // `-1` is what `lastLine` asks for, and it must be the last chunk ALONE
     // rather than the whole log.
     expect(await drain(active.adapter.readStream(runId, { startIndex: -1 }))).toEqual(["done"]);
+    // A NON-NEGATIVE `startIndex` is an INCLUSIVE floor — the first index the
+    // reader wants — which is `workflow-streams.ts`'s reading and so the contract
+    // this adapter is a second implementation of. Read exclusively, a default
+    // poll never delivered chunk 0.
+    expect(await drain(active.adapter.readStream(runId, { startIndex: 0 }))).toEqual([
+      "reading otters",
+      "done",
+    ]);
+    expect(await drain(active.adapter.readStream(runId, { startIndex: 1 }))).toEqual(["done"]);
+    expect(await drain(active.adapter.readStream(runId, { startIndex: 2 }))).toEqual([]);
     // A named stream is `emit`'s, kept apart from the sentences.
     expect(await active.adapter.streamTail(runId, { namespace: "results" })).toBe(0);
     expect(await drain(active.adapter.readStream(runId, { namespace: "results" }))).toEqual([
@@ -186,16 +168,16 @@ describe("createEvalWorkflowEngine", () => {
     expect(await active.adapter.getRun("nope")).toBeUndefined();
   });
 
-  test("refuses a workflowId it does not serve, naming what it does", async () => {
+  test("refuses a workflow name it does not serve, naming what it does", async () => {
     const active = open({ narrator });
-    await expect(active.adapter.start("workflow//nobody//else", [{}])).rejects.toThrow(
-      /has no workflow for id/,
+    await expect(active.adapter.start("nobody-else", [{}])).rejects.toThrow(
+      /has no workflow named "nobody-else"; it serves narrator/,
     );
   });
 
   test("cancel marks the run and says so, but cannot stop a running function", async () => {
     const active = open({ narrator });
-    const runId = await active.adapter.start(idOf(narrator), [{ topic: "otters" }]);
+    const runId = await active.adapter.start("narrator", [{ topic: "otters" }]);
     expect(await active.adapter.cancel(runId)).toBe(true);
     await active.record(runId)?.settled;
     // The STATUS is cancelled and the body ran to the end anyway — which is why
@@ -208,7 +190,7 @@ describe("createEvalWorkflowEngine", () => {
 
   test("wakeUp and signal answer rather than lying about a suspension", async () => {
     const active = open({ narrator });
-    const runId = await active.adapter.start(idOf(narrator), [{ topic: "otters" }]);
+    const runId = await active.adapter.start("narrator", [{ topic: "otters" }]);
     await active.record(runId)?.settled;
     // A sleep is skipped, so nothing was ever asleep; `createHook()` throws
     // untransformed, so nothing can be listening on a token.
@@ -218,7 +200,7 @@ describe("createEvalWorkflowEngine", () => {
 
   test("release unpublishes the slots, so the next file's steps read their own", async () => {
     const active = open({ narrator });
-    const runId = await active.adapter.start(idOf(narrator), [{ topic: "otters" }]);
+    const runId = await active.adapter.start("narrator", [{ topic: "otters" }]);
     await active.record(runId)?.settled;
     await active.release();
     engine = undefined;
@@ -227,8 +209,8 @@ describe("createEvalWorkflowEngine", () => {
     // exported step callable from an ordinary spec.
     vi.stubEnv("FIXTURE_KEY", "from-the-shell");
     expect(stepEnv("FIXTURE_KEY")).toBe("from-the-shell");
-    // And the sleep global is gone, so the DevKit's own refusal is back.
-    await expect(sleep("1 second")).rejects.toThrow(/inside a workflow function/);
+    // There is no sleep GLOBAL any more: a body's waits are `ctx.sleep`, which
+    // `evalCtx` answers, so releasing the engine leaves nothing behind to unset.
   });
 });
 

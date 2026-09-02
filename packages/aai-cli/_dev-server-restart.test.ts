@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   chokidarState,
   mockClose,
+  mockCreateMemoryJournal,
   mockCreateRuntime,
   mockCreateServer,
   mockListen,
@@ -114,6 +115,40 @@ describe("startDevServer watch wiring", () => {
         },
         { timeout: 15_000 },
       );
+
+      await cleanup();
+    });
+  });
+
+  /**
+   * STORAGE per PROCESS, CODE per BUILD.
+   *
+   * A rebuild replaces the workflow ENGINE — that is what makes a save reload a
+   * workflow body — and it used to replace the store underneath it too, because
+   * `createInProcessWorkflowEngine` defaults to a fresh `createMemoryJournal()`
+   * when nobody hands it one. So under `aai dev` with no `DATABASE_URL`, a run
+   * started before a save was gone after it and `GET /workflows/runs/:id`
+   * answered 404 for a run the caller still held the id of.
+   *
+   * The wiring is one journal at process scope, passed to every build's
+   * `createRuntime`. Asserted as IDENTITY across the calls rather than as a call
+   * count, because "built once" is the property — a second `createMemoryJournal()`
+   * is the bug whether or not the first one is still reachable.
+   */
+  test("every rebuild's runtime gets the SAME journal, so a run survives a save", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      fireChange(dir, "agent.ts");
+      await vi.waitFor(() => expect(mockCreateRuntime.mock.calls.length).toBeGreaterThan(1), {
+        timeout: 15_000,
+      });
+
+      const journals = mockCreateRuntime.mock.calls.map(([options]) => options.journal);
+      expect(journals[0]).toBeDefined();
+      for (const journal of journals) expect(journal).toBe(journals[0]);
+      expect(mockCreateMemoryJournal).toHaveBeenCalledTimes(1);
 
       await cleanup();
     });

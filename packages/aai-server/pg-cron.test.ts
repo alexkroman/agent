@@ -193,6 +193,63 @@ describe("blob GC", () => {
       expect.soft(command(), `${guard} is unguarded`).toContain(guard);
     }
   });
+
+  /**
+   * The uploads arm — the half that reclaims an uploaded BYTE, which nothing in
+   * this platform did until it existed.
+   *
+   * These are text assertions, and text is all they can be: `pg-cron.test.ts`
+   * reads the command as a string. What the arm actually SELECTS is asserted
+   * against a real Postgres in `pg-cron.scenario.test.ts`, including the negative
+   * that matters (an in-flight upload with no record yet is not deleted) and an
+   * A/B on each guard below. These exist so a guard that is DELETED fails a test
+   * somebody runs in under a second, without a database.
+   */
+  describe("the uploads arm", () => {
+    test("refuses to run against an empty workflow_uploads table", () => {
+      // The blobs arm's empty-agents guard, one table over and for the identical
+      // reason: an upload RECORD is the referrer here, so a table that failed to
+      // load would condemn every recording in a bucket shared by every tenant.
+      expect(command()).toContain(
+        "select count(*) into live_uploads from aai_platform.workflow_uploads",
+      );
+      expect(command()).toContain("if live_uploads = 0 then");
+    });
+
+    test("treats the presence of a record as the reference", () => {
+      // Joined on the two halves of the key, which are also the record's primary
+      // key — that correspondence is the whole predicate.
+      expect(command()).toContain("from aai_platform.workflow_uploads u");
+      expect(command()).toContain("u.slug = split_part(o.name, '/', 2)");
+      expect(command()).toContain("u.id = split_part(o.name, '/', 3)");
+    });
+
+    test("only reads a key it can decompose", () => {
+      // A key that does not parse is a key whose slug and id cannot be read back
+      // out, so the join above would be against the wrong halves of somebody's
+      // object. The arm leaves it rather than guessing.
+      expect(command()).toContain("^uploads/[^/]+/[^/]+/[0-9]+$");
+      expect(command()).toContain("like 'uploads/%'");
+    });
+
+    test("waits out a window longer than any sandbox can live", () => {
+      // Bytes precede the record in `create` alone, and that gap is one guest
+      // request inside a sandbox `SANDBOX_TIMEOUT_SECS` clamps to 86,400 seconds.
+      // Three days is three times that ceiling; shortening it past a day is what
+      // would start deleting uploads in flight.
+      expect(command()).toContain("interval '3 days'");
+      expect(command()).toContain("limit 500");
+    });
+
+    test("deletes through the Storage API, exactly as the blobs arm does", () => {
+      // Both arms share one `net.http_delete` builder, so this is really asserting
+      // that the shared one is what the uploads arm got: two objects deleted per
+      // pass at two different prefixes, one credential path.
+      const deletes = command().match(/net\.http_delete/g) ?? [];
+      expect(deletes).toHaveLength(2);
+      expect(command()).not.toContain("delete from storage.objects");
+    });
+  });
 });
 
 /**

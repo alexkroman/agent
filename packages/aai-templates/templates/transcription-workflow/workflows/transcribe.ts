@@ -63,16 +63,19 @@
  *   `output` exists only when the last segment does.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import {
   emit,
   encodeWav,
   mapConcurrent,
   readUpload,
   report,
+  requireCompleteUpload,
   uploadInfo,
 } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
+import { downsampleSegment, requestFormat } from "./downsample.ts";
 import { normalizeRecording } from "./normalize.ts";
 import { stitchTranscript, TRANSCRIPT_STREAM, type TranscriptChunk } from "./stitch.ts";
 import { elapsed, timed, transcribeWav } from "./sync-api.ts";
@@ -168,15 +171,18 @@ export const BYTES_IN_FLIGHT = 640 * 1024 * 1024;
  * The table above was measured under the old per-round barrier. Re-measuring it is
  * worth doing before this number moves again: the window makes a wide fan-out
  * cheaper at the tail, which if anything argues for a HIGHER knee. *
- * **What EXECUTES at this width is the world's call, not this number's.**
+ * **What EXECUTES at this width is the engine's call, not this number's.**
  * `mapConcurrent` bounds how many step calls the body has in flight; how many
- * run at once is the workflow world's worker concurrency, which on the
- * `DATABASE_URL` path defaults to three — so on a default deployment a width
- * above three is inert while still costing a queued job per item. That makes
- * this the FAR SIDE's knee and the width to use once an operator has raised
- * the ceiling, not a promise about a stock deployment. See "The WINDOW is not
- * the concurrency" in `@alexkroman1/aai/step`'s `mapConcurrent`; the numbers
- * above were measured against the endpoint and say nothing about that layer.
+ * run at once is `DEFAULT_STEP_CONCURRENCY` (`aai-runtime`), which is **16** —
+ * measured against a real microVM at Modal's guaranteed reservation, where a
+ * concurrent segment of 48 kHz stereo costs 26.1 MB. So a width above 16 is
+ * inert on a stock deployment while still costing a queued job per item, and
+ * this number is the FAR SIDE's knee: the one to use once an operator has
+ * raised `AAI_WORKFLOW_STEP_CONCURRENCY` for a larger guest. It was three,
+ * inherited from graphile-worker and never measured, which made every number
+ * in the table above unreachable. See "The WINDOW is not the concurrency" in
+ * `@alexkroman1/aai/step`'s `mapConcurrent`; the numbers above were measured
+ * against the endpoint and say nothing about that layer.
  */
 export const MAX_SEGMENT_CONCURRENCY = 32;
 
@@ -199,7 +205,13 @@ export const MAX_SEGMENT_CONCURRENCY = 32;
  * `stepFetch` pins.
  */
 export function segmentConcurrency(format: WavFormat): number {
-  const perSegment = bytesPerSecond(format) * (SEGMENT_SECONDS + SEGMENT_OVERLAP_SECONDS);
+  // The format that will be SENT, not the one that was cut. The budget is bytes
+  // UPLOADING and `transcribeSegment` normalizes each window first, so asking the
+  // source format would price a 48 kHz stereo segment at 17.66 MB when 2.94 MB
+  // goes on the wire — six times too cautious, and drifting the moment either
+  // side of that pair changes. Both derive it from `requestFormat`.
+  const perSegment =
+    bytesPerSecond(requestFormat(format)) * (SEGMENT_SECONDS + SEGMENT_OVERLAP_SECONDS);
   if (perSegment <= 0) return MAX_SEGMENT_CONCURRENCY;
   return Math.max(1, Math.min(MAX_SEGMENT_CONCURRENCY, Math.floor(BYTES_IN_FLIGHT / perSegment)));
 }
@@ -236,9 +248,7 @@ export type SegmentTranscript = {
  * The input is what `POST /workflows/runs` carries — see `agent.ts` for the
  * schema it is validated against before a run exists.
  */
-export async function transcribeFlow(input: { recording: string }) {
-  "use workflow";
-
+export async function transcribeFlow(input: { recording: string }, ctx: WorkflowCtx) {
   // Both at once: neither needs the other, and issued together they are one
   // round trip instead of two before any audio is read. The ORDER is still a
   // pure function of this line — the two calls go out synchronously, left to
@@ -247,12 +257,20 @@ export async function transcribeFlow(input: { recording: string }) {
   // The clock starts before the conversion rather than after it, because a
   // reader comparing the three flows over one file is comparing what the desk
   // COST them, and re-encoding an m4a is part of that.
-  const [startedAt, ready] = await Promise.all([startClock(), normalizeRecording(input.recording)]);
+  // `maxAttempts: 6` was `normalizeRecording.maxRetries = 5`. More than the
+  // default 3, and not because a conversion is flaky — a corrupt file fails
+  // identically forever, and `throwFfmpegStepError` is what stops the engine
+  // retrying that. It is the two I/O halves that are worth another attempt: this
+  // step reads a whole recording out of the store and writes a whole one back.
+  const [startedAt, ready] = await Promise.all([
+    ctx.step("startClock", () => startClock()),
+    ctx.step("normalizeRecording", () => normalizeRecording(input.recording), { maxAttempts: 6 }),
+  ]);
 
   // `ready.recording` from here on, not `input.recording`: a converted file is a
   // DIFFERENT upload, and cutting the original by offsets planned against the
   // converted one is a fan-out of garbage that still reports success.
-  const plan = await splitRecording(ready.recording);
+  const plan = await ctx.step("splitRecording", () => splitRecording(ready.recording));
 
   // One step per segment, bounded, in an order a replay reproduces exactly.
   // A failed segment fails the RUN, deliberately: every sibling that finished is
@@ -260,13 +278,20 @@ export async function transcribeFlow(input: { recording: string }) {
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
   const parts = await mapConcurrent(plan.segments, segmentConcurrency(plan.format), (segment) =>
-    transcribeSegment(ready.recording, plan.format, segment),
+    // `maxAttempts: 6` was `transcribeSegment.maxRetries = 5` — more than the
+    // default 3 because a rate limit is the expected failure here, and a segment
+    // that 429s is not a segment that is wrong.
+    ctx.step("transcribeSegment", () => transcribeSegment(ready.recording, plan.format, segment), {
+      maxAttempts: 6,
+    }),
   );
 
   // The ORIGINAL id, and only here: `mergeTranscript` uses it for the filename a
   // reader sees, and `standup.m4a` is the recording they uploaded — where the
   // converted copy is an artifact of how the desk works.
-  return await mergeTranscript(input.recording, plan.durationMs, parts, startedAt);
+  return await ctx.step("mergeTranscript", () =>
+    mergeTranscript(input.recording, plan.durationMs, parts, startedAt),
+  );
 }
 
 /**
@@ -283,10 +308,14 @@ export async function splitRecording(uploadId: string): Promise<{
   segments: Segment[];
   durationMs: number;
 }> {
-  "use step";
-
+  // The whole file, refused if it is still arriving. `info.size` is the readable
+  // PREFIX, and it is what the segment plan's width is derived from — so against a
+  // half-arrived recording this planned a fan-out over the first half and the run
+  // returned a transcript of it, reporting success. `stream.ts` is the flow for a
+  // recording that is still landing; this one wants all of it.
+  const stored = await requireCompleteUpload(uploadId);
   const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
-  const format = fatalOnUnsupported(() => parseWav(head.bytes, head.info.size));
+  const format = fatalOnUnsupported(() => parseWav(head.bytes, stored.size));
   const segments = fatalOnUnsupported(() => planSegments(format));
   const durationMs = segments.at(-1)?.endMs ?? 0;
 
@@ -308,8 +337,6 @@ export async function transcribeSegment(
   format: WavFormat,
   segment: Segment,
 ): Promise<SegmentTranscript> {
-  "use step";
-
   // One line per segment, which is what makes the fan-out legible to a page: the
   // status is `running` for the whole thing, so without this a sixty-segment
   // recording and a one-segment recording look identical while they run.
@@ -338,9 +365,29 @@ export async function transcribeSegment(
   // template's: a `WavFormat` is structurally a `PcmFormat`, and 22 lines of
   // `DataView` writes with a comment about which of the two declared lengths a
   // decoder trusts is not a thing worth a second copy of.
+  // Down to 16 kHz mono BEFORE the header goes on, because the endpoint's budget
+  // is 30 seconds of wall clock and that covers the upload. At 48 kHz stereo this
+  // window is 17.66 MB and the same audio is 2.94 MB normalized — six times the
+  // bytes against a fixed deadline, which is what turns a slow segment into a
+  // `504 request exceeded 30.0s` and then into a failed run. Inert on the classic
+  // flow, where `normalizeRecording` already converted the whole file; see
+  // `downsample.ts` for why the streaming flow cannot do the same.
+  //
+  // Through `fatalOnUnsupported` for the same reason `planStreamed` reads its
+  // header through it: `parseWav` admits any bit depth whose block align is
+  // positive, and `downsampleSegment` can serve only four of them — so a
+  // recording the desk could cut but cannot send raises
+  // `UnsupportedRecordingError` here, and a plain throw would spend all six
+  // attempts re-reading this window out of the upload store to arrive at the
+  // identical answer. BOTH flows can reach it, which is newer than it looks:
+  // the check used to hang off the resampler, so a 12-bit recording already at
+  // 16 kHz mono — light for both flows, and therefore converted by neither —
+  // sailed past it into an unclassified `RangeError` from `encodeWav`.
+  const light = fatalOnUnsupported(() => downsampleSegment(audio.bytes, format));
+
   const { value: text, ms } = await timed(() =>
     transcribeWav(
-      encodeWav(audio.bytes, format),
+      encodeWav(light.bytes, light.format),
       `segment-${segment.index}.wav`,
       `Segment ${segment.index} (${formatDuration(segment.startMs)})`,
     ),
@@ -365,12 +412,6 @@ export async function transcribeSegment(
 }
 
 /**
- * Retries beyond the default 3, because a rate limit is the expected failure and
- * a segment that 429s is not a segment that is wrong.
- */
-transcribeSegment.maxRetries = 5;
-
-/**
  * Stitch the segments into one transcript.
  *
  * A step rather than a pure call in the body, and the reason is the narration:
@@ -385,8 +426,6 @@ export async function mergeTranscript(
   parts: readonly SegmentTranscript[],
   startedAt: number,
 ): Promise<Transcript> {
-  "use step";
-
   await report(`Stitching ${parts.length} ${plural(parts.length, "segment")} together.`);
 
   // `mapConcurrent` resolves in ITEM order however the calls settled, so this is
@@ -427,8 +466,6 @@ export async function mergeTranscript(
  * which needs one number measured one way.
  */
 export async function startClock(): Promise<number> {
-  "use step";
-
   return Date.now();
 }
 

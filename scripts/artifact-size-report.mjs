@@ -81,7 +81,7 @@ const BUNDLES = [
 ];
 
 /** Measured: 3 (`aai`, `aai-ui`, `aai-cli`). See the floor's note in `main`. */
-const MIN_PUBLISHABLE_PACKAGES = 3;
+const MIN_PUBLISHABLE_PACKAGES = 4;
 
 /**
  * The options this accepts, for `node:util`'s `parseArgs`.
@@ -296,8 +296,12 @@ function main() {
   // `packages/` produced a report with zero packages, a budget comparison over
   // nothing, and "no regressions ✓" at exit 0 — verified twice, once by
   // hand-building a degenerate report and running it through
-  // `artifact-size-budget.mjs`. Three today, and the number is stable: it moves
-  // only when this repo starts or stops publishing something.
+  // `artifact-size-budget.mjs`. FOUR today — `aai`, `aai-cli`, `aai-runtime`
+  // and `aai-ui`, the fixed release group — and the number is stable: it moves
+  // only when this repo starts or stops publishing something. It read `three`
+  // while the set was already four, which is the floor drifting loose rather
+  // than breaking: a scan that stopped finding one package would still clear a
+  // floor set below the real count.
   const packages = publishablePackages(ROOT);
   if (packages.length < MIN_PUBLISHABLE_PACKAGES) {
     throw new Error(

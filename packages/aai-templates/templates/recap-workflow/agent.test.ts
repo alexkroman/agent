@@ -14,7 +14,7 @@
  *   for a second transcription, and that a cancel says out loud what cancelling
  *   does not do.
  * - **The steps**, directly. Imported through vitest with no bundler in the
- *   path a `"use step"` function is an ordinary async function, so its HTTP
+ *   path a step is an ordinary async function, so its HTTP
  *   handling, its retryable/fatal split and its JSON contract with the model are
  *   all testable.
  * - **The body's two helpers** — the poll loop and the compensation unwind —
@@ -25,12 +25,28 @@
  *   test would be the worse failure. `aai-cli`'s
  *   `dev-workflow.scenario.test.ts` is the tier that builds a project and
  *   runs a real one.
+ *
+ * **One branch of the body is therefore UNPINNED here, and it is the most
+ * expensive one in the file: `recapFlow`'s `isWorkflowSuspend(err)` re-throw.**
+ * Its own comment says what its absence did — the first poll that had to wait
+ * deleted the transcript the run was waiting for — so the missing test is worth
+ * naming rather than leaving as a gap somebody assumes is covered.
+ * `createWorkflowCtx` cannot produce a suspend by construction: its `sleep` is
+ * RECORDED and its `waitFor` answers out of `hooks`, so no wait it serves ever
+ * throws. Minting the engine's brand by hand would drive the branch against a
+ * value no engine here produced — a test of this file's own fixture. The real
+ * one is `aai-runtime`'s `workflow-replay.test.ts`, whose engine fails any run
+ * whose body swallows a suspend, which is the guard under this rule for every
+ * template at once.
  */
 
+/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
+import agentDef from "virtual:aai/agent";
 import type { WorkflowClient } from "@alexkroman1/aai";
 import {
   createRunSnapshot,
   createToolContext,
+  createWorkflowCtx,
   parseSchemaInput,
   schemaInputIssues,
   toolRunner,
@@ -42,36 +58,20 @@ import {
 } from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { createHook, type Hook, sleep } from "workflow";
 import { recap } from "./shared.ts";
 import {
   askWhetherToKeep,
   awaitTranscript,
+  callbackUrl,
   checkTranscript,
   compensate,
   discardTranscript,
+  recapFlow,
   submitRecording,
   summarize,
   type TranscriptState,
 } from "./workflows/recap.ts";
-import { retentionToken } from "./workflows/tokens.ts";
-
-/**
- * The DevKit, with only its timer replaced.
- *
- * `sleep` throws outside a run, so the poll loop cannot be exercised at all
- * without this — and everything else the module imports from `workflow`
- * (`FatalError`, `RetryableError`) is a real class the steps' own specs assert
- * against, so it is `importActual` plus one override rather than a fake module.
- */
-vi.mock("workflow", async (importActual) => ({
-  ...(await importActual<typeof import("workflow")>()),
-  sleep: vi.fn(async () => undefined),
-  createHook: vi.fn(),
-}));
-
-/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
-import agentDef from "virtual:aai/agent";
+import { retentionToken, transcriptToken } from "./workflows/tokens.ts";
 
 /**
  * Every tool here is driven through the agent's own table, by the name the model
@@ -405,7 +405,13 @@ describe("submitRecording", () => {
 
   test("posts the recording and returns the job id", async () => {
     const calls = stubProvider({ id: "t_1", status: "queued" });
-    expect(await submitRecording("https://example.com/a.mp3")).toEqual({ id: "t_1" });
+    // `callback: false` alongside the id, because the body may only branch on
+    // journaled values — see `submitRecording`'s own doc. No minter is published
+    // in a spec, so `stepWebhookUrl` throws and `callbackUrl` degrades.
+    expect(await submitRecording("https://example.com/a.mp3")).toEqual({
+      id: "t_1",
+      callback: false,
+    });
 
     const call = calls[0];
     expect(call?.method).toBe("POST");
@@ -439,6 +445,73 @@ describe("submitRecording", () => {
     // the first poll has already lost the id it needed to compensate with.
     stubProvider({ status: "queued" });
     await expect(submitRecording("https://example.com/a.mp3")).rejects.toThrow(/transcript id/);
+  });
+
+  test("asks the provider to CALL BACK when it was handed a URL to call", async () => {
+    const calls = stubProvider({ id: "t_1", status: "queued" });
+    await submitRecording("https://example.com/a.mp3", "https://desk.example/hook/transcript:s_1");
+
+    // `webhook_url` rides the same `params` passthrough `speaker_labels` does.
+    // This one field is the whole difference between the two arms of
+    // `awaitTranscript`.
+    expect(JSON.parse(String(calls[0]?.body))).toMatchObject({
+      webhook_url: "https://desk.example/hook/transcript:s_1",
+      speaker_labels: true,
+    });
+  });
+
+  test("reports the callback FACT with the id, so the body branches on the journal", async () => {
+    // The determinism requirement in one assertion. Whether a callback was
+    // registered decides whether the body parks on a hook, and a body may only
+    // branch on what came out of the journal — so the step that established the
+    // fact is what returns it. A body that re-minted the URL on each replay
+    // could flip this branch under a redeploy and then look for a `waitFor` the
+    // journal never recorded.
+    stubProvider({ id: "t_1", status: "queued" });
+    expect(
+      await submitRecording("https://example.com/a.mp3", "https://desk.example/hook/t"),
+    ).toEqual({ id: "t_1", callback: true });
+  });
+
+  test("OMITS the key rather than sending a null when there is no callback URL", async () => {
+    // `JSON.stringify` drops an `undefined` property, so the key is absent on
+    // the wire for free — and what this pins is that nobody "makes it explicit"
+    // with a `?? null` or a `?? ""`, either of which puts it back. A provider
+    // handed a null for a URL is entitled to refuse the whole submission. The
+    // assertion is about the KEY, which `toMatchObject` cannot express.
+    const calls = stubProvider({ id: "t_1", status: "queued" });
+    await submitRecording("https://example.com/a.mp3");
+
+    expect(Object.keys(JSON.parse(String(calls[0]?.body)))).not.toContain("webhook_url");
+  });
+});
+
+describe("callbackUrl", () => {
+  test("degrades to NO callback when the deployment cannot mint one", async () => {
+    // `stepWebhookUrl` THROWS on an unpublished slot rather than answering
+    // `undefined` — a callback URL has no legitimate default, so the SDK refuses
+    // to invent one. A spec publishes no minter, which is the same position as
+    // `aai dev` on a laptop and a self-hosted server started without
+    // `publicUrl`. What must NOT happen is that throw reaching the step: a recap
+    // may not fail over a missing optimization.
+    expect(callbackUrl(transcriptToken("s_1"))).toBeUndefined();
+  });
+
+  test("does not swallow an EMPTY token, which would compose the route's own prefix", async () => {
+    // The one input `stepWebhookUrl` refuses that is a caller bug rather than a
+    // deployment fact — and this pins that `callbackUrl`'s catch does not hide
+    // it as "no callback available". A URL that is the bare prefix is refused by
+    // the route's own parser, so the failure would otherwise arrive at the far
+    // end as a 404 on a URL nobody can re-issue.
+    //
+    // It currently reads `undefined` because the unpublished slot is checked
+    // FIRST, so both arms of `stepWebhookUrl` are indistinguishable here. That is
+    // a real limit of this tier rather than a claim about the SDK: a spec with a
+    // published minter would tell them apart, and publishing one needs
+    // `publishStepWebhookUrl` off `@alexkroman1/aai/host-internal` — a host
+    // surface a template has no business importing. Recorded so the next reader
+    // does not mistake the assertion for a stronger one than it is.
+    expect(callbackUrl("")).toBeUndefined();
   });
 });
 
@@ -566,14 +639,29 @@ describe("summarize", () => {
     await expect(summarize("https://x/a.mp3", transcript())).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
   });
 
-  test("retries beyond the default, because a rate limit and a bad format both happen", () => {
-    expect(summarize.maxRetries).toBeGreaterThan(3);
+  test("is called with more attempts than the default, a rate limit and a bad format both happening", async () => {
+    // The policy is an argument to `ctx.step` now, so it is observable only at
+    // the call. `runSteps: false` and a skeleton of results: the subject is what
+    // the body ASKED FOR.
+    const ctx = createWorkflowCtx({
+      runSteps: false,
+      results: {
+        submitRecording: { id: "t_1" },
+        checkTranscript: { status: "completed", text: "Done.", durationMs: 1 },
+        summarize: { headline: "H", points: [], spoken: "S." },
+      },
+      hooks: { [retentionToken("Ada")]: { keep: true } },
+    });
+    await recapFlow({ url: "https://x/a.mp3", requestedBy: "Ada" }, ctx);
+
+    const step = ctx.steps.find((entry) => entry.name === "summarize");
+    expect(step?.maxAttempts).toBeGreaterThan(3);
   });
 });
 
 // ---- The body's helpers -----------------------------------------------------
 
-describe("awaitTranscript — the polling port", () => {
+describe("awaitTranscript — the polling port, and the callback over it", () => {
   beforeEach(() => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
@@ -593,7 +681,7 @@ describe("awaitTranscript — the polling port", () => {
       { status: "processing" },
       { status: "completed", text: "Done.", audio_duration: 60 },
     ]);
-    const state = await awaitTranscript("t_1");
+    const state = await awaitTranscript("t_1", createWorkflowCtx());
     expect(state).toMatchObject({ status: "completed", text: "Done." });
     expect(polls()).toBe(3);
   });
@@ -602,65 +690,210 @@ describe("awaitTranscript — the polling port", () => {
     // `error` is terminal: polling a failed job to the bound would spend twenty
     // minutes learning what the first answer already said.
     const polls = stubStatuses([{ status: "error", error: "Transcoding failed" }]);
-    await expect(awaitTranscript("t_1")).rejects.toThrow(/Transcoding failed/);
+    await expect(awaitTranscript("t_1", createWorkflowCtx())).rejects.toThrow(/Transcoding failed/);
     expect(polls()).toBe(1);
   });
 
   test("gives up at the bound rather than polling a stuck job forever", async () => {
     stubStatuses([{ status: "processing" }]);
-    await expect(awaitTranscript("t_1")).rejects.toThrow(/Gave up/);
+    await expect(awaitTranscript("t_1", createWorkflowCtx())).rejects.toThrow(/Gave up/);
+  });
+
+  /** A job still `processing` for `polls` turns, then completed. */
+  function stubSlowJob(polls: number) {
+    return stubStatuses([
+      ...Array.from({ length: polls }, () => ({ status: "processing" })),
+      { status: "completed", text: "Done.", audio_duration: 60 },
+    ]);
+  }
+
+  test("says nothing about a long one until it really has waited two minutes", async () => {
+    // The boundary this case and the next one hold together, and it is where
+    // `PATIENCE_POLLS` disagreed with its own doc. The note goes out at the TOP
+    // of a poll, so the wait it follows is the sleeps BEHIND it — attempt N is
+    // reached after N-1 of them. At a fifteen-second interval the two minutes
+    // the constant promises is eight sleeps, so the earliest honest turn to say
+    // it is the ninth. Here the job finishes on that ninth poll, two minutes in
+    // and not a second over, so the caller is told nothing.
+    const ctx = createWorkflowCtx();
+    stubSlowJob(8);
+
+    await awaitTranscript("t_1", ctx);
+
+    expect(ctx.steps.filter((entry) => entry.name === "noteSlow")).toEqual([]);
+    // Eight sleeps of the declared interval — the two minutes, exactly.
+    expect(ctx.slept.map((one) => one.until)).toEqual(Array.from({ length: 8 }, () => 15_000));
+  });
+
+  test("says it ONCE past two minutes, not on every poll after", async () => {
+    // The ninth poll finds the job still going, which is the first turn that has
+    // two minutes of waiting behind it — so the note goes out, and the eleven
+    // polls after it say nothing more. A note per poll would be a caller told
+    // the same sentence every fifteen seconds.
+    const ctx = createWorkflowCtx();
+    stubSlowJob(20);
+
+    await awaitTranscript("t_1", ctx);
+
+    expect(ctx.steps.filter((entry) => entry.name === "noteSlow")).toHaveLength(1);
+  });
+
+  // ---- The callback arm -----------------------------------------------------
+  //
+  // Everything above drives `awaitTranscript` with no callback token, which is
+  // what a deployment that does not know its own public URL gets — and those
+  // cases are the REGRESSION guard for this section: the poll-only arm has to
+  // keep behaving exactly as it did before there was a callback at all.
+  //
+  // `createWorkflowCtx` is the only tier that can drive the answered branch:
+  // its `waitFor` reads `hooks` by token, so supplying a payload IS the delivery
+  // landing and omitting one IS the window closing. The eval tier cannot —
+  // nothing there can signal — so it only ever sees the fallback, which is
+  // stated in `agent.eval.test.ts`.
+
+  /** The token both `request_recap` and the body derive for one session. */
+  const NUDGE = transcriptToken("s_1");
+
+  test("the delivery ends the wait, so a finished job costs no sleeping at all", async () => {
+    // The whole point of the conversion, in one assertion. Read once, park on
+    // the callback, read again when it lands: two requests to the provider
+    // where the poll-only arm would have made nine before it even said
+    // anything, and not one durable sleep.
+    const polls = stubStatuses([
+      { status: "processing" },
+      { status: "completed", text: "Done.", audio_duration: 60 },
+    ]);
+    const ctx = createWorkflowCtx({
+      hooks: { [NUDGE]: { transcript_id: "t_1", status: "completed" } },
+    });
+
+    const state = await awaitTranscript("t_1", ctx, NUDGE);
+
+    expect(state).toMatchObject({ status: "completed", text: "Done." });
+    expect(polls()).toBe(2);
+    expect(ctx.slept).toEqual([]);
+    // On the token the tool derives for the same session — the one string this
+    // template and a third party on the public internet have to agree about.
+    expect(ctx.waited).toEqual([NUDGE]);
+  });
+
+  test("a delivery is a NUDGE, not an answer: the run still READS the status", async () => {
+    // The security property of this template, and the reason an unauthenticated
+    // callback route is safe here. The payload SAYS the job completed; the
+    // provider's own endpoint says otherwise, and the provider wins — so a
+    // forged delivery on a guessed token costs exactly one extra read and
+    // changes no outcome. Nothing the payload carries is ever read.
+    const polls = stubStatuses([
+      { status: "processing" },
+      { status: "processing" },
+      { status: "completed", text: "The real transcript.", audio_duration: 60 },
+    ]);
+    const ctx = createWorkflowCtx({
+      hooks: { [NUDGE]: { transcript_id: "t_1", status: "completed", text: "A LIE." } },
+    });
+
+    const state = await awaitTranscript("t_1", ctx, NUDGE);
+
+    expect(state).toMatchObject({ status: "completed", text: "The real transcript." });
+    // Three reads: the one before the park, the one the delivery woke, and the
+    // one after the ordinary fifteen-second wait that followed it.
+    expect(polls()).toBe(3);
+    expect(ctx.slept).toEqual([{ until: 15_000, correlationId: undefined }]);
+  });
+
+  test("parks ONCE and then polls, because a token cannot be claimed twice", async () => {
+    // `claimHook` refuses a second claim on a token its run still holds, and a
+    // refusal is a throw rather than a suspend — which `recapFlow`'s catch would
+    // read as a failed run and answer by deleting the transcript. So the wait
+    // may not be inside the loop, and this is what pins that: twenty turns, ONE
+    // `waitFor`, and every other wait a plain sleep.
+    const ctx = createWorkflowCtx({ hooks: { [NUDGE]: {} } });
+    stubSlowJob(20);
+
+    await awaitTranscript("t_1", ctx, NUDGE);
+
+    expect(ctx.waited).toHaveLength(1);
+    expect(ctx.slept).toHaveLength(19);
+  });
+
+  test("an unanswered window falls back to the poll rather than hanging", async () => {
+    // No `hooks` entry, so the timed wait resolves `undefined` — which IS the
+    // window closing. The run must finish anyway: a dropped delivery is the
+    // ordinary case a webhook has no answer for, and a template that waited
+    // forever on one would be strictly worse than the loop it replaced.
+    const polls = stubStatuses([
+      { status: "processing" },
+      { status: "processing" },
+      { status: "completed", text: "Done.", audio_duration: 60 },
+    ]);
+    const ctx = createWorkflowCtx();
+
+    const state = await awaitTranscript("t_1", ctx, NUDGE);
+
+    expect(state).toMatchObject({ status: "completed", text: "Done." });
+    expect(polls()).toBe(3);
+    // It asked, and then it stopped counting on the answer.
+    expect(ctx.waited).toEqual([NUDGE]);
+    expect(ctx.slept).toEqual([{ until: 15_000, correlationId: undefined }]);
+  });
+
+  test("says 'still transcribing' after ONE closed window, not after nine", async () => {
+    // The same two minutes the poll-only arm counts out in eight sleeps, in one
+    // window — so whichever arm a run is on, a caller hears the sentence at the
+    // same point. The note goes out at the TOP of a poll, so attempt 2 is the
+    // first turn with a whole closed window behind it.
+    const ctx = createWorkflowCtx();
+    stubSlowJob(20);
+
+    await awaitTranscript("t_1", ctx, NUDGE);
+
+    const notes = ctx.steps.filter((entry) => entry.name === "noteSlow");
+    expect(notes).toHaveLength(1);
+    // Attempt 2, which is one `checkTranscript` and one closed window in.
+    expect(ctx.steps.slice(0, 3).map((entry) => entry.name)).toEqual([
+      "checkTranscript",
+      "checkTranscript",
+      "noteSlow",
+    ]);
+  });
+
+  test("says nothing when the delivery beats the window", async () => {
+    // The mirror of the case above, and what stops the note being a thing every
+    // callback run says: the delivery lands, attempt 2 finds the job done, and
+    // nobody is told a recording is a long one.
+    const ctx = createWorkflowCtx({ hooks: { [NUDGE]: {} } });
+    stubSlowJob(1);
+
+    await awaitTranscript("t_1", ctx, NUDGE);
+
+    expect(ctx.steps.filter((entry) => entry.name === "noteSlow")).toEqual([]);
   });
 });
 
 describe("askWhetherToKeep — the expense port", () => {
   beforeEach(() => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    // The window has NOT elapsed unless a test says so. A `sleep` that resolves
-    // would race the hook's own answer, and which one won would come down to
-    // microtask order rather than to the branch under test.
-    vi.mocked(sleep).mockReturnValue(new Promise<void>(() => undefined));
-    vi.mocked(createHook).mockReturnValue(hookAnswering(undefined));
   });
 
   /**
-   * A hook that resolves with `payload`, or never — which is what the timeout
-   * branch has to see.
+   * The gate, driven with or without an answer.
    *
-   * Built by hanging the hook's own members on a REAL promise rather than by
-   * writing a `then` property: a `Hook` is a thenable, and a hand-written one
-   * is both a lint finding and a worse model of the thing.
-   *
-   * `createHook()` throws outside a run, so this is the only way to reach the
-   * gate's branching at all. What it pins is the three OUTCOMES and the safe
-   * default; suspension, token registration and replay are not testable here
-   * and are not claimed to be.
+   * This block used to be forty lines of DevKit scaffolding: `vi.mock("workflow")`
+   * over `createHook` and `sleep`, plus a hand-built `Hook` assembled by hanging
+   * members on a real promise, plus a never-resolving `sleep` so the two sides of
+   * a `Promise.race` could not settle in an order that decided the test instead
+   * of the branch. The gate is ONE call now — `ctx.waitFor(token, { timeoutMs })`
+   * — so an answer is a `hooks` entry and the no-answer branch is its absence.
+   * What is pinned is unchanged: the three outcomes and the safe default.
    */
-  function hookAnswering(
-    payload: { keep: boolean } | undefined,
-    onClaim: () => void = () => undefined,
-  ): Hook<{ keep: boolean }> {
-    const settled: Promise<{ keep: boolean }> =
-      payload === undefined ? new Promise(() => undefined) : Promise.resolve(payload);
-    return Object.assign(settled, {
-      token: "retention:stub",
-      getConflict: async () => {
-        onClaim();
-        return null;
-      },
-      dispose: () => undefined,
-      [Symbol.dispose]: () => undefined,
-      [Symbol.asyncIterator]: async function* () {
-        yield await settled;
-      },
-    });
-  }
+  const gateCtx = (answer?: { keep: boolean }) =>
+    createWorkflowCtx(answer === undefined ? {} : { hooks: { [retentionToken("s_1")]: answer } });
 
   test("keeps the transcript when the caller says to, and deletes nothing", async () => {
-    vi.mocked(createHook).mockReturnValue(hookAnswering({ keep: true }));
     const provider = installStubStepFetch();
 
     const compensations = [{ label: "transcript t_1", undo: async () => undefined }];
-    expect(await askWhetherToKeep("s_1", "t_1", compensations)).toEqual({
+    expect(await askWhetherToKeep("s_1", "t_1", compensations, gateCtx({ keep: true }))).toEqual({
       kept: true,
       answered: true,
     });
@@ -670,11 +903,10 @@ describe("askWhetherToKeep — the expense port", () => {
   });
 
   test("deletes on a DECLINE, and drops the undo it just performed", async () => {
-    vi.mocked(createHook).mockReturnValue(hookAnswering({ keep: false }));
     const calls = stubProvider({ id: "t_1" });
 
     const compensations = [{ label: "transcript t_1", undo: async () => undefined }];
-    expect(await askWhetherToKeep("s_1", "t_1", compensations)).toEqual({
+    expect(await askWhetherToKeep("s_1", "t_1", compensations, gateCtx({ keep: false }))).toEqual({
       kept: false,
       answered: true,
     });
@@ -686,29 +918,33 @@ describe("askWhetherToKeep — the expense port", () => {
 
   test("DELETES when nobody answers, which is what makes the window mean anything", async () => {
     // The safe default, and the whole reason the gate is a gate: a no-answer
-    // branch that kept the data would be a prompt with a grace period.
-    vi.mocked(sleep).mockResolvedValue(undefined);
+    // branch that kept the data would be a prompt with a grace period. No
+    // `hooks` entry is exactly the closed-window case, because the wait carries a
+    // `timeoutMs` and so has an unanswered branch to take.
     const calls = stubProvider({ id: "t_1" });
 
-    expect(await askWhetherToKeep("s_1", "t_1", [])).toEqual({ kept: false, answered: false });
+    expect(await askWhetherToKeep("s_1", "t_1", [], gateCtx())).toEqual({
+      kept: false,
+      answered: false,
+    });
     expect(calls[0]?.method).toBe("DELETE");
   });
 
-  test("claims the token BEFORE the caller is asked to answer it", async () => {
-    // `createHook()` registers nothing until the workflow suspends, so an answer
-    // sent before the claim lands is answered "nobody is listening" — which is
-    // indistinguishable from being late.
-    const order: string[] = [];
-    vi.mocked(createHook).mockReturnValue(
-      hookAnswering({ keep: true }, () => order.push("claimed")),
-    );
-    installStubStepFetch(() => {
-      order.push("asked");
-      return { body: {} };
-    });
+  test("asks BEFORE it waits, so the caller knows what they are answering", async () => {
+    // The ordering that replaced `createHook`'s claim-then-ask dance. Under the
+    // DevKit the hook registered nothing until the workflow suspended, so an
+    // answer sent before the claim landed was told "nobody is listening" —
+    // indistinguishable from being late — and the body had to call
+    // `getConflict()` first to force it. `ctx.waitFor` registers the token as
+    // part of waiting, by construction, so what is left to assert is the thing
+    // that still matters to a person: the note goes out first.
+    const ctx = gateCtx({ keep: true });
+    installStubStepFetch();
 
-    await askWhetherToKeep("s_1", "t_1", []);
-    expect(order[0]).toBe("claimed");
+    await askWhetherToKeep("s_1", "t_1", [], ctx);
+
+    expect(ctx.steps[0]?.name).toBe("noteGate");
+    expect(ctx.waited).toEqual([retentionToken("s_1")]);
   });
 });
 
@@ -723,6 +959,7 @@ describe("compensate — the saga port", () => {
         { label: "first", undo: async () => void order.push("first") },
       ],
       "because",
+      createWorkflowCtx(),
     );
     expect(order).toEqual(["second", "first"]);
   });
@@ -744,6 +981,7 @@ describe("compensate — the saga port", () => {
           { label: "fine", undo: async () => void order.push("fine") },
         ],
         "because",
+        createWorkflowCtx(),
       ),
     ).resolves.toBeUndefined();
     expect(order).toEqual(["fine"]);
@@ -753,6 +991,8 @@ describe("compensate — the saga port", () => {
     // The case where the FIRST step failed: there is nothing to reverse, and a
     // run that narrated an unwind it did not perform would be lying to the
     // caller reading its progress.
-    await expect(compensate([], "nothing was acquired")).resolves.toBeUndefined();
+    await expect(
+      compensate([], "nothing was acquired", createWorkflowCtx()),
+    ).resolves.toBeUndefined();
   });
 });

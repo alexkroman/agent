@@ -24,7 +24,7 @@
  * | | dead-air cover (`pipeline-stream-parts.ts`) | failure phrases (here) |
  * | --- | --- | --- |
  * | why | the turn is taking a long time | the turn, or the session, failed |
- * | client transcript | INTERIM only (`record: false`) | FINAL |
+ * | client transcript | INTERIM only (`record: false`) | FINAL, tagged `recovery` |
  * | history / `ctx.messages` | never | never |
  *
  * The cover is a timing artifact the caller hears, so it must match the audio
@@ -41,6 +41,21 @@
  * do differ (one inside a reply, one outside any reply, with its own drain and
  * `publishTranscript: false`), and merging them would erase the difference
  * that is the point.
+ *
+ * ## The `never` in that row is on the WIRE, because it could not be kept here
+ *
+ * This module can only decline to push; it cannot stop a reader that sees the
+ * committed transcript from recording it, and for a long time two of them did.
+ * `agent-transcript.committed` was the same event for a reply and for an
+ * apology, so `session-core.ts`'s live dispatch appended the phrase to
+ * `ctx.messages` on the same call the caller heard it, and
+ * `messagesFromEvents` handed it back to the model on the first reconnect —
+ * compounding, since every reconnect re-seeds. Both phrases therefore carry
+ * `recovery` (`AgentTranscriptRecovery`, `sdk/protocol-events.ts`), the
+ * only thing on the wire that says an utterance was SPOKEN and is not part of
+ * the record, and `historyMessageOf` (`session-event-history.ts`) is the one
+ * reader of it. Adding a third phrase means tagging it: an untagged committed
+ * transcript is a reply, by definition and by every older log.
  */
 
 import type { ModelMessage } from "ai";
@@ -112,10 +127,12 @@ export interface TurnOutcome {
    * be silence too.
    *
    * Emitted as a transcript so the UI matches what was heard, but deliberately
-   * NOT pushed into `history.llm`: teaching the model that its own replies open
-   * with apologies is how it starts producing them unprompted. Same reasoning
-   * as keeping the dead-air cover out of the record — see the module doc for
-   * why the transcript rule nonetheless goes the other way.
+   * NOT pushed into `history.llm`, and tagged `recovery: "turn-failed"` so no
+   * READER of the stream records it either: teaching the model that its own
+   * replies open with apologies is how it starts producing them unprompted.
+   * Same reasoning as keeping the dead-air cover out of the record — see the
+   * module doc for why the transcript rule nonetheless goes the other way, and
+   * for the two readers that used to put the phrase back.
    */
   speakRecovery(failed: boolean): boolean;
   /** Announce and persist a turn that produced speech. */
@@ -132,6 +149,9 @@ export interface TurnOutcome {
    *
    * Not a reply: no reply id, no history, no turn. Just the sentence and its
    * audio, drained before the caller's teardown discards what is still queued.
+   * Tagged `recovery: "session-failed"` for the reason `speakRecovery`'s twin
+   * is tagged — a reader cannot otherwise tell this from something the agent
+   * chose to say.
    */
   speakStartFailure(): Promise<void>;
 }
@@ -170,13 +190,21 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
     speakRecovery(failed) {
       if (!failed || errorPhrase.length === 0) return false;
       sendTtsText(errorPhrase);
-      callbacks.report({ type: "agent-transcript.committed", text: errorPhrase });
+      callbacks.report({
+        type: "agent-transcript.committed",
+        text: errorPhrase,
+        recovery: "turn-failed",
+      });
       return true;
     },
 
     async speakStartFailure() {
       if (startFailurePhrase.length === 0 || !providers.tts) return;
-      callbacks.report({ type: "agent-transcript.committed", text: startFailurePhrase });
+      callbacks.report({
+        type: "agent-transcript.committed",
+        text: startFailurePhrase,
+        recovery: "session-failed",
+      });
       sendTtsText(startFailurePhrase, { publishTranscript: false });
       await drainTts().catch(() => undefined);
     },

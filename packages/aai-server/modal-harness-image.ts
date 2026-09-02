@@ -56,11 +56,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { CONTAINED_ENV } from "@alexkroman1/aai-runtime/internal";
 import type { App, Image, ModalClient, Sandbox } from "modal";
 import pTimeout from "p-timeout";
 import { keyedMemoAsync } from "./_memo.ts";
 import { resolveHarnessPath } from "./constants.ts";
+import { GUEST_ROOT, guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./guest-exec-env.ts";
 import { createLogger } from "./logger.ts";
 import {
   GUEST_SYSTEM_PACKAGES,
@@ -70,42 +70,18 @@ import {
 
 const log = createLogger("modal.harness-image");
 
-/** Root the guest toolchain and harness live under inside the baked image. */
-export const GUEST_ROOT = "/opt/aai";
-
-/** Where the guest harness lives inside the baked image. */
-export const HARNESS_REMOTE_PATH = `${GUEST_ROOT}/harness.mjs`;
-
-/** Where the harness's baked V8 compile cache lives inside the image. */
-export const HARNESS_COMPILE_CACHE_PATH = `${GUEST_ROOT}/.compile-cache`;
-
-/**
- * The exec env EVERY Modal guest gets, whatever its mode — one builder so the
- * three exec sites (agent, studio, describe) cannot drift on it.
- *
- * `NODE_COMPILE_CACHE` points at the V8 compile cache baked into the image.
- * The harness is a single ~13 MB bundle and every sandbox boots it cold, so
- * V8 spends the same parse+compile on every spawn; populating the cache once
- * during the image build and snapshotting it (see `warmCompileCache`) turns
- * that into a cache read. Measured on the real bundle: **~545ms without,
- * ~343ms with** — ~200ms off every cold voice session, every studio broker
- * call, for ~1.5 MB in the image. A missing or
- * stale entry is a silent MISS, never an error (a cache written by a different
- * Node version, or for different file content, is simply ignored), which is
- * what makes it safe to bake in. Modal-only on purpose: the cache is a
- * property of the baked image, and the subprocess backend has no image to bake
- * one into.
- *
- * CONTAINED declares that a real container surrounds this guest, so the SDK's
- * network builtins drop their SSRF screen — it guards nothing a tenant cannot
- * bypass with a raw fetch from their own tool code, and the container holds no
- * platform credentials. Declared by the SPAWNER rather than sniffed by the
- * guest, and deliberately absent from the subprocess backend, whose "guest" is
- * a child process on the developer's own machine (see aai/host/ssrf.ts).
- */
-export function guestExecBaseEnv(): Record<string, string> {
-  return { NODE_COMPILE_CACHE: HARNESS_COMPILE_CACHE_PATH, [CONTAINED_ENV]: "1" };
-}
+// The guest exec CONTRACT used to live here and now lives beside itself
+// (`guest-exec-env.ts`, whose doc has the seam). Re-exported by name rather than
+// with `export *`: every import site in the package and in the specs still reads
+// these four off this module, and a named list is what keeps `noReExportAll` and
+// knip able to see which of them are actually used — `GUEST_SCRATCH_DIR` is
+// deliberately NOT among them, having no reader here.
+export {
+  GUEST_ROOT,
+  guestExecBaseEnv,
+  HARNESS_COMPILE_CACHE_PATH,
+  HARNESS_REMOTE_PATH,
+} from "./guest-exec-env.ts";
 
 /** Name the harness-baked snapshot images are published under. */
 const HARNESS_IMAGE_NAME = "aai-guest-harness";
@@ -130,8 +106,14 @@ const HARNESS_WARMUP_TIMEOUT_MS = 60_000;
  * (the provider SDKs) resolve at install time. See
  * `scripts/sync-guest-toolchain.mjs` for the full reasoning and for the
  * third-party half, which IS locked.
+ *
+ * EXPORTED only so `guest-image-extractors.test.ts` can compare it against what
+ * `scripts/build-guest-image-extract.mjs` reads back out of this file's source.
+ * Nothing else may import it — the scripts read the source text, since they are
+ * plain `.mjs` with no TypeScript loader, and that spec is the only thing that
+ * can see the two disagree.
  */
-const SDK_PACKAGES = [
+export const SDK_PACKAGES = [
   "@alexkroman1/aai",
   "@alexkroman1/aai-cli",
   "@alexkroman1/aai-runtime",

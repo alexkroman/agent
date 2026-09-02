@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `stubUploads` — the upload store a spec publishes so a `"use step"` body that
+ * `stubUploads` — the upload store a spec publishes so a step that
  * reads or writes a file is testable without a server.
  *
  * Its own module beside `testing-gateway.ts`, `testing-generate.ts` and
@@ -118,7 +118,7 @@ export type StubUploads = {
 };
 
 /**
- * Publish an in-memory upload store, so a `"use step"` function that calls
+ * Publish an in-memory upload store, so a step that calls
  * `readUpload` can be tested without a server.
  *
  * A step reads uploads through a process-wide slot rather than dialling

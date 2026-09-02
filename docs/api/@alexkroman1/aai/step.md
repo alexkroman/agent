@@ -1,6 +1,6 @@
 # step
 
-`@alexkroman1/aai/step` — the surface a `"use step"` body is written
+`@alexkroman1/aai/step` — the surface a step body is written
 against.
 
 This is the half of `/utils` that has an AUDIENCE rather than a build
@@ -12,13 +12,12 @@ body, a tool body, and the framework's own plumbing), so the import line said
 nothing about which layer you were in and the reference page for the step
 vocabulary was a list you had to filter by hand.
 
-**That reader is a `workflows/*.ts` module in an agent project.** The
-Workflow Development Kit's builder scans exactly that directory and rewrites
-the `"use step"` and `"use workflow"` bodies it finds there — a body written
-anywhere else is transformed by nothing and runs inline, with no journal and
-no retry. So the loop is: `workflow` on the root DECLARES the run and
-types its input, a `workflows/*.ts` module holds the body, this subpath is
-what that body is written against, and
+**That reader is a `workflows/*.ts` module in an agent project.** Nothing here
+is durable on its own: a call becomes a journaled step only when the body puts
+it inside `ctx.step(name, fn)`, and outside one it runs inline on every replay
+with no journal and no retry. So the loop is: `workflow` on the root DECLARES
+the run and types its input, a `workflows/*.ts` module holds the body, this
+subpath is what that body is written against, and
 `useWorkflowRun` in `@alexkroman1/aai-ui` renders it.
 
 What is here is one reader's whole vocabulary, in the order a pipeline needs
@@ -34,6 +33,10 @@ it:
   reset) and [multipartBody](#multipartbody-1).
 - **Narration** — [report](#report) / [emit](#emit), what a page's progress
   stream renders.
+- **Being woken** — [stepWebhookUrl](#stepwebhookurl), the public callback URL a step
+  hands a third party so a delivery resolves the body's `ctx.waitFor` instead
+  of the run polling for an answer. The tool-side spelling of the same URL is
+  `ctx.workflows.publicWebhookUrl`, which a body and its steps cannot reach.
 - **The model** — [stepGenerate](#stepgenerate) (one `fetch` to the LLM gateway on the
   agent's own key, because the AI SDK would be megabytes in a ~7 KB artifact)
   and [stepGenerateJson](#stepgeneratejson) / [stripJsonFence](#stripjsonfence).
@@ -53,11 +56,12 @@ rather than a synthesizer, the same split [stepFetch](#stepfetch) makes with its
 undici dispatcher.
 
 Two neighbours that are deliberately elsewhere. The failure a body THROWS
-(`toStepError` / `throwStepError` / `throwFatalStepError`)
-is on `@alexkroman1/aai/step-errors`, which is the one authoring module
-allowed to import the DevKit's `workflow` package. And the DevKit's own
-directives and its durable `sleep` are imported from `workflow` directly —
-this SDK owns what is INSIDE a step and never the steps.
+(`toStepError` / `throwStepError` / `throwFatalStepError`, and the
+`FatalError` / `RetryableError` they resolve to) is on
+`@alexkroman1/aai/step-errors`, so that importing a classifier is an opt-in
+rather than something every `/step` reader pays for. And the durable wait is
+`ctx.sleep` on the `WorkflowCtx` the engine hands the body — this SDK
+owns what is INSIDE a step and never the steps.
 
 ## Functions
 
@@ -84,7 +88,6 @@ the answer growing instead of a spinner:
 import { emit } from "@alexkroman1/aai/step";
 
 export async function transcribeSegment(index: number) {
-  "use step";
   const text = await transcribe(index);
   await emit("transcript", { index, text });
   return { index, text };
@@ -266,39 +269,21 @@ Most calls in flight at once. Rounded down, and floored at 1.
 (`item`: `T`, `index`: `number`) => `R` \| `Promise`\<`R`\>
 
 Called once per item, with the item and its index in `items`.
-  Inside a workflow body this is where a `"use step"` call goes, and it must
-  be the only one — see the remarks below.
+  Inside a workflow body this is where a `ctx.step` call goes, and **it must
+  be the only one, issued synchronously** — a callback that awaits before its
+  step call, or issues two in a row, interleaves with its siblings by
+  completion order and a resume hands the Nth journal entry to a different
+  call. A body needing two steps per item runs them as two fan-outs. The
+  module doc above carries why, and why the window itself needs no barrier.
 
 #### Returns
 
 `Promise`\<`R`[]\>
 
-#### Remarks
-
-**`run` must issue the same sequence of step calls for every item**, which in
-practice means one, issued synchronously. The Workflow Development Kit
-correlates a journal entry to a step call by the ORDER the call was issued in
-and by nothing else, so a callback that awaits something before its step call,
-or issues two steps in a row, interleaves with its siblings by completion
-order — and a resume then hands the Nth journal entry to a different call. A
-body that needs two steps per item runs them as two fan-outs.
-
-What that requires of the window itself is narrower than it looks, and is why
-there is no barrier in it: the SEQUENCE OF ITEMS whose calls are issued has to
-be a pure function of the list, not of the settle order. The cursor only ever
-hands out the next index, so the Nth call issued is item N-1 however the calls
-settle; what completion order decides is which slot runs which item, and no
-step id depends on that. A slot that finishes early therefore takes the next
-item immediately rather than idling until its slowest sibling lands.
-
-Nothing here imports the Workflow Development Kit, so this is a plain bounded
-map: a tool body can use it for a rate-limited API and a spec can call it
-directly.
-
 #### Example
 
 ```ts no-check
-// In a "use workflow" body: one step per segment, four in flight.
+// In a workflow body: one step per segment, four in flight.
 const cleaned = await mapConcurrent(segments, 4, (text) => postProcess(text));
 ```
 
@@ -427,13 +412,11 @@ bytes never do.
 import { readUpload, writeUpload } from "@alexkroman1/aai/step";
 
 export async function store(bytes: Uint8Array): Promise<string> {
-  "use step";
   const { id } = await writeUpload(bytes, { name: "summary.wav" });
   return id;
 }
 
 export async function firstSecond(uploadId: string): Promise<Uint8Array> {
-  "use step";
   const { bytes } = await readUpload(uploadId, { start: 44, end: 44 + 32_000 });
   return bytes;
 }
@@ -479,6 +462,51 @@ One line of progress, as a reader should see it. Prefer a
 
 ***
 
+### requireCompleteUpload()
+
+```ts
+function requireCompleteUpload(id: string): Promise<UploadInfo>;
+```
+
+One upload's metadata, refused unless every byte is in.
+
+The read for a step that consumes a file END TO END — an upload to a provider,
+a copy to local disk, a length a segment plan is computed from. A step that
+works on a WINDOW wants [uploadInfo](#uploadinfo-1) and clamping, which is what
+`readUpload` already does.
+
+#### Parameters
+
+##### id
+
+`string`
+
+#### Returns
+
+`Promise`\<[`UploadInfo`](#uploadinfo)\>
+
+#### Example
+
+```ts
+import { requireCompleteUpload } from "@alexkroman1/aai/step";
+
+export async function wholeFileSize(uploadId: string): Promise<number> {
+  const stored = await requireCompleteUpload(uploadId);
+  return stored.size;
+}
+```
+
+#### Throws
+
+when the upload is still arriving — see this
+  module's doc for why that is a refusal rather than a wait.
+
+#### Throws
+
+when the id names no upload, exactly as [uploadInfo](#uploadinfo-1) does.
+
+***
+
 ### requireStepEnv()
 
 ```ts
@@ -489,10 +517,10 @@ function requireStepEnv(name: string): string;
 
 The failure a step wants for a credential: an absent key is not transient, so
 it should say which key and how to set it rather than surface three layers
-down as an HTTP 401 the DevKit then retries.
+down as an HTTP 401 the engine then retries.
 
-It throws a plain `Error` rather than the DevKit's `FatalError` on purpose —
-this module is dependency-free and must stay importable from a tool body and a
+It throws a plain `Error` rather than a `FatalError` on purpose — that class
+is `/step-errors`' and this module must stay importable from a tool body and a
 spec, neither of which has a workflow around it. A step that wants the retries
 skipped wraps the call:
 
@@ -532,7 +560,7 @@ Reads `Retry-After` in both spellings RFC 9110 allows — delta-seconds
 (`Retry-After: 30`) and an HTTP date (`Retry-After: Wed, 21 Oct 2026 07:28:00
 GMT`) — and answers `undefined` for a header that is absent, unparsable, or in
 the past. `undefined` is what a caller wants there: it means "you decide",
-which is the DevKit's own backoff, rather than a date that would retry
+which is the engine's own default delay, rather than a date that would retry
 instantly or never.
 
 #### Parameters
@@ -560,7 +588,7 @@ A `Response`, or its headers. Both spellings are accepted
 function stepEnv(name: string): string | undefined;
 ```
 
-Read one key of the agent's env from inside a `"use step"` function.
+Read one key of the agent's env from inside a step.
 
 #### Parameters
 
@@ -584,7 +612,6 @@ The value, or `undefined` when the agent env does not declare it.
 import { stepEnv } from "@alexkroman1/aai/step";
 
 export async function fetchReport(id: string): Promise<string> {
-  "use step";
   const base = stepEnv("REPORT_BASE_URL") ?? "https://reports.example.com";
   return await (await fetch(`${base}/${id}`)).text();
 }
@@ -600,7 +627,7 @@ function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
 
 Make one HTTP request from inside a step.
 
-Prefer this to `fetch` in any `"use step"` function, and especially in a
+Prefer this to `fetch` in any step, and especially in a
 fan-out: it pins HTTP/1.1 (so a concurrent batch gets a socket each rather
 than N streams on one connection), reuses connections across a fan-out's
 calls, and reports a connection failure with its whole `cause` chain instead
@@ -652,8 +679,8 @@ when the request never got an answer — a reset
   status, which is returned like any other: only the caller knows whether a
   `404` is fatal.
 
-**From a `"use step"` body, prefer `stepFetchOk`
-(`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+**From a step, prefer `stepFetchOk`
+(`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
 
@@ -667,8 +694,8 @@ function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<strin
 
 Ask the AssemblyAI LLM Gateway one question and return its reply.
 
-**From a `"use step"` body, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
-It is this call plus `throwStepError`, and the DevKit decides its retry policy
+**From a step, prefer `stepGenerateClassified` (`@alexkroman1/aai/step-errors`).**
+It is this call plus `throwStepError`, and the engine decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
 named sits unread. Reach for the raw call where the failure is not simply a
@@ -699,10 +726,9 @@ The reply, trimmed. Never empty — a 200 carrying no content is a
 
 ```ts
 import { stepGenerate, StepGenerateError } from "@alexkroman1/aai/step";
-import { FatalError } from "workflow";
+import { FatalError } from "@alexkroman1/aai/step-errors";
 
 export async function summarize(text: string): Promise<string> {
-  "use step";
   try {
     return await stepGenerate(text, { system: "Summarize in two sentences." });
   } catch (err) {
@@ -733,8 +759,8 @@ Ask the model for JSON and return it validated.
 The reply is unfenced, parsed, and checked against `schema`; the validated
 value is what comes back, typed as the schema's output.
 
-**From a `"use step"` body, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
-It is this call plus `throwStepError`, and the DevKit decides its retry policy
+**From a step, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
+It is this call plus `throwStepError`, and the engine decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
 named sits unread. Reach for the raw call where the failure is not simply a
@@ -768,7 +794,7 @@ The validated reply.
 
 #### Throws
 
-A plain error — retryable by the DevKit's default, which is
+A plain error — retryable by the engine's default, which is
   the point — when the reply is not JSON, is not an object, or does not
   satisfy `schema`. All three are things a model may get right next time.
 
@@ -787,7 +813,6 @@ import { z } from "zod";
 const Digest = z.object({ headline: z.string(), points: z.array(z.string()) });
 
 export async function summarize(article: string): Promise<{ headline: string }> {
-  "use step";
   return await stepGenerateJson(article, {
     schema: Digest,
     system: 'Reply with JSON only: {"headline": string, "points": string[]}.',
@@ -843,7 +868,6 @@ this in two would carry the audio across the queue on every resume.
 import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(summary: string): Promise<string> {
-  "use step";
   const spoken = await stepSpeak(summary, { voice: "jane" });
   const stored = await writeUpload(spoken.audio, {
     name: "summary.wav",
@@ -897,8 +921,8 @@ forever.
   and the one that reads least like a failure: everything downstream would
   otherwise be handed no words and asked to work anyway.
 
-**From a `"use step"` body, prefer `stepTranscribePollClassified`
-(`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+**From a step, prefer `stepTranscribePollClassified`
+(`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
 
@@ -960,22 +984,20 @@ import {
 } from "@alexkroman1/aai/step";
 
 export async function startJob(uploadId: string): Promise<string> {
-  "use step";
   const { audioUrl } = await stepTranscribeUpload(uploadId);
   const { id } = await stepTranscribeSubmit(audioUrl);
   return id;
 }
 
 export async function checkJob(id: string): Promise<string | undefined> {
-  "use step";
   const progress = await stepTranscribePoll(id);
   // Branch on `done`, never on a provider status string.
   return progress.done ? progress.transcript.text : undefined;
 }
 ```
 
-**From a `"use step"` body, prefer `stepTranscribeSubmitClassified`
-(`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+**From a step, prefer `stepTranscribeSubmitClassified`
+(`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
 
@@ -991,8 +1013,8 @@ function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Pr
 
 Transcribe one complete audio file.
 
-**From a `"use step"` body, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
-It is this call plus `throwStepError`, and the DevKit decides its retry policy
+**From a step, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
+It is this call plus `throwStepError`, and the engine decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
 named sits unread. Reach for the raw call where the failure is not simply a
@@ -1055,7 +1077,6 @@ that cannot fit in one.
 import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
 
 export async function transcribeClip(uploadId: string): Promise<string> {
-  "use step";
   const clip = await readUpload(uploadId);
   const { text } = await stepTranscribeSync(clip.bytes);
   return text;
@@ -1080,6 +1101,13 @@ body is an async iterable of windows — which `stepFetch` accepts precisely
 for this. Nothing is buffered beyond one window, and one window of READ-AHEAD
 keeps the store and the socket busy at the same time.
 
+**The upload has to be FINISHED, and that is checked rather than assumed.**
+`UploadInfo.size` is the contiguous readable prefix, so reading it off a
+still-arriving recording used to upload only what had landed and transcribe a
+truncated file — a plausible wrong answer with no error anywhere.
+`requireCompleteUpload` refuses instead, BEFORE the expensive leg; its module
+doc carries why that is a refusal rather than a wait.
+
 #### Parameters
 
 ##### uploadId
@@ -1087,7 +1115,7 @@ keeps the store and the socket busy at the same time.
 `string`
 
 An upload in the agent's own store, as `writeUpload` or a
-  page's `api.upload(file)` produced.
+  page's `api.upload(file)` produced. Must be complete.
 
 ##### opts?
 
@@ -1101,14 +1129,103 @@ An upload in the agent's own store, as `writeUpload` or a
 
 #### Throws
 
+when the upload is still arriving.
+
+#### Throws
+
 on a refusal, carrying the verdict `toStepError`
   reads. Give this step extra retries: it is the one call here worth another
   attempt, and the only one whose cost is the file.
 
-**From a `"use step"` body, prefer `stepTranscribeUploadClassified`
-(`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+**From a step, prefer `stepTranscribeUploadClassified`
+(`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
+
+***
+
+### stepWebhookUrl()
+
+```ts
+function stepWebhookUrl(token: string): string;
+```
+
+The public URL a third party POSTs to in order to resolve `ctx.waitFor(token)`
+for the run this step belongs to.
+
+The same URL `ctx.workflows.publicWebhookUrl(token)` mints for a tool, reached
+from a step — which is what lets a `workflowApp()` with no tools hand a
+provider a callback instead of polling it. Hand it out in the step that
+submits the work, so the far side is told about the waitpoint before the body
+parks on it.
+
+**One `waitFor` park per token per run, with a poll as the backstop.** A
+token can be claimed at most ONCE per run — a second claim under a different
+occurrence key THROWS, and the token is only released when the run goes
+terminal (`onRunSettled` in `aai-runtime/workflow-journal-memory.ts`, whose
+comment records a template bitten by exactly this: a derived token served one
+run, the second claim conflicted, the conflict is not a suspend, and the saga
+compensated a transcript away). So this belongs in a submit-then-park shape,
+never a `waitFor` inside a loop — and because a delivery can be lost, missed
+or never sent, the reconciling backstop is a `waitFor(token, { timeoutMs })`
+whose `undefined` sends the body to poll the provider once. The callback is
+what makes the common case fast; the poll is what makes it correct.
+
+**Under `aai dev` this throws, and even where a local origin IS configured it
+is not reachable from the internet.** A public URL is a property of a
+deployment: the platform bakes it into the guest's exec env, a self-hosted
+server passes `publicUrl`. A laptop has none, so a real third-party callback
+cannot be exercised locally — drive that path against a deployed agent, or
+point a tunnel at the dev server's BACKEND port (the Vite port a developer
+opens does not proxy `/.well-known/`) and set `PUBLIC_URL` to the tunnel. A
+spec drives it by publishing a minter of its own.
+
+#### Parameters
+
+##### token
+
+`string`
+
+The waitpoint's token, exactly as the body passes it to
+  `ctx.waitFor`. Derived from the run's input, never random.
+
+#### Returns
+
+`string`
+
+The absolute URL, encoded for the route's single token segment.
+
+#### Example
+
+Submit the work and hand the callback over in the same step, so the far side
+is told about the waitpoint before the body parks on it.
+```ts
+import { report, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
+
+// The token is DERIVED from the run's own input, so the step handing the URL
+// out and the body parking on it agree — the rule `ctx.waitFor` states.
+export const renderToken = (id: string) => `render:${id}`;
+
+export async function submitRender(id: string): Promise<void> {
+  await report(`Submitting render ${id}.`);
+  await stepFetch("https://renders.example.com/jobs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, callbackUrl: stepWebhookUrl(renderToken(id)) }),
+  });
+}
+```
+
+#### Throws
+
+when this process cannot mint one — the message names the
+  configuration and says what `aai dev` can and cannot do.
+
+#### Throws
+
+when `token` is empty: that composes to the route's own
+  prefix, which the parser refuses, so the failure would otherwise arrive at
+  the far end as a 404 on a URL nobody can re-issue.
 
 ***
 
@@ -1190,11 +1307,10 @@ that keeps a recording's bytes out of a run's INPUT, arriving at the other
 end of the run. So the bytes go to the store and the output carries the id,
 which a page turns back into a file with `api.download(id)`.
 
-```ts no-check
+```ts
 import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(summary: string) {
-  "use step";
   const spoken = await stepSpeak(summary);
   const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
   return { audio: stored.id, durationMs: spoken.durationMs };
@@ -1246,14 +1362,15 @@ when the process published no store, or published a READ-ONLY one —
 
 A model call that failed, with the one thing a step has to decide from.
 
-`retryable` is the whole point. The Workflow DevKit retries a step that throws
+`retryable` is the whole point. The engine retries a step that throws
 and a caller has to choose between letting it (a rate limit, a 5xx) and
 refusing (a bad key, a rejected request) — and getting that backwards is
 either five pointless attempts against a 401 or one attempt against a blip.
 
 It is a BOOLEAN on the error rather than a `FatalError` thrown for you,
-because `FatalError` belongs to `workflow` and importing it here would put the
-DevKit on the CLI's zero-dependency startup path. The mapping is one line at
+because `FatalError` lives on `@alexkroman1/aai/step-errors` and reaching for
+it is the caller's opt-in: whether a terminal failure should burn a step's
+remaining attempts is not this module's call. The mapping is one line at
 the call site:
 
 ```ts no-check
@@ -1335,7 +1452,7 @@ readonly retryAfter: Date | undefined;
 When the gateway asked to be called back, from its own `Retry-After`.
 
 Present on a rate limit that named a delay, and what a caller should hand
-to `RetryableError` — the DevKit's default backoff is a guess, and this is
+to `RetryableError` — the engine's default delay is a guess, and this is
 the number the far side chose.
 
 ##### status
@@ -1494,6 +1611,71 @@ readonly status: number | undefined;
 ```
 
 HTTP status the endpoint answered, when it answered one.
+
+***
+
+### UploadIncompleteError
+
+An upload that is still arriving, where the whole file was needed.
+
+`retryable: false`, and that is the interesting field: `toStepError`
+(`@alexkroman1/aai/step-errors`) recognises a carried verdict STRUCTURALLY, so
+a step ending `.catch(throwStepError)` turns this into a `FatalError` and the
+run stops on the spot with this sentence. Which is right — the default retry
+cadence is ~0 ms, so three attempts would spend the whole budget of the most
+expensive step in the flow inside a millisecond and still find the upload
+unfinished. What has to change is the run's ORDER, and no number of attempts
+changes that.
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new UploadIncompleteError(message: string, stored: number): UploadIncompleteError;
+```
+
+###### Parameters
+
+###### message
+
+`string`
+
+###### stored
+
+`number`
+
+###### Returns
+
+[`UploadIncompleteError`](#uploadincompleteerror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+#### Properties
+
+##### retryable
+
+```ts
+readonly retryable: false = false;
+```
+
+Whether asking again could plausibly answer differently. It cannot.
+
+##### stored
+
+```ts
+readonly stored: number;
+```
+
+Bytes readable when the check ran — the PREFIX, never a total.
 
 ## Type Aliases
 
@@ -1842,7 +2024,7 @@ the published fetch adds; the caller passes only the iterable.
 
 Note a streaming body cannot be RETRIED by the transport, because an iterable is
 consumed once. That is a property of streaming rather than of this option, and it
-is why a step sending one should be the step the DevKit retries — a fresh attempt
+is why a step sending one should be the step the engine retries — a fresh attempt
 re-reads the upload from the start.
 
 ##### headers?

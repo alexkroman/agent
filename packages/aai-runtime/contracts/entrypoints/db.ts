@@ -16,5 +16,4 @@ export {
   type CreatePostgresDbOptions,
   createPostgresDb,
   type ReservedDb,
-  type SweepSkip,
 } from "../../runtime-barrel.ts";

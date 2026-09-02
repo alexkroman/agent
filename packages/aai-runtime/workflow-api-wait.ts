@@ -23,29 +23,34 @@
  * (`MAX_WORKFLOW_WAIT_MS`) safe to enforce rather than a trap: waiting degrades
  * to the asynchronous behaviour that was already there.
  *
- * ## It polls, and that is not the expensive kind of polling
+ * ## It polls, and the read is SHARED
  *
- * The same reasoning `workflow-api-events.ts` sets out for its SSE stream: the
- * cost of polling a run is the HTTP hop and, on the platform, the brokering in
- * front of it — not the read. This loop runs INSIDE the guest, next to the world
- * the run lives in, for the life of one request that a caller is already
- * holding open. It is deliberately faster than the event stream's interval,
- * because a synchronous call's whole value is that a fast run answers fast.
+ * This loop used to justify its interval on the read being local — inside the
+ * guest, next to the world the run lives in, for the life of one request a
+ * caller is already holding open. On a deployed agent that is false: every read
+ * is a `POST /:slug/workflow-journal`, and this is the fastest of three loops
+ * that may be watching the same run in the same process. So it no longer reads
+ * directly; it asks `workflow-run-reads.ts` for an observation no later than
+ * {@link WORKFLOW_WAIT_POLL_MS} from now, which is one read shared with every
+ * other watcher of that run.
+ *
+ * The interval stays the tightest of the three, and that is what the shared
+ * reader honours: a synchronous call's whole value is that a fast run answers
+ * fast, so the stream's slower watchers ride this pace rather than setting it.
  */
 
-import { sleep } from "@alexkroman1/aai/host-internal";
 import { clampWorkflowWait } from "@alexkroman1/aai/internal";
 import { isTerminal, type WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
-import type { RunReader } from "./workflow-api-events.ts";
+import { type RunReader, watchRun } from "./workflow-run-reads.ts";
 
 /**
  * How often a waiting request re-reads the run.
  *
- * Below what a person perceives as a delay on a fast workflow, and four cheap
- * in-process reads a second on a slow one. Quicker than
+ * Below what a person perceives as a delay on a fast workflow. Quicker than
  * `RUN_EVENT_POLL_MS` on purpose: the stream is watching something the reader
  * will see anyway, while this interval is added latency on every synchronous
- * call that finishes.
+ * call that finishes. It is a DEADLINE rather than a period — the shared reader
+ * may answer sooner because somebody else asked sooner, and never later.
  */
 export const WORKFLOW_WAIT_POLL_MS = 250;
 
@@ -99,9 +104,14 @@ export async function waitForRun(
     gone = true;
   };
   link.once("close", onClose);
+  const watch = watchRun(reader, runId);
+  // ZERO for the first look: a caller holding a request open must not wait out
+  // an interval to hear about a run that has already finished. The shared
+  // reader takes that read on this call rather than on a timer.
+  let within = 0;
   try {
     for (;;) {
-      const run = await reader.get(runId);
+      const run = await watch.next(within);
       if (isTerminal(run) || gone) return run;
       // A run the agent does not know will not start being known, so there is
       // nothing to wait for — but only AFTER a read, so a caller polling an id
@@ -110,9 +120,13 @@ export async function waitForRun(
       if (!run) return;
       const remaining = deadline - now();
       if (remaining <= 0) return run;
-      await sleep(Math.min(pollMs, remaining), { unref: true });
+      // TRIMMED to what is left, so a 100 ms budget answers in 100 ms rather
+      // than at the next full interval — the shared reader schedules its tick
+      // at the earliest deadline it holds, which is what makes that reachable.
+      within = Math.min(pollMs, remaining);
     }
   } finally {
+    watch.close();
     link.off("close", onClose);
   }
 }

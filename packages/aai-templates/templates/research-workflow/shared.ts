@@ -10,9 +10,10 @@
  * so "both halves import the declaration" needs the declaration to have a home
  * that is neither half.
  *
- * The `"use workflow"` BODY stays in `workflows/research.ts`: the Workflow DevKit
- * builder scans that directory and rewrites what it finds, and a body written
- * anywhere else runs inline once with no durability and nothing saying so.
+ * The BODY stays in `workflows/research.ts` by CONVENTION rather than by
+ * mechanism — nothing scans that directory any more, and a body reached with a
+ * `ctx` is durable wherever it is written. Keeping it there is what makes the
+ * declaration, the tools and the body findable from one another.
  */
 
 import { workflow } from "@alexkroman1/aai";

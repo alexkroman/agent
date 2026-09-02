@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `writeUpload()` — storing a file a `"use step"` function PRODUCED.
+ * `writeUpload()` — storing a file a step PRODUCED.
  *
  * The write half of `step-uploads.ts`, split out because that module reached
  * the 500-line cap and this is the seam a split falls on: everything there is
@@ -47,11 +47,10 @@ export type WriteUploadOptions = {
  * end of the run. So the bytes go to the store and the output carries the id,
  * which a page turns back into a file with `api.download(id)`.
  *
- * ```ts no-check
+ * ```ts
  * import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string) {
- *   "use step";
  *   const spoken = await stepSpeak(summary);
  *   const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
  *   return { audio: stored.id, durationMs: spoken.durationMs };

@@ -66,6 +66,17 @@ export function queueReducer(state: MessageQueue, action: QueueAction): MessageQ
     case "clear":
       // The latch survives a clear: a Stop landing in the dispatch window
       // must not let the next render start a turn.
+      //
+      // It also must not hand the dispatched message BACK, which is the half
+      // that took a property to settle (`message-queue-conservation.test.ts`).
+      // Between the chat accepting a handover and the next render, the message
+      // is already in the transcript while the latch is still armed — so a
+      // Stop that drained it would put a second copy in the composer, and the
+      // property reports that as a text in two places the user can act on.
+      // Whether the queue may hold a latch it can no longer release is a
+      // different question, and the answer is not here: nothing in the reducer
+      // can know. It is the handover's own settlement — see `releaseLatch` in
+      // use-message-queue.ts.
       return state.items.length === 0 ? state : { ...state, items: [] };
     default:
       return unhandled(action);

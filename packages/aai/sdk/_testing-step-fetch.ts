@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `stubStepFetch` — the published `stepFetch` a spec answers with, so a
- * `"use step"` body's HTTP is assertable without a server.
+ * step's HTTP is assertable without a server.
  *
  * Split out of `sdk/testing.ts` to break a cycle rather than for length:
  * `_testing-transcribe.ts` builds its provider fake ON this one, and
@@ -88,7 +88,7 @@ export function toStepResponse(answered: StubStepAnswer): Response {
 }
 
 /**
- * Publish a fake `stepFetch`, so a `"use step"` function's HTTP can be asserted
+ * Publish a fake `stepFetch`, so a step's HTTP can be asserted
  * without a server and without stubbing a global.
  *
  * A step's outbound call goes through a process-wide slot rather than

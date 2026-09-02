@@ -14,7 +14,6 @@
  * import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
  *
  * export async function postSummary(webhookUrl: string, points: string[]): Promise<string> {
- *   "use step";
  *   return await sendToChannelClassified(slackChannel({ webhookUrl }), {
  *     text: `Weekly summary: ${points.length} items`,
  *     heading: "Weekly summary",
@@ -42,14 +41,14 @@
  *   only a typo check.
  * - {@link sendToChannel} — post, and throw a {@link ChannelDeliveryError}
  *   carrying the retry verdict. `sendToChannelClassified`
- *   (`@alexkroman1/aai/step-errors`) is the same call with the DevKit mapping
- *   already applied.
+ *   (`@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
+ *   mapping already applied.
  * - {@link renderChannelPayload} — the request that WOULD be sent, pure, so a
  *   spec can assert the body without a network.
  *
- * This subpath names neither `zod` nor the Workflow DevKit, which is what lets
- * an `agent.ts` import {@link isSlackWebhookUrl} for a schema refinement
- * without pulling either into its graph.
+ * This subpath names neither `zod` nor `@alexkroman1/aai/step-errors`, which is
+ * what lets an `agent.ts` import {@link isSlackWebhookUrl} for a schema
+ * refinement without pulling either into its graph.
  *
  * @module channels
  */

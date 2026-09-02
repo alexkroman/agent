@@ -85,23 +85,16 @@ export const GUEST_ROUTES = {
    */
   workflows: SERVER_ROUTES.workflows.path,
   /**
-   * Workflow-run replay, called back by the Workflow DevKit's queue.
-   *
-   * The caller is the guest's OWN worker (graphile-worker, polling the app
-   * database from inside this sandbox), not the platform and not a browser.
-   */
-  workflowFlow: WORKFLOW_CALLBACK_ROUTES.flow.path,
-  /** One workflow step, called back by the same queue as `workflowFlow`. */
-  workflowStep: WORKFLOW_CALLBACK_ROUTES.step.path,
-  /**
    * The PLATFORM's delivery door for a queue message it owns.
    *
-   * The two routes above are the DevKit's own queue callbacks and are refused
-   * from any peer that is not loopback. A queue the PLATFORM owns is outside the
-   * container, so it needs a way in — and this is one door rather than a widened
-   * gate on those two, because deciding which of the two a message is means
-   * parsing the DevKit's queue-name grammar, which belongs on the side that
-   * depends on the DevKit. See `aai-runtime/workflow-queue-dispatch.ts`.
+   * There used to be two DevKit queue callbacks above this — `workflowFlow` and
+   * `workflowStep`, `guest-internal` and refused from any peer that was not
+   * loopback. They went with the DevKit: the replay engine runs a step INLINE
+   * during the walk rather than as its own message, so this is now the only way
+   * a queue message reaches a guest.
+   *
+   * It is the PLATFORM's queue, which lives outside the container, so it needs a
+   * credential rather than a network position — see `aai-runtime/workflow-serve.ts`.
    */
   workflowQueue: WORKFLOW_CALLBACK_ROUTES.queue.path,
   /**
@@ -162,16 +155,15 @@ export type GuestRoute = (typeof GUEST_ROUTES)[keyof typeof GUEST_ROUTES];
 /**
  * Every method a `proxied` route may declare.
  *
- * A runtime constant with the union DERIVED from it, rather than the union alone,
- * because `guest-routes.test.ts` has to name the whole vocabulary: the webhook
- * route answers whatever verb the far side sends (`pickWorkflowHandler` in
- * `aai/host/workflow-serve.ts` gates only flow and step on POST), so "the guest
- * gates nothing here" is asserted as "the declaration lists them all". Spelled
- * once, a method added here cannot be missing from that assertion.
+ * A plain union, and it used to be a runtime `PROXIED_HTTP_METHODS` array with
+ * the union derived from it — because one route declared the WHOLE vocabulary
+ * and `guest-routes.test.ts` had to name it. That was the webhook, on the
+ * argument that the sender owns the verb; it gates POST now, so no declaration
+ * names the vocabulary any more and every proxied route's methods are read from
+ * the table that serves them. A constant nothing reads is a constant that goes
+ * stale, so it is gone rather than kept for symmetry.
  */
-export const PROXIED_HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const;
-
-export type ProxiedHttpMethod = (typeof PROXIED_HTTP_METHODS)[number];
+export type ProxiedHttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 
 export type GuestRouteExposure =
   | {
@@ -182,7 +174,7 @@ export type GuestRouteExposure =
        *
        * For a route whose last segment is a parameter the guest path is only a
        * PREFIX — the guest parses the segment off it itself (`webhookToken` in
-       * `aai/host/workflow-serve.ts`) — so `/:slug<path>` alone would register
+       * `aai-runtime/workflow-webhook.ts`) — so `/:slug<path>` alone would register
        * a route no real request matches. Declaring the suffix keeps the parity
        * test checking the path the platform must really answer.
        */
@@ -271,39 +263,10 @@ export const GUEST_ROUTE_EXPOSURE = {
   // being alive. Promoting this to `proxied` is one route registration plus the
   // methods declared here, if a caller turns up that needs it.
   sessionEvents: { via: "direct-dial" },
-  // Nothing outside the sandbox calls these two, and that survived the queue
-  // MOVING. It used to be graphile-worker polling the app database from inside
-  // this container; the queue is the platform's own now and hands a message to
-  // `workflowQueue` below, whose handler dials these on loopback. Either way the
-  // caller is in-container, so there is nothing to route for. Not `proxied` — a
-  // platform route would be an unauthenticated way for anyone to replay another
-  // tenant's run or execute one of its steps, and these two are unauthenticated
-  // precisely BECAUSE loopback is the whole gate. Not `host-only` either: the
-  // platform dials `workflowQueue`, never these, and saying otherwise would claim
-  // a bearer check that does not exist.
-  //
-  // The old note here said to reconsider "if a run's queue ever moves out of the
-  // guest — then they need a platform route AND an authenticity check of their
-  // own, not one without the other". It moved, and the resolution was neither: ONE
-  // authenticated door (`workflowQueue`) in front of both, which is strictly
-  // narrower than two.
-  //
-  // "Loopback is the whole gate" was, for a long time, a claim about intent
-  // rather than about code: nothing checked the peer, a deployed guest binds
-  // every interface, and the PUBLIC `/:slug/client-config` hands the tunnel
-  // origin to any browser — so anyone could execute a tenant's step. The gate
-  // exists now, in the module that serves the routes (`handleWorkflowRequest`
-  // in `aai-runtime/workflow-serve.ts`, which covers `aai dev` and a
-  // self-hosted server too). This entry is what says it must: an exposure of
-  // `guest-internal` is an assertion that the route is unreachable from
-  // outside the container, and it is the enforcement's own specification.
-  workflowFlow: { via: "guest-internal" },
-  workflowStep: { via: "guest-internal" },
-  // HOST-ONLY, which is the whole reason the two above can stay
-  // `guest-internal`: the platform dials THIS one over the sandbox tunnel with
-  // the per-sandbox manage bearer, and the guest dispatches to flow or step
-  // internally. Not `proxied` — no client has any business driving another
-  // tenant's run, which is the same sentence the two entries above carry. The
+  // HOST-ONLY: the platform dials this over the sandbox tunnel with the
+  // per-sandbox manage bearer, and the guest re-walks the run named by the queue
+  // name. Not `proxied` — no client has any business driving another
+  // tenant's run. The
   // guest refuses it when its composition supplies no way to vouch for a
   // caller, so `aai dev`, host mode and a self-hosted server answer 401 rather
   // than opening a door with no queue behind it.
@@ -318,12 +281,42 @@ export const GUEST_ROUTE_EXPOSURE = {
   // The platform route boots one; see workflow-webhook-handler.ts.
   workflowWebhook: {
     via: "proxied",
-    // Whatever verb the far side chooses: the sender owns that decision, and
-    // the guest answers any method here (`pickWorkflowHandler` in
-    // `aai/host/workflow-serve.ts` gates only flow and step on POST).
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    // POST, and only POST — matching `WORKFLOW_CALLBACK_ROUTES.webhook.methods`,
+    // which is what the guest's `createServer` gates the route on (405 with
+    // `Allow: POST` to anything else).
+    //
+    // This said "whatever verb the far side chooses: the sender owns that
+    // decision", and listed all five. The guest really did answer any verb, and
+    // that was the bug rather than the contract: a delivery is PERMANENT — it
+    // resolves the run's waitpoint and closes the hook — so a bare `GET` from a
+    // link-preview fetcher, a URL scanner or a mail client's link checker
+    // following a leaked callback URL resolved an approval workflow with `{}`
+    // and no human anywhere near it.
+    //
+    // Narrowed HERE too rather than left to the guest, and the reason is
+    // specific to this route: the platform handler BROKERS
+    // (`workflow-webhook-handler.ts`), so a forwarded `GET` is not a wasted
+    // round trip but a Modal sandbox boot — on the one unauthenticated,
+    // scannable door in the product, where the URL is handed to third parties
+    // and therefore leaks by design. The "one source of truth for the verb"
+    // argument for forwarding is answered by DERIVING rather than by
+    // forwarding: `guest-routes.test.ts` pins this list against the runtime's
+    // own table, so the two cannot drift and neither has to guess.
+    //
+    // What it COSTS, stated because it is a real difference and not nothing:
+    // Hono has no automatic 405, so a deployed `GET` here now falls through to
+    // `app.notFound` and gets a 404 with no `Allow: POST` — where a direct dial
+    // to the guest gets the guest's 405 naming the verb. A sender that guessed
+    // wrong therefore loses the self-correcting answer on the platform hop. It
+    // is the right trade twice over: a 404 is already what this route answers
+    // for an unknown slug or a closed hook, so the shape is one a webhook
+    // sender's error handling has to cope with anyway, and `aai dev` — where an
+    // integration is actually written — serves the guest directly and still
+    // answers 405. Registering a catch-all here purely to emit 405 would put an
+    // unauthenticated wildcard on the agent surface for a diagnostic.
+    methods: ["POST"],
     // The token segment — the only thing identifying the run, and the only
-    // authorization the DevKit performs on this endpoint.
+    // authorization this endpoint performs.
     suffix: "/:token",
   },
   manageStatus: { via: "host-only" },

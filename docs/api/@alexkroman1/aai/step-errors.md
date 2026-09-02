@@ -1,16 +1,15 @@
 # step-errors
 
-The failure a `"use step"` body should throw (the
+The failure a step should throw (the
 `@alexkroman1/aai/step-errors` subpath).
 
-The Workflow DevKit retries a step that throws, gives up on a `FatalError`,
+The engine retries a step that throws, gives up on a `FatalError`,
 and honours the delay on a `RetryableError` — so every step body that calls
 an HTTP API owns the same three-way decision, and `@alexkroman1/aai/step`
-already carries the two halves it can answer without the DevKit
+already carries the two halves it can answer with no verdict vocabulary at all
 (`isTransientStatus` and `retryAfter`). What it could not do is
-CONSTRUCT the error, because `FatalError` and `RetryableError` belong to
-`workflow`. So the mapping was left as a snippet in a module doc — and both
-templates that needed it copied the snippet out, verbatim and
+CONSTRUCT the error. So the mapping was left as a snippet in a module doc — and
+both templates that needed it copied the snippet out, verbatim and
 character-identical. That is what this module is: the last function of an
 extraction that stopped one function short.
 
@@ -20,35 +19,30 @@ extraction that stopped one function short.
 here actually has is why [throwStepError](#throwsteperror) is not next to
 `stepFetch`.
 
-The answer is that this module is the ONE authoring module allowed
-to import the DevKit's `workflow` package, and `/step` is not written only
-for a step. Its vocabulary is reached from a tool body and from a spec as
-well — `mapConcurrent` bounds a rate-limited API call anywhere,
+The answer is that IMPORTING FROM HERE IS THE OPT-IN, and `/step` is not
+written only for a step. Its vocabulary is reached from a tool body and from a
+spec as well — `mapConcurrent` bounds a rate-limited API call anywhere,
 `stepFetch` is an ordinary HTTP client, and an exported step is driven
-directly by every workflow template's tests. Putting `workflow` in that
-subpath's graph would put it in all of theirs.
+directly by every workflow template's tests. None of those callers has a
+retry budget to burn, so none of them should meet a vocabulary whose whole
+subject is one.
 
-A STEP, meanwhile, pays nothing for the extra import line: the DevKit's
-builder externalizes `workflow` and `@workflow/*` from the artifact it
-produces, so the dependency is only ever in the import graph of a caller
-that asked for it. `workflow` is already a real dependency of this package,
-so nothing new is installed either way.
+The split used to be a DEPENDENCY boundary — this was the one authoring module
+allowed to import the Workflow DevKit's `workflow` package, which owned
+`FatalError` and `RetryableError`. That package is gone and the two classes are
+ours (`step-error-classes.ts` says why), so nothing here costs a caller
+anything at install time. What survives is the audience boundary above, which
+is the half that was ever load-bearing for a reader.
 
-(An earlier version of this section argued the same split against
-`@alexkroman1/aai/utils`, which was the sibling at the time. It no longer is
-— the step vocabulary moved to `/step` — and the zero-dependency budget it
-named is now a property of BOTH subpaths rather than the reason one of them
-exists. The boundary is unchanged; only what it is drawn against is.)
-
-It is in `sdk/` rather than `host/` despite `workflow` being a Node package,
-and that is the rule rather than an exception to it: the split is about
+It is in `sdk/` rather than `host/`, and that is the rule rather than an
+exception to it: the split is about
 `node:` builtins, which this has none of (it compiles under
 `sdk/tsconfig.json`, which sets `types: []`), and `host/` is the half that
 never runs inside a guest sandbox — where every step in fact runs.
 
 ## Three outcomes, and the third is the one worth having
 
-A `FatalError` stops the DevKit retrying something that will answer the same
+A `FatalError` stops the engine retrying something that will answer the same
 way. A bare `RetryableError` retries in ONE SECOND, which is that class's own
 default and not a considered number. A `RetryableError` carrying `retryAfter`
 waits exactly as long as the far side asked — which matters most where this
@@ -68,11 +62,11 @@ sites across eight templates** — every LLM and transcription call any of them
 makes. Two had already wrapped it in a local `ask()` whose only content was
 that `.catch`, each paying a doc block to say why, and the second one records
 that two OTHER templates wrote the same mapping before it was extracted. So it
-is hoisted one level further: [stepGenerateClassified](#stepgenerateclassified) and its five
+is hoisted one level further: [stepGenerateClassified](#stepgenerateclassified) and its
 siblings are the `/step` call and [throwStepError](#throwsteperror), nothing else.
 
 They live here rather than in `/step` because IMPORTING THEM IS THE OPT-IN.
-`/step` may not name the DevKit at all, and whether a terminal failure should
+`/step` names no verdict vocabulary at all, and whether a terminal failure should
 burn a step's remaining attempts is the caller's decision — a `404` meaning
 "already deleted" wants the raw call. The `Classified` suffix keeps the `/step`
 name intact, so a wrapper reads as the call it wraps.
@@ -91,7 +85,7 @@ why the wrapper lives here rather than beside the call it wraps.
 
 `ChannelDeliveryError` carries the platform's verdict AND its `Retry-After`,
 so a rate-limited post waits the delay the platform named rather than the
-DevKit's one-second default, and a 4xx — a revoked webhook, an unpublished
+default one-second delay, and a 4xx — a revoked webhook, an unpublished
 Slack workflow, a variable name that matches nothing — stops immediately
 with the sentence a person can act on instead of burning three more attempts
 on an answer that will not change.
@@ -125,7 +119,6 @@ import { slackChannel } from "@alexkroman1/aai/channels";
 import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
 
 export async function announce(webhookUrl: string, headline: string): Promise<string> {
-  "use step";
   return await sendToChannelClassified(slackChannel({ webhookUrl }), { text: headline });
 }
 ```
@@ -160,8 +153,8 @@ reasons beyond the line count:
   that said exactly what was wrong with the request arrives as the number
   `400`, and whoever reads the run has to reproduce the call to find out.
 - **The verdict stays with `toStepError`.** Transient by `isTransientStatus`,
-  waiting out a `Retry-After` the server named rather than the DevKit's
-  one-second default. That distinction is the reason a step should never
+  waiting out a `Retry-After` the server named rather than the default
+  one-second delay. That distinction is the reason a step should never
   throw a bare `Error` on a bad response, and it is easy to forget in the
   fourth call site of a file.
 
@@ -190,7 +183,6 @@ that second case.
 import { stepFetchOk } from "@alexkroman1/aai/step-errors";
 
 export async function readFeed(url: string): Promise<string> {
-  "use step";
   return await (await stepFetchOk(url, { signal: AbortSignal.timeout(30_000) })).text();
 }
 ```
@@ -212,9 +204,9 @@ adds is [throwStepError](#throwsteperror), and see this module's doc for why tha
 worth an export rather than a line at each of the eight templates that wrote
 it. `StepGenerateError` carries the gateway's own verdict AND its
 `Retry-After`, so a rate-limited call waits the delay the gateway named
-instead of the DevKit's one-second default.
+instead of the default one-second delay.
 
-None of the six takes a `message`: a caller with a label worth attaching wants
+None of them takes a `message`: a caller with a label worth attaching wants
 the explicit `.catch((err) => throwStepError(err, …))`.
 
 #### Parameters
@@ -241,7 +233,6 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
 
 export async function summarize(text: string): Promise<string> {
-  "use step";
   return await stepGenerateClassified(text, { system: "Summarize in two sentences." });
 }
 ```
@@ -436,7 +427,7 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 function throwFatalStepError(cause: unknown, message?: string): never;
 ```
 
-Stop the DevKit retrying: throw a `FatalError` whatever the cause was.
+Stop the engine retrying: throw a `FatalError` whatever the cause was.
 
 For the failure a step has DECIDED is terminal on grounds no status code
 carries — a missing API key, a recording in a format the step cannot cut.
@@ -505,7 +496,7 @@ fatal/retryable choice stays visible in the name the author types.
 
 **The retryable arm goes through [throwStepError](#throwsteperror) even though it
 classifies nothing.** An `FfmpegError` is neither a `Response` nor an SDK error
-carrying `retryable`, so it is rethrown UNCHANGED and the DevKit's default
+carrying `retryable`, so it is rethrown UNCHANGED and the engine's unclassified default
 retries it — where constructing a `RetryableError` would replace ffmpeg's own
 message and its `argv` with a sentence, and the argv is what you paste into a
 shell.
@@ -548,7 +539,6 @@ import { transcodeToWav } from "@alexkroman1/aai/ffmpeg";
 import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 
 export async function toPcm(bytes: Uint8Array): Promise<Uint8Array> {
-  "use step";
   return await transcodeToWav(bytes, { sampleRate: 16_000 }).catch(throwFfmpegStepError);
 }
 ```
@@ -565,13 +555,14 @@ function throwStepError(cause: unknown, message?: string): never;
 
 The form a `.catch()` takes, which is the shape both LLM templates want:
 `stepGenerate` rejects with a `StepGenerateError` and the step wants
-that classified before it reaches the DevKit.
+that classified before it reaches the engine.
 
 It is a function taking the cause as an ARGUMENT rather than a `throw` inside
-a `catch` block, and that is mechanical rather than stylistic: `FatalError`
-takes only a message — no `cause` — so constructing one directly inside a
-`catch` trips Biome's `useErrorCause` with no way to satisfy it. Here nothing
-is being swallowed, because the original is what was passed in.
+a `catch` block, and that is mechanical rather than stylistic: what Biome's
+`useErrorCause` asks of an error constructed inside a `catch` is that it carry
+the one being handled, and a call site cannot forget to do that here — the
+cause is the first parameter, and both of these attach it. Nothing is being
+swallowed either way: the original is what was passed in.
 
 #### Parameters
 
@@ -594,7 +585,6 @@ import { stepGenerate } from "@alexkroman1/aai/step";
 import { throwStepError } from "@alexkroman1/aai/step-errors";
 
 export async function summarize(text: string): Promise<string> {
-  "use step";
   return await stepGenerate(text, { system: "Summarize in two sentences." }).catch(
     throwStepError,
   );
@@ -609,7 +599,7 @@ export async function summarize(text: string): Promise<string> {
 function toStepError(cause: unknown, message?: string): Error;
 ```
 
-The DevKit error one failure deserves.
+The step error one failure deserves.
 
 `cause` decides how the verdict is reached, and the three cases are the three
 ways a step learns it failed:
@@ -629,7 +619,7 @@ ways a step learns it failed:
   it is carried rather than re-derived from a status that is not there.
 - **Anything else** — a verdict this function cannot reach, so it does not
   invent one: the value is returned unchanged if it is an `Error` and wrapped
-  in a plain `Error` if it is not. Both are retryable by the DevKit's default,
+  in a plain `Error` if it is not. Both are retryable by the engine's default,
   which is the safe direction — the alternative is silently disabling retries
   for a failure nobody classified. Reach for [throwFatalStepError](#throwfatalsteperror) where
   the step really has decided a failure is terminal.
@@ -659,9 +649,212 @@ The sentence to report. Defaults to the response's status
 import { toStepError } from "@alexkroman1/aai/step-errors";
 
 export async function fetchOrder(id: string): Promise<unknown> {
-  "use step";
   const response = await fetch(`https://api.example.com/orders/${id}`);
   if (!response.ok) throw toStepError(response, `Order ${id}: HTTP ${response.status}`);
   return await response.json();
 }
 ```
+
+## Classes
+
+### FatalError
+
+A failure that another attempt cannot fix.
+
+Throwing one fails the RUN, not merely the step — a step whose remaining
+attempts are pointless has nothing left to contribute. Reach for it where the
+far side has already given a terminal answer: a `404` on a resource that was
+deleted, a `422` on input that will be malformed on every attempt, a provider
+saying the recording has no speech in it.
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new FatalError(message: string, options?: {
+  cause?: unknown;
+}): FatalError;
+```
+
+###### Parameters
+
+###### message
+
+`string`
+
+###### options?
+
+###### cause?
+
+`unknown`
+
+###### Returns
+
+[`FatalError`](#fatalerror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+#### Methods
+
+##### is()
+
+```ts
+static is(value: unknown): value is FatalError;
+```
+
+Is `value` a [FatalError](#fatalerror), including one from another copy of this module?
+
+###### Parameters
+
+###### value
+
+`unknown`
+
+###### Returns
+
+`value is FatalError`
+
+#### Properties
+
+##### fatal
+
+```ts
+readonly fatal: true = true;
+```
+
+Always `true`.
+
+A readable field rather than only the brand, because it is what shows up in
+a journaled failure and in a log line — `fatal: true` in a run's history
+answers "why did this stop after one attempt" without the reader knowing
+this class exists.
+
+***
+
+### RetryableError
+
+A failure another attempt might survive, with an optional "not before".
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new RetryableError(message: string, options?: RetryableErrorOptions): RetryableError;
+```
+
+###### Parameters
+
+###### message
+
+`string`
+
+###### options?
+
+[`RetryableErrorOptions`](#retryableerroroptions)
+
+###### Returns
+
+[`RetryableError`](#retryableerror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+#### Methods
+
+##### is()
+
+```ts
+static is(value: unknown): value is RetryableError;
+```
+
+Is `value` a [RetryableError](#retryableerror), including one from another copy of this module?
+
+###### Parameters
+
+###### value
+
+`unknown`
+
+###### Returns
+
+`value is RetryableError`
+
+#### Properties
+
+##### retryAfter
+
+```ts
+readonly retryAfter: Date;
+```
+
+When the next attempt may run. Always a `Date` — a number passed to the
+constructor is resolved against the clock AT CONSTRUCTION, which is the
+moment the caller meant.
+
+## Type Aliases
+
+### RetryableErrorOptions
+
+```ts
+type RetryableErrorOptions = {
+  cause?: unknown;
+  retryAfter?: number | Date;
+};
+```
+
+What [RetryableError](#retryableerror) accepts for its delay.
+
+#### Properties
+
+##### cause?
+
+```ts
+optional cause?: unknown;
+```
+
+##### retryAfter?
+
+```ts
+optional retryAfter?: number | Date;
+```
+
+When the next attempt may run: a delay in MILLISECONDS, or the absolute
+`Date` the far side named.
+
+Defaults to [DEFAULT\_RETRY\_DELAY\_MS](#default_retry_delay_ms) from now. The DevKit accepted a
+duration STRING here too (`"5s"`) and this does not — a string delay is one
+more parser to own and no call site in the repo passed one, every one of
+them having a `Retry-After` header or nothing.
+
+## Variables
+
+### DEFAULT\_RETRY\_DELAY\_MS
+
+```ts
+const DEFAULT_RETRY_DELAY_MS: 1000 = 1000;
+```
+
+How long a [RetryableError](#retryableerror) that names no delay waits.
+
+One second, which is what the DevKit's class defaulted to — kept so the
+migration changes no timing it does not have to. It is not a considered
+number, and a caller who has the far side's own `Retry-After` should pass it:
+this SDK encourages fan-out, so N segments meet a rate limit together and a
+second later all N ask again.

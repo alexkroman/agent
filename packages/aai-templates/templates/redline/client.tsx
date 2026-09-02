@@ -24,6 +24,31 @@
  * and a textarea holds a string where the workflow's schema wants `string[]`.
  * `toInput` is where the two meet — and it is the only place, so the split lives
  * in one function rather than in the field, the submit handler and the workflow.
+ *
+ * ## A reload used to lose the loop, which is minutes of model calls
+ *
+ * A `runId` names a run for as long as something holds it, and this page held it
+ * in React state — so a refresh lost it while the loop carried on writing,
+ * grading and revising without anywhere to report to. On a desk whose whole
+ * subject is a loop that runs several long-form model calls, that is the one
+ * failure worth two lines of wiring: `key` is the handle that survives a reload
+ * and `recover` is what reads it back, so the draft, the critique trail and the
+ * Clear button are all there again.
+ *
+ * **The key is opaque and lives in `sessionStorage`, and the brief is why.** A
+ * `?key=` parameter in the page's own URL would survive more — a new tab, a
+ * bookmark, a link sent to the person who asked for the piece — and that is
+ * exactly what it must not do here. There is no per-user filtering behind
+ * `find`, so the key IS the scoping mechanism, and a brief is the most private
+ * thing on this page: it is what somebody typed about their own product, their
+ * own incident or their own customers, and the critique trail beside it is
+ * working material nobody writes expecting an audience. The thing worth sending
+ * a colleague is the DRAFT, which is text on the page and travels by being
+ * copied; sending a run means sending the brief that produced it.
+ *
+ * Deriving the key from the brief is worse again: two people briefing the same
+ * thing would recover each other's runs, and the key would then carry what they
+ * typed into a lookup token the platform deliberately stopped logging.
  */
 
 import "@alexkroman1/aai-ui/styles.css";
@@ -35,12 +60,14 @@ import {
   page,
   SubmitButton,
   TextAreaField,
+  useRunKey,
   useWorkflowSubmit,
   WORKFLOW_STATUS_LABELS,
   WorkflowFields,
   WorkflowProgress,
   type WorkflowRun,
 } from "@alexkroman1/aai-ui";
+import { useState } from "react";
 import type { redline } from "./agent.ts";
 
 /**
@@ -54,6 +81,21 @@ type Redline = WorkflowOutputOf<typeof redline>;
 
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
 const WORKFLOW = "redline";
+
+/**
+ * What the desk says while the loop is turning — three situations, one line
+ * each.
+ *
+ * The reload case gets its own words deliberately: somebody who did not press
+ * the button is owed an explanation for a draft appearing in front of them, and
+ * the sentence a page reaches for instead ("you can close this tab") is the one
+ * that was true about the RUN and false about the page.
+ */
+function pendingNote(startedHere: boolean, found: boolean): string {
+  if (startedHere) return "Reloading is safe — this page will find the draft again.";
+  if (!found) return "Looking for a draft this tab started earlier…";
+  return "Still working on a draft this tab started earlier.";
+}
 
 /**
  * The submitted form as the workflow's input schema wants it.
@@ -79,7 +121,19 @@ export function toInput(values: FormValues): WorkflowInputOf<typeof redline> {
 }
 
 function RedlineDesk() {
-  const { submit, run, pending, error, reset } = useWorkflowSubmit<typeof redline>(WORKFLOW);
+  // This tab's handle on its own drafts — opaque, short, and remembered for the
+  // next load, which is what `recover` produces to find the run again.
+  const key = useRunKey();
+  // Did THIS load start the run? A reload cannot have, and that is the only way
+  // the page can tell "writing what you just briefed" from "picking up where
+  // you left off" — the hook reports the run, not who asked for it.
+  const [startedHere, setStartedHere] = useState(false);
+  const { submit, run, pending, error, reset } = useWorkflowSubmit<typeof redline>(WORKFLOW, {
+    // Neither half is useful alone: without the key there is nothing to find
+    // the run by, and without `recover` the key is only ever written.
+    key,
+    recover: true,
+  });
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-8">
@@ -91,7 +145,13 @@ function RedlineDesk() {
         </p>
       </header>
 
-      <Form onSubmit={(values) => submit(toInput(values))} error={error}>
+      <Form
+        onSubmit={(values) => {
+          setStartedHere(true);
+          return submit(toInput(values));
+        }}
+        error={error}
+      >
         {/* The scalars: brief, audience, rounds. Declared, not written. */}
         <WorkflowFields workflow={WORKFLOW} />
         {/* The array the schema declares and no generic control can render. */}
@@ -104,7 +164,27 @@ function RedlineDesk() {
         <SubmitButton pending={pending}>Write it</SubmitButton>
       </Form>
 
-      {run && <RunPanel run={run} onClear={reset} />}
+      {/* `pending` covers the RUN rather than the request, and on a reload it is
+          also true while the run is being looked up by key — the stretch where a
+          form offering Submit would be inviting a second loop over the same
+          brief, which here is several long-form model calls of somebody's
+          money. */}
+      {pending && (
+        <p className="text-sm opacity-70">{pendingNote(startedHere, run !== undefined)}</p>
+      )}
+
+      {run && (
+        <RunPanel
+          run={run}
+          onClear={() => {
+            // The recovered run is dismissed as deliberately as one this load
+            // started: `reset()` is not undone by a second lookup (the lookup
+            // is a mount-time act), so Clear really does clear.
+            setStartedHere(false);
+            reset();
+          }}
+        />
+      )}
     </main>
   );
 }

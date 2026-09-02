@@ -1,50 +1,47 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `ctx.workflows` — the {@link WorkflowClient} implementation, over the Workflow
- * Development Kit.
+ * `ctx.workflows` — the {@link WorkflowClient} implementation, over whatever
+ * engine {@link WdkAdapter} is backed by.
  *
  * There is no engine in this file and there is not meant to be one. Every method
- * is a translation between two vocabularies:
+ * is a translation between the authoring vocabulary and the adapter's:
  *
- * | ours | WDK |
+ * | ours | adapter |
  * | --- | --- |
- * | `start(def, input, { key })` | `start({ workflowId }, [input])` + our key index |
- * | `get(runId)` | `world.runs.get(runId)` |
- * | `find(def, key)` | key index → `world.runs.get` per id |
- * | `recent(def)` | `world.runs.list({ workflowName: workflowId })` |
- * | `cancel(runId)` | `getRun(runId).cancel()` |
- * | `wakeUp(runId)` | `getRun(runId).wakeUp()` |
- * | `stream(runId)` | `getRun(runId).getReadable()` |
+ * | `start(def, input, { key })` | `start(name, [input])` + our key index |
+ * | `get(runId)` | `getRun(runId)` |
+ * | `find(def, key)` | key index → `getRun` per id |
+ * | `recent(def)` | `listRuns(name)` |
+ * | `cancel(runId)` | `cancel(runId)` |
+ * | `wakeUp(runId)` | `wakeUp(runId)` |
+ * | `stream(runId)` | `readStream(runId)` |
  * | `listing()` | the declared `workflows` record |
  *
- * Two translations are worth reading before changing them: the name mapping,
- * which is what makes a rename a one-place change, and the snapshot mapping,
- * which is where WDK's run record becomes a discriminated union.
+ * That the adapter is injected rather than imported is what lets this module be
+ * specified with no engine, no journal and no database — `workflow-client.test.ts`
+ * passes a fake, and `eval/workflow-engine.ts` passes an in-process one.
  *
- * ## The two vocabularies use the word "name" for different strings
+ * ## A workflow has ONE name now
  *
- * A run record's `workflowName` is the COMPILER's identifier —
- * `workflow//./workflows/digest//digestFlow`, the same string as `workflowId`,
- * which the DevKit's own docs call machine-readable and hand to
- * `parseWorkflowName()` before showing anyone. Ours is the key in
- * `agent({ workflows })`, which is what `WorkflowRunBase.workflow` promises and
- * what `find` indexes keys under.
+ * This section used to be titled "the two vocabularies use the word name for
+ * different strings", and deleting it is the visible half of removing the
+ * Workflow DevKit. A run record's `workflowName` was the COMPILER's identifier —
+ * `workflow//./workflows/digest//digestFlow`, which the DevKit's own docs call
+ * machine-readable — while ours was the key in `agent({ workflows })`. Both
+ * directions of that translation had been missing, and each was silent in its
+ * own way: `recent` filtered by the declared name, which matched no stored run,
+ * so it answered `[]` for every workflow and took `GET /workflows/runs` and
+ * `aai workflow runs <name>` with it; while every snapshot reported the machine
+ * id as its `workflow`, which a status tool reads to a caller down the phone.
  *
- * Both directions of that translation were missing, and each was silent in its
- * own way: `recent` filtered `world.runs.list` by the DECLARED name, which
- * matches no stored run, so it answered `[]` for every workflow — taking
- * `GET /workflows/runs` and `aai workflow runs <name>` ("No runs of X yet") with
- * it — while every snapshot reported the machine id as its `workflow`, which
- * `research-workflow`'s status tool reads to a caller down the phone. Neither could
- * be caught by this module's own specs, because a stubbed adapter answers with
- * whatever name the test wrote; {@link WdkAdapter}'s `listRuns` therefore names
- * its parameter `workflowId`, and the fake in `workflow-client.test.ts` stores
- * runs under it.
+ * The engine now records a run under the declared name, so there is one string,
+ * `nameByDef` is the only index, and neither bug is representable. What remains
+ * is the reason the mapping is by IDENTITY rather than a `name` field on the def
+ * — see `resolve`.
  */
 
 import {
   formatSchemaIssues,
-  MISSING_WORKFLOW_ID_MESSAGE,
   PUBLIC_URL_UNCONFIGURED_MESSAGE,
   toToolJsonSchema,
 } from "@alexkroman1/aai/host-internal";
@@ -83,7 +80,7 @@ export type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-
  * `find` and `recent` are bounded by `resolveFindLimit`, whose ceiling is
  * `MAX_WORKFLOW_FIND_LIMIT` (100) — so an unbounded `Promise.all` over the
  * result let ONE request put 100 concurrent reads on the app's Postgres, a pool
- * this shares with `ctx.db` and the world's own queue. The route is fail-open
+ * this shares with `ctx.db`. The route is fail-open
  * unless the operator set `AAI_WORKFLOW_API_TOKEN`, so the caller does not have
  * to be trusted for that to matter.
  *
@@ -103,8 +100,9 @@ export type WorkflowClientOptions = {
    */
   keys: WorkflowKeyStore;
   /**
-   * The WDK entry points, injected rather than imported so this module can be
-   * specified without a world. Production passes `wdkAdapter` (`workflow-wdk.ts`).
+   * The engine's entry points, injected rather than imported so this module can
+   * be specified without one. Production passes `createInProcessWorkflowEngine`
+   * (`workflow-in-process.ts`); an eval passes `eval/workflow-engine.ts`.
    */
   wdk: WdkAdapter;
   /**
@@ -129,26 +127,24 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   const { workflows, keys, wdk, publicUrl, logger } = opts;
 
   /**
-   * The two indexes over `agent({ workflows })`, built in ONE pass.
+   * The index over `agent({ workflows })`: a def to the key it is declared
+   * under.
    *
-   * `nameByDef` is what `resolve` looks a def up in — the same identity mapping
-   * it used to re-derive by scanning `Object.entries` on every call, which is
-   * the one direction this record was not already indexed in. FIRST key wins in
-   * both, matching `Object.entries` order: the same def declared under two keys
-   * is legitimate (see `resolve`), a run of it carries no trace of which one a
-   * caller meant, and the two indexes must agree about which one it is.
+   * FIRST key wins, matching `Object.entries` order — the same def declared
+   * under two keys is legitimate (see `resolve`) and a run of it carries no
+   * trace of which one a caller meant, so the choice has to be deterministic.
    *
-   * A def the compiler never transformed contributes no `workflowId` entry
-   * rather than throwing: `start` is where that build failure is reported, and a
-   * client that could not even be CONSTRUCTED for it would take the other
-   * workflows' reads down with it.
+   * **There used to be a second index here, and its disappearance is the shape
+   * of the DevKit removal.** A workflow had two identities: the key an author
+   * declared it under, and the `workflowId` a compile-time transform stamped
+   * onto the body (`workflow//{file}//{export}`). Everything downstream — the
+   * run record's `workflowName`, `listRuns`'s filter — spoke the second one, so
+   * this map existed to translate back. The engine now takes the declared name
+   * directly, the two identities are one, and the translation is gone with it.
    */
   const nameByDef = new Map<AnyWorkflowDef, string>();
-  const declaredNameById = new Map<string, string>();
   for (const [name, def] of Object.entries(workflows)) {
     if (!nameByDef.has(def)) nameByDef.set(def, name);
-    const id = def.run.workflowId;
-    if (id !== undefined && !declaredNameById.has(id)) declaredNameById.set(id, name);
   }
 
   /**
@@ -202,21 +198,29 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     return result.value;
   }
 
-  /** The `workflowId` the WDK compiler attached, or a message naming the build. */
-  function workflowIdOf(def: WorkflowDef): string {
-    const id = def.run.workflowId;
-    if (!id) throw new Error(MISSING_WORKFLOW_ID_MESSAGE);
-    return id;
-  }
-
   /**
-   * WDK's run record as our discriminated snapshot.
+   * The engine's run record as our discriminated snapshot.
    *
-   * The `output` read is deliberately conditional on `status === "completed"`,
-   * which is also what makes it cheap: `readOutput` polls until the run settles,
-   * so calling it on a `running` run would block a snapshot read for the length
-   * of the run. Having already observed a terminal status, the poll's first
-   * iteration returns.
+   * `output` comes off the RECORD when the record CARRIES it, which every
+   * adapter in this repo does. It used to be a second `readOutput` call
+   * unconditionally, and that cost a journal round trip per snapshot of a
+   * finished run — two POSTs to the platform where one would do, paid again on
+   * every browser reload of a completed form, and `recent()` paid one per
+   * completed run in the page. The re-read bought nothing: `completed` is
+   * terminal and the status and the output are written by one statement, so the
+   * record already in hand carries the final value.
+   *
+   * **`readOutput` is still the FALLBACK, and dropping it was a real gap.**
+   * `WdkRunRecord.output` is OPTIONAL, so an adapter written against an earlier
+   * epoch legitimately carries none — and `contracts/compatibility/workflow/
+   * v2.ts`, a RETAINED epoch, is exactly that adapter, its own doc justifying
+   * the retain on the grounds that "an adapter that carries no `output` is one
+   * whose callers fall back to `readOutput` exactly as they did". They had
+   * stopped: every completed run of such an adapter reported `output:
+   * undefined`, silently, and the epoch's stated contract was false. The test is
+   * PRESENCE of the key rather than definedness, because a body that returns
+   * nothing is a completed run whose output really is `undefined` and must not
+   * cost a round trip to say so.
    */
   async function toSnapshot(
     record: WdkRunRecord,
@@ -229,17 +233,21 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // read by id from another deployment) keeps the raw identifier: it is the
       // only true thing left to say, and it is still the string
       // `parseWorkflowName` takes.
-      workflow: declaredNameById.get(record.workflowName) ?? record.workflowName,
+      workflow: record.workflowName,
       createdAt: new Date(record.createdAt).getTime(),
       ...omitUndefined({ key }),
     };
     switch (record.status) {
       case "completed":
-        return { ...base, status: "completed", output: await wdk.readOutput(record.runId) };
+        return {
+          ...base,
+          status: "completed",
+          output: "output" in record ? record.output : await wdk.readOutput(record.runId),
+        };
       case "failed":
-        // WDK records a failure with no message when the run died without one
-        // (a killed container, a max-deliveries stop). An empty `error` on a
-        // `failed` snapshot would read as "no error", so name the status instead.
+        // A run can be recorded `failed` with no message — a killed container,
+        // a delivery that never got to write one. An empty `error` on a `failed`
+        // snapshot would read as "no error", so name the status instead.
         return { ...base, status: "failed", error: record.error?.message ?? "Workflow run failed" };
       case "cancelled":
         return { ...base, status: "cancelled" };
@@ -262,7 +270,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     ): Promise<string> {
       const { name, def } = resolve(workflow);
       const validated = await validate(name, def, input);
-      const runId = await wdk.start(workflowIdOf(def), [validated]);
+      const runId = await wdk.start(name, [validated]);
       if (options?.key !== undefined) {
         // A failed key write must not fail the `start`: the run is already
         // created and running, so throwing here would tell the caller nothing
@@ -307,11 +315,8 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       workflow: AnyWorkflowDef | string,
       options?: FindOptions,
     ): Promise<WorkflowRunSnapshot[]> {
-      // The workflowId, not the name — see the module doc's second half. `find`
-      // reads OUR key index and so takes the declared name; this one reads
-      // WDK's own store and so takes WDK's own identifier.
-      const { def } = resolve(workflow);
-      const records = await wdk.listRuns(workflowIdOf(def), resolveFindLimit(options?.limit));
+      const { name } = resolve(workflow);
+      const records = await wdk.listRuns(name, resolveFindLimit(options?.limit));
       return await mapConcurrent(records, RUN_READ_CONCURRENCY, (r) => toSnapshot(r, undefined));
     },
 
@@ -415,14 +420,32 @@ function streamOptions(options: StreamOptions | undefined): WdkStreamOptions {
   return { namespace: options?.namespace, startIndex: options?.startIndex };
 }
 
-/** Convert a declared input schema for the wire, warning rather than throwing. */
+/**
+ * Convert a declared input schema for the wire, warning rather than throwing.
+ *
+ * **`"input"`, and it is the direction by definition.** This feeds
+ * {@link WorkflowSummary.inputSchema} — "the input schema to render" — and
+ * `validate` above runs the SAME schema over what the caller then sends, so
+ * whatever a `.default()` fills in is exactly what the caller may omit. Under
+ * zod's own default (`"output"`, the PARSED value) every defaulted field is
+ * advertised `required`, so a rendered form marked as mandatory the fields whose
+ * author had supplied a fallback while the validator beside it accepted the
+ * submission without them. Two shipped templates were living with it.
+ *
+ * Two other things move with the direction, and neither costs this surface
+ * anything. A plain `z.object()` stops claiming `additionalProperties: false` —
+ * honest, since zod ACCEPTS an unknown key on the way in and silently drops it,
+ * and no reader of this schema (`WorkflowFields`, the studio's sampler) looks at
+ * the keyword. And a `.transform()` field reports its PRE-transform type instead
+ * of failing conversion, which is the type a caller actually has to send.
+ */
 function safeJsonSchema(
   schema: NonNullable<WorkflowDef["input"]>,
   name: string,
   logger: Logger,
 ): unknown {
   try {
-    return toToolJsonSchema(schema);
+    return toToolJsonSchema(schema, "input");
   } catch (err: unknown) {
     logger.warn?.("Workflow input schema could not be converted to JSON Schema", {
       workflow: name,

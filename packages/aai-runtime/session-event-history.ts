@@ -27,11 +27,50 @@
  * cheap direction of the same trade the live rule makes — under-keeping costs a
  * little redundancy, over-keeping tells the model it delivered information the
  * caller never got.
+ *
+ * ## The rule has ONE home now, and it used to have three
+ *
+ * {@link historyMessageOf} is it: the two functions below and
+ * `session-core.ts`'s live event dispatch all went through their own copy of
+ * "append on a committed transcript, in this role", which is how the two rules
+ * governing a RECOVERY phrase came to compose into the outcome both forbid.
+ * `pipeline-turn-outcome.ts`'s table says `errorPhrase` and
+ * `startFailurePhrase` reach `history / ctx.messages: never`, and its transcript
+ * row says FINAL — so the phrase was committed for the caption's sake, kept out
+ * of the live pipeline history by the transport, and then appended anyway by
+ * the two copies of this rule the transport does not own: into `ctx.messages`
+ * by the live dispatch, on the same call, and back into the model's context by
+ * `seedHistory` on the first reconnect, compounding with every one after it.
+ * The phrase now says what it is (`recovery`, see
+ * `AgentTranscriptRecovery` in `sdk/protocol-events.ts`) and one reader decides.
  */
 
 import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
-import type { RestoredToolCall, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { RestoredToolCall, SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
+
+/**
+ * The conversation message one event contributes, or `undefined` for an event
+ * that contributes none.
+ *
+ * The ONE statement of "what is a turn" — read by both readers below and by the
+ * live dispatch in `session-core.ts`, which is what makes the three agree by
+ * construction rather than by three authors remembering. See the module doc.
+ *
+ * Two events append, and a third looks exactly like one of them and does not: a
+ * committed agent transcript carrying `recovery` is a phrase the TRANSPORT
+ * spoke because the model could not, and it is deliberately audible, captioned,
+ * and absent from the record. An event with no `recovery` — including every
+ * event written before the field existed — is an ordinary reply.
+ *
+ * @internal
+ */
+export function historyMessageOf(event: SessionEventBody): Message | undefined {
+  if (event.type === "user-transcript.committed") return { role: "user", content: event.text };
+  if (event.type !== "agent-transcript.committed") return undefined;
+  if (event.recovery !== undefined) return undefined;
+  return { role: "assistant", content: event.text };
+}
 
 /**
  * The conversation these events record, oldest first and capped like the live
@@ -42,16 +81,15 @@ import type { RestoredToolCall, SessionEvent } from "@alexkroman1/aai/protocol";
 export function messagesFromEvents(events: readonly SessionEvent[]): Message[] {
   const messages: Message[] = [];
   for (const event of events) {
-    if (event.type === "user-transcript.committed") {
-      messages.push({ role: "user", content: event.text });
-    } else if (event.type === "agent-transcript.committed") {
-      messages.push({ role: "assistant", content: event.text });
-    } else if (event.type === "session.reset") {
+    if (event.type === "session.reset") {
       // A reset DISCARDED the conversation, so everything before it is not this
       // conversation. Replaying across one would restore turns the caller
       // explicitly cleared — and the agent would answer as though they had not.
       messages.length = 0;
+      continue;
     }
+    const message = historyMessageOf(event);
+    if (message) messages.push(message);
   }
   // Trimmed at the FRONT, matching the live window (`DEFAULT_MAX_HISTORY`): a
   // resumed session must not come back holding more context than it could have
@@ -93,11 +131,13 @@ export function historyFromEvents(events: readonly SessionEvent[]): {
   for (const event of events) {
     switch (event.type) {
       case "user-transcript.committed":
-        messages.push({ role: "user", content: event.text });
+      case "agent-transcript.committed": {
+        // The same one rule the model's own view reads, so a phrase skipped
+        // there and kept here would slide every tool-call ANCHOR below by one.
+        const message = historyMessageOf(event);
+        if (message) messages.push(message);
         break;
-      case "agent-transcript.committed":
-        messages.push({ role: "assistant", content: event.text });
-        break;
+      }
       case "tool.called":
         toolCalls.push({
           callId: event.toolCallId,

@@ -78,23 +78,43 @@ const DELIVERY = { timeout: 15_000, interval: 50 } as const;
 const migrationsDir = path.resolve(import.meta.dirname, "../../supabase/migrations");
 
 /**
- * The tables the RLS migration names, read from the migration itself.
+ * The tables that carry RLS *now*, read from the migrations themselves.
  *
- * Parsed rather than listed so adding a table to the migration extends this
- * suite automatically. A hand-kept copy is the failure this repo has already
- * paid for elsewhere (the vitest project lists that drifted), and here it
- * would drift QUIETLY: a new table with RLS enabled and no coverage looks
- * exactly like a new table with coverage.
+ * Parsed rather than listed so adding a table to a migration extends this suite
+ * automatically. A hand-kept copy is the failure this repo has already paid for
+ * elsewhere (the vitest project lists that drifted), and here it would drift
+ * QUIETLY: a new table with RLS enabled and no coverage looks exactly like a new
+ * table with coverage.
+ *
+ * **DROPS are subtracted, and that is not bookkeeping.** This reads every
+ * migration in one pass, so without it the set is the union of every table that
+ * ever existed — and the first retired one turns this case into
+ * `<table> is missing — run \`supabase db push --local\``, which reads as a
+ * developer with a stale stack rather than as a table that is gone on purpose.
+ * No table has been dropped yet, so the subtraction is inert today — it stays
+ * because the first drop must not read as a stale stack. `workflow_run_owner`
+ * was expected to be the first and is not: the Workflow DevKit's schema is
+ * RETIRED by rename rather than dropped (see `RETIRED_OBJECTS` in
+ * `platform-schema.test.ts`), and that table is left in place entirely so a
+ * rollback can still say whose rows those are.
  */
 function rlsTables(): string[] {
   const files = readdirSync(migrationsDir)
     .filter((n) => n.endsWith(".sql"))
     .sort();
   const sql = files.map((n) => readFileSync(path.join(migrationsDir, n), "utf-8")).join("\n");
-  const tables = [
+  const enabled = [
     ...sql.matchAll(/^alter table aai_platform\.(\w+) enable row level security;/gm),
   ].map((m) => m[1] as string);
-  return [...new Set(tables)].sort();
+  const dropped = new Set(
+    [...sql.matchAll(/^drop table if exists aai_platform\.(\w+);/gm)].map((m) => m[1] as string),
+  );
+  // Code-unit, never `localeCompare`: with no explicit locale that answers to
+  // the runtime's ICU default, so the same migrations would order differently on
+  // another machine — the rule `API-EXPORTS.json` states for the same reason.
+  return [...new Set(enabled)]
+    .filter((table) => !dropped.has(table))
+    .sort((a, b) => Number(a > b) - Number(a < b));
 }
 
 describeWithStack("the platform change stream survives RLS being enabled", () => {

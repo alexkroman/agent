@@ -30,8 +30,8 @@ async function drain(result: { textStream: AsyncIterable<string> }): Promise<str
  *
  * `agent()` takes no `tools`: a tool is a FILE, and the enumeration happens
  * where the bundle is assembled. A spec has no bundler in its path, so it
- * resolves the registry itself — `withDiscoveredTools` over an
- * `import.meta.glob` in a real project, and a literal here, since these tools
+ * resolves the registry itself — `virtual:aai/agent` (or `deployedAgent` over an
+ * `import.meta.glob`) in a real project, and a literal here, since these tools
  * exist to be driven rather than to live anywhere.
  */
 function textAgent(def: Parameters<typeof agent>[0], tools: ToolRegistry = {}): AgentDef {

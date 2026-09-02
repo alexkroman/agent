@@ -1627,6 +1627,45 @@ function Cart() {
 
 ***
 
+### useRunKey()
+
+```ts
+function useRunKey(options?: {
+  storage?: "session" | "local";
+}): string;
+```
+
+A lookup key for `useWorkflowSubmit({ key, recover: true })`, stable across
+reloads.
+
+#### Parameters
+
+##### options?
+
+See the module doc for the whole argument. The storage kind
+  is read once, when the key is minted: a value that changed afterwards would
+  be asking to move a key that has already been recorded with a run.
+
+###### storage?
+
+`"session"` \| `"local"`
+
+Which store keeps the key between loads.
+
+`"session"` (the default) dies with the tab; `"local"` survives the
+browser closing, which is what a run that sleeps for days needs. See "The
+storage is the caller's decision".
+
+#### Returns
+
+`string`
+
+The key to record runs under and to look them up by — the same one
+  for the life of the component, and for the next load in the same tab (or the
+  same browser, under `"local"`).
+
+***
+
 ### useSession()
 
 ```ts
@@ -2066,6 +2105,15 @@ Watch one run until it reaches a terminal status.
 A watch rather than a subscription because a run is durable and the page is
 not: it can complete while the tab is closed, on a different sandbox, hours
 later. There is no session to reconnect — the id is the whole state.
+
+Which is also the limit of what this hook can do on its own. An id is state a
+RELOAD destroys, so a page holding nothing else comes back unable to name a
+run that is still going. The durable handle is `StartOptions.key`, read back
+with `find(workflow, key)`, and the hook that owns the id is where that
+belongs: `useWorkflowSubmit({ key, recover: true })` adopts the key's newest
+run as it mounts and passes the id here. See `_recover-run.ts` — the reason
+recovery is NOT in this hook is `reset()`, which leaves the owner holding no
+id on purpose, and a watcher that re-resolved one from a key would undo it.
 
 The stream (`GET /runs/:id/events`) is tried first and the poll is its
 fallback, so an agent deployed before that route existed still works. Watching
@@ -4645,7 +4693,7 @@ The agent's declared workflows, each with the JSON Schema of its input.
 ### UseWorkflowStreamOptions
 
 ```ts
-type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
+type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
 ```
 
 Options for [useWorkflowStream](#useworkflowstream).
@@ -4653,6 +4701,15 @@ Options for [useWorkflowStream](#useworkflowstream).
 [UseWorkflowSubmitOptions](#useworkflowsubmitoptions) without `wait`, which is the synchronous
 mode: it holds the `POST` open until the run settles, and here the run is
 started before its bytes are, so there is nothing left to hold it for.
+
+Without `recover` either, and REFUSED rather than ignored: an option a hook
+accepts and does nothing with is the silent-no-op failure this repo keeps
+paying for. Adopting an earlier run by key would hand this hook a run whose
+input names an upload id it did not mint and is not filling — so the run
+would sit waiting for bytes nobody is sending until its own abandonment
+bound. That is the same reason `_upload-recall.ts` deliberately does not
+recall for this hook, one layer up: here the id is part of a run's INPUT.
+`key` itself still works, and still makes the run findable.
 
 `parallel` COMPOSES with what this hook is for rather than competing with it.
 The run still starts before the bytes, and the store still publishes how far
@@ -4670,6 +4727,7 @@ type UseWorkflowSubmitOptions = {
   intervalMs?: number;
   key?: string;
   parallel?: UploadParallel;
+  recover?: boolean;
   wait?: number;
 };
 ```
@@ -4718,6 +4776,33 @@ across connections is what makes that stretch shorter, and it degrades to the
 single request wherever it would not help — a small file, an older agent — so
 the default costs nothing where it would not have paid. See
 `UploadOptions.parallel`.
+
+##### recover?
+
+```ts
+optional recover?: boolean;
+```
+
+On mount, adopt the newest run this `key` already has.
+
+**This is what makes a reload survivable.** The run id is this hook's own
+state, so a refresh loses it while the run carries on — and a page that
+cannot name a run cannot show it, cancel it or wake it. With a `key` and
+this flag the hook asks `find(workflow, key)` once as it mounts and follows
+whatever comes back, so the answer, the progress and the controls are all
+there again.
+
+Inert without a `key`, because the key IS the lookup. Opt-in because a
+`key` on its own means only "record this with the run", which is what a
+page passing an account id may well want; adopting a run is a decision
+about the page.
+
+The key has to be one the next load can produce, and choosing it is the
+caller's: it is a lookup CAPABILITY (there is no per-user filtering behind
+`find`), it must fit the route's 256-character bound, and anything derived
+from a person's own input both collides and carries what they typed.
+`useRunKey()` is that key, and its module argues every alternative; a page
+with accounts passes the account's own id instead.
 
 ##### wait?
 
@@ -5375,7 +5460,7 @@ exactly as it reads a single streaming `PUT`.
 ##### wake()
 
 ```ts
-wake(runId: string): Promise<number>;
+wake(runId: string, options?: WakeUpOptions): Promise<number>;
 ```
 
 End a run's `sleep()` early, resolving how many pending sleeps were
@@ -5385,11 +5470,27 @@ interrupted.
 gone. Same shape as [WorkflowApi.cancel](#cancel-1) answering false, and for the
 same reason: two tabs pressing "send it now" is ordinary.
 
+[WakeUpOptions.correlationIds](../aai/workflow-api.md#correlationids) narrows it to the waits declared with
+those ids, which is the same bag `ctx.workflows.wakeUp` takes and reaches the
+route's repeatable `?correlationId=`. Reach for it when the caller means one
+particular wait rather than "everything this run is waiting on" — and note it
+is the ONLY spelling that can end a hook's approval deadline, since a bare
+wake deliberately cannot (the journal filters a `hookTimeout` out of one).
+
+An id that is blank, or longer than 256 characters, REJECTS here without a
+request being sent. The route answers 400 for both, and there is nothing a
+caller can do with that answer that it could not do with a rejection it never
+had to make a round trip for.
+
 ###### Parameters
 
 ###### runId
 
 `string`
+
+###### options?
+
+[`WakeUpOptions`](../aai/workflow-api.md#wakeupoptions)
 
 ###### Returns
 
@@ -5508,8 +5609,7 @@ export const digest = workflow({
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 import type { digest } from "../agent.ts";
 
-export async function digestFlow(input: WorkflowInputOf<typeof digest>) {
-  "use workflow";
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowCtx) {
   // `limit` is `number`, not `number | undefined` — the default already ran.
   return await research(input.topic, input.limit);
 }

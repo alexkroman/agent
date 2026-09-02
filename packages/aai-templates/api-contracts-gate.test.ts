@@ -60,6 +60,24 @@ const tables: Record<string, string> = import.meta.glob("../*/contracts/contract
   eager: true,
 });
 
+/**
+ * The names a retained epoch promised that no frozen example imports, with a
+ * reason each.
+ *
+ * A DENY-list, so a new fixture defaults into being checked, and a ratchet: an
+ * entry may be deleted and none may be added — the spec below fails on an entry
+ * whose name IS covered, because an exemption nobody counts is how a gate
+ * narrows with no diff saying so.
+ */
+const coverageDenylistSource: string =
+  sole(
+    import.meta.glob("../../scripts/api-contracts-coverage-denylist.json", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  ) ?? "";
+
 const exportsSource: string =
   sole(
     import.meta.glob("../../API-EXPORTS.json", {
@@ -68,11 +86,10 @@ const exportsSource: string =
       eager: true,
     }),
   ) ?? "{}";
-// The two RUNNERS come from the shared wiring block — the same three sources
-// every gate spec here reads. `?? ""` keeps a source that stopped resolving
-// visible as an empty search, which the assertions below then fail on.
+// The RUNNER comes from the shared wiring block — the same sources every gate
+// spec here reads. `?? ""` keeps a source that stopped resolving visible as an
+// empty search, which the assertions below then fail on.
 const checkScript: string = GATE_WIRING["scripts/check.mjs"] ?? "";
-const ciWorkflow: string = GATE_WIRING[".github/workflows/check.yml"] ?? "";
 
 const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
 
@@ -105,6 +122,43 @@ const declaredNames = (source: string): string[] =>
   [...source.matchAll(/export\s*(?:type\s*)?\{([^}]*)\}\s*from\s*"/g)]
     .flatMap((match) => (match[1] ?? "").split(","))
     .map((entry) => entry.trim().replace(/^type\s+/, ""))
+    .filter((entry) => /^[A-Za-z_$][\w$]*$/.test(entry))
+    .sort(byCodeUnit);
+
+/**
+ * The names one frozen example IMPORTS from its own package's surface.
+ *
+ * "Names it" is read off the import CLAUSE rather than by searching the source,
+ * and the two are not close: every fixture discusses its surface at length, so a
+ * word scan scores prose. `telephony/v1.ts` mentions `twilioCodec`, `telnyxCodec`
+ * and `startTelephonySession` in its doc comment and imports none of them —
+ * measured, a substring scan called that fixture 8 of 13 covered where its import
+ * clause says 5, and one of the three it invented is the very name that file's own
+ * epoch note says the transition moved through.
+ *
+ * An import is equivalent to a USE here, which is what makes the cheap parse
+ * sound: `noUnusedImports` (biome.json) and `noUnusedLocals` (the root tsconfig)
+ * both reject an imported name nothing reads, so a fixture cannot pad its score
+ * with an import list. And the specifier must start with `..` — the same fact the
+ * "imports no published surface" check already requires — so a name that arrived
+ * from `zod` or `@alexkroman1/aai` can never be mistaken for the capability's own.
+ *
+ * A renamed import counts under its ORIGINAL name, which is the one the epoch
+ * promised. What it still misses is a name reachable without being named: an
+ * inferred type, or a member read off a value imported under another name. That
+ * is the cheap error in the safe direction — it over-reports, and the remedy for
+ * an over-report is an import the two unused-name rules then keep honest.
+ */
+const importedFromSurface = (source: string): string[] =>
+  [...source.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*"(\.\.[^"]*)"/g)]
+    .flatMap((match) => (match[1] ?? "").split(","))
+    .map(
+      (entry) =>
+        entry
+          .trim()
+          .replace(/^type\s+/, "")
+          .split(/\s+as\s+/)[0] ?? "",
+    )
     .filter((entry) => /^[A-Za-z_$][\w$]*$/.test(entry))
     .sort(byCodeUnit);
 
@@ -152,6 +206,79 @@ const contracts = packages.flatMap((entry) =>
 const roots = packages.flatMap((entry) =>
   entry.roots.map((root) => ({ ...entry, ...root, id: `${entry.pkg}:${root.capability}` })),
 );
+
+/** The deny-list, minus its `_description` prose key. */
+const denials: Record<string, Record<string, string>> = Object.fromEntries(
+  Object.entries(JSON.parse(coverageDenylistSource || "{}") as Record<string, unknown>).filter(
+    (pair): pair is [string, Record<string, string>] => !pair[0].startsWith("_"),
+  ),
+);
+
+/**
+ * What each capability's frozen examples actually FREEZE.
+ *
+ * The three checks below on a superseded epoch's fixture — it exists, it is not
+ * the scaffold, it imports from `..` — say nothing about DEGREE, and a fixture
+ * importing one name out of twenty-eight satisfies all three while freezing one
+ * signature. This is the fourth: a name a retained epoch promised must be named
+ * by frozen code somewhere, or the promise has nothing behind it.
+ *
+ * **Per CAPABILITY, not per fixture, and the files argue for it themselves.**
+ * Calibrated over all twelve existing examples, per-fixture completeness flags
+ * nine of them — because a capability with two retained epochs SPLITS its
+ * surface between them on purpose, and says so: `runtime/v3.ts` "deliberately
+ * narrows" to the session-facing half and `v4.ts` is "the reason the latter is on
+ * the capability"; `db/v5.ts` is "the half `v2.ts` does not reach"; `server/v6.ts`
+ * the same. A rule that flags nine deliberate, documented designs is the wrong
+ * rule. The union flags two, and both are real (see the deny-list, and `removed`
+ * below).
+ *
+ * **Every name, never a percentage.** A floor cannot say WHICH name went
+ * uncovered, so it absorbs the next removal silently and there is no honest
+ * number to pick; a named exemption puts each gap on a reviewable line instead.
+ *
+ * `removed` is the one forgiveness, and it is DERIVED rather than listed: a name
+ * the CURRENT epoch no longer exports cannot be imported by anything that
+ * compiles, so it cannot be owed. It has one live instance and that instance is a
+ * finding — `aai-runtime:db` epoch 2 promised `SweepSkip`, which is gone, and
+ * epoch 4 was DROPPED for exactly that ("A consumer naming the type no longer
+ * compiles, which is what makes this a drop rather than a retain"). By its own
+ * standard epoch 2 is unsupportable, and it reads as supported only because
+ * `v2.ts` never named the type. Left as a finding rather than an assertion,
+ * because the fix is a `--bump --drop` and not a test.
+ */
+const coverage = contracts
+  .map((entry) => {
+    const { current, supported } = entry.table[entry.capability] as Contract;
+    const frozen = supported.filter((version) => version !== current).sort((a, b) => a - b);
+    const exportsAt = (version: number): string[] =>
+      entry.epochs.find(
+        (record) => record.capability === entry.capability && record.version === version,
+      )?.record.exports ?? [];
+    const promised = [...new Set(frozen.flatMap(exportsAt))].sort(byCodeUnit);
+    const named = new Set(
+      frozen.flatMap((version) =>
+        importedFromSurface(entry.fixture(entry.capability, version) ?? ""),
+      ),
+    );
+    const live = new Set(exportsAt(current));
+    const exempt = denials[entry.id] ?? {};
+    return {
+      ...entry,
+      frozen,
+      promised,
+      exportsAt,
+      /** Promised, gone from the current surface, and therefore unfreezable. */
+      removed: promised.filter((name) => !live.has(name)),
+      /** Promised, still live, named by no fixture, and not exempted. */
+      owed: promised.filter((name) => live.has(name) && !named.has(name) && !(name in exempt)),
+      /** An exemption for a name that is covered, or was never promised. */
+      stale: Object.keys(exempt)
+        .filter((name) => named.has(name) || !promised.includes(name))
+        .sort(byCodeUnit),
+    };
+  })
+  .filter((entry) => entry.frozen.length > 0);
 
 const remedy = "See `node scripts/api-contracts.mjs`.";
 
@@ -305,6 +432,73 @@ describe("capability contracts", () => {
     }
   });
 
+  test.each(coverage)("$id's frozen examples import what its epochs promised", (entry) => {
+    for (const version of entry.frozen) {
+      // A zero-length promise makes coverage trivially complete, which is the
+      // vacuous-pass shape this whole file exists to refuse. Asserted per epoch
+      // rather than over the union, because one empty record inside a healthy
+      // capability is invisible in a total.
+      expect(
+        entry.exportsAt(version).length,
+        `${entry.id} v${version}.json promises nothing, so nothing of it can be frozen`,
+      ).toBeGreaterThan(0);
+    }
+    expect(
+      entry.owed,
+      `${entry.owed.length} name(s) ${entry.id} promised at epoch ${entry.frozen.join("/")} are ` +
+        `imported by none of its frozen examples, starting with ${entry.owed[0]}. A fixture that ` +
+        "names one signature freezes one signature — the other names compile because nothing " +
+        "mentions them. Import it and use it, or record a reason in " +
+        `scripts/api-contracts-coverage-denylist.json. ${remedy}`,
+    ).toEqual([]);
+  });
+
+  test("no coverage exemption is dead, and the corpus it measures is not empty", () => {
+    // Measured 2026-09-01: 10 fixtures across 6 capabilities, 70 distinct
+    // promised names, ALL 70 imported by frozen code — nothing exempted and
+    // nothing unfreezable. It read 84/75/8/1 until `aai-runtime:db` v2 and
+    // `telephony` v1 were dropped as unsupportable retains, which is where the
+    // last exemption and the last gone-from-the-surface name went. The floors
+    // sit a third under, because a `--bump --drop` legitimately DELETES a
+    // fixture and the floor must not turn a correct drop into a failure — what
+    // it exists to catch is an extraction that stopped finding fixtures at all,
+    // which would agree with an empty deny-list and print a checkmark.
+    expect(coverage.length, "no capability has a frozen example").toBeGreaterThanOrEqual(5);
+    expect(
+      coverage.reduce((total, entry) => total + entry.frozen.length, 0),
+      "no fixtures found",
+    ).toBeGreaterThanOrEqual(8);
+    expect(
+      coverage.reduce((total, entry) => total + entry.promised.length, 0),
+      "the frozen epochs promise almost nothing",
+    ).toBeGreaterThanOrEqual(50);
+
+    // The deny-list is a ratchet that may only shrink, so an entry that has
+    // become true has to come OUT — otherwise it is unclaimed headroom the next
+    // fixture inherits, exactly as `check:hatches` warns about.
+    for (const entry of coverage) {
+      expect(
+        entry.stale,
+        `scripts/api-contracts-coverage-denylist.json exempts ${entry.stale[0]} for ${entry.id}, ` +
+          "which is now imported by a frozen example or promised by no retained epoch. Delete " +
+          "the entry — an exemption may be removed and never added.",
+      ).toEqual([]);
+    }
+    // A typo'd capability id exempts nothing and reads as an exemption, which is
+    // the same silent widening one level up.
+    const ids = new Set(coverage.map((entry) => entry.id));
+    for (const id of Object.keys(denials)) {
+      expect([...ids], `the deny-list names ${id}, which has no frozen example`).toContain(id);
+      expect(
+        Object.keys(denials[id] ?? {}).length,
+        `${id}'s deny-list entry is empty`,
+      ).toBeGreaterThan(0);
+      for (const reason of Object.values(denials[id] ?? {})) {
+        expect(reason.trim().length, `${id} has an exemption with no reason`).toBeGreaterThan(20);
+      }
+    }
+  });
+
   test("a dropped epoch keeps no fixture", () => {
     // Dropped MEANS "no longer compiles", and fixtures sit under the package
     // tsconfig — so a leftover one turns the classification into a red
@@ -329,16 +523,16 @@ describe("capability contracts", () => {
       );
     }
     // Ordering matters: the contracts read the authoring surface out of the
-    // committed API reports, so a stale report would be believed.
-    for (const [label, source] of [
-      ["scripts/check.mjs", checkScript],
-      [".github/workflows/check.yml", ciWorkflow],
-    ] as const) {
-      expect(
-        source.indexOf("check:api-report"),
-        `${label} must run check:api-report before check:api-contracts`,
-      ).toBeLessThan(source.indexOf("check:api-contracts"));
-    }
+    // committed API reports, so a stale report would be believed. Asserted
+    // against the GATES table alone now — CI used to carry its own copy of the
+    // list, and the two had to be checked separately; it runs THIS one (`node
+    // scripts/check.mjs --gates ci`), in source order, so the table is the only
+    // place the order can be stated. `gate-wiring.test.ts` is what holds the
+    // derivation together.
+    expect(
+      checkScript.indexOf("check:api-report"),
+      "scripts/check.mjs must run check:api-report before check:api-contracts",
+    ).toBeLessThan(checkScript.indexOf("check:api-contracts"));
   });
 });
 
@@ -394,6 +588,8 @@ describe("API-EXPORTS.json", () => {
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("ToolModules");
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
       "ProjectFiles",
+      "RecordedSleep",
+      "RecordedStep",
       "RunSnapshotOverrides",
       "STUB_SPEECH_PCM_BYTES",
       "SentEvent",
@@ -430,10 +626,13 @@ describe("API-EXPORTS.json", () => {
       "ToolBearingAgent",
       "ToolContextOverrides",
       "ToolRunner",
+      "WorkflowCtxOptions",
+      "WorkflowCtxRecorder",
       "createProgressStream",
       "createRunSnapshot",
       "createStubWorkflows",
       "createToolContext",
+      "createWorkflowCtx",
       "deployedAgent",
       "ok",
       "okPosition",

@@ -34,17 +34,18 @@
  *
  * ## The plan is made in the BODY, and that is legal
  *
- * `planSegments` runs in the directive body rather than in a step, which looks
- * like a rule violation and is not: it is a pure function of `ingested.silences`
- * and `ingested.durationMs`, both of which came out of a journaled step result.
- * So a replay re-derives the identical list in the identical order, which is
- * exactly what `mapConcurrent` needs — the DevKit correlates a journal entry to a
- * step call by the ORDER the call was issued in.
+ * `planSegments` runs in the BODY rather than in a step, which looks like a rule
+ * violation and is not: it is a pure function of `ingested.silences` and
+ * `ingested.durationMs`, both of which came out of a journaled step result. So a
+ * replay re-derives the identical list in the identical order, which is exactly
+ * what `mapConcurrent` needs — every call shares the name `transcribeSegment`, so
+ * a journal entry is matched by the ORDER its call was issued in.
  *
  * Putting it in a step would journal the same list twice (once as part of the
  * ingest result, once as the plan) and buy nothing.
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { encodeWav, mapConcurrent, readUpload, report } from "@alexkroman1/aai/step";
 import { countWords, formatDuration } from "@alexkroman1/aai/utils";
 // ERASED at build time, so the body can name the schema's own output type without
@@ -79,15 +80,18 @@ import { transcribeSpan } from "./sync-api.ts";
  * the byte bound never binds and what is left is the endpoint's own knee, which it
  * measured at 32. Its `BYTES_IN_FLIGHT` and `MAX_SEGMENT_CONCURRENCY` docs carry
  * both measurements; this is the one number that survives them. *
- * **What EXECUTES at this width is the world's call, not this number's.**
+ * **What EXECUTES at this width is the engine's call, not this number's.**
  * `mapConcurrent` bounds how many step calls the body has in flight; how many
- * run at once is the workflow world's worker concurrency, which on the
- * `DATABASE_URL` path defaults to three — so on a default deployment a width
- * above three is inert while still costing a queued job per item. That makes
- * this the FAR SIDE's knee and the width to use once an operator has raised
- * the ceiling, not a promise about a stock deployment. See "The WINDOW is not
- * the concurrency" in `@alexkroman1/aai/step`'s `mapConcurrent`; the numbers
- * above were measured against the endpoint and say nothing about that layer.
+ * run at once is `DEFAULT_STEP_CONCURRENCY` (`aai-runtime`), which is **16** —
+ * measured against a real microVM at Modal's guaranteed reservation, where a
+ * concurrent segment of 48 kHz stereo costs 26.1 MB. So a width above 16 is
+ * inert on a stock deployment while still costing a queued job per item, and
+ * this number is the FAR SIDE's knee: the one to use once an operator has
+ * raised `AAI_WORKFLOW_STEP_CONCURRENCY` for a larger guest. It was three,
+ * inherited from graphile-worker and never measured, which made every number
+ * in the table above unreachable. See "The WINDOW is not the concurrency" in
+ * `@alexkroman1/aai/step`'s `mapConcurrent`; the numbers above were measured
+ * against the endpoint and say nothing about that layer.
  */
 export const SEGMENT_CONCURRENCY = 32;
 
@@ -150,14 +154,30 @@ export type CallAudit = {
  * The input is what `POST /workflows/runs` carries — see `agent.ts` for the schema
  * it is validated against before a run exists.
  */
-export async function auditFlow(input: WorkflowInputOf<typeof audit>): Promise<CallAudit> {
-  "use workflow";
-
+export async function auditFlow(
+  input: WorkflowInputOf<typeof audit>,
+  ctx: WorkflowCtx,
+): Promise<CallAudit> {
   // Both at once: neither needs the other, and issued together they are one round
   // trip instead of two before any audio moves. The ORDER is still a pure function
   // of this expression — the two calls go out synchronously, left to right — which
   // is what a replay reproduces.
-  const [startedAt, ingested] = await Promise.all([now(), ingestRecording(input.recording)]);
+  //
+  // `clockStart` and `clockEnd` are two NAMES for one function, deliberately.
+  // `(name, occurrence)` step identity would tell two `now` calls apart on its
+  // own (`now#0`, `now#1`), but a run's history is read by a person: `clockEnd`
+  // says which end it is where `now#1` makes the reader count call sites.
+  // `maxAttempts: 6` was `ingestRecording.maxRetries = 5` — five retries AFTER
+  // the first, so six in all. More than the default 3, and not because a
+  // conversion is flaky: a corrupt file fails identically forever, and
+  // `throwFfmpegStepError` is what stops the engine retrying that. It is the two
+  // I/O halves that are worth another attempt — the step reads a whole recording
+  // out of the store and writes a whole one back, and either can lose a
+  // connection on a file this size.
+  const [startedAt, ingested] = await Promise.all([
+    ctx.step("clockStart", () => now()),
+    ctx.step("ingestRecording", () => ingestRecording(input.recording), { maxAttempts: 6 }),
+  ]);
 
   // Pure, in the body, from journaled values. See the module doc. Planned against
   // the stored BYTE COUNT rather than the reported duration — `durationSeconds`
@@ -169,14 +189,24 @@ export async function auditFlow(input: WorkflowInputOf<typeof audit>): Promise<C
   // already journaled, so a resume replays those for free and re-issues only what
   // is missing — where catching here to salvage a partial transcript would return
   // a recording with a silent hole in it and report success.
+  // `mapConcurrent` hands out items from a monotonic cursor, so the Nth call
+  // ISSUED is segment N whatever order they settle in — which is what makes
+  // `transcribeSegment#N` stable across a replay. `maxAttempts: 6` was
+  // `transcribeSegment.maxRetries = 5` — more than the default 3 because a rate
+  // limit is the expected failure here, and a segment that 429s is not a segment
+  // that is wrong.
   const parts = await mapConcurrent(segments, SEGMENT_CONCURRENCY, (segment) =>
-    transcribeSegment(ingested.audio, segment),
+    ctx.step("transcribeSegment", () => transcribeSegment(ingested.audio, segment), {
+      maxAttempts: 6,
+    }),
   );
 
   const transcript = joinSegments(segments, parts);
-  const summary = await summarize(transcript, ingested.source, ingested.durationMs);
-  const spoken = await narrate(summary.spoken, input.voice);
-  const finishedAt = await now();
+  const summary = await ctx.step("summarize", () =>
+    summarize(transcript, ingested.source, ingested.durationMs),
+  );
+  const spoken = await ctx.step("narrate", () => narrate(summary.spoken, input.voice));
+  const finishedAt = await ctx.step("clockEnd", () => now());
 
   // Whatever this returns is what a caller reads as `output` on a completed run —
   // so it is what the page renders, typed through `WorkflowOutputOf`. Assembled in
@@ -221,8 +251,6 @@ export async function auditFlow(input: WorkflowInputOf<typeof audit>): Promise<C
  * no reason for a second copy of it to exist.
  */
 export async function transcribeSegment(audioId: string, segment: Segment): Promise<SegmentText> {
-  "use step";
-
   // One line per segment, which is what makes the fan-out legible to a page: the
   // status is `running` for the whole thing, so without this a sixty-segment
   // recording and a one-segment recording look identical while they run.
@@ -246,12 +274,6 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
 }
 
 /**
- * Retries beyond the default 3, because a rate limit is the expected failure and a
- * segment that 429s is not a segment that is wrong.
- */
-transcribeSegment.maxRetries = 5;
-
-/**
  * When it is now, as epoch ms.
  *
  * A STEP, and that is the whole reason it exists rather than a `Date.now()` in the
@@ -266,8 +288,6 @@ transcribeSegment.maxRetries = 5;
  * smaller thing.
  */
 export async function now(): Promise<number> {
-  "use step";
-
   return Date.now();
 }
 

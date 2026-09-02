@@ -12,24 +12,23 @@
  *
  * So a step narrates with one call and it lands in both places:
  *
- * ```ts no-check
+ * ```ts
  * import { report } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {
- *   "use step";
  *   await report(`Transcribing segment ${index}.`);
  * }
  * ```
  *
  * ## Why a published slot rather than an import
  *
- * The stream half is `getWritable()` from `workflow`, which this module may not
- * import: `@alexkroman1/aai/utils` is on the CLI's zero-dependency startup path
- * and is pulled into the browser bundle, and the DevKit is neither zero-cost nor
- * loadable in a browser. The host publishes a reporter instead — the same
- * `Symbol.for` slot mechanism {@link stepEnv} uses, and for the same reason: the
- * step artifact bundles its own copy of this module, so the publisher and the
- * reader are two module instances in one realm.
+ * The stream half belongs to the host — it owns the run's progress channel and
+ * the logger the line also goes to — and this module may not import it:
+ * `@alexkroman1/aai/step` is pulled into the browser bundle, and none of that is
+ * loadable there. The host publishes a reporter instead — the same `Symbol.for`
+ * slot mechanism {@link stepEnv} uses, and for the same reason: the agent bundle
+ * carries its own copy of this module, so the publisher and the reader are two
+ * module instances in one realm.
  *
  * `host/workflow-report.ts` is the published half, and it is what turns one
  * `report()` into a stream chunk plus a `logger.info` line.
@@ -85,7 +84,7 @@ export type StepReporter = (
 type StepReporterSlot = { [STEP_REPORTER_SLOT]?: StepReporter };
 
 /**
- * Publish the reporter for this process's `"use step"` functions.
+ * Publish the reporter for this process's steps.
  *
  * Called by whatever is about to serve workflows — `createServer`, which is the
  * one front door `aai dev`, a self-hosted server and every deployed guest all
@@ -157,7 +156,6 @@ export async function report(line: string): Promise<void> {
  * import { emit } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {
- *   "use step";
  *   const text = await transcribe(index);
  *   await emit("transcript", { index, text });
  *   return { index, text };

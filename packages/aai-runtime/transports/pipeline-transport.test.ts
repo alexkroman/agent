@@ -451,6 +451,9 @@ describe("PipelineTransport", () => {
       expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
         type: "agent-transcript.committed",
         text: expect.stringContaining("cannot hear you"),
+        // ...and tagged as a recovery phrase, which is what keeps it out of the
+        // conversation every reader reconstructs from the stream.
+        recovery: "session-failed",
       });
       // Still a failed start: the client must learn the session is dead.
       expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({

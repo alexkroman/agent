@@ -12,9 +12,11 @@
  * Three surfaces, and they compose in `createAgentRequestHandler` in the order
  * their gates demand:
  *
- * - The DevKit's workflow routes, which carry their OWN gates (loopback for the
- *   two queue callbacks, the injected predicate for the platform's door) and so
- *   must be claimed before anything here.
+ * - `POST /workflow-queue`, the platform's delivery door. It carries its OWN
+ *   gate — the injected `allowRemote` predicate — and so must be claimed before
+ *   anything here. It was three routes under the DevKit, two of them the world's
+ *   own loopback-gated queue callbacks; the replay engine executes a step inline
+ *   during the walk, so only the delivery is left.
  * - `/workflows/*`, the run API, refused on a direct tunnel dial so the
  *   platform's rate limiters cannot be skipped.
  * - `/manage/*`: session count, drain, and this guest's own captured output.
@@ -22,7 +24,8 @@
 
 import type http from "node:http";
 import { requestQuery } from "@alexkroman1/aai/internal";
-import { handleWorkflowRequest, type WorkflowSurface } from "@alexkroman1/aai-runtime/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
+import { handleWorkflowRequest } from "@alexkroman1/aai-runtime/internal";
 import { verifyBearer } from "./harness-auth.ts";
 import { guestLogBuffer, parseLogQuery } from "./harness-logs.ts";
 import { gateDirectWorkflowDial } from "./harness-workflow-gate.ts";
@@ -162,26 +165,36 @@ export function createWorkflowActivity(): WorkflowActivity {
 }
 
 /**
- * Agent mode's whole `request` hook: the DevKit's queue callbacks, then the
- * manage surface.
+ * Agent mode's whole `request` hook: the platform's delivery door, the direct-
+ * dial gate on `/workflows/*`, then the manage surface.
  *
- * Workflows go FIRST because the paths are disjoint and this is the hotter one
- * on an agent that has any; unclaimed they would fall through to the server's
- * 404 and every run would stall with nothing saying why. The workflow surface is
- * read through a getter rather than passed by value because the bundle is loaded
- * before this is built but the two are independently replaceable, and a captured
- * `null` would leave a reloaded bundle's routes unmounted.
+ * The delivery door goes FIRST because the paths are disjoint and this is the
+ * hotter one on an agent that has workflows; unclaimed it would fall through to
+ * the server's 404 and every scheduled run would stall with nothing saying why.
+ * Why `deliverWorkflow` is a getter rather than a value is on the parameter.
  */
 export function createAgentRequestHandler(deps: {
   manage: ManageDeps;
-  workflows: () => WorkflowSurface | null;
+  /**
+   * `AgentRuntime.deliverWorkflow` — re-walk one run for a platform delivery.
+   *
+   * A GETTER for the reason `workflows` is one: the harness builds its runtime on
+   * the first thing that needs it, so a captured value is `undefined` for the
+   * life of the process. Absent means this guest has no engine to deliver to, and
+   * the door then answers as it did before — 404 for an agent with no workflows.
+   *
+   * This is the whole reason the door exists under the replay engine: a deployed
+   * guest's own timers die with a sandbox that self-exits, so the platform's
+   * queue holds the schedule and a due message boots the guest and lands here.
+   */
+  deliverWorkflow?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
   /** Absent leaves workflow work invisible to the idle controller — tests only. */
   activity?: WorkflowActivity | undefined;
 }): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
   const manage = createManageHandler(deps.manage);
   return (req, res, url, method) => {
     if (
-      handleWorkflowRequest(deps.workflows(), req, res, url, method, {
+      handleWorkflowRequest(req, res, url, method, {
         // The platform's queue-delivery door, vouched for by the same bearer the
         // rest of the manage surface uses — this IS a management operation the
         // platform performs on a guest, and `AAI_GUEST_TOKEN` is an HMAC over
@@ -194,6 +207,10 @@ export function createAgentRequestHandler(deps: {
         // caller but the platform, so there is nothing to compose with and the
         // ordinary bearer is the honest spelling.
         allowRemote: (r) => verifyBearer(r.headers.authorization, deps.manage.token),
+        // The getter itself, NOT its result: reading it builds the runtime, and
+        // `handleWorkflowRequest` resolves it only after the path and the bearer.
+        // Passed as a value it was evaluated on every request reaching this hook.
+        ...omitUndefined({ deliver: deps.deliverWorkflow }),
       })
     ) {
       deps.activity?.begin(res);

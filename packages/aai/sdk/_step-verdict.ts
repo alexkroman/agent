@@ -16,18 +16,19 @@
  *
  * `_`-prefixed because it is not an import path. `@alexkroman1/aai/step-errors`
  * is, and it publishes every name here — read that module's doc for why this
- * subpath exists at all and why it is the one authoring module allowed to name
- * the DevKit's `workflow` package.
+ * subpath exists at all. The `FatalError`/`RetryableError` it reaches for are
+ * this repo's own (`step-error-classes.ts`); they were the Workflow DevKit's
+ * until the replay engine that reads a verdict moved in-tree.
  */
 
-import { FatalError, RetryableError } from "workflow";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import { FatalError, RetryableError } from "./step-error-classes.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
 import { errorMessage } from "./utils.ts";
 
 /**
- * The DevKit error one failure deserves.
+ * The step error one failure deserves.
  *
  * `cause` decides how the verdict is reached, and the three cases are the three
  * ways a step learns it failed:
@@ -47,7 +48,7 @@ import { errorMessage } from "./utils.ts";
  *   it is carried rather than re-derived from a status that is not there.
  * - **Anything else** — a verdict this function cannot reach, so it does not
  *   invent one: the value is returned unchanged if it is an `Error` and wrapped
- *   in a plain `Error` if it is not. Both are retryable by the DevKit's default,
+ *   in a plain `Error` if it is not. Both are retryable by the engine's default,
  *   which is the safe direction — the alternative is silently disabling retries
  *   for a failure nobody classified. Reach for {@link throwFatalStepError} where
  *   the step really has decided a failure is terminal.
@@ -61,7 +62,6 @@ import { errorMessage } from "./utils.ts";
  * import { toStepError } from "@alexkroman1/aai/step-errors";
  *
  * export async function fetchOrder(id: string): Promise<unknown> {
- *   "use step";
  *   const response = await fetch(`https://api.example.com/orders/${id}`);
  *   if (!response.ok) throw toStepError(response, `Order ${id}: HTTP ${response.status}`);
  *   return await response.json();
@@ -73,8 +73,15 @@ import { errorMessage } from "./utils.ts";
 export function toStepError(cause: unknown, message?: string): Error {
   if (isResponseLike(cause)) {
     const sentence = message ?? `HTTP ${cause.status}`;
-    if (!isTransientStatus(cause.status)) return new FatalError(sentence);
-    return retryableError(sentence, retryAfter(cause));
+    // The response rides along as the `cause` for the same reason the arms
+    // below carry theirs: what a caller has left otherwise is a sentence, and
+    // the headers and the status it was derived FROM are what a reader debugs
+    // with. It is not journaled — the log's codec keeps a message and nothing
+    // else (`workflow-replay-step.ts` says so) — so this is for the process
+    // that threw it, and `stepFetchOk` has already read the body by the time it
+    // gets here.
+    if (!isTransientStatus(cause.status)) return new FatalError(sentence, { cause });
+    return retryableError(sentence, retryAfter(cause), cause);
   }
   if (hasCarriedVerdict(cause)) return fromCarriedVerdict(cause, message);
   // No verdict is available, so none is invented — see this function's doc.
@@ -88,17 +95,18 @@ export function toStepError(cause: unknown, message?: string): Error {
  * down and one this function was PAYING when it read `cause instanceof
  * Response`.
  *
- * A `"use step"` body is bundled separately and executed in its own realm, and
- * the `fetch` it calls belongs to the HOST — so the response it is handed was
- * built by another realm's undici and `instanceof` against this realm's
- * `Response` is false. Measured inside a real step bundle under `aai dev`:
+ * A step's HTTP goes through the `stepFetch` SLOT, and the host publishes an
+ * implementation built on the `undici` PACKAGE — whose `Response` is a
+ * different class from `globalThis.Response`, even in one realm. So the
+ * response a step is handed does not satisfy `instanceof Response` against the
+ * binding this module can see. Measured under `aai dev`:
  * `{ instanceofResponse: false, ctor: "Response", realmTag: "[object Response]",
- * globalResponseIsSame: true }` — the object IS a response, the binding IS the
- * realm's global, and the two realms simply never meet.
+ * globalResponseIsSame: true }` — the object IS a response, the global binding
+ * IS the same one, and the two constructors still never meet.
  *
  * What that cost is the whole of this module's job, silently: every `Response`
  * fell through to the unclassifiable arm and came back a plain `Error`, which
- * the DevKit retries with its own one-second default. Both of the two things
+ * the engine retries with its own one-second default. Both of the two things
  * this function exists to decide were therefore inert in production, measured
  * against a stub far side through a real step bundle:
  *
@@ -141,7 +149,7 @@ type CarriedVerdict = {
  *
  * The shape IS the contract, which is what lets a fourth SDK error join by
  * having these fields rather than by earning another branch. Structural is also
- * the only thing that WORKS here: `toStepError` runs inside `"use step"` bodies,
+ * the only thing that WORKS here: `toStepError` runs inside step bodies,
  * where an error can arrive rehydrated from the durable journal with no
  * prototype — an `instanceof` chain silently misses those and a
  * `retryable: false` refusal comes back out as retryable. `step-errors.ts` made
@@ -158,8 +166,13 @@ function hasCarriedVerdict(cause: unknown): cause is CarriedVerdict {
 
 function fromCarriedVerdict(cause: CarriedVerdict, message: string | undefined): Error {
   const sentence = message ?? cause.message;
-  if (!cause.retryable) return new FatalError(sentence);
-  return retryableError(sentence, cause.retryAfter);
+  // Carrying the original is the whole difference between "the gateway refused
+  // this" and a stack pointing at this line: the causes reaching here are the
+  // SDK's own errors, each with the far side's detail on it, and `message`
+  // routinely replaces their sentence — which is exactly when dropping them
+  // loses everything.
+  if (!cause.retryable) return new FatalError(sentence, { cause });
+  return retryableError(sentence, cause.retryAfter, cause);
 }
 
 /**
@@ -167,13 +180,14 @@ function fromCarriedVerdict(cause: CarriedVerdict, message: string | undefined):
  *
  * The form a `.catch()` takes, which is the shape both LLM templates want:
  * `stepGenerate` rejects with a `StepGenerateError` and the step wants
- * that classified before it reaches the DevKit.
+ * that classified before it reaches the engine.
  *
  * It is a function taking the cause as an ARGUMENT rather than a `throw` inside
- * a `catch` block, and that is mechanical rather than stylistic: `FatalError`
- * takes only a message — no `cause` — so constructing one directly inside a
- * `catch` trips Biome's `useErrorCause` with no way to satisfy it. Here nothing
- * is being swallowed, because the original is what was passed in.
+ * a `catch` block, and that is mechanical rather than stylistic: what Biome's
+ * `useErrorCause` asks of an error constructed inside a `catch` is that it carry
+ * the one being handled, and a call site cannot forget to do that here — the
+ * cause is the first parameter, and both of these attach it. Nothing is being
+ * swallowed either way: the original is what was passed in.
  *
  * @example
  * ```ts
@@ -181,7 +195,6 @@ function fromCarriedVerdict(cause: CarriedVerdict, message: string | undefined):
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  *
  * export async function summarize(text: string): Promise<string> {
- *   "use step";
  *   return await stepGenerate(text, { system: "Summarize in two sentences." }).catch(
  *     throwStepError,
  *   );
@@ -195,7 +208,7 @@ export function throwStepError(cause: unknown, message?: string): never {
 }
 
 /**
- * Stop the DevKit retrying: throw a `FatalError` whatever the cause was.
+ * Stop the engine retrying: throw a `FatalError` whatever the cause was.
  *
  * For the failure a step has DECIDED is terminal on grounds no status code
  * carries — a missing API key, a recording in a format the step cannot cut.
@@ -224,7 +237,14 @@ export function throwStepError(cause: unknown, message?: string): never {
  * @public
  */
 export function throwFatalStepError(cause: unknown, message?: string): never {
-  throw new FatalError(message ?? errorMessage(cause));
+  // `cause` and not only its sentence, which is what a journaled failure and a
+  // log line are read from: a step written the documented way —
+  // `catch (err) { return throwFatalStepError(err); }` — otherwise reported one
+  // sentence with the stack and the chain under it thrown away, and the
+  // original's own `cause` with them. It is attached rather than merely
+  // MENTIONED because `message` routinely replaces the cause's sentence, which
+  // is the case where dropping it loses everything.
+  throw new FatalError(message ?? errorMessage(cause), { cause });
 }
 
 /**
@@ -238,9 +258,13 @@ export function throwFatalStepError(cause: unknown, message?: string): never {
  *
  * Note what "no delay" means downstream: the class does not leave `retryAfter`
  * unset, it defaults it to **one second from now**. So omitting a known
- * `Retry-After` is not "let the DevKit decide" so much as "retry in a second",
+ * `Retry-After` is not "let the engine decide" so much as "retry in a second",
  * which is exactly the behaviour a rate limit punishes.
+ *
+ * `cause` goes through the same helper for the same reason, and every caller
+ * passes one: an error that names only its sentence is the thing this module
+ * kept producing.
  */
-function retryableError(message: string, at: Date | undefined): RetryableError {
-  return new RetryableError(message, omitUndefined({ retryAfter: at }));
+function retryableError(message: string, at: Date | undefined, cause?: unknown): RetryableError {
+  return new RetryableError(message, omitUndefined({ retryAfter: at, cause }));
 }

@@ -30,8 +30,10 @@ order, roughly by what a spec reaches for first:
   SUBAGENT concluded, without running one.
 - `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
-  slots a `"use step"` body reaches through, each answered in memory.
-- `testing-workflows.ts` — run snapshots and progress streams, for a page.
+  slots a step reaches through, each answered in memory.
+- `testing-workflows.ts` — run snapshots and progress streams, for a page;
+  `testing-workflow-ctx.ts` — `createWorkflowCtx`, the `ctx` a workflow BODY
+  takes, which nothing else can hand it.
 
 ## Functions
 
@@ -221,6 +223,37 @@ test("recommend pushes its picks to the client", async () => {
 
 ***
 
+### createWorkflowCtx()
+
+```ts
+function createWorkflowCtx(options?: WorkflowCtxOptions): WorkflowCtxRecorder;
+```
+
+Build a `WorkflowCtx` that runs a body and records what it asked for.
+
+#### Parameters
+
+##### options?
+
+[`WorkflowCtxOptions`](#workflowctxoptions)
+
+#### Returns
+
+[`WorkflowCtxRecorder`](#workflowctxrecorder)
+
+#### Example
+
+```ts no-check
+const ctx = createWorkflowCtx();
+const output = await digestFlow({ url: "https://example.com/a" }, ctx);
+
+expect(output.headline).toBe("…");
+expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
+expect(ctx.slept).toEqual([{ until: 10_000 }]);
+```
+
+***
+
 ### deployedAgent()
 
 ```ts
@@ -238,10 +271,14 @@ export measures an agent with NO TOOLS and the FRAMEWORK-DEFAULT system
 prompt. Nothing fails: the model answers plausibly out of its own knowledge,
 every case that asserts a sentence still passes, and the suite reports green
 on a different agent than the one anybody deploys. It produced four bogus
-green eval results in one day, and the two nested wrappers it replaces —
-`withSystemPrompt(withDiscoveredTools(authored, glob), prompt)`, written out
-in seventeen template evals — are exactly the shape where one of the two goes
-missing under an edit.
+green eval results in one day, and the two nested wrappers it replaces — a
+tools lowering inside a prompt lowering, written out in seventeen template
+evals — are exactly the shape where one of the two goes missing under an edit.
+
+**Under vitest, prefer `import agentDef from "virtual:aai/agent"`**, which is
+this call made for you against the importing spec's own directory (see the
+module doc). Reach for this one when the runner is not vitest, or when the
+lowering itself is the subject of the spec.
 
 **An EMPTY `tools` glob throws.** That is the same bug wearing its other
 face: `import.meta.glob("./tool/*.ts")` (or a `tools/` directory that moved)
@@ -250,8 +287,11 @@ not lowering at all. A project with no tools omits the field instead, which
 is a statement rather than an accident.
 
 ```ts no-check
-// `no-check`: import.meta.glob is a Vite transform, so it only type-checks in
-// a project whose tsconfig has vite/client types — i.e. yours, not here.
+// `no-check`: two of these imports are files YOU own — `./agent.ts` and
+// `./system-prompt.md?raw` — which exist in your project and in no tree of
+// ours, so nothing here can resolve them. (`import.meta.glob` is not the
+// blocker: the doc-example gate compiles against the scaffold's own
+// `global.d.ts`, which carries `/// <reference types="vite/client" />`.)
 import { deployedAgent } from "@alexkroman1/aai/testing";
 import authored from "./agent.ts";
 import systemPrompt from "./system-prompt.md?raw";
@@ -506,8 +546,10 @@ When the agent declares no tool called `name` (see `toolOf`), when
 
 #### Example
 
-```ts no-check
-import { parseToolInput, withDiscoveredTools } from "@alexkroman1/aai/testing";
+```ts
+import agentDef from "virtual:aai/agent";
+import { parseToolInput } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
 
 const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza", {
   size: "small",
@@ -538,9 +580,10 @@ would be testing a path the tool never runs on. Pass the arguments the tool
 body expects to receive. (To test the SCHEMA itself, which is a different
 question, use `parseToolInput` / `toolInputIssues`.)
 
-The def to pass is the one a DEPLOYED agent runs — `agent.ts`'s default export
-put through `withDiscoveredTools`, since a tool is a file and the authored def
-carries none. See [toolOf](#toolof), which this is built on.
+The def to pass is the one a DEPLOYED agent runs — `virtual:aai/agent` under
+vitest, or `deployedAgent` under any other runner, since a tool is a file and
+`agent.ts`'s default export carries none. See [toolOf](#toolof), which this is
+built on.
 
 **A tool that takes no arguments may say so by leaving them out**, passing the
 context in their place: `runTool(agentDef, "view_order", ctx)`. A no-argument
@@ -586,12 +629,10 @@ The context. Defaults to a fresh [createToolContext](#createtoolcontext) — so
 
 #### Example
 
-```ts no-check
-// `no-check`: import.meta.glob needs your project's vite/client types.
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
-import authored from "./agent.ts";
-
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+```ts
+import agentDef from "virtual:aai/agent";
+import { createToolContext, runTool } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
 
 expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
   added: "apple",
@@ -870,7 +911,7 @@ const model = stubGenerate({ object: { steps: ["Only step"] } });
 function stubReporter(): StubReporter;
 ```
 
-Capture what a `"use step"` function narrates and emits.
+Capture what a step narrates and emits.
 
 `report()` and `emit()` both go through a published slot, and with nothing
 published they fall back to the console — which is right for a step under test
@@ -935,7 +976,7 @@ function stubStepFetch(answer?: (request: StubStepRequest) =>
   | Promise<StubStepAnswer>): StubStepFetch;
 ```
 
-Publish a fake `stepFetch`, so a `"use step"` function's HTTP can be asserted
+Publish a fake `stepFetch`, so a step's HTTP can be asserted
 without a server and without stubbing a global.
 
 A step's outbound call goes through a process-wide slot rather than
@@ -1050,7 +1091,7 @@ await expect(transcribeSegment("upl_1", segment)).rejects.toBeInstanceOf(Retryab
 function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 ```
 
-Publish an in-memory upload store, so a `"use step"` function that calls
+Publish an in-memory upload store, so a step that calls
 `readUpload` can be tested without a server.
 
 A step reads uploads through a process-wide slot rather than dialling
@@ -1161,9 +1202,11 @@ function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>
 The tool `name` is declared under, or a throw naming the ones that are.
 
 A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
-pass it through `withDiscoveredTools` first, exactly as this example does and
-as every shipped template's spec does. Handing this the authored def directly
-is the common mistake, and it fails with "(none)".
+import the agent as DEPLOYED, exactly as this example does and as every
+shipped template's spec does: `virtual:aai/agent` under vitest, or
+`deployedAgent` (`@alexkroman1/aai/testing`) under any other runner. Handing
+this the authored def directly is the common mistake, and it fails with
+"(none)".
 
 #### Parameters
 
@@ -1181,12 +1224,10 @@ is the common mistake, and it fails with "(none)".
 
 #### Example
 
-```ts no-check
-// `no-check`: import.meta.glob needs your project's vite/client types.
-import { toolOf, withDiscoveredTools } from "@alexkroman1/aai/testing";
-import authored from "./agent.ts";
-
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+```ts
+import agentDef from "virtual:aai/agent";
+import { toolOf } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
 
 expect(toolOf(agentDef, "add_item").description).toContain("cart");
 ```
@@ -1241,12 +1282,11 @@ second call is meant to see the first call's work — see [runTool](#runtool).
 
 #### Example
 
-```ts no-check
-// `no-check`: import.meta.glob needs your project's vite/client types.
-import { createToolContext, toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
-import authored from "./agent.ts";
+```ts
+import agentDef from "virtual:aai/agent";
+import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
 
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
 const run = toolRunner(agentDef);
 
 expect(await run("add_item", { item: "apple" })).toEqual({ added: "apple" });
@@ -1447,7 +1487,7 @@ optional status?: number;
 ```
 
 HTTP status to answer with. Defaults to 200. A non-2xx answers with an
-error body, which is what `stepGenerate` (`@alexkroman1/aai/utils`)
+error body, which is what `stepGenerate` (`@alexkroman1/aai/step`)
 quotes back in its `StepGenerateError`.
 
 ***
@@ -1587,6 +1627,64 @@ SITE — see the module doc for why it cannot be a directory string.
 
 Omit it for a project with no `tools/` directory. Passing an EMPTY glob is
 an error, not a no-op: see [deployedAgent](#deployedagent).
+
+***
+
+### RecordedSleep
+
+```ts
+type RecordedSleep = {
+  correlationId?: string;
+  until: number | Date;
+};
+```
+
+One wait the body asked for — and did NOT take.
+
+#### Properties
+
+##### correlationId?
+
+```ts
+optional correlationId?: string;
+```
+
+##### until
+
+```ts
+until: number | Date;
+```
+
+Exactly what the body passed: milliseconds, or a `Date`.
+
+***
+
+### RecordedStep
+
+```ts
+type RecordedStep = {
+  maxAttempts?: number;
+  name: string;
+};
+```
+
+One step the body reached, as the recorder saw it.
+
+#### Properties
+
+##### maxAttempts?
+
+```ts
+optional maxAttempts?: number;
+```
+
+What the body asked for, or `undefined` when it passed no options.
+
+##### name
+
+```ts
+name: string;
+```
 
 ***
 
@@ -2642,6 +2740,124 @@ that binds it.
 #### Returns
 
 `Promise`\<`unknown`\>
+
+***
+
+### WorkflowCtxOptions
+
+```ts
+type WorkflowCtxOptions = {
+  hooks?: Record<string, unknown>;
+  results?: Record<string, unknown>;
+  runId?: string;
+  runSteps?: boolean;
+  workflow?: string;
+};
+```
+
+What [createWorkflowCtx](#createworkflowctx) takes.
+
+#### Properties
+
+##### hooks?
+
+```ts
+optional hooks?: Record<string, unknown>;
+```
+
+Payloads for `ctx.waitFor`, by token.
+
+A token that is absent THROWS rather than hanging, because a spec that hangs
+reports a timeout naming the runner instead of the missing payload.
+
+##### results?
+
+```ts
+optional results?: Record<string, unknown>;
+```
+
+Results to answer particular steps with, by step NAME.
+
+Takes precedence over running the step, so it works in both modes: with
+`runSteps: true` it stubs one expensive step and leaves the rest real, and
+with `runSteps: false` it is what makes a body whose control flow READS its
+steps drivable at all — `planAngles` returning `undefined` otherwise reaches
+the fan-out below it as a missing list.
+
+Keyed by name rather than by occurrence: a step in a loop is one name, and a
+spec that needs the iterations to differ wants `runSteps: true` with the
+collaborator stubbed instead.
+
+##### runId?
+
+```ts
+optional runId?: string;
+```
+
+Defaults to `"wrun_test"`.
+
+##### runSteps?
+
+```ts
+optional runSteps?: boolean;
+```
+
+Run each step's `fn`, or only record that it was reached.
+
+Defaults to `true`, which is what makes this drive a REAL body. Pass `false`
+when the subject is the policy or the order — a step that is not run needs
+no collaborator stubbed, so such a spec stays short.
+
+Note a recorded-only step resolves `undefined`, so a body that reads its
+result will see one. That is the honest cost of not running it.
+
+##### workflow?
+
+```ts
+optional workflow?: string;
+```
+
+The declared key. Defaults to `"test"`.
+
+***
+
+### WorkflowCtxRecorder
+
+```ts
+type WorkflowCtxRecorder = WorkflowCtx & {
+  slept: RecordedSleep[];
+  steps: RecordedStep[];
+  waited: string[];
+};
+```
+
+What [createWorkflowCtx](#createworkflowctx) answers: a real `WorkflowCtx` plus its log.
+
+#### Type Declaration
+
+##### slept
+
+```ts
+readonly slept: RecordedSleep[];
+```
+
+Every `ctx.sleep`, in order.
+
+##### steps
+
+```ts
+readonly steps: RecordedStep[];
+```
+
+Every step reached, in the order the body reached them.
+
+##### waited
+
+```ts
+readonly waited: string[];
+```
+
+Every token `ctx.waitFor` was called with, in order.
 
 ## Variables
 

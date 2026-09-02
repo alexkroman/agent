@@ -389,12 +389,6 @@ export const APP_DB_POOL_MAX = 3;
 // @public
 export const APP_DB_PRESENCE_LOCK = 1;
 
-// @public
-export const APP_DB_WORLD_POOL_MAX = 4;
-
-// @public
-export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
-
 // @internal
 export function asDispatcher(agent: Agent): FetchDispatcher;
 
@@ -1005,6 +999,9 @@ export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 export function isPrivateIp(ip: string): boolean;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -1059,9 +1056,6 @@ type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
 };
-
-// @internal
-export const MISSING_WORKFLOW_ID_MESSAGE: string;
 
 // @public
 export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
@@ -1179,6 +1173,9 @@ export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 
 // @internal
 export function publishStepReporter(reporter: StepReporter | undefined): void;
+
+// @internal
+export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void;
 
 // @internal
 export function publishUploadReader(reader: UploadAccess | undefined): void;
@@ -1321,10 +1318,15 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 type SessionMode = "s2s" | "pipeline" | "text";
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
+export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
 
 // @internal
-type SleepOptions = {
+type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
@@ -1405,10 +1407,16 @@ type StartOptions = {
 export const STEP_FETCH_CONNECTIONS = 64;
 
 // @internal
+export const STEP_FETCH_INACTIVITY_MS = 600000;
+
+// @internal
 export const STEP_FETCH_KEEP_ALIVE_MS = 30000;
 
 // @internal
 export const STEP_FETCH_PIPELINING = 1;
+
+// @internal
+export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE: string;
 
 // @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
@@ -1421,11 +1429,19 @@ type StepFetchInit = {
     signal?: AbortSignal | undefined;
 };
 
+// @public
+type StepOptions = {
+    maxAttempts?: number;
+};
+
 // @internal
 export type StepReporter = (chunk: unknown, options?: {
     namespace?: string | undefined;
     log?: boolean | undefined;
 }) => void | Promise<void>;
+
+// @internal
+export type StepWebhookMinter = (token: string) => string;
 
 // @public
 type StreamOptions = {
@@ -1559,7 +1575,7 @@ type ToolSchema = {
 };
 
 // @public
-export function toToolJsonSchema(schema: StandardSchemaV1): JSONSchema7;
+export function toToolJsonSchema(schema: StandardSchemaV1, io?: "input" | "output"): JSONSchema7;
 
 // @internal
 export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
@@ -1680,14 +1696,17 @@ export type UploadWriter = {
 };
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -1708,6 +1727,16 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public
@@ -1883,6 +1912,9 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T ex
 } : T;
 
 // @public
+export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
+
+// @public
 export const DEFAULT_SYSTEM_PROMPT: "You are a voice agent in a real-time spoken conversation. What you\nreceive is a live speech transcript, and everything you write will be\nspoken aloud by a text-to-speech system and shown as plain text.\nAgent-specific instructions may follow these defaults. They decide WHAT\nyou do — policy, persona, scope, what to collect and when — and they win\non all of it. They do not change how this channel works: the LISTENING\nand SPEAKING sections below are facts about a live transcript and a\nreal-time voice, not preferences, and they hold whatever a later\ninstruction says. When a later instruction asks for something those\nfacts make useless — most often asking the caller to repeat or spell\nsomething you already have — honour what it is trying to achieve and\nfollow the section's method for achieving it.\n\n## PERSONALITY\n- Unless the agent's instructions say otherwise: warm, calm, and\n  competent. Sound like a capable person, not a phone tree.\n\n## SPEAKING\n- Keep the whole reply to two sentences, about thirty spoken words.\n  Going long is the single most expensive habit on a phone call: the\n  longer you talk, the more likely the caller cuts in, and everything\n  after that point is never heard.\n- Your FIRST sentence is at most eight words and carries the answer or\n  the next question — never a preface, an acknowledgment, or a\n  restatement of what the caller just said.\n  Too long: \"Thanks for that. I will look up your account now. I found\n  your account, and I can see two orders on it.\"\n  Say instead: \"Found your account. Two orders — which has the water\n  bottle?\"\n- Write exactly as you would say it out loud to a friend. Contractions\n  sound better spoken (\"I'll\", \"it's\", \"don't\"). No markdown, bullet\n  points, code, headings, emoji, stage directions, or sound effects —\n  none of it can be spoken.\n- When the caller asks HOW MANY, lead with the number that answers what\n  they asked — how many records actually match their question, not how\n  big the list you looked at was. Leave the ones that don't qualify out\n  of the number and never make the caller do the subtraction; a total\n  plus an exclusion is not an answer.\n  Asked \"how many can I still pick from?\": say \"Ten to choose from.\"\n  Not: \"There are twelve, and two are out.\"\n- To list things, say \"First,\" \"Next,\" \"Finally.\" Never read out a long\n  list: give the count that matches what they asked for, name at most\n  two, and ask which one they mean (\"Five items on that order — the\n  headphones and the vacuum, plus three more. Which one?\").\n- Say numbers, amounts, and dates the way a person says them (\"one\n  hundred fifty-four dollars, on March third\"). An IDENTIFIER is the\n  exception, and the rule for it is all-or-nothing: any code that mixes\n  letters and digits, or that is not a word, is spoken one character at\n  a time from end to end.\n  Right: \"A-B-C-one-two-three.\"\n  Wrong: \"ABC one hundred twenty three\" — the letters spelled and the\n  digits read as a number is the common failure, and it is unusable:\n  the caller cannot tell \"123\" from \"one two three\" from \"one twenty\n  three\".\n  Wrong: \"Delive\" — a code is never pronounced as if it were a word.\n  When a quantity sits next to a code, put the unit between them, or\n  they run together into one unsayable token: \"two of K-two\", never\n  \"two K two\".\n- Speak the language the caller is speaking. Switch only when they do —\n  never on your own.\n- Ask at most one question per turn, and make it the one that unblocks\n  the most.\n- Vary your openers — don't start consecutive replies with the same\n  acknowledgment. If the caller interrupts, stop and address what they\n  said.\n- Never verbalize internal reasoning, tool names, system mechanics, or\n  technical failures.\n\n## LISTENING\n- The transcript carries fillers, pauses, false starts, and\n  self-corrections. Read through the noise to the caller's final intent\n  and act on it. When they correct themselves (\"Boston... actually,\n  Chicago\"), use only the last value.\n- Respond only to speech directed at you. If a turn is empty, garbled,\n  or clearly background noise or a side conversation, say briefly that\n  you didn't catch that — never act on it. Otherwise act on your best\n  understanding rather than stalling.\n- Take a value the way a person says it, in one piece, and TRY it before\n  asking for it spelled. A spelling request costs a full round trip and\n  transcribes no better: spelled letters lose their word boundaries and\n  lose their tail to a pause, a cough, or a breath, which reads as a\n  valid value and is not. If the caller volunteers something you didn't\n  ask for, use it; never re-collect what you already have in another\n  form.\n- Write spoken identifiers in their normal written form, not as they\n  were said. Drop spoken separators (\"K dash 2\" is K2, \"P dash five\n  dash two\" is P52), join spelled-out characters (\"A B C one two three\"\n  is ABC123), and add nothing the caller did not say (\"Z K 3 F F W\" is\n  ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in\n  ordinary title case (Maria Garza, not MARIA GARZA).\n- Don't read spelled input back letter by letter — it's slow and\n  invites interruption. Confirm briefly and move on (\"Okay, Yusuf\n  Rossi, ZIP 1-9-1-2-2 — one moment\"). Re-spell a single character only\n  to resolve a genuine ambiguity (\"Was that F or S?\"). The one time to\n  read an identifier back in full is right before an action that's hard\n  to undo.\n\n## TOOLS\n- Never fabricate. If you don't know something, look it up with a tool;\n  if no tool can answer it, say so. Never state data from memory that a\n  tool can retrieve: every confirmation number, price, total, seat, or\n  other detail you speak must come from a tool result.\n- Act first, ask second: if the caller's words contain everything a\n  tool needs, call it immediately. Ask only when a required value is\n  genuinely missing — and never fill one with a placeholder or a guess.\n  A date, time, or priority the caller hasn't stated is theirs to give,\n  not yours to pick.\n- Report RESULTS, never intentions. Don't announce what you're about\n  to do — the caller can't act on a plan, and each announcement is\n  another sentence they can interrupt. Stay silent while the calls run\n  and speak once you have the answer.\n  Wrong: \"I will look up your account now. I found your account. I\n  will check that order now.\"\n  Right: nothing, until the calls are done — then: \"Your order's\n  delivered. Both items can be exchanged.\"\n- Never say an action is done unless a tool call returned success for\n  it. Announcing an action is not performing it: if you say you're\n  looking up, booking, changing, or cancelling something, make the\n  matching tool call in that same turn. Carrying something over (a\n  seat, a bag allowance, a preference) is itself an action — it needs\n  its own tool call and doesn't happen because a related call\n  succeeded.\n- Copy values from prior tool results exactly. Never retype, reformat,\n  or construct an ID from a pattern — if you don't have it, look it up\n  first, then use it.\n- The same rule covers MONEY and COUNTS, and it is the one most often\n  broken: speak the figure from the field that holds it. A total you\n  worked out yourself is a total you invented, and the caller acts on\n  it.\n- A lookup that fails on a spoken value is a MIS-HEARING until proven\n  otherwise, not a missing record. Before you say a word about it, work\n  this list in order and stop at the first step that succeeds:\n  1. Re-read the conversation. If the caller gave this value more than\n     once, or you said it back and they agreed, retry EACH earlier\n     version before anything else. An earlier turn is evidence you\n     already hold, not history.\n  2. Retry the plausible confusions of what you have — F/S, B/P/V,\n     D/G/T, M/N, and a missing or doubled final letter.\n  3. Retry with a different identifier you already hold. Digits\n     transcribe better than names — prefer a number when one is\n     accepted.\n  4. Only now ask the caller, and ask for something DIFFERENT: a new\n     identifier, or the single character you're unsure of (\"M as in\n     Mike?\"). Asking for the same value again produces the same\n     transcript, so it is never step one and never repeats.\n  When every identifier is exhausted, say what you can still do.\n- On a tool error, read the message. Fix the specific problem and retry\n  once with something actually different — never resend arguments that\n  already failed, and never pretend a failed call succeeded. If it\n  still fails or returns nothing, don't mention tools, APIs, or errors:\n  say plainly what you couldn't get and offer a next step.\n- Finish the whole request, ACROSS TURNS. When the caller asks for\n  several things, keep the ones you haven't answered and come back to\n  them the moment you can — a question they had to repeat is a question\n  you dropped. If one has to wait on a step in progress, say so in a\n  clause rather than letting it fall away. Never stop halfway and ask\n  \"shall I continue?\".\n- Before an action that's hard to undo, state what you're about to do\n  and get a clear yes. When the caller's request already says exactly\n  what to do, that request is the authorization — execute it.\n- Any number you are about to say that you worked out yourself — a\n  count, a total, a difference, a date offset — comes from enumerating\n  the records one at a time, or from a calculator tool if one exists.\n  Counting how many records meet a condition is arithmetic. A number\n  you did not enumerate is a guess; don't say it.\n- If the caller questions a number or a fact you already gave, re-derive\n  it from the tool result before answering, and say the corrected value\n  plainly. Your own previous reply is not a source, and agreeing with\n  yourself is not confirming. Call the tool again if the record no\n  longer covers it.\n- If you're stuck after exhausting the retries above, say so, offer what\n  you can do instead, and hand off if a transfer or escalation tool\n  exists.";
 
 // @public
@@ -2047,6 +2079,9 @@ export function isRecord(value: unknown): value is Record<string, unknown>;
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
 
+// @public
+export function isWorkflowSuspend(value: unknown): boolean;
+
 // @public (undocumented)
 export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
     readonly size: number;
@@ -2063,6 +2098,9 @@ export class KeyedLockTimeoutError extends Error {
     // (undocumented)
     readonly key: string;
 }
+
+// @public
+type Literal<S extends string> = string extends S ? never : S;
 
 // @public
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -2296,6 +2334,10 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -2443,6 +2485,11 @@ type SilenceNudgeParams = {
 type SilencePromptWithoutTimeoutMisuse = "`silencePrompt` is the instruction injected when `silenceTimeoutMs` elapses — with no timeout nothing ever injects it; set `silenceTimeoutMs`, or remove `silencePrompt`";
 
 // @public
+export type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 export type SlotHolder = {
     readonly slots: SlotStore;
     readonly sessionId: string;
@@ -2527,6 +2574,11 @@ type StaticAgentParamsCore = Omit<SharedAgentParams, WorkflowAppOnlyField | Fron
 
 // @public
 type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
+
+// @public
+export type StepOptions = {
+    maxAttempts?: number;
+};
 
 // @public
 type StreamOptions = {
@@ -2625,6 +2677,11 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
+export type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -2645,9 +2702,7 @@ type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow
 type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 export type WorkflowClient = {
@@ -2668,6 +2723,16 @@ export type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+export type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public
@@ -2733,12 +2798,6 @@ export const APP_DB_POOL_MAX = 3;
 
 // @public
 export const APP_DB_PRESENCE_LOCK = 1;
-
-// @public
-export const APP_DB_WORLD_POOL_MAX = 4;
-
-// @public
-export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
 
 // @internal
 export function capToolResult(result: string): string;
@@ -2892,6 +2951,9 @@ export function isTextAssetPath(assetPath: string): boolean;
 export function linkConfirmationCode(code: string): string;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 
 // @public
@@ -2920,9 +2982,6 @@ export const MIC_SEND_MAX_BUFFERED_BYTES: number;
 
 // @internal
 export const MIC_SILENCE_PROBE_MS = 1500;
-
-// @internal
-export const MISSING_WORKFLOW_ID_MESSAGE: string;
 
 // @public
 export function normalizeSpeechText(text: string): string;
@@ -2995,10 +3054,15 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
+export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
 
 // @internal
-export type SleepOptions = {
+export type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
@@ -3042,6 +3106,11 @@ type StartOptions = {
 };
 
 // @public
+type StepOptions = {
+    maxAttempts?: number;
+};
+
+// @public
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
@@ -3066,6 +3135,11 @@ type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 export const VALID_SLUG_RE: RegExp;
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -3073,10 +3147,11 @@ type WakeUpOptions = {
 // @public
 export const WORKFLOW_API_PREFIX = "/workflows";
 
+// @internal
+export const WORKFLOW_SUSPEND_BRAND: unique symbol;
+
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -3097,6 +3172,16 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public
@@ -3457,6 +3542,9 @@ export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -3596,6 +3684,10 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -3703,6 +3795,11 @@ type SessionEventType = SessionEvent["type"];
 export type SessionMode = "s2s" | "pipeline" | "text";
 
 // @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
@@ -3752,6 +3849,11 @@ interface StateProjection<V = unknown> {
     readonly create: () => unknown;
     readonly key: string;
 }
+
+// @public
+type StepOptions = {
+    maxAttempts?: number;
+};
 
 // @public
 type StreamOptions = {
@@ -3845,6 +3947,11 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -3858,9 +3965,7 @@ export function withTools<D extends {
 }>(def: D, registry: ToolRegistry): D;
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -3881,6 +3986,16 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public
@@ -4173,6 +4288,10 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -4386,6 +4505,9 @@ export type ReadUploadOptions = {
 export function report(line: string): Promise<void>;
 
 // @public
+export function requireCompleteUpload(id: string): Promise<UploadInfo>;
+
+// @public
 export function requireStepEnv(name: string): string;
 
 // @public
@@ -4528,6 +4650,9 @@ export class StepTransportError extends Error {
 }
 
 // @public
+export function stepWebhookUrl(token: string): string;
+
+// @public
 export function stripJsonFence(reply: string): string;
 
 // @public
@@ -4605,6 +4730,13 @@ export type Transcript = {
 };
 
 // @public
+export class UploadIncompleteError extends Error {
+    constructor(message: string, stored: number);
+    readonly retryable = false;
+    readonly stored: number;
+}
+
+// @public
 export type UploadInfo = {
     id: string;
     name: string;
@@ -4678,7 +4810,32 @@ interface ChannelSection {
 }
 
 // @public
+export const DEFAULT_RETRY_DELAY_MS = 1000;
+
+// @public
+export class FatalError extends Error {
+    constructor(message: string, options?: {
+        cause?: unknown;
+    });
+    readonly fatal = true;
+    static is(value: unknown): value is FatalError;
+}
+
+// @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export class RetryableError extends Error {
+    constructor(message: string, options?: RetryableErrorOptions);
+    static is(value: unknown): value is RetryableError;
+    readonly retryAfter: Date;
+}
+
+// @public
+export type RetryableErrorOptions = {
+    retryAfter?: number | Date;
+    cause?: unknown;
+};
 
 // @public
 export function sendToChannelClassified(channel: Channel, message: ChannelMessage): Promise<string>;
@@ -4999,6 +5156,9 @@ export function createStubWorkflows(overrides?: Partial<WorkflowClient>): Workfl
 export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 
 // @public
+export function createWorkflowCtx(options?: WorkflowCtxOptions): WorkflowCtxRecorder;
+
+// @public
 type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @public
@@ -5069,6 +5229,9 @@ type GenerateResult = {
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -5115,6 +5278,18 @@ interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+export type RecordedSleep = {
+    until: number | Date;
+    correlationId?: string | undefined;
+};
+
+// @public
+export type RecordedStep = {
+    name: string;
+    maxAttempts?: number | undefined;
+};
 
 // @public
 export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
@@ -5228,6 +5403,10 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -5332,6 +5511,11 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 type SessionEventType = SessionEvent["type"];
 
 // @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
@@ -5381,6 +5565,11 @@ interface StateProjection<V = unknown> {
     readonly create: () => unknown;
     readonly key: string;
 }
+
+// @public
+type StepOptions = {
+    maxAttempts?: number;
+};
 
 // @public
 type StreamOptions = {
@@ -5696,14 +5885,17 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -5724,6 +5916,32 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public
+export type WorkflowCtxOptions = {
+    runId?: string;
+    workflow?: string;
+    runSteps?: boolean;
+    results?: Record<string, unknown>;
+    hooks?: Record<string, unknown>;
+};
+
+// @public
+export type WorkflowCtxRecorder = WorkflowCtx & {
+    readonly steps: RecordedStep[];
+    readonly slept: RecordedSleep[];
+    readonly waited: string[];
 };
 
 // @public
@@ -5826,6 +6044,9 @@ export function installStubTranscribe(options?: StubTranscribeOptions): StubTran
 export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export function mockWorkflows(options?: MockWorkflowsOptions): WorkflowClient;
 
 // @public
@@ -5834,6 +6055,11 @@ export type MockWorkflowsOptions = {
     names?: readonly string[];
     runId?: string;
     lastLine?: unknown;
+};
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
 };
 
 // @public
@@ -5872,6 +6098,11 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 type StartOptions = {
     key?: string;
     notify?: boolean | string;
+};
+
+// @public
+type StepOptions = {
+    maxAttempts?: number;
 };
 
 // @public
@@ -6017,14 +6248,17 @@ type StubUploadWrite = {
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -6045,6 +6279,16 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public
@@ -6349,7 +6593,15 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
+
+// @public
+export type SleepOptions = {
+    correlationId?: string;
+};
 
 // @public
 interface StandardSchemaIssue {
@@ -6387,6 +6639,11 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 export type StartOptions = {
     key?: string;
     notify?: boolean | string;
+};
+
+// @public
+export type StepOptions = {
+    maxAttempts?: number;
 };
 
 // @public
@@ -6459,6 +6716,11 @@ export type UploadRef = {
 };
 
 // @public
+export type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 export type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -6498,7 +6760,7 @@ export type WorkflowApi = {
         fromIndex?: number;
         signal?: AbortSignal;
     }): AsyncIterable<unknown>;
-    wake(runId: string): Promise<number>;
+    wake(runId: string, options?: WakeUpOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     uploadInfo(id: string): Promise<UploadInfo>;
     download(id: string, options?: {
@@ -6514,9 +6776,7 @@ export type WorkflowApiClientOptions = {
 };
 
 // @public
-export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 export type WorkflowClient = {
@@ -6537,6 +6797,16 @@ export type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+export type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public
@@ -6717,16 +6987,6 @@ export type BuildWorkerOptions = {
     configFile?: false;
     plugins?: PluginOption[];
     runtime?: boolean;
-    workflows?: WorkflowBundleOutput | undefined;
-};
-
-// @public
-type WorkflowBundleOutput = {
-    workflowCode: string;
-    stepCode: string;
-    manifest: unknown;
-    inputFiles: readonly string[];
-    warnings: readonly string[];
 };
 ```
 
@@ -6742,7 +7002,7 @@ import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import { StepFetch } from '@alexkroman1/aai/host-internal';
@@ -7030,9 +7290,9 @@ import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
-import { StepFetch } from '@alexkroman1/aai/host-internal';
+import type { StepFetch } from '@alexkroman1/aai/host-internal';
 import type { ToolInputSchema } from '@alexkroman1/aai';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
@@ -7289,6 +7549,7 @@ import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 export { AgentEnv }
 
@@ -7298,6 +7559,7 @@ export type AgentRuntime = {
     shutdown(): Promise<void>;
     readonly readyConfig: ReadyConfig;
     readonly workflows?: WorkflowClient | undefined;
+    readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
     readonly sessionEvents?: SessionEventStream | undefined;
 };
 
@@ -7317,10 +7579,8 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
-    stepCode?: string | undefined;
     telephony?: boolean | undefined;
     uploadBroker?: string | undefined;
-    workflowCode?: string | undefined;
 }
 
 // @public
@@ -7413,6 +7673,8 @@ export type CreatePostgresDbOptions = {
     onNotice?: (notice: unknown) => void;
     connectTimeoutSeconds?: number;
     queryTimeoutMs?: number;
+    reservedQueryTimeoutMs?: number;
+    reserveTimeoutMs?: number;
 };
 
 // @public
@@ -7461,6 +7723,12 @@ export function ensureSessionStateSchema(opts: {
 }): Promise<boolean>;
 
 // @public
+export function ensureWorkflowJournalSchema(opts: {
+    url: string;
+    logger: Logger;
+}): Promise<boolean>;
+
+// @public
 type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
     type: T;
 }>;
@@ -7488,6 +7756,14 @@ type HeaderWebSocket = {
     }) => void): void;
 };
 
+// @public
+type HookRecord = {
+    token: string;
+    delivered: boolean;
+    payload?: unknown;
+    closed?: boolean;
+};
+
 export { HostCredentialEnv }
 
 // @internal
@@ -7511,6 +7787,29 @@ export type HttpUploadBlobsOptions = {
     serviceKey: string;
     bucket: string;
     fetch?: typeof globalThis.fetch | undefined;
+};
+
+// @public
+type JournalStore = {
+    createRun(record: RunRecord): Promise<void>;
+    getRun(runId: string): Promise<RunRecord | undefined>;
+    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
+    setStatus(runId: string, next: RunStatus, patch?: {
+        output?: unknown;
+        error?: {
+            message: string;
+        };
+    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    readSteps(runId: string): Promise<StepEntry[]>;
+    claimAttempt(runId: string, key: string): Promise<number>;
+    releaseAttempt(runId: string, key: string): Promise<void>;
+    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
+    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+    closeHook(runId: string, key: string): Promise<boolean>;
+    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
+    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
 };
 
 // @public
@@ -7634,7 +7933,29 @@ export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
 // @public
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
 
+// @public
+type ResumableRun = {
+    runId: string;
+    wakeAt?: number | undefined;
+};
+
 export { RunCodeExecutor }
+
+// @public
+type RunRecord = {
+    runId: string;
+    workflow: string;
+    status: RunStatus;
+    createdAt: number;
+    input: unknown;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+type RunStatus = WorkflowRunStatus;
 
 // @public
 export type Runtime = AgentRuntime & {
@@ -7655,6 +7976,7 @@ export type RuntimeOptions = {
     providerEnv?: ProviderEnv | undefined;
     db?: Db | undefined;
     workflows?: WorkflowClient | undefined;
+    journal?: JournalStore | undefined;
     createWebSocket?: CreateS2sWebSocket | undefined;
     createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
     publicUrl?: string | undefined;
@@ -7745,7 +8067,7 @@ export type SessionEventStream = {
 };
 
 // @public
-export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents">;
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow">;
 
 // @public
 export type SessionStartOptions = {
@@ -7807,6 +8129,14 @@ export type SessionWebSocket = {
 export type SkipGreeting = boolean | (() => boolean);
 
 // @public
+type SleepRecord = {
+    wakeAt: number;
+    woken: boolean;
+    correlationId?: string | undefined;
+    kind: "sleep" | "hookTimeout";
+};
+
+// @public
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, opts: {
     carrier: CarrierCodec;
     logger?: Logger;
@@ -7817,6 +8147,19 @@ export type StateSyncSession = {
     read(key: string): unknown;
     lastPush(): string | undefined;
     recordPush(json: string): void;
+};
+
+// @public
+type StepEntry = {
+    key: string;
+    name: string;
+    status: "ok" | "failed";
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    attempts: number;
+    finishedAt: number;
 };
 
 // @public
@@ -7836,13 +8179,6 @@ export { SttOpenOptions }
 export { SttSession }
 
 export { SttTurnMeta }
-
-// @public
-export type SweepSkip =
-/** Another pool holds presence, so its locks are live and not ours to clear. */
-"another-pool-is-live"
-/** Presence is ours and there was nothing locked. The healthy case. */
-| "no-orphaned-locks";
 
 // @public
 export const TELEPHONY_PATH = "/phone";
@@ -8004,6 +8340,7 @@ export type WdkRunRecord = {
     workflowName: string;
     status: "pending" | "running" | "completed" | "failed" | "cancelled";
     createdAt: Date | number;
+    output?: unknown;
     error?: {
         message: string;
     } | undefined;
@@ -8075,35 +8412,27 @@ import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
 import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @internal
 export function agentServerEnv(env: Record<string, string>): Record<string, string>;
 
 // @internal
-export function callPlatformStorage(opts: PlatformStorageOptions, method: string, args: readonly unknown[]): Promise<unknown>;
-
-// @internal
-export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;
-
-// @public
-type CloseableDb = Db & {
-    reserve(): Promise<ReservedDb>;
-    listen(channel: string, onNotify: () => void): Promise<() => void>;
-    close(): Promise<void>;
-};
-
-// @internal
-export function configureWorkflowWorld(opts: {
-    databaseUrl: string | undefined;
-    port: number;
-    dataDir?: string;
-    env?: NodeJS.ProcessEnv;
-}): WorldKind;
+export function applyWorkflowJournalDdl(opts: {
+    db: Db;
+    logger: Logger;
+}): Promise<boolean>;
 
 // @internal
 export const consoleLogger: Logger;
 
 export { CONTAINED_ENV }
+
+// @internal
+export function createMemoryJournal(): JournalStore;
+
+// @internal
+export function createPlatformJournal(opts: PlatformEndpoint): JournalStore;
 
 // @internal
 export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName: string, message: unknown, queueOpts?: {
@@ -8116,40 +8445,12 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName:
 }>;
 
 // @internal
-export function createPlatformStorage(opts: PlatformStorageOptions): {
-    runs: {
-        get: StorageFn;
-        list: StorageFn;
-    };
-    steps: {
-        get: StorageFn;
-        list: StorageFn;
-    };
-    events: {
-        create: StorageFn;
-        get: StorageFn;
-        list: StorageFn;
-        listByCorrelationId: StorageFn;
-    };
-    hooks: {
-        get: StorageFn;
-        getByToken: StorageFn;
-        list: StorageFn;
-    };
-};
+export function createPlatformStateBackend(opts: PlatformSessionStateOptions): SessionStateBackend;
 
 // @internal
-export function createPlatformStreamer(opts: PlatformStorageOptions): {
-    writeToStream: StorageFn;
-    writeToStreamMulti: StorageFn;
-    closeStream: StorageFn;
-    listStreamsByRunId: StorageFn;
-    getStreamChunks: StorageFn;
-    getStreamInfo: StorageFn;
-};
-
-// @internal
-export function createPlatformStreamReader(opts: PlatformStorageOptions): (name: string, startIndex?: number) => Promise<ReadableStream<Uint8Array>>;
+export function createPostgresJournal(opts: {
+    db: Db;
+}): JournalStore;
 
 // @internal
 export function createPostgresStateBackend(opts: {
@@ -8177,9 +8478,6 @@ export function createUploadStore(opts: {
     prefix?: string | undefined;
     maxBytes?: number | undefined;
 }): UploadStore;
-
-// @internal
-export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
 
 // @internal
 export function decodeStorageJson(text: string): unknown;
@@ -8227,12 +8525,19 @@ type ExecuteToolCallOptions = {
 };
 
 // @internal
-type FetchHandler = (req: Request) => Promise<Response>;
-
-// @internal
-export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
+export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
+    logger?: Logger | undefined;
+    deliver?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
 }): boolean;
+
+// @public
+type HookRecord = {
+    token: string;
+    delivered: boolean;
+    payload?: unknown;
+    closed?: boolean;
+};
 
 // @internal
 type HostGenerateFn = (options: GenerateOptions, callOpts?: {
@@ -8241,6 +8546,49 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 
 // @internal
 export function isPathInside(dir: string, target: string): boolean;
+
+// @public
+type JournalArm = {
+    label: string;
+    journal: () => JournalStore;
+    uid: () => string;
+    resumable: boolean;
+};
+
+// @public
+export type JournalConformanceSuite = {
+    journalConformance: (arm: JournalArm) => void;
+    journalIds: (label: string) => () => string;
+};
+
+// @public
+type JournalStore = {
+    createRun(record: RunRecord): Promise<void>;
+    getRun(runId: string): Promise<RunRecord | undefined>;
+    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
+    setStatus(runId: string, next: RunStatus, patch?: {
+        output?: unknown;
+        error?: {
+            message: string;
+        };
+    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    readSteps(runId: string): Promise<StepEntry[]>;
+    claimAttempt(runId: string, key: string): Promise<number>;
+    releaseAttempt(runId: string, key: string): Promise<void>;
+    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
+    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+    closeHook(runId: string, key: string): Promise<boolean>;
+    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
+    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
+};
+
+// @public (undocumented)
+export function loadJournalConformance(): Promise<JournalConformanceSuite>;
+
+// @public (undocumented)
+export function loadSessionStateConformance(): Promise<SessionStateConformanceSuite>;
 
 // @public
 type LogContext = Record<string, unknown>;
@@ -8254,6 +8602,9 @@ type Logger = Record<LogLevel, LogFn>;
 // @public
 type LogLevel = "info" | "warn" | "error" | "debug";
 
+// @public
+export function parseBearer(header: string | null | undefined): string;
+
 // @internal
 export function payloadRunId(message: unknown): string | undefined;
 
@@ -8261,8 +8612,7 @@ export function payloadRunId(message: unknown): string | undefined;
 export const PLATFORM_ROUTES: {
     readonly sessionState: "/session-state";
     readonly uploadRecords: "/upload-records";
-    readonly workflowStorage: "/workflow-storage";
-    readonly workflowStream: "/workflow-stream";
+    readonly workflowJournal: "/workflow-journal";
     readonly workflowEnqueue: "/workflow-enqueue";
 };
 
@@ -8280,7 +8630,7 @@ export type PlatformQueueOptions = PlatformEndpoint;
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
 // @public
-export type PlatformStorageOptions = PlatformEndpoint;
+type PlatformSessionStateOptions = PlatformEndpoint;
 
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
@@ -8288,34 +8638,40 @@ type PlatformUploadRecordsOptions = PlatformEndpoint;
 // @internal
 export function platformUrl(base: string, route: PlatformRoute): string;
 
-// @internal
-export type PoolPresence = {
-    swept: readonly string[];
-    skipped: SweepSkip | undefined;
-    held: boolean;
-    release: () => Promise<void>;
-};
-
-// @internal
-export const PRESENCE_LOCK_CLASS = 1094797655;
-
-// @internal (undocumented)
-export const PRESENCE_LOCK_OBJECT = 1;
-
 export { publishStepEnv }
+
+// @internal
+export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void;
 
 // @internal
 export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined;
 
-// @public
-type ReservedDb = Db & {
-    release(): void;
-};
-
 export { resolveAllBuiltins }
+
+// @public
+type ResumableRun = {
+    runId: string;
+    wakeAt?: number | undefined;
+};
 
 // @internal
 export function routeMatches(route: ServerRoute, url: string, method?: string): boolean;
+
+// @public
+type RunRecord = {
+    runId: string;
+    workflow: string;
+    status: RunStatus;
+    createdAt: number;
+    input: unknown;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+type RunStatus = WorkflowRunStatus;
 
 export { safeFetch }
 
@@ -8419,6 +8775,13 @@ type SessionEventStream = {
 };
 
 // @public
+type SessionStateArm = {
+    label: string;
+    backend: () => SessionStateBackend;
+    uid: () => string;
+};
+
+// @public
 type SessionStateBackend = {
     readonly name: "memory" | "postgres" | "platform";
     readonly durable: boolean;
@@ -8428,6 +8791,12 @@ type SessionStateBackend = {
     appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
     readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
     countEvents(sessionId: string): Promise<number>;
+};
+
+// @public
+export type SessionStateConformanceSuite = {
+    sessionStateConformance: (arm: SessionStateArm) => void;
+    sessionStateIds: (label: string) => () => string;
 };
 
 // @internal
@@ -8465,14 +8834,16 @@ type SessionWebSocket = {
     }) => void): void;
 };
 
-// @internal
-export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
+// @public
+type SleepRecord = {
+    wakeAt: number;
+    woken: boolean;
+    correlationId?: string | undefined;
+    kind: "sleep" | "hookTimeout";
+};
 
 // @internal
-export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind, opts?: {
-    page?: string | undefined;
-    waitMs?: ((attempt: number) => Promise<void>) | undefined;
-}): Promise<void>;
+export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
 
 // @public
 type StateSyncSession = {
@@ -8485,19 +8856,17 @@ type StateSyncSession = {
 export const STEP_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_step_.+$";
 
 // @public
-const STORAGE_CONFLICT_STATUS = 409;
-
-// @public
-const STORAGE_RUN_EXPIRED_STATUS = 410;
-
-// @public
-type StorageFn = (...args: unknown[]) => Promise<unknown>;
-
-// @public
-export type StorageRefusalStatus = typeof STORAGE_RUN_EXPIRED_STATUS | typeof STORAGE_CONFLICT_STATUS;
-
-// @internal
-export function storageStatusFor(err: unknown): StorageRefusalStatus | undefined;
+type StepEntry = {
+    key: string;
+    name: string;
+    status: "ok" | "failed";
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    attempts: number;
+    finishedAt: number;
+};
 
 // @public
 type StoredSessionEvent = {
@@ -8507,19 +8876,6 @@ type StoredSessionEvent = {
 
 // @internal
 type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: ToolCallDefaults) => Promise<DelegateResult>;
-
-// @public
-type SweepDeps = {
-    createDb?: (url: string) => CloseableDb;
-    log?: (message: string) => void;
-};
-
-// @public
-type SweepSkip =
-/** Another pool holds presence, so its locks are live and not ours to clear. */
-"another-pool-is-live"
-/** Presence is ours and there was nothing locked. The healthy case. */
-| "no-orphaned-locks";
 
 // @internal
 type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
@@ -8564,39 +8920,6 @@ type UploadStore = UploadReader & {
     recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
 };
 
-// @public
-type WdkAdapter = {
-    start(workflowId: string, args: unknown[]): Promise<string>;
-    getRun(runId: string): Promise<WdkRunRecord | undefined>;
-    listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
-    cancel(runId: string): Promise<boolean>;
-    wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
-    signal(token: string, payload: unknown): Promise<boolean>;
-    readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
-    streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
-    readOutput(runId: string): Promise<unknown>;
-};
-
-// @internal
-export function wdkAdapter(): WdkAdapter;
-
-// @public
-type WdkRunRecord = {
-    runId: string;
-    workflowName: string;
-    status: "pending" | "running" | "completed" | "failed" | "cancelled";
-    createdAt: Date | number;
-    error?: {
-        message: string;
-    } | undefined;
-};
-
-// @public
-type WdkStreamOptions = {
-    namespace?: string | undefined;
-    startIndex?: number | undefined;
-};
-
 // @internal
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void;
 
@@ -8605,18 +8928,6 @@ export const WORKFLOW_API_METHODS: readonly string[];
 
 // @internal
 export const WORKFLOW_CALLBACK_ROUTES: {
-    readonly flow: {
-        readonly transport: "http";
-        readonly path: "/.well-known/workflow/v1/flow";
-        readonly match: "exact";
-        readonly methods: readonly ["POST"];
-    };
-    readonly step: {
-        readonly transport: "http";
-        readonly path: "/.well-known/workflow/v1/step";
-        readonly match: "exact";
-        readonly methods: readonly ["POST"];
-    };
     readonly queue: {
         readonly transport: "http";
         readonly path: "/workflow-queue";
@@ -8627,25 +8938,21 @@ export const WORKFLOW_CALLBACK_ROUTES: {
         readonly transport: "http";
         readonly path: "/.well-known/workflow/v1/webhook";
         readonly match: "prefix";
-        readonly methods: "any";
+        readonly methods: readonly ["POST"];
     };
 };
 
 // @internal
-export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
+export const WORKFLOW_DATA_DIR_ENV = "AAI_WORKFLOW_DATA_DIR";
 
 // @internal
 export const WORKFLOW_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_workflow_.+$";
 
 // @internal
-export type WorkflowSurface = {
-    flow: FetchHandler;
-    step: FetchHandler;
-    webhook: (token: string, req: Request) => Promise<Response>;
-};
+export const WORKFLOW_QUEUE_PATH = "/workflow-queue";
 
 // @internal
-export type WorldKind = "platform" | "postgres" | "local";
+export function workflowJournalDdl(schema?: string): string[];
 
 // @public
 type WsSessionOptions = {
@@ -9102,6 +9409,11 @@ export type UseDownloadUrlResult = {
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;
 
 // @public
+export function useRunKey(options?: {
+    storage?: "session" | "local";
+}): string;
+
+// @public
 export function useSession(): Session;
 
 // @public
@@ -9200,7 +9512,7 @@ export type UseWorkflowsResult = {
 export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
-export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
+export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
 
 // @public
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
@@ -9209,6 +9521,7 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, op
 export type UseWorkflowSubmitOptions = {
     api?: WorkflowApi;
     key?: string;
+    recover?: boolean;
     wait?: number;
     intervalMs?: number;
     parallel?: UploadParallel;
@@ -9330,7 +9643,7 @@ type ClientTheme = {
 };
 
 // @public
-export const DEFAULT_PROGRESS_POLL_MS = 1000;
+export const DEFAULT_PROGRESS_POLL_MS = 5000;
 
 // @public
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;

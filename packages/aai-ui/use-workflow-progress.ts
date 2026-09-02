@@ -41,6 +41,15 @@
  * log rather than a socket — but it is a poll of a CHEAP shape: each read asks
  * only for chunks past the last index it saw, so a quiet run costs an empty
  * answer rather than the whole log again.
+ *
+ * ## A FAILED read is not an absent route, whether or not it carried a status
+ *
+ * Because the loop stops for good once it decides the route is absent, that
+ * decision is the one place a single bad request can cost a live run its entire
+ * narration — and it did. Every non-2xx used to read as "this agent serves no
+ * progress route", so one transient answer hid the log permanently while the run
+ * carried on and the status line went on saying `running`. See
+ * {@link isTransientRead} for the split and `readOnce` for what each arm costs.
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -70,8 +79,58 @@ export type UseWorkflowProgressResult<T = string> = {
   supported: boolean;
 };
 
-/** How often a live run's progress is re-read once a bounded read has ended. */
-export const DEFAULT_PROGRESS_POLL_MS = 1000;
+/**
+ * How often a live run's progress is re-read once a bounded read has ended.
+ *
+ * **Five seconds, up from one, because narration is the cheapest thing on the
+ * page and it was the most expensive thing on the wire.**
+ *
+ * On the platform every one of these reads BROKERS (see `useWorkflowRun`'s note
+ * on the same hazard), and a page routinely mounts TWO of these hooks against one
+ * run — `transcription-workflow` renders `<WorkflowProgress>` for the run's own
+ * narration and `<LiveTranscript>` for the segments as they land. At one second
+ * that is 2 requests/second from a single tab, which is exactly the platform's
+ * whole per-IP surface budget (`WORKFLOW_IP_RATE_LIMIT`, 600 per 5 minutes) — so
+ * one tab watching one run, with a history entry expanded, answers
+ * `429 Too many workflow requests` partway through its own run.
+ *
+ * It is also contending for the link with the UPLOAD, which on this page is the
+ * thing the reader is actually waiting for: a workflow app's whole wall clock is
+ * bytes going out, and progress polling spends the same uplink to describe it.
+ *
+ * What five costs is that a line appears up to five seconds after the run wrote
+ * it. That is the right trade for a log a person SKIMS while waiting minutes —
+ * and it is not the run's completion, which arrives on `useWorkflowRun`'s event
+ * stream (see {@link DEFAULT_WORKFLOW_POLL_MS}, deliberately left at two seconds
+ * because it answers "is it done", not "what is it doing").
+ *
+ * A page that really wants a live feed passes `intervalMs` and owns the
+ * consequence. That option is the authoring surface for this choice, which is why
+ * this constant is `/internal` rather than public.
+ */
+export const DEFAULT_PROGRESS_POLL_MS = 5000;
+
+/**
+ * Whether a non-2xx says "come back" rather than "there is nothing here".
+ *
+ * The 408/429/5xx split, and it is a THIRD copy of that rule stated
+ * deliberately: the SDK's own `isTransientStatus` is on
+ * `@alexkroman1/aai/step` and `RETRYABLE_STATUS` is `sdk/_upload-retry.ts`'s
+ * internal, so neither is reachable from a browser bundle — this package may
+ * not import the step surface, and an `_`-prefixed module may not be imported
+ * cross-package at all. Hoisting one of them onto `/utils` (where this guide's
+ * own prose already claims `isTransientStatus` lives) is the fix that would
+ * delete this; it is a published-surface change and therefore not this one.
+ *
+ * Everything else is treated as a stable answer, which keeps a permanent
+ * refusal — a 401 against an agent whose `AAI_WORKFLOW_API_TOKEN` this page has
+ * no token for — from brokering a request every interval for as long as the tab
+ * is open. A 404 is the specific case the route documents: an agent deployed
+ * before progress streams existed, or one serving no workflow API at all.
+ */
+function isTransientRead(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
 
 /** What one bounded read reported. */
 type Ending =
@@ -127,6 +186,15 @@ async function consumeFrames<T>(
  * poll cheap: a quiet run answers with a bare `done` rather than the whole log
  * again.
  *
+ * `next` is a COUNT of chunks consumed, and `startIndex` is an INCLUSIVE floor,
+ * so the two are the same number and no adjustment sits between them. That
+ * identity is the whole correctness argument here, and it is why the store's
+ * floor is inclusive rather than exclusive — read exclusively, this loop lost the
+ * chunk sitting AT its cursor on every re-open, so a run writing one line per
+ * poll delivered every other line.
+ * `packages/aai-runtime/workflow-stream-cursor.test.ts` states it as a property
+ * over generated polling schedules; this module's own spec pins the URLs.
+ *
  * ## A negative `startIndex` is resolved on the FIRST read, not carried
  *
  * "The last N lines" names no position a later read can resume from — the tail
@@ -166,7 +234,9 @@ function readProgressUntilComplete<T>(
     // `omitUndefined` rather than a spread: under `exactOptionalPropertyTypes` a
     // present-and-undefined `namespace` is not the same as an absent one, and the
     // client would put an empty parameter on the query string. Index 0 is left
-    // off for the same reason — it is what the route does with no parameter.
+    // off because an omitted cursor and a `0` are the SAME request under an
+    // inclusive floor — cosmetic, not load-bearing, and it stays only so a
+    // caught-up-from-the-start reader sends the shorter URL.
     const res = await getClient().streamOutput(runId, {
       ...omitUndefined({
         namespace: options.namespace,
@@ -174,9 +244,34 @@ function readProgressUntilComplete<T>(
       }),
       signal,
     });
-    // A non-2xx, or a body-less response, is an agent that does not serve this —
-    // the ordinary case for one deployed before the route existed, and also what
-    // a 404 for an unknown run looks like.
+    // A TRANSIENT status is this read failing, not the route being absent, so it
+    // is retried exactly like the thrown fetch below. That distinction was
+    // missing, and one such answer cost a live run its whole narration: it set
+    // `supported: false` and ended the loop for good, so the page showed a bare
+    // status line for the rest of the run while the run itself carried on
+    // narrating. The lines then reappeared all at once from a FRESH reader — a
+    // reload, or the finished run expanded in a history list — which is why the
+    // shape reads as "it only shows the steps once it is done" rather than as a
+    // failed request.
+    //
+    // Reported against `transcription-workflow`'s `transcribeBatch`, and the
+    // reason it surfaced there is EXPOSURE rather than anything about that flow:
+    // it waits minutes on a provider's queue with nothing else touching the
+    // agent, so it is by far the longest-lived of that template's three runs and
+    // makes the most reads. One in N failing is then a near-certainty, and on
+    // the platform every one of these reads BROKERS, so the ways it can fail
+    // transiently are not exotic. Which producer it was does not matter here:
+    // what was wrong is that ANY of them was terminal.
+    //
+    // `useWorkflowRun` has always drawn this line: an id the agent does not know
+    // is a stable answer on a small budget, and everything else is "a dropped
+    // request against a booting sandbox … giving up would strand a live run".
+    if (!res.ok && isTransientRead(res.status)) return "partial";
+    // Anything else non-2xx, or a body-less response, is an agent that does not
+    // serve this — the ordinary case for one deployed before the route existed.
+    // An unknown RUN is no longer in this bucket: the route frames it as
+    // `missing` on a 200 (`consumeFrames` below), which is what stops a wrong id
+    // from reading as a missing feature and hiding the progress UI.
     if (!(res.ok && res.body)) return "unsupported";
     const { ending, chunks } = await consumeFrames<T>(res.body, signal);
     next += chunks.length;

@@ -25,7 +25,7 @@
 // evidence.
 //
 // WHAT NO EVAL HERE COVERS: durability. Imported through vitest with no bundler
-// in the path, a `"use workflow"` body is an ordinary async function — no
+// in the path, a workflow body is an ordinary async function — no
 // journal, no replay, and no per-step retry, so a rate-limited live run FAILS
 // where a deployed one would have ridden it out. The tier that really resumes a
 // run is `aai-cli`'s `dev-workflow.scenario.test.ts`.

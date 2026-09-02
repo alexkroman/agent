@@ -90,8 +90,24 @@ export function isLockfile(name: string): boolean {
  * `list_files`/`grep`, and hiding a `.env` the agent itself wrote would make
  * it invisible to the tool that needs to read it, whereas a lockfile is one
  * the agent has no reason to read and did not author.
+ *
+ * **`.env.example` is EXCLUDED, because it is the opposite of a secret.** The
+ * scaffold ships one and its `.gitignore` un-ignores it by name
+ * (`.env`/`.env.*` then `!.env.example`), so the project's own declaration is
+ * that this file is committed source — the single place an author writes down
+ * which secrets their agent needs. Caught by `^\.env(\..+)?$` it was dropped
+ * from every `aai push` with no warning (the skip rule is silent, correctly,
+ * for a real `.env`) and then re-supplied from the scaffold by the next
+ * `aai pull`, so a user's documentation round-tripped back to boilerplate.
+ * It is also what makes {@link isLocalOnlyFile} usable as the filter for a
+ * template COPY, where dropping the scaffold's copy would leave a scaffolded
+ * project with no `.env` at all.
  */
-export const LOCAL_ONLY_FILES: readonly RegExp[] = [/^\.env(\..+)?$/, ...LOCKFILES, /^\.DS_Store$/];
+export const LOCAL_ONLY_FILES: readonly RegExp[] = [
+  /^\.env(?!\.example$)(\..+)?$/,
+  ...LOCKFILES,
+  /^\.DS_Store$/,
+];
 
 /** True when `name` matches {@link LOCAL_ONLY_FILES}. */
 export function isLocalOnlyFile(name: string): boolean {

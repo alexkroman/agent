@@ -34,9 +34,25 @@ import slugifyLib from "@sindresorhus/slugify";
  * `decamelize: false` keeps "MyAgent" as one word: the name is an identifier
  * the user typed, not a symbol to prettify.
  *
- * The result can be empty (a name of nothing but punctuation reduces to
- * nothing) and is NOT checked against `VALID_SLUG_RE` — callers decide
- * whether an unusable name is a rejection or a fallback to a generated one.
+ * **What it guarantees is the slug CHARACTER grammar, not `VALID_SLUG_RE`.**
+ * Every result is empty or matches `/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/`, is at
+ * most `maxLen` long, and is unchanged by a second pass. What it does NOT
+ * guarantee is the two-character FLOOR `VALID_SLUG_RE` also requires:
+ * `slugifyName("b", 64)` is `"b"`, and so are `"日X"` -> `"x"` and
+ * `slugifyName("ab cd", 1)` -> `"a"` — legal outputs the platform refuses.
+ * `slugify.test.ts` states the guarantees as properties and pins those
+ * outputs; the claim used to be the whole grammar, asserted over five
+ * hand-picked names all five characters or longer, which is what let a
+ * one-letter name sit outside it.
+ *
+ * So the length check is the CALLERS' boundary, and both callers already draw
+ * it: `CreateProjectSchema` refines with "Project name must contain at least
+ * two letters or numbers", and `projectNameFromDir` tests `VALID_SLUG_RE` and
+ * answers `null`. Padding a one-character result would invent a name nobody
+ * typed, and emptying it would conflate "one usable character" with "nothing
+ * usable" — a distinction those two callers answer differently. It also could
+ * not be done here: `projectBaseFromPrompt` uses this as a TOKENIZER (maxLen
+ * 2000, output split on `-`), where a single-character word is a word.
  */
 export function slugifyName(input: string, maxLen: number): string {
   return slugifyLib(input, { decamelize: false }).slice(0, maxLen).replace(/-+$/, "");

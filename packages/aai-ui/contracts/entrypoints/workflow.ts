@@ -35,6 +35,7 @@ export {
   type UseWorkflowsOptions,
   type UseWorkflowsResult,
   useDownloadUrl,
+  useRunKey,
   useWorkflowProgress,
   useWorkflowRun,
   useWorkflowRuns,

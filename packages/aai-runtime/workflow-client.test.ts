@@ -18,39 +18,39 @@ import { makeLogger } from "./_test-utils.ts";
 import { createWorkflowClient, type WdkAdapter, type WdkRunRecord } from "./workflow-client.ts";
 import { createMemoryKeyStore, type WorkflowKeyStore } from "./workflow-keys.ts";
 
-/** A `"use workflow"` body as the compiler leaves it — the id is what start reads. */
-function body<I, R>(id: string, result?: R): WorkflowBody<I, R> {
-  const fn = (() => Promise.resolve(result as R)) as WorkflowBody<I, R>;
-  fn.workflowId = id;
-  return fn;
+/** A workflow body. Identity is the key it is declared under, so this carries none. */
+function body<I, R>(result?: R): WorkflowBody<I, R> {
+  return (() => Promise.resolve(result as R)) as WorkflowBody<I, R>;
 }
 
 /**
- * The compiler's identifier for `digest` — what WDK stores as `workflowName`.
+ * The name `digest` is declared under — and, since the DevKit removal, the only
+ * identity it has.
  *
- * Spelled out as a constant because the fake below has to answer with it: a
- * record carrying the DECLARED name instead is the shape that let `recent` and
- * the snapshot's `workflow` field both report the wrong string with every spec
- * in this file green.
+ * Still a constant because the fake has to answer with it, and the assertion it
+ * guards is unchanged in spirit: a run record whose `workflowName` disagrees
+ * with the declared key is what let `recent` and the snapshot's `workflow`
+ * field both report the wrong string with every spec in this file green. What
+ * changed is that the two strings can no longer differ BY DESIGN rather than by
+ * a translation somebody has to remember.
  */
-const DIGEST_ID = "workflow//./workflows/digest//digestFlow";
+const DIGEST_ID = "digest";
 
 const digest = workflow({
   description: "Research a topic",
   input: z.object({ topic: z.string() }),
-  run: body<{ topic: string }, { ok: true }>(DIGEST_ID),
+  run: body<{ topic: string }, { ok: true }>(),
 });
 
 /** The `createdAt` every fake run carries — asserted by both spellings WDK reports. */
 const CREATED_AT = Date.UTC(2026, 7, 12);
 
 /** A workflow with no schema, to pin that validation is skipped rather than failed. */
-const bare = workflow({ run: body("workflow//./workflows/bare//bareFlow") });
+const bare = workflow({ run: body() });
 
 function record(over: Partial<WdkRunRecord> = {}): WdkRunRecord {
   return {
     runId: "wrun_1",
-    // WDK's own vocabulary: the compiler id, not the declared key.
     workflowName: DIGEST_ID,
     status: "pending",
     createdAt: new Date("2026-08-12T00:00:00Z"),
@@ -121,18 +121,14 @@ describe("starting a run", () => {
     await client.start(digest, { topic: "otters" }, { key: "sess-1" });
     // The workflowId reaches WDK; the NAME is what the key index records, so a
     // workflow moved between modules keeps its keys.
-    expect(wdk.start).toHaveBeenCalledWith("workflow//./workflows/digest//digestFlow", [
-      { topic: "otters" },
-    ]);
+    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }]);
     expect(await keys.lookup("digest", "sess-1", 10)).toEqual(["wrun_1"]);
   });
 
   test("accepts the name as a string for a workflow that is data", async () => {
     const { client, wdk } = makeClient();
     await client.start("digest", { topic: "otters" });
-    expect(wdk.start).toHaveBeenCalledWith("workflow//./workflows/digest//digestFlow", [
-      { topic: "otters" },
-    ]);
+    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }]);
   });
 
   test("rejects a workflow the agent does not declare, naming the declared set", async () => {
@@ -143,7 +139,7 @@ describe("starting a run", () => {
   });
 
   test("rejects a definition that was never wired into agent({ workflows })", async () => {
-    const orphan = workflow({ run: body("workflow//./workflows/orphan//orphanFlow") });
+    const orphan = workflow({ run: body() });
     const { client, wdk } = makeClient();
     await expect(client.start(orphan, {})).rejects.toThrow(/not declared on this agent/);
     expect(wdk.start).not.toHaveBeenCalled();
@@ -160,7 +156,7 @@ describe("starting a run", () => {
   test("passes input through unvalidated for a workflow with no schema", async () => {
     const { client, wdk } = makeClient();
     await client.start(bare, {});
-    expect(wdk.start).toHaveBeenCalledWith("workflow//./workflows/bare//bareFlow", [{}]);
+    expect(wdk.start).toHaveBeenCalledWith("bare", [{}]);
   });
 
   test("a failed key write warns and still returns the runId", async () => {
@@ -189,21 +185,12 @@ describe("starting a run", () => {
     await client.start(digest, { topic: "otters" });
     expect(keys.record).not.toHaveBeenCalled();
   });
-
-  test("rejects a body the WDK compiler never transformed, naming the build", async () => {
-    // `workflow()` guards this at declaration time, so reaching the client with
-    // one means the def was built by hand — which the studio's generated code
-    // could plausibly do.
-    const untransformed = { run: (() => Promise.resolve()) as WorkflowBody } as WorkflowDef;
-    const { client } = makeClient({ workflows: { untransformed } });
-    await expect(client.start("untransformed", {})).rejects.toThrow(/use workflow/);
-  });
 });
 
 describe("reading a run", () => {
   test("a completed run narrows to a typed output", async () => {
     const { client } = makeClient({
-      wdk: { getRun: async () => record({ status: "completed" }) },
+      wdk: { getRun: async () => record({ status: "completed", output: { ok: true } }) },
     });
     const run = await client.get("wrun_1", digest);
     expect(run?.status).toBe("completed");
@@ -226,13 +213,70 @@ describe("reading a run", () => {
     expect(run).toMatchObject({ status: "failed", error: "Workflow run failed" });
   });
 
-  test("a non-terminal run does not read its output", async () => {
-    const readOutput = vi.fn(async () => ({ ok: true }));
-    const { client } = makeClient({ wdk: { readOutput } });
-    await client.get("wrun_1");
-    // `readOutput` polls a live run at 1s intervals with no ceiling, so a
-    // speculative read turns a snapshot into a wait for the whole run.
+  test("a completed run is ONE journal read, not two", async () => {
+    // `readOutput` is `getRun(runId).output` in every implementation of this
+    // seam, so calling it after `getRun` is a SECOND platform POST for a value
+    // the record carried, on a terminal status that cannot have changed between
+    // them. Every browser reload of a finished form paid it.
+    let reads = 0;
+    const stored = record({ status: "completed", output: { ok: true } });
+    const readOutput = vi.fn(async () => {
+      reads += 1;
+      return stored.output;
+    });
+    const { client } = makeClient({
+      wdk: {
+        getRun: async () => {
+          reads += 1;
+          return stored;
+        },
+        readOutput,
+      },
+    });
+    expect(await client.get("wrun_1")).toMatchObject({ status: "completed", output: { ok: true } });
+    expect(reads).toBe(1);
     expect(readOutput).not.toHaveBeenCalled();
+  });
+
+  test("an adapter whose record carries no output falls back to readOutput", async () => {
+    // `WdkRunRecord.output` is OPTIONAL and the RETAINED epoch 2 template carries
+    // none — retained on the written grounds that such an adapter's callers "fall
+    // back to `readOutput` exactly as they did". They had stopped.
+    const readOutput = vi.fn(async () => ({ late: true }));
+    const { client } = makeClient({
+      wdk: { getRun: async () => record({ status: "completed" }), readOutput },
+    });
+    expect(await client.get("wrun_1")).toMatchObject({
+      status: "completed",
+      output: { late: true },
+    });
+    expect(readOutput).toHaveBeenCalledOnce();
+  });
+
+  test("a completed run that returned nothing costs no round trip", async () => {
+    // PRESENCE, not definedness: a returning-nothing body is a completed run whose
+    // output IS `undefined`; a read to learn that costs the common case.
+    const readOutput = vi.fn(async () => "never");
+    const { client } = makeClient({
+      wdk: {
+        getRun: async () => ({ ...record({ status: "completed" }), output: undefined }),
+        readOutput,
+      },
+    });
+    expect(await client.get("wrun_1")).toMatchObject({ status: "completed" });
+    expect(readOutput).not.toHaveBeenCalled();
+  });
+
+  test("a non-terminal run reports no output, even when the record carries one", async () => {
+    // The snapshot union carries `output` on `completed` alone, and the record
+    // is now where that value comes from — so a stale one on a running run must
+    // not leak onto a snapshot whose status says there is no answer yet.
+    const { client } = makeClient({
+      wdk: { getRun: async () => record({ status: "running", output: { half: true } }) },
+    });
+    const run = await client.get("wrun_1");
+    expect(run).toMatchObject({ status: "running" });
+    expect(run && "output" in run).toBe(false);
   });
 
   test("resolves undefined for a run that does not exist", async () => {
@@ -314,15 +358,6 @@ describe("recent runs", () => {
       wdk: { listRuns: async (id) => stored.filter((r) => r.workflowName === id) },
     });
     expect((await client.recent(digest)).map((r) => r.runId)).toEqual(["wrun_a", "wrun_b"]);
-  });
-
-  test("rejects a workflow whose body the compiler never transformed", async () => {
-    // Same failure `start` reports, for the same reason: with no id there is
-    // nothing to filter by, and answering "no runs" would read as an empty
-    // history rather than as an untransformed build.
-    const untransformed = { run: (() => Promise.resolve()) as WorkflowBody } as WorkflowDef;
-    const { client } = makeClient({ workflows: { untransformed } });
-    await expect(client.recent("untransformed")).rejects.toThrow(/use workflow/);
   });
 });
 
@@ -547,6 +582,35 @@ describe("listing declared workflows", () => {
     });
   });
 
+  /**
+   * The FAILING observation: `safeJsonSchema` converted with zod's default
+   * `io: "output"`, which describes the PARSED value — so every `.default()`
+   * field came back `required`, and `WorkflowSummary.input` is documented as
+   * "the input schema to render". Both `podcast-digest` (five defaulted fields)
+   * and `redline` (two) therefore served a form marking as mandatory exactly the
+   * fields their author had given a fallback, while `validate()` next door
+   * accepts the same input WITHOUT them — the two halves of one schema
+   * disagreeing about one submission.
+   *
+   * Same fix, and the same direction, as the tool-parameter surface:
+   * `toToolJsonSchema(schema, "input")`.
+   */
+  test("a `.default()` field is OPTIONAL in the served schema, never required", () => {
+    const scheduled = workflow({
+      input: z.object({ topic: z.string(), everyDays: z.number().int().default(1) }),
+      run: body(),
+    });
+    const { client } = makeClient({ workflows: { scheduled } });
+    const [summary] = client.listing();
+    expect(summary?.inputSchema).toMatchObject({
+      // The default still RIDES on the property, which is what a form pre-fills
+      // the control from — `WorkflowFields` reads `default` and `required`
+      // separately, so this is the pair that has to move together.
+      properties: { everyDays: { default: 1 } },
+      required: ["topic"],
+    });
+  });
+
   test("omits the schema for a workflow that declares none", () => {
     const { client } = makeClient();
     const bareSummary = client.listing().find((w) => w.name === "bare");
@@ -568,7 +632,7 @@ describe("listing declared workflows", () => {
       },
     };
     const unconvertible: WorkflowDef = {
-      run: body("workflow//./workflows/x//x"),
+      run: body(),
       input: unconvertibleInput,
     };
     const { client, logger } = makeClient({ workflows: { unconvertible } });

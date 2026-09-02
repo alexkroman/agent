@@ -35,18 +35,18 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `guest-forward.ts` — the one platform→guest forward (`forwardToGuest`) and
   its header policy, shared by the three routes that proxy into a tenant's
   sandbox (`/client-config`, `/:slug/workflows/*`, the durable-run webhook),
-  which had re-derived broker→URL→filter→bounded-fetch three times with three
-  different filters. **A header crossing this hop reaches TENANT CODE**, so
-  `Cookie`, `Authorization` and `X-Forwarded-*` never do; the API routes take
-  an allow-list and the webhook route deliberately passes the rest through. Its
-  module doc has the argument.
+  which had re-derived it three times with three different filters. **A header
+  crossing this hop reaches TENANT CODE**, so `Cookie`, `Authorization` and
+  `X-Forwarded-*` never do. **Every direction is an allow-list except the
+  webhook's REQUEST**: a sender's `Stripe-Signature`-class headers cannot be
+  enumerated, where its RESPONSE (`content-type`, `retry-after`) is read by a
+  sender wanting a status and a type. Its doc argues that asymmetry.
 
   **A route forwarding a STREAMING request body needs `bound: "activity"`; the
-  other two bounds are a trap for it.** Both bound the response HEAD, so a
-  guest that answers only after consuming the whole body has the entire upload
-  inside its deadline — `POST /workflows/uploads` did, and a 500 MB file was a
-  503 at 30.3s while working under `aai dev`, which has no forward at all. The
-  `bound` doc in that module carries the arithmetic and why no TOTAL is right
+  other two bound the response HEAD, so a guest that answers only after
+  consuming the whole body has the entire upload inside its deadline** —
+  `POST /workflows/uploads` did, and a 500 MB upload 503'd at 30.3s while
+  working under `aai dev`, which has no forward. Its `bound` doc has the rest
 - `modal-context.ts` — the shared Modal context every spawn path needs
   first: the client, the App, the harness-baked snapshot image (built once
   per harness version, published under a content-addressed tag), and the
@@ -142,20 +142,16 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   every replica would leave rotation at once, turning a feature outage into a
   total one. A high-water-mark `joined` flag made the drop-after-join case, the
   worse one, structurally invisible.
-- The reap for studio previews nothing references is a pg_cron job again —
-  `aai-sweep-orphan-previews` in `pg-cron.ts`, which owns the argument. It was a
-  cron body, moved into the server when per-app database deprovisioning went to
-  the Management API, and moved back: with no database to drop there is no step
-  SQL cannot perform, and a reap is a Vault row and an agents row.
-
 - `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
   archived queue jobs, unreferenced deploy blobs, runaway tenant queries,
   pg_cron's own run log), installed idempotently at boot.
 
-  **The orphan-preview reap IS one of them, again**, and its own doc in that
-  module carries why the round trip is safe — the two reasons it left
-  (`DROP DATABASE` inside pg_cron's transaction, `25001`; and a SQL sweep
-  duplicating a Management API step) both stopped holding.
+  **The orphan-preview reap (`aai-sweep-orphan-previews`) IS one of them,
+  again**, and that module's own doc carries why the round trip is safe: the
+  two reasons it left (`DROP DATABASE` inside pg_cron's transaction, `25001`;
+  and a SQL sweep duplicating a Management API step) both stopped holding, and
+  with no database to drop there is no step SQL cannot perform — a reap is a
+  Vault row and an agents row.
 
   Three properties make the move safe rather than merely possible, and each is
   asserted in `pg-cron.scenario.test.ts` against a real database:
@@ -331,10 +327,24 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `upload-bytes.ts` / `upload-handler.ts` — `PUT/GET/HEAD /:slug/uploads/:id/:offset`,
   one WINDOW of a workflow upload's bytes. The SAME bucket as deploy blobs, under
   `uploads/` rather than `blobs/` — which is safe only because
-  `aai-sweep-blob-gc` filters `name like 'blobs/%'`; without that clause it would
-  delete every upload in the bucket on its first run, an upload having no
-  `worker_hash` to be found by. **Anything else put in this bucket owes the same
-  check.** See "A workflow upload's bytes are the PLATFORM's" below.
+  `aai-sweep-blob-gc`'s FIRST arm filters `name like 'blobs/%'`; without that
+  clause it would delete every upload in the bucket on its first run, an upload
+  having no `worker_hash` to be found by. **Anything else put in this bucket
+  owes the same check.** See "A workflow upload's bytes are the PLATFORM's".
+
+  That job now has a SECOND arm over `uploads/%`, because nothing reclaimed
+  those bytes at all — four paths each assumed another did, and past the 7-day
+  record expiry they were unreachable as well as unreclaimed, every reader
+  resolving the record before it touches a window. Its referrer is the
+  `workflow_uploads` row rather than a hash set, which is the stronger claim: an
+  object whose `(slug, id)` has no row cannot be read by construction. Because
+  that table cascades on agent delete, a deleted agent's uploads go with it and
+  `deleteAgent` does NOT grow a step — which `pg-cron-delete-parity.test.ts`
+  would fail, pinning it to exactly two store calls. The arm deletes only a key
+  it can fully parse, carries its own empty-table guard, and waits
+  `UPLOAD_ORPHAN_GRACE` (3 days) because `create` writes bytes BEFORE the row —
+  `stream` and `beginParts` do not — a gap bounded by one guest request and so
+  by `SANDBOX_TIMEOUT_SECS`, whose 86,400s ceiling the grace is 3x.
 - `deploy.ts` / `delete.ts` — deployment lifecycle.
 
   **A delete is one row and the cascades hanging off it** —
@@ -366,13 +376,12 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 
 ## The platform provisions no tenant database
 
-Eleven modules used to sit here — `app-database.ts`, `app-db-admin.ts` +
-`supabase-management.ts` (`create database` / `drop database` over the Supabase
-Management API), `storage-handler.ts` (`GET/POST/DELETE /:slug/storage`),
-`app-db-tier.ts`, `app-db-browse.ts`, `app-db-url.ts`, `app-db-usage.ts`,
-`app-db-identifier.ts`, `app-db-session-tables.ts` and `dev-management-api.ts`.
-All gone, with the `aai storage` CLI command, the studio's Database card and
-pane, and the `databaseEnabled` project flag.
+Eleven modules used to sit here — `app-database.ts`, `app-db-*.ts`,
+`app-db-admin.ts` + `supabase-management.ts` (`create database` /
+`drop database` over the Supabase Management API), `storage-handler.ts`
+(`GET/POST/DELETE /:slug/storage`) and `dev-management-api.ts`. All gone, with
+the `aai storage` CLI command, the studio's Database card and pane, and the
+`databaseEnabled` project flag.
 
 **A tenant gets no database from the platform.** An author who wants one puts a
 `DATABASE_URL` in their own secrets and it reaches the guest like any other
@@ -398,10 +407,16 @@ filesystem and `ENOSPC`'d every write. `platform-uploads.ts` has the account,
 including the write-volume measurement and the tripwire that would change the
 design.
 
-The measurable win is the connection budget: `MAX_PLATFORM_DB_CONNECTIONS`
-carried an allowance for per-app databases — 28 of 40, spoken for by TWO apps at
-the workflow entitlement — so the fleet claim scaled with tenant count, the one
-variable a constant cannot bound. It has one term now.
+The measurable win is the connection budget — `MAX_PLATFORM_DB_CONNECTIONS` had
+a tenant-scaled term, so the fleet claim grew with the one variable a constant
+cannot bound. It has one term now; the numbers are under "Per-slug mutation
+lock" below.
+
+**The shape a Postgres tenant boundary has to take, if one is ever needed
+again**, is the one that was here: a database per app with a per-app login role
+and `CONNECT` revoked from `PUBLIC` — verified at the time, a neighbour's
+database answering `42501 permission denied`. Cross-agent isolation rests on
+nothing like it now; see "Cross-agent isolation" below for what it rests on.
 
 **Four Postgres-tenancy arguments came out of those modules, and they are
 recorded in `20260827030000_drop_dblink_admin.sql`** rather than here — this
@@ -683,32 +698,22 @@ What deliberately stays in-process, and why it doesn't break statelessness:
 
 ## Two packages, ONE deployment (aai-server / aai-studio-server)
 
-Two packages, one surface each, composed into a single process.
+Two packages, one surface each, composed into a single process. `aai-server`
+is the agent surface plus the shared platform core (stores, locks, epochs,
+sandbox machinery), a LIBRARY with no entry point and no `build`;
+`platform-barrel.ts` is the sanctioned path to its `_`-internal utilities.
+`aai-studio-server` is the studio surface AND the composition root, and its
+entry is the only one any deployment runs — `pnpm dev:aai-server` included, so
+local dev and production are the same composition.
 
-`aai-server` is the agent surface plus the shared platform core (stores,
-locks, epochs, sandbox machinery); `platform-barrel.ts` is the sanctioned path
-to its `_`-internal utilities. **It ships no entry point** — it is a library,
-consumed through its `exports` map, and has no `build` (its subpaths resolve to
-`.ts` source, which its consumer bundles). `aai-studio-server` is the studio
-surface AND the composition root: its entry is the only one any deployment
-runs, and `pnpm dev:aai-server` runs it too, so local dev and production are
-the same composition. There is ONE Modal app, `aai-server-web`, from
-`packages/aai-server/modal_deploy.py` — note the asymmetry, the deploy script
-lives in the package that does NOT provide the entry.
-
-**The composition itself is documented where the composition ROOT lives: see
-"One deployment, two packages" in `packages/aai-studio-server/CLAUDE.md`.**
-That is where the retired split deployment and the two constraints any revival
-owes are recorded, along with the `alwaysBundle` specifier bug that cost every
-container cold start ~72 modules of type-stripping, the 31-subpath shared-core
-`exports` map (widen it in package.json, and delete an entry when a coupling
-goes away — this list only ratchets down), `resolvePublicOrigin` and the two
-outages that came of deriving a scheme from the request URL,
-`AAI_ALLOWED_ORIGINS`, the agents-row CHANGE STREAM that is the only
-cross-service invalidation (and why its REJOIN is itself a signal), retirement
-vs. termination, and the shutdown ordering — the boot guard, the grace, the
-two-level bound, and why a long-lived response must register with
-`live-streams.ts`.
+**The composition is documented where the composition ROOT lives, and this
+paragraph is deliberately not a second copy of it: see "One deployment, two
+packages" in `packages/aai-studio-server/CLAUDE.md`.** The retired split
+deployment and what a revival owes, the `alwaysBundle` specifier bug, the
+31-subpath shared-core `exports` map, `resolvePublicOrigin`,
+`AAI_ALLOWED_ORIGINS`, the agents-row CHANGE STREAM (and why its REJOIN is
+itself a signal), retirement vs. termination and the shutdown ordering are all
+there.
 
 Two rules from it that a reader of THIS package needs in front of them:
 
@@ -742,7 +747,7 @@ Two rules from it that a reader of THIS package needs in front of them:
   failed spawn is a failed spawn.
 
   That sentinel was `!SUPABASE_STORAGE_BUCKET`, which inverted the rule it
-  exists for — see "Two questions, two sentinels" below, which owns the account.
+  exists for — see "Two questions, two sentinels" above, which owns the account.
 - **Every spawn failure is a `SandboxUnavailableError`** (`sandbox-errors.ts`)
   — both Modal spawners, both subprocess spawners. It is a marker class, not a
   message: the message stays the backend's technical one (`Modal sandbox spawn
@@ -783,16 +788,12 @@ Two rules from it that a reader of THIS package needs in front of them:
   `packages/aai-guest/CLAUDE.md`.
 - **Modal reports a `skopeo` manifest miss as `Image build for im-<id> failed
   with the exception:` and then NOTHING** — no tag, no registry, no remedy — one
-  outage per image path so far. PINNED: the TAG is source-independent, the IMAGE
-  is not (each source publishes one place only), so setting
-  `GUEST_IMAGE_REGISTRY` orphaned every earlier `harness_image_tag`;
-  `resolvePinAcrossSources` probes Modal first and logs the ref. CURRENT — a
-  studio session, a first-ever spawn — logged nothing, that promise having been
-  kept on the pinned half alone, and its create escaped
-  `SandboxUnavailableError`, both spawners calling `createGuestSandbox` OUTSIDE
-  the terminating `try`: a 500 where the taxonomy owes a 503. See
-  `translateSpawnFailure`, and `guest-image-wait-gate.test.ts` for the gate that
-  no-op'd over a broken publisher for three green deploys.
+  outage per image path so far, and the PINNED and CURRENT paths each failed a
+  different way. `resolvePinAcrossSources` probes Modal first and logs the ref;
+  a create escaping `SandboxUnavailableError` is a 500 where the taxonomy owes a
+  503 (see `translateSpawnFailure`). Both accounts, and the gate that no-op'd
+  over a broken publisher for three green deploys, are in
+  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 - **The harness, the build toolchain, and the V8 compile cache are baked into
   a snapshot image**, not written per spawn — with the toolchain LOCKED by a
   committed lockfile so one `harness_image_tag` can only ever mean one tree.
@@ -805,32 +806,16 @@ Two rules from it that a reader of THIS package needs in front of them:
 - Sandboxes are created with open egress and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h).
 - **Guest resources are a BURST RANGE: reserve the idle shape, cap the build
-  shape.** `SANDBOX_MEMORY_MB` / `SANDBOX_CPU` reserve; `SANDBOX_MEMORY_LIMIT_MB`
-  / `SANDBOX_CPU_LIMIT` cap. Modal constrains the pair from both sides — a bare
-  cap fails sandbox creation ("must also specify cpu when cpuLimit is
-  specified") and a reservation above its cap is rejected — so
-  `parseSandboxLimitsFromEnv` reconciles them in one place and **throws on a
-  cap with no reservation**, naming the env var, rather than letting the spawn
-  die inside Modal on parameters the operator never set.
-
-  **Why they must stay two numbers is argued in `modal_deploy.py`'s own
-  guest-sandbox resources block** — the bimodal load, the direct-reclaim wedge
-  a single number produced, and why the cgroup cap defeats moving the bundler
-  into a child process (#845, reverted in #863). Read it there; this guide is
-  the copy at a size cap. What it does not carry is the MEASUREMENT, so: on a
-  wedged production sandbox, RSS pinned flat at 1.29 GB, ~1 core split seven
-  ways across 4 V8 GC workers + the main thread + 2 rolldown workers, **zero**
-  I/O, 453 CPU-seconds and no progress, versus 253 MB / 0.97 CPU-seconds on an
-  idle sibling. It reads as a hung build, never as an OOM — and
-  `--max-old-space-size` cannot help, because the memory is native rather than
-  V8's.
-
-  **The burst range is set in ONE place** — the guest-sandbox resources block
-  in `aai-server/modal_deploy.py`, the only Modal app there is. Studio
-  sandboxes (coding-agent sessions, Publish) are spawned by that same process
-  and inherit it, which matters because their `test_agent`/Publish builds are
-  the workload the cap exists for. (This said "BOTH Modal apps … keep the two
-  blocks in lockstep" until the second one went with the split deployment.)
+  shape.** `SANDBOX_MEMORY_MB` / `SANDBOX_CPU` reserve;
+  `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT` cap. Modal constrains the
+  pair from both sides, so `parseSandboxLimitsFromEnv` reconciles them in one
+  place and **throws on a cap with no reservation**, naming the env var, rather
+  than letting the spawn die inside Modal on parameters the operator never set.
+  The range is set in ONE place — the guest-sandbox resources block in
+  `aai-server/modal_deploy.py` — and studio sandboxes inherit it. Why they must
+  stay two numbers, plus the measurement off a wedged production sandbox (RSS
+  flat at 1.29 GB, 453 CPU-seconds, zero I/O, no progress — it reads as a hung
+  build, never an OOM), is in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 - **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
   `preview`, `studio`, `studio-publish`) plus the `slug`
   (studio sandboxes carry the project name), so the Modal dashboard can tell
@@ -857,20 +842,11 @@ Two rules from it that a reader of THIS package needs in front of them:
   opt-in from the slug's shape would NOT have fixed it: a production Publish
   of such a project passes exactly that slug.
 - **The guest snapshot image is resolved AT BOOT, not on the first spawn**
-  (`prewarmModal(harnessPath)` in modal-context.ts, called from
-  `assertSandboxBackendOrWarn`). Two memoized stages otherwise charged to
-  whoever spawns first: the Modal app lookup (a gRPC round trip), and the
-  harness image — reading the ~13 MB harness, the synchronous SHA-256 that
-  forms its content-addressed tag, and resolving that tag. On a harness
-  version nobody has published yet — i.e. right after EVERY deploy —
-  "resolving" means BUILDING: toolchain layer, builder sandbox, 13 MB write,
-  `snapshotFilesystem`, publish. That landed on one unlucky user's first
-  voice session or studio chat. `createGuestSandbox` awaits the same memoized
-  promise, so a spawn racing the prewarm joins it rather than starting a
-  second build, and replicas racing each other are no worse than the
-  concurrent cold spawns that raced before (the resolver tries
-  `images.fromName(tag)` first). Fire-and-forget: a failure only warns and
-  the memo resets, exactly as when the first spawn was the first caller.
+  (`prewarmModal(harnessPath)` in modal-context.ts) — otherwise the Modal app
+  lookup and the harness image resolve, or right after every deploy BUILD, on
+  one unlucky user's first voice session or studio chat. A spawn racing the
+  prewarm joins the same memoized promise. Details in
+  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 - **Readiness is Modal's readiness PROBE**, not host-side polling
   (`GUEST_READINESS_PROBE` in modal-context.ts): every guest sandbox is
   created with `readinessProbe: Probe.withTcp(8080)` and the spawn awaits
@@ -924,37 +900,13 @@ Two rules from it that a reader of THIS package needs in front of them:
   URL is public; the token is what keeps the managed surfaces from being an
   open door.
 - **Nothing is region-pinned — not guest sandboxes, and not the services
-  themselves. Capacity beats locality.** `MODAL_SANDBOX_REGION`
-  (comma-separated for multiple) still pins SANDBOX placement via Modal's
-  `regions` create param, but it is an operator override that production
-  leaves unset; `build_image` (scripts/modal_image.py) deliberately bakes no
-  value, and neither app's `@app.function` passes `region=`.
-
-  The WEB service's pin (once `us-east-2`) was removed after it took
-  production down, and it is worth knowing the shape because no symptom names
-  a region: the app sits at `deployed` with **zero tasks** despite
-  `MIN_CONTAINERS=1`, requests hang until the client times out having received
-  **zero bytes**, and there are **no container logs at all** — not a crash,
-  because no container is ever created, so `modal app logs` replays the last
-  image build and then streams silence. Everything that normally localizes a
-  fault says healthy: the image builds, the secrets resolve, and booting the
-  entry by hand inside the function's own spec (`modal shell <file>::server
-  -c 'node …'`) serves fine. Neither a redeploy nor `modal app rollover`
-  helps — both only re-ask for a container that still cannot be placed. A
-  warm floor is what makes a pin dangerous, so if a measurement ever justifies
-  re-pinning, prefer Modal's region LIST (a fallback order) over one value.
-
-  It used to be exported as `MODAL_SANDBOX_REGION` too, so every guest was
-  confined to one region's spare capacity. The failure that buys is a spawn
-  Modal cannot schedule inside the ~50s `sandbox.tunnels()` waits, surfacing
-  as `SandboxTimeoutError: Sandbox operation timed out` — the whole session
-  fails, and the more regions are available the less often it happens.
-
-  The locality it bought was narrower than the note that justified it claimed:
-  AGENT guests have no host channel at all, so a voice turn crosses that hop
-  **zero** times and only the studio's control-channel RPCs pay it, outside any
-  latency budget. Re-pin per environment if that stops being true; don't re-bake
-  it into the shared image.
+  themselves. Capacity beats locality.** `MODAL_SANDBOX_REGION` still pins
+  SANDBOX placement, but production leaves it unset and neither the image nor
+  either `@app.function` bakes a value. The WEB service's pin took production
+  down (a `deployed` app with zero tasks, zero bytes and no container logs at
+  all), and exporting it for guests confined every spawn to one region's spare
+  capacity. Both accounts, and what would justify re-pinning, are in
+  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 
 - **Orphan cleanup differs per mode.** STUDIO guests: the host's
   WebSocket IS the liveness signal — a host that dies without teardown
@@ -974,50 +926,38 @@ Two rules from it that a reader of THIS package needs in front of them:
   There is NO host-side idle eviction: the guest owns idleness (agent-mode
   self-exit; the studio broker keeps its own per-project idle sweep), and a
   guest exit detaches its slot via `onSandboxLost`.
-- The server itself deploys to Modal too (`modal_deploy.py`,
-  `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
-  Fly.io deployment anymore.
+- The server itself deploys to Modal too (`modal_deploy.py` in Key files) —
+  there is no Docker image or Fly.io deployment anymore.
 
 ## The local backend is a microVM
 
 `microsandbox-sandbox.ts` boots the guest in a libkrun microVM from the SAME OCI
-image production pulls: the studio agent's `bash`/`run_code` stop running as the
-server's uid, and in-guest builds resolve production's `/opt/aai` toolchain
-rather than aai-guest's darwin `node_modules`. Boot WARNS when the image is
-missing, rather than letting the first session eat a 30s dial timeout:
+image production pulls, so the studio agent's `bash`/`run_code` stop running as
+the server's uid and in-guest builds resolve production's `/opt/aai` toolchain.
+`pnpm build:guest-image --msb` builds and loads it — **a harness edit is not
+live until it has run** ("A harness edit needs the IMAGE rebuilt",
+`packages/aai-guest/CLAUDE.md`) — and `pnpm --filter aai-server test:scenario`
+runs the real-microVM tier, which SKIPS without hardware virtualization
+(`AAI_REQUIRE_MICROSANDBOX=1` makes that skip a failure).
 
-`pnpm build:guest-image --msb` builds the image and loads it into
-microsandbox's own store — **and a harness edit is not live until it has run**
-("A harness edit needs the IMAGE rebuilt", `packages/aai-guest/CLAUDE.md`).
-`pnpm --filter aai-server test:scenario` runs the real-microVM tier. Four traps,
-all measured:
-
-- **`.network()` REPLACES the network config**, so a `.port()` called before it
-  is discarded — silently. The harness logs `listening on 0.0.0.0:8080` inside
-  the guest while every host dial gets ECONNREFUSED, which reads as a guest that
-  failed to boot. The published port therefore goes INSIDE `.network()`.
-- **A guest's `127.0.0.1` is the VM.** `microsandbox-network.ts` rewrites the
-  agent env to a host alias and opens exactly the ports that rewrite needed — a
-  policy opening the `host` GROUP would pass every "can it reach the database"
-  test while handing tenant code the whole machine.
-- **`isInstalled()` lies** (false where microVMs boot fine), so the scenario gate
-  asks the runtime a real question. That tier SKIPS without hardware
-  virtualization — GitHub's standard runners do not reliably provide it — and
-  `AAI_REQUIRE_MICROSANDBOX=1` makes the skip a failure where they do.
-- **A name is NOT released when the sandbox dies** — Modal's property, which
-  `sandbox-directory.ts` rests on and microsandbox does not share. A SIGKILLed
-  VM left its slug permanently unreachable; `createReclaimingName`'s doc has it.
+**Its four measured traps are in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md)** —
+`.network()` silently discarding an earlier `.port()`, a guest's `127.0.0.1`
+being the VM, `isInstalled()` lying, and a name not being released when the
+sandbox dies (which is a Modal property `sandbox-directory.ts` rests on and
+microsandbox does not share).
 
 ## A teardown may not depend on the boot it is tearing down
 
 `createSandbox` returns SYNCHRONOUSLY with a pending `vmReady`, so a spawn's
 Modal create, boot writes and readiness probe all run OUTSIDE the slug lock the
-broker took — and `deleteAgentResources` drops the app's Postgres role and
-database FIRST. So a DELETE landing in that window completes while a guest is
-still coming up, which reached production as `28P01 password authentication
-failed for user "app_<hex>"` out of `@workflow/world-postgres`'s migration.
-**28P01 is also what a MISSING role reports**, so it reads as a
-storage-credential bug and is a lifecycle race.
+broker took: a DELETE landing in that window completes while a guest is still
+coming up. (`deleteAgentResources` no longer drops anything external — see "A
+delete is one row" in Key files — but the window is the spawn's, not the
+delete's, so it is still there for whatever a future teardown removes.) It
+reached production as `28P01 password authentication failed for user
+"app_<hex>"` out of `@workflow/world-postgres`'s migration, back when a delete
+dropped the app's Postgres role first. **28P01 is also what a MISSING role
+reports**, so it read as a storage-credential bug and was a lifecycle race.
 
 **The rule, because this shape recurs: a capability a TEARDOWN needs must never
 be published on the RESOLVED handle.** `terminate` was, so the one operation
@@ -1157,16 +1097,11 @@ Host↔guest control traffic is JSON-RPC over a WebSocket the host dials
 through the same tunnel (`/ws`), authenticated by a per-sandbox bearer
 token.
 
-**In production.** A run declaring `AAI_LOCAL_DEV=1` gets the `microsandbox`
-backend — a real boundary, though not this one — and `SANDBOX_BACKEND=subprocess`
-gets **none** of the properties described below, the harness being a child
-process of the server sharing its uid, filesystem and network. Selection
-(`sandbox-backend.ts`) makes the isolation-free one
-unreachable without that declaration: every other environment resolves `modal`
-unconditionally, so the boundary is what a deployment gets by DEFAULT rather
-than by remembering a variable. When reasoning about the security model, the
-backend is the first thing to establish, and the boot log names it (with a
-warning when there is no boundary at all).
+**Everything below describes the `modal` backend only, so establish the backend
+FIRST** — `microsandbox` is a real boundary but not this one, and `subprocess`
+has none at all. Which one a run gets, and why the isolation-free one is
+unreachable without an explicit declaration, is "Three backends" under "Modal
+sandbox notes" above; the boot log names it.
 
 Key properties:
 
@@ -1182,19 +1117,15 @@ Key properties:
   never enter the guest.
 - **Minimal filesystem**: the guest sees the baked harness image — never
   the host filesystem.
-- **Resource limits**: Modal per-sandbox memory/CPU caps
-  (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) and a bounded lifetime
-  (`SANDBOX_TIMEOUT_SECS`, default 4h).
+- **Resource limits**: the burst range and bounded lifetime above.
 - **Sessions live in the guest**: the embedded runtime owns per-session state
   (slot values, history, the resume grace window) exactly as the self-hosted
   runtime does. The host holds no session state; a DURABLE slot value lives in the
   tenant's own schema, on the tenant's own role.
 
-Key files: `sandbox.ts`, `sandbox-vm.ts`, `modal-sandbox.ts`,
-`aai-guest/harness.ts`, `rpc-transport.ts`. A deployed agent's env is
-delivered as a boot FILE written into its own sandbox (scrubbed after
-reading); per-sandbox tokens ride the exec env, and platform secrets stay
-host-side.
+A deployed agent's env is delivered as a boot FILE written into its own sandbox
+(scrubbed after reading); per-sandbox tokens ride the exec env, and platform
+secrets stay host-side.
 
 **Credential separation:** each agent provides its own `ASSEMBLYAI_API_KEY`
 via `.env` (local dev) or `aai secret put` (production) — **there is no
@@ -1216,11 +1147,6 @@ per-sandbox bearer, and each is scoped by the caller's slug SERVER-side
 (`workflow-run-owner.ts` for runs, the primary key for session state). Beyond
 that, each sandbox communicates over its own authenticated WebSocket, sessions
 are per-sandbox, and there is no shared mutable state between sandboxes.
-
-This used to rest on per-app DATABASES with per-app login roles and `CONNECT`
-revoked from `PUBLIC` (verified then: a neighbour's database answered `42501
-permission denied`) — worth knowing as the shape a Postgres tenant boundary has
-to take if one is needed again.
 
 **`run_code`**: executes only inside the guest sandbox — see "The
 `run_code` executor" in `packages/aai-guest/CLAUDE.md` for its authority
@@ -1357,98 +1283,21 @@ the two undici-version traps in the pinned dispatcher are in
 
 ### The image is layered dependencies-first (`scripts/modal_image.py`)
 
-The service image installs, then builds, and the two halves have deliberately
-different cache keys:
+The SERVICE image installs, then builds, with deliberately different cache keys
+per half — install inputs (lockfile, workspace manifests, patch files) first, so
+a doc change cannot refetch the dependency tree, and the win is COLD START
+rather than deploy latency. Four things it costs to get wrong, each having cost
+it once: a recipe that reads the filesystem at import crash-loops every
+container while `modal deploy` exits 0; the manifests must be NORMALIZED
+(`version` moves on every release, i.e. exactly when a deploy happens); a
+`patchedDependencies` entry names a file that must be STAGED; and the image
+bakes the server's V8 compile cache (~600ms → ~395ms cold start).
+`modal-image-inputs.test.ts` pins all four.
 
-1. **Install inputs only** — the lockfile, `pnpm-workspace.yaml`, `.npmrc`,
-   every workspace manifest, and every patch file `patchedDependencies` names,
-   staged into a temp dir by `_stage_install_inputs`.
-2. `pnpm install --frozen-lockfile`.
-3. **The source tree** (`add_local_dir(REPO_ROOT, …)`), which merges into the
-   installed `/app` rather than replacing it — `BUILD_IGNORE` keeps
-   `node_modules` out of the copy. `ASSERT_INSTALL_SURVIVED` runs before the
-   build so that assumption fails as one sentence at image build, not as a
-   missing module twelve steps later.
-4. `BUILD_COMMAND`.
-
-It used to be one `add_local_dir` for the whole repo followed by install and
-build in a single step, so **any** file change — a test, a doc — invalidated
-the install and refetched the entire dependency tree. The win is not deploy
-latency (`modal deploy` builds before any traffic moves, and under Modal's
-rolling strategy the old containers serve throughout); it is the **cold
-start**, where a container on a worker that already holds the install layer
-pulls only what changed.
-
-**Everything in the recipe must be IMPORTABLE without the repo present, and
-that is not a style rule — it is the difference between a deploy and a
-crash-loop.** Modal re-imports the deploy script inside every container to
-hydrate the function, so `build_image` runs a second time where the repo does
-not exist and `REPO_ROOT` (derived from `__file__`, mounted at `/root/`)
-resolves to `/`. Modal's own `Image` builder calls are LAZY, so naming
-`REPO_ROOT` in one is fine; computing an argument to one by reading the
-filesystem is not. `_stage_install_inputs` did, and the container died at
-import with `FileNotFoundError: '/pnpm-lock.yaml'` — it is guarded on
-`modal.is_local()` now, returning an empty staging dir off-host.
-
-**Every signal a deploy has is blind to that failure**, which is why it ran for
-hours: `modal deploy` exits 0, the image builds, CI goes green, the app reads
-`deployed`, and — because the rolling strategy keeps the PREVIOUS deploy's
-containers serving — the health endpoint answers 200 and the request log stays
-clean. What actually shipped was a service that could not scale out or replace
-a container, one container-death away from an outage with no recovery path.
-Observed 2026-08-09: 13 failed container starts over four minutes, production
-served for the next two hours by a container that predated the deploy, and the
-only trace was a `Function modal_deploy.server is crash-looping` line in an app
-log nobody was reading. Hence two guards, at different distances:
-`modal-image-inputs.test.ts` pins the `is_local` short-circuit statically (a
-gate that fails in the ordinary test run), and **`ship.yml`'s verify step**
-(`scripts/verify_modal_deploy.py`) asserts after every deploy that a container
-started AFTER the deploy began and that the service answers — the general net,
-since it catches any startup failure rather than this one. Checking health
-alone would not have caught it; the stale container was answering fine.
-
-**The manifests are NORMALIZED, and without that the split would be pure
-ceremony.** A layer's cache key is the bytes that go into it, and a
-package.json's `version` moves on every changeset release — which is exactly
-and only when a deploy happens (`ship.yml` fires on a version bump). Copied
-verbatim, the install layer would therefore miss on every production deploy.
-`INSTALL_MANIFEST_FIELDS` is a whitelist of the fields install actually reads;
-`version` and `scripts` are dropped, so the layer survives a release and
-misses only on a real dependency change. The full manifests still land in the
-source layer, so the built image carries each package's true version.
-
-**A `patchedDependencies` entry names a FILE, and that file is an install
-input** — the yaml is copied byte-for-byte, so a declared patch not staged
-beside it fails the layer with `ENOENT: … open '/app/patches/<name>.patch'`
-while pnpm hashes it against the lockfile. Every other signal is green, the
-patch being in the tree. `_patch_paths` carries why it derives the paths and
-raises on a declaration it cannot read; `modal-image-inputs.test.ts` pins it.
-
-**The image also bakes the SERVER's V8 compile cache**, the same trick the
-guest snapshot bakes for the harness. After `BUILD_COMMAND`, a build step runs
-the built entry once in warm-up mode (`AAI_SERVER_WARMUP=1`, honored at the top
-of `aai-studio-server/index.ts` — it evaluates the module graph and exits 0,
-opening no port, socket, or database connection) under `NODE_COMPILE_CACHE`,
-and the resulting `/app/.compile-cache` ships in the layer; `.env()` points the
-container's node at the same directory, which is the half that is silent when
-it drifts — a warmed cache nothing consults costs exactly what no cache costs.
-Measured on the built bundle: **~600ms → ~395ms**, i.e. ~200ms off every cold
-start, for ~3.6 MB in the image. Unlike the harness's warm-up this one is
-deliberately FATAL to the build: it runs the real entry, so a non-zero exit
-means the artifact production is about to run cannot be evaluated at all.
-`modal-image-inputs.test.ts` pins the three things that must agree (entry path,
-flag name, cache directory) across the recipe and the entry.
-
-Dropping `version` is safe **because every workspace dependency here is
-`workspace:*`**, which matches any version. A `workspace:^` anywhere would
-silently break that, so `modal-image-inputs.test.ts` asserts it — along with
-the two other ways this drifts: a workspace glob added to
-`pnpm-workspace.yaml` but not to `WORKSPACE_MANIFEST_GLOBS`, and a manifest
-that grows a dependency-declaring field (`overrides`, `resolutions`,
-`optionalDependencies`) the whitelist does not carry. The first fails loudly
-at image build as a lockfile mismatch; the second does **not** — the install
-succeeds and merely resolves a different tree than the source layer expects,
-which is why it needs a test rather than a comment.
+**The full account is in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md) beside this
+file** — the four-step recipe, the 2026-08-09 outage where production served
+for two hours from a container that predated the deploy, `ship.yml`'s verify
+step, and why `INSTALL_MANIFEST_FIELDS` is a whitelist.
 
 ### The guest fetches its own bundle (signed Storage URL)
 
@@ -1647,12 +1496,37 @@ no width bound.
 **Delivery is NOTIFY-driven now, with the interval as the timer for PARKED
 work** — `workflow-queue-sweep.ts`'s module doc owns the argument, including why
 the interval cannot be removed (a notification is dropped rather than queued,
-and cannot express "due at T", which is how `sleep()` works), why one coalescing
-runner sits behind both triggers, and why the listening connection is COUNTED in
-the budget. Two findings worth knowing before touching it: a delayed enqueue
-must NOT notify, and an absence-of-notification spec needs a barrier channel — a
-`vi.waitFor` on an exact count passes against an unconditional notify, verified
-by A/B.
+and cannot express "due at T", which is how `sleep()` works), why the coalescing
+runner sits behind the NOTIFY trigger, and why the listening connection is
+COUNTED in the budget. Two findings worth knowing before touching it: a delayed
+enqueue must NOT notify, and an absence-of-notification spec needs a barrier
+channel — a `vi.waitFor` on an exact count passes against an unconditional
+notify, verified by A/B.
+
+**A TICK is not gated on the previous pass, and that is a fix rather than a
+detail.** It was: the coalescing runner sat behind both triggers, and a pass
+awaits every delivery it claimed, where one delivery is bounded only by
+`QUEUE_DELIVERY_TIMEOUT_MS` (60 s, because a delivery runs a tenant's step
+inline). So ONE slow step anywhere on the replica stopped every other tenant's
+message from being claimed for as long as it ran — measured by hand against a
+dev server on the real platform path at **21.1 s** end to end for a two-step,
+wait-free workflow, against **0.5 s** with the replica idle, cross-tenant. What
+bounds the work instead is the replica's DELIVERY budget
+(`workflow-queue-budget.ts`, which carries the argument): slots taken before the
+claim, released one at a time as each delivery settles, and a tick with none
+free returns before it reserves a connection. Two consequences to keep: the
+claim asks for `min(maxPerTick, free slots)`, because a claim writes `locked_at`
+and a message claimed beyond the in-flight bound is hidden from every other
+replica for nothing; and a claim that THROWS must give its slots back, or a
+replica whose database blips leaks the whole budget and stops claiming for good.
+The overlap is safe for the reason the module doc already gave —
+`claimDue` re-checks its predicate under the row lock, so concurrent passes take
+disjoint sets.
+
+The engine-side half of the same defect — a walk the ceiling could not stop
+re-executing steps a sibling had already journaled — is fixed in
+`aai-runtime/workflow-replay-step.ts`; see "An attempt is a LEASE, not a tally"
+in that package's guide.
 
 **Five properties survive**, each the answer to a way "boot a sandbox on a
 schedule" goes wrong, and the queue sweep keeps all five:
@@ -1709,19 +1583,39 @@ streaming the body, with `brokerSessionUrl`'s taxonomy. Three decisions:
 - **Per-IP limits run BEFORE the handler**, so a refused request never brokers:
   a surface limit sized for a POLLING page plus a tighter one on `POST /runs`
   counted IN ADDITION — the one route whose cost OUTLIVES its request.
+- **A DELETED agent is a 404 here, not the booting agent's 503**, and the route
+  answered 503 at BOTH of its two exits until a user hit it. `guest-bearer.ts`
+  now answers the same way for the same condition, and its docstring's defence of
+  the 503 — that a 404 would disclose existence — failed twice: the oracle was
+  already open one status over (`Bearer x` gives **401** for a slug that exists
+  and 503 for one that does not), and the neighbouring routes disclose it
+  deliberately. A redeploy cannot reach that branch either, since agent rows are
+  written `on conflict (slug) do update`, so `null` only ever means gone. `503 agent
+  unavailable, retry shortly` is advice a caller cannot act on once the row is
+  gone: every workflow table cascades off it, so there is no run to resume and no
+  sandbox that will ever answer, while the sentence spins a client's retry loop.
+  It is reachable without any race — `resolveSandbox`'s fast path serves a live
+  resident WITHOUT reading the row, so on every replica but the deleting one the
+  broker keeps succeeding for the whole time `watchAgentInvalidation`'s Realtime
+  event takes to arrive — and again as the FORWARD's own failure, which is how it
+  was reported: a delete terminates the resident mid-request and the fetch dies
+  with `fetch failed <- aborted`, indistinguishable from a crashed guest except
+  by re-reading the row. So the failure path re-reads it (one indexed read, only
+  when the forward already failed). **The answer is 404 `notFoundMessage`, never
+  410**: a delete leaves no tombstone, so a deleted slug and a slug nobody ever
+  deployed are the same absent row, and `Gone` would claim a history the platform
+  cannot support. It is also what `brokerSessionUrlOrThrow` and
+  `upload-handler.ts`'s `assertAgentExists` already answer — the bug was one
+  upload loop being told "gone" by the byte route and "retry" by this one.
 
 ### No warm pool — every spawn boots from the snapshot image
 
-There is NO warm sandbox pool (`sandbox-pool.ts` and its `SANDBOX_POOL_SIZE`,
-`pool` role and `setTags` plumbing are deleted — production always ran with it
-disabled, so it was pure complexity). Every spawn — agent, studio — boots
-directly from the published content-addressed harness snapshot image, one code
-path per backend, and every sandbox knows its identity (role/slug tags) at
-creation. When Modal's
-JS SDK exposes sandbox MEMORY snapshots (today it exposes only
-`snapshotFilesystem`; memory snapshots are Python-SDK experimental),
-restore-from-snapshot slots into this single spawn path — do NOT
-reintroduce a host-managed pool to approximate it.
+There is NO warm sandbox pool (`sandbox-pool.ts`, `SANDBOX_POOL_SIZE`, the
+`pool` role and the `setTags` plumbing are deleted — production always ran with
+it disabled). Every spawn boots directly from the published content-addressed
+harness snapshot image, one code path per backend. Do NOT reintroduce a
+host-managed pool to approximate Modal memory snapshots; see
+[`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 
 ### No horizontal sandbox scaling — one sandbox per slug, FLEET-WIDE
 
@@ -1795,15 +1689,15 @@ platform host mode ever returns, run it in the guest on the bundle's runtime.
 
 ### Testing security boundaries
 
+Note what none of these can assert: isolation itself — filesystem, memory,
+network and env denial — is Modal's, not host code's, so no test here covers
+it.
+
 - `modal-sandbox.test.ts` — Modal spawn flow against an injected fake
   context: sandbox creation, tunnel dial + per-sandbox token, teardown on
-  failure. (Isolation itself — filesystem, memory — is enforced by Modal's
-  sandbox boundary, not host code.)
+  failure.
 - `aai-guest/harness.test.ts` — the guest's `run_code`
-  executor (console capture, thrown-error reporting, timeout). It does NOT
-  test network/filesystem/env denial: the executor has no in-process
-  sandbox — the Modal container is the boundary, so those are Modal's to
-  enforce, not host code's.
+  executor (console capture, thrown-error reporting, timeout).
 - `net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
   (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
 
@@ -1836,16 +1730,46 @@ can hold while every sandbox fails.
 ### Building a platform request in a test
 
 **Build a request with `authFetch`/`deploy`, not a header literal.** The
-`Bearer`+`Content-Type` pair was spelled out at ~47 sites across 8 files;
-they are converted, and the 28 remaining `Bearer` strings in the package are
-all ones where the literal IS the subject — the bearer parser's own spec
-(`_bearer.test.ts`), the `resolveBearer` cases in `middleware.test.ts`, and
-header ASSERTIONS in the blob-storage / supabase-auth / warm-harness suites.
+`Bearer`+`Content-Type` pair was spelled out at ~47 sites across 8 files; they
+are converted, and the `Bearer` strings left are all ones where the literal IS
+the subject — the bearer gate's own specs
+(`_bearer.test.ts`, `guest-bearer.test.ts`), `middleware.test.ts`'s
+`resolveBearer` cases, and header ASSERTIONS in the blob-storage /
+supabase-auth / warm-harness suites.
 `deploy(fetch, { key, body })` is the same idea one level up, for the
-`POST /deploy` shape ~40 specs restate; `deployPayload()` is `deployBody()`
-as an object, for callers that re-encode it (the gzip specs). Drop to a bare
-`fetch` only when the REQUEST is what a spec exercises — a missing header, a
-gzipped body, a raw string — and those cases are why `deployBody` stays.
+`POST /deploy` shape ~40 specs restate; `deployPayload()` is `deployBody()` as
+an object, for callers that re-encode it (gzip specs). Drop to a bare
+`fetch` only when the REQUEST is the subject — a missing header, a gzipped
+body, a raw string — which is why `deployBody` stays.
+
+### A suite over a FLEET-WIDE predicate owns its database
+
+Slugs isolate the rows a test WRITES. They do nothing about the predicate that
+READS them, and the queue's predicates are all fleet-wide: `claimDue` takes due
+messages for any slug, `WORKFLOW_QUEUE_CHANNEL` carries every tenant's enqueue,
+and `findStalledRuns` scans every run under an `order by created_at` and a
+`limit`. Two suites over one database therefore corrupt each other's ANSWERS
+while each keeps its own rows perfectly, and vitest runs files in parallel.
+
+It was live: full scenario runs failed roughly one time in two, always in
+`workflow-queue-store.scenario.test.ts`, never the same cases twice. Two
+distinct mechanisms, both measured — seeding ONE stalled run under a foreign
+slug fails four of its cases on its own, because `runQueuePass` reconciles that
+run and every count then sees a row the suite did not write; and a sibling's
+older rows can fill `findStalledRuns`'s `limit` and push a suite's own run out
+of the answer, which surfaces as `expected [] to deeply equal [ 'wrun_stalled' ]`
+in a suite that did nothing wrong.
+
+`useThrowawayPlatformDb` (`_workflow-queue-test-utils.ts`) is the fix: a private
+`create database`, `ensurePlatformTables` over it, `drop database` after. Both
+queue suites take one, which is also what lets one of them call the fleet-wide
+`reconcileStalledRuns` at all. Three things follow. The schema still comes from
+`ensurePlatformTables`, never a hand-written `create table` — that is what keeps
+the FOREIGN KEYS and the unique idempotency index the SHIPPED ones. A listener
+must dial the fixture's `url()`, not `pgUrl()`, or it waits on a channel nobody
+announces to. And this is a different fix from the `aai_test_schema_ready`
+sentinel beside it: that one stops parallel suites seeing a half-built SCHEMA,
+this one stops them seeing each other's ROWS.
 
 ### Gating a suite on a real Postgres
 

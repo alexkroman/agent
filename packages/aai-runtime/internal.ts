@@ -42,10 +42,11 @@
  * name reachable from no subpath cannot be autocompleted, reported, or come to
  * be depended on. They were removed, and the rule stands for the next one — a
  * clause added here in anticipation of a consumer is a surface with no reader.
- * One exception is structural, not aspirational: `WorldKind` is unimported but
- * named by the signature of something on this page, so a consumer satisfying it has
- * to be able to spell it. (There were three; the two the wake hint contributed went
- * with it.)
+ * There used to be three structural exceptions — names nothing imported but a
+ * signature on this page could not be spelled without: `WakeHintOptions`,
+ * `WakeHintPublisher` and `WorldKind`. All three went with the code that named
+ * them (the wake hint, then the DevKit's world), so there are none, and a name
+ * arriving here now owes an importer.
  *
  * **A name here that wants to be public does not get re-exported from
  * `runtime-barrel.ts`.** Its `@internal` tag comes OFF at the declaration site
@@ -62,6 +63,18 @@
  * @module internal
  */
 
+// One backend under test, as the shared `JournalStore` conformance suite names
+// it — imported for the signature of `JournalConformanceSuite` at the foot of
+// this file and deliberately NOT re-exported: nothing imports the NAME (an arm
+// is written as a literal at its one call site), and this subpath's rule is that
+// a name here owes an importer. A consumer that wants it can have the line.
+import type { JournalArm } from "./journal-conformance-cases.ts";
+// The same, for the `SessionStateBackend` contract's own suite type below. Also
+// type-only, so the case module it is declared in — and the `vitest` import at
+// the top of that module — is erased rather than bundled; see "Why this is a
+// LOADER" at the foot of this file.
+import type { SessionStateArm } from "./session-state-conformance-slots.ts";
+
 export {
   CONTAINED_ENV,
   publishStepEnv,
@@ -71,6 +84,16 @@ export {
   UPLOAD_PART_BYTES,
   UPLOAD_TOKEN_RE,
 } from "@alexkroman1/aai/host-internal";
+// Parsing an `Authorization: Bearer <token>` header. Here because FOUR
+// byte-identical copies existed — the guest's gate (`aai-guest/harness-auth.ts`),
+// `bearerMatches` in this package, `aai-server/_bearer.ts`, and the platform's
+// guest gate through it — and all of them matched the scheme case-sensitively.
+// `aai-server` cannot be imported by the other two, so this is the narrowest home
+// that reaches all three; it is now the ONLY copy, that module having deleted its
+// own once it turned out it could import this subpath (it already does in five
+// others). `isBlankSecret` beside it is deliberately NOT exported: the one caller
+// outside this package, `guest-bearer.ts`, is safe by its own ordering.
+export { parseBearer } from "./bearer.ts";
 // The two sizes an upload is measured in, plus the id grammar. Exported for the
 // PLATFORM, which owns the byte route a deployed guest brokers through: its window
 // cap and its key derivation have to be stated in the same units the SDK cuts in,
@@ -119,6 +142,14 @@ export { isPathInside } from "./server-static.ts";
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel.
 export { createSessionEventStream, stampSessionEvent } from "./session-event-stream.ts";
+// Session state's PLATFORM backend — the HTTP client `aai-server` serves on
+// `POST /:slug/session-state`. Here for the same reason `createPlatformJournal`
+// below is, and it is the same arm: `session-state-conformance-platform.scenario.test.ts`
+// in `aai-server` builds one over the real route and a real Postgres, which is
+// the only thing anywhere that exercises this client and the platform's own SQL
+// together (its unit arm's transport is a fake over the memory reference). Not
+// an embedder's to call — `createRuntime` selects a backend from the boot env.
+export { createPlatformStateBackend } from "./session-state-platform.ts";
 // Session state's Postgres backend. `createRuntime` wires it itself, so what a
 // consumer needs is the TABLE NAME: the platform's TTL sweep reads it out of
 // every app schema, and spelling it here rather than in that sweep is what
@@ -145,35 +176,61 @@ export { executeToolCall } from "./tool-executor.ts";
 // has to agree with. The HANDLER is not here: `createServer` mounts the route
 // itself, so nothing outside this package wires one by hand.
 export { WORKFLOW_API_METHODS } from "./workflow-api.ts";
-// The startup sweep that clears queue locks no live pool owns, and the advisory
-// lock it contends for. Exported for a SPEC: what a fake cannot check is that
-// `graphile_worker.force_unlock_workers` exists and does what its name says, and
-// the constants' own doc says they exist "so a test or a verification script can
-// contend for the SAME lock without restating the number" — which nothing outside
-// this package could do while they stopped here. See
-// `aai-server/workflow-lock-sweep.scenario.test.ts`. What the sweep reports when
-// it declines (`SweepSkip`) is contracted, on the root barrel.
+// Where a LOCAL deployment keeps a workflow's on-disk state. The READER
+// (`localWorkflowDataDir`) is not here — every reader is inside this package —
+// but the one WRITER is `aai dev`, which had spelled the key out by hand
+// because it reached no barrel. A disagreement between the two is silent:
+// uploads under one directory, runs under another, and no error anywhere.
+export { WORKFLOW_DATA_DIR_ENV } from "./workflow-data-dir.ts";
+/**
+ * A run journal in this process's memory, for a host that must hold one across
+ * a rebuild.
+ *
+ * `aai dev` is the importer and the reason: it rebuilds the runtime on every
+ * file save, and the engine's own default is a FRESH journal per build — so
+ * every save discarded the runs. STORAGE per process, CODE per build. What a
+ * host does with this is pass it as `RuntimeOptions.journal`; nothing else here
+ * builds a store by hand.
+ */
+export { createMemoryJournal } from "./workflow-journal-memory.ts";
+/**
+ * The journal's PLATFORM backend — the HTTP client `aai-server` serves.
+ *
+ * Here for the same reason `createPostgresJournal` above is: `workflow-runtime.ts`
+ * picks it, and the conformance arm in `aai-server` builds one to drive the real
+ * route with. That arm is the only thing anywhere that exercises this client and
+ * the platform's own SQL together — its unit arm's transport is a fake over the
+ * memory reference — so the export is what makes the last mile of that wire
+ * testable at all. Nothing an embedder calls: `createAgentServer` chooses a
+ * journal from the boot env.
+ */
+export { createPlatformJournal } from "./workflow-journal-platform.ts";
+/**
+ * The durable JOURNAL and its schema.
+ *
+ * On `/internal` rather than the root barrel because a name is here when
+ * something IMPORTS it and it is not authoring API: the two consumers are
+ * `workflow-runtime.ts`, which picks a backend, and the scenario suite in
+ * `aai-server` that drives the real arm. A host embedding this runtime is handed
+ * a journal by `createAgentServer`; it does not build one.
+ */
+export { createPostgresJournal } from "./workflow-journal-postgres.ts";
 export {
-  claimPoolPresenceAndSweep,
-  type PoolPresence,
-  PRESENCE_LOCK_CLASS,
-  PRESENCE_LOCK_OBJECT,
-} from "./workflow-lock-sweep.ts";
+  applyWorkflowJournalDdl,
+  workflowJournalDdl,
+} from "./workflow-journal-schema.ts";
+// Asking the PLATFORM to queue a message for one of this guest's own runs.
+// `aai-server`'s enqueue handler is the other end, and `payloadRunId` is what it
+// reads a run id out of a body with.
 export {
   createPlatformQueueSend,
   enqueueToPlatform,
   type PlatformQueueOptions,
   payloadRunId,
 } from "./workflow-platform-queue.ts";
-export {
-  callPlatformStorage,
-  createPlatformStorage,
-  createPlatformStreamer,
-  createPlatformStreamReader,
-  type PlatformStorageOptions,
-} from "./workflow-platform-storage.ts";
-// The DevKit's queue-name grammar, and the classifier over it. The grammar is a
-// third-party one — `parseQueueName` in `@workflow/world` — and the DevKit is a
+// The queue-name grammar, and the classifier over it. It began as the DevKit's
+// (`parseQueueName` in `@workflow/world`) and is ours now — the platform's claim
+// SQL matches the two patterns, so it has to stay stable whoever owns it. It is a
 // declared dependency of THIS package and not of `aai-server`, so a second
 // spelling on that side is exactly the copy this subpath exists to prevent.
 //
@@ -189,35 +246,136 @@ export {
   queueNameKind,
   STEP_QUEUE_NAME_PATTERN,
   WORKFLOW_QUEUE_NAME_PATTERN,
+  WORKFLOW_QUEUE_PATH,
 } from "./workflow-queue-dispatch.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
-export {
-  createWorkflowSurface,
-  handleWorkflowRequest,
-  WORKFLOW_FLOW_PATH,
-  type WorkflowSurface,
-} from "./workflow-serve.ts";
-// The STORAGE half of the codec only, which is the half `aai-server`'s storage
-// handler is the other end of. The queue half (`encodeTypedJson`) has one
-// intra-package caller and the two raw replacer/reviver pairs have none, so by
-// this subpath's own rule — a name is here because something IMPORTS it — they
-// stay off it. Which side of the codec a path is on is load-bearing rather than
-// incidental: see `workflow-typed-json.ts`.
-export { type StorageRefusalStatus, storageStatusFor } from "./workflow-storage-status.ts";
+//
+// `publishWorkflowWebhookUrl` is beside it for the same reason: the GUEST is the
+// one composition that knows its public origin (`AAI_PUBLIC_BASE_URL` in its exec
+// env, which the agent env never carries), and it must not learn the webhook path
+// in order to publish a minter over it. What it fills is the step slot a workflow
+// BODY reads through `stepWebhookUrl`.
+export { handleWorkflowRequest, publishWorkflowWebhookUrl } from "./workflow-serve.ts";
 export { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 // Standing an upload store up. The store TYPE, the two blob implementations and
 // the part addressing are contracted, on the root barrel; this is what JOINS
 // them, which is a host's job.
 export { createUploadStore } from "./workflow-uploads.ts";
-export { wdkAdapter } from "./workflow-wdk.ts";
-// Choosing the world a workflow lives in, and starting it when the agent
-// declares one. `WorldKind` is what the first hands the second.
-export {
-  configureWorkflowWorld,
-  startWorkflowWorldIfDeclared,
-  type WorldKind,
-} from "./workflow-world.ts";
 // Wiring a socket up under a session. `SessionWebSocket` — the minimal socket
 // shape a host supplies — is contracted, on the root barrel.
 export { wireSessionSocket } from "./ws-handler.ts";
+
+/**
+ * The {@link JournalStore} CONFORMANCE suite, loaded on demand.
+ *
+ * One case list, run over every arm a run really journals into
+ * (`journal-conformance.ts` carries the argument). Two of the three arms live in
+ * this package; the third is `createPlatformJournal` wired to the platform's REAL
+ * handler and a real Postgres, which can only be stood up in `aai-server` — so
+ * the case list has to cross the package boundary, and this is the subpath that
+ * direction is allowed on (`aai-server` imports this package; never the reverse).
+ *
+ * That arm is the whole point: the platform arm in this package's unit tier
+ * delegates every SEMANTIC to a memory-backed fake transport, so a divergence in
+ * the platform's own SQL is invisible to it — and one was shipped. `createRun`'s
+ * `on conflict … do nothing` answered a duplicate run id with SUCCESS while the
+ * contract, the memory reference and the self-hosted store all refuse it, so two
+ * racing starts on one run id both believed they had won.
+ *
+ * ## Why this is a LOADER and not a re-export clause
+ *
+ * The case modules `import { describe, expect, test } from "vitest"`, and vitest
+ * is an OPTIONAL peer dependency of this package. A static
+ * `export { journalConformance } from …` here is bundled INTO `dist/internal.js`
+ * — measured: `import { describe, expect, test } from "vitest"` lands on line 4 —
+ * and `@alexkroman1/aai-cli`'s published `dist` imports a VALUE from this exact
+ * module (`consoleLogger`, in `_dev-env.ts`) with every bare specifier left
+ * external. So the plain clause makes `aai dev` unrunnable in any install that
+ * does not happen to have the test runner: `ERR_MODULE_NOT_FOUND` from inside a
+ * published package, which neither `publint` nor `attw` can see. Behind a dynamic
+ * import the same code splits into its own chunk (verified: zero `vitest`
+ * references in `dist/internal.js`) and is fetched only by the caller that asks
+ * for it. Same rule as `@alexkroman1/aai-runtime/eval/vitest` and
+ * `@alexkroman1/aai/testing/vitest` — anything that pulls the runner is reached
+ * deliberately — expressed as a function because this subpath cannot afford to
+ * be split in two.
+ *
+ * A consumer awaits it at the TOP of its test file and registers the cases
+ * synchronously afterwards, which is what a `describe` body needs:
+ *
+ * `no-check`: `describeWithPg` is an `aai-server` test helper, which a doc
+ * example cannot import (the harness compiles fences under the SCAFFOLD
+ * tsconfig, where a private workspace package does not resolve), and `store`
+ * is the arm the reader is registering. Not the `await` and not the loader —
+ * both of those type-check.
+ * ```ts no-check
+ * const { journalConformance, journalIds } = await loadJournalConformance();
+ * describeWithPg("…", () => {
+ *   journalConformance({ label: "platform", journal: () => store, uid: journalIds("pf") });
+ * });
+ * ```
+ */
+export type JournalConformanceSuite = {
+  /** Declares the whole case list over one arm. Call inside a `describe` body. */
+  journalConformance: (arm: JournalArm) => void;
+  /** The arm-independent id factory every case mints its keys from. */
+  journalIds: (label: string) => () => string;
+};
+export async function loadJournalConformance(): Promise<JournalConformanceSuite> {
+  const { journalConformance, journalIds } = await import("./journal-conformance.ts");
+  return { journalConformance, journalIds };
+}
+
+/**
+ * The {@link SessionStateBackend} CONFORMANCE suite, loaded on demand.
+ *
+ * The second loader on this subpath, and it is here for the reason the first one
+ * is: `session-state-conformance.ts` declares one case list over every backend a
+ * session's durable state really lands in, three of whose four arms live in this
+ * package. The fourth is `createPlatformStateBackend` wired to the platform's
+ * REAL handler and a real Postgres, which can only be stood up in `aai-server` —
+ * so the case list has to cross the package boundary, and this is the subpath
+ * that direction is allowed on.
+ *
+ * **A separate function rather than a widened return, deliberately.** One loader
+ * handing back both suites would make an `aai-server` file that registers the
+ * journal's cases import the session-state case modules too — a second dynamic
+ * chunk pulled in for nothing — and would put two contracts' vocabularies behind
+ * one name. One clause per contract; the cost is a paragraph.
+ *
+ * Why a LOADER and not `export { sessionStateConformance } from …` is measured,
+ * and the measurement is `loadJournalConformance`'s above: the case modules
+ * `import { describe, expect, test } from "vitest"`, an OPTIONAL peer of this
+ * package, and a static clause here lands that import in `dist/internal.js`
+ * (line 4, verified) — which `@alexkroman1/aai-cli`'s published `dist` imports a
+ * VALUE from with every bare specifier external. `aai dev` would then die with
+ * `ERR_MODULE_NOT_FOUND` in any install without the test runner, invisible to
+ * both `publint` and `attw`.
+ *
+ * A consumer awaits it at the TOP of its test file and registers the cases
+ * synchronously afterwards, which is what a `describe` body needs:
+ *
+ * `no-check`: `describeWithPg` is an `aai-server` test helper a doc example
+ * cannot import (fences compile under the SCAFFOLD tsconfig, where a private
+ * workspace package does not resolve), and `backend` is the arm the reader is
+ * registering. Not the `await` and not the loader — both of those type-check.
+ * ```ts no-check
+ * const { sessionStateConformance, sessionStateIds } = await loadSessionStateConformance();
+ * describeWithPg("…", () => {
+ *   sessionStateConformance({ label: "platform", backend: () => backend, uid: sessionStateIds("pf") });
+ * });
+ * ```
+ */
+export type SessionStateConformanceSuite = {
+  /** Declares the whole case list over one arm. Call inside a `describe` body. */
+  sessionStateConformance: (arm: SessionStateArm) => void;
+  /** The arm-independent session-id factory every case mints its keys from. */
+  sessionStateIds: (label: string) => () => string;
+};
+export async function loadSessionStateConformance(): Promise<SessionStateConformanceSuite> {
+  const { sessionStateConformance, sessionStateIds } = await import(
+    "./session-state-conformance.ts"
+  );
+  return { sessionStateConformance, sessionStateIds };
+}

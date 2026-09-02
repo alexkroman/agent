@@ -30,8 +30,10 @@
  *   SUBAGENT concluded, without running one.
  * - `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
  *   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
- *   slots a `"use step"` body reaches through, each answered in memory.
- * - `testing-workflows.ts` — run snapshots and progress streams, for a page.
+ *   slots a step reaches through, each answered in memory.
+ * - `testing-workflows.ts` — run snapshots and progress streams, for a page;
+ *   `testing-workflow-ctx.ts` — `createWorkflowCtx`, the `ctx` a workflow BODY
+ *   takes, which nothing else can hand it.
  *
  * @module testing
  */
@@ -113,6 +115,17 @@ export {
   type StubUploadWrite,
   stubUploads,
 } from "./testing-uploads.ts";
+// Driving a workflow BODY, which nothing else can do: its steps are ordinary
+// functions a spec calls directly and its declaration is a value a spec reads,
+// but the body takes a `ctx` only an engine constructs. Three templates
+// hand-rolled one.
+export {
+  createWorkflowCtx,
+  type RecordedSleep,
+  type RecordedStep,
+  type WorkflowCtxOptions,
+  type WorkflowCtxRecorder,
+} from "./testing-workflow-ctx.ts";
 export {
   createProgressStream,
   createRunSnapshot,
@@ -138,7 +151,7 @@ export type StubReporter = {
 };
 
 /**
- * Capture what a `"use step"` function narrates and emits.
+ * Capture what a step narrates and emits.
  *
  * `report()` and `emit()` both go through a published slot, and with nothing
  * published they fall back to the console — which is right for a step under test

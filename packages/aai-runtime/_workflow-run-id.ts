@@ -41,13 +41,31 @@ const UNSAFE_RUN_ID_RE = /[./\\]/;
 const UNSAFE_RUN_ID_MESSAGE = 'A run id may not be empty or contain ".", "/" or "\\".';
 
 /**
- * The run id in this path, or `undefined` having ALREADY answered 400.
+ * The run id in this path, or `undefined` having ALREADY answered.
  *
  * A path segment is percent-decoded, and `decodeURIComponent` throws a
  * `URIError` on a malformed escape — so `GET /workflows/runs/%` used to reach
  * the router's catch and answer 500 for what is plainly a bad request. See
  * `_path-decode.ts`: none of the decode sites in this package may throw, and
  * each answers the way its own route answers a request it cannot parse.
+ *
+ * ## Two statuses, because there are two mistakes
+ *
+ * A bad ID is a 400. A path with a segment this route does not have is a **404**,
+ * and separating them is a fix rather than a nicety: `GET
+ * /workflows/runs/wrun_1/frobnicate` matched the router's bare `/runs/:id` rule,
+ * so `"wrun_1/frobnicate"` was read as a run id and answered
+ * `400 {"error":"A run id may not … contain \\"/\\""}` — telling a caller to fix
+ * the one part of its request that was correct. The verbs with no prefix rule for
+ * the suffix (`POST`, `PUT`) already answered 404, so one class of mistake had
+ * two statuses depending on which method asked.
+ *
+ * The test is on the RAW segment, before decoding, and that split is
+ * load-bearing: a literal `/` is a path separator, so a further one means a
+ * route; a percent-encoded one is a single segment naming an id no store can
+ * hold, and stays a 400 (`workflow-api-run-id.test.ts` pins `wrun_a%2Fb`).
+ * The 404 body is the router's own sentence for a path it does not serve, since
+ * that is exactly what this is.
  */
 export function runIdOr400(
   res: http.ServerResponse,
@@ -55,7 +73,12 @@ export function runIdOr400(
   prefix: string,
   suffix = "",
 ): string | undefined {
-  const id = decodePathSegment(url.slice(prefix.length, suffix ? -suffix.length : undefined));
+  const raw = url.slice(prefix.length, suffix ? -suffix.length : undefined);
+  if (raw.includes("/")) {
+    sendJson(res, 404, { error: "Not found" });
+    return undefined;
+  }
+  const id = decodePathSegment(raw);
   if (id === undefined) {
     sendJson(res, 400, { error: "Malformed run id" });
     return undefined;

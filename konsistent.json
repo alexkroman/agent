@@ -375,6 +375,50 @@
           }
         }
       ]
+    },
+    {
+      "name": "workflow-journal-backends",
+      "description": "A `workflow-journal-<backend>.ts` file IS a journal backend, and it exports `create<Backend>Journal`. There are three \u2014 memory (the reference), postgres (a self-hoster's own DATABASE_URL) and platform (HTTP to aai-server) \u2014 one interface with twelve methods, and a review of the branch that added the third found five drifts between them, every one an edge case about ABSENCE. So the shape is checked here for the reason the provider and channel shapes are: it is repeated BY CONSTRUCTION, so the next one drifts from the first in a way no per-file tool can see. What this convention buys beyond naming is DISCOVERY \u2014 it makes a backend's factory name derivable from its filename, which is what lets `journal-conformance.test.ts` enumerate the backends out of the tree and fail when one is missing from `JOURNAL_BACKENDS`. Konsistent can state the shape and cannot state that set comparison, which is why the registration rule is the two together.",
+      "paths": [
+        "packages/aai-runtime/workflow-journal-{backendId}.ts",
+        "!packages/aai-runtime/workflow-journal-types.ts",
+        "!packages/aai-runtime/workflow-journal-schema.ts",
+        "!packages/aai-runtime/workflow-journal-*.test.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          "create${backendId.toPascalCase()}Journal"
+        ]
+      }
+    },
+    {
+      "name": "session-state-backends",
+      "description": "A `session-state-<backend>.ts` file IS a session-state backend, and it exports `create<Backend>StateBackend`. There are three — memory (the reference), postgres (a self-hoster's own DATABASE_URL) and platform (HTTP to aai-server) — one interface with six methods, and the requirement that they AGREE was written down twice in prose, as a claim between implementations, while nothing compared them: the postgres spec is an SQL-text recorder, the platform spec an HTTP recorder, and the semantics were asserted for memory only, through the store above it. `session-state-conformance.ts` is the shared case list that closed that, and what this convention buys beyond naming is DISCOVERY for its registry: `session-state-conformance.test.ts` enumerates the backends out of the tree by FACTORY NAME (a name scan rather than the journal's filename scan, because the memory factory is re-exported from the module declaring the interface), so this rule is what keeps a fourth backend's factory name recognisable to that scan. Konsistent can state the shape and cannot state that set comparison, which is why the registration rule is the two together. The exclusions are the modules whose names match the glob and are not backends — the interface and its store, the grace-window sweep scheduler, and the conformance table's own case modules.",
+      "paths": [
+        "packages/aai-runtime/session-state-{backendId}.ts",
+        "!packages/aai-runtime/session-state-store.ts",
+        "!packages/aai-runtime/session-state-sweeps.ts",
+        "!packages/aai-runtime/session-state-conformance*.ts",
+        "!packages/aai-runtime/session-state-*.test.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          "create${backendId.toPascalCase()}StateBackend"
+        ]
+      }
+    },
+    {
+      "name": "workflow-key-stores",
+      "description": "`workflow-keys.ts` declares BOTH implementations of the correlation-key index, and this pins their names. It is the odd one of the three store-conformance registration rules and the shape is why: the journal's and session state's implementations live one per file, so those conventions derive a factory name from a FILENAME and a new backend cannot arrive under a name their sweeps do not recognise. Here there is one file and two factories, so there is no filename grammar to state — which is also the finding the conformance table came out of: `aai-server/store-conformance.ts` had exempted this contract on the ground that a shared case list could not span a package boundary, and both factories had been in one module of one package since the runtime split. What this rule buys is the other half of the same guarantee: `workflow-keys-conformance.test.ts` enumerates the stores out of the tree by FACTORY NAME and fails when one is missing from `WORKFLOW_KEY_STORES`, and this keeps the two names it scans for present in the module that registry claims. A rename now fails HERE, naming the file, rather than in a text sweep. Konsistent can state that the exports exist and cannot state the set comparison, which is why the registration rule is the two together. Note the path is a LITERAL rather than a glob with a captured segment: a `workflow-keys-{storeId}.ts` pattern would match the conformance table's own modules and would have to exclude every one of them, i.e. a convention whose only matches are its exclusions.",
+      "paths": [
+        "packages/aai-runtime/workflow-keys.ts"
+      ],
+      "must": {
+        "exportFunctions": [
+          "createMemoryKeyStore",
+          "createPostgresKeyStore"
+        ]
+      }
     }
   ]
 }

@@ -28,6 +28,13 @@
 // And what no eval here can see at all: anything below the audio boundary —
 // endpointing, barge-in, whether two sentences merged into one turn.
 
+import agentDef from "virtual:aai/agent";
+import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+import type { EvalToolCall, EvalWorkflows } from "@alexkroman1/aai-runtime/eval";
+import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { expect } from "vitest";
+import { z } from "zod";
+import { research } from "./shared.ts";
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
  *
@@ -40,13 +47,7 @@
  * The glob is written here rather than reached for from a shared helper because
  * this file SHIPS — see `agent.test.ts`.
  */
-import agentDef from "virtual:aai/agent";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
-import type { EvalToolCall, EvalWorkflows } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
-import { expect } from "vitest";
-import { z } from "zod";
-import { research } from "./shared.ts";
+import { REVIEW_DELAY_MS } from "./workflows/research.ts";
 
 /**
  * The key the run's steps read with `requireStepEnv`.
@@ -249,7 +250,7 @@ describeEval(
         // durable `sleep` rather than suspending, so what a case can honestly
         // claim is that the body asked — and that is the assertion that fails
         // if the suspension is ever deleted.
-        expect(run?.slept).toEqual([{ duration: "30 seconds" }]);
+        expect(run?.slept).toEqual([{ duration: REVIEW_DELAY_MS }]);
 
         // Six model calls, all through the step slot: the fan-out's width came
         // from a journaled stage rather than from anything the body recomputed.

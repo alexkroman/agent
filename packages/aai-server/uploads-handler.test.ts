@@ -15,7 +15,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   bearerFor,
   createTestOrchestrator,
@@ -61,7 +61,7 @@ async function platform(
   });
   const harness = await createTestOrchestrator({ adminDb });
   for (const slug of [MINE, THEIRS]) await deploy(harness.fetch, slug);
-  return { ...harness, seen };
+  return { ...harness, seen, adminDb };
 }
 
 async function deploy(fetch: TestFetch, slug: string): Promise<void> {
@@ -208,6 +208,29 @@ describe("POST /:slug/upload-records", () => {
         await bearerFor(store, MINE),
       );
       expect(res.status).toBe(400);
+    });
+
+    /**
+     * The stronger claim, and the one the statement recorder cannot make: a refused
+     * body costs no CONNECTION, not merely no statement.
+     *
+     * Per-field validation used to run inside `withReserved`, so every malformed
+     * call took one of `ADMIN_POOL_MAX` reserved admin connections, held it across
+     * the read that refused the request, and gave it back. `seen` stayed empty
+     * throughout — the cost was the door, not the query — which is why this needs
+     * its own spy. See `PlatformCall` in `_platform-route.ts`.
+     */
+    test("reserves no connection for a body it is going to refuse", async () => {
+      const { fetch, store, adminDb } = await platform();
+      const reserve = vi.spyOn(adminDb, "reserve");
+      const res = await callRoute(
+        fetch,
+        MINE,
+        { method: "finish", id: "u1" },
+        await bearerFor(store, MINE),
+      );
+      expect(res.status).toBe(400);
+      expect(reserve).not.toHaveBeenCalled();
     });
   });
 

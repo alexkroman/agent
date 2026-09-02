@@ -3,17 +3,17 @@
  * The published half of {@link report} and {@link emit}: one call becomes a
  * stream chunk, and — for a narration line — a server-log line beside it.
  *
- * `sdk/step-report.ts` is the surface a step calls and may import neither the
- * DevKit (it is on the CLI's zero-dependency startup path and rides the browser
- * bundle) nor a logger (a step is handed none). This module is where both live,
- * and `createServer` publishes it — the one front door `aai dev`, a self-hosted
+ * `sdk/step-report.ts` is the surface a step calls and may not import a logger
+ * (a step is handed none) — it rides the browser bundle and the CLI's
+ * zero-dependency startup path. This module is where the logger lives, and
+ * `createServer` publishes it — the one front door `aai dev`, a self-hosted
  * server and every deployed guest share, so narration behaves identically in all
  * three.
  *
  * ## Two readers, and neither is optional
  *
- * The **stream** is what a page renders: `getWritable()` is the only channel a
- * run has before it produces an output, read back by
+ * The **stream** is what a page renders: `RunContext.write` is the only channel
+ * a run has before it produces an output, read back by
  * `GET /workflows/runs/:id/stream` and `useWorkflowProgress`. The **log** is
  * what an operator has: a workflow app otherwise answers requests and executes
  * steps with nothing in the server log naming the work, so "is it stuck, or is
@@ -23,62 +23,18 @@
  * stream write fails, because the failure modes are the reader's: a page can
  * close, a stream can be gone, and an operator still wants the line.
  *
- * ## `workflow` is imported LAZILY, and that is load-bearing twice
+ * ## The run is found through an `AsyncLocalStorage`, not through an import
  *
- * `host/server.ts` reaches this module, and `server.ts` is what `aai dev`
- * imports at startup — a static import would put the DevKit on the CLI's
- * startup path for every agent, workflows or not. It also must not throw for a
- * process that has no world: an import failure degrades to log-only, which is
- * exactly right for a spec calling an exported step.
- *
- * The dynamic import does not lose the run: `getWritable()` reads an
- * `AsyncLocalStorage` context, which propagates across awaits, so resolving the
- * module inside the call still lands in the step's own run.
+ * `workflow-run-context.ts` is the store, and it propagates across awaits — so a
+ * `report()` from deep inside a step's own helpers still lands in the step's own
+ * run. Outside a run there is no context, and that is ORDINARY: a spec calling
+ * an exported step degrades to log-only rather than failing.
  */
 
 import type { StepReporter } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
-
-/** The two DevKit entry points a report reads, as that package exports them. */
-type WorkflowRuntime = {
-  getWritable?: <T>(options?: { namespace?: string }) => WritableStream<T>;
-  getStepMetadata?: () => { stepName: string; stepId: string; attempt: number };
-};
-
-/**
- * Resolve `getWritable` once per process.
- *
- * Memoized on the PROMISE rather than the value so concurrent steps share one
- * import; a rejection is remembered too, deliberately — the module is either
- * resolvable in this process or it never will be, and retrying it per line
- * would pay the failure on every step of every run.
- */
-let devkit: Promise<WorkflowRuntime> | undefined;
-
-function loadDevkit(): Promise<WorkflowRuntime> {
-  devkit ??= import("workflow")
-    .then((mod) => mod as WorkflowRuntime)
-    .catch(() => ({}) as WorkflowRuntime);
-  return devkit;
-}
-
-/**
- * Which step is speaking, when one is.
- *
- * `getStepMetadata()` THROWS outside a step — in a workflow body, in a spec —
- * which is a legitimate place to call `report()` from, so the answer there is
- * "no step" rather than a failure.
- */
-function stepMetadata(
-  mod: WorkflowRuntime,
-): { stepName: string; stepId: string; attempt: number } | undefined {
-  try {
-    return mod.getStepMetadata?.();
-  } catch {
-    return undefined;
-  }
-}
+import { currentRun } from "./workflow-run-context.ts";
 
 /**
  * Build the reporter `createServer` publishes.
@@ -88,8 +44,11 @@ function stepMetadata(
  */
 export function createStepReporter(logger: Logger): StepReporter {
   return async (chunk: unknown, options): Promise<void> => {
-    const mod = await loadDevkit();
-    const step = stepMetadata(mod);
+    // Which step is speaking, when one is. A body, a tool and a spec are all
+    // legitimate places to `report()` from and none of them is a step, so the
+    // answer there is `undefined` rather than a failure — which is what let the
+    // DevKit-era try/catch around `getStepMetadata()` go.
+    const step = currentRun()?.step;
     const namespace = options?.namespace;
     // **The attempt is part of the LINE, not just the log context.** A fan-out
     // that is retrying looks identical in a progress stream to one that is
@@ -110,11 +69,11 @@ export function createStepReporter(logger: Logger): StepReporter {
     // it sits beside.
     if (options?.log !== false) {
       logger.info(`Workflow: ${String(written)}`, {
-        ...(step ? { step: step.stepName, stepId: step.stepId, attempt: step.attempt } : {}),
+        ...(step ? { step: step.name, stepId: step.key, attempt: step.attempt } : {}),
       });
     }
     try {
-      await writeChunk(mod, written, namespace);
+      await writeChunk(written, namespace);
     } catch (err: unknown) {
       // Not `logger.warn`: a page that closed mid-run makes this the ordinary
       // case, and a warn per step would bury the narration it sits beside.
@@ -134,28 +93,18 @@ export function createStepReporter(logger: Logger): StepReporter {
  * Write one chunk to a stream of the current run, if there is one.
  *
  * The namespace is what separates `emit()`'s typed chunks from `report()`'s
- * lines: the DevKit keys a run's writable streams by it, so a reader subscribing
- * to one sees only the other's. An ABSENT namespace is the default stream, which
- * is `report()`'s — passed through rather than defaulted here, because
- * `getWritable` distinguishes the two and a `{ namespace: undefined }` is not
- * the same request as no options at all.
+ * lines: a run's streams are keyed by it, so a reader subscribing to one sees
+ * only the other's. An ABSENT namespace is the default stream, which is
+ * `report()`'s.
  */
-async function writeChunk(
-  mod: WorkflowRuntime,
-  chunk: unknown,
-  namespace: string | undefined,
-): Promise<void> {
-  // No DevKit in this process (a spec, a script): the log line above is the
-  // whole report, which is what makes an exported step callable without a world.
-  if (!mod.getWritable) return;
-  const writer = mod
-    .getWritable<unknown>(namespace === undefined ? undefined : { namespace })
-    .getWriter();
-  try {
-    await writer.write(chunk);
-  } finally {
-    // Released rather than closed: later steps write to the same stream, and a
-    // closed stream cannot be reopened.
-    writer.releaseLock();
-  }
+async function writeChunk(chunk: unknown, namespace: string | undefined): Promise<void> {
+  // No run in this context (a spec, a script, a `report()` from a tool): the log
+  // line above is the whole report, which is what makes an exported step
+  // callable with no engine around it.
+  const run = currentRun();
+  if (!run) return;
+  // `namespace` is passed through UNRESOLVED — `streamNamespace` in
+  // `workflow-streams.ts` is the one owner, and an earlier draft's `?? ""` here
+  // defeated it while a comment claimed the opposite.
+  await run.write(namespace, chunk);
 }

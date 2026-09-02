@@ -39,6 +39,9 @@ export function installStubTranscribe(options?: StubTranscribeOptions): StubTran
 export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export function mockWorkflows(options?: MockWorkflowsOptions): WorkflowClient;
 
 // @public
@@ -47,6 +50,11 @@ export type MockWorkflowsOptions = {
     names?: readonly string[];
     runId?: string;
     lastLine?: unknown;
+};
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
 };
 
 // @public
@@ -85,6 +93,11 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 type StartOptions = {
     key?: string;
     notify?: boolean | string;
+};
+
+// @public
+type StepOptions = {
+    maxAttempts?: number;
 };
 
 // @public
@@ -230,14 +243,17 @@ type StubUploadWrite = {
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -258,6 +274,16 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public

@@ -17,11 +17,10 @@
  * plays at the wrong speed rather than failing, which is a bug nobody reads as
  * a header bug.
  *
- * ```ts no-check
+ * ```ts
  * import { encodeWav, stepSpeak } from "@alexkroman1/aai/step";
  *
  * export async function speak(text: string) {
- *   "use step";
  *   const spoken = await stepSpeak(text);
  *   // Already a WAV — `stepSpeak` frames it with this. Shown for the shape:
  *   return encodeWav(spoken.pcm, { sampleRate: spoken.sampleRate });

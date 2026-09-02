@@ -15,8 +15,9 @@ this split is critical for sandbox security:
   Schema acceptance (`schema.ts`), the `agent()`/`tool()`/`sessionSlot()`
   authoring helpers (`define.ts`, `session-slot.ts`), the provider DESCRIPTOR
   factories, and the concurrency primitives above.
-- **`host/`** — host-only modules that **require Node.js APIs** (`node:vm`,
-  `node:crypto`, …). Only runs on the platform server and CLI, never inside a
+- **`host/`** — host-only modules that **require Node.js APIs**
+  (`node:child_process`, `node:fs/promises`, `node:dns/promises`, `node:net`,
+  …). Only runs on the platform server and CLI, never inside a
   guest sandbox: `server.ts`, `runtime*.ts`, `session-core.ts`, `s2s.ts`,
   `ws-handler.ts`, `tool-executor.ts`, `builtin-tools.ts`, `postgres-db.ts`,
   `telephony/`, `providers/` (the STT/TTS openers and the descriptor→instance
@@ -38,7 +39,7 @@ is the security boundary.
 
 ## Package exports
 
-Twenty subpaths, mapped below. What decides which
+Twenty-two subpaths, nineteen of them mapped below. What decides which
 one a symbol lives on:
 
 ### The root barrel is CURATED, and `export *` is what broke it
@@ -49,7 +50,7 @@ loads on every invocation) — so a wildcard put a jitter-buffer depth, a
 WebSocket close code and the platform's slug regex in an agent author's
 autocomplete beside `greeting`. Measured before the split: **175 exports, 71 of
 them `@internal`, and 160 unused by any of the fourteen templates** — eleven
-symbols covered every one. It is 81 now (count it in `API-EXPORTS.json`) and
+symbols covered every one. It is 98 now (count it in `API-EXPORTS.json`) and
 **none is `@internal`**, the property to preserve. `sdk/utils.ts` came back
 WHOLE (`safeJsonParse` was here and `isRecord`, its result's guard, was not);
 `sdk/constants.ts` is gone entirely.
@@ -100,11 +101,11 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, and `assemblyAIPipeline()`/`assemblyAIS2s()`. One constant, `DEFAULT_SYSTEM_PROMPT`, because an author READS it. See "The root barrel is CURATED" above |
-| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published and why the module carries no test-runner dependency. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createUnusedDb()` / `createStubWorkflows()` are the rejecting `db`/`ctx.workflows` it defaults to. Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`withDiscoveredTools(def, modules)`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs. It takes the glob's RESULT rather than a directory (`import.meta.glob` expands against the file containing it and cannot take a variable), and a `readdir` + `import()` is refused: that resolves the tools through Node rather than the test runner and hands them a second copy of this SDK. Generic over `ToolBearingAgent`, which keeps `AgentDef` and the sixteen declarations behind it off this subpath's contract. Four more shipped for the templates, a spec being unable to import from a sibling: **`ok`/`okPosition`** unwrap a dialog tool's envelope and FAIL at the call quoting the refusal, where the cast they replace reads `undefined` off a `ToolFailure` and dies several assertions later; **`parseToolInput`/`toolInputIssues`** (plus `parseSchemaInput`/`schemaInputIssues` under them — 16 of the 18 converted sites validate a WORKFLOW's input) replace reaching through `["~standard"].validate`, which may be sync or async, so a missing `await` leaves `.issues` undefined and the negative test passes for the wrong reason; and **`stubTranscribe`**, staging a refusal as an HTTP STATUS so the SDK's own `transcribeFailure` sets `retryable`/`retryAfter` — a fake minting that error would assert the classification the spec is testing. `createToolContext` takes `ToolContextOverrides` (each field also accepting `undefined`, run through `omitUndefined`), because `Partial<ToolContext>` under `exactOptionalPropertyTypes` forced specs into the conditional spread rule 22 counts as debt; `runTool`'s args and ctx are optional, told apart by SHAPE (66 sites passed `{}`), an omitted context being a DISTINCT session. `stubUploads` answers `{ restore, writes, read }` like its three siblings rather than a bare thunk — the breaking change that dropped the `aai:testing` epoch. Each helper's own doc carries the rest; see the `_test-utils.ts` section of the root guide |
+| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published and why the module carries no test-runner dependency. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createStubWorkflows()` is the rejecting `ctx.workflows` it defaults to (the rejecting `db` is internal now — see the `aai:testing` bump below). Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`deployedAgent(def, { tools, systemPrompt })`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs, system prompt included. It takes the glob's RESULT rather than a directory (`import.meta.glob` expands against the file containing it and cannot take a variable), and a `readdir` + `import()` is refused: that resolves the tools through Node rather than the test runner and hands them a second copy of this SDK. Generic over `ToolBearingAgent`, which keeps `AgentDef` and the sixteen declarations behind it off this subpath's contract. Four more shipped for the templates, a spec being unable to import from a sibling: **`ok`/`okPosition`** unwrap a dialog tool's envelope and FAIL at the call quoting the refusal, where the cast they replace reads `undefined` off a `ToolFailure` and dies several assertions later; **`parseToolInput`/`toolInputIssues`** (plus `parseSchemaInput`/`schemaInputIssues` under them — 16 of the 18 converted sites validate a WORKFLOW's input) replace reaching through `["~standard"].validate`, which may be sync or async, so a missing `await` leaves `.issues` undefined and the negative test passes for the wrong reason; and **`stubTranscribe`**, staging a refusal as an HTTP STATUS so the SDK's own `transcribeFailure` sets `retryable`/`retryAfter` — a fake minting that error would assert the classification the spec is testing. `createToolContext` takes `ToolContextOverrides` (each field also accepting `undefined`, run through `omitUndefined`), because `Partial<ToolContext>` under `exactOptionalPropertyTypes` forced specs into the conditional spread rule 22 counts as debt; `runTool`'s args and ctx are optional, told apart by SHAPE (66 sites passed `{}`), an omitted context being a DISTINCT session. `stubUploads` answers `{ restore, writes, read }` like its three siblings rather than a bare thunk — the breaking change that dropped the `aai:testing` epoch. Each helper's own doc carries the rest; see the `_test-utils.ts` section of the root guide |
 | `@alexkroman1/aai/testing/vitest` | `sdk/testing-vitest.ts` (direct) | `installStubGateway(replies, opts?)` — the fake above, installed as the global `fetch`, returning its call log. The one place a test-runner dependency is allowed, so the rule the subpath above states stays true: `vitest` is an OPTIONAL peer, and importing THIS is what pulls it. A helper belongs here only when its remaining content is the installation — the fake itself stays framework-agnostic next door |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zero-dependency helpers a TOOL body reaches for, and nothing else: `errorMessage`/`errorDetail`, `responseErrorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, `createKeyedLock`/`withLock`, and the four narration formatters `formatBytes`/`formatDuration`/`countWords`/`plural` (`sdk/format.ts`). Nineteen exports. The fifteen helpers are on the ROOT too, so this is the path for a tool body that wants one without naming the root; **the four formatters are reachable only here**, and deliberately — their reader is BOTH a `workflows/*.ts` step and a `client.tsx` (a run narrates itself, a page renders the same run), and `/utils` is the path a browser bundle takes without pulling zod's graph. Non-localized permanently, each output pinned to the character in `format.test.ts`: `Intl` answers to the host's ICU default, so one run would render differently on a laptop and in a sandbox. The duplication they replace was a live bug — `call-audit` printed one 64-minute recording as `1:04:09` from `workflows/media.ts` and `64:09` from `client.tsx`, two copies of one formatter in one template disagreeing about one run, because the `m:ss` shape is four lines and looks finished. `plural(n, one, many?)` returns the WORD, not the count. **It was 79**: the membership rule was a BUILD property (zod-free, so the CLI pays no startup cost), which is a fact about its graph rather than an audience, and three unrelated readers piled onto one import line. The `"use step"` vocabulary is `/step` now, the platform contracts and wire helpers `/internal`. `createKeyedLock`'s `p-timeout` is the one exception to zero-dependency; its module doc owns it |
-| `@alexkroman1/aai/step` | `sdk/step-barrel.ts` | The vocabulary a `"use step"` body is written against, from one import path — the half of `/utils` that has an AUDIENCE rather than a build property. `mapConcurrent` (a WINDOW over a cursor, so a slow item costs only itself), `stepEnv`/`requireStepEnv` (a step body has no `ToolContext`), **`stepFetch`** + `multipartBody` (HTTP/1.1-pinned — `fetch` speaks h2, and a fan-out on one connection turns a rate limit into an unreadable stream reset), `report`/`emit` (what a page's progress stream renders), `stepGenerate` (one `fetch` to the LLM gateway on the agent's own key) and `stepGenerateJson`/`stripJsonFence`, and the audio round trip both ways — **`writeUpload`**/`readUpload`/`uploadInfo`, **`stepSpeak`** + `encodeWav`, and `stepTranscribe`{`Upload`,`Submit`,`Poll`} for the async job API or `stepTranscribeSync` for the one-request one. Plus `isTransientStatus`/`retryAfter`. The zero-zod budget still applies and now has its own reason: a `workflows/*.ts` module is bundled separately, so the root barrel's graph would ride into the step bundle. **The module doc owns the rest** |
-| `@alexkroman1/aai/step-errors` | `sdk/step-errors.ts` (direct) | `toStepError`/`throwStepError`/`throwFatalStepError`/`stepFetchOk` — the failure a `"use step"` body throws, classified into the DevKit's `FatalError`/`RetryableError`; **`throwFfmpegStepError`**, the one arm whose default is INVERTED (anything it does not recognise as `timeout`/`aborted` is fatal, where `toStepError`'s default for an unclassified cause is retryable pass-through — a separate name is what keeps that polarity visible); and the seven **`*Classified`** callers (`stepGenerate`/`stepGenerateJson`, the four transcription entry points, and `sendToChannel`), each being the underlying call and `throwStepError` and nothing else. The raw calls stay: importing from HERE is the opt-in, because whether a terminal failure burns a step's remaining attempts is the caller's call. Its own subpath because it is the one authoring module importing `workflow`, which `/utils` may not. **The ffmpeg guard is STRUCTURAL, not `instanceof`, and `sdk/tsconfig.json` is why**: that second program compiles with `types: []`, so a module reachable from `sdk/` may not import a `node:` builtin *and may not name a Node TYPE either* — `FfmpegError.signal` is `NodeJS.Signals \| null`, and a node-free split reports `TS2503: Cannot find namespace 'NodeJS'` against the HOST file rather than the sdk file that pulled it in. |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zero-dependency helpers a TOOL body reaches for, and nothing else: `errorMessage`/`errorDetail`, `responseErrorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, `createKeyedLock`/`withLock`, and the four narration formatters `formatBytes`/`formatDuration`/`countWords`/`plural` (`sdk/format.ts`), plus `decodeHtmlEntities`. Twenty exports. The fifteen helpers are on the ROOT too, so this is the path for a tool body that wants one without naming the root; **the four formatters and `decodeHtmlEntities` are reachable only here**, and deliberately — their reader is BOTH a `workflows/*.ts` step and a `client.tsx` (a run narrates itself, a page renders the same run), and `/utils` is the path a browser bundle takes without pulling zod's graph. Non-localized permanently, each output pinned to the character in `format.test.ts`: `Intl` answers to the host's ICU default, so one run would render differently on a laptop and in a sandbox. The duplication they replace was a live bug — `call-audit` printed one 64-minute recording as `1:04:09` from `workflows/media.ts` and `64:09` from `client.tsx`, two copies of one formatter in one template disagreeing about one run, because the `m:ss` shape is four lines and looks finished. `plural(n, one, many?)` returns the WORD, not the count. **It was 79**: the membership rule was a BUILD property (zod-free, so the CLI pays no startup cost), which is a fact about its graph rather than an audience, and three unrelated readers piled onto one import line. The STEP vocabulary is `/step` now, the platform contracts and wire helpers `/internal`. `createKeyedLock`'s `p-timeout` is the one exception to zero-dependency; its module doc owns it |
+| `@alexkroman1/aai/step` | `sdk/step-barrel.ts` | The vocabulary a step is written against, from one import path — the half of `/utils` that has an AUDIENCE rather than a build property. `mapConcurrent` (a WINDOW over a cursor, so a slow item costs only itself), `stepEnv`/`requireStepEnv` (a step body has no `ToolContext`), **`stepFetch`** + `multipartBody` (HTTP/1.1-pinned — `fetch` speaks h2, and a fan-out on one connection turns a rate limit into an unreadable stream reset), `report`/`emit` (what a page's progress stream renders), `stepGenerate` (one `fetch` to the LLM gateway on the agent's own key) and `stepGenerateJson`/`stripJsonFence`, and the audio round trip both ways — **`writeUpload`**/`readUpload`/`uploadInfo`/`requireCompleteUpload`, **`stepSpeak`** + `encodeWav`, and `stepTranscribe`{`Upload`,`Submit`,`Poll`} for the async job API or `stepTranscribeSync` for the one-request one. Plus `isTransientStatus`/`retryAfter`. The zero-zod budget still applies: this barrel is `sdk/`, so it rides a browser bundle, and the root barrel's graph would come with it. **The module doc owns the rest** |
+| `@alexkroman1/aai/step-errors` | `sdk/step-errors.ts` (direct) | `toStepError`/`throwStepError`/`throwFatalStepError`/`stepFetchOk` — the failure a step throws, classified into this repo's own `FatalError`/`RetryableError` (`sdk/step-error-classes.ts`, published here too); **`throwFfmpegStepError`**, the one arm whose default is INVERTED (anything it does not recognise as `timeout`/`aborted` is fatal, where `toStepError`'s default for an unclassified cause is retryable pass-through — a separate name is what keeps that polarity visible); and the seven **`*Classified`** callers (`stepGenerate`/`stepGenerateJson`, the four transcription entry points, and `sendToChannel`), each being the underlying call and `throwStepError` and nothing else. The raw calls stay: importing from HERE is the opt-in, because whether a terminal failure burns a step's remaining attempts is the caller's call. Its own subpath because it is the one authoring module that OWNS the retry vocabulary — the two error classes the engine reads — which `/utils` may not carry. **The ffmpeg guard is STRUCTURAL, not `instanceof`, and `sdk/tsconfig.json` is why**: that second program compiles with `types: []`, so a module reachable from `sdk/` may not import a `node:` builtin *and may not name a Node TYPE either* — `FfmpegError.signal` is `NodeJS.Signals \| null`, and a node-free split reports `TS2503: Cannot find namespace 'NodeJS'` against the HOST file rather than the sdk file that pulled it in. |
 | `@alexkroman1/aai/channels` | `sdk/channels-barrel.ts` | Where a run's output GOES: `slackChannel({ webhookUrl })` names a destination, `sendToChannel` posts a `ChannelMessage` to it. A descriptor is serializable `{ kind, options }`, like a provider's. Slack's two webhook URLs take DIFFERENT bodies, so `text` is required; `isSlackWebhookUrl` is a SECURITY boundary. The barrel's doc owns the rest |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai-runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
@@ -116,19 +117,24 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + options (`cartesiaTts`, `rimeTts`, `assemblyAITts`), and the voice catalog |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + their options (`openaiS2s`; the root re-exports `assemblyAIS2s`) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
-| `@alexkroman1/aai/ffmpeg` | `host/ffmpeg.ts` (direct) | ffmpeg from a step — `runFfmpeg`/`probeMedia`/`transcodeToWav`; why, in `aai-guest/CLAUDE.md`. **Body-use only** — see the row below |
-| `@alexkroman1/aai/step-files` | `host/step-files.ts` (direct) | The upload ↔ local-FILE plumbing an ffmpeg step spends most of its lines on (ffmpeg needs a real path: a pipe cannot seek an m4a's trailing `moov` atom, and piped output is capped at 64 MiB). `withTempDir` (a temp directory whose lifetime is a lexical scope), `readUploadToFile` (windowed `readUpload` → a path, size defaulted from `uploadInfo`), `writeUploadFromFile` (a path → `writeUpload`, streamed) and `STEP_FILE_WINDOW_BYTES`. **A subpath of its own, not `/step`**: `/step` reaches 28 modules and zero `node:` builtins and every `workflows/*.ts` holds it at module scope, so `node:fs` there would ride into the workflow VM bundle and every run would die at replay with `ReferenceError: require is not defined`. This module reaches exactly three; `host/step-files.import-graph.test.ts` pins both halves. `writeUploadFromFile` absorbs the COMPOSITION rather than exporting a `fileChunks` generator, so the reused-read-buffer aliasing trap two templates each warned about in prose has one home and one spec (A/B-verified: deleting the `.slice()` fails the round trip). `readUploadToFile` advances by what was actually READ and stops short, where both templates strode by the window size and would leave a hole mid-file on a streamed upload |
+| `@alexkroman1/aai/ffmpeg` | `host/ffmpeg.ts` (direct) | ffmpeg from a step — `runFfmpeg`/`probeMedia`/`transcodeToWav`; why, in `aai-guest/CLAUDE.md`. **Node-only** — see the note below the table |
+| `@alexkroman1/aai/step-files` | `host/step-files.ts` (direct) | The upload ↔ local-FILE plumbing an ffmpeg step spends most of its lines on (ffmpeg needs a real path: a pipe cannot seek an m4a's trailing `moov` atom, and piped output is capped at 64 MiB). `withTempDir` (a temp directory whose lifetime is a lexical scope), `readUploadToFile` (windowed `readUpload` → a path; with no `size` the file must be COMPLETE — see `requireCompleteUpload`), `writeUploadFromFile` (a path → `writeUpload`, streamed) and `STEP_FILE_WINDOW_BYTES`. **A subpath of its own, not `/step`**: `/step` is an `sdk/` barrel — 28 modules, zero `node:` builtins — and `sdk/` must stay runnable in a browser and in Deno, which `sdk/tsconfig.json`'s `types: []` makes a compile error rather than a convention. This module lives in `host/` and reaches exactly three builtins; `host/step-files.import-graph.test.ts` pins both halves. `writeUploadFromFile` absorbs the COMPOSITION rather than exporting a `fileChunks` generator, so the reused-read-buffer aliasing trap two templates each warned about in prose has one home and one spec (A/B-verified: deleting the `.slice()` fails the round trip). `readUploadToFile` advances by what was actually READ and stops short, where both templates strode by the window size and would leave a hole mid-file on a streamed upload |
 | `@alexkroman1/aai/internal` | `internal.ts` | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`, `sleep`) plus every framework BUDGET and DOCUMENTED DEFAULT (the client-audio constants, `AGENT_CSP`, `WS_OPEN`, and the 21 `DEFAULT_*`/`MAX_*` names that were on the root), the workflow API's server half, the two platform contracts BOTH ends must derive identically (the slug shape — `VALID_SLUG_RE`, `RESERVED_SLUGS`, `MAX_SLUG_LENGTH`, `PREVIEW_SLUG_SUFFIX` — and the `aai login` confirmation code), and the framework's own wire helpers (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`; `sdk/_wire-helpers.ts`). Not public API, not semver-covered, excluded from the docs. **It is ZOD-FREE, and that is now a rule** — it used to reach `formatSchemaIssues` through `sdk/schema.ts`, which imports zod, so importing anything here pulled zod's graph: exactly the startup cost `/utils` exists to keep off the CLI's path, and what kept the slug contract and the wire helpers on a PUBLISHED subpath. The function itself lives in the zod-free `sdk/standard-schema.ts`; importing it from there is the whole fix. The env brands live on `./runtime` instead — they appear in its public signatures (`RuntimeOptions`, `withHostCredentialFallback`) |
 
-**Two subpaths are BODY-USE ONLY — `/ffmpeg` and `/step-files`** — because both
-import `node:` builtins and a `workflows/*.ts` module keeps every MODULE-SCOPE
-import in the workflow bundle. The rule is about REFERENCES, not import
-statements: an unused import is dropped with the body it belonged to, and one a
-surviving module-scope function still names is not. Both are nonetheless
-CONTRACTED rather than deny-listed — `NON_AUTHORING_SUBPATHS` is for surfaces
-whose reader is the framework, and a `"use step"` body is an author writing
-code. `packages/aai-templates/CLAUDE.md` carries the symptom and the two
-templates that paid for getting it wrong.
+**Two subpaths are NODE-ONLY — `/ffmpeg` and `/step-files`** — because both
+import `node:` builtins, which is why they live in `host/` and are reached by
+subpaths of their own rather than joining `@alexkroman1/aai/step`. They are
+nonetheless CONTRACTED rather than deny-listed — `NON_AUTHORING_SUBPATHS` is for
+surfaces whose reader is the framework, and a step is an author writing code.
+
+**They used to be BODY-USE ONLY, and that rule is retired.** It came from the
+Workflow DevKit's builder, which rewrote `"use step"` bodies out of a
+`workflows/*.ts` module and compiled what was left as a `node:vm` Script with no
+`require` — so a `node:` import a surviving module-scope function still named
+killed every run at replay. The replay engine compiles no separate workflow
+bundle, so a `workflows/*.ts` module may name either subpath at module scope.
+`packages/aai-templates/CLAUDE.md` carries the two templates that paid for
+getting the old rule wrong.
 
 **Not on those four subpaths**, each barrel's doc saying why: the eighteen
 `*_KIND`/`*_API_KEY_ENV` pairs (`/host-internal`, beside the `resolve*Settings`
@@ -645,56 +651,19 @@ arrow) nor `sdk/workflow.ts`'s `@example` (marked `no-check`) catches it. The
 convention that works — name the schema const and ANNOTATE the def — is in
 `packages/aai-templates/CLAUDE.md`.
 
-## The DevKit is never handed a BARE specifier
+## A callback URL comes from `publicWebhookUrl`
 
-`host/workflow-resolve.ts` is the one helper, and the rule is one sentence: the
-DevKit loads code from files whose LOCATION we do not choose, so a bare specifier
-we pass it resolves against a directory with no `node_modules` above it and fails
-naming a package that is plainly installed. Its own compiled artifacts land in
-`tmpdir()`; so do the route modules `workflow-serve.ts` writes.
-
-```text
-Cannot find module '@workflow/world-postgres'
-Require stack:
-- /private/var/folders/…/T/index.js
-```
-
-Two call sites, one move, and the split between them is the MECHANISM the DevKit
-will use — which is the part that has been got wrong:
-
-- **`resolveWorldSpecifier`** for `WORKFLOW_TARGET_WORLD`, which the DevKit
-  `require`s: an absolute PATH, resolved with `createRequire`.
-- **`resolveImportSpecifier`** for the static specifiers `rewriteWorkflowImports`
-  rewrites, which are ESM: a file URL, resolved with `import.meta.resolve`. Not
-  interchangeable — `workflow`'s root entry maps `require` to its TypeScript
-  PLUGIN, so the require form rewrote an ESM import to a CJS plugin that then
-  failed loading `typescript/lib/tsserverlibrary`.
-
-A specifier that will not resolve is left ALONE in both directions, so the load
-fails with Node's own error naming the module rather than on an absolute path
-that resolves to nothing.
-
-**Writing those files somewhere with a usable `node_modules` above them is the
-weaker fix** — it bets on a writable install directory, and it cannot work at all
-for the DevKit's own artifacts, whose path is not ours to pick. (The guest does
-anchor its WORKER bundle beside the harness, which is a different problem: that
-file's requires are the tenant bundle's, and it falls back with a warning.)
-
-**What no unit test here can check is the resolution itself.** Vitest patches
-`createRequire`, so a bare specifier resolves from any directory in that tier —
-verified: a negative control asserting the bare form fails from `tmpdir()` did
-not throw. So the tests pin the SHAPE (absolute, and of the right kind), and both
-assertions fail when the resolution is removed. Measured outside vitest, which is
-where the property is real: the resolved path resolves from `tmpdir()` and the
-bare specifier does not.
-
-## A callback URL comes from `publicWebhookUrl`, never from `hook.url`
-
-`ctx.workflows.publicWebhookUrl(token)` is what a tool hands a payment provider;
-`hook.url` is guest-local and names the inside of a sandbox that has exited by
-the time anyone calls back. The three load-bearing properties, and the gap a
-`"use workflow"` body still has, are in `packages/aai-runtime/CLAUDE.md` — the
-package where `workflow-client.ts` lives.
+`ctx.workflows.publicWebhookUrl(token)` is what a tool hands a payment provider,
+and the token is the one a body passed `ctx.waitFor`. It is the only URL that
+survives the sandbox that minted it — the DevKit's guest-local `hook.url`, which
+named the inside of a sandbox that had exited by the time anyone called back, is
+gone with `createHook`. **A BODY and its steps reach the same URL as
+`stepWebhookUrl(token)`** (`sdk/step-webhook.ts`, on `/step`), which is what a
+`workflowApp()` with no tools has: a `Symbol.for` slot a host fills with a
+minter that already knows the route. Its own doc carries the one-claim-per-run
+rule and what `aai dev` can and cannot do. The three load-bearing properties are
+in `packages/aai-runtime/CLAUDE.md` — the package where `workflow-client.ts`
+lives.
 
 ## A run can tell the caller it finished
 
@@ -815,11 +784,12 @@ replaced; what follows is the index plus the rule and the adopters.**
 - **`mapConcurrent(items, size, run)`** (`sdk/map-concurrent.ts`, `/step` — the
   other PUBLIC one) — bounded fan-out inside a durable workflow body: a WINDOW
   over a cursor, so a slow item costs only itself. It was `mapInBatches`
-  (sequential `Promise.all` batches, kept as a deprecated alias) on the belief
-  that a pool broke replay, and it does not: the DevKit needs the SEQUENCE OF
-  ITEMS whose calls are issued to be a pure function of the list, and a cursor
-  that only ever hands out the next index satisfies that at any width and under
-  any settle order. What the barrier cost was its slowest member once per round,
+  (sequential `Promise.all` batches, since deleted) on the belief
+  that a pool broke replay, and it does not: the replay engine needs the
+  SEQUENCE OF ITEMS whose calls are issued to be a pure function of the list,
+  and a cursor that only ever hands out the next index satisfies that at any
+  width and under any settle order. What the barrier cost was its slowest
+  member once per round,
   which `transcription-workflow` measured at 6.7x p50 on a wide fan-out. **The
   rule that IS load-bearing** — `run` must issue the same sequence of step calls
   for every item, in practice one, synchronously — is unchanged by the shape and
@@ -1136,8 +1106,8 @@ session-event hook context — first the platform's per-app Postgres, then a
 `DATABASE_URL` an author set. The platform provisions no database and hands tool
 code none, so a tool that persists brings its own client and credential. `Db`
 survives as an `@internal` type: the shape this runtime's own Postgres consumers
-take (upload records, the session-state backend, the world's postgres arm), not
-an authoring type. `sdk/db.ts` carries that.
+take (upload records, the session-state backend, the workflow journal's
+postgres arm), not an authoring type. `sdk/db.ts` carries that.
 
 Removing it dropped ten capability epochs — `aai:db` retired outright, and
 `agent`/`tool`/`dialog`/`state`/`subagent`/`testing` plus five `aai-runtime`
@@ -1148,7 +1118,7 @@ defaulted to.
 **What the platform DOES persist**, with no setup, is the part worth leading
 with: `sessionSlot` for a session's own state (durable across a crash and a
 redeploy, through the platform's session-state backend), and durable workflow
-runs (surviving an idle sandbox, every redeploy, and a multi-day `sleep()`).
+runs (surviving an idle sandbox, every redeploy, and a multi-day `ctx.sleep()`).
 Those cover almost everything; a database is for data that must outlive a
 session AND be queryable.
 

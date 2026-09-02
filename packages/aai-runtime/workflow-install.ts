@@ -1,19 +1,20 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The two things a process must publish before its `"use step"` functions can
- * do their job: somewhere to read uploads from, and somewhere to report to.
+ * The four slots a process must publish before a step can do its job: somewhere
+ * to read uploads from, somewhere to report to, something to speak with, and the
+ * HTTP/1.1-pinned fetch a step's outbound call goes through.
  *
- * Both are `Symbol.for` slots rather than imports, for the reason
+ * All four are `Symbol.for` slots rather than imports, for the reason
  * `sdk/step-env.ts` states — the step artifact bundles its own copy of the SDK,
  * so the publisher and the reader are two module instances in one realm — and
- * both are published HERE, in one call, because they have one correct wiring
+ * all four are published HERE, in one call, because they have one correct wiring
  * point: `createServer`. That is the front door `aai dev`, a self-hosted server
  * and every deployed guest all go through, which is what makes a step behave
  * identically in all three.
  *
  * Publishing at the SERVER rather than at the runtime is deliberate. A guest
  * builds its runtime lazily, on the first request that needs one, while the
- * DevKit's queue can dispatch a step the moment the process boots — a run that
+ * platform's queue can deliver a run the moment the process boots — a run that
  * was mid-flight when the last container went away resumes exactly then. A
  * reader published from the runtime would therefore be missing for precisely
  * the steps that matter most.
@@ -33,6 +34,7 @@ import type { CloseableDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { speakOverWebSocket } from "./step-speak.ts";
+import { isPerProcessDataDir, localWorkflowDataDir } from "./workflow-data-dir.ts";
 import { platformGuestOptions } from "./workflow-platform-world.ts";
 import { createStepReporter } from "./workflow-report.ts";
 import {
@@ -41,7 +43,6 @@ import {
   type UploadStore,
   uploadBytesAreRemote,
 } from "./workflow-uploads.ts";
-import { isPerProcessDataDir, localWorkflowDataDir } from "./workflow-world.ts";
 
 /**
  * What one server's workflow support OWNS, so it can give it back.
@@ -81,10 +82,11 @@ type WorkflowSupport = {
 /**
  * Build the upload store for one server and publish all three step slots.
  *
- * **The store's home follows the WORLD's, off the same input.**
- * `configureWorkflowWorld` reads `DATABASE_URL` to choose between a Postgres world
- * and the local one; this reads it to choose where an upload lives, so the two can
- * only ever agree — which is the invariant `workflow-uploads.ts` states and the one
+ * **The store's home follows the RUNS', off the same input.** `selectJournal`
+ * (`workflow-runtime.ts`) reads `DATABASE_URL` to choose between a Postgres
+ * journal and an in-memory one; this reads it to choose where an upload lives, so
+ * the two can only ever agree — which is the invariant `workflow-uploads.ts`
+ * states and the one
  * the deleted file backend broke. With a database the record goes in it and the
  * bytes need a bucket (no bucket, no store: a refusal naming it). Without one, both
  * live in the local world's own data directory, so a databaseless agent has working
@@ -153,8 +155,8 @@ export function installWorkflowSupport(opts: {
   if (!(db || platform)) {
     // ANNOUNCED, once, at construction. A store that quietly loses an upload with
     // its container is the shape this repo keeps paying for; a store that says which
-    // directory it is using is a documented tradeoff. The local world logs its own
-    // line beside this one.
+    // directory it is using is a documented tradeoff. `buildWorkflowClient`'s
+    // "Workflows resolved" line reports the matching run store.
     //
     // It has been wrong THREE times, which is why it is worth reading before
     // editing. It first said an upload lives "exactly as long as the runs that read

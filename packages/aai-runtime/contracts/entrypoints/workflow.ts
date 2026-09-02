@@ -13,6 +13,7 @@
 
 export {
   DEFAULT_WORKFLOW_FIND_LIMIT,
+  ensureWorkflowJournalSchema,
   MAX_WORKFLOW_FIND_LIMIT,
   MAX_WORKFLOW_INPUT_BYTES,
   type WdkAdapter,

@@ -18,11 +18,20 @@
  * `packages/aai-cli/turbo.json` adds those sources to the build's `inputs`,
  * so editing a template invalidates the CLI build rather than replaying a
  * cache that predates it.
+ *
+ * **The copy is FILTERED, and `templateCopyFilter` carries why** — a template
+ * directory is also a runnable project, so it accumulates untracked build
+ * output and machine state that this step would otherwise pack into the
+ * published tarball. Imported from `_templates.ts` rather than re-derived here:
+ * the runtime copy applies the same rule, and two copies of it is how the one
+ * that ships stops matching the one that is tested.
  */
 
 import { cp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+
+import { templateCopyFilter } from "./_templates.ts";
 
 /** Directories copied from the templates package into `dist/`. */
 const BUNDLED_DIRS = ["templates", "scaffold"];
@@ -37,7 +46,10 @@ const distDir = path.join(import.meta.dirname, "dist");
 for (const dir of BUNDLED_DIRS) {
   const dest = path.join(distDir, dir);
   await rm(dest, { recursive: true, force: true });
-  await cp(path.join(templatesRoot, dir), dest, { recursive: true });
+  await cp(path.join(templatesRoot, dir), dest, {
+    recursive: true,
+    filter: templateCopyFilter,
+  });
 }
 
 console.log(`Bundled ${BUNDLED_DIRS.join(", ")} into ${path.relative(process.cwd(), distDir)}`);

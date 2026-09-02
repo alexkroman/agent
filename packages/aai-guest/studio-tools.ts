@@ -32,7 +32,7 @@ import type { HarnessBundleAccess } from "./harness-types.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { applyEdit, clearEditMisses, rewriteHint, StudioEditError } from "./studio-edit.ts";
 import { globMatcher, grepWorkspace, StudioGrepError } from "./studio-grep.ts";
-import { envWithoutGuestToken, outputWithKillNote, runCapped } from "./studio-spawn.ts";
+import { outputWithKillNote, runCapped, workspaceChildEnv } from "./studio-spawn.ts";
 import { formatRejection, syntaxError } from "./studio-syntax.ts";
 import { formatTestRun, runWorkspaceTests } from "./studio-test.ts";
 import {
@@ -147,7 +147,7 @@ async function runBash(
 ): Promise<{ exitCode: number | null; output: string }> {
   const result = await runCapped("bash", ["-c", command], {
     cwd: dir,
-    env: envWithoutGuestToken(),
+    env: workspaceChildEnv(),
     timeoutMs,
     cap: BASH_OUTPUT_CAP,
     combineStreams: true,

@@ -3,11 +3,20 @@
  * Resolving your project's own FILES in a spec, the way a build does — the
  * `tools/` directory and `system-prompt.md`.
  *
- * **Reach for {@link deployedAgent}, which does both.** {@link withDiscoveredTools}
- * is the tools half on its own and stays public because a spec that drives a
- * single tool wants nothing else; the combined form exists because forgetting
- * one of the two lowerings is silent and produces a green suite measuring the
- * framework defaults. Its own doc carries that argument.
+ * **Under vitest a spec calls none of this.** `aaiAgentPlugin()`
+ * (`@alexkroman1/aai/testing/vite`, registered in a scaffolded project's
+ * `vitest.config.ts`) serves the whole lowering as one module, resolved against
+ * the importing spec's own directory:
+ *
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
+ * ```
+ *
+ * {@link deployedAgent} is that same lowering written out, for a runner that is
+ * not vitest and so cannot register the plugin. It applies BOTH halves in one
+ * call because forgetting one of them is silent and produces a green suite
+ * measuring the framework defaults; its own doc carries that argument. There is
+ * no exported tools-only half — that was `withDiscoveredTools`, now internal.
  *
  * A tool is registered by EXISTING: `tools/add_item.ts` is the tool
  * `add_item`, and nothing lists them anywhere. That enumeration happens where
@@ -16,26 +25,15 @@
  * it declared INLINE, and `def.tools` in a spec is empty (or short) for every
  * project whose tools are files.
  *
- * A spec has no bundler in its path, so it has to do the same lowering itself,
- * and there is exactly one way to do it:
+ * A spec has no bundler in its path, so the lowering has to happen somewhere —
+ * in the plugin, or in a {@link deployedAgent} call the spec writes.
  *
- * ```ts no-check
- * // `no-check`: import.meta.glob is a Vite transform, so it only type-checks
- * // in a project whose tsconfig has vite/client types — i.e. yours, not here.
- * import { withDiscoveredTools } from "@alexkroman1/aai/testing";
- * import authored from "./agent.ts";
- *
- * const agentDef = withDiscoveredTools(
- *   authored,
- *   import.meta.glob("./tools/*.ts", { eager: true }),
- * );
- * ```
- *
- * **The glob has to be written at the call site, and that is why this takes the
- * result rather than a directory.** `import.meta.glob` is expanded at TRANSFORM
- * time against the file that contains it, so a pattern inside this module would
- * resolve against the SDK's own directory and find nothing. It also cannot take
- * a variable, which is why there is no `withDiscoveredTools(def, "./tools")`.
+ * **The glob has to be written at the call site, and that is why
+ * {@link ProjectFiles} takes the RESULT rather than a directory.**
+ * `import.meta.glob` is expanded at TRANSFORM time against the file that
+ * contains it, so a pattern inside this module would resolve against the SDK's
+ * own directory and find nothing. It also cannot take a variable, which is why
+ * there is no `deployedAgent(def, { tools: "./tools" })`.
  *
  * **And it is deliberately not a `readdir` + `import()`.** That would resolve
  * the tool modules through NODE rather than through your test runner, handing
@@ -51,37 +49,28 @@ import { type ToolModules, toolRegistry, withTools } from "./tool-registry.ts";
 import type { AgentDef } from "./types.ts";
 
 /**
- * The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
- * `tools/` directory declares.
+ * The tools half of {@link deployedAgent}: the def `agent.ts` exports, plus the
+ * tools its `tools/` directory declares.
  *
- * Pass `import.meta.glob("./tools/*.ts", { eager: true })` — see the module doc
- * for why the glob belongs at the call site. Every rule the build applies applies
- * here too, and each is an error naming the file: the name grammar, the
- * default-export requirement, no nested files, and a name declared twice.
+ * **Not exported, and not to be re-exported.** It was on
+ * `@alexkroman1/aai/testing` and came off when `virtual:aai/agent` started
+ * serving the whole lowering — a spec that lowers the tools and forgets the
+ * system prompt measures the framework default prompt and reports green, which
+ * is the failure {@link deployedAgent} exists to make unrepresentable. That
+ * function is its only caller; a spec reaches the lowering through the plugin or
+ * through it.
  *
- * A project with no `tools/` directory gets an empty glob and the def unchanged.
+ * `modules` is the RESULT of `import.meta.glob("./tools/*.ts", { eager: true })`
+ * — see the module doc for why the glob belongs at the call site. Every rule the
+ * build applies applies here too, and each is an error naming the file: the name
+ * grammar, the default-export requirement, no nested files, and a name declared
+ * twice.
  *
  * Structural rather than `AgentDef`, the same as {@link toolOf} and
- * {@link runTool} next door, and it hands back the def it was given — so a spec
- * may pass the agent's default export, a bare `{ tools }` literal, or anything
- * else carrying one, and keeps the type it passed in.
+ * {@link runTool} next door, and it hands back the def it was given — so the
+ * caller keeps the type it passed in.
  *
- * @example
- * ```ts no-check
- * // `no-check`: import.meta.glob needs your project's vite/client types.
- * import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
- * import authored from "./agent.ts";
- *
- * const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
- *
- * test("adds an item", async () => {
- *   expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
- *     added: "apple",
- *   });
- * });
- * ```
- *
- * @public
+ * @internal
  */
 export function withDiscoveredTools<D extends ToolBearingAgent>(def: D, modules: ToolModules): D {
   return withTools(def, toolRegistry(modules));
@@ -127,10 +116,14 @@ export type ProjectFiles = {
  * prompt. Nothing fails: the model answers plausibly out of its own knowledge,
  * every case that asserts a sentence still passes, and the suite reports green
  * on a different agent than the one anybody deploys. It produced four bogus
- * green eval results in one day, and the two nested wrappers it replaces —
- * `withSystemPrompt(withDiscoveredTools(authored, glob), prompt)`, written out
- * in seventeen template evals — are exactly the shape where one of the two goes
- * missing under an edit.
+ * green eval results in one day, and the two nested wrappers it replaces — a
+ * tools lowering inside a prompt lowering, written out in seventeen template
+ * evals — are exactly the shape where one of the two goes missing under an edit.
+ *
+ * **Under vitest, prefer `import agentDef from "virtual:aai/agent"`**, which is
+ * this call made for you against the importing spec's own directory (see the
+ * module doc). Reach for this one when the runner is not vitest, or when the
+ * lowering itself is the subject of the spec.
  *
  * **An EMPTY `tools` glob throws.** That is the same bug wearing its other
  * face: `import.meta.glob("./tool/*.ts")` (or a `tools/` directory that moved)
@@ -139,8 +132,11 @@ export type ProjectFiles = {
  * is a statement rather than an accident.
  *
  * ```ts no-check
- * // `no-check`: import.meta.glob is a Vite transform, so it only type-checks in
- * // a project whose tsconfig has vite/client types — i.e. yours, not here.
+ * // `no-check`: two of these imports are files YOU own — `./agent.ts` and
+ * // `./system-prompt.md?raw` — which exist in your project and in no tree of
+ * // ours, so nothing here can resolve them. (`import.meta.glob` is not the
+ * // blocker: the doc-example gate compiles against the scaffold's own
+ * // `global.d.ts`, which carries `/// <reference types="vite/client" />`.)
  * import { deployedAgent } from "@alexkroman1/aai/testing";
  * import authored from "./agent.ts";
  * import systemPrompt from "./system-prompt.md?raw";

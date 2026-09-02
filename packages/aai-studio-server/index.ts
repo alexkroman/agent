@@ -22,7 +22,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { DEFAULT_PORT } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
 import { resolvePort } from "aai-server/platform-barrel";
-import { DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "aai-server/rate-limit";
+import { createPgAgentRateLimiters } from "aai-server/rate-limit";
 import { startService } from "aai-server/serve-lifecycle";
 import {
   assertSandboxBackendOrWarn,
@@ -75,10 +75,16 @@ function buildRateLimiters(base: ServiceConfig): StudioRateLimiters | undefined 
   };
 }
 
-/** Fleet-wide per-IP deploy limiter, when a platform database is configured. */
-function buildDeployRateLimiter(base: ServiceConfig): RateLimiter | undefined {
+/**
+ * The agent surface's fleet-wide per-IP limiters, when a platform database is
+ * configured. All three at once, from one factory in the package that owns the
+ * windows — see `createPgAgentRateLimiters` for why this is not three builders.
+ */
+function buildAgentRateLimiters(
+  base: ServiceConfig,
+): ReturnType<typeof createPgAgentRateLimiters> | undefined {
   if (!base.sql) return;
-  return createPgRateLimiter(base.sql, { name: "deploy-ip", ...DEPLOY_IP_RATE_LIMIT });
+  return createPgAgentRateLimiters(base.sql);
 }
 
 function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAppOpts {
@@ -141,11 +147,6 @@ async function main(): Promise<void> {
   const teardown = async (): Promise<void> => {
     await teardownSandboxes({ slots: base.slots, broker: { dispose: disposeStudio } });
     await base.events.close();
-    // The workflow world's own `close` ends the streamer's dedicated `LISTEN`
-    // client and the pool behind it. Last, and after the guests: a guest still
-    // draining may write one more journal entry through `/:slug/workflow-storage`,
-    // and closing the world under it would fail that write rather than the run.
-    await base.runStorage?.close();
   };
 
   // Both apps in one process, dispatched by path. Each app carries
@@ -153,10 +154,9 @@ async function main(): Promise<void> {
   // would bypass the studio app's bindings injection) is involved.
   // `base.events` rides into the orchestrator, which wires the agents-row
   // change stream to sandbox invalidation.
-  const deployRateLimiter = buildDeployRateLimiter(base);
   const orchestrator = createOrchestrator({
     ...base,
-    ...omitUndefined({ deployRateLimiter }),
+    ...buildAgentRateLimiters(base),
     isDraining: () => draining,
   });
   const combinedFetch = (req: Request): Response | Promise<Response> =>

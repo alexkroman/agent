@@ -1,7 +1,8 @@
 # @alexkroman1/aai
 
-The aai voice-agent SDK: everything an `agent.ts` file imports, plus the
-self-hostable runtime the CLI and the managed platform run.
+The aai voice-agent SDK: everything an `agent.ts` file imports. The
+self-hostable runtime the CLI and the managed platform run is
+`@alexkroman1/aai-runtime`.
 
 ```sh
 npm i @alexkroman1/aai zod
@@ -124,15 +125,17 @@ STT, the LLM loop, and TTS all run service-side over one socket:
 ## Testing an agent
 
 A tool is a file, so `agent.ts`'s default export carries no tools —
-`withDiscoveredTools` gives you the definition a deployed agent runs:
+`deployedAgent` gives you the definition a deployed agent runs:
 
 ```ts no-check
-// `no-check`: import.meta.glob needs your project's vite/client types.
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+// `no-check`: `./agent.ts` and `./tools/` are files in YOUR project, not here.
+import { createToolContext, deployedAgent, runTool } from "@alexkroman1/aai/testing";
 import { expect, test } from "vitest";
 import authored from "./agent.ts";
 
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+const agentDef = deployedAgent(authored, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+});
 
 test("saves a note", async () => {
   expect(await runTool(agentDef, "add_note", { text: "milk" }, createToolContext())).toEqual({
@@ -152,14 +155,13 @@ column describes what you are doing.
 
 | Subpath | Reach for it when |
 | --- | --- |
-| `/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `withDiscoveredTools`, `runTool` |
+| `/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
 | `/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage (the table above) |
-| `/step`, `/step-errors` | writing a `"use step"` body inside a workflow — `stepFetch`, `stepEnv`, `mapConcurrent`, `stepGenerate` |
+| `/step`, `/step-errors` | writing a step inside a workflow — `stepFetch`, `stepEnv`, `mapConcurrent`, `stepGenerate` |
 | `/workflow-api` | calling a deployed agent from a page, a script or a cron job — `createAgentClient` |
 | `/tools` | calling `fetchJson`, `visitWebpage` or `webSearch` from your own tool code |
 | `/utils` | small helpers written inside a tool body — `toolFailure`, `errorMessage`, `pushCapped`, `withLock` |
 | `/ffmpeg` | running ffmpeg from a step — `runFfmpeg`, `probeMedia`, `transcodeToWav` |
-| `/runtime` | self-hosting the Node runtime — `createRuntime()`, `createServer()` |
 | `/protocol`, `/manifest`, `/slugify`, `/workspace-files`, `/internal` | framework internals used by the CLI and the platform; not a public API and not covered by semver |
 
 ## Documentation

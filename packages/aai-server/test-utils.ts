@@ -399,6 +399,29 @@ function readMigrations(): { dir: string; files: string[]; raw: string } {
   return { dir, files, raw: files.map((n) => readFileSync(path.join(dir, n), "utf-8")).join("\n") };
 }
 
+/**
+ * A raced duplicate means the object we wanted EXISTS, which is success.
+ * `create ... if not exists` is check-then-create in Postgres rather than
+ * atomic, so two workers both pass the check and one dies on a system-catalog
+ * unique index (`pg_type_typname_nsp_index`, `pg_namespace_nspname_index`).
+ * Anything else is a real failure and still throws.
+ */
+const isRacedDdl = (cause: unknown): boolean =>
+  /duplicate key value|already exists|tuple concurrently (?:updated|deleted)/i.test(
+    cause instanceof Error ? cause.message : String(cause),
+  );
+
+/** Every statement is `if [not] exists`, so a raced sibling is tolerated per statement. */
+async function applyTolerantly(sql: SqlExec, statements: readonly string[]): Promise<void> {
+  for (const statement of statements) {
+    try {
+      await sql(statement);
+    } catch (cause) {
+      if (!isRacedDdl(cause)) throw cause;
+    }
+  }
+}
+
 export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
   const { dir, files: repoMigrations, raw } = readMigrations();
 
@@ -411,8 +434,25 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
     return;
   }
 
+  // The sentinel is a marker this function creates LAST — never one of the
+  // migrated tables. Under the `forks` pool every test FILE builds this schema
+  // against the same database at once, and `aai_platform.studio_workspaces` is
+  // created EARLY, so it went true partway through another worker's build: the
+  // second worker returned and started inserting into a schema whose remaining
+  // statements had not run. Measured on a fresh database — a seed insert failed
+  // with `null value in column "config" of relation "agents"` because
+  // `alter table ... drop column config` was still pending in the other worker,
+  // and a sibling suite read `aai_platform.session_slots does not exist`. A
+  // marker written after the last statement cannot be true early.
+  //
+  // A transaction would be the other way to get atomicity and is NOT available:
+  // `SqlExec` is a POOL, so postgres.js refuses a bare `begin` outright
+  // (`UNSAFE_TRANSACTION: Only use sql.begin, sql.reserved or max: 1`) — it
+  // cannot promise the next statement lands on the same connection. Every
+  // statement below is `if [not] exists`, so each worker completing the whole
+  // list itself is the cheaper equivalent.
   const [existing] = await sql(
-    "select to_regclass('aai_platform.studio_workspaces') is not null as present",
+    "select to_regclass('public.aai_test_schema_ready') is not null as present",
   );
   if (existing?.present) return;
 
@@ -433,15 +473,14 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
   if (!tables || tables.length === 0) {
     throw new Error(`no create-table statements found in ${dir} — has the format changed?`);
   }
-  await sql("create schema if not exists aai_platform");
-  for (const statement of tables) await sql(statement);
+  const script: string[] = ["create schema if not exists aai_platform", ...tables];
 
   // Applied in migration order (the file sort above), so a column added and
   // later dropped ends up dropped. Every one is `if [not] exists`, so this is
   // as re-runnable as the creates.
-  const columns =
-    sqlText.match(/alter table\s+aai_platform\.\w+\s+(?:add|drop) column[\s\S]*?;/g) ?? [];
-  for (const statement of columns) await sql(statement);
+  script.push(
+    ...(sqlText.match(/alter table\s+aai_platform\.\w+\s+(?:add|drop) column[\s\S]*?;/g) ?? []),
+  );
 
   // INDEXES, and a unique one is a CONSTRAINT rather than an optimization —
   // which is why they cannot be skipped here. `workflow_queue`'s idempotency key
@@ -452,8 +491,15 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
   // duplicate-collapse case was the only failure.
   //
   // Every one is `if not exists`, so this is as re-runnable as the creates.
-  const indexes = sqlText.match(/create\s+(?:unique\s+)?index if not exists[\s\S]*?;/g) ?? [];
-  for (const statement of indexes) await sql(statement);
+  script.push(...(sqlText.match(/create\s+(?:unique\s+)?index if not exists[\s\S]*?;/g) ?? []));
+
+  await applyTolerantly(sql, script);
+  // LAST, and that is the whole point of it — see the sentinel above. It lives
+  // in `public` rather than `aai_platform` deliberately: this marker is test
+  // scaffolding, not platform schema, and `schema-drift.scenario.test.ts`
+  // rightly fails any `aai_platform` table no migration declares. Putting it
+  // there traded one red suite for another.
+  await applyTolerantly(sql, ["create table if not exists public.aai_test_schema_ready ()"]);
 
   const [created] = await sql(
     "select to_regclass('aai_platform.studio_workspaces') is not null as present",

@@ -34,9 +34,11 @@ const options = (fetch: typeof globalThis.fetch) => ({
 describe("where an upload's window lives", () => {
   test("is the agent's slug under the uploads prefix, beside the deploy blobs", () => {
     // ONE bucket rather than two, which is safe only because `aai-sweep-blob-gc`
-    // matches `name like 'blobs/%'` — without that clause it would delete every
-    // upload in the bucket on its first run, an upload having no referrer to be
-    // found by. Anything else put in this bucket owes the same check.
+    // sweeps it per PREFIX: its blobs arm matches `name like 'blobs/%'` and would
+    // otherwise delete every upload in the bucket on its first run, an upload
+    // having no hash to be found by, while its uploads arm matches this prefix and
+    // uses the `workflow_uploads` row as the referrer. Anything else put in this
+    // bucket owes an arm of its own, or nothing ever reclaims it.
     expect(uploadKey("digest-desk", "upl_a", 8_388_608)).toBe("uploads/digest-desk/upl_a/8388608");
     // The root is the runtime's constant, so the two sides share one literal.
     expect(uploadKey("a", "b", 0).startsWith(`${UPLOAD_KEY_PREFIX}/`)).toBe(true);

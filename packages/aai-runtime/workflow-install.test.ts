@@ -43,7 +43,11 @@ beforeEach(async () => {
   publishStepReporter(undefined);
   publishStepFetch(undefined);
   dataDir = await mkdtemp(join(tmpdir(), "aai-install-data-"));
-  vi.stubEnv("WORKFLOW_LOCAL_DATA_DIR", dataDir);
+  // `AAI_WORKFLOW_DATA_DIR`, ours — it was `WORKFLOW_LOCAL_DATA_DIR`, the
+  // DevKit's own key, written by `configureWorkflowWorld`. With that writer gone
+  // the old name would have been a key nothing sets, read by a fallback: a value
+  // silently always the default, which is what this case exists to catch.
+  vi.stubEnv("AAI_WORKFLOW_DATA_DIR", dataDir);
 });
 
 afterEach(async () => {
@@ -84,11 +88,12 @@ describe("installWorkflowSupport", () => {
     await expect(readUpload("upl_missing")).rejects.toThrow(/No upload with id upl_missing/);
   });
 
-  test("with no database, uploads WORK and live under the world's data directory", async () => {
-    // The pairing this module exists to make automatic: `configureWorkflowWorld`
-    // reads `DATABASE_URL` to pick the local world, and this reads it to pick the
-    // local store — so an upload and the runs that read it share one directory and
-    // one lifetime. A databaseless agent used to have no uploads at all.
+  test("with no database, uploads WORK and live under the declared data directory", async () => {
+    // A databaseless agent used to have no uploads at all. The directory used to
+    // be the DevKit local world's, paired automatically because both were chosen
+    // off `DATABASE_URL`; the world is gone and the directory is ours, so the
+    // pairing is now simply that this is where a deployment with no database puts
+    // things. `AAI_WORKFLOW_DATA_DIR` is what a host declares it with.
     const local = install();
     const created = await local.uploads.create({ name: "a.wav" }, oneChunk());
     expect(created).toMatchObject({ name: "a.wav", size: 4, complete: true });
@@ -99,6 +104,39 @@ describe("installWorkflowSupport", () => {
     // than minting one of its own.
     expect((await readdir(dataDir)).toSorted()).toEqual(["objects", "records"]);
     await local.close();
+  });
+
+  test("the boot line reports a DECLARED directory as surviving a restart", async () => {
+    // The arm nothing reached until `aai dev` gained a writer for
+    // `AAI_WORKFLOW_DATA_DIR`. Its wording is the whole tradeoff an operator has
+    // to know, and while every deployment took the per-process default this
+    // branch was unreachable in production — so the sentence a developer under
+    // `aai dev` actually gets was asserted by nothing.
+    const logger = quietLogger();
+    const local = installWorkflowSupport({ logger });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining(`workflow uploads are LOCAL (${dataDir})`),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("they survive a restart of this process"),
+    );
+    await local.close();
+  });
+
+  test("and an UNDECLARED one as belonging to this process", async () => {
+    // The other arm, which is what a scaffold `server.mjs` and a deployed guest
+    // with neither a platform nor a database get: `tmpdir()/aai-workflow-data-<pid>`,
+    // gone with the process. Nothing is written here, so no directory is created.
+    vi.stubEnv("AAI_WORKFLOW_DATA_DIR", undefined);
+    const logger = quietLogger();
+    const perProcess = installWorkflowSupport({ logger });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining(`aai-workflow-data-${process.pid}`),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("an upload does not outlive it"),
+    );
+    await perProcess.close();
   });
 
   test("a database with no bucket REFUSES, naming the durable half", async () => {

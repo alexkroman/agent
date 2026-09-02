@@ -145,10 +145,14 @@ INSTALL_MANIFEST_FIELDS = (
     "pnpm",
 )
 
-# Copied byte-for-byte: these ARE the dependency graph (and `.npmrc` carries
-# `verify-deps-before-run=false`, which the build commands below rely on once
-# the source layer replaces the normalized manifests).
-INSTALL_ROOT_FILES = ("pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc")
+# Copied byte-for-byte: these ARE the dependency graph. The workspace yaml also
+# carries `verifyDepsBeforeRun: false`, which the build commands below rely on
+# once the source layer replaces the normalized manifests. That setting used to
+# live in a third file here, `.npmrc`, and moved because pnpm 11 reads no
+# pnpm-specific setting from `.npmrc` at all — measured on 11.24.0, the key
+# resolved to `undefined` there and to `false` from the yaml. So the guarantee
+# this list exists to carry into the image is now in a file already on it.
+INSTALL_ROOT_FILES = ("pnpm-lock.yaml", "pnpm-workspace.yaml")
 
 # `patchedDependencies` in the workspace yaml names a patch FILE per dependency,
 # and pnpm reads that file during install to verify the patched tarball against

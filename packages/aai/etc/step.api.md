@@ -61,6 +61,9 @@ export type ReadUploadOptions = {
 export function report(line: string): Promise<void>;
 
 // @public
+export function requireCompleteUpload(id: string): Promise<UploadInfo>;
+
+// @public
 export function requireStepEnv(name: string): string;
 
 // @public
@@ -203,6 +206,9 @@ export class StepTransportError extends Error {
 }
 
 // @public
+export function stepWebhookUrl(token: string): string;
+
+// @public
 export function stripJsonFence(reply: string): string;
 
 // @public
@@ -278,6 +284,13 @@ export type Transcript = {
     text: string;
     durationMs: number;
 };
+
+// @public
+export class UploadIncompleteError extends Error {
+    constructor(message: string, stored: number);
+    readonly retryable = false;
+    readonly stored: number;
+}
 
 // @public
 export type UploadInfo = {

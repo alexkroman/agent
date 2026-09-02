@@ -105,6 +105,38 @@ describe("stepTranscribeUpload", () => {
     });
     uploads.restore();
   });
+
+  // The worst shape available: a PLAUSIBLE WRONG ANSWER. `size` is the
+  // contiguous readable PREFIX of an upload, not its final length, so a run
+  // started against a still-arriving recording used to upload whatever had
+  // landed, get a URL for it, and transcribe a truncated file — no error
+  // anywhere, and a transcript that reads as the whole call. Refusing costs a
+  // failed run; not refusing costs a wrong transcript nobody can tell from a
+  // right one.
+  test("REFUSES an upload that is still arriving rather than transcribing its prefix", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    const uploads = stubUploads({ rec: { bytes: new Uint8Array([1, 2, 3, 4]), complete: false } });
+    const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
+
+    await expect(stepTranscribeUpload("rec")).rejects.toThrow(/still arriving/);
+    // Nothing went out: the refusal is BEFORE the expensive leg, so a run started
+    // a moment too early does not pay for an upload it must not use.
+    expect(api.calls).toHaveLength(0);
+    uploads.restore();
+  });
+
+  test("that refusal is NOT retryable — no number of attempts finishes the upload", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    const uploads = stubUploads({ rec: { bytes: new Uint8Array([1]), complete: false } });
+    stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
+
+    // An upload that died stays incomplete forever, and the default backoff is
+    // ~0 ms — so retrying spends the file-sized step's whole budget in
+    // milliseconds and still cannot help. The fix is the run's ORDER, which is a
+    // fatal verdict's job to say.
+    await expect(stepTranscribeUpload("rec")).rejects.toMatchObject({ retryable: false });
+    uploads.restore();
+  });
 });
 
 describe("stepTranscribeSubmit", () => {

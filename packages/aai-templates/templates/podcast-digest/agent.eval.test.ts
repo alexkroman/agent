@@ -32,7 +32,7 @@
 //
 // WHAT NO EVAL HERE COVERS: durability — which for THIS template is most of
 // what it is for. Imported through vitest with no bundler in the path, a
-// `"use workflow"` body is an ordinary async function, so the multi-day
+// workflow body is an ordinary async function, so the multi-day
 // suspension that makes a digest arrive tomorrow is not exercised; the sleep is
 // RECORDED and skipped. `run.slept` below is that admission written as an
 // assertion, and it is the only way to check a seven-day schedule without
@@ -43,7 +43,7 @@ import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
-import { MAX_POLL_ATTEMPTS, POLL_DELAY, scheduleIntervalMs } from "./workflows/digest.ts";
+import { MAX_POLL_ATTEMPTS, POLL_DELAY_MS, scheduleIntervalMs } from "./workflows/digest.ts";
 
 /** The feed every case reads. Not a real host — nothing here leaves the process. */
 const FEED_URL = "https://feeds.example.test/rebuild.xml";
@@ -320,9 +320,9 @@ describeWorkflowEval(agentDef, (test) => {
     expect(world.calls.filter((call) => call.url.includes("/v2/transcript/"))).toHaveLength(5);
     // Three waits for four rounds — asked for, and recorded rather than taken.
     expect(run.slept).toEqual([
-      { duration: POLL_DELAY },
-      { duration: POLL_DELAY },
-      { duration: POLL_DELAY },
+      { duration: POLL_DELAY_MS },
+      { duration: POLL_DELAY_MS },
+      { duration: POLL_DELAY_MS },
     ]);
 
     // And the digest is in PUBLICATION order, not completion order. The feed is

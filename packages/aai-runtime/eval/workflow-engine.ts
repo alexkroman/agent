@@ -44,7 +44,8 @@
  * | --- | --- | --- |
  * | `cancel` | marks the run cancelled; the body keeps going | there is no queue to stop delivering to |
  * | `wakeUp` | `0` | a sleep is skipped, not suspended — nothing is asleep to wake |
- * | `signal` | `false` | `createHook()` THROWS untransformed, so no run can be listening |
+ * | `ctx.waitFor` | a TIMED wait resolves `undefined`; an unbounded one rejects | a deadline that nobody answered is an honest outcome; an open wait has none |
+ * | `signal` | `false` | nothing here registers a waitpoint, so no run is ever listening for one |
  * | `readOutput` | the value the body returned | no serialization round trip, so a value a real journal would refuse passes here |
  *
  * **And a step's `maxRetries` is INERT**, which is the one consequence worth
@@ -60,12 +61,12 @@
  *
  * ## The published slots ARE the observable surface
  *
- * Three are always filled: a step narrates through `publishStepReporter`, reads
- * credentials through `publishStepEnv`, and a body sleeps through a
- * `Symbol.for("WORKFLOW_SLEEP")` global the DevKit's `sleep()` looks for —
- * absent, it throws "`sleep()` can only be called inside a workflow function",
- * which is what makes a body like `link-digest`'s undrivable without this. Two
- * more are filled only when a caller supplies one
+ * Two are always filled: a step narrates through `publishStepReporter` and reads
+ * credentials through `publishStepEnv`, which is what makes a body like
+ * `link-digest`'s drivable at all. A body's WAITS need no slot — `ctx.sleep` and
+ * `ctx.waitFor` are `evalCtx`'s to answer, where the DevKit's `sleep()` looked
+ * for a `Symbol.for("WORKFLOW_SLEEP")` global and threw without one. Two more are
+ * filled only when a caller supplies one
  * ({@link EvalWorkflowEngineOptions.stepFetch}, `.speech`), and both are
  * unpublished on release either way — a slot this call left empty may hold a
  * PREVIOUS engine's value.
@@ -87,149 +88,29 @@ import {
   publishStepEnv,
   publishStepFetch,
   publishStepReporter,
-  type SpeechSynthesizer,
-  type StepFetch,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
-import type { WorkflowDef, WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowCtx, WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import type { WdkAdapter, WdkRunRecord } from "../workflow-wdk-types.ts";
 
-/**
- * The DevKit's own slot for the durable `sleep`.
- *
- * `Symbol.for('WORKFLOW_SLEEP')` — read out of `@workflow/core`'s `symbols.js`,
- * where `sleep()` looks it up on `globalThis` and throws when it is empty. Named
- * by its string rather than imported because the import that would give it to us
- * is `@workflow/core/dist/symbols.js`, a deep path into a dependency's internals
- * that no export map offers.
- */
-const WORKFLOW_SLEEP = Symbol.for("WORKFLOW_SLEEP");
+import type {
+  EvalBody,
+  EvalRunRecord,
+  EvalWorkflowEngine,
+  EvalWorkflowEngineOptions,
+} from "./workflow-engine-types.ts";
 
-/** The shape the sleep slot is read and written through. */
-type SleepSlot = { [WORKFLOW_SLEEP]?: (param: string | number | Date) => Promise<void> };
-
-/** One chunk `emit()` wrote during a run, and the stream it named. */
-export type EvalEmitted = {
-  /** The stream the step named. */
-  readonly namespace: string;
-  /** The value, exactly as the step passed it. */
-  readonly chunk: unknown;
-};
-
-/**
- * One durable `sleep()` a body asked for — and did NOT take.
- *
- * Recorded rather than waited out, because a suspension is the thing this engine
- * cannot reproduce and a real wait would only make a case slow while proving
- * nothing extra: `link-digest`'s ten seconds and the six hours its own comment
- * says the mechanism is identical at differ by nothing that runs here. What a
- * case CAN assert is that the body asked, and for how long.
- */
-export type EvalSleep = {
-  /** Exactly what the body passed `sleep()` — `"10 seconds"`, a number of ms, a date. */
-  readonly duration: string | number | Date;
-};
-
-/** One run this engine executed, as the engine records it. */
-export type EvalRunRecord = {
-  readonly runId: string;
-  /** The synthetic `workflowId` this engine stands in for the compiler's with. */
-  readonly workflowId: string;
-  status: WorkflowRunStatus;
-  readonly createdAt: number;
-  output?: unknown;
-  error?: { message: string };
-  /** Lines this run's steps wrote with `report()`, oldest first. */
-  readonly reported: string[];
-  /** Chunks this run's steps wrote with `emit()`, oldest first. */
-  readonly emitted: EvalEmitted[];
-  /** Durable sleeps the body asked for — see {@link EvalSleep}. */
-  readonly slept: EvalSleep[];
-  /** Wall clock from `start()` to the body settling, once it has. */
-  elapsedMs?: number;
-  /**
-   * Resolves when the body has settled, whatever it did. Never rejects.
-   *
-   * Writable because it cannot be built with the record: the body needs the
-   * record to narrate into, so the promise is assigned the statement after
-   * `start` creates one — synchronously, before any caller can read it.
-   */
-  settled: Promise<void>;
-};
-
-/**
- * A workflow body as this engine calls it.
- *
- * `WorkflowDef`'s default schema parameter makes `run` take
- * `Record<string, unknown>` — the validated input — so this is that signature
- * named, and it is what lets the engine call a body without a cast.
- */
-type EvalBody = (input: Record<string, unknown>) => Promise<unknown> | unknown;
-
-/** What {@link createEvalWorkflowEngine} takes. */
-export type EvalWorkflowEngineOptions = {
-  /** The agent's declared workflows, keyed as `agent({ workflows })` keys them. */
-  readonly workflows: Readonly<Record<string, WorkflowDef>>;
-  /**
-   * The agent env a step reads with `stepEnv`/`requireStepEnv`.
-   *
-   * Published rather than left to `process.env`, which is what an unpublished
-   * slot falls back to: publishing is what makes a step read exactly the keys the
-   * agent declares, in an eval as in a deployment.
-   */
-  readonly env: Readonly<Record<string, string>>;
-  /**
-   * A `stepFetch` to publish for this app's steps. Nothing is published by
-   * default, which means a step's HTTP falls back to `globalThis.fetch`.
-   *
-   * **Taken as a VALUE rather than built here, and that is a graph decision
-   * rather than a style one.** `createStepFetch` reaches `undici`, and naming it
-   * from this module put the runtime's whole step graph into the program of
-   * every package whose eval file imports `/eval/vitest` — which is
-   * `aai-templates`, where it failed on an unrelated `BodyInit` mismatch under
-   * `exactOptionalPropertyTypes`. That is the hazard
-   * `packages/aai-runtime/CLAUDE.md` records for `host-internal`, arriving by a
-   * new route. A host that wants the pooled HTTP/1.1 fetch passes its own; a
-   * template eval does not need one.
-   *
-   * The cost, stated: `globalThis.fetch` offers `h2` in ALPN, so a WIDE live
-   * fan-out through it can collect stream resets a pooled HTTP/1.1 fetch would
-   * not (`sdk/step-fetch.ts` has the measurements). An eval is not where a
-   * fan-out's concurrency is measured, and the upside is that BOTH published
-   * fakes work — `installStubGateway` over the global, and
-   * `installStubStepFetch` / `installStubTranscribe` over the slot.
-   */
-  readonly stepFetch?: StepFetch | undefined;
-  /**
-   * A speech synthesizer to publish, for a flow whose step calls `stepSpeak`.
-   *
-   * Nothing by default, so an unpublished slot fails by name — which is the
-   * SDK's own behaviour and the right one: there is no global synthesizer to
-   * fall back to. A case supplies `installStubSpeech`
-   * (`@alexkroman1/aai/testing/vitest`); a host wanting the real socket passes
-   * `speakOverWebSocket`, which is not named here for the same graph reason as
-   * {@link EvalWorkflowEngineOptions.stepFetch}.
-   */
-  readonly speech?: SpeechSynthesizer | undefined;
-};
-
-/** The engine, and the two things a caller does with it. */
-export type EvalWorkflowEngine = {
-  /** Hand this to `createWorkflowClient` as its `wdk`. */
-  readonly adapter: WdkAdapter;
-  /** The run this engine executed under `runId`, if it executed one. */
-  record(runId: string): EvalRunRecord | undefined;
-  /** Every run, oldest first. */
-  records(): readonly EvalRunRecord[];
-  /**
-   * Unpublish the step slots and give the synthetic `workflowId`s back.
-   *
-   * Never optional: the slots are process-global, so an engine left installed
-   * answers the NEXT case's steps — the cross-file leak `stubUploads` carries the
-   * same warning about. Never rejects.
-   */
-  release(): Promise<void>;
-};
+// Every type this engine takes or records lives one file over — see that module's
+// doc for the seam. Re-exported rather than reached through a second import path,
+// because they are part of THIS module's surface: `eval-barrel.ts` publishes them
+// from here.
+export type {
+  EvalEmitted,
+  EvalRunRecord,
+  EvalSleep,
+  EvalWorkflowEngine,
+  EvalWorkflowEngineOptions,
+} from "./workflow-engine-types.ts";
 
 /** Ids are per engine, so a case can assert on the string a tool was handed. */
 let engines = 0;
@@ -237,13 +118,13 @@ let engines = 0;
 /**
  * Build the in-process engine, publishing what a step reads.
  *
- * The synthetic `workflowId` is the interesting part. `createWorkflowClient`
- * reads `def.run.workflowId` and refuses without one, because on every real path
- * the DevKit's transform has attached it — so this engine attaches one itself
- * and hands it back on `release()`. Assigning rather than working around the
- * check is deliberate: the check is what makes "the bundler plugin did not run"
- * a legible error in production, and an eval that bypassed the field would also
- * bypass `recent`, whose whole filter is that id.
+ * **This used to stamp a synthetic `workflowId` onto every body, and the fact
+ * that it no longer has to is the shape of the DevKit removal.**
+ * `createWorkflowClient` read `def.run.workflowId` and refused without one,
+ * because on every real path a compile-time transform had attached it — so an
+ * eval, which imports a body through a test runner with no bundler in the path,
+ * had to forge one and give it back on `release()`. A workflow is identified by
+ * its declared key now, which an eval has for free.
  *
  * @see the module doc for what an eval run does NOT exercise.
  */
@@ -251,20 +132,13 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   engines += 1;
   const prefix = `eval-${engines}`;
   const runs = new Map<string, EvalRunRecord>();
-  const byWorkflowId = new Map<string, { name: string; def: WorkflowDef }>();
-  /** The `run` functions this engine stamped, so `release` can unstamp them. */
-  const stamped: WorkflowDef["run"][] = [];
+  const byName = new Map<string, { name: string; def: WorkflowDef }>();
 
   for (const [name, def] of Object.entries(opts.workflows)) {
-    // FIRST key wins, matching `createWorkflowClient`'s own two indexes: the same
-    // def declared under two names is legitimate and a run of it carries no trace
-    // of which one a caller meant, so both sides have to pick the same one.
-    if (def.run.workflowId === undefined) {
-      def.run.workflowId = `workflow//${prefix}//${name}`;
-      stamped.push(def.run);
-    }
-    const id = def.run.workflowId;
-    if (id !== undefined && !byWorkflowId.has(id)) byWorkflowId.set(id, { name, def });
+    // FIRST key wins, matching `createWorkflowClient`'s own index: the same def
+    // declared under two names is legitimate and a run of it carries no trace of
+    // which one a caller meant, so both sides have to pick the same one.
+    if (!byName.has(name)) byName.set(name, { name, def });
   }
 
   // The narration channel. `report()` and `emit()` carry no run id — a real step
@@ -284,27 +158,78 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   if (opts.speech) publishSpeechSynthesizer(opts.speech);
   if (opts.stepFetch) publishStepFetch(opts.stepFetch);
 
-  // Saved and restored rather than deleted, so an engine opened inside something
-  // that had already installed a sleep (a future harness, a nested case) does not
-  // silently take it away.
-  const globals = globalThis as SleepSlot;
-  const priorSleep = globals[WORKFLOW_SLEEP];
-  globals[WORKFLOW_SLEEP] = (duration) => {
-    current.getStore()?.slept.push({ duration });
-    return Promise.resolve();
-  };
-
   let sequence = 0;
 
   function toWdkRecord(record: EvalRunRecord): WdkRunRecord {
     return {
       runId: record.runId,
-      // The synthetic id, under WDK's own name for the field — which is the
-      // machine identifier, not the declared key. `toSnapshot` translates it.
-      workflowName: record.workflowId,
+      workflowName: record.workflowName,
       status: record.status,
       createdAt: record.createdAt,
+      // Both payload fields ride the record, mirroring the production engine's
+      // `toWdkRecord`: a snapshot reads `output` from here rather than paying a
+      // second `readOutput`, so an engine that dropped it would report every
+      // completed run as having returned nothing.
+      ...(record.status === "completed" ? { output: record.output } : {}),
       ...(record.status === "failed" && record.error ? { error: record.error } : {}),
+    };
+  }
+
+  /**
+   * The `ctx` a body is handed here — and the one method on it does NOT journal.
+   *
+   * `step(name, fn)` calls `fn` and returns what it returns. There is no
+   * memoization, because nothing replays; no attempt counting, because nothing
+   * retries; and no persistence, because there is no journal to persist to. It
+   * is a pass-through that exists so the body can be WRITTEN the way a deployed
+   * body is written.
+   *
+   * That is the same limitation the module doc states, moved to where it is now
+   * VISIBLE. Under the DevKit it was invisible and accidental — an untransformed
+   * `"use step"` is just a directive nobody read, so the body silently degraded
+   * to ordinary calls and only prose said so. Here the degradation is a function
+   * a reader can see the whole of, which is strictly better even though it
+   * measures exactly as much.
+   */
+  function evalCtx(record: EvalRunRecord): WorkflowCtx {
+    return {
+      runId: record.runId,
+      workflow: record.workflowName,
+      step: async (_name, fn) => await fn(),
+      // RECORDED, not taken — the same treatment the DevKit's `sleep()` gets
+      // through the global slot above, and for the same reason: a suspension is
+      // the one thing this engine cannot reproduce, and really waiting would
+      // make a case slow while proving nothing extra. `link-digest`'s ten
+      // seconds and the six hours its own comment says are mechanically
+      // identical differ by nothing that runs here. What a case CAN assert is
+      // that the body asked, and for how long.
+      sleep: async (until) => {
+        record.slept.push({ duration: until });
+      },
+      // REFUSED, and named. A hook is the one thing on `WorkflowCtx` this engine
+      // cannot fake: a sleep can be skipped because the body continues either
+      // way, but a `waitFor` is defined by what the SIGNALLER sends, and
+      // inventing a payload would evaluate a run nobody could have produced.
+      // Under the DevKit this was the same gap arriving less legibly —
+      // `createHook()` threw from inside `@workflow/core` with a message about
+      // workflow functions — and `recap-workflow`'s retention gate is still the
+      // case it costs. The seam that would close it is an
+      // `openEvalWorkflows({ hooks })` supplying payloads by token; it is not
+      // built, and this message is what says so.
+      waitFor: (_token: string, waitOptions?: { timeoutMs: number }) =>
+        // A wait with a DEADLINE has an honest answer here — nobody signalled, so
+        // the window closed — and it is the branch a retention gate or an
+        // approval window takes when no one replies. Only an UNBOUNDED wait has
+        // nothing this engine can say.
+        waitOptions !== undefined
+          ? Promise.resolve(undefined)
+          : Promise.reject(
+              new Error(
+                "ctx.waitFor is not available in an eval run: a hook's payload comes from " +
+                  "outside the run, so there is nothing here to send one. Drive the run " +
+                  "through the workflow HTTP API in a scenario test instead.",
+              ),
+            ),
     };
   }
 
@@ -321,7 +246,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // — and a workflow declaring no schema is handed whatever the caller
       // passed, which its body is free to ignore. `{}` for that case rather than
       // `undefined`, because the parameter is typed as present.
-      const output = await body(isRecord(input) ? input : {});
+      const output = await body(isRecord(input) ? input : {}, evalCtx(record));
       record.elapsedMs = Date.now() - startedAt;
       // A cancelled run keeps its status: there is no queue to stop delivering
       // to, so the body ran on regardless, and reporting `completed` would claim
@@ -343,7 +268,28 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
     return record.emitted.filter((one) => one.namespace === namespace).map((one) => one.chunk);
   }
 
-  /** WDK's `startIndex`: absent is the whole stream, negative counts back. */
+  /**
+   * `startIndex`, with the SAME two readings the real store gives it.
+   *
+   * Absent is the whole stream, negative counts back from the end (`-1` is the
+   * newest alone), and a non-negative value is an INCLUSIVE floor — the first
+   * index the reader wants. `workflow-streams.ts`'s `read` is the definition and
+   * its own doc carries the argument, which is short: every consumer of this
+   * cursor counts what it consumed and re-sends that count, and a count IS the
+   * first unread index.
+   *
+   * This briefly read it EXCLUSIVELY, to match a production store that was
+   * exclusive at the time. That made the two implementations of one `WdkAdapter`
+   * agree — on the wrong semantic — which is worth recording, because agreement
+   * between two implementations is exactly what a differential spec looks for and
+   * it is not the same claim as either of them being right. The oracle that
+   * settled it is `workflow-stream-cursor.test.ts`: it holds this adapter against
+   * the memory store AND both against a poll loop that has to reconstruct its
+   * own log, and only the third property could tell the two candidates apart.
+   *
+   * Indices here are array positions because nothing drops from the front; the
+   * real store subtracts its first index for the same arithmetic.
+   */
   function fromIndex(chunks: readonly unknown[], startIndex: number | undefined): unknown[] {
     if (startIndex === undefined) return [...chunks];
     if (startIndex < 0) return chunks.slice(Math.max(0, chunks.length + startIndex));
@@ -351,13 +297,13 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   }
 
   const adapter: WdkAdapter = {
-    start(workflowId, args) {
-      const entry = byWorkflowId.get(workflowId);
+    start(workflowName, args) {
+      const entry = byName.get(workflowName);
       if (!entry) {
         return Promise.reject(
           new Error(
-            `eval workflow engine has no workflow for id ${JSON.stringify(workflowId)}; ` +
-              `it serves ${[...byWorkflowId.keys()].join(", ") || "(none)"}`,
+            `eval workflow engine has no workflow named ${JSON.stringify(workflowName)}; ` +
+              `it serves ${[...byName.keys()].join(", ") || "(none)"}`,
           ),
         );
       }
@@ -365,7 +311,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       const runId = `${prefix}-run-${sequence}`;
       const record: EvalRunRecord = {
         runId,
-        workflowId,
+        workflowName,
         status: "running",
         createdAt: Date.now(),
         reported: [],
@@ -386,10 +332,10 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       return Promise.resolve(record ? toWdkRecord(record) : undefined);
     },
 
-    listRuns(workflowId, limit) {
+    listRuns(workflowName, limit) {
       // Newest first, which is what `recent` promises.
       const matching = [...runs.values()]
-        .filter((record) => record.workflowId === workflowId)
+        .filter((record) => record.workflowName === workflowName)
         .reverse()
         .slice(0, limit);
       return Promise.resolve(matching.map(toWdkRecord));
@@ -459,9 +405,6 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // cross-file leak `stubUploads` carries the same warning about.
       publishSpeechSynthesizer(undefined);
       publishStepFetch(undefined);
-      if (priorSleep === undefined) delete globals[WORKFLOW_SLEEP];
-      else globals[WORKFLOW_SLEEP] = priorSleep;
-      for (const run of stamped) delete run.workflowId;
       // A caller-supplied fetch is the CALLER's to close: this call did not open
       // its pool and cannot know who else holds it.
       return Promise.resolve();

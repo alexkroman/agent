@@ -1,0 +1,18 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "workflow",
+  "epoch": 2,
+  "sha256": "7292b93e8625dc399b566a0e4434a94fdaa5d3570c6f924aab8cf2f39abff5a6",
+  "exports": [
+    "DEFAULT_WORKFLOW_FIND_LIMIT",
+    "MAX_WORKFLOW_FIND_LIMIT",
+    "MAX_WORKFLOW_INPUT_BYTES",
+    "WORKFLOW_API_PREFIX",
+    "WORKFLOW_API_TOKEN_ENV",
+    "WdkAdapter",
+    "WdkRunRecord",
+    "WdkStreamOptions",
+    "WorkflowClientOptions",
+    "ensureWorkflowJournalSchema"
+  ]
+}

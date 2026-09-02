@@ -75,6 +75,14 @@ export type WdkAdapter = {
    *
    * Separate from `getRun` because reading it costs a deserialization (and,
    * with encryption on, a key resolution) that a `pending` run has no use for.
+   *
+   * **What CALLS it is `toSnapshot`'s fallback**, and that is the reason it is
+   * still here rather than a name kept in case somebody wants it. {@link
+   * WdkRunRecord.output} is optional, so an adapter written against an earlier
+   * epoch legitimately carries no value on the record — the retained epoch-2
+   * template is precisely that adapter — and for one of those this is the only
+   * path to a result. It is not called at all for an adapter that carries the
+   * key, which is every one in this repo.
    */
   readOutput(runId: string): Promise<unknown>;
 };
@@ -102,5 +110,22 @@ export type WdkRunRecord = {
   workflowName: string;
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   createdAt: Date | number;
+  /**
+   * The run's return value, set on a `completed` record and on no other.
+   *
+   * On the record rather than behind {@link WdkAdapter.readOutput} because the
+   * store that answers `getRun` already read it: `completed` is TERMINAL, so a
+   * second read cannot see a newer value, and a snapshot of a finished run was
+   * costing two platform round trips for one fact.
+   *
+   * **Optional, so `toSnapshot` reads it by PRESENCE of the key and falls back
+   * to `readOutput` when it is absent.** An adapter that carries no `output` is
+   * legal at every epoch and the retained epoch-2 template is one; when the
+   * fallback was dropped, every completed run of such an adapter reported
+   * `output: undefined` with nothing said anywhere. Presence rather than
+   * definedness because a body that returns nothing is a completed run whose
+   * output really is `undefined`.
+   */
+  output?: unknown;
   error?: { message: string } | undefined;
 };

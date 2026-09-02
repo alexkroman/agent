@@ -33,6 +33,7 @@ import { announcePlatformDbCapacity } from "./platform-db-capacity.ts";
 import {
   PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
   PLATFORM_DB_QUERY_TIMEOUT_MS,
+  PLATFORM_DB_RESERVE_TIMEOUT_MS,
   platformDb,
 } from "./platform-db-errors.ts";
 import {
@@ -61,7 +62,6 @@ import {
   type SqlExec,
 } from "./secret-store.ts";
 import { createStudioAuthFromEnv } from "./supabase-auth.ts";
-import { createPlatformWorldStorage } from "./workflow-storage-world.ts";
 import {
   createMemoryWorkspaceStore,
   createPgWorkspaceStore,
@@ -254,6 +254,23 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       max: ADMIN_POOL_MAX,
       connectTimeoutSeconds: PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
       queryTimeoutMs: PLATFORM_DB_QUERY_TIMEOUT_MS,
+      // The RESERVED path takes the same deadline, and this pool is the reason
+      // that option exists. Every guest platform route — the workflow journal,
+      // the queue, session state, upload records — runs its work on a
+      // reservation from HERE (`_platform-route.ts`'s `withReserved`) and takes
+      // no advisory lock, so the exemption `reserve()` grants by default left
+      // them unbounded: on a silent partition, ADMIN_POOL_MAX hung reads is
+      // every other platform read on this replica — Vault, the agents row the
+      // broker needs, the rate limits — queued behind them, and each 503s on
+      // its own client-side deadline. Reachable with FOUR concurrent watchers.
+      reservedQueryTimeoutMs: PLATFORM_DB_QUERY_TIMEOUT_MS,
+      // And the ACQUIRE, which those two do not cover: a statement's deadline
+      // starts once a connection is in hand, so a request that never got one
+      // was bounded by nothing on this side. Four hung reads is the same
+      // arithmetic as the line above, one step earlier — every further platform
+      // request queues on `reserve()` with no deadline, and each fails on its
+      // CALLER's timeout instead, which is a 500 where this is a 503.
+      reserveTimeoutMs: PLATFORM_DB_RESERVE_TIMEOUT_MS,
     }),
   );
   const exec: SqlExec = (query, params) => admin.query(query, params);
@@ -299,10 +316,19 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // Vault reads, workspace writes, and the agents-row lookups the broker
     // makes, on a replica that was otherwise healthy. Separated, lock
     // acquires queue only against each other.
-    // The slug-lock pool takes the connect bound but NOT the query bound: its
+    // The slug-lock pool takes the connect bound and NEITHER query bound: its
     // whole job is holding an advisory lock on a RESERVED connection for a
-    // deploy's duration, and the pooled query timeout is scoped to the pool
-    // path anyway — a lock wait carries its own `lock_timeout` deadline.
+    // deploy's duration, so `reservedQueryTimeoutMs` — which the admin pool
+    // above does set — would abort deploys here. The wait that does need a
+    // bound, the ACQUIRE, carries its own `lock_timeout` on the connection
+    // (`platform-lock.ts`). This is the whole reason that option is per-pool
+    // rather than a blanket on `reserve()`.
+    //
+    // `reserveTimeoutMs` is refused on the same ground and it is the sharper
+    // case: a reservation here is held for a whole deploy, so a fifth
+    // concurrent distinct-slug mutation waits minutes for a connection
+    // LEGITIMATELY. A deadline would turn ordinary deploy concurrency into a
+    // failure, where on the admin pool the same wait can only mean exhaustion.
     slugLock: createPgSlugLock(
       platformDb(
         createPostgresDb({
@@ -323,18 +349,15 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
 /**
  * Assemble the shared service bindings from the environment.
  *
- * **Async because of the workflow world, and that is the point rather than a
- * cost.** `ServiceConfig` has declared a `runStorage` binding since the DevKit's
- * world moved onto the platform, and for that whole time nothing filled it:
- * `createPlatformWorldStorage` had no caller anywhere outside a test util. So
- * `/:slug/workflow-storage` and `/:slug/workflow-stream` answered 501 on every
- * deployment, while the guest side routed to them UNCONDITIONALLY — a deployed
- * sandbox always has `AAI_PUBLIC_BASE_URL` and `AAI_GUEST_TOKEN`, so
- * `configureWorkflowWorld` always chose `"platform"`. Every durable run on the
- * platform failed at its first `events.create` and was abandoned after the
- * retry budget. A binding whose construction lives in a second place is a
- * binding an entry can forget; this is the one function that reads the
- * environment and builds them, so it builds this one too.
+ * **Still async, and no longer for the reason it became async.** It was awaiting
+ * `createPlatformWorldStorage` — the DevKit's world on the platform's own
+ * database — and the lesson from that binding is worth keeping now the binding
+ * is gone: `ServiceConfig` DECLARED it for months while nothing filled it, so
+ * `/:slug/workflow-storage` answered 501 on every deployment while the guest
+ * routed to it unconditionally, and every durable run died at its first
+ * `events.create`. A binding whose construction lives in a second place is a
+ * binding an entry can forget. This is the one function that reads the
+ * environment and builds them, so anything new belongs here too.
  */
 export async function buildServiceConfig(env: NodeJS.ProcessEnv): Promise<ServiceConfig> {
   // One key, two consumers that both need service-role authority (Storage
@@ -365,12 +388,6 @@ export async function buildServiceConfig(env: NodeJS.ProcessEnv): Promise<Servic
   // inside `buildPlatformDb`, so a pooler pasted here was refused before we get
   // here.
   //
-  // Undefined without a platform database, which is `aai dev` and every unit
-  // test; the routes answer 501, the same answer the enqueue route beside them
-  // gives. The `@workflow/world-postgres` import is what this await pays for —
-  // the POOL is lazy, so a replica serving no workflow agent still opens no
-  // connection.
-  const runStorage = await createPlatformWorldStorage({ url: env.SUPABASE_DB_URL });
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure
@@ -417,7 +434,6 @@ export async function buildServiceConfig(env: NodeJS.ProcessEnv): Promise<Servic
     replicaId,
     ...omitUndefined({ sql }),
     ...omitUndefined({ adminDb }),
-    ...omitUndefined({ runStorage }),
     ...omitUndefined({ directory }),
   };
 }

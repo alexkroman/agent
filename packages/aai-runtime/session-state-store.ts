@@ -94,12 +94,14 @@ export type StoredSessionEvent = {
  * its own selection rule, its own sweep and its own answer to "is this agent
  * durable".
  *
- * **`discard` reclaims what the backend is ALLOWED to reclaim, which is not
- * always both.** The memory backend drops slots and events together; the
- * Postgres one drops slots only, because on the platform the event table is
- * append-only to the role the guest holds (a log tool code can delete is not a
- * log) and its rows are reclaimed by the admin-run retention sweep instead. So a
- * discarded session's events can outlive its slots by up to that window.
+ * **`discard` reclaims BOTH, on every backend.** This sentence used to say
+ * "what the backend is ALLOWED to reclaim, which is not always both", and the
+ * hedge was the bug: the Postgres backend dropped slots only while the other two
+ * dropped both, so "discarded" meant two different things depending on where a
+ * session ran and nothing failed. The append-only GRANT that justified the
+ * asymmetry went with per-app databases. `session-state-conformance.ts` carries
+ * the decision and asserts it as a shared case on every arm; the retention sweep
+ * stays as the backstop for a session whose guest died before it discarded.
  *
  * @public
  */
@@ -202,70 +204,15 @@ type SessionEntry = {
 };
 
 /**
- * The memory backend: what a deployment with no database gets.
+ * The memory backend, from the module that now declares it.
  *
- * It really stores — a session's values survive its own disconnect and the
- * resume grace window, which is what the old `stateMap` did — and it really
- * cannot survive the process, which is the difference the two tiers exist to
- * express. Values are held as the same serialized JSON the Postgres backend
- * holds, so the round trip a value takes is identical in both.
- *
- * @internal
+ * Re-exported here rather than moved out from under its importers: this is the
+ * module that declares the interface, so it is where a reader looks for the
+ * reference implementation of it. `session-state-memory.ts`'s own header has
+ * why it left — the conformance registry's one-file-per-backend grammar, and
+ * this file's 500-line cap.
  */
-export function createMemoryStateBackend(): SessionStateBackend {
-  const sessions = new Map<string, Map<string, string>>();
-  /** One session's event log, keyed by index — sparse-tolerant, like the rows. */
-  const events = new Map<string, Map<number, string>>();
-  return {
-    name: "memory",
-    durable: false,
-    load: (sessionId) => Promise.resolve(new Map(sessions.get(sessionId) ?? [])),
-    commit: (sessionId, values) => {
-      const session = sessions.get(sessionId) ?? new Map<string, string>();
-      for (const [key, json] of values) session.set(key, json);
-      sessions.set(sessionId, session);
-      return Promise.resolve();
-    },
-    discard: (sessionId) => {
-      sessions.delete(sessionId);
-      events.delete(sessionId);
-      return Promise.resolve();
-    },
-    appendEvents: (sessionId, pending) => {
-      const log = events.get(sessionId) ?? new Map<number, string>();
-      for (const event of pending) log.set(event.index, event.json);
-      events.set(sessionId, log);
-      return Promise.resolve();
-    },
-    readEvents: (sessionId, startIndex, limit) => {
-      const log = events.get(sessionId);
-      if (!log) return Promise.resolve([]);
-      const out: StoredSessionEvent[] = [];
-      // By index rather than by insertion order: the Postgres backend answers
-      // `order by index`, and a memory backend that answered otherwise would
-      // stop being a valid test double for it.
-      for (const index of [...log.keys()].sort((a, b) => a - b)) {
-        if (index < startIndex) continue;
-        if (out.length >= limit) break;
-        const json = log.get(index);
-        if (json !== undefined) out.push({ index, json });
-      }
-      return Promise.resolve(out);
-    },
-    countEvents: (sessionId) => {
-      // `max + 1`, not `size` — see the backend type's doc. A sparse log (the
-      // retention cap, a partly-failed flush) is exactly where the two differ,
-      // and it is the case this answer exists for.
-      const log = events.get(sessionId);
-      let highest = -1;
-      // A loop rather than `Math.max(...keys)`: the log holds up to
-      // `MAX_SESSION_EVENTS` entries and spreading that many arguments is a
-      // stack overflow waiting for the cap to be raised.
-      for (const index of log?.keys() ?? []) if (index > highest) highest = index;
-      return Promise.resolve(highest + 1);
-    },
-  };
-}
+export { createMemoryStateBackend } from "./session-state-memory.ts";
 
 /**
  * Install one stored slot into the cache, or drop it with a warning.

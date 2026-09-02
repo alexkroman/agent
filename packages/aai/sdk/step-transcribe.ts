@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `stepTranscribe*()` — turning a recording into text from inside a
- * `"use step"` function.
+ * step.
  *
  * The counterpart of {@link stepSpeak}, and the other half of a workflow's
  * round trip: that one makes audio out of words, this one makes words out of
@@ -17,43 +17,37 @@
  * a step that waited for one would be a step holding its process open for an
  * hour, journaling nothing, and starting over from the upload after a crash.
  *
- * The durable shape is a body that calls a step per phase and `sleep`s between
- * polls, and **the SDK cannot own that body**: the Workflow DevKit's builder
- * transforms exactly the files under a project's `workflows/` directory, so a
- * `"use step"` in this package would be scanned by nothing, transformed into
- * nothing, and would run inline as an ordinary function with no journal and no
- * retry — with no symptom saying so. Every step in this repository is a user's.
+ * The durable shape is a body that calls a step per phase and `ctx.sleep`s
+ * between polls, and **the SDK cannot own that body**: durability comes from the
+ * `ctx.step` a body wraps a call in, and this package is handed no `ctx`. A
+ * function exported from here is an ordinary async call — no journal, no retry —
+ * until a body puts it inside a step, and nothing says so at the call site.
+ * Every step in this repository is a user's.
  *
  * So the division is: **the caller owns the four steps and the loop, this owns
  * everything inside them.** That is the same division `stepGenerate` and
- * `stepFetch` already keep, and it is why nothing here carries a directive.
+ * `stepFetch` already keep.
  *
- * ```ts no-check
- * import { sleep } from "workflow";
+ * ```ts
+ * import type { WorkflowCtx } from "@alexkroman1/aai/workflow-api";
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  * import { stepTranscribePoll, stepTranscribeSubmit, stepTranscribeUpload } from "@alexkroman1/aai/step";
  *
- * export async function upload(recording: string) {
- *   "use step";
- *   return await stepTranscribeUpload(recording).catch(throwStepError);
- * }
- * export async function submit(audioUrl: string) {
- *   "use step";
- *   return await stepTranscribeSubmit(audioUrl).catch(throwStepError);
- * }
- * export async function poll(id: string) {
- *   "use step";
- *   return await stepTranscribePoll(id).catch(throwStepError);
- * }
- *
- * export async function transcribe(recording: string) {
- *   "use workflow";
- *   const { audioUrl } = await upload(recording);
- *   const { id } = await submit(audioUrl);
+ * export async function transcribe(input: { recording: string }, ctx: WorkflowCtx) {
+ *   const { audioUrl } = await ctx.step("upload", () =>
+ *     stepTranscribeUpload(input.recording).catch(throwStepError),
+ *   );
+ *   const { id } = await ctx.step("submit", () =>
+ *     stepTranscribeSubmit(audioUrl).catch(throwStepError),
+ *   );
  *   for (let n = 0; n < 360; n += 1) {
- *     const progress = await poll(id);
+ *     // One call site in a loop is exactly what `(name, occurrence)` keying is
+ *     // for — `poll#0`, `poll#1`, … — so it needs no name of its own per round.
+ *     const progress = await ctx.step("poll", () =>
+ *       stepTranscribePoll(id).catch(throwStepError),
+ *     );
  *     if (progress.done) return progress.transcript;
- *     await sleep("10s");
+ *     await ctx.sleep(10_000);
  *   }
  *   throw new Error(`Transcript ${id} is still unfinished.`);
  * }
@@ -64,7 +58,7 @@
  * Upload and submit look like one operation — an `upload_url` is useless alone
  * and expires — and both templates that own this flow began that way. The first
  * live run is what split them: the create call failed on a deprecated field,
- * the DevKit retried the whole step five times, and 24 MB went up the wire on
+ * the engine retried the whole step five times, and 24 MB went up the wire on
  * every attempt to fix a fault in a JSON body. A retry that repeats the
  * expensive half to fix the cheap half is not a retry. The risk that makes the
  * split look wrong is real and far smaller — if the URL expires before the next
@@ -99,7 +93,8 @@ import {
   transcribeSignal,
 } from "./_transcribe-shared.ts";
 import { stepFetch } from "./step-fetch.ts";
-import { readUpload, uploadInfo } from "./step-uploads.ts";
+import { readUpload } from "./step-uploads.ts";
+import { requireCompleteUpload } from "./step-uploads-complete.ts";
 
 /** The async API's base. */
 export const TRANSCRIBE_API = "https://api.assemblyai.com";
@@ -191,17 +186,25 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
  * for this. Nothing is buffered beyond one window, and one window of READ-AHEAD
  * keeps the store and the socket busy at the same time.
  *
- * @param uploadId - An upload in the agent's own store, as `writeUpload` or a
- *   page's `api.upload(file)` produced.
+ * **The upload has to be FINISHED, and that is checked rather than assumed.**
+ * `UploadInfo.size` is the contiguous readable prefix, so reading it off a
+ * still-arriving recording used to upload only what had landed and transcribe a
+ * truncated file — a plausible wrong answer with no error anywhere.
+ * `requireCompleteUpload` refuses instead, BEFORE the expensive leg; its module
+ * doc carries why that is a refusal rather than a wait.
  *
+ * @param uploadId - An upload in the agent's own store, as `writeUpload` or a
+ *   page's `api.upload(file)` produced. Must be complete.
+ *
+ * @throws {UploadIncompleteError} when the upload is still arriving.
  * @throws {TranscribeError} on a refusal, carrying the verdict `toStepError`
  *   reads. Give this step extra retries: it is the one call here worth another
  *   attempt, and the only one whose cost is the file.
  *
  * @public
  *
- * **From a `"use step"` body, prefer `stepTranscribeUploadClassified`
- * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+ * **From a step, prefer `stepTranscribeUploadClassified`
+ * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
  */
@@ -209,7 +212,9 @@ export async function stepTranscribeUpload(
   uploadId: string,
   opts: TranscribeRequestOptions = {},
 ): Promise<{ audioUrl: string }> {
-  const stored = await uploadInfo(uploadId);
+  // Not `uploadInfo`: `size` is the readable PREFIX, and a run started while the
+  // recording was still arriving would upload the prefix and transcribe it.
+  const stored = await requireCompleteUpload(uploadId);
   const response = await stepFetch(`${TRANSCRIBE_API}/v2/upload`, {
     method: "POST",
     // The raw key — this API takes it unprefixed, and a `Bearer ` in front of
@@ -262,14 +267,12 @@ export async function stepTranscribeUpload(
  * } from "@alexkroman1/aai/step";
  *
  * export async function startJob(uploadId: string): Promise<string> {
- *   "use step";
  *   const { audioUrl } = await stepTranscribeUpload(uploadId);
  *   const { id } = await stepTranscribeSubmit(audioUrl);
  *   return id;
  * }
  *
  * export async function checkJob(id: string): Promise<string | undefined> {
- *   "use step";
  *   const progress = await stepTranscribePoll(id);
  *   // Branch on `done`, never on a provider status string.
  *   return progress.done ? progress.transcript.text : undefined;
@@ -278,8 +281,8 @@ export async function stepTranscribeUpload(
  *
  * @public
  *
- * **From a `"use step"` body, prefer `stepTranscribeSubmitClassified`
- * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+ * **From a step, prefer `stepTranscribeSubmitClassified`
+ * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
  */
@@ -328,8 +331,8 @@ export async function stepTranscribeSubmit(
  *
  * @public
  *
- * **From a `"use step"` body, prefer `stepTranscribePollClassified`
- * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+ * **From a step, prefer `stepTranscribePollClassified`
+ * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
  */

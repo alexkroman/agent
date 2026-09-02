@@ -80,12 +80,24 @@ export type StreamOptions = {
    */
   namespace?: string;
   /**
-   * Chunk index to start from, 0-based. Negative counts back from the end
-   * (`-3` reads the last three), which is what a reconnecting reader wants when
-   * it does not know how far it got.
+   * Chunk index to start from, 0-based and INCLUSIVE — the chunk at this index
+   * is the first one you receive. Negative counts back from the end (`-3` reads
+   * the last three), which is what a reconnecting reader wants when it does not
+   * know how far it got.
    *
    * Defaults to 0 — the whole stream from the beginning, since chunks are
-   * retained with the run rather than being live-only.
+   * retained with the run rather than being live-only. `0` and an omitted value
+   * are the same request, which is what makes a cursor safe to send
+   * unconditionally: a reader that has consumed `n` chunks passes `n` and
+   * receives exactly what it has not seen, with no special case for `n === 0`.
+   *
+   * **Inclusive is a decision, not a description**, and the alternative shipped
+   * briefly. An EXCLUSIVE floor ("what came after the index I last saw") reads
+   * naturally for a poll loop and cannot be spelled here: the cursor before
+   * chunk 0 is `-1`, and `-1` already means "the last chunk alone". So it forces
+   * every caller to special-case its own origin into an omitted parameter, and
+   * the off-by-one at that boundary is what a default `followOutput` was losing
+   * — the first progress line of every run.
    */
   startIndex?: number;
 };

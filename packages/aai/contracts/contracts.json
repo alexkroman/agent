@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 9,
-    "supported": [9],
+    "current": 13,
+    "supported": [13],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
@@ -10,7 +10,11 @@
       "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "6": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "7": "`agent({ system })` is gone; the field is `systemPrompt`. The alias existed to match the Vercel AI SDK's spelling and made `agent({ system, systemPrompt })` representable, which then needed a runtime throw to forbid — one concept with two names and a rule to police them. A stale `system` is reported by name, because it is in the stray-field renames map.",
-      "8": "Pre-release: `StaticAgentParams` is now `Omit<StaticAgentParamsCore, WorkflowAppOnlyField>` plus the misuse messages, rather than sharing a third unexported base with the arm — so this epoch would in fact still compile, the shape being identical. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty. The change exists so the docs build has one name to resolve instead of two: TypeDoc refuses an undocumented type on a public signature, and `StaticAgentParamsBase` was a second one."
+      "8": "Pre-release: `StaticAgentParams` is now `Omit<StaticAgentParamsCore, WorkflowAppOnlyField>` plus the misuse messages, rather than sharing a third unexported base with the arm — so this epoch would in fact still compile, the shape being identical. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty. The change exists so the docs build has one name to resolve instead of two: TypeDoc refuses an undocumented type on a public signature, and `StaticAgentParamsBase` was a second one.",
+      "9": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface.",
+      "10": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's two new methods reach it. The change is the DevKit removal's phases 2 and 3, not this surface.",
+      "11": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
+      "12": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
     }
   },
   "builtins": {
@@ -31,14 +35,18 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 6,
-    "supported": [6],
+    "current": 10,
+    "supported": [10],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "3": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
       "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "6": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface.",
+      "7": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's two new methods reach it. The change is the DevKit removal's phases 2 and 3, not this surface.",
+      "8": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
+      "9": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
     }
   },
   "ffmpeg": {
@@ -74,29 +82,34 @@
     "dropped": {}
   },
   "state": {
-    "current": 6,
-    "supported": [6],
+    "current": 10,
+    "supported": [10],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "3": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
       "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "6": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface.",
+      "7": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's two new methods reach it. The change is the DevKit removal's phases 2 and 3, not this surface.",
+      "8": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
+      "9": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
     }
   },
   "step": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [3, 4],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "step-errors": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "2": "FatalError and RetryableError are this SDK's own classes rather than @workflow/errors', and RetryableErrorOptions.retryAfter no longer accepts a duration string. Membership is a brand rather than instanceof."
     }
   },
   "step-files": {
@@ -110,18 +123,22 @@
     "dropped": {}
   },
   "subagent": {
-    "current": 5,
-    "supported": [5],
+    "current": 9,
+    "supported": [9],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
       "3": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "4": "`SubagentDef.instructions` is `systemPrompt`. It was the only field renamed between `subagent()` and its larger sibling — otherwise a field-for-field smaller `agent()` — so one concept had two names depending on which declaration you were writing. Migration is the rename at each `subagent({ … })` call site; a stale one is reported BY NAME, because `instructions` is in the stray-field renames map."
+      "4": "`SubagentDef.instructions` is `systemPrompt`. It was the only field renamed between `subagent()` and its larger sibling — otherwise a field-for-field smaller `agent()` — so one concept had two names depending on which declaration you were writing. Migration is the rename at each `subagent({ … })` call site; a stale one is reported BY NAME, because `instructions` is in the stray-field renames map.",
+      "5": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface.",
+      "6": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's two new methods reach it. The change is the DevKit removal's phases 2 and 3, not this surface.",
+      "7": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
+      "8": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
     }
   },
   "testing": {
-    "current": 10,
-    "supported": [10],
+    "current": 14,
+    "supported": [14],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -131,18 +148,26 @@
       "6": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "7": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "8": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "9": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example. `withDiscoveredTools` is no longer exported: it was the tools-only half of `deployedAgent`, and with `virtual:aai/agent` serving the whole lowering there is nothing left for a spec to reach it for."
+      "9": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example. `withDiscoveredTools` is no longer exported: it was the tools-only half of `deployedAgent`, and with `virtual:aai/agent` serving the whole lowering there is nothing left for a spec to reach it for.",
+      "10": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface.",
+      "11": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's two new methods reach it. The change is the DevKit removal's phases 2 and 3, not this surface.",
+      "12": "createWorkflowCtx is new: a WorkflowCtx a spec drives a workflow BODY with, which nothing else could do — three templates had hand-rolled one.",
+      "13": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
     }
   },
   "tool": {
-    "current": 6,
-    "supported": [6],
+    "current": 10,
+    "supported": [10],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
       "3": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "4": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
-      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example."
+      "5": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
+      "6": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface.",
+      "7": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's two new methods reach it. The change is the DevKit removal's phases 2 and 3, not this surface.",
+      "8": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
+      "9": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
     }
   },
   "transcribe": {
@@ -156,9 +181,11 @@
     "dropped": {}
   },
   "uploads": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Purely additive — `requireCompleteUpload` and `UploadIncompleteError` join the surface and every epoch-1 caller still compiles. Dropped rather than retained on the same grounds as `aai-runtime:db` epoch 1: there is no external consumer to keep an epoch-1 template for, and no `uploads` example exists to extend, so a retain would oblige a frozen fixture exercising all eight names to evidence a compatibility nobody is relying on."
+    }
   },
   "utils": {
     "current": 1,
@@ -166,18 +193,27 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 2,
-    "supported": [2],
+    "current": 7,
+    "supported": [7],
     "dropped": {
-      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "2": "A workflow body is now (input, ctx) and carries no compiler-stamped workflowId: the Workflow DevKit's \"use workflow\"/\"use step\" directives are replaced by ctx.step, so a body written at epoch 2 does not compile.",
+      "3": "ctx.sleep and ctx.waitFor were added to WorkflowCtx: durable suspension (phase 2) and hooks (phase 3) of the DevKit removal. A body written at the previous epoch still compiles, but the engine it was written for did not have either, so the epoch evidences nothing.",
+      "4": "ctx.waitFor gained a timeout option, so a hook's deadline is a parameter rather than a Promise.race against ctx.sleep — both suspend, and a suspend unwinds the stack, so the race stops the body before the other side is reached.",
+      "5": "isWorkflowSuspend is new, and it is part of the authoring surface rather than an engine internal: a catch inside a body must re-throw the engine's suspend signal or its failure path runs against a run that was only waiting. recap-workflow shipped that bug.",
+      "6": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
     }
   },
   "workflow-api": {
-    "current": 3,
-    "supported": [3],
+    "current": 7,
+    "supported": [7],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
-      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "3": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, whose WorkflowDef now carries the (input, ctx) body signature. The change is the DevKit removal, not this surface.",
+      "4": "ctx.sleep and ctx.waitFor were added to WorkflowCtx: durable suspension (phase 2) and hooks (phase 3) of the DevKit removal. A body written at the previous epoch still compiles, but the engine it was written for did not have either, so the epoch evidences nothing.",
+      "5": "ctx.waitFor gained a timeout option, so a hook's deadline is a parameter rather than a Promise.race against ctx.sleep — both suspend, and a suspend unwinds the stack, so the race stops the body before the other side is reached.",
+      "6": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for."
     }
   }
 }

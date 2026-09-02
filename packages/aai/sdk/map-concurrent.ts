@@ -5,18 +5,33 @@
  *
  * A workflow body that fans out over a list wants two things at once: a bound,
  * because the far side of a step is usually a rate limit, and a call order that
- * is a pure function of the list, because the Workflow Development Kit
- * correlates a journal entry to a step call **by the order the call was issued
- * in** and nothing else.
+ * is a pure function of the list, because the engine correlates a journal entry
+ * to a step call **by the order the call was issued in** and nothing else.
  *
  * ## What replay really requires
  *
- * The WDK transform rewrites a `"use step"` function into a dispatcher that
- * stamps each invocation with `step_${ulid()}` from a monotonic factory seeded
- * off the run's `startedAt`. So the Nth step call ISSUED in a run gets the Nth
- * id, on the first execution and on every replay, and the step's name is only
- * cross-checked against that id — a mismatch is `ReplayDivergenceError`, not a
- * silent re-run.
+ * A step is called through `ctx.step(name, fn)`, and its journal key is the name
+ * plus the number of times THAT name has already been reached in this walk —
+ * `segment#0`, `segment#1`, … (see `WorkflowCtx` in `sdk/workflow-ctx.ts`). So
+ * the Nth call issued under a given name reads the Nth entry under it, on the
+ * first execution and on every replay.
+ *
+ * **Nothing cross-checks that the Nth call is the same WORK it was last time.**
+ * A body whose call order changes between walks does not fail — it silently
+ * reads another item's journaled result. That is what makes the rule below
+ * load-bearing rather than advisory, and it is why this module exists instead of
+ * a hand-rolled pool at each call site.
+ *
+ * **The engine DOES now refuse a walk that changes a step's NAME**
+ * (`aai-runtime/workflow-replay-divergence.ts`, which is where the
+ * `ReplayDivergenceError` this doc once promised finally lives). That is a
+ * different fault from this one and it is worth being precise about which is
+ * which, because the two look alike in prose: a changed name mints a journal
+ * key nobody ever reached, and the engine can see that. A fan-out reordered
+ * UNDER ONE NAME mints no new key at all — every call still reads
+ * `segment#0..N`, in the same order, and the only thing that moved is which
+ * ITEM call N was for. There is nothing for the journal to disagree with, so
+ * the rule below remains the whole defence.
  *
  * The requirement that falls out of this is narrower than it looks: **the
  * SEQUENCE OF ITEMS whose calls are issued must be a pure function of the
@@ -26,8 +41,8 @@
  *
  * A window over a shared cursor satisfies it. The cursor only ever hands out the
  * next index, so the Nth call issued is item N-1 whatever order the calls settle
- * in; what completion order decides is which SLOT runs which item, and no id
- * depends on that. So there is no barrier here: a slot that finishes early takes
+ * in; what completion order decides is which SLOT runs which item, and no
+ * journal key depends on that. So there is no barrier here: a slot that finishes early takes
  * the next item immediately instead of idling until its slowest sibling lands.
  *
  * **This was `mapInBatches`, and it ran sequential batches of `Promise.all` on
@@ -47,36 +62,37 @@
  * settles. Neither shape rescues it; a body that needs two steps per item runs
  * them as two fan-outs.
  *
- * ## The WINDOW is not the concurrency — the WORLD's worker count is
+ * ## The WINDOW is not the concurrency — the ENGINE's step gate is
  *
  * `size` bounds how many step calls this body has in flight. How many of them
- * EXECUTE at once is decided one layer down, by the workflow world's worker
- * concurrency, and on the `DATABASE_URL` path that is
- * `APP_DB_WORLD_WORKER_CONCURRENCY` — **three**. So a window of 8 or 17 runs
- * three wide, and past three a wider window buys nothing while still costing a
- * queued job per item.
+ * EXECUTE at once is decided one layer down, by `DEFAULT_STEP_CONCURRENCY` in
+ * `@alexkroman1/aai-runtime` — **16**. So a window of 32 runs sixteen wide, and
+ * past sixteen a wider window buys nothing while still costing a queued job per
+ * item.
  *
- * Measured on `aai dev` against a local Postgres, 16 steps each awaiting a 2s
- * loopback response, window 16: **12.3s, an effective 2.6x**. The same run with
- * `WORKFLOW_POSTGRES_WORKER_CONCURRENCY=12` (and `WORKFLOW_POSTGRES_MAX_POOL_SIZE=13`,
- * since the concurrency is derived one below the pool): **4.4s, 7.3x**. Nothing
- * about the body changed. Against a FAST far side the wide window is actively
- * worse — 32 loopback steps took 903ms at window 2 and 1587ms at window 16, a
- * 76% penalty for asking for eight times the concurrency.
+ * That number used to be three, inherited from graphile-worker's default on the
+ * `DATABASE_URL` path and never measured against the thing it bounds. It is
+ * sixteen now because it was: in a real libkrun microVM at Modal's GUARANTEED
+ * reservation (1 CPU / 1024 MB, `SANDBOX_MEMORY_MB` — the cap above it is
+ * elastic and a default may not depend on it), a concurrent transcription
+ * segment costs 26.1 MB at 48 kHz stereo, so sixteen sits at 576 MB of 982 MB
+ * usable. The gate's own doc carries the table.
  *
  * Two things follow. **Size the window against the far side's latency, not
  * against the item count**: the engine spends ~38ms per step (measured, and
  * steady across three far-side latencies), so a window only pays where the far
  * side costs meaningfully more than that — which is why a real provider taking
- * seconds rewards 8 or 17 and a loopback stub does not. And **the ceiling is an
- * operator's knob, not an author's**: those two environment variables are read
- * from the SERVER's process environment (a project's `.env` is the agent env and
- * does not reach it), so a self-hosted deployment that owns its database can
- * raise them. See `sdk/app-db-budget.ts` for why the default is what it is.
+ * seconds rewards 8 or 17 and a loopback stub does not. Against a FAST far side
+ * a wide window is actively worse: 32 loopback steps took 903ms at window 2 and
+ * 1587ms at window 16, a 76% penalty for asking for eight times the concurrency.
+ * And **the ceiling is an operator's knob, not an author's** —
+ * `AAI_WORKFLOW_STEP_CONCURRENCY`, read from the SERVER's process environment (a
+ * project's `.env` is the agent env and does not reach it), so a deployment that
+ * has sized its guest larger can raise it.
  *
  * ## It is not workflow-specific, and needs no workflow to run
  *
- * Nothing here imports the DevKit: this is a plain bounded map, so a tool body
+ * Nothing here imports the engine: this is a plain bounded map, so a tool body
  * can use it for a rate-limited API and a spec can call it directly. The rules
  * above are why it exists and why it is shaped the way it is.
  */
@@ -104,33 +120,16 @@
  *   `Math.min(NaN, n)` is `NaN`, so `Array.from({ length: NaN })` is empty and
  *   the map silently does NOTHING, which reads as an empty input.
  * @param run - Called once per item, with the item and its index in `items`.
- *   Inside a workflow body this is where a `"use step"` call goes, and it must
- *   be the only one — see the remarks below.
- *
- * @remarks
- * **`run` must issue the same sequence of step calls for every item**, which in
- * practice means one, issued synchronously. The Workflow Development Kit
- * correlates a journal entry to a step call by the ORDER the call was issued in
- * and by nothing else, so a callback that awaits something before its step call,
- * or issues two steps in a row, interleaves with its siblings by completion
- * order — and a resume then hands the Nth journal entry to a different call. A
- * body that needs two steps per item runs them as two fan-outs.
- *
- * What that requires of the window itself is narrower than it looks, and is why
- * there is no barrier in it: the SEQUENCE OF ITEMS whose calls are issued has to
- * be a pure function of the list, not of the settle order. The cursor only ever
- * hands out the next index, so the Nth call issued is item N-1 however the calls
- * settle; what completion order decides is which slot runs which item, and no
- * step id depends on that. A slot that finishes early therefore takes the next
- * item immediately rather than idling until its slowest sibling lands.
- *
- * Nothing here imports the Workflow Development Kit, so this is a plain bounded
- * map: a tool body can use it for a rate-limited API and a spec can call it
- * directly.
+ *   Inside a workflow body this is where a `ctx.step` call goes, and **it must
+ *   be the only one, issued synchronously** — a callback that awaits before its
+ *   step call, or issues two in a row, interleaves with its siblings by
+ *   completion order and a resume hands the Nth journal entry to a different
+ *   call. A body needing two steps per item runs them as two fan-outs. The
+ *   module doc above carries why, and why the window itself needs no barrier.
  *
  * @example
  * ```ts no-check
- * // In a "use workflow" body: one step per segment, four in flight.
+ * // In a workflow body: one step per segment, four in flight.
  * const cleaned = await mapConcurrent(segments, 4, (text) => postProcess(text));
  * ```
  *
@@ -188,9 +187,8 @@ export async function mapConcurrent<T, R>(
   // `stopped` only stops a slot taking a NEW item — so a slot already inside
   // `await run(...)` is abandoned mid-call, with its result discarded whether or
   // not the call went on to succeed. In a durable fan-out those are the calls
-  // that have already been paid for: the DevKit reports them as
-  // "run failed with N uncommitted operation(s)", their journal entries never
-  // land, and the resume re-issues and re-bills work that had SUCCEEDED. Draining
+  // that have already been paid for: their journal entries never
+  // land, so the resume re-issues and re-bills work that had SUCCEEDED. Draining
   // first costs the tail of whatever is in flight — bounded by those calls' own
   // deadlines, and they are running either way — and buys every one of their
   // results.

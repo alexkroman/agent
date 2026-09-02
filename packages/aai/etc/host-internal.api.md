@@ -105,12 +105,6 @@ export const APP_DB_POOL_MAX = 3;
 // @public
 export const APP_DB_PRESENCE_LOCK = 1;
 
-// @public
-export const APP_DB_WORLD_POOL_MAX = 4;
-
-// @public
-export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
-
 // @internal
 export function asDispatcher(agent: Agent): FetchDispatcher;
 
@@ -721,6 +715,9 @@ export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 export function isPrivateIp(ip: string): boolean;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -775,9 +772,6 @@ type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
 };
-
-// @internal
-export const MISSING_WORKFLOW_ID_MESSAGE: string;
 
 // @public
 export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
@@ -895,6 +889,9 @@ export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 
 // @internal
 export function publishStepReporter(reporter: StepReporter | undefined): void;
+
+// @internal
+export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void;
 
 // @internal
 export function publishUploadReader(reader: UploadAccess | undefined): void;
@@ -1037,10 +1034,15 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 type SessionMode = "s2s" | "pipeline" | "text";
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
+export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
 
 // @internal
-type SleepOptions = {
+type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
@@ -1121,10 +1123,16 @@ type StartOptions = {
 export const STEP_FETCH_CONNECTIONS = 64;
 
 // @internal
+export const STEP_FETCH_INACTIVITY_MS = 600000;
+
+// @internal
 export const STEP_FETCH_KEEP_ALIVE_MS = 30000;
 
 // @internal
 export const STEP_FETCH_PIPELINING = 1;
+
+// @internal
+export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE: string;
 
 // @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
@@ -1137,11 +1145,19 @@ type StepFetchInit = {
     signal?: AbortSignal | undefined;
 };
 
+// @public
+type StepOptions = {
+    maxAttempts?: number;
+};
+
 // @internal
 export type StepReporter = (chunk: unknown, options?: {
     namespace?: string | undefined;
     log?: boolean | undefined;
 }) => void | Promise<void>;
+
+// @internal
+export type StepWebhookMinter = (token: string) => string;
 
 // @public
 type StreamOptions = {
@@ -1275,7 +1291,7 @@ type ToolSchema = {
 };
 
 // @public
-export function toToolJsonSchema(schema: StandardSchemaV1): JSONSchema7;
+export function toToolJsonSchema(schema: StandardSchemaV1, io?: "input" | "output"): JSONSchema7;
 
 // @internal
 export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
@@ -1396,14 +1412,17 @@ export type UploadWriter = {
 };
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -1424,6 +1443,16 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public

@@ -48,10 +48,10 @@
  *
  * ## What is NOT here
  *
- * No `ctx.step`, no `ctx.waitFor`. Steps are `"use step"` functions in
- * `workflows/research.ts` and waitpoints are the Workflow DevKit's own
- * `defineHook()`. The SDK's job is declaring the workflow and starting runs; the
- * durable execution belongs to `workflow`.
+ * No step function and no waitpoint. The body composes them with `ctx.step`
+ * and suspends with `ctx.sleep`; the functions themselves live in
+ * `workflows/research.ts`. What `agent.ts` owns is declaring the workflow and
+ * the two tools that start and read runs.
  *
  * ## The research is real, and it really searches the web
  *

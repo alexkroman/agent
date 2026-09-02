@@ -80,4 +80,45 @@ describe("resolveInside", () => {
   test("allows a nested path", () => {
     expect(resolveInside(dir(), "tools/book.ts")).toBe(path.join(dir(), "tools", "book.ts"));
   });
+
+  test("does not care how the ROOT is spelled", () => {
+    // The shipped symptom of the open-coded containment check this now shares
+    // with `aai-runtime`: `resolveInside("/a/b/", "c.ts")` THREW "Path escapes
+    // the workspace" for a path plainly inside the workspace, because
+    // `"/a/b/c.ts".startsWith("/a/b/" + "/")` is false. Every root in the guest
+    // today is `path.join`ed, so it fails closed and no caller is broken — this
+    // is the next caller's test. Same for a `.` segment and a relative root.
+    const base = dir();
+    const want = path.join(base, "c.ts");
+    for (const root of [
+      base,
+      `${base}${path.sep}`,
+      path.join(base, "."),
+      `${base}${path.sep}${path.sep}`,
+    ]) {
+      expect(resolveInside(root, "c.ts"), `root=${root}`).toBe(want);
+    }
+  });
+
+  test("refuses an escape however the root is spelled", () => {
+    // The other direction: normalizing the root must not have widened it.
+    const base = dir();
+    for (const root of [base, `${base}${path.sep}`, path.join(base, ".")]) {
+      expect(() => resolveInside(root, "../secrets"), `root=${root}`).toThrow(
+        /escapes the workspace/,
+      );
+      expect(() => resolveInside(root, "sub/../../secrets"), `root=${root}`).toThrow(
+        /escapes the workspace/,
+      );
+    }
+  });
+
+  test("names the path it refused, not the path it computed", () => {
+    // The message is this module's and stays this module's — the CLI's copy of
+    // the same predicate reports a different sentence, which is why only the
+    // PREDICATE is shared.
+    expect(() => resolveInside(dir(), "../secrets")).toThrow(
+      "Path escapes the workspace: ../secrets",
+    );
+  });
 });

@@ -304,7 +304,9 @@ export function createTelephonyBridge(
       return;
     }
     if (frame.kind !== "media" || toSession === null) return;
-    const pcm = toSession.process(mulawToPcm16(base64ToUint8(frame.payload)));
+    // A payload the CARRIER chose, so a drop is the one worth seeing most —
+    // through this call's own logger rather than `_base64.ts`'s default.
+    const pcm = toSession.process(mulawToPcm16(base64ToUint8(frame.payload, log)));
     if (pcm.length === 0) return;
     emit(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
   }

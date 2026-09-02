@@ -88,6 +88,50 @@ describe("createSessionCore — history", () => {
     expect(sink.events.filter((e: SessionEvent) => e.type === "history.restored")).toHaveLength(0);
   });
 
+  test("a RECOVERY phrase never reaches the model's context", async () => {
+    // `speakRecovery` reports a committed transcript so the CAPTION matches what
+    // the caller heard, and `pipeline-turn-outcome.ts`'s own table says that
+    // phrase reaches "history / ctx.messages: never" — while this dispatch
+    // pushed it, on the same call, into the very array every tool call is handed.
+    const executeTool = vi.fn<ExecuteTool>(async () => "ok");
+    const { core } = makeCore({ executeTool });
+    await core.start();
+
+    core.report({ type: "user-transcript.committed", text: "hi" });
+    core.report({
+      type: "agent-transcript.committed",
+      text: "Sorry, I had a problem just then.",
+      recovery: "turn-failed",
+    });
+    core.report({ type: "agent-transcript.committed", text: "Here you go." });
+
+    core.onReplyStarted("r1");
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
+    expect(executeTool.mock.calls[0]?.[3]).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Here you go." },
+    ]);
+  });
+
+  test("the phrase is still EMITTED, because the caller heard it", async () => {
+    // The other half, and the reason the fix cannot be "stop reporting it": the
+    // client's transcript must match the audio, so the event goes out — tag and
+    // all, since a client may want to render a recovery line differently.
+    const { core, sink } = makeCore();
+    await core.start();
+
+    core.report({
+      type: "agent-transcript.committed",
+      text: "Sorry, I had a problem just then.",
+      recovery: "turn-failed",
+    });
+
+    expect(
+      sink.events.filter((e: SessionEvent) => e.type === "agent-transcript.committed"),
+    ).toMatchObject([{ text: "Sorry, I had a problem just then.", recovery: "turn-failed" }]);
+  });
+
   test("onReset clears the history the next tool call sees", async () => {
     const executeTool = vi.fn<ExecuteTool>(async () => "ok");
     const { core } = makeCore({ executeTool });

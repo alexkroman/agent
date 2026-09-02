@@ -55,6 +55,13 @@ export type EvalCaseOptions = {
    * `{ tool, args }` is a tool call, which is what makes a stub run worth having
    * for an agent that HAS tools:
    *
+   * `no-check`: the fence is one FIELD of this type, and its only compilable
+   * reading is a labelled statement inside a block — it would type-check
+   * whatever the field were called, so checking it asserts nothing about
+   * {@link EvalCaseOptions.stubReply}. Kept as a fragment deliberately, not
+   * because it cannot compile: a `no-check` that would pass is unclaimed
+   * headroom, and this one would pass for the wrong reason.
+   *
    * ```ts no-check
    * { stubReply: [{ tool: "look_up", args: { orderId: "W1234" } }, "It shipped."] }
    * ```

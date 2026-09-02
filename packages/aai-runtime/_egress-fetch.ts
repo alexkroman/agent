@@ -95,11 +95,13 @@ function current(): Http1Pool {
     // See `createHttp1Pool` — the head-of-line blocking this pool exists to avoid
     // has an HTTP/1.1 spelling too.
     pipelining: 1,
-    // LEFT AT undici's defaults, deliberately unlike the step pool, which turns
-    // them off because a step owns its own deadline. Here the callers bound the
+    // LEFT AT undici's defaults (300s each), which are TIGHTER than the step
+    // pool's raised bound rather than merely different: the callers here bound the
     // REQUEST (`BYTE_OP_TIMEOUT_MS`, `PlatformCall.timeoutMs`) and nothing bounds
     // draining the body afterwards — which is exactly what a window `read` does —
-    // so undici's body-inactivity timeout is the only limit that path has.
+    // so undici's body-inactivity timeout is the only limit that path has. A step
+    // needs a longer one because its bodies can be gigabytes; see
+    // `STEP_FETCH_INACTIVITY_MS`.
   });
   return pool;
 }

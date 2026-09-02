@@ -8,10 +8,12 @@
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
+import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
+import { WORKFLOW_DATA_DIR_ENV } from "@alexkroman1/aai-runtime/internal";
 import getPort from "get-port";
 import { describe, expect, test, vi } from "vitest";
 import { agentEnvWarnings, startDevServer } from "./_dev-server.ts";
+import { aaiRuntimeModule, WORKFLOW_DATA_DIR_ENV_LITERAL } from "./_dev-server-test-utils.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
@@ -96,7 +98,19 @@ describe("viteDevConfig", () => {
     // call it makes is a same-origin fetch under this prefix. Unproxied, Vite
     // answers its own 404 and submitting the form fails with `Workflow API 404`
     // while the backend serves the API correctly one port over.
-    expect(proxy["/workflows"]).toBe("http://127.0.0.1:3001");
+    expect(proxy["/workflows"]).toMatchObject({ target: "http://127.0.0.1:3001" });
+  });
+
+  test("the workflow entry carries a bypass, so `workflows/` source is reachable", () => {
+    // The prefix key also matches the project's own `workflows/` DIRECTORY,
+    // which is where the SDK tells authors to put bodies — so a bare string
+    // entry sent `client.tsx`'s import of `./workflows/stitch.ts` to the agent
+    // server's 404 and rendered a blank page. This asserts only that the hook is
+    // WIRED; what it decides needs a real Vite server and is asserted in
+    // `dev-vite-workflow-proxy.scenario.test.ts`.
+    const proxy = viteDevConfig("/proj", 3000, 3001).server?.proxy as Record<string, unknown>;
+    const entry = proxy[WORKFLOW_API_PREFIX] as { bypass?: unknown };
+    expect(typeof entry.bypass).toBe("function");
   });
 
   test("the workflow proxy key is the prefix the API is actually served under", () => {
@@ -105,6 +119,31 @@ describe("viteDevConfig", () => {
     // nothing answers, which is the same silent failure by a new route.
     const proxy = viteDevConfig("/proj", 3000, 3001).server?.proxy as Record<string, unknown>;
     expect(Object.keys(proxy)).toContain(WORKFLOW_API_PREFIX);
+  });
+
+  test("the dev-server mocks spell the workflow data-dir key the way the SDK does", () => {
+    // The sibling suites mock `@alexkroman1/aai-runtime/internal` wholesale, so
+    // the key `startDevServer` writes the project's `.workflow-data` under comes
+    // from a literal in their harness. This file mocks nothing, which makes it
+    // the one place the two can be compared — and a disagreement is otherwise
+    // silent in BOTH directions: the specs keep passing against their own
+    // literal, and uploads land under a directory the reader never looks in.
+    expect(WORKFLOW_DATA_DIR_ENV_LITERAL).toBe(WORKFLOW_DATA_DIR_ENV);
+  });
+
+  test("the dev-server mocks spell the runtime constants the way the SDK does", () => {
+    // Same trap as the row above, one module over: the sibling suites mock
+    // `@alexkroman1/aai-runtime` wholesale, so the proxy KEY and the BIND HOST
+    // that `viteDevConfig` reads come from literals in that harness — a mock
+    // may not import the module it mocks. A disagreement is silent in both
+    // directions, and for `DEFAULT_LISTEN_HOST` it would be worse than for the
+    // prefix: the specs would keep asserting `127.0.0.1` while the real config
+    // handed Vite something else. This file mocks nothing, so it is the one
+    // place the two can be compared.
+    expect(aaiRuntimeModule()).toMatchObject({
+      WORKFLOW_API_PREFIX,
+      DEFAULT_LISTEN_HOST,
+    });
   });
 
   test("every proxy target is an IP LITERAL, never a hostname", () => {
@@ -147,18 +186,17 @@ describe("viteDevConfig", () => {
     expect(viteDevConfig("/proj", 3000, 3001).server?.host).toBe("0.0.0.0");
   });
 
-  test.each(["", "   "])("leaves Vite on its loopback default for AAI_DEV_HOST=%o", (value) => {
-    // `devBindHost` normalizes blank to "unset", and the key is then OMITTED
-    // rather than passed as undefined — Vite's `host` has meaning by presence.
+  test.each(["", "   ", undefined])("binds the BACKEND's host for AAI_DEV_HOST=%o", (value) => {
+    // `devBindHost` normalizes blank to "unset", and unset takes the same
+    // constant `createServer` binds rather than Vite's own default. Vite's
+    // default is the HOSTNAME `localhost`, so Node binds whatever
+    // `getaddrinfo` answers first — measured `::1` on macOS, which makes
+    // `http://127.0.0.1:<port>` ECONNREFUSED against a healthy server whose
+    // URL `aai dev` prints as `http://localhost:<port>`. Asserted against the
+    // runtime's own constant, so the two halves of `aai dev` cannot come to
+    // name different loopbacks.
     vi.stubEnv("AAI_DEV_HOST", value);
-    const server = viteDevConfig("/proj", 3000, 3001).server;
-    expect(server && "host" in server).toBe(false);
-  });
-
-  test("omits host entirely when AAI_DEV_HOST is unset", () => {
-    vi.stubEnv("AAI_DEV_HOST", undefined);
-    const server = viteDevConfig("/proj", 3000, 3001).server;
-    expect(server && "host" in server).toBe(false);
+    expect(viteDevConfig("/proj", 3000, 3001).server?.host).toBe(DEFAULT_LISTEN_HOST);
   });
 });
 

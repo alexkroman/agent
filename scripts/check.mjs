@@ -3,8 +3,10 @@
  * The repo's check pipeline, as a TABLE plus one runner.
  *
  * Usage:
- *   node scripts/check.mjs           # full CI check       (pnpm check)
- *   node scripts/check.mjs --local   # fast pre-commit gate (pnpm check:local)
+ *   node scripts/check.mjs              # full CI check       (pnpm check)
+ *   node scripts/check.mjs --local      # fast pre-commit gate (pnpm check:local)
+ *   node scripts/check.mjs --gates ci   # one phase set, nothing else (CI)
+ *   node scripts/check.mjs --list-gates # the table as JSON, for a reader
  *
  * ## Why this is not `check.sh` any more
  *
@@ -38,32 +40,56 @@
  *
  * `mode` narrows a row to one mode; absent means both.
  *
- * ## The gate names are string literals on purpose
+ * ## This table is the ONLY list, and CI reads it
  *
- * Every `check:*` here is spelled out rather than derived, because
- * `packages/aai-templates/*-gate.test.ts` asserts its own gate's name appears in
- * this file AND in `.github/workflows/check.yml` AND in `package.json`. A gate
- * in `package.json` but neither runner is a script nobody runs; one in this file
- * alone is enforced by the pre-push hook, which `git push --no-verify` skips.
- * The repo has been there, for every ratchet at once. CI declares its own list
- * for the same reason — two independent declarations, so a gate dropped from one
- * is a failing spec rather than a silent hole.
+ * `.github/workflows/check.yml` used to restate the rows as a shell block of
+ * `pnpm run check:*` lines, defended here as "two independent declarations, so
+ * a gate dropped from one is a failing spec". That is not what happened.
+ * Deleting a gate (`check:workflow-schema`) took its row, its `package.json`
+ * script and the spec that watched it, and LEFT the workflow line: `pnpm run
+ * <missing>` exits non-zero under `bash -e`, that job is in the required `ci`
+ * job's `needs`, so every push would have failed CI while `pnpm check` stayed
+ * green locally. The guard lived beside its subject, so deleting the subject
+ * deleted the guard.
+ *
+ * So CI runs {@link runSelection} — one command, `--gates ci` — and the rows
+ * reach it as VALUES. Adding, renaming or deleting a gate is an edit to this
+ * file alone, and the two cannot disagree because there is only one of them.
+ * `packages/aai-templates/gate-wiring.test.ts` is the guard that CANNOT be
+ * deleted with its subject: it lives in a package owning none of this, reads
+ * the table and the workflow independently, and fails on an empty parse.
+ * Fatality stays a FIELD read by {@link runPhase}, which is the other half the
+ * block flattened — `bash -e` makes every gate fatal, so a branch tripping
+ * three ratchets learned about one per push.
  */
 
 import { spawnSync } from "node:child_process";
 import { cpus } from "node:os";
 import process from "node:process";
 
-import { parseScriptArgs } from "./_args.mjs";
+import { parseScriptArgs, USAGE_EXIT } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url);
 
 const { values: FLAGS } = parseScriptArgs({
   script: import.meta.url,
-  options: { local: { type: "boolean" } },
+  options: {
+    local: { type: "boolean" },
+    gates: { type: "string" },
+    "list-gates": { type: "boolean" },
+  },
 });
 const MODE = FLAGS.local === true ? "local" : "full";
+
+/**
+ * Whether to speak GitHub's workflow-command dialect: only `::error`, so a
+ * failing gate becomes an ANNOTATION naming it. Deliberately no `::group` —
+ * `check:konsistent` emits its own `::error` lines when this variable is set,
+ * and wrapping its output is not worth risking the one gate that already
+ * annotates the diff.
+ */
+const ANNOTATE = process.env.GITHUB_ACTIONS === "true";
 
 // Spelled as escapes, never as the raw bytes: one control character makes a
 // whole file BINARY to `git grep`, which silently exempts it from every
@@ -211,6 +237,12 @@ const GATES = [
     why: "A test with no assertion passes whatever the code does, while counting in the suite total and in coverage — indistinguishable from real coverage at every level anyone looks at.",
   },
   {
+    script: "check:property-floors",
+    phase: "ratchets",
+    fatal: false,
+    why: "One level under check:test-assertions. A property test's load-bearing half is the coverage FLOOR, not the property: a generated sequence that stops reaching the interesting state does not fail, it passes faster and forever, with the same green count and the same coverage percentage. And a floor with no recorded actual cannot be re-measured, so one that has silently stopped being a floor is indistinguishable from a healthy one.",
+  },
+  {
     script: "check:claude-md",
     phase: "ratchets",
     fatal: false,
@@ -233,12 +265,6 @@ const GATES = [
     phase: "ratchets",
     fatal: false,
     why: "The third committed copy in this shape and the only one that SHIPS: it cannot say `catalog:`, so every catalogued bump is applied to it a second time. Nothing enforced that — the sync script ran only during a release, unchecked — and the catalog migration had already broken it into writing a literal `catalog:` into a manifest npm cannot resolve.",
-  },
-  {
-    script: "check:workflow-schema",
-    phase: "ratchets",
-    fatal: false,
-    why: "The DevKit's `workflow` schema is the platform's durable-run journal and nothing in this repo created it. It is a vendored migration now, generated from the installed package — the fourth committed copy in this shape, and it goes stale the first time they add a table.",
   },
   {
     script: "check:konsistent",
@@ -300,6 +326,23 @@ const GATES = [
 ];
 
 /**
+ * Phase sets a caller may ask for by NAME, so CI names a JOB rather than a list.
+ *
+ * `ci` is the `lint-typecheck-and-checks` job, which owns two of the three
+ * phases: the ratchets (pure git/fs, no build) and the after-build gates (that
+ * job restores every package's `dist` before the step runs). The third,
+ * `after-tests`, belongs to the coverage matrix, where a job holds only its own
+ * coverage output and so invokes the gate per package with `--package`.
+ *
+ * A name rather than `--gates ratchets,after-build` spelled in the YAML: which
+ * job runs which phases is the last of this mapping still expressible in two
+ * places, so it lives here too. `--gates <phase>` still takes phases directly.
+ */
+const GATE_SELECTIONS = {
+  ci: ["ratchets", "after-build"],
+};
+
+/**
  * What `--local` does NOT cover, named out loud.
  *
  * A subset by design, but a green subset reads as a green branch — and the gates
@@ -358,6 +401,10 @@ const gatesFor = (phase) =>
 function runPhase(phase) {
   for (const gate of gatesFor(phase)) {
     if (run("pnpm", ["run", gate.script])) continue;
+    // The annotation is what puts the gate's NAME in front of a reader who has
+    // not expanded the log — the one thing the shell block in `check.yml` used
+    // to get for free from `bash -e` stopping on the line that failed.
+    if (ANNOTATE) console.log(`::error title=${gate.script}::${gate.script} failed`);
     if (gate.fatal) {
       console.error(`\n${RED}${gate.script} failed.${NC}`);
       process.exit(1);
@@ -366,11 +413,58 @@ function runPhase(phase) {
   }
 }
 
+/**
+ * Run one selection — a {@link GATE_SELECTIONS} name or a comma list of phases
+ * — and nothing else. Never returns. This is what `check.yml` invokes.
+ *
+ * The two refusals are why it is here rather than in YAML. A selection naming a
+ * phase the table does not declare is a USAGE error (exit 2, distinct from a
+ * gate failure), and so is one resolving to ZERO gates: this function's whole
+ * output is a count, so an empty run and a clean run would otherwise print the
+ * same checkmark.
+ */
+function runSelection(selection) {
+  const declared = new Set(GATES.map((gate) => gate.phase));
+  const phases = GATE_SELECTIONS[selection] ?? selection.split(",").map((phase) => phase.trim());
+  const unknown = phases.filter((phase) => !declared.has(phase));
+  const usage = `Selections: ${Object.keys(GATE_SELECTIONS).join(", ")}. Phases: ${[...declared].join(", ")}.`;
+  if (unknown.length > 0) {
+    console.error(
+      `check: --gates ${selection} names no such phase: ${unknown.join(", ")}. ${usage}`,
+    );
+    process.exit(USAGE_EXIT);
+  }
+  const chosen = phases.flatMap((phase) => gatesFor(phase));
+  if (chosen.length === 0) {
+    console.error(`check: --gates ${selection} selected NO gate in ${MODE} mode. ${usage}`);
+    process.exit(USAGE_EXIT);
+  }
+  for (const phase of phases) runPhase(phase);
+  if (deferred.length > 0) {
+    console.error(`\n${RED}Quality ratchet(s) failed: ${deferred.join(", ")}${NC}`);
+    process.exit(1);
+  }
+  console.log(`\n${GREEN}All ${chosen.length} gate(s) in --gates ${selection} passed.${NC}`);
+  process.exit(0);
+}
+
 function turbo(args, env = {}) {
   if (run("pnpm", ["exec", "turbo", "run", ...args], env)) return;
   console.error(`\n${RED}Some checks failed.${NC}`);
   process.exit(1);
 }
+
+// The TABLE as data, for anything that needs to know what this repo gates on
+// without running it. Deliberately NOT what CI consumes: a shell loop over this
+// JSON would re-decide `fatal` per row, and `||` suppressing `set -e` on the
+// way past is the bug that made check.sh print "All checks passed." over a
+// failing gate.
+if (FLAGS["list-gates"] === true) {
+  console.log(JSON.stringify({ selections: GATE_SELECTIONS, gates: GATES }, null, 2));
+  process.exit(0);
+}
+
+if (FLAGS.gates !== undefined) runSelection(FLAGS.gates);
 
 runPhase("ratchets");
 

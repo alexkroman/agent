@@ -36,17 +36,17 @@ export type ToolBearingAgent = {
  * The tool `name` is declared under, or a throw naming the ones that are.
  *
  * A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
- * pass it through `withDiscoveredTools` first, exactly as this example does and
- * as every shipped template's spec does. Handing this the authored def directly
- * is the common mistake, and it fails with "(none)".
+ * import the agent as DEPLOYED, exactly as this example does and as every
+ * shipped template's spec does: `virtual:aai/agent` under vitest, or
+ * `deployedAgent` (`@alexkroman1/aai/testing`) under any other runner. Handing
+ * this the authored def directly is the common mistake, and it fails with
+ * "(none)".
  *
  * @example
- * ```ts no-check
- * // `no-check`: import.meta.glob needs your project's vite/client types.
- * import { toolOf, withDiscoveredTools } from "@alexkroman1/aai/testing";
- * import authored from "./agent.ts";
- *
- * const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
+ * import { toolOf } from "@alexkroman1/aai/testing";
+ * import { expect } from "vitest";
  *
  * expect(toolOf(agentDef, "add_item").description).toContain("cart");
  * ```
@@ -101,9 +101,10 @@ function describe(value: unknown): string {
  * body expects to receive. (To test the SCHEMA itself, which is a different
  * question, use `parseToolInput` / `toolInputIssues`.)
  *
- * The def to pass is the one a DEPLOYED agent runs — `agent.ts`'s default export
- * put through `withDiscoveredTools`, since a tool is a file and the authored def
- * carries none. See {@link toolOf}, which this is built on.
+ * The def to pass is the one a DEPLOYED agent runs — `virtual:aai/agent` under
+ * vitest, or `deployedAgent` under any other runner, since a tool is a file and
+ * `agent.ts`'s default export carries none. See {@link toolOf}, which this is
+ * built on.
  *
  * **A tool that takes no arguments may say so by leaving them out**, passing the
  * context in their place: `runTool(agentDef, "view_order", ctx)`. A no-argument
@@ -128,12 +129,10 @@ function describe(value: unknown): string {
  *   work.
  *
  * @example
- * ```ts no-check
- * // `no-check`: import.meta.glob needs your project's vite/client types.
- * import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
- * import authored from "./agent.ts";
- *
- * const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
+ * import { createToolContext, runTool } from "@alexkroman1/aai/testing";
+ * import { expect } from "vitest";
  *
  * expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
  *   added: "apple",
@@ -222,12 +221,11 @@ export type ToolRunner = (
  * second call is meant to see the first call's work — see {@link runTool}.
  *
  * @example
- * ```ts no-check
- * // `no-check`: import.meta.glob needs your project's vite/client types.
- * import { createToolContext, toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
- * import authored from "./agent.ts";
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
+ * import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
+ * import { expect } from "vitest";
  *
- * const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
  * const run = toolRunner(agentDef);
  *
  * expect(await run("add_item", { item: "apple" })).toEqual({ added: "apple" });

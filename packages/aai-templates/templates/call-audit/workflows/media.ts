@@ -5,7 +5,7 @@
  *
  * No directive in this file, which is what lets it sit under `workflows/`: the
  * Workflow DevKit's builder scans this directory and transforms only what carries
- * a `"use workflow"` / `"use step"` body. Everything here is a pure function of a
+ * a workflow body or a step. Everything here is a pure function of a
  * journaled value, and that is deliberate rather than tidy — **an ffmpeg pipeline
  * is untestable exactly where it spawns**, so every decision this desk makes is
  * pushed out of the steps and into this module, where a spec drives it with no

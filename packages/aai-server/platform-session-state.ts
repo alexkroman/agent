@@ -8,8 +8,9 @@
  *
  * ## Tenancy is in the KEY, which is stronger than a check
  *
- * `workflow-run-owner.ts` needs a mapping table because the DevKit's schema is
- * fixed and has no tenant column. This schema is the platform's own, so the slug is
+ * That is the design, and it is worth naming what it replaced: the DevKit's
+ * journal had a fixed schema with no tenant column, so a `workflow_run_owner`
+ * mapping table carried ownership beside it. Both are gone. This schema is the platform's own, so the slug is
  * part of the primary key and part of every statement below. A guessed session id
  * therefore reaches nothing: there is no query here that can be pointed at another
  * agent's rows, so there is no check to forget.
@@ -107,11 +108,15 @@ export async function commitSlots(
 /**
  * Reclaim one session.
  *
- * BOTH tables, unlike the postgres backend — and the difference is a grant
- * rather than a decision. There, `ctx.db` hands tool code arbitrary SQL on the same
- * role, so the event table is granted `select, insert` only and reclaiming it is
- * the sweep's job alone. Here the tenant has no credential on this database at all,
- * so the append-only property is structural and `discard` can do what it says.
+ * BOTH tables — and this is now the CONTRACT every backend answers to rather
+ * than this one's local advantage. It used to differ from `ctx.db`'s backend,
+ * which dropped slots only on the ground that a per-app role held `select,
+ * insert` on the event table; that role went with per-app databases, so the
+ * asymmetry outlived its mechanism and left "discarded" meaning two things
+ * depending on where a session ran. `aai-runtime/session-state-conformance.ts`
+ * carries the decision and asserts it as a shared case on every arm, this
+ * route's included (`session-state-conformance-platform.scenario.test.ts`).
+ * Nothing here changed: the statement below was already right.
  */
 export async function discardSession(sql: SqlExec, slug: string, sessionId: string): Promise<void> {
   // ONE statement, not two awaited in series. The two deletes are independent —
@@ -150,7 +155,38 @@ export async function appendEvents(
   );
 }
 
-/** Events from `startIndex` inclusive, in index order, at most `limit`. */
+/**
+ * Events from `startIndex` inclusive, in index order, at most `limit`.
+ *
+ * ## A row this cannot read fails the PAGE, and is never skipped
+ *
+ * The same refusal `nextEventIndex` makes below, for a reason one step removed
+ * and just as silent. This is a CURSOR read: a caller takes the page, advances
+ * past the highest index in it, and never asks that range again. So a row
+ * dropped here is not a degraded answer, it is a HOLE — the event is gone from
+ * the stream and nothing anywhere says so, because a page it was skipped from
+ * looks exactly like a page that never held it. `flatMap` returning `[]` for an
+ * unreadable row was doing precisely that.
+ *
+ * The read is `readIndex`'s, i.e. `typeof` FIRST, and the coercion trap is
+ * WORSE here than one method over: `Number(row.event_index)` turns a NULL
+ * column into `0`, which passes `Number.isInteger` — so such a row was not even
+ * dropped, it was emitted AT INDEX 0, displacing the real first event of the
+ * session in every reader's page.
+ *
+ * A throw is safe for the reason it is safe below, plus one more. Both columns
+ * are `not null` (`20260827020000_platform_session_state.sql`) and `event::text`
+ * of a `jsonb` is always a string, so this is unreachable on a healthy request.
+ * And unlike `countEvents` this method is on no hydrate path: its one consumer
+ * is the read-only session-events surface
+ * (`aai-runtime/session-event-stream.ts` -> `session-events-api.ts`), where a
+ * rejection is a logged 500 on a diagnostic read rather than a failed session.
+ *
+ * Note what it does NOT take over. A stored event whose JSON will not PARSE is
+ * still dropped with a warning one layer up, deliberately: that is a judgement
+ * about event CONTENT, made where there is a logger to announce it. This is a
+ * judgement about whether the READ happened.
+ */
 export async function readEvents(
   sql: SqlExec,
   slug: string,
@@ -165,12 +201,43 @@ export async function readEvents(
       limit $4`,
     [slug, sessionId, startIndex, limit],
   );
-  return rows.flatMap((row) => {
-    const index = Number(row.event_index);
-    return Number.isInteger(index) && typeof row.event === "string"
-      ? [{ index, event: row.event }]
-      : [];
+  return rows.map((row) => {
+    const index = readIndex(row.event_index);
+    if (!Number.isInteger(index) || index < 0 || typeof row.event !== "string") {
+      // The INDEX only. Never the sessionId — the slug is already in
+      // `withReserved`'s `detail` — and never the event body, which is a
+      // caller's own data and would be reaching a warn line.
+      throw new Error(`session-state readEvents read a non-event at ${String(row.event_index)}`);
+    }
+    return { index, event: row.event };
   });
+}
+
+/**
+ * The driver's `next`, read WITHOUT coercing an unreadable answer into one.
+ *
+ * The ORDER is the whole finding, and it is the same one the runtime's client
+ * states one package over: `typeof` FIRST, then `Number`. `Number(null)` is `0`
+ * and `Number("")` is `0`, so a check applied to the COERCED value passes a NULL
+ * column straight through as the one answer that must never be guessed — which
+ * is how a `: 0` fallback here survived review and why the obvious repair
+ * (keeping `Number(...)` and throwing on `!Number.isInteger`) still would not
+ * have caught it. Verified: that draft answered `0` for `{ next: null }`.
+ *
+ * A `NaN` return means "this is not an index", which BOTH callers refuse —
+ * `readEvents` above and `nextEventIndex` below.
+ */
+function readIndex(answered: unknown): number {
+  // What a fake `SqlExec` and the memory-shaped arms hand back.
+  if (typeof answered === "number") return answered;
+  // `event_index` is a `bigint` and postgres.js returns `int8` as a STRING, so
+  // this is the production path — see `nextEventIndex`'s own doc. Digits only:
+  // `Number` is willing to read `""`, `" "` and `"0x10"`, and none of those is
+  // something this column can produce.
+  if (typeof answered === "string" && /^\d+$/.test(answered)) return Number(answered);
+  // Belt and braces for a driver configured to hand `int8` back as a `bigint`.
+  if (typeof answered === "bigint") return Number(answered);
+  return Number.NaN;
 }
 
 /**
@@ -179,6 +246,39 @@ export async function readEvents(
  * The module doc has the argument. `coalesce(max(...), -1) + 1` so an empty log
  * answers 0 rather than `NaN`, and so the arithmetic is the database's rather than
  * this process's.
+ *
+ * ## `event_index` is a `bigint`, so the driver hands this back as a STRING
+ *
+ * postgres.js returns `int8` as a string — `"6"`, not `6` — and the aggregate
+ * above is `bigint` arithmetic, so `Number` is the READ and not a tidy-up. The
+ * same rule `platform-workflow-journal.ts` states for `millis`. Nothing but the
+ * real-Postgres arm can see it: every other arm of the session-state contract
+ * answers a JS number by construction, so removing the read reddens 12 cases in
+ * `session-state-conformance-platform.scenario.test.ts` and nothing anywhere
+ * else. `platform-session-state.test.ts` pins it in the unit tier for exactly
+ * that reason — a fact reachable only from the arm that needs a database is a
+ * fact somebody deletes.
+ *
+ * ## An answer this cannot read THROWS, and never defaults to 0
+ *
+ * `0` is the one value that must not be guessed here: it means "this session has
+ * no events", so a resumed session restarts its log at 0 and its appends
+ * overwrite history from the start — silently, because `on conflict do nothing`
+ * discards the re-appends. The runtime's client
+ * (`aai-runtime/session-state-platform.ts`) refuses an unreadable `countEvents`
+ * for precisely that reason, and this end used to do the opposite — a defence in
+ * depth pointing the wrong way. Measured: with the `: 0` fallback in place, an
+ * A/B removing the read above reddened six shared cases and left FIVE zero-log
+ * ones green, passing on the fallback rather than on a correct read. Both ends
+ * refuse now; neither guesses, and that A/B reddens all 12.
+ *
+ * It is also unreachable on a healthy request, which is what makes a throw safe:
+ * an aggregate with no `group by` returns exactly one row and `coalesce` makes
+ * `next` non-null, so this cannot 503 a working session. `withReserved` maps it
+ * to a 503 with the value in the warn line. The coercion trap that made the
+ * fallback look harmless is `readIndex`'s subject and is why the read is
+ * `typeof`-first. Same shape as `readPlatformDbCapacity` refusing an unreadable
+ * `max_connections`, and as `claimAttempt` refusing an empty `returning`.
  */
 export async function nextEventIndex(
   sql: SqlExec,
@@ -190,8 +290,14 @@ export async function nextEventIndex(
       where slug = $1 and session_id = $2`,
     [slug, sessionId],
   );
-  const next = Number(rows[0]?.next);
-  return Number.isInteger(next) && next >= 0 ? next : 0;
+  const answered = rows[0]?.next;
+  const next = readIndex(answered);
+  if (!Number.isInteger(next) || next < 0) {
+    // The value only, never the sessionId: this string reaches a warn line, and
+    // the slug is already in `withReserved`'s `detail`.
+    throw new Error(`session-state countEvents read a non-index: ${String(answered)}`);
+  }
+  return next;
 }
 
 /**

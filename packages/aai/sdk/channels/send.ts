@@ -22,14 +22,14 @@
  * exists to make loud, and the message names what IS registered, because the
  * likeliest cause is a channel module that was never imported.
  *
- * ## Why this is not a `"use step"` body
+ * ## Why this is not a step
  *
- * The Workflow DevKit's builder rewrites `"use step"` bodies it finds in an
- * agent project's `workflows/` directory. A body written anywhere else — here,
- * in `node_modules` — is transformed by nothing: it would run inline, with no
- * journal and no retry, while LOOKING durable at every call site. So this is a
- * function a step body calls, exactly like `stepFetch` and `stepGenerate`, and
- * the `"use step"` stays in the agent project where the builder can see it.
+ * A step is `ctx.step(name, fn)`, and only a workflow BODY holds a `ctx`. A
+ * "step" declared in a dependency is reached by no `ctx.step`, so it would run
+ * inline with no journal and no retry while LOOKING durable at every call site.
+ * So this is a function a step CALLS, exactly like `stepFetch` and
+ * `stepGenerate`, and the step boundary stays in the agent project where the
+ * author can see it.
  */
 
 import { stepFetch } from "../step-fetch.ts";
@@ -127,7 +127,7 @@ export function channelAdvice(channel: Channel, detail: string): string {
  * and any `Retry-After` it named is carried on the error.
  *
  * The `ChannelDeliveryError` it throws is what `toStepError` reads, so a step
- * body hands it straight on and the DevKit gives up or waits the right amount
+ * body hands it straight on and the engine gives up or waits the right amount
  * — see {@link ChannelDeliveryError}, or reach for `sendToChannelClassified`
  * (`@alexkroman1/aai/step-errors`) to skip the `.catch`.
  *
@@ -140,7 +140,6 @@ export function channelAdvice(channel: Channel, detail: string): string {
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  *
  * export async function announce(webhookUrl: string): Promise<string> {
- *   "use step";
  *   return await sendToChannel(slackChannel({ webhookUrl }), { text: "Run finished." }).catch(
  *     throwStepError,
  *   );

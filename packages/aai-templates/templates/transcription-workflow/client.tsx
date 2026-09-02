@@ -141,45 +141,74 @@
  * either — `output.elapsedMs` is the RUN's own wall clock, so it starts after the
  * bytes are stored in two of the three modes and misses the whole upload, which is
  * most of the wait on a long file over a slow link. Only the browser holds both
- * ends, so `useTotalLatency` is a stopwatch here: started by the submit, ticking
- * across the upload and the run alike, and frozen the moment the run settles.
+ * ends, so `total-latency.tsx` is a stopwatch: `useTotalLatency` is started by
+ * the submit, ticks across the upload and the run alike, and freezes the moment
+ * the run settles.
  *
  * `<TotalLatency>` also prints the SPLIT once the run reports its own elapsed —
  * before the run and inside it — because the two numbers on screen otherwise
  * disagree with no way to see why, and their difference is exactly what picking a
  * mode or unchecking `parallel` moves.
+ *
+ * ## A reload keeps two of the three runs, and the third CANNOT be kept
+ *
+ * The run id lives in React state, so a refresh loses it while the fan-out
+ * carries on. `key` is the handle that survives that and `recover: true` is what
+ * reads it back — and here it is a decision PER MODE rather than per page:
+ *
+ * - **"After it uploads"** and **"Let the provider do it"** recover. Their input
+ *   names a recording that is already stored, so a later load adopting the run
+ *   is adopting something complete: the transcript arrives, the progress log
+ *   replays, and nobody is asked to send a 600 MB file a second time.
+ * - **"While it uploads" does not, and the hook REFUSES the option rather than
+ *   ignoring it.** That run's input names an upload id this page load minted and
+ *   is still filling, so a later load could only adopt a run waiting for bytes
+ *   nobody is sending — and it is worse than useless: `workflows/stream.ts`
+ *   fails a run whose upload stops growing (`MAX_IDLE_POLLS`), so the reload
+ *   that "recovered" it would be watching it die. Streaming runs are still in
+ *   Previous runs below, which is where a run this page cannot hold belongs.
+ *
+ * The MODE is remembered too, and that is not decoration: without it a reload
+ * opens on the default flow while the recovered run sits behind a radio nobody
+ * pressed, so the reader sees an empty form and starts a second run — the exact
+ * thing the key exists to prevent. The KEY is `useRunKey()`, which owns the
+ * minting, the storage and the argument for the key being opaque rather than a
+ * `?key=` parameter; `recover.ts` owns the mode, which is this page's own
+ * concept, and the validation on the way back out of storage that turning a
+ * stored string into a workflow name obliges.
+ *
+ * Two smaller consequences worth knowing. Both recovering hooks look up on
+ * mount, so a load costs two `find` requests on a page that was already reading
+ * a run listing — cheap, and the alternative (arming the lookup when a mode is
+ * picked) would re-adopt a run the reader had just cleared, because the lookup
+ * is deliberately a mount-time act. And `<TotalLatency>` shows nothing for a
+ * recovered run: the stopwatch is a browser clock and the browser it was
+ * running on is gone, which is more honest than a total measured from the reload.
  */
 
 import "@alexkroman1/aai-ui/styles.css";
-import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   Form,
   isTerminal,
   page,
   SubmitButton,
   UploadProgressBar,
-  useWorkflowProgress,
+  useRunKey,
   useWorkflowRuns,
   useWorkflowStream,
   useWorkflowSubmit,
-  WORKFLOW_STATUS_LABELS,
   WorkflowFields,
-  WorkflowProgress,
-  type WorkflowRun,
 } from "@alexkroman1/aai-ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { transcribe } from "./agent.ts";
-import { stitchChunks, TRANSCRIPT_STREAM, type TranscriptChunk } from "./workflows/stitch.ts";
-
-/**
- * What a finished run reports.
- *
- * Derived from the workflow declaration rather than restated — `import type` is
- * erased, so naming `transcribe` here bundles none of the agent, the SDK, or the
- * workflow body into this page.
- */
-type Transcript = WorkflowOutputOf<typeof transcribe>;
+import { pendingNote, recalledMode, rememberMode } from "./recover.ts";
+// The readouts — one run in flight, and every one before it. Their own module
+// because they are the same whichever of the three hooks produced the run; this
+// file owns the page's shape.
+import { HISTORY_LIMIT, History, RunPanel, type Transcript } from "./run-panel.tsx";
+// The stopwatch and the section that prints it. See its module doc for why the
+// one number a reader wants can only be measured here.
+import { TotalLatency, useTotalLatency } from "./total-latency.tsx";
 
 /**
  * The three workflows this page drives, keyed by the mode that picks one.
@@ -207,7 +236,7 @@ const MODES: readonly { mode: Mode; label: string; note: string }[] = [
   {
     mode: "streaming",
     label: "While it uploads",
-    note: "Sync API. The run starts first and transcribes each segment as its bytes land, so progress is visible while the file is still moving.",
+    note: "Sync API. The run starts first and transcribes each segment as its bytes land, so progress is visible while the file is still moving — but the run is reading the file from this page, so it cannot survive a reload.",
   },
   {
     mode: "classic",
@@ -221,147 +250,51 @@ const MODES: readonly { mode: Mode; label: string; note: string }[] = [
   },
 ];
 
-/** Most past runs the history list shows. */
-const HISTORY_LIMIT = 10;
-
 /**
- * How often the running stopwatch re-renders.
+ * Just the mode names, for the recall to check a stored value against.
  *
- * Under a second, so the displayed seconds turn over promptly rather than up to a
- * second late; nothing reads this value, since the elapsed time is measured from
- * the clock at render (see {@link useTotalLatency}).
+ * Derived from `MODES` rather than written out again: a fourth flow then joins
+ * the recall by joining that list, and the two cannot disagree about what a
+ * mode is.
  */
-const STOPWATCH_TICK_MS = 250;
-
-/** What {@link useTotalLatency} reports. */
-type TotalLatency = {
-  /**
-   * Milliseconds since the submit — ticking while the submission is in flight,
-   * frozen at the finish, and undefined before the first one.
-   */
-  elapsedMs: number | undefined;
-  /** Whether the clock is still running, which is what makes the label honest. */
-  running: boolean;
-  /** Start (or restart) the clock. Called from the form's own submit handler. */
-  start: () => void;
-  /** Drop it, for a panel that no longer describes the submission it timed. */
-  clear: () => void;
-};
-
-/**
- * Wall clock from the submit to the finish, across both waits.
- *
- * `inFlight` is the submission's own `pending` — true from `submit()` until the run
- * reaches a terminal status — so the clock covers the upload, the run, and the
- * gap between them, which is the whole of what a reader waits for and is the one
- * measurement no server-side number can make.
- *
- * Two details it would be easy to get wrong:
- *
- * - **The interval re-renders; it does not accumulate.** The elapsed time is read
- *   from the clock at render, so a tick the tab throttled or dropped cannot make
- *   the number lag behind real time.
- * - **`performance.now()`, not `Date.now()`.** It is monotonic, so a clock
- *   correction (NTP, a laptop waking up) cannot make a transcription look
- *   instant — or negative.
- */
-function useTotalLatency(inFlight: boolean): TotalLatency {
-  const [startedAt, setStartedAt] = useState<number | undefined>(undefined);
-  const [frozenMs, setFrozenMs] = useState<number | undefined>(undefined);
-  // Re-render trigger only — see the doc above.
-  const [, tick] = useState(0);
-  // Whether `inFlight` has been seen true since the last `start()`. Without it,
-  // a start that lands one render before the submission reports itself in flight
-  // would freeze the clock at zero instead of running it.
-  const began = useRef(false);
-
-  useEffect(() => {
-    if (startedAt === undefined || frozenMs !== undefined) return;
-    if (inFlight) {
-      began.current = true;
-      const id = setInterval(() => tick((n) => n + 1), STOPWATCH_TICK_MS);
-      return () => clearInterval(id);
-    }
-    // Measured here rather than at render, so the frozen number is the one at the
-    // moment the run settled rather than whenever this page next drew.
-    if (began.current) setFrozenMs(performance.now() - startedAt);
-  }, [startedAt, frozenMs, inFlight]);
-
-  const start = useCallback(() => {
-    began.current = false;
-    setFrozenMs(undefined);
-    setStartedAt(performance.now());
-  }, []);
-
-  const clear = useCallback(() => {
-    began.current = false;
-    setStartedAt(undefined);
-    setFrozenMs(undefined);
-  }, []);
-
-  return {
-    elapsedMs: frozenMs ?? (startedAt === undefined ? undefined : performance.now() - startedAt),
-    running: startedAt !== undefined && frozenMs === undefined,
-    start,
-    clear,
-  };
-}
-
-/**
- * The one number the two bars cannot give: click to transcript.
- *
- * Rendered above the run panel rather than inside it, because the stretch it
- * covers starts before there IS a run — in two of the three modes the run does
- * not exist until the upload finishes, so a clock living in the panel would
- * appear only after the wait it is supposed to be timing.
- *
- * `runMs` is the run's own elapsed, once it reports one. The remainder is
- * everything the run could not see: storing the file (or, in streaming mode,
- * minting the upload id), the `POST` that starts the run, and the poll that
- * notices it finished. Clamped at zero, because the two numbers come from two
- * different clocks on two different machines and a few milliseconds the wrong way
- * would otherwise print a negative.
- */
-function TotalLatency({
-  elapsedMs,
-  running,
-  runMs,
-}: {
-  elapsedMs: number | undefined;
-  running: boolean;
-  runMs: number | undefined;
-}) {
-  if (elapsedMs === undefined) return null;
-  const outside = runMs === undefined ? undefined : Math.max(0, elapsedMs - runMs);
-  return (
-    <section className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-md border px-5 py-3">
-      <h2 className="text-sm font-medium uppercase tracking-[1.2px]">
-        {running ? "Elapsed" : "Total latency"}
-      </h2>
-      <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-sm tabular-nums">{formatDuration(elapsedMs)}</span>
-        {runMs !== undefined && outside !== undefined && (
-          <span className="text-xs tabular-nums opacity-60">
-            {formatDuration(outside)} before the run · {formatDuration(runMs)} inside it
-          </span>
-        )}
-      </span>
-    </section>
-  );
-}
+const MODE_NAMES: readonly Mode[] = MODES.map((option) => option.mode);
 
 function TranscriptionDesk() {
-  const [mode, setMode] = useState<Mode>("streaming");
+  // The mode the last submission used, so a recovered run is in front of the
+  // reader rather than behind a radio nobody pressed. Lazy, and validated on the
+  // way out of storage — see `recalledMode`.
+  const [mode, setMode] = useState<Mode>(() => recalledMode(MODE_NAMES, "streaming"));
   // Whether the browser cuts the recording up and sends the pieces at once. One
   // piece of state for all three hooks, because it describes the UPLOAD and every
   // mode has one — see the module doc.
   const [parallel, setParallel] = useState(true);
+  // This tab's handle on its own runs — minted once and remembered, which is
+  // what a later load produces to find the run again.
+  const key = useRunKey();
+  // Did THIS load press Transcribe? A reload cannot have, and it is the only way
+  // the page can tell "working on what you just sent" from "picking up where you
+  // left off" — the hooks report the run, not who asked for it.
+  const [startedHere, setStartedHere] = useState(false);
   // ALL THREE hooks are called every render, because a hook may not be conditional —
   // and that costs nothing here: none of them does anything until its `submit` is
   // called, and `useWorkflowRun` underneath them holds no id until then either.
+  //
+  // `recover` is a constant `true` on the two that take it rather than
+  // `mode === …`: the lookup is a MOUNT-time act, so arming it when a mode is
+  // picked would re-adopt a run the reader had just cleared. The streaming hook
+  // takes neither half — it refuses `recover` by type, and recording a key it
+  // will never read back would be config nothing uses.
   const streamed = useWorkflowStream<typeof transcribe>(WORKFLOWS.streaming, { parallel });
-  const stored = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.classic, { parallel });
-  const batched = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.batch, { parallel });
+  const stored = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.classic, {
+    parallel,
+    key,
+    recover: true,
+  });
+  const batched = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.batch, {
+    parallel,
+    key,
+    recover: true,
+  });
   // The batch flow uploads the same way the classic one does — the id comes from the
   // store — so it is the SAME hook against a different workflow. Only the streaming
   // mode needs the other one, because only it needs the id before the bytes.
@@ -394,7 +327,8 @@ function TranscriptionDesk() {
         <h1 className="text-2xl font-medium">Transcription Desk</h1>
         <p className="text-sm opacity-70">
           Upload a WAV recording. It is split into chunks, transcribed chunk by chunk, and stitched
-          back together by a durable workflow — so you can close this tab and come back to it.
+          back together by a durable workflow — which outlives this page, and which two of the three
+          flows below can pick up again after a reload.
         </p>
       </header>
 
@@ -422,6 +356,11 @@ function TranscriptionDesk() {
       <Form
         onSubmit={(values) => {
           total.start();
+          setStartedHere(true);
+          // Written at SUBMIT rather than on the radio, so the remembered mode
+          // is always the mode a run exists under — which is the only thing the
+          // next load can use it for.
+          rememberMode(mode);
           return submitForm(values);
         }}
         error={error}
@@ -442,10 +381,28 @@ function TranscriptionDesk() {
         runMs={run?.status === "completed" ? run.output.elapsedMs : undefined}
       />
 
+      {/* One sentence about the wait, and the only place the three modes differ
+          in what a reader may DO: `pending` is also true on a reload while the
+          run is being looked up by key, which is the stretch where an empty form
+          would invite a second upload of the same recording. */}
+      {pending && (
+        <p className="text-sm opacity-70">
+          {pendingNote({
+            recoverable: mode !== "streaming",
+            startedHere,
+            found: run !== undefined,
+          })}
+        </p>
+      )}
+
       {run && (
         <RunPanel
           run={run}
           onClear={() => {
+            // A recovered run is dismissed as deliberately as one this load
+            // started: the lookup is a mount-time act, so `reset()` is not
+            // undone by a second one and Clear really does clear.
+            setStartedHere(false);
             reset();
             total.clear();
           }}
@@ -549,164 +506,5 @@ function UploadPicker({
     </fieldset>
   );
 }
-
-/**
- * Every recent run, newest first, with its transcript one click away.
- *
- * This is what a durable workflow with an HTTP API is FOR, and the page used to
- * squander it: a run id is the whole handle — no session, no cookie — so
- * `GET /workflows/runs` can answer "what has this desk transcribed" for any tab,
- * any machine, days later. What stood here instead was a text box asking the
- * reader to paste an id they would have had to write down, which is the same
- * information behind a worse door.
- */
-function History({
-  runs,
-  error,
-  openId,
-  onOpen,
-}: {
-  runs: WorkflowRun<Transcript>[];
-  error: string | undefined;
-  openId: string | undefined;
-  onOpen: (runId: string) => void;
-}) {
-  return (
-    <section className="flex flex-col gap-3 border-t pt-6">
-      <h2 className="text-sm font-medium uppercase tracking-[1.2px]">Previous runs</h2>
-      {error !== undefined && <p className="text-sm text-red-600">{error}</p>}
-      {runs.length === 0 && error === undefined && (
-        <p className="text-sm opacity-60">Nothing transcribed yet.</p>
-      )}
-      <ul className="flex flex-col">
-        {runs.map((entry) => (
-          <li key={entry.runId} className="border-b last:border-b-0">
-            <button
-              type="button"
-              onClick={() => onOpen(entry.runId)}
-              className="flex w-full items-baseline justify-between gap-4 py-2 text-left text-sm"
-            >
-              <span className="truncate">{title(entry)}</span>
-              <span className="shrink-0 text-xs opacity-60">{STATUS_LINE[entry.status]}</span>
-            </button>
-            {openId === entry.runId && <RunPanel run={entry} />}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/**
- * One line naming a past run.
- *
- * The FILE where there is one — `mergeTranscript` puts the recording's own name
- * in the output for exactly this — falling back to the id, which is all a run
- * that failed before it read the upload ever had.
- */
-function title(run: WorkflowRun<Transcript>): string {
-  if (run.status === "completed") return run.output.source;
-  return run.runId;
-}
-
-/** The run's status, its narration, and its transcript once there is one. */
-function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: () => void }) {
-  return (
-    <section className="flex flex-col gap-3 rounded-md border p-5">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-sm font-medium uppercase tracking-[1.2px]">
-          {STATUS_LINE[run.status]}
-        </h2>
-        {onClear && (
-          <button type="button" onClick={onClear} className="text-xs underline opacity-60">
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* The run's own narration, oldest first — the complement of `STATUS_LINE`
-          below, and the reason both exist: the status is `running` for the whole
-          fan-out, so a sixty-segment recording and a one-segment recording look
-          identical while they run. These lines come from the run itself
-          (`report()` in `workflows/transcribe.ts`), and they REPLAY, so looking a
-          finished run up in the panel below shows how it got there. */}
-      <WorkflowProgress runId={run.runId} />
-
-      {/* While it runs, the transcript so far. Unguarded on the run's status
-          beyond this: the component renders nothing until a segment has landed,
-          and stops the moment there is an `output` to render instead. */}
-      {!isTerminal(run) && <LiveTranscript runId={run.runId} />}
-
-      {/* Discriminated on `status`, so `output` and `error` are reachable
-          without a cast — the reason a snapshot is a union rather than a flat
-          object with optional fields. */}
-      {run.status === "completed" && (
-        <>
-          <p className="text-xs opacity-60">
-            {run.output.segments} {plural(run.output.segments, "segment")} ·{" "}
-            {formatDuration(run.output.durationMs)} of audio · took{" "}
-            {formatDuration(run.output.elapsedMs)} · {run.output.words} words
-          </p>
-          <pre className="whitespace-pre-wrap text-sm leading-relaxed">{run.output.transcript}</pre>
-        </>
-      )}
-      {run.status === "failed" && <p className="text-red-600">{run.error}</p>}
-    </section>
-  );
-}
-
-/**
- * The transcript as it arrives, stitched from the segments that have landed.
- *
- * The other half of `<WorkflowProgress>` above it: that one renders what the run
- * SAYS about itself, this one renders what it has produced. Both are the same
- * mechanism — a run's output stream — separated by the namespace, which is what
- * lets this one be typed.
- *
- * It renders NOTHING until a segment lands, so a page can mount it unguarded:
- * before the first chunk there is nothing to say that the progress log is not
- * already saying better.
- *
- * The count is derived from the stitched text rather than summed per chunk,
- * because the seams overlap — adding up the segments would over-count every one
- * of them by a couple of seconds' worth of words.
- */
-function LiveTranscript({ runId }: { runId: string }) {
-  const { progress } = useWorkflowProgress<TranscriptChunk>(runId, {
-    namespace: TRANSCRIPT_STREAM,
-  });
-  // Memoized on the ARRAY, which the hook appends to per read: stitching is a
-  // seam search per segment, and a fan-out re-renders this panel on every
-  // progress poll whether or not anything arrived.
-  const transcript = useMemo(() => stitchChunks(progress), [progress]);
-  if (progress.length === 0) return null;
-
-  // The furthest point reached, not the count: segments land out of order, so
-  // "6 segments" says nothing about how much of the recording is covered.
-  const covered = Math.max(...progress.map((chunk) => chunk.endMs));
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-xs opacity-60">
-        {countWords(transcript)} words so far · through {formatDuration(covered)}
-      </p>
-      <pre className="whitespace-pre-wrap text-sm leading-relaxed opacity-80">{transcript}</pre>
-    </div>
-  );
-}
-
-/**
- * One line describing where a run has got to.
- *
- * `WORKFLOW_STATUS_LABELS` is the SDK's neutral map — a `Record` keyed by the
- * status union rather than a switch, so a status added upstream is a compile
- * error in one place every page inherits, and spreading a complete record cannot
- * drop a key. Two of these keys are really this desk's: a page knows what its
- * workflow does and the SDK does not.
- */
-const STATUS_LINE = {
-  ...WORKFLOW_STATUS_LABELS,
-  running: "Transcribing…",
-  completed: "Transcript ready",
-};
 
 page({ name: "Transcription Desk", component: TranscriptionDesk });

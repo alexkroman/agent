@@ -473,12 +473,24 @@ output. Omitted, this is the run's default stream.
 optional startIndex?: number;
 ```
 
-Chunk index to start from, 0-based. Negative counts back from the end
-(`-3` reads the last three), which is what a reconnecting reader wants when
-it does not know how far it got.
+Chunk index to start from, 0-based and INCLUSIVE — the chunk at this index
+is the first one you receive. Negative counts back from the end (`-3` reads
+the last three), which is what a reconnecting reader wants when it does not
+know how far it got.
 
 Defaults to 0 — the whole stream from the beginning, since chunks are
-retained with the run rather than being live-only.
+retained with the run rather than being live-only. `0` and an omitted value
+are the same request, which is what makes a cursor safe to send
+unconditionally: a reader that has consumed `n` chunks passes `n` and
+receives exactly what it has not seen, with no special case for `n === 0`.
+
+**Inclusive is a decision, not a description**, and the alternative shipped
+briefly. An EXCLUSIVE floor ("what came after the index I last saw") reads
+naturally for a poll loop and cannot be spelled here: the cursor before
+chunk 0 is `-1`, and `-1` already means "the last chunk alone". So it forces
+every caller to special-case its own origin into an omitted parameter, and
+the off-by-one at that boundary is what a default `followOutput` was losing
+— the first progress line of every run.
 
 ***
 
@@ -1352,7 +1364,7 @@ exactly as it reads a single streaming `PUT`.
 ##### wake()
 
 ```ts
-wake(runId: string): Promise<number>;
+wake(runId: string, options?: WakeUpOptions): Promise<number>;
 ```
 
 End a run's `sleep()` early, resolving how many pending sleeps were
@@ -1362,11 +1374,27 @@ interrupted.
 gone. Same shape as [WorkflowApi.cancel](#cancel) answering false, and for the
 same reason: two tabs pressing "send it now" is ordinary.
 
+[WakeUpOptions.correlationIds](#correlationids) narrows it to the waits declared with
+those ids, which is the same bag `ctx.workflows.wakeUp` takes and reaches the
+route's repeatable `?correlationId=`. Reach for it when the caller means one
+particular wait rather than "everything this run is waiting on" — and note it
+is the ONLY spelling that can end a hook's approval deadline, since a bare
+wake deliberately cannot (the journal filters a `hookTimeout` out of one).
+
+An id that is blank, or longer than 256 characters, REJECTS here without a
+request being sent. The route answers 400 for both, and there is nothing a
+caller can do with that answer that it could not do with a rejection it never
+had to make a round trip for.
+
 ###### Parameters
 
 ###### runId
 
 `string`
+
+###### options?
+
+[`WakeUpOptions`](#wakeupoptions)
 
 ###### Returns
 
@@ -1473,31 +1501,23 @@ reader reach for a `!` or a conditional spread.
 ### WorkflowBody
 
 ```ts
-type WorkflowBody<I, R> = (input: I) => Promise<R> | R & {
-  workflowId?: string;
-};
+type WorkflowBody<I, R> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 ```
 
-A `"use workflow"` function, as the compiler leaves it.
+A workflow body: an ordinary async function of its input and a
+[WorkflowCtx](index.md#workflowctx).
 
-The `workflowId` property is what the WDK's transform attaches and what
-`start()` reads; it is the whole reason a declaration can name a workflow body
-without importing the engine. Typed as optional-but-present rather than
-required because the property does not exist until the transform runs, and a
-required field would make an untransformed function a compile error at the
-declaration site — which is the wrong place to report it. `ctx.workflows.start`
-checks it instead, at the point the id is actually needed, where the error can
-say that the bundler plugin did not run.
+**There is no `workflowId` any more, and its absence is the point.** Under the
+Workflow DevKit this type carried one, attached by a compile-time transform,
+and `start()` read it — so a body that the bundler plugin had not reached
+looked perfectly valid at the declaration site and failed at the first
+`start()` with `MISSING_WORKFLOW_ID`. An agent that builds, deploys, boots and
+answers the phone but cannot start a run is a bad failure to design in. A
+workflow is now identified by the key it is declared under in
+`agent({ workflows })`, which cannot go missing because the declaration IS the
+registration.
 
-#### Type Declaration
-
-##### workflowId?
-
-```ts
-optional workflowId?: string;
-```
-
-Attached by the WDK compiler: `workflow//{file}//{export}`.
+The body is REPLAYED — see [WorkflowCtx](index.md#workflowctx) for what that forbids.
 
 #### Type Parameters
 
@@ -1505,13 +1525,27 @@ Attached by the WDK compiler: `workflow//{file}//{export}`.
 
 `I` = `unknown`
 
-The body's single input argument.
+The body's validated input.
 
 ##### R
 
 `R` = `unknown`
 
 What the body returns.
+
+#### Parameters
+
+##### input
+
+`I`
+
+##### ctx
+
+[`WorkflowCtx`](index.md#workflowctx)
+
+#### Returns
+
+`Promise`\<`R`\> \| `R`
 
 ***
 
@@ -1564,8 +1598,7 @@ export const digest = workflow({
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 import type { digest } from "../agent.ts";
 
-export async function digestFlow(input: WorkflowInputOf<typeof digest>) {
-  "use workflow";
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowCtx) {
   // `limit` is `number`, not `number | undefined` — the default already ran.
   return await research(input.topic, input.limit);
 }
@@ -1821,6 +1854,18 @@ has to upload first.
 
 ## References
 
+### SleepOptions
+
+Re-exports [SleepOptions](index.md#sleepoptions)
+
+***
+
+### StepOptions
+
+Re-exports [StepOptions](index.md#stepoptions)
+
+***
+
 ### UploadInfo
 
 Re-exports [UploadInfo](step.md#uploadinfo)
@@ -1833,9 +1878,21 @@ Re-exports [UploadRange](step.md#uploadrange)
 
 ***
 
+### WaitForOptions
+
+Re-exports [WaitForOptions](index.md#waitforoptions)
+
+***
+
 ### WorkflowClient
 
 Re-exports [WorkflowClient](index.md#workflowclient)
+
+***
+
+### WorkflowCtx
+
+Re-exports [WorkflowCtx](index.md#workflowctx)
 
 ***
 

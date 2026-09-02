@@ -28,6 +28,15 @@
  * blob is immutable and shared across deploys — see bundle-store.ts on why
  * orphans are accepted), no iteration. Anything wanting more should ask
  * whether it really wants a Postgres row.
+ *
+ * **"No delete" is about this INTERFACE, not about the bucket.** Objects are
+ * reclaimed, by `aai-sweep-blob-gc` (`pg-cron-bodies.ts`) — mark-and-sweep from
+ * pg_cron through the Storage API, one arm for `blobs/` and one for `uploads/`.
+ * It is there rather than here because reclamation has to run exactly once
+ * platform-wide on a schedule that survives replica churn, which an in-process
+ * client held by every replica cannot do. So a delete method added here would
+ * have no caller; what it would have is the appearance of one, which is how a
+ * second deleter with a different rule gets written.
  */
 
 import { errorMessage } from "@alexkroman1/aai";

@@ -17,6 +17,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { isPathInside } from "@alexkroman1/aai-runtime/internal";
 import { resolveDeployTarget } from "./_agent.ts";
 import { apiRequest, checkedResponse } from "./_api-client.ts";
 import { updateProjectConfig } from "./_config.ts";
@@ -57,7 +58,13 @@ async function materializeFiles(dir: string, files: Record<string, string>): Pro
   // tree. The writes themselves are independent, so they run concurrently.
   const targets = Object.entries(files).map(([rel, content]) => {
     const abs = path.resolve(dir, rel);
-    if (abs !== dir && !abs.startsWith(dir + path.sep)) {
+    // `isPathInside`, not a third copy of the line: this was open-coded here and
+    // in `aai-guest/studio-workspace-fs.ts`, and both copies were correct only
+    // for an absolute, normalized, trailing-slash-free `dir` — a precondition
+    // nothing stated, so a `dir` with a trailing separator refused every path in
+    // the tree. `aai-runtime/internal` is a permitted import here; `aai-server`
+    // and `aai-guest` are not.
+    if (!isPathInside(dir, abs)) {
       throw new Error(`Pulled file path escapes the project directory: ${rel}`);
     }
     return { abs, content };

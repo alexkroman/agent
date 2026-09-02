@@ -46,6 +46,23 @@ ignoredBuiltDependencies:
 
 minimumReleaseAge: 1440
 
+# Disable pnpm's verify-deps-before-run check. When `pnpm exec`/`pnpm run` is
+# invoked (e.g. `pnpm exec turbo run lint typecheck`) against a restored CI
+# cache whose workspace-state file is missing/empty, the check crashes with
+# "Unexpected end of JSON input" in loadWorkspaceState. CI verifies deps
+# explicitly via `pnpm install --frozen-lockfile` instead.
+#
+# This lives HERE and not in `.npmrc`, which is where it used to live and where
+# it silently stopped working: pnpm 11 reads no pnpm-specific setting from
+# `.npmrc`. Measured on 11.24.0 — `.npmrc` resolves the key to `undefined`,
+# this file resolves it to `false`, and 10.29.3 reads it from here too, so one
+# spelling covers both majors. The symptom under 11 was `pnpm dev:aai-server`
+# spawning a synchronous `pnpm install` first, and a Ctrl-C during it printing
+# a pnpm stack trace that names `pnpm install` rather than the dev server.
+# The check runs in the OUTER pnpm before `packageManager` re-execs the pinned
+# version, so pinning 10.29.3 does not protect against it.
+verifyDepsBeforeRun: false
+
 onlyBuiltDependencies:
   - esbuild
   - lefthook
@@ -55,7 +72,4 @@ overrides:
   unrun: 0.2.39
 
 patchedDependencies:
-  '@workflow/core@4.8.2': patches/@workflow__core@4.8.2.patch
-  '@workflow/world-local@4.2.4': patches/@workflow__world-local@4.2.4.patch
-  cbor-x@1.6.0: patches/cbor-x@1.6.0.patch
   cbor-x@1.6.5: patches/cbor-x@1.6.5.patch

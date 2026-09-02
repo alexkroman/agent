@@ -35,7 +35,32 @@ interface ChannelSection {
 }
 
 // @public
+export const DEFAULT_RETRY_DELAY_MS = 1000;
+
+// @public
+export class FatalError extends Error {
+    constructor(message: string, options?: {
+        cause?: unknown;
+    });
+    readonly fatal = true;
+    static is(value: unknown): value is FatalError;
+}
+
+// @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export class RetryableError extends Error {
+    constructor(message: string, options?: RetryableErrorOptions);
+    static is(value: unknown): value is RetryableError;
+    readonly retryAfter: Date;
+}
+
+// @public
+export type RetryableErrorOptions = {
+    retryAfter?: number | Date;
+    cause?: unknown;
+};
 
 // @public
 export function sendToChannelClassified(channel: Channel, message: ChannelMessage): Promise<string>;

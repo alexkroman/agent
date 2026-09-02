@@ -3,7 +3,7 @@
  * A fake `ctx.generate`, for testing a tool body that calls a model.
  *
  * The tool-side twin of {@link stubGateway}, which fakes the same thing for a
- * `"use step"` body. Nothing covered this side, so a template whose tools reason
+ * step. Nothing covered this side, so a template whose tools reason
  * with a model wrote its own — and the two that did wrote the same two
  * non-obvious things.
  *

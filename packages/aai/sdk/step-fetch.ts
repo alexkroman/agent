@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `stepFetch()` — the HTTP call a `"use step"` function should make, and
+ * `stepFetch()` — the HTTP call a step should make, and
  * `multipartBody()` — how it attaches a file.
  *
  * A step's whole job is usually one outbound request, and `globalThis.fetch` is
@@ -61,7 +61,6 @@
  * import { multipartBody, stepFetch } from "@alexkroman1/aai/step";
  *
  * export async function transcribe(bytes: Uint8Array) {
- *   "use step";
  *   const part = multipartBody({ name: "audio", filename: "clip.wav", type: "audio/wav", bytes });
  *   const response = await stepFetch("https://sync.assemblyai.com/transcribe", {
  *     method: "POST",
@@ -107,7 +106,7 @@ export type StepFetchInit = {
    *
    * Note a streaming body cannot be RETRIED by the transport, because an iterable is
    * consumed once. That is a property of streaming rather than of this option, and it
-   * is why a step sending one should be the step the DevKit retries — a fresh attempt
+   * is why a step sending one should be the step the engine retries — a fresh attempt
    * re-reads the upload from the start.
    */
   body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
@@ -121,7 +120,7 @@ const STEP_FETCH_SLOT = Symbol.for("@alexkroman1/aai.stepFetch");
 type StepFetchSlot = { [STEP_FETCH_SLOT]?: StepFetch };
 
 /**
- * Publish the HTTP/1.1 fetch for this process's `"use step"` functions.
+ * Publish the HTTP/1.1 fetch for this process's steps.
  *
  * `createServer` does this, which is what makes a step's outbound calls behave
  * identically under `aai dev`, on a self-hosted server and in a deployed guest.
@@ -152,7 +151,7 @@ function isStreamingBody(body: StepFetchInit["body"]): boolean {
 /**
  * Make one HTTP request from inside a step.
  *
- * Prefer this to `fetch` in any `"use step"` function, and especially in a
+ * Prefer this to `fetch` in any step, and especially in a
  * fan-out: it pins HTTP/1.1 (so a concurrent batch gets a socket each rather
  * than N streams on one connection), reuses connections across a fan-out's
  * calls, and reports a connection failure with its whole `cause` chain instead
@@ -188,8 +187,8 @@ function isStreamingBody(body: StepFetchInit["body"]): boolean {
  *   `404` is fatal.
  * @public
  *
- * **From a `"use step"` body, prefer `stepFetchOk`
- * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+ * **From a step, prefer `stepFetchOk`
+ * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
  */

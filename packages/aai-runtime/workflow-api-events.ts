@@ -14,12 +14,17 @@
  * graph, no microphone. Adding a WebSocket here would put back the one thing
  * that split exists to keep out, for a stream that is one-directional anyway.
  *
- * **It watches by POLLING `ctx.workflows.get`, in-process.** That sounds like it
- * defeats the purpose and does not: the expensive part was never the read, it
- * was the HTTP hop and the brokering in front of it. Here the read is one query
- * against the world the run already lives in, next to it, with no platform in
- * the path. A push notification from the Workflow DevKit would be faster still
- * and would be WRONG on its own — a run can be executed by another replica
+ * **It watches by POLLING, and the read is SHARED.** This module used to argue
+ * that the poll was cheap because the read was in-process — one query against
+ * the world the run already lives in, with no platform in the path. On a
+ * deployed agent that is false: `selectJournal` puts the platform arm first, so
+ * every read is a `POST /:slug/workflow-journal`. And one sandbox serves one
+ * slug fleet-wide, so the three tabs this file's opening paragraph counts are
+ * three streams in ONE process, which is where the multiplication actually
+ * happened. So the stream asks `workflow-run-reads.ts` for its observations:
+ * every watcher of a run, streams and the other two loops alike, shares one
+ * read per tick. A push notification from the world would be faster still and
+ * would be WRONG on its own — a run can be executed by another replica
  * entirely, so the world's record is the only thing that knows.
  *
  * @internal
@@ -28,8 +33,16 @@
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { isTerminal, type WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { SSE_HEADERS, sseFrame } from "./workflow-api-http.ts";
+import { isRunWatchClosed, type RunReader, type RunWatch, watchRun } from "./workflow-run-reads.ts";
 
-/** How often a live stream re-reads the run it is watching. */
+/**
+ * How soon a live stream wants its next look at the run.
+ *
+ * A DEADLINE handed to the shared reader rather than a period of its own: a
+ * faster watcher of the same run (a synchronous wait, at
+ * `WORKFLOW_WAIT_POLL_MS`) pulls the tick in, and this stream is answered
+ * early for free. What it never does is answer LATE.
+ */
 export const RUN_EVENT_POLL_MS = 1000;
 
 /**
@@ -77,8 +90,15 @@ export const RUN_EVENT_STREAM_MAX_MS = 5 * 60_000;
  */
 export const RUN_EVENT_MAX_READ_FAILURES = 5;
 
-/** What the stream needs to read. A slice of the client, so a test needs no world. */
-export type RunReader = { get(runId: string): Promise<WorkflowRunSnapshot | undefined> };
+/**
+ * What the stream needs to read. A slice of the client, so a test needs no
+ * world.
+ *
+ * DECLARED in `workflow-run-reads.ts`, which keys a run's shared reads by it,
+ * and re-exported here because this is the module its readers already import
+ * it from.
+ */
+export type { RunReader } from "./workflow-run-reads.ts";
 
 /**
  * What the stream needs to WRITE — the four members of `http.ServerResponse` it
@@ -99,6 +119,15 @@ export type EventSink = {
 
 /** A live stream, so a caller can end it (shutdown) and a test can stop it. */
 export type RunEventStream = { close(): void };
+
+/**
+ * What one observation tells the stream's loop to do next.
+ *
+ * Named so the two things that can happen to a read — a snapshot, a failure —
+ * are handled in a function each rather than as nested branches inside the
+ * loop, which is what the cognitive-complexity ceiling is about.
+ */
+type StreamStep = "wait" | "stop";
 
 /**
  * The one method this module logs through, so a caller can pass its own
@@ -124,7 +153,13 @@ export function streamRunEvents(
   const now = options.now ?? Date.now;
   const startedAt = now();
   let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * This stream's place in the run's shared reads.
+   *
+   * Assigned synchronously by {@link pump} before it first suspends, so the
+   * close handler below can never find it unset.
+   */
+  let watch: RunWatch | undefined;
   /** Consecutive failed reads — see {@link RUN_EVENT_MAX_READ_FAILURES}. */
   let failures = 0;
   // The last snapshot SENT, as JSON. Compared rather than deep-equalled because
@@ -142,75 +177,116 @@ export function streamRunEvents(
   const finish = (): void => {
     if (closed) return;
     closed = true;
-    if (timer !== undefined) clearTimeout(timer);
+    // Leaving the shared reads BEFORE ending the response, so the last watcher
+    // of a run stops its reader now rather than one tick from now — and so a
+    // pending observation cannot come back to a stream that is over.
+    watch?.close();
     res.end();
   };
 
-  function arm(): void {
-    if (closed) return;
-    if (now() - startedAt >= RUN_EVENT_STREAM_MAX_MS) {
-      send("idle", { runId });
-      finish();
-      return;
-    }
-    timer = setTimeout(() => void tick(), RUN_EVENT_POLL_MS);
-    // Unref'd: a page watching a run must never be the reason a host stays up.
-    timer.unref?.();
-  }
+  /**
+   * One failed read: count it, report it, and decide whether the stream has
+   * absorbed enough of them.
+   */
+  const onReadFailure = (err: unknown): StreamStep => {
+    // A read that failed says nothing about the run, so the stream holds and
+    // tries again. Ending here would send a page back to polling over a blip.
+    // BOUNDED, though: past the cap the failure is not a blip, and a stream
+    // that keeps this to itself is worse than no stream at all — see
+    // RUN_EVENT_MAX_READ_FAILURES.
+    failures += 1;
+    options.logger?.warn?.("Workflow run event read failed", {
+      runId,
+      error: errorMessage(err),
+      failures,
+    });
+    if (failures < RUN_EVENT_MAX_READ_FAILURES) return "wait";
+    // `idle`, which the client already reads as "this stream gave up, go back
+    // to polling" — the poll then reports the underlying failure the way it
+    // reports every other one. A new frame kind would need every client to
+    // learn it to reach the same place.
+    send("idle", { runId });
+    finish();
+    return "stop";
+  };
 
-  const tick = async (): Promise<void> => {
-    if (closed) return;
-    let run: WorkflowRunSnapshot | undefined;
-    try {
-      run = await reader.get(runId);
-    } catch (err) {
-      // A read that failed says nothing about the run, so the stream holds and
-      // tries again. Ending here would send a page back to polling over a blip.
-      // BOUNDED, though: past the cap the failure is not a blip, and a stream
-      // that keeps this to itself is worse than no stream at all — see
-      // RUN_EVENT_MAX_READ_FAILURES.
-      failures += 1;
-      options.logger?.warn?.("Workflow run event read failed", {
-        runId,
-        error: errorMessage(err),
-        failures,
-      });
-      if (failures >= RUN_EVENT_MAX_READ_FAILURES) {
-        // `idle`, which the client already reads as "this stream gave up, go
-        // back to polling" — the poll then reports the underlying failure the
-        // way it reports every other one. A new frame kind would need every
-        // client to learn it to reach the same place.
-        send("idle", { runId });
-        finish();
-        return;
-      }
-      arm();
-      return;
-    }
-    failures = 0;
-    if (closed) return;
+  /** One observation: frame whatever changed, and stop on a final answer. */
+  const onObservation = (run: WorkflowRunSnapshot | undefined): StreamStep => {
+    if (closed) return "stop";
     if (run === undefined) {
       // A 404 is a STABLE answer — a run the world does not know about now will
       // not appear later — so there is nothing to wait for. Named as its own
       // event so the client can stop rather than reconnect.
       send("missing", { runId });
       finish();
-      return;
+      return "stop";
     }
     const encoded = JSON.stringify(run);
     if (encoded !== last) {
       last = encoded;
       send("run", run);
     }
-    if (isTerminal(run)) {
-      // Nothing will change again, so the stream is DONE rather than idle.
-      // Stated explicitly so a client can tell "finished" from "connection
-      // dropped" and not reconnect to a run with nothing left to say.
-      send("done", { runId });
+    if (!isTerminal(run)) return "wait";
+    // Nothing will change again, so the stream is DONE rather than idle. Stated
+    // explicitly so a client can tell "finished" from "connection dropped" and
+    // not reconnect to a run with nothing left to say.
+    send("done", { runId });
+    finish();
+    return "stop";
+  };
+
+  /**
+   * One iteration: hold for the run's next shared observation, then act on it.
+   *
+   * Its own function so {@link pump} is a loop and nothing else — and because
+   * the three ways an iteration can end (the duration cap, a read failure, a
+   * final answer) each read better beside the state they touch than as a
+   * branch nested inside a `for`.
+   */
+  const advance = async (joined: RunWatch, within: number): Promise<StreamStep> => {
+    if (closed) return "stop";
+    if (now() - startedAt >= RUN_EVENT_STREAM_MAX_MS) {
+      send("idle", { runId });
       finish();
-      return;
+      return "stop";
     }
-    arm();
+    // Settled into a VALUE rather than caught, so the two handlers below sit
+    // outside the guarded region: a `res.write` that throws is a broken socket,
+    // and counting it as a failed read would spend this stream's failure budget
+    // on the wrong fault.
+    const observed = await joined.next(within).then(
+      (run) => ({ ok: true as const, run }),
+      (err: unknown) => ({ ok: false as const, err }),
+    );
+    if (closed) return "stop";
+    if (!observed.ok) {
+      // A teardown is not a failed read, and counting it as one would spend
+      // this stream's failure budget on its own shutdown.
+      if (isRunWatchClosed(observed.err)) return "stop";
+      return onReadFailure(observed.err);
+    }
+    failures = 0;
+    return onObservation(observed.run);
+  };
+
+  /**
+   * Read, frame, wait, repeat — one iteration per shared observation.
+   *
+   * A loop rather than the self-arming `setTimeout` this used to be, because
+   * the wait is no longer this stream's to schedule: `next(within)` IS the
+   * wait, and it resolves when the run's shared reader next reads, which may be
+   * sooner than this stream asked because somebody else asked sooner.
+   */
+  const pump = async (): Promise<void> => {
+    const joined = watchRun(reader, runId);
+    watch = joined;
+    // ZERO for the first look, which is what the old `void tick()` did: a page
+    // that has just connected must not watch a spinner for a second to be told
+    // about a run that finished before it asked.
+    let within = 0;
+    while ((await advance(joined, within)) === "wait") {
+      within = RUN_EVENT_POLL_MS;
+    }
   };
 
   const heartbeat = setInterval(() => {
@@ -221,11 +297,11 @@ export function streamRunEvents(
   res.on("close", () => {
     clearInterval(heartbeat);
     closed = true;
-    if (timer !== undefined) clearTimeout(timer);
+    watch?.close();
   });
 
   if (runId) {
-    void tick();
+    void pump();
   } else {
     // The empty id every sibling route refuses before its read: `readRun` and
     // `streamRunOutput` spell it `runId ? … : undefined`, `cancelRun` and

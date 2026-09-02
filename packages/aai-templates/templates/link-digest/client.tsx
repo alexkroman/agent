@@ -9,8 +9,30 @@
  *
  * What replaces `useSession()` is `useWorkflowSubmit()`: it starts the run,
  * follows its STATUS, and hands back the controls bound to it — `wake`, `cancel`
- * and `reset`. The API is durable, so the `runId` is the whole state — it
- * survives a reload, a different device, or `curl`.
+ * and `reset`.
+ *
+ * ## The run survives a reload; the run ID does not
+ *
+ * A `runId` names a run for as long as anything is holding it, and this page
+ * holds it in React state — so a refresh loses it while the run carries on
+ * without it. That is the wrong half of durability to leave to the reader: the
+ * page used to promise "the run continues without it" and then had no way back
+ * to the run it was promising about.
+ *
+ * `key` is the handle that survives, and `recover` is what reads it back. Two
+ * lines of wiring, one decision:
+ *
+ * - **The key is OPAQUE and lives in `sessionStorage`.** It names nothing about
+ *   the person or the link — `useRunKey()` is the SDK's, and its module argues
+ *   what that rules out (a key derived from the URL being digested, a `?key=`
+ *   parameter) and why. Six templates had written those twenty lines each.
+ * - **`recover: true`** makes the hook ask `find("digest", key)` as it mounts
+ *   and follow whatever run comes back, so a reload lands back on the same
+ *   headline, the same progress log and the same buttons.
+ *
+ * Deployed, this needs the correlation-key index, which is a `DATABASE_URL`
+ * away — `agent.ts` says what happens without one (the runs are still durable;
+ * the index that finds them by key is in memory).
  *
  * ## The FORM here is still written by hand, deliberately
  *
@@ -31,13 +53,16 @@
  * cheap: one stream each, ended by the agent when there is nothing left to say.
  *
  * Progress also REPLAYS — chunks are retained with the run — so a reload mid-run
- * catches up rather than starting from whatever arrives next. `lines={1}` is
+ * catches up rather than starting from whatever arrives next. That only pays off
+ * because the reload can name its run again: `<WorkflowProgress runId>` is handed
+ * `run?.runId`, so before `recover` a refresh replayed a log for nobody.
+ * `lines={1}` is
  * what narrows it to the newest line, because on a page this small that is the
  * whole of what a status wants; `transcription-workflow` renders the full log,
  * where a fan-out makes the history worth seeing.
  */
 
-import { page, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
+import { page, useRunKey, useWorkflowSubmit, WorkflowProgress } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
@@ -45,20 +70,52 @@ import "@alexkroman1/aai-ui/styles.css";
 import { useState } from "react";
 import type { digest } from "./agent.ts";
 
+/**
+ * What the page says while something is in flight — three situations, one line
+ * each, and none of them the sentence this page used to print.
+ *
+ * That one was "You can close this tab — the run continues without it": true
+ * about the run and false about the page, which is the worst shape a reassurance
+ * can have. The run did continue and the tab could never find it again. Now it
+ * can, so the promise gets stronger and the reload case gets its own words —
+ * somebody who did not press the button is owed an explanation for the work
+ * appearing in front of them.
+ */
+function pendingNote(startedHere: boolean, found: boolean): string {
+  if (startedHere)
+    return "You can close this tab or reload it — this page will find the run again.";
+  if (!found) return "Looking for a digest this tab started earlier…";
+  return "Still working on the digest this tab started earlier. Reloading is safe.";
+}
+
 export function App() {
   const [url, setUrl] = useState("");
+  // This tab's handle on its own runs — minted once and remembered, which is
+  // what a later load produces to find the run again.
+  const key = useRunKey();
+  // Did THIS load start the run? A reload cannot have, and that is the only way
+  // the page can tell "working on what you just submitted" from "picking up
+  // where you left off" — the hook reports the run, not who asked for it.
+  const [startedHere, setStartedHere] = useState(false);
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. `error` is the agent's own sentence for a
   // rejected input, which is better copy than anything this page could write, and
   // `wake` is bound to whatever run the hook is following — the whole reason this
   // page no longer holds a `createWorkflowApi()` of its own.
-  const { submit, run, pending, error, wake } = useWorkflowSubmit<typeof digest>("digest");
+  const { submit, run, pending, error, wake } = useWorkflowSubmit<typeof digest>("digest", {
+    // Recorded with the run, and read back on the next load. Neither half is
+    // useful alone: without the key there is nothing to find the run by, and
+    // without `recover` the key is only ever written.
+    key,
+    recover: true,
+  });
 
   // `submit()` resolves as soon as the run exists — deliberately not when it
   // finishes. That is the whole mechanism: the digest sleeps for a while, and
   // this page is free to be closed in the meantime.
   const onSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    setStartedHere(true);
     void submit({ url });
   };
 
@@ -90,8 +147,9 @@ export function App() {
 
       {/* A run that has not settled says so. `pending` is not derivable from the
           snapshot alone — an id the agent never knew leaves `run` undefined,
-          which would otherwise read as "still waiting" forever. */}
-      {pending && <p>You can close this tab — the run continues without it.</p>}
+          which would otherwise read as "still waiting" forever, and on a reload
+          it is also true while the run is being looked up by key. */}
+      {pending && <p>{pendingNote(startedHere, run !== undefined)}</p>}
 
       {/* The run's own narration, newest line only. `lines={1}` is the window;
           everything else — the replay, and the "serves no stream" case that is

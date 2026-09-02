@@ -17,6 +17,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
+import { isBlankSecret, parseBearer } from "./bearer.ts";
 
 /**
  * The response members a JSON reply touches, named rather than taken whole.
@@ -39,6 +40,26 @@ export type JsonResponse = {
   readonly headersSent: boolean;
   destroy(): unknown;
 };
+
+/**
+ * A numeric query parameter as a number, with a BLANK one reading as `NaN`.
+ *
+ * `Number("")` is `0`, not `NaN`, which is the whole reason this exists: a caller
+ * that meant to send a value and computed nothing gets served a legitimate-looking
+ * `0` rather than a refusal. `?startIndex=` is where it was harmful — that floor
+ * is INCLUSIVE, so `0` is a full replay of everything the reader had already read,
+ * once per poll — and `?wait=` had the same shape one route over, where `0` means
+ * "do not wait". Both refuse a `NaN` with a 400 rather than clamping it.
+ *
+ * A FUNCTION rather than the expression at each site, and shared rather than
+ * copied, because the two call sites disagreeing about blank is precisely the
+ * failure: the reading a route gives an empty parameter is the same question
+ * whatever the parameter means. Its own function rather than a nested ternary
+ * besides, which the linter refuses.
+ */
+export function numberParam(value: string): number {
+  return value.trim() === "" ? Number.NaN : Number(value);
+}
 
 /** Write a JSON body and end the response. */
 export function sendJson(res: JsonResponse, status: number, body: unknown): void {
@@ -134,9 +155,35 @@ export function answerHandlerFailure(
  * Length is compared first because `timingSafeEqual` THROWS on a length mismatch
  * rather than returning false — and comparing lengths leaks only the length,
  * which the caller supplied anyway.
+ *
+ * The PARSE is `parseBearer` (`bearer.ts`) rather than a `startsWith("Bearer ")`
+ * of its own, which is what this was: RFC 7235 makes `auth-scheme`
+ * case-insensitive, so a client sending `authorization: bearer <token>` was
+ * refused by every route on this surface, and the reply named an authorization
+ * failure rather than a capitalisation. Two other copies of the same line existed
+ * — see that module's doc.
+ *
+ * **A BLANK `token` matches nothing, and that guard is the whole gate for one
+ * class of misconfiguration.** `timingSafeEqual` on two empty buffers returns
+ * true, so `bearerMatches(undefined, "")` used to answer `true` — a request with
+ * no `Authorization` header authenticating against a set-but-empty secret. Both
+ * callers guarded `token === undefined` and neither guarded `token === ""`, so
+ * `AAI_SESSION_EVENTS_TOKEN=` served the conversation unauthenticated and
+ * `AAI_WORKFLOW_API_TOKEN=` left `/workflows/*` open while reading as closed.
+ * `isBlankSecret` carries why an empty expected secret is not a credential anyone
+ * can present rather than merely a short one.
+ *
+ * The refusal is HERE, at the comparison, as well as at the env read that feeds
+ * it (`agentGateToken`, `server-env.ts`) because this function is reachable
+ * without that read: a self-hoster calling `createWorkflowApi({ token })` or
+ * `createSessionEventsApi({ token })` directly, and whatever the third caller
+ * turns out to be. This layer makes the primitive safe for all of them, and it
+ * fails CLOSED — a blank secret 401s everything rather than opening the surface,
+ * which is the right way round for a caller nobody can send a log line to.
  */
 export function bearerMatches(header: string | undefined, token: string): boolean {
-  const presented = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
+  if (isBlankSecret(token)) return false;
+  const presented = parseBearer(header);
   const a = Buffer.from(presented);
   const b = Buffer.from(token);
   return a.length === b.length && timingSafeEqual(a, b);

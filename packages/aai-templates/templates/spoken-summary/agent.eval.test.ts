@@ -41,7 +41,7 @@
 //     about the transcript and the summary rather than about audible audio.
 //
 // WHAT NO EVAL HERE COVERS: durability. Imported through vitest with no bundler
-// in the path, a `"use workflow"` body is an ordinary async function — no
+// in the path, a workflow body is an ordinary async function — no
 // journal, no replay, and no per-step retry, so a rate-limited live run FAILS
 // where a deployed one would have ridden it out, and the resume-replays-the-id
 // property that makes speak-and-store ONE step is argued here rather than
@@ -56,7 +56,7 @@ import {
 import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import agentDef, { spokenSummary } from "./agent.ts";
-import { POLL_INTERVAL } from "./workflows/transcribe.ts";
+import { POLL_INTERVAL_MS } from "./workflows/transcribe.ts";
 
 /** The id every case uploads the recording under. */
 const UPLOAD_ID = "upl_eval";
@@ -271,7 +271,7 @@ describeWorkflowEval(
       expect(run.output?.transcript).toBe(TRANSCRIPT);
       // Two waits for three polls: asked for and — this being an eval rather
       // than a deployment — recorded rather than taken.
-      expect(run.slept).toEqual([{ duration: POLL_INTERVAL }, { duration: POLL_INTERVAL }]);
+      expect(run.slept).toEqual([{ duration: POLL_INTERVAL_MS }, { duration: POLL_INTERVAL_MS }]);
       expect(provider.calls.filter((call) => call.leg === "poll")).toHaveLength(3);
       // The expensive half happened ONCE, which is the whole reason the upload
       // and the submit are separate steps.

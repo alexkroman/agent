@@ -32,35 +32,27 @@ import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
 import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @internal
 export function agentServerEnv(env: Record<string, string>): Record<string, string>;
 
 // @internal
-export function callPlatformStorage(opts: PlatformStorageOptions, method: string, args: readonly unknown[]): Promise<unknown>;
-
-// @internal
-export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;
-
-// @public
-type CloseableDb = Db & {
-    reserve(): Promise<ReservedDb>;
-    listen(channel: string, onNotify: () => void): Promise<() => void>;
-    close(): Promise<void>;
-};
-
-// @internal
-export function configureWorkflowWorld(opts: {
-    databaseUrl: string | undefined;
-    port: number;
-    dataDir?: string;
-    env?: NodeJS.ProcessEnv;
-}): WorldKind;
+export function applyWorkflowJournalDdl(opts: {
+    db: Db;
+    logger: Logger;
+}): Promise<boolean>;
 
 // @internal
 export const consoleLogger: Logger;
 
 export { CONTAINED_ENV }
+
+// @internal
+export function createMemoryJournal(): JournalStore;
+
+// @internal
+export function createPlatformJournal(opts: PlatformEndpoint): JournalStore;
 
 // @internal
 export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName: string, message: unknown, queueOpts?: {
@@ -73,40 +65,12 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName:
 }>;
 
 // @internal
-export function createPlatformStorage(opts: PlatformStorageOptions): {
-    runs: {
-        get: StorageFn;
-        list: StorageFn;
-    };
-    steps: {
-        get: StorageFn;
-        list: StorageFn;
-    };
-    events: {
-        create: StorageFn;
-        get: StorageFn;
-        list: StorageFn;
-        listByCorrelationId: StorageFn;
-    };
-    hooks: {
-        get: StorageFn;
-        getByToken: StorageFn;
-        list: StorageFn;
-    };
-};
+export function createPlatformStateBackend(opts: PlatformSessionStateOptions): SessionStateBackend;
 
 // @internal
-export function createPlatformStreamer(opts: PlatformStorageOptions): {
-    writeToStream: StorageFn;
-    writeToStreamMulti: StorageFn;
-    closeStream: StorageFn;
-    listStreamsByRunId: StorageFn;
-    getStreamChunks: StorageFn;
-    getStreamInfo: StorageFn;
-};
-
-// @internal
-export function createPlatformStreamReader(opts: PlatformStorageOptions): (name: string, startIndex?: number) => Promise<ReadableStream<Uint8Array>>;
+export function createPostgresJournal(opts: {
+    db: Db;
+}): JournalStore;
 
 // @internal
 export function createPostgresStateBackend(opts: {
@@ -134,9 +98,6 @@ export function createUploadStore(opts: {
     prefix?: string | undefined;
     maxBytes?: number | undefined;
 }): UploadStore;
-
-// @internal
-export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
 
 // @internal
 export function decodeStorageJson(text: string): unknown;
@@ -184,12 +145,19 @@ type ExecuteToolCallOptions = {
 };
 
 // @internal
-type FetchHandler = (req: Request) => Promise<Response>;
-
-// @internal
-export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
+export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, opts?: {
     allowRemote?: ((req: IncomingMessage) => boolean) | undefined;
+    logger?: Logger | undefined;
+    deliver?: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined;
 }): boolean;
+
+// @public
+type HookRecord = {
+    token: string;
+    delivered: boolean;
+    payload?: unknown;
+    closed?: boolean;
+};
 
 // @internal
 type HostGenerateFn = (options: GenerateOptions, callOpts?: {
@@ -198,6 +166,49 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 
 // @internal
 export function isPathInside(dir: string, target: string): boolean;
+
+// @public
+type JournalArm = {
+    label: string;
+    journal: () => JournalStore;
+    uid: () => string;
+    resumable: boolean;
+};
+
+// @public
+export type JournalConformanceSuite = {
+    journalConformance: (arm: JournalArm) => void;
+    journalIds: (label: string) => () => string;
+};
+
+// @public
+type JournalStore = {
+    createRun(record: RunRecord): Promise<void>;
+    getRun(runId: string): Promise<RunRecord | undefined>;
+    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
+    setStatus(runId: string, next: RunStatus, patch?: {
+        output?: unknown;
+        error?: {
+            message: string;
+        };
+    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    readSteps(runId: string): Promise<StepEntry[]>;
+    claimAttempt(runId: string, key: string): Promise<number>;
+    releaseAttempt(runId: string, key: string): Promise<void>;
+    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
+    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+    closeHook(runId: string, key: string): Promise<boolean>;
+    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
+    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
+};
+
+// @public (undocumented)
+export function loadJournalConformance(): Promise<JournalConformanceSuite>;
+
+// @public (undocumented)
+export function loadSessionStateConformance(): Promise<SessionStateConformanceSuite>;
 
 // @public
 type LogContext = Record<string, unknown>;
@@ -211,6 +222,9 @@ type Logger = Record<LogLevel, LogFn>;
 // @public
 type LogLevel = "info" | "warn" | "error" | "debug";
 
+// @public
+export function parseBearer(header: string | null | undefined): string;
+
 // @internal
 export function payloadRunId(message: unknown): string | undefined;
 
@@ -218,8 +232,7 @@ export function payloadRunId(message: unknown): string | undefined;
 export const PLATFORM_ROUTES: {
     readonly sessionState: "/session-state";
     readonly uploadRecords: "/upload-records";
-    readonly workflowStorage: "/workflow-storage";
-    readonly workflowStream: "/workflow-stream";
+    readonly workflowJournal: "/workflow-journal";
     readonly workflowEnqueue: "/workflow-enqueue";
 };
 
@@ -237,7 +250,7 @@ export type PlatformQueueOptions = PlatformEndpoint;
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
 // @public
-export type PlatformStorageOptions = PlatformEndpoint;
+type PlatformSessionStateOptions = PlatformEndpoint;
 
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
@@ -245,34 +258,40 @@ type PlatformUploadRecordsOptions = PlatformEndpoint;
 // @internal
 export function platformUrl(base: string, route: PlatformRoute): string;
 
-// @internal
-export type PoolPresence = {
-    swept: readonly string[];
-    skipped: SweepSkip | undefined;
-    held: boolean;
-    release: () => Promise<void>;
-};
-
-// @internal
-export const PRESENCE_LOCK_CLASS = 1094797655;
-
-// @internal (undocumented)
-export const PRESENCE_LOCK_OBJECT = 1;
-
 export { publishStepEnv }
+
+// @internal
+export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void;
 
 // @internal
 export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined;
 
-// @public
-type ReservedDb = Db & {
-    release(): void;
-};
-
 export { resolveAllBuiltins }
+
+// @public
+type ResumableRun = {
+    runId: string;
+    wakeAt?: number | undefined;
+};
 
 // @internal
 export function routeMatches(route: ServerRoute, url: string, method?: string): boolean;
+
+// @public
+type RunRecord = {
+    runId: string;
+    workflow: string;
+    status: RunStatus;
+    createdAt: number;
+    input: unknown;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+type RunStatus = WorkflowRunStatus;
 
 export { safeFetch }
 
@@ -376,6 +395,13 @@ type SessionEventStream = {
 };
 
 // @public
+type SessionStateArm = {
+    label: string;
+    backend: () => SessionStateBackend;
+    uid: () => string;
+};
+
+// @public
 type SessionStateBackend = {
     readonly name: "memory" | "postgres" | "platform";
     readonly durable: boolean;
@@ -385,6 +411,12 @@ type SessionStateBackend = {
     appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
     readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
     countEvents(sessionId: string): Promise<number>;
+};
+
+// @public
+export type SessionStateConformanceSuite = {
+    sessionStateConformance: (arm: SessionStateArm) => void;
+    sessionStateIds: (label: string) => () => string;
 };
 
 // @internal
@@ -422,14 +454,16 @@ type SessionWebSocket = {
     }) => void): void;
 };
 
-// @internal
-export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
+// @public
+type SleepRecord = {
+    wakeAt: number;
+    woken: boolean;
+    correlationId?: string | undefined;
+    kind: "sleep" | "hookTimeout";
+};
 
 // @internal
-export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind, opts?: {
-    page?: string | undefined;
-    waitMs?: ((attempt: number) => Promise<void>) | undefined;
-}): Promise<void>;
+export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
 
 // @public
 type StateSyncSession = {
@@ -442,19 +476,17 @@ type StateSyncSession = {
 export const STEP_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_step_.+$";
 
 // @public
-const STORAGE_CONFLICT_STATUS = 409;
-
-// @public
-const STORAGE_RUN_EXPIRED_STATUS = 410;
-
-// @public
-type StorageFn = (...args: unknown[]) => Promise<unknown>;
-
-// @public
-export type StorageRefusalStatus = typeof STORAGE_RUN_EXPIRED_STATUS | typeof STORAGE_CONFLICT_STATUS;
-
-// @internal
-export function storageStatusFor(err: unknown): StorageRefusalStatus | undefined;
+type StepEntry = {
+    key: string;
+    name: string;
+    status: "ok" | "failed";
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    attempts: number;
+    finishedAt: number;
+};
 
 // @public
 type StoredSessionEvent = {
@@ -464,19 +496,6 @@ type StoredSessionEvent = {
 
 // @internal
 type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: ToolCallDefaults) => Promise<DelegateResult>;
-
-// @public
-type SweepDeps = {
-    createDb?: (url: string) => CloseableDb;
-    log?: (message: string) => void;
-};
-
-// @public
-type SweepSkip =
-/** Another pool holds presence, so its locks are live and not ours to clear. */
-"another-pool-is-live"
-/** Presence is ours and there was nothing locked. The healthy case. */
-| "no-orphaned-locks";
 
 // @internal
 type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
@@ -521,39 +540,6 @@ type UploadStore = UploadReader & {
     recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
 };
 
-// @public
-type WdkAdapter = {
-    start(workflowId: string, args: unknown[]): Promise<string>;
-    getRun(runId: string): Promise<WdkRunRecord | undefined>;
-    listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
-    cancel(runId: string): Promise<boolean>;
-    wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
-    signal(token: string, payload: unknown): Promise<boolean>;
-    readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
-    streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
-    readOutput(runId: string): Promise<unknown>;
-};
-
-// @internal
-export function wdkAdapter(): WdkAdapter;
-
-// @public
-type WdkRunRecord = {
-    runId: string;
-    workflowName: string;
-    status: "pending" | "running" | "completed" | "failed" | "cancelled";
-    createdAt: Date | number;
-    error?: {
-        message: string;
-    } | undefined;
-};
-
-// @public
-type WdkStreamOptions = {
-    namespace?: string | undefined;
-    startIndex?: number | undefined;
-};
-
 // @internal
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void;
 
@@ -562,18 +548,6 @@ export const WORKFLOW_API_METHODS: readonly string[];
 
 // @internal
 export const WORKFLOW_CALLBACK_ROUTES: {
-    readonly flow: {
-        readonly transport: "http";
-        readonly path: "/.well-known/workflow/v1/flow";
-        readonly match: "exact";
-        readonly methods: readonly ["POST"];
-    };
-    readonly step: {
-        readonly transport: "http";
-        readonly path: "/.well-known/workflow/v1/step";
-        readonly match: "exact";
-        readonly methods: readonly ["POST"];
-    };
     readonly queue: {
         readonly transport: "http";
         readonly path: "/workflow-queue";
@@ -584,25 +558,21 @@ export const WORKFLOW_CALLBACK_ROUTES: {
         readonly transport: "http";
         readonly path: "/.well-known/workflow/v1/webhook";
         readonly match: "prefix";
-        readonly methods: "any";
+        readonly methods: readonly ["POST"];
     };
 };
 
 // @internal
-export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
+export const WORKFLOW_DATA_DIR_ENV = "AAI_WORKFLOW_DATA_DIR";
 
 // @internal
 export const WORKFLOW_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_workflow_.+$";
 
 // @internal
-export type WorkflowSurface = {
-    flow: FetchHandler;
-    step: FetchHandler;
-    webhook: (token: string, req: Request) => Promise<Response>;
-};
+export const WORKFLOW_QUEUE_PATH = "/workflow-queue";
 
 // @internal
-export type WorldKind = "platform" | "postgres" | "local";
+export function workflowJournalDdl(schema?: string): string[];
 
 // @public
 type WsSessionOptions = {

@@ -15,6 +15,7 @@ on:
       - "packages/aai/**"
       - "packages/aai-cli/**"
       - "packages/aai-guest/**"
+      - "packages/aai-runtime/**"
       - "packages/aai-templates/**"
       - "packages/aai-ui/**"
       - "pnpm-lock.yaml"

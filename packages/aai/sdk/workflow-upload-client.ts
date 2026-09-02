@@ -47,6 +47,7 @@
 
 import { progressOf, sendViaXhr, uploadXhrClass } from "./_upload-progress.ts";
 import { withResumes } from "./_upload-resume.ts";
+import { invariant } from "./invariant.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
 import type { UploadInfo } from "./step-uploads.ts";
@@ -282,8 +283,10 @@ function describeUpload(
  */
 function newClientUploadId(): string {
   const id = crypto.randomUUID().replaceAll("-", "");
-  if (!UPLOAD_TOKEN_RE.test(id))
-    throw new Error(`${UPLOAD_ERROR_LABEL}: could not mint an upload id`);
+  // The doc above says "asserted rather than assumed", and this is the assert:
+  // the grammar and the minter are both ours, so a miss is our bug and not an
+  // upload error the caller could act on.
+  invariant(UPLOAD_TOKEN_RE.test(id), "upload.id.minted", () => ({ id }));
   return id;
 }
 

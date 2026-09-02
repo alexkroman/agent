@@ -25,14 +25,16 @@
  * outlives the call is still found the way it always was, by correlation key on
  * the next call.
  *
- * ## The poll is the cheap kind
+ * ## The poll is SHARED, which is what made it cheap
  *
- * It runs INSIDE the guest, next to the world the run lives in — no HTTP hop
- * and no brokering per read, the same argument `workflow-api-wait.ts` makes for
- * its own loop. What differs is the interval: that one serves a caller holding
- * a request open and answers in 250 ms; this one is watching work measured in
- * minutes, so it reads every {@link RUN_NOTIFY_POLL_MS} and the cost is a few
- * reads per minute per watched run.
+ * This module used to argue the poll was cheap because it ran inside the guest,
+ * next to the world the run lives in. On a deployed agent every read is a
+ * `POST /:slug/workflow-journal`, and a run worth announcing is usually a run
+ * somebody is also WATCHING — a page open on the same run, at a tighter
+ * interval, in the same process. So the watch goes through
+ * `workflow-run-reads.ts`: {@link RUN_NOTIFY_POLL_MS} is the longest this is
+ * willing to wait, not a read of its own, and a run already being streamed
+ * costs this watcher nothing at all.
  *
  * ## What the agent is told
  *
@@ -42,21 +44,22 @@
  * both out of voice and, after a minute of conversation, often out of place.
  */
 
-import { sleep } from "@alexkroman1/aai/host-internal";
 import { capToolResult } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";
+import { isRunWatchClosed, type RunWatch, watchRun } from "./workflow-run-reads.ts";
 
 /**
- * How often a watched run is re-read.
+ * How long a watched run may go unread.
  *
  * Sized against what is being watched rather than against the poll's cost: the
  * runs worth announcing take minutes (research three model calls deep, a
- * sixty-segment transcription), so a caller cannot tell two seconds of
- * latency from none, and at this interval a five-minute run costs 150 local
- * reads.
+ * sixty-segment transcription), so a caller cannot tell two seconds of latency
+ * from none. It is the loosest of the three watchers' deadlines, which means a
+ * run anybody else is watching is read on their schedule and this one pays for
+ * nothing.
  */
 export const RUN_NOTIFY_POLL_MS = 2000;
 
@@ -127,31 +130,55 @@ export function createRunNotifier(opts: RunNotifierOptions): RunNotifier {
   // Keyed by run AND session: the same run legitimately reaches two sessions
   // (a caller who redialled), and only the pair identifies one announcement.
   const watching = new Set<string>();
+  // The live handles, so `stop()` can leave the shared reads rather than let
+  // each watch notice on its next observation: a teardown that takes one more
+  // read per watched run is a teardown that reads a database on the way out.
+  const watches = new Set<RunWatch>();
   let stopped = false;
+
+  /**
+   * Hold for this run's next shared observation, then decide whether to keep
+   * watching.
+   *
+   * Its own function so {@link poll} is the deadline loop and nothing else.
+   */
+  async function observe(request: WatchRequest, watch: RunWatch): Promise<"wait" | "stop"> {
+    let run: WorkflowRunSnapshot | undefined;
+    try {
+      // The WAIT and the read in one: this is the interval, which is why there
+      // is no `sleep` here any more. A watcher of the same run with a tighter
+      // deadline pulls the observation in; nothing pushes it out.
+      run = await watch.next(pollMs);
+    } catch (err: unknown) {
+      if (stopped || isRunWatchClosed(err)) return "stop";
+      // A transient read failure is not a reason to abandon a run somebody is
+      // waiting on — the next poll is two seconds away.
+      opts.logger.debug?.("Workflow notify read failed", {
+        runId: request.runId,
+        error: errorMessage(err),
+      });
+      return "wait";
+    }
+    if (stopped) return "stop";
+    // A run that has GONE (a redeployed agent on a fresh database) is not
+    // coming back, and announcing nothing is the right answer.
+    if (!run) return "stop";
+    if (!isTerminal(run)) return "wait";
+    announce(request, run);
+    return "stop";
+  }
 
   async function poll(request: WatchRequest): Promise<void> {
     const deadline = Date.now() + maxMs;
-    while (!stopped && Date.now() < deadline) {
-      await sleep(pollMs);
-      if (stopped) return;
-      let run: WorkflowRunSnapshot | undefined;
-      try {
-        run = await opts.client.get(request.runId);
-      } catch (err: unknown) {
-        // A transient read failure is not a reason to abandon a run somebody is
-        // waiting on — the next poll is two seconds away.
-        opts.logger.debug?.("Workflow notify read failed", {
-          runId: request.runId,
-          error: errorMessage(err),
-        });
-        continue;
+    const watch = watchRun(opts.client, request.runId);
+    watches.add(watch);
+    try {
+      while (!stopped && Date.now() < deadline) {
+        if ((await observe(request, watch)) === "stop") return;
       }
-      // A run that has GONE (a redeployed agent on a fresh database) is not
-      // coming back, and announcing nothing is the right answer.
-      if (!run) return;
-      if (!isTerminal(run)) continue;
-      announce(request, run);
-      return;
+    } finally {
+      watches.delete(watch);
+      watch.close();
     }
   }
 
@@ -189,6 +216,8 @@ export function createRunNotifier(opts: RunNotifierOptions): RunNotifier {
     stop(): void {
       stopped = true;
       watching.clear();
+      for (const watch of watches) watch.close();
+      watches.clear();
     },
     get size(): number {
       return watching.size;

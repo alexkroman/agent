@@ -25,6 +25,26 @@ const workflowToken = {
   description: "Bearer for an agent that sets AAI_WORKFLOW_API_TOKEN",
 } as const;
 
+/**
+ * `--agent <url>` — target a server the caller is running THEMSELVES.
+ *
+ * The workflow API is the one agent surface that is fully live under `aai dev`,
+ * and until this flag existed there was no way to say so: every verb resolved a
+ * platform origin plus a PUBLISHED slug, so an undeployed project was told to
+ * `aai publish` while the runs it asked about were answering on localhost. A
+ * dev server also has no slug segment at all (`createServer` mounts the API on
+ * the origin), so a different `--server` could not express it either.
+ *
+ * Separate from `--server` rather than a mode of it, because the two carry
+ * different credentials: `--server` is paired with the user's platform API key
+ * and is trust-checked for that reason, where this reaches a bare agent and
+ * sends nothing but `--token`. See `workflow.ts`.
+ */
+const workflowAgent = {
+  type: "string",
+  description: "Base URL of a server you are running (e.g. `aai dev` on http://localhost:3000)",
+} as const;
+
 /** The positional every run-scoped verb takes. */
 const runIdArg = { type: "positional", description: "Run id", required: true } as const;
 
@@ -37,6 +57,7 @@ const workflowArgs = {
   server: sharedArgs.server,
   json: sharedArgs.json,
   token: workflowToken,
+  agent: workflowAgent,
 } as const;
 
 /**
@@ -52,7 +73,7 @@ const workflowList = defineExec({
   cwd: WORKFLOW_CWD,
   async run({ args, cwd }) {
     const { executeWorkflowList } = await import("./workflow.ts");
-    return executeWorkflowList(cwd, { server: args.server, token: args.token });
+    return executeWorkflowList(cwd, { server: args.server, token: args.token, agent: args.agent });
   },
 });
 
@@ -75,6 +96,7 @@ const workflowRuns = defineExec({
     return executeWorkflowRuns(cwd, args.workflow, {
       server: args.server,
       token: args.token,
+      agent: args.agent,
       limit,
     });
   },
@@ -89,6 +111,7 @@ const workflowShow = defineExec({
     return executeWorkflowShow(cwd, args.runId, {
       server: args.server,
       token: args.token,
+      agent: args.agent,
     });
   },
 });
@@ -102,6 +125,7 @@ const workflowCancel = defineExec({
     return executeWorkflowCancel(cwd, args.runId, {
       server: args.server,
       token: args.token,
+      agent: args.agent,
     });
   },
 });

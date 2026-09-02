@@ -30,6 +30,8 @@
  * @module
  */
 
+import { invariant } from "@alexkroman1/aai/internal";
+
 /**
  * One starter's ask, as facts about the agent it should produce.
  *
@@ -247,15 +249,24 @@ export const EXPECTATIONS: readonly Expectation[] = [
 /**
  * A capture group's text.
  *
- * Every group read through this helper is MANDATORY in its pattern, so the
- * fallback is unreachable. It exists because `noUncheckedIndexedAccess` types
- * an index into a match as possibly-undefined, and the alternative at a dozen
- * call sites is a non-null assertion each — a suppression per line, for a
- * condition the regex already rules out. Genuinely OPTIONAL groups (the
- * quote-style alternation in {@link toolDescriptionsFromSource}) coalesce at
- * their call site instead, where the choice is the point.
+ * Every group read through this helper is MANDATORY in its pattern, so a miss
+ * cannot happen. It exists because `noUncheckedIndexedAccess` types an index
+ * into a match as possibly-undefined, and the alternative at a dozen call sites
+ * is a non-null assertion each — a suppression per line, for a condition the
+ * regex already rules out. Genuinely OPTIONAL groups (the quote-style
+ * alternation in {@link toolDescriptionsFromSource}) coalesce at their call
+ * site instead, where the choice is the point.
+ *
+ * An {@link invariant} rather than the `?? ""` this used to be: the patterns
+ * and their groups are both declared in this file, so a miss is a pattern
+ * edited out from under a reader — and an empty string is that bug reported as
+ * an agent that failed an expectation.
  */
-const group = (m: RegExpMatchArray, i: number): string => m[i] ?? "";
+const group = (m: RegExpMatchArray, i: number): string => {
+  const text = m[i];
+  invariant(text !== undefined, "starter.match.group", () => ({ i, matched: m[0] }));
+  return text;
+};
 
 /**
  * `test_agent` reports the loaded config as prose. Parsing it is how the

@@ -30,12 +30,11 @@
  * complete files (parts of a multi-file upload, {@link stepSpeak}'s output)
  * passes them through untouched.
  *
- * ```ts no-check
+ * ```ts
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  * import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
  *
  * export async function transcribeClip(uploadId: string) {
- *   "use step";
  *   const clip = await readUpload(uploadId);
  *   const { text } = await stepTranscribeSync(clip.bytes).catch(throwStepError);
  *   return text;
@@ -106,8 +105,8 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
 /**
  * Transcribe one complete audio file.
  *
- * **From a `"use step"` body, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
- * It is this call plus `throwStepError`, and the DevKit decides its retry policy
+ * **From a step, prefer `stepTranscribeSyncClassified` (`@alexkroman1/aai/step-errors`).**
+ * It is this call plus `throwStepError`, and the engine decides its retry policy
  * from WHICH error a step throws: raw, a terminal failure burns every remaining
  * attempt and a rate limit backs off for one second while the delay the far side
  * named sits unread. Reach for the raw call where the failure is not simply a
@@ -151,7 +150,6 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
  * import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
  *
  * export async function transcribeClip(uploadId: string): Promise<string> {
- *   "use step";
  *   const clip = await readUpload(uploadId);
  *   const { text } = await stepTranscribeSync(clip.bytes);
  *   return text;

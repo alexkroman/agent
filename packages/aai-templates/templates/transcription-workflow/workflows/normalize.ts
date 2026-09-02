@@ -71,34 +71,22 @@
 
 import { basename, extname, join } from "node:path";
 import { probeMedia, runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
-import { readUpload, report, uploadInfo } from "@alexkroman1/aai/step";
+import { readUpload, report, requireCompleteUpload } from "@alexkroman1/aai/step";
 import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
+import {
+  heavierThanNormalizedFormat,
+  NORMALIZED_CHANNELS,
+  NORMALIZED_SAMPLE_RATE,
+} from "./downsample.ts";
 import { HEADER_PROBE_BYTES, parseWav, UnsupportedRecordingError } from "./wav.ts";
 
-/**
- * The rate everything is converted TO.
- *
- * 16 kHz because that is what speech models are trained at — a higher rate
- * carries no information the decoder uses and costs proportional bytes in a
- * fan-out whose width is bounded by bytes in flight (`BYTES_IN_FLIGHT` in
- * `transcribe.ts`). A converted two-hour recording is 230 MB of 16 kHz mono
- * against 1.4 GB of 48 kHz stereo, which is the difference between a fan-out
- * that saturates on width and one that saturates on the queue.
- */
-export const NORMALIZED_SAMPLE_RATE = 16_000;
-
-/**
- * Channels everything is converted TO.
- *
- * Mono, and it is a real loss rather than a free win: a stereo call recording
- * with one party per channel is exactly the file where the channels are the most
- * interesting thing about it, and downmixing throws that away. This desk
- * transcribes rather than diarizes, so it takes the 2x saving; a desk that wants
- * the speakers apart splits the channels first and transcribes each one.
- */
-export const NORMALIZED_CHANNELS = 1;
+// Re-exported rather than re-declared: they are still this module's vocabulary —
+// the `runFfmpeg` call below converts TO them — and they live in `downsample.ts`
+// only because the streaming flow needs them from a module that reaches no
+// `node:` builtin. See that file's module doc.
+export { NORMALIZED_CHANNELS, NORMALIZED_SAMPLE_RATE } from "./downsample.ts";
 
 /**
  * How long a conversion may run before it is killed.
@@ -134,9 +122,10 @@ export type NormalizedRecording = {
  * file that already exists instead of paying for a second one.
  */
 export async function normalizeRecording(uploadId: string): Promise<NormalizedRecording> {
-  "use step";
-
-  const stored = await uploadInfo(uploadId);
+  // `requireCompleteUpload`, not `uploadInfo`: `size` is the readable PREFIX, and
+  // every judgement below — cuttable, heavier-per-second, the byte count copied to
+  // disk — is about the WHOLE file.
+  const stored = await requireCompleteUpload(uploadId);
   const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
 
   if (cuttable(head.bytes, stored.size) && !heavierThanNormalized(head.bytes, stored.size)) {
@@ -227,17 +216,6 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
 }
 
 /**
- * Retries beyond the default 3.
- *
- * Not because a conversion is flaky — a corrupt file fails identically forever,
- * and `throwFfmpegStepError` is what stops the DevKit retrying that. It is the
- * two I/O halves that are worth another attempt: this step reads a whole
- * recording out of the store and writes a whole one back, and either can lose a
- * connection on a file this size.
- */
-normalizeRecording.maxRetries = 5;
-
-/**
  * Whether `splitRecording` will be able to read this header.
  *
  * The question, not a guess at it — see the module doc. Only
@@ -266,7 +244,7 @@ export function cuttable(head: Uint8Array, totalBytes: number): boolean {
  * so six times the upload per request is the difference between segments landing
  * in single digits and segments landing at 22-28s — which is not a slow run, it
  * is a run where the first straggler past 30s takes the whole thing down (a
- * segment burns `maxRetries`, the body throws, and every sibling still in flight
+ * segment burns its attempts, the body throws, and every sibling still in flight
  * is discarded and re-billed on the resume).
  *
  * This is NOT the "second opinion" the module doc warns about. That warning is
@@ -289,8 +267,7 @@ export function cuttable(head: Uint8Array, totalBytes: number): boolean {
  * answering.
  */
 export function heavierThanNormalized(head: Uint8Array, totalBytes: number): boolean {
-  const format = parseWav(head, totalBytes);
-  return format.sampleRate > NORMALIZED_SAMPLE_RATE || format.channels > NORMALIZED_CHANNELS;
+  return heavierThanNormalizedFormat(parseWav(head, totalBytes));
 }
 
 /** `41:20 of aac`, or as much of that as ffprobe would say. */

@@ -31,7 +31,11 @@ describe("the route tables", () => {
     // The floor. An extraction that stopped finding routes would make every
     // other test here pass over an empty list.
     expect(Object.keys(SERVER_ROUTES).length).toBeGreaterThanOrEqual(7);
-    expect(Object.keys(WORKFLOW_CALLBACK_ROUTES).length).toBeGreaterThanOrEqual(4);
+    // Two, down from four: the DevKit's `flow` and `step` callbacks went with it.
+    // The floor moves with the table rather than being relaxed to zero — its job
+    // is to stop an extraction that found NOTHING from making every other case
+    // here pass over an empty list.
+    expect(Object.keys(WORKFLOW_CALLBACK_ROUTES).length).toBeGreaterThanOrEqual(2);
   });
 
   test("every path is absolute and carries no query or trailing slash", () => {
@@ -82,14 +86,35 @@ describe("routeMatches", () => {
   test("a method the route does not answer does not match", () => {
     expect(routeMatches(SERVER_ROUTES.health, HEALTH_PATH, "POST")).toBe(false);
     expect(
-      routeMatches(WORKFLOW_CALLBACK_ROUTES.flow, WORKFLOW_CALLBACK_ROUTES.flow.path, "GET"),
+      routeMatches(WORKFLOW_CALLBACK_ROUTES.queue, WORKFLOW_CALLBACK_ROUTES.queue.path, "GET"),
     ).toBe(false);
   });
 
   test('a route declared "any" answers every verb', () => {
-    const url = `${WORKFLOW_WEBHOOK_PATH}/tok`;
+    // Kept as a property of `routeMatches` itself. The webhook used to be the
+    // one route declaring it — see below for why it no longer may — and with no
+    // declared instance left this branch would go unexercised.
+    const anyVerb: ServerRoute = {
+      transport: "http",
+      path: "/anything",
+      match: "exact",
+      methods: "any",
+    };
     for (const method of ["GET", "POST", "PUT", "DELETE", "PATCH"]) {
-      expect(routeMatches(WORKFLOW_CALLBACK_ROUTES.webhook, url, method), method).toBe(true);
+      expect(routeMatches(anyVerb, "/anything", method), method).toBe(true);
+    }
+  });
+
+  test("the webhook answers POST and nothing else", () => {
+    // A delivery is PERMANENT — it resolves a waitpoint and closes the hook —
+    // so the verb gate is a security control, not a nicety: while this route
+    // declared `"any"`, a bare `GET` from a link-preview fetcher or a URL
+    // scanner resolved an approval workflow with no human involved. A delivery
+    // carries a payload, so it is a verb that has a body.
+    const url = `${WORKFLOW_WEBHOOK_PATH}/tok`;
+    expect(routeMatches(WORKFLOW_CALLBACK_ROUTES.webhook, url, "POST")).toBe(true);
+    for (const method of ["GET", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"]) {
+      expect(routeMatches(WORKFLOW_CALLBACK_ROUTES.webhook, url, method), method).toBe(false);
     }
   });
 

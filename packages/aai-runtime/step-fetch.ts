@@ -34,12 +34,14 @@ import {
   type PinnedRequestInit,
   pinnedFetch,
   STEP_FETCH_CONNECTIONS,
+  STEP_FETCH_INACTIVITY_MS,
   STEP_FETCH_KEEP_ALIVE_MS,
   STEP_FETCH_PIPELINING,
 } from "@alexkroman1/aai/host-internal";
 import type { StepFetchInit } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createHttp1Pool } from "./_http1-agent.ts";
+import { currentRun } from "./workflow-run-context.ts";
 
 /**
  * A published step `fetch`, with the pool behind it.
@@ -76,14 +78,19 @@ export function createStepFetch(): StepFetchHandle {
     connections: STEP_FETCH_CONNECTIONS,
     keepAliveTimeout: STEP_FETCH_KEEP_ALIVE_MS,
     pipelining: STEP_FETCH_PIPELINING,
-    // A step owns its own deadline — an `AbortSignal` it passes, or the
-    // DevKit's step budget. undici's default 300s header timeout and 300s body
-    // timeout would otherwise cut a long provider call off with a transport
-    // error the caller cannot classify, which is the failure mode this whole
-    // module exists to remove. The runtime's own egress pool does NOT do this —
-    // see `_egress-fetch.ts`.
-    headersTimeout: 0,
-    bodyTimeout: 0,
+    // A REQUEST THAT STOPS PROGRESSING is bounded here, and a request's total
+    // duration is bounded by the caller's own `AbortSignal`. Both were `0` — off
+    // — on the argument that a step owns its own deadline, "an `AbortSignal` it
+    // passes, or the DevKit's step budget"; the second clause went with the
+    // DevKit and was the only half that covered a step passing no signal. See
+    // `STEP_FETCH_INACTIVITY_MS` for why an inactivity bound needs no
+    // per-file tuning where a total-duration one would, and for the number.
+    //
+    // The runtime's own egress pool leaves undici's DEFAULTS instead, which are
+    // tighter — see `_egress-fetch.ts`; the difference is now the value rather
+    // than whether there is one at all.
+    headersTimeout: STEP_FETCH_INACTIVITY_MS,
+    bodyTimeout: STEP_FETCH_INACTIVITY_MS,
   });
   const dispatcher = pool.dispatcher;
   const fetch: StepFetch = (url: string, init: StepFetchInit = {}): Promise<Response> => {
@@ -99,7 +106,7 @@ export function createStepFetch(): StepFetchHandle {
         // `Headers` widened in by a looser caller type cannot ride through.
         headers: init.headers && { ...init.headers },
         body: init.body,
-        signal: init.signal,
+        signal: stepSignal(init.signal),
         // Required by undici (and by the spec) for a streaming request body, and
         // REFUSED alongside a plain one — so it is set only when the body really is
         // an iterable. A step sending a stored upload window by window is the case
@@ -114,6 +121,31 @@ export function createStepFetch(): StepFetchHandle {
   // that was about to finish. Idle keep-alive sockets — the thing a rebuild
   // strands — go either way.
   return { fetch, close: pool.close };
+}
+
+/**
+ * The caller's signal, COMBINED with the walk's.
+ *
+ * The engine hands a step body no `AbortSignal` — deliberately, because
+ * `stepFetch` is reached from inside a step's own helpers and a parameter would
+ * have to be threaded through every one of them (see `RunContext["step"]`). So
+ * the walk's signal is read out of the run context here, which is the one place
+ * every step's outbound HTTP already goes through.
+ *
+ * What it buys is that a CANCEL reaches a step's I/O. Without it a cancelled run
+ * — or a delivery whose caller hung up — went on uploading a recording nobody
+ * was waiting for until the process died, and `attemptLoop`'s abort arm could
+ * only unwind once the request it could not see had finished.
+ *
+ * `AbortSignal.any` rather than replacing either: a caller's own deadline still
+ * fires first, and sources are held weakly so there is no unlink bookkeeping.
+ * Outside a run — a step called directly from a spec — there is no walk and the
+ * caller's signal passes through untouched.
+ */
+function stepSignal(callerSignal: AbortSignal | undefined): AbortSignal | undefined {
+  const walk = currentRun()?.step?.signal;
+  if (!walk) return callerSignal;
+  return callerSignal ? AbortSignal.any([callerSignal, walk]) : walk;
 }
 
 /**

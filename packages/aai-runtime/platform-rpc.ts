@@ -55,10 +55,12 @@
  * @module platform-rpc
  */
 
+import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { egressFetch } from "./_egress-fetch.ts";
 import { type PlatformEndpoint, type PlatformRoute, platformUrl } from "./platform-endpoint.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "./workflow-api-error-status.ts";
 
 /** One POST to the platform, as its caller declares it. */
 export type PlatformCall = {
@@ -139,12 +141,39 @@ export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): 
     // is also why the guard, rather than the ORDER, is what keeps a caller's own
     // error independent of whether the reply could be read.
     const detail = await res.text().catch(() => "");
-    throw (
-      call.errorFor?.(res.status, detail) ??
-      new Error(`${call.label} answered HTTP ${res.status}: ${detail.slice(0, 500)}`)
-    );
+    throw call.errorFor?.(res.status, detail) ?? statusError(call.label, res.status, detail);
   }
   return await res.text();
+}
+
+/**
+ * The generic error for a non-2xx, CODED when the status says to come back.
+ *
+ * The message is unchanged and is still where a reader looks; what is new is
+ * that a retryable status is machine-readable. Without it the whole family
+ * arrived at the workflow API's classification table as a plain `Error`, was
+ * declined by every recognizer there, and a platform shortage reached the
+ * browser as `500 Internal server error` — see {@link PLATFORM_UNAVAILABLE_CODE}
+ * for why that is the one answer this condition must not get.
+ *
+ * `RETRYABLE_STATUS` is the SDK's own set rather than a list written here, for
+ * the reason `_upload-blobs-brokered.ts` gives for taking it: the two ends of a
+ * platform call cannot be allowed to disagree about which statuses mean "later".
+ * A status outside it stays code-less on purpose — a 400, 401, 404 or 501 will
+ * be the same answer next time, and a 503 telling a page to retry one forever is
+ * strictly worse than the 500 it gets.
+ */
+function statusError(label: string, status: number, detail: string): Error {
+  const err = new Error(`${label} answered HTTP ${status}: ${detail.slice(0, 500)}`);
+  // A property rather than a subclass, for the reason `workflow-run-reads.ts`
+  // spells out: this module has one instance per copy of the package in a
+  // deployed guest, so a class declared here would have two identities and the
+  // harness's copy could not recognise what the bundle's copy threw. Every
+  // recognizer in the classification table reads a `code`, which is why that is
+  // the property.
+  return RETRYABLE_STATUS.has(status)
+    ? Object.assign(err, { code: PLATFORM_UNAVAILABLE_CODE })
+    : err;
 }
 
 /**

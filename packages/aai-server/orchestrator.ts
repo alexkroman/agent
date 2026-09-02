@@ -87,7 +87,6 @@ import {
   handleClientAsset,
 } from "./transport-websocket.ts";
 import { createMemoryUploadBytes, type UploadBytes } from "./upload-bytes.ts";
-import type { PlatformWorldStorage } from "./workflow-storage-world.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
@@ -181,12 +180,6 @@ export type OrchestratorOpts = {
    * than being stored somewhere it will not be found.
    */
   uploadBytes?: UploadBytes;
-  /**
-   * The DevKit's world on the platform's own database (workflow-storage-world.ts),
-   * which is where a durable run's journal lives once no agent has a database of
-   * its own. Absent means this deployment serves no run storage.
-   */
-  runStorage?: PlatformWorldStorage;
   /**
    * True once shutdown has begun. Fails `/health` so the platform's proxy
    * stops routing here. (Upgrades on `/:slug/websocket` are pure handshake
@@ -384,7 +377,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     uploadBytes: opts.uploadBytes ?? createMemoryUploadBytes(),
     ...omitUndefined({ guestFetch: opts.guestFetch }),
     ...omitUndefined({ adminDb: opts.adminDb }),
-    ...omitUndefined({ runStorage: opts.runStorage }),
     ...omitUndefined({ workflowRateLimiter: opts.workflowRateLimiter }),
     ...omitUndefined({ workflowStartRateLimiter: opts.workflowStartRateLimiter }),
   });

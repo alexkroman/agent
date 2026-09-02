@@ -56,6 +56,9 @@ export function createStubWorkflows(overrides?: Partial<WorkflowClient>): Workfl
 export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 
 // @public
+export function createWorkflowCtx(options?: WorkflowCtxOptions): WorkflowCtxRecorder;
+
+// @public
 type DelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @public
@@ -126,6 +129,9 @@ type GenerateResult = {
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -172,6 +178,18 @@ interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+export type RecordedSleep = {
+    until: number | Date;
+    correlationId?: string | undefined;
+};
+
+// @public
+export type RecordedStep = {
+    name: string;
+    maxAttempts?: number | undefined;
+};
 
 // @public
 export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
@@ -285,6 +303,10 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -389,6 +411,11 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 type SessionEventType = SessionEvent["type"];
 
 // @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
 type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
@@ -438,6 +465,11 @@ interface StateProjection<V = unknown> {
     readonly create: () => unknown;
     readonly key: string;
 }
+
+// @public
+type StepOptions = {
+    maxAttempts?: number;
+};
 
 // @public
 type StreamOptions = {
@@ -753,14 +785,17 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
 
 // @public
-type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 type WorkflowClient = {
@@ -781,6 +816,32 @@ type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public
+export type WorkflowCtxOptions = {
+    runId?: string;
+    workflow?: string;
+    runSteps?: boolean;
+    results?: Record<string, unknown>;
+    hooks?: Record<string, unknown>;
+};
+
+// @public
+export type WorkflowCtxRecorder = WorkflowCtx & {
+    readonly steps: RecordedStep[];
+    readonly slept: RecordedSleep[];
+    readonly waited: string[];
 };
 
 // @public

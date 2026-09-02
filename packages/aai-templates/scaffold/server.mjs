@@ -20,6 +20,7 @@ import { parseEnv } from "node:util";
 import {
   createAgentServer,
   ensureSessionStateSchema,
+  ensureWorkflowJournalSchema,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
@@ -60,20 +61,6 @@ if (!existsSync(workerPath)) {
 // Windows, where a bare POSIX-looking path is not a valid module specifier.
 const worker = await import(pathToFileURL(workerPath).href);
 const agent = worker.default;
-
-/**
- * The compiled workflow surface, carried on the bundle as two string exports.
- *
- * A `"use workflow"` body has to go through the DevKit's compiler, which happens
- * at BUILD time — a deployed agent is handed one ESM string and has no bundler —
- * so `aai build` leaves the result here as data. Passing them is what makes
- * durable workflows actually run: without them the server accepts a run and no
- * world is ever started to execute it, so it sits `pending` with no error
- * anywhere. Both are absent for a project with no `workflows/` directory.
- */
-const workflowCode =
-  typeof worker.__aaiWorkflowCode === "string" ? worker.__aaiWorkflowCode : undefined;
-const stepCode = typeof worker.__aaiStepCode === "string" ? worker.__aaiStepCode : undefined;
 
 /**
  * Parse a dotenv-syntax file into a record; `{}` when it does not exist.
@@ -167,6 +154,10 @@ const publicUrl = process.env.PUBLIC_URL?.trim();
  */
 if (env.DATABASE_URL) {
   await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: console });
+  // And the durable-run journal's, which is a separate set of tables owned by
+  // the same deployment. Without it a project with a `DATABASE_URL` boots
+  // claiming durable runs and fails on the first one.
+  await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: console });
 }
 
 const server = createAgentServer({
@@ -178,16 +169,14 @@ const server = createAgentServer({
   providerEnv: withHostCredentialFallback(env),
   clientDir: resolveClientDir(),
   ...(publicUrl ? { publicUrl } : {}),
-  // Durable workflows. A `DATABASE_URL` in `env` puts the runs in Postgres and
-  // they survive a restart; without one they live in a per-process directory and
-  // do not, which is the same trade `aai dev` makes.
+  // Durable workflows need nothing passed here. A `DATABASE_URL` in `env` puts
+  // the runs in Postgres and they survive a restart; without one they live in a
+  // per-process directory and do not, which is the same trade `aai dev` makes.
   //
-  // Passed straight through rather than conditionally spread: both fields accept
-  // `undefined` explicitly, so a project with no `workflows/` directory needs no
-  // guard here — and a truthiness-guarded spread is what `guard-invariants`
-  // rule 22 counts.
-  workflowCode,
-  stepCode,
+  // Two options used to sit here — the compiled workflow surface, carried on the
+  // bundle as `__aaiWorkflowCode`/`__aaiStepCode` because a `"use workflow"` body
+  // had to go through a compiler at BUILD time. The engine reads the agent's own
+  // `workflows` declaration instead, so there is no artifact to hand over.
 });
 
 // Loopback by default: this server has no request authentication of its own,

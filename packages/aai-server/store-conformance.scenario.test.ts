@@ -39,6 +39,7 @@ import { createPgAgentRows } from "./agent-store.ts";
 import { createPgChatStore } from "./chat-store.ts";
 import { createPgRateLimiter } from "./rate-limit.ts";
 import { createVaultSecretStore, type SqlExec } from "./secret-store.ts";
+import { CONFORMANCE_PREFIX, conformanceLike } from "./store-conformance.ts";
 import {
   agentRowsConformance,
   chatStoreConformance,
@@ -65,18 +66,22 @@ describeWithStack("store conformance: the Supabase stack arm", () => {
   });
 
   afterAll(async () => {
-    // Everything this file writes is keyed `conf-*`. Workspaces cascade to their
-    // chats and sessions (`on delete cascade`), so the workspace sweep covers
-    // three tables; agents, rate-limit rows and Vault secrets are their own.
-    await sql("delete from aai_platform.studio_workspaces where scope like 'conf-%'");
-    await sql("delete from aai_platform.agents where slug like 'conf-%'");
-    await sql("delete from aai_platform.studio_rate_limits where key like 'conf-%'");
-    await sql(
-      `select vault.delete_secret(name) from vault.decrypted_secrets where name like 'conf-%'`,
-    ).catch(async () => {
+    // Everything this file writes carries THIS PROCESS's prefix, and the sweep
+    // matches nothing else — `conf-%` reached the studio package's suite, which
+    // runs in parallel against this same database. See `CONFORMANCE_PREFIX`.
+    // Workspaces cascade to their chats and sessions (`on delete cascade`), so
+    // the workspace sweep covers three tables; agents, rate-limit rows and Vault
+    // secrets are their own.
+    const mine = conformanceLike();
+    await sql("delete from aai_platform.studio_workspaces where scope like $1", [mine]);
+    await sql("delete from aai_platform.agents where slug like $1", [mine]);
+    await sql("delete from aai_platform.studio_rate_limits where key like $1", [mine]);
+    await sql("select vault.delete_secret(name) from vault.decrypted_secrets where name like $1", [
+      mine,
+    ]).catch(async () => {
       // Older Vault has no `delete_secret`; the store's own delete is the
       // fallback and does the same thing one row at a time.
-      const rows = await sql("select name from vault.decrypted_secrets where name like 'conf-%'");
+      const rows = await sql("select name from vault.decrypted_secrets where name like $1", [mine]);
       const store = createVaultSecretStore(sql);
       for (const row of rows) await store.delete(String(row.name));
     });
@@ -127,7 +132,7 @@ describeWithStack("store conformance: the Supabase stack arm", () => {
       // window — and impossible to express in the shared case list, which is the
       // finding rather than an inconvenience.
       const limiter = createPgRateLimiter(sql, { name: "conformance", limit: 1, windowMs: 300 });
-      const key = `conf-rl-elapsed-${process.pid}-${Date.now()}`;
+      const key = `${CONFORMANCE_PREFIX}rl-elapsed-${Date.now()}`;
       expect(await limiter.check(key)).toEqual({ ok: true });
       expect((await limiter.check(key)).ok).toBe(false);
       await sleep(400);

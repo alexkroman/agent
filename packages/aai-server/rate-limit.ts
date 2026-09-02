@@ -19,8 +19,11 @@
  * - `createPgRateLimiter` — windows in `aai_platform.studio_rate_limits`
  *   over the platform's Supabase Postgres, so a limit holds across replicas
  *   instead of multiplying by the replica count. That difference is the whole
- *   point for an ABUSE limit: with `MAX_CONTAINERS = 10`, a per-replica cap
- *   is a cap of ten times the number written down. One atomic upsert per
+ *   point for an ABUSE limit: at `MAX_CONTAINERS` (3, in modal_deploy.py), a
+ *   per-replica cap is a cap of three times the number written down — and
+ *   choosing it is a COMPOSITION decision, so see `createPgAgentRateLimiters`
+ *   below for how the agent surface's three are handed over as one thing, and
+ *   what it cost when they were handed over one at a time. One atomic upsert per
  *   check; a database error propagates (fail-closed) rather than silently
  *   unmetering the route. Expired rows are swept by pg_cron (pg-cron.ts).
  *
@@ -29,6 +32,7 @@
  * is what lets a second consumer share the table without one.
  */
 
+import { invariant } from "@alexkroman1/aai/internal";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -164,7 +168,16 @@ export function createPgRateLimiter(
     async check(key) {
       const rows = await sql(CHECK_SQL, [options.name, key, options.windowMs]);
       const row = rows[0];
-      if (!row) throw new Error(`Rate-limit upsert returned no row for ${options.name}/${key}`);
+      // `CHECK_SQL` is an upsert with a `returning` clause and no `where` on the
+      // insert, so it answers exactly one row for every input — a property of a
+      // statement written right here, not of what the caller asked for. The
+      // index read is only unchecked because `noUncheckedIndexedAccess` cannot
+      // see that.
+      invariant(row !== undefined, "ratelimit.upsert.row", () => ({
+        limiter: options.name,
+        key,
+        rows: rows.length,
+      }));
       const count = Number(row.count);
       if (count <= options.limit) return { ok: true };
       return {
@@ -172,5 +185,50 @@ export function createPgRateLimiter(
         retryAfterSeconds: Math.max(1, Number(row.retry_after_seconds) || 1),
       };
     },
+  };
+}
+
+/**
+ * Every limiter the AGENT surface runs, built together — the shape
+ * `createOrchestrator` takes, so a composition root spreads it and is done.
+ *
+ * **It is one function because the alternative was measured and failed.** The
+ * three windows above are the orchestrator's whole rate-limit policy, and the
+ * composition root (`aai-studio-server/index.ts`) passed exactly ONE of them:
+ * `deployRateLimiter`, wired by the audit that added it. The two workflow
+ * limiters landed later with their own `?:` options, their own middleware and
+ * their own tests, and nothing connected them to the entry — so in production
+ * `createWorkflowRateLimitMw` fell through to `?? createRateLimiter(…)` and the
+ * `/:slug/workflows/*` surface was metered PER REPLICA. At `MAX_CONTAINERS = 3`
+ * that is a 600/IP window enforcing 1,800, and the tighter start limit — the one
+ * bounding the only route whose cost outlives its request — enforcing 180 rather
+ * than 60. Every test passed: the middleware's own specs inject limiters, so they
+ * never see the default, and the entry has no spec at all.
+ *
+ * A per-limiter builder makes forgetting the next one free. One builder makes the
+ * whole policy one spread at the call site, and `rate-limit.test.ts` reads
+ * `orchestrator.ts` for `RateLimiter` options this does not answer — so the gate
+ * holds for the NEXT one too, which a type cannot promise while every option is
+ * optional with an in-memory default behind it.
+ *
+ * Without a platform database there is no `sql` and no caller: one process means
+ * the in-memory default IS fleet-wide, which is why the entry passes nothing
+ * rather than passing a memory-backed copy of the same thing.
+ */
+export function createPgAgentRateLimiters(sql: SqlExec): {
+  deployRateLimiter: RateLimiter;
+  workflowRateLimiter: RateLimiter;
+  workflowStartRateLimiter: RateLimiter;
+} {
+  return {
+    deployRateLimiter: createPgRateLimiter(sql, { name: "deploy-ip", ...DEPLOY_IP_RATE_LIMIT }),
+    workflowRateLimiter: createPgRateLimiter(sql, {
+      name: "workflow-ip",
+      ...WORKFLOW_IP_RATE_LIMIT,
+    }),
+    workflowStartRateLimiter: createPgRateLimiter(sql, {
+      name: "workflow-start-ip",
+      ...WORKFLOW_START_IP_RATE_LIMIT,
+    }),
   };
 }

@@ -18,16 +18,25 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
  * this hop, so passing it on makes the guest's view of its caller a description
  * of the platform.
  *
- * **One route deliberately passes more, and says why.** The durable-run webhook
- * delivers a THIRD PARTY's request into the run: `resumeWebhook` hands the whole
- * `Request` to `resumeHook`, which dehydrates it as the hook's payload, so a
- * workflow verifying `Stripe-Signature` / `X-Hub-Signature-256` needs headers
- * this module cannot enumerate. Allow-listing there would break the feature's
- * headline use case (a payment callback) while an unknown provider header
- * silently disappeared. So that one route uses {@link passThroughHeaders}, whose
- * strip set is {@link NEVER_FORWARDED} — the hop-by-hop headers PLUS the three
+ * **One DIRECTION of one route deliberately passes more, and says why.** The
+ * durable-run webhook delivers a THIRD PARTY's request into the run:
+ * `resumeWebhook` hands the whole `Request` to `resumeHook`, which dehydrates it
+ * as the hook's payload, so a workflow verifying `Stripe-Signature` /
+ * `X-Hub-Signature-256` needs headers this module cannot enumerate.
+ * Allow-listing there would break the feature's headline use case (a payment
+ * callback) while an unknown provider header silently disappeared. So that
+ * route's REQUEST uses {@link passThroughHeaders}, whose strip set is
+ * {@link NEVER_FORWARDED} — the hop-by-hop headers PLUS the three
  * credential-bearing ones above, which is the same rule the allow-list encodes,
  * read from the other end.
+ *
+ * **Its RESPONSE does not.** Both directions of both hops are allow-lists now
+ * ({@link GUEST_API_RESPONSE_HEADERS}, {@link GUEST_WEBHOOK_RESPONSE_HEADERS}),
+ * and the asymmetry is what the two callers really are: the request carries a
+ * message from a sender nobody enumerated, while the response is read by a
+ * webhook sender that looks at a status code. The deny-list this replaced is
+ * argued at {@link GUEST_WEBHOOK_RESPONSE_HEADERS} — including the three
+ * origin-scoped headers it had never heard of, which is what a deny-list costs.
  */
 
 /**
@@ -56,12 +65,34 @@ export const GUEST_API_REQUEST_HEADERS = [
  * `Content-Encoding` and `Transfer-Encoding` are deliberately absent: `fetch`
  * has already decoded the body we are re-emitting, so echoing them would
  * describe bytes that no longer exist.
+ *
+ * **`Retry-After` was missing, and the guest is the one that MINTS it.**
+ * `aai-runtime/workflow-api-error-status.ts` is an entire deliberate taxonomy of
+ * which 5xx carries a delay and which does not — a saturated connection pool, an
+ * exhausted descriptor table and a failed hop out of the sandbox each answer
+ * `503` with `Retry-After: 1`, while a full disk answers `507` with none, and
+ * that ABSENCE is as much a signal as the value. `workflow-api.ts` sets the
+ * header; this hop dropped it, so every one of those decisions arrived at a
+ * deployed caller as a bare status. The readers are real and already written:
+ * `aai/sdk/step-retry.ts`'s `retryAfter()` and `sdk/_upload-retry.ts`, which a
+ * browser uploading parts through `/:slug/workflows/uploads` runs on every
+ * refusal — "the far side knows something this does not" is that module's own
+ * argument for preferring it, and the far side was being censored.
+ *
+ * It is also the one name this list and {@link GUEST_WEBHOOK_RESPONSE_HEADERS}
+ * now share beyond `Content-Type`, and the two still do NOT merge. Their union
+ * is not either policy: this hop must carry the range and streaming headers, and
+ * the webhook hop must not (the platform buffers that reply, so a length or an
+ * encoding would describe bytes the runtime re-frames). Their intersection is
+ * not either policy either — it would drop `Content-Range`, which is the whole
+ * point of the `Range` request half. One list is one AUDIENCE, and there are two.
  */
 export const GUEST_API_RESPONSE_HEADERS = [
   "content-type",
   "content-length",
   "cache-control",
   "x-accel-buffering",
+  "retry-after",
   // The `Range` half's answer. Without `Content-Range` a 206 is a partial body
   // a client cannot place, and without `Accept-Ranges` a client that probes
   // first never asks for a range at all.
@@ -96,13 +127,63 @@ export const NEVER_FORWARDED: ReadonlySet<string> = new Set([
   "authorization",
 ]);
 
-/** Response headers describing the guest→platform hop, for a pass-through reply. */
-export const NEVER_RETURNED: ReadonlySet<string> = new Set([
-  ...NEVER_FORWARDED,
-  // `fetch` has already decoded the body, so passing this on would declare an
-  // encoding the bytes no longer carry.
-  "content-encoding",
-]);
+/**
+ * Response headers returned from the durable-run webhook hop.
+ *
+ * ## Why this direction is an ALLOW-LIST
+ *
+ * A header the guest sets on this hop is a TENANT statement made in the
+ * platform's own voice: agent pages and the studio share one origin today, and
+ * `packages/aai-studio-client/CLAUDE.md` records that the origin split is owed —
+ * so anything persisted or origin-scoped is a thing one tenant could otherwise
+ * say about every other tenant and about the studio itself.
+ *
+ * This was a deny-list of 19 names, assembled from the criterion "does it scope
+ * to the ORIGIN, or outlive the response?" — `set-cookie`, `clear-site-data`,
+ * `alt-svc`, `strict-transport-security`, the reporting destinations, CSP,
+ * `www-authenticate`, and so on. Two things about that shape, and the second is
+ * the one that decided it:
+ *
+ * - **A deny-list has to be re-audited whenever the web platform ships another
+ *   persisted origin-scoped header.** `clear-site-data`, `set-login` and
+ *   `reporting-endpoints` all post-date `set-cookie`. An allow-list only needs
+ *   editing when a FEATURE wants something.
+ * - **It was already out of date, demonstrably.** Three headers a browser
+ *   honours crossed this hop: `Refresh: 0; url=…` (a redirect under another
+ *   name, so the deliberate `location` exclusion below was leaking its own
+ *   mirror image), `Speculation-Rules` (names a JSON document of URLs the
+ *   browser then FETCHES), and `Integrity-Policy` (document policy, with a
+ *   tenant-chosen reporting endpoint). Nobody had heard of them, which is
+ *   precisely the failure mode — `guest-forward.test.ts` carries that as a
+ *   failing-first observation.
+ *
+ * ## What a webhook sender actually reads, which is all this carries
+ *
+ * `Content-Type`, so the body it logs or shows in a dashboard is interpretable,
+ * and `Retry-After`, so a tenant answering 429/503 can steer the sender's own
+ * retry loop. Nothing else has a reader: the platform buffers the reply
+ * (`workflow-webhook-handler.ts`), so `Content-Length` is framed by the runtime
+ * and `Content-Encoding` would describe bytes `fetch` has already decoded.
+ *
+ * ## `location` is OMITTED, and that is the decision this list makes
+ *
+ * A tenant 302 relayed through the platform origin is an open redirect wearing
+ * the platform's hostname. Under a deny-list, keeping it was defensible on the
+ * ground that a redirect scopes to its own response and today's caller is a
+ * third-party webhook sender with no address bar — but that ground is a claim
+ * about the CALLER SET, and the guide above says the origin split is owed, i.e.
+ * the caller set is expected to change. `Refresh` crossing unnoticed is what the
+ * claim costs in practice.
+ *
+ * **What omitting it breaks**, stated so the trade is reviewable: a tenant whose
+ * webhook endpoint answers 3xx now has its `Location` dropped, so the sender
+ * sees a bodiless redirect status it cannot follow. That is narrow — the DevKit's
+ * own webhook resume answers 200/204, and a webhook endpoint that redirects is
+ * answering the wrong question — and it is one entry away from being restored
+ * the day a feature asks, which is the whole argument for this shape. Restoring
+ * it while a BROWSER can reach this hop is the thing to refuse.
+ */
+export const GUEST_WEBHOOK_RESPONSE_HEADERS = ["content-type", "retry-after"] as const;
 
 /** Copy an allow-listed subset of `from` into a fresh `Headers`. */
 export function pickHeaders(from: Headers, names: readonly string[]): Headers {
@@ -115,18 +196,20 @@ export function pickHeaders(from: Headers, names: readonly string[]): Headers {
 }
 
 /**
- * Copy everything except `strip` (and every `x-forwarded-*`) into a fresh
- * `Headers`. For the one hop that must carry headers this module cannot name —
- * see the module doc.
+ * Copy everything except {@link NEVER_FORWARDED} (and every `x-forwarded-*`)
+ * into a fresh `Headers`. For the one DIRECTION of one hop that must carry
+ * headers this module cannot name — see the module doc.
+ *
+ * The strip set used to be a parameter, and its only other argument was the
+ * response deny-list this file no longer has. A seam with one caller is a seam
+ * that reads as a policy choice, and the policy here is that there is exactly
+ * one pass-through and exactly one reason for it.
  */
-export function passThroughHeaders(
-  from: Headers,
-  strip: ReadonlySet<string> = NEVER_FORWARDED,
-): Headers {
+export function passThroughHeaders(from: Headers): Headers {
   const headers = new Headers();
   from.forEach((value, name) => {
     const lower = name.toLowerCase();
-    if (strip.has(lower) || lower.startsWith("x-forwarded-")) return;
+    if (NEVER_FORWARDED.has(lower) || lower.startsWith("x-forwarded-")) return;
     headers.append(lower, value);
   });
   return headers;

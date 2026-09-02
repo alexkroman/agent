@@ -25,7 +25,7 @@
  *
  * They are ADAPTED rather than copied: theirs are written for a LangGraph agent
  * that calls tools by name and returns a long markdown report to a reader, and
- * ours are written for a `"use step"` function that calls `webSearch` itself,
+ * ours are written for a step that calls `webSearch` itself,
  * returns JSON a later step consumes, and ends at a voice agent reading two
  * sentences down a phone. What survives verbatim is the part that is the actual
  * finding: the numbered stop rules, "repeat the useful text rather than

@@ -103,7 +103,9 @@ embedder writes against: `server`, `runtime`, `session`, `session-state`,
 `providers`, `telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`,
 `text`, `tools`, `eval`. The
 mechanism is the repo's — see "The authoring surface is versioned in epochs" in
-the root `AGENTS.md` — and what it means here is that a signature change on any
+`docs/CLAUDE.md`, which owns all three artifacts over this surface (the reports,
+the epochs and the renderings); `AGENTS.md` keeps the four obligations a change
+owes — and what it means here is that a signature change on any
 of the 125 public names is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
 rather than discovered by whoever's build breaks.
 
@@ -122,10 +124,12 @@ reason this exists.
 
 **A RETAINED epoch owes a frozen, compiling TEMPLATE** under
 `contracts/compatibility/<capability>/v<N>.ts`, and `pnpm typecheck` is what
-enforces it. There are none today: this package has no external consumers, so
-every superseded epoch is classified `--drop` rather than `--retain`. When one is
-retained, editing its template to make an error go away defeats the mechanism —
-the error IS the finding.
+enforces it. There are **seven** — `db@2`, `runtime@3`, `server@4`,
+`session-state@1`, `session-state@2`, `telephony@1` and `workflow@1` — and this
+paragraph said "there are none today" until the DevKit removal retained the
+first of them. Editing one to make an error go away defeats the mechanism: the
+error IS the finding, and the way to change an API is a new epoch carrying a new
+template.
 
 **A template rather than an example, and the distinction is the point.** `aai`
 and `aai-ui` freeze snippets an author READS: an `agent.ts` is a short file and
@@ -137,20 +141,19 @@ which is where a reader can find it without opening twelve files). Each is the
 starter as it was written AT THAT EPOCH; the way to change an API is a new epoch
 carrying a new template, never an edit to a frozen one.
 
-**A template exercises 98 of the 125 names, and that is not a hole in the
-gate.** The epoch hash covers the capability's REPORT, which carries every name
-the entrypoint selects — so a signature change on `SweepSkip` moves `db`'s hash
-and demands a classification whether or not any template mentions it.
-Classification coverage is 125 of 125; what the other 27 lack is a compile-time
-exercise. The gap is deliberate and per name: `createServer`/`createHostServer`
-are a different artifact from the bootstrap (embedding into an existing runtime,
-and a multi-tenant host-mode server); `SweepSkip` has no public producer, so a
-host can never be handed one; `partKey`/`partsOf` would need a `delete` that
-`UploadBlobs` does not have; `telnyxCodec`/`twilioCodec` are the shipped
-carriers a third-carrier template exists to be an alternative to. Contorting a
-starter to touch all 125 is how these files became catalogues the first time.
-Where a name's absence is a finding rather than a choice, it is in the list
-below.
+**A template does not exercise every contracted name, and that is not a hole in
+the gate.** The epoch hash covers the capability's REPORT, which carries every
+name the entrypoint selects — so a signature change on `partKey` moves
+`uploads`'s hash and demands a classification whether or not any template
+mentions it. Classification coverage is every name; what the rest lack is a
+compile-time exercise. The gap is deliberate and per name:
+`createServer`/`createHostServer` are a different artifact from the bootstrap
+(embedding into an existing runtime, and a multi-tenant host-mode server);
+`partKey`/`partsOf` would need a `delete` that `UploadBlobs` does not have;
+`telnyxCodec`/`twilioCodec` are the shipped carriers a third-carrier template
+exists to be an alternative to. Contorting a starter to touch all of them is how
+these files became catalogues the first time. Where a name's absence is a
+finding rather than a choice, it is in the list below.
 
 ### The root barrel had 50 names it does not own
 
@@ -229,10 +232,11 @@ to 0.
   `@internal` — that is what the zero means, and the ratchet is what holds it.
 - **`@alexkroman1/aai-runtime/internal` (`internal.ts`)** is the cross-package
   infrastructure `aai-server`, `aai-cli` and `aai-guest` need: the session-state
-  backends and their tables, the workflow serving half (surface, world, flow
-  path), the wake hint, the queue-lock sweep, the step-env publisher, the upload
-  store, and the shipped `consoleLogger`. No capability, no epoch, no semver
-  promise.
+  backends and their tables, the durable JOURNAL and its DDL, the platform route
+  table, the queue-name grammar and its classifier, the delivery door
+  (`handleWorkflowRequest`, `WORKFLOW_QUEUE_PATH`), the typed-JSON storage codec,
+  the step-env publisher, the upload store, and the shipped `consoleLogger`. No
+  capability, no epoch, no semver promise.
 
   **A name is on it because something IMPORTS it.** Both tranches were assembled
   by moving whole `@internal` blocks off the root barrel, which is why the
@@ -242,17 +246,20 @@ to 0.
   cheaper than publishing it somewhere quieter — intra-package use is relative
   imports, so nothing breaks, and a name reachable from no subpath cannot be
   autocompleted, reported on, or depended upon. They are gone, and adding a
-  clause here in anticipation of a consumer is a surface with no reader. The
-  three exceptions are structural: `WakeHintOptions`, `WakeHintPublisher` and
-  `WorldKind` are unimported and named by the signature of something that is.
+  clause here in anticipation of a consumer is a surface with no reader. There
+  used to be three structural exceptions — `WakeHintOptions`,
+  `WakeHintPublisher` and `WorldKind`, unimported but named by the signature of
+  something that was. All three went with the code that named them, so a name
+  arriving here now owes an importer.
 
 Where a capability's TYPE is contracted and its CONSTRUCTOR is not, the two are
 deliberately on different pages and each clause says so: `SessionCore` on the
 barrel and `createSessionCore` on `/internal`, `SessionStateBackend` against
 `createPostgresStateBackend`, `UploadStore` against `createUploadStore`,
-`WorkflowClientOptions` against `createWorkflowClient`, `SweepSkip` against
-`claimPoolPresenceAndSweep`. That asymmetry is a finding, not a shape to copy —
-see "What writing the templates found" below.
+`WorkflowClientOptions` against `createWorkflowClient`. (There was a fourth,
+`SweepSkip` against `claimPoolPresenceAndSweep`; the queue-lock sweep went with
+the DevKit's world.) That asymmetry is a finding, not a shape to copy — see
+"What writing the templates found" below.
 
 **Making one of them public is not a re-export.** The `@internal` tag comes OFF
 at the declaration site and the name joins a capability under
@@ -302,51 +309,54 @@ TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
 `upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
 bag. Do not narrow them back.
 
-### Self-hosted durable workflows: the door has to START a world
+### Self-hosted durable workflows: there is no world to start any more
 
-`createAgentServer` configures the workflow world and mounts the DevKit's
-`flow`/`step` callback routes, off `workflowCode`/`stepCode` — the two strings
-`aai build` leaves on the worker bundle, which the scaffold's `server.mjs` reads
-and passes.
+**This section used to be four times as long, and deleting it is the clearest
+measure of what the DevKit removal bought.** `createAgentServer` had to
+`configureWorkflowWorld` (writing `WORKFLOW_TARGET_WORLD` and two more keys into
+`process.env`), then `publishStepEnv`, then build a compiled `WorkflowSurface`
+out of the `workflowCode`/`stepCode` pair `aai build` left on the worker bundle,
+then `startWorkflowWorldIfDeclared` — in that order, and BEFORE the bind
+whenever the port was known, so no request could reach a `getWorld()` that would
+resolve and memoize an unconfigured world. `listen(0)` could not honour that and
+had its own branch. Get any of it wrong and a self-hosted run sat `pending`
+forever with nothing logged.
 
-**It did neither, and the result was that self-hosting could not run a durable
-workflow at all.** `configureWorkflowWorld` and `startWorkflowWorldIfDeclared`
-had exactly two callers, `aai dev` and the guest harness; `createWorkflowSurface`
-the same. So a self-hosted server accepted a run through `/workflows/runs` and
-nothing ever executed it — no world was started, and the callback routes 404'd —
-which presents as a run sitting `pending` forever with nothing logged. Every
-signal said healthy: the build succeeded, the page rendered, the API answered.
+The replay engine executes a run in THIS process off the agent's own `workflows`
+declaration. There is no artifact to load, no world to resolve, no memoization
+window, and no port-0 special case. What is left of the sequence is one line:
 
-Two things made it survivable for so long, and both are worth knowing:
+- **`publishWorkflowStepEnv()` before the bind**, guarded on the agent declaring
+  workflows. The guard is not frugality — it writes a module-global, so
+  publishing for every `createAgentServer` would leak one test's env into the
+  next (`unstubEnvs` only undoes `vi.stubEnv`). It publishes the AGENT env
+  rather than `providerEnv`, so a step sees exactly what `.env` declares and
+  cannot come to depend on a shell-exported key that will not exist after a
+  deploy.
 
-- **No test booted a workflow through this door.** The e2e suite's `npm start`
-  leg used `pizza-ordering`, which declares no workflows, and the one durable
-  leg ran under `aai dev`. `aai-cli`'s `e2e.test.ts` now covers both — see
-  "self-hosted server: durable workflows" — and the `pack + build + boot`
-  subset boots every template it builds, a workflow app among them.
-- **The scaffold PROMISED it.** `server.mjs` documents `PUBLIC_URL` as what to
+Two things the old wiring's failure taught, which still hold:
+
+- **A test has to boot a workflow through this DOOR.** The e2e suite's
+  `npm start` leg used `pizza-ordering`, which declares no workflows, and the
+  one durable leg ran under `aai dev` — so the door nobody tested was the one
+  that did not work. `aai-cli`'s `e2e.test.ts` covers both now, and the
+  `pack + build + boot` subset boots every template it builds, a workflow app
+  among them.
+- **The scaffold PROMISES this.** `server.mjs` documents `PUBLIC_URL` as what to
   set "whenever a durable workflow has to hand a URL to somebody else", and
   `AgentServerOptions.env`'s own doc treats a dropped `DATABASE_URL` as a bug
   because a workflow upload's record would otherwise vanish before a resumed run
-  read it. Both described a feature the door did not wire.
+  read it. `ensureWorkflowJournalSchema` is on the PUBLIC barrel for the same
+  reason — see "The tables come WITH the database" in
+  `workflow-journal-postgres.ts`.
 
-Three mechanics, each a way to get this wrong:
-
-- **The ORDER is `configureWorkflowWorld` → `publishStepEnv` → surface →
-  start.** `createWorkflowSurface` imports `workflow/runtime`, which resolves a
-  world from the env as it loads; backwards, a project with a `DATABASE_URL`
-  silently takes the LOCAL world and writes its runs to a directory that dies
-  with the process.
-- **The world is configured BEFORE the bind whenever the port is known**, so no
-  request can reach a `getWorld()` that would resolve — and memoize — an
-  unconfigured world. `listen(0)` cannot do that (the loopback callback base is
-  unknowable until bound) and configures immediately after; `PORT=0` is a test
-  convenience.
-- **An agent with no `workflows/` directory is left alone entirely.** The setup
-  returns early when either string is absent, because `configureWorkflowWorld`
-  WRITES `WORKFLOW_TARGET_WORLD` and two more keys into `process.env` — doing
-  that for every `listen()` would pick a world nobody asked for and leak those
-  keys across a test file.
+**The other half is the delivery door.** `createAgentServer` composes
+`handleWorkflowRequest` into `createServer`'s `request` hook, so this door is
+wired identically to `aai dev`'s and the harness's — but it supplies no
+`allowRemote`, so `POST /workflow-queue` answers 401. That is correct: a
+self-hosted server has no platform-owned queue to be vouched for by, and the
+engine's own in-process timers are what deliver. What the composition buys is
+that a door cannot silently LACK the route.
 
 **What is still NOT wired is host mode** (`createHostServer`): its sessions run
 caller-supplied agents, which declare no workflows.
@@ -751,6 +761,290 @@ Rendered in ISOLATION it reports seven more, all `{@link Db}`-shaped links into
 `@alexkroman1/aai`. Those are an artifact of the SDK not being in the project,
 not a defect in these comments — do not "fix" them by deleting links.
 
+## A run's journal has THREE homes, and the order between them is a decision
+
+`selectJournal` (`workflow-runtime.ts`) picks the replay engine's journal:
+**platform, then postgres, then memory**, and the boot line names whichever won.
+
+- **platform** — `createPlatformJournal`, one `POST /:slug/workflow-journal` per
+  operation, beside the queue, session state and upload records that already work
+  this way. The statements run on the platform's own database
+  (`aai-server/platform-workflow-journal.ts`), which mirrors
+  `workflow-journal-schema.ts` with a `slug` added to every key.
+- **postgres** — `createPostgresJournal` over the agent's own `DATABASE_URL`,
+  which is what a self-hosted deployment has and the platform never provisions.
+- **memory** — a `Map`, for trying a workflow out before provisioning anything.
+
+**The order is what closed the bug, and it is not "most specific wins".** A
+deployed guest could reach NEITHER durable backend: the platform provisions no
+tenant database, so every deployed run journaled into a sandbox that self-exits
+after `AGENT_IDLE_EXIT_MS`. A step's result, its attempt count and an open
+approval window died with it — and nothing reported it, because from inside the
+system a step whose result was lost is indistinguishable from one never reached.
+The run sat suspended looking healthy, so "durable" was true of the interface and
+false of every deployment.
+
+Platform BEFORE postgres for a second reason: a deployed guest may also carry an
+author-supplied `DATABASE_URL`, and its runs belong beside its session state
+rather than split across two databases with the wake sweep able to see only one
+of them.
+
+**The platform pair is read from THIS PROCESS's environment**
+(`platformGuestOptions`), never the agent's — the distinction that already cost
+a deployment, and the safer read besides: an agent may set any `AAI_*` key as a
+secret, so under the tenant spelling an agent would choose the base URL and
+bearer its own journal was sent to. The section below on `AAI_PLATFORM_BASE_URL`
+carries the rest.
+
+**Memory is last and the boot line SAYS so.** A durability tradeoff absent from
+the log reads as a bug, and this is the one an author is most likely to hit by
+accident.
+
+### What the tiers of test each cover, and why none substitutes
+
+The claims are of four different kinds, which is why there are four files:
+
+- **`workflow-journal-platform.test.ts`** — our side of the wire. The CODEC (a
+  `Uint8Array` in a step's output crosses as an envelope, not as an index map,
+  which `JSON.stringify` produces with no error), and three answers REFUSED
+  rather than invented: `claimAttempt` on a non-number (a made-up ceiling does
+  not hold), `appendStep` on an unreadable answer (the STORED entry is what makes
+  a double execution deterministic), `claimSleep` likewise.
+- **`aai-server/platform-workflow-journal.test.ts`** — SHAPE, over all twelve
+  methods as a TABLE rather than a case each: every statement binds the slug as
+  `$1`, no statement binds a bare `$n::jsonb`, `claimAttempt` issues exactly one
+  query. A table because the interesting failure is one method forgetting, and a
+  hand-written case per method is what a thirteenth method would not get.
+- **`aai-server/platform-workflow-journal.scenario.test.ts`** — the only place
+  TENANCY is testable, that being a claim about column values in a shared table.
+  Two tenants' rows, and every cross-tenant read comes back empty.
+- **`aai-server/journal-conformance-platform.scenario.test.ts`** — the shared
+  CONTRACT, answered by the real route over a real database. The three above each
+  assert a property somebody thought to write down; this one asserts the same
+  cases every other backend answers, which is a different job. See below.
+
+Two things the scenario tier taught. **`jsonb` NORMALIZES**, so a value survives
+by MEANING and not by bytes — the memory journal preserves bytes and these do
+not, a divergence a spec might reasonably have asserted, so the cases compare
+parsed values. And the **`::text::jsonb`** binding is deliberate on both stores:
+postgres.js JSON-serializes a parameter bound to a jsonb position, and the
+self-hosted twin shipped with a bare cast that stored a JSON string containing
+the JSON, found only by a real server.
+
+### The FOURTH arm is the platform's own SQL, and it lives in `aai-server`
+
+`journal-conformance.ts` declares ONE case list and `JOURNAL_BACKENDS` registers
+the backends. Three arms run it from this package; the fourth cannot, and it is
+the one that finds platform bugs:
+
+| Arm | Tier | What it can see |
+| --- | --- | --- |
+| memory | unit | the reference |
+| platform over a FAKE transport | unit | THIS side of the wire — the codec, `toRun`/`toStep` |
+| postgres, real database | scenario | `on conflict`, a row count, a unique index |
+| **platform over the REAL route and a real Postgres** | scenario, in `aai-server` | the platform's own statements |
+
+The unit platform arm delegates every SEMANTIC to the memory reference (its own
+header says so), so a divergence in the platform's SQL is invisible to it. One
+was shipped: `createRun` was `on conflict (slug, run_id) do nothing` with no
+`returning`, so a duplicate run id was answered with SUCCESS — against an
+interface that says "rejects if `runId` already exists", a memory backend that
+throws, and a self-hosted store that trips its primary key. Two racing starts on
+one id both believed they had won and the loser's `input` was discarded, on the
+platform arm only, i.e. for every deployed agent. A/B'd: with that SQL in place
+the unit suite reports **123 passed** and the fourth arm fails the shared case.
+
+`aai-server/journal-conformance-platform.scenario.test.ts` is that arm. The
+refusal it now gets is a typed `PlatformWorkflowRunTakenError` mapped to a
+**409** by `withReserved`'s `statusFor` hook — the same shape as `claimHook`'s
+token conflict, and for the same reason: every plain `Error` there becomes a
+retryable **503**, so the engine spends the message's whole attempt budget on a
+refusal that cannot change.
+
+**The case list crosses the boundary through a LOADER, not a re-export clause.**
+`loadJournalConformance()` on `/internal` dynamically imports the case modules.
+They `import { describe, expect, test } from "vitest"`, which is an OPTIONAL peer
+of this package, and a static clause is bundled INTO `dist/internal.js` —
+measured: `import … from "vitest"` on line 4. `@alexkroman1/aai-cli`'s published
+`dist` imports a VALUE from that exact module (`consoleLogger`, in `_dev-env.ts`)
+with every bare specifier external, so the plain clause makes `aai dev`
+unrunnable in any install without the test runner: `ERR_MODULE_NOT_FOUND` from
+inside a published package, invisible to `publint` and to `attw`. Behind the
+dynamic import the same code splits into its own chunk (verified: zero `vitest`
+references in `dist/internal.js`) and is loaded only by the caller that asks.
+Same rule as `/eval/vitest` and `@alexkroman1/aai/testing/vitest`, but as a
+function because `/internal` cannot afford to be split in two.
+
+### An attempt is a LEASE, not a tally
+
+`claimAttempt` charges an attempt before a step's body runs — a crash therefore
+burns it, which is the whole reason the charge precedes the body — and
+`releaseAttempt` gives one back. The number a claim answers is not "how many
+times has this step been tried"; it is **how many attempts are outstanding
+right now**, this one included. Only an attempt that never ENDED keeps its
+charge, and only a dead worker fails to end one, so the pre-body ceiling bounds
+ABANDONMENT.
+
+It used to be a bare tally, and one number served two budgets that pull in
+opposite directions — how many times to TRY (the author's `maxAttempts`) and how
+many workers may die holding this step. A property harness
+(`workflow-concurrent-delivery.test.ts`) shrank the defect to a ONE-node body
+under three deliveries: a `ctx.step` whose body sleeps — a shape the engine now
+REFUSES outright, see the section below — all three suspending
+inside it having charged one each, so the next reach found the budget spent and
+appended `{status: "failed", error: "step s0 exhausted 3 attempt(s)"}` over a
+step that then SUCCEEDED — whose own walk read that failure back out of the
+idempotent append and failed the run. Tries are counted in the WALK now, and the
+pre-body refusal is no longer a journal entry at all
+(`StepAbandonedError`, classified like a divergence: a verdict about the walk,
+never about the step). **A step that succeeded is never journaled `failed`,
+because only a walk whose own body threw may write a `failed` entry.**
+`workflow-replay-step.ts`'s module doc carries the rest, including the one
+residual — a charge cannot tell an abandoned attempt from a LIVE one, so
+`maxAttempts` simultaneous in-flight deliveries of one step is the most this
+tolerates, which needs a heartbeat to close.
+
+### A step body may not WAIT, and the engine refuses one that does
+
+`ctx.sleep` and `ctx.waitFor` belong to the body. The closure `ctx.step` is
+handed CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep(2000))` is
+one line away at every call site, and until `workflow-replay-wait.ts` existed the
+engine ran it — silently, and wrongly in two separate ways. Both are measured:
+
+- **The step body re-ran from the top on every delivery.** The suspend unwinds
+  out of the step, the attempt charge is released (correct — a suspend settles
+  nothing), so the step is never journaled and the next delivery re-runs the
+  closure. A one-step body logged its effect **twice** across two deliveries and
+  reported `completed`. For a step that calls a paid provider that is a duplicate
+  charge, which is how this was found.
+- **And every LATER wait in the run read the wrong record.** This is the sharper
+  half and it is not a duplicate-work problem at all. Waits are keyed
+  POSITIONALLY (`sleep!0`, `hook!0`) off a counter that advances only when a wait
+  is REACHED — and a settled step's body is not re-executed, so its wait stops
+  being reached the moment the step lands, and every wait after it slides one
+  place down the key space. Reproduced, clock unmoved between walks 2 and 3:
+
+  ```text
+  walk 1  napper enters, sleep!0 claimed                      -> suspended
+  walk 2  napper enters again, sleep!0 elapsed, napper#0
+          journaled, body-level wait claims sleep!1           -> suspended, +7 days
+  walk 3  napper answered from the journal (body NOT run),
+          body-level wait is now sleep!0 — elapsed on walk 2  -> completed
+  ```
+
+  A week-long durable wait skipped in full, reported `completed`. For
+  `ctx.waitFor` the same shift hands the body somebody else's PAYLOAD.
+
+So both methods now refuse when `currentRun()?.step` is set — which is true for
+the whole of a step's execution, including inside every helper it awaits, since
+`withStepContext` narrows the run context rather than a lexical scope. The
+refusal is a `FatalError` (a redelivery cannot make a body legal) recorded
+through `replayRun`'s `refused`, so a body that catches broadly cannot turn it
+into `completed` — the third verdict on that channel, beside a divergence and an
+abandoned step.
+
+**It cannot be a TYPE, and that is worth stating because the repo has precedent
+that looks like it transfers.** `ctx.step`'s `Literal<Name>` guard types an
+ARGUMENT; this would have to retype a CAPTURED BINDING. The outer `ctx` is
+lexically in scope inside the callback and TypeScript has no effect system, so a
+step-scoped `ctx` parameter would be advice a one-line closure ignores, not a
+gate. Runtime is the only layer that sees it. Nor is it worth making RESUMABLE:
+journaling a step's partial progress needs continuations, and the affordance for
+"work, then wait, then more work" already exists — two steps with the wait
+between them.
+
+**What the refusal cost, recorded because it is a real loss.** The property
+grammar's `nestedWait` node (`_workflow-resume-program.ts`) generated exactly
+this shape and was the 10-out-of-10 regression for the lease fix above. It is
+gone: it can no longer generate a legal body. The arm it defended — a suspend
+GIVING BACK its charge — now has a deterministic test instead
+(`workflow-replay.test.ts`, "a suspend that reaches a step's attempt loop
+anyway", driven with a hand-branded signal), and the half of the lease that is
+still reachable through `ctx` — a charge NOT given back when an attempt dies — is
+held by `flaky`. Removing the node also lowered two coverage floors in
+`workflow-resume-equivalence.test.ts`, re-measured over 20 runs with the old
+ranges kept beside the new ones.
+
+**That residual is REACHABLE, and the estimate beside it was measured wrong.**
+It read "far past what one dispatcher per deployment produces". One dispatcher
+produces up to FIVE, whenever a single step exceeds 60 seconds: the platform's
+`QUEUE_DELIVERY_TIMEOUT_MS` (60s, `aai-server/workflow-queue-deliver.ts`) closes
+the delivery's HTTP response but does **not** stop the walk, so every redelivery
+adds a CONCURRENT walk of the same run in the same guest — measured at 61.15s
+then 65.23s against a live dev server, i.e. the ceiling plus
+`RETRY_BACKOFF_MS[0..1]`. Each of those walks charges the same step key, so a
+step running longer than roughly 2.2 minutes takes a fourth charge against a
+budget of three and is REFUSED. A slow-but-healthy step is exactly the case the
+lease was supposed to protect.
+
+Worse, the duplicate walks were not merely wasteful: `replayRun` reads the
+journal ONCE per walk, so a walk that starts before an earlier one has journaled
+anything re-executed **every** step. Measured on the transcription template, a
+second walk re-ran `normalizeRecording`, `splitRecording`, four
+`transcribeSegment` calls against the real provider and `mergeTranscript` on a
+run already marked `completed`.
+
+**That half is CLOSED, by `settledSince` in `workflow-replay-step.ts`.** A
+snapshot can only be stale about a key somebody ELSE reached, and `claimAttempt`
+already answers exactly that: `1` means this attempt is the only one
+outstanding, so nothing has been missed. So a miss in the snapshot re-reads the
+journal **only when the charge says another walk touched this key**, and a
+settled entry answers the step instead of running it — which also makes a
+settled step answer from the journal rather than take the `StepAbandonedError`
+the blown budget above would otherwise produce (the two checks are ordered on
+that ground). The happy path pays nothing: a first walk reaching a fresh step
+sees `1` and never re-reads. `workflow-concurrent-delivery.test.ts` measured the
+effect — generated `duplicateSteps` fell from **44-107 to 6-21**, and its floor
+came down with a re-measured range — and
+`workflow-replay-stale-snapshot.test.ts` pins the two interleavings by hand.
+
+What is NOT closed is the race it was never about: two walks reaching a step
+NEITHER has settled still both run it, which is the engine's stated
+at-least-once cost, and the delivery door still starts walks it cannot stop. Both
+want a heartbeat on the RUN so a ceiling cannot abandon a walk that is alive.
+The platform's own half — a slow delivery starving every OTHER tenant's claim —
+is fixed separately in `aai-server/workflow-queue-budget.ts`.
+
+### Three `JournalStore` contract points the suite refused to decide, decided
+
+A conformance table can only assert what the interface actually promises, and
+three points were underspecified — each with two backends doing one thing and the
+third doing another, and no case able to name a winner. The decisions:
+
+- **`setStatus`'s patch is ADDITIVE.** A field the patch does not carry is not
+  written, and an explicit `undefined` is the same as absent — so a stored
+  `output` can never be CLEARED. The platform already behaves this way (the
+  handler builds `{output, error}` and the SQL `coalesce`s), which makes memory's
+  and postgres's `"output" in patch` distinction dead code. Adopted rather than
+  fixed the other way for three reasons. It is what `error` has always done in
+  ALL THREE backends (`coalesce($6, error)`, `if (patch?.error)`), so the
+  alternative leaves two fields of one patch with two rules. Reaching the
+  distinction over HTTP needs a new wire field — the client sends
+  `output: encode(patch?.output)` and `JSON.stringify` drops an `undefined` key,
+  so "no patch" and "clear it" are already the same bytes — i.e. a protocol
+  change to serve a caller that does not exist: the engine passes either a
+  defined output or no patch at all. And clearing a terminal payload is a
+  mutation primitive in disguise, which this interface says outright it does not
+  have ("no `updateStep` and no `deleteRun`: the journal is APPEND-ONLY").
+- **`claimAttempt`, `claimSleep`, `claimHook` and `appendStep` are defined only
+  for a run that EXISTS, and a backend MAY throw.** Memory throws; both
+  databases insert a row with no run to belong to and answer normally. Left
+  under-specified ON PURPOSE, out loud, so nobody writes a caller that depends on
+  either: mandating the throw costs the databases a read (or a foreign key) per
+  step to detect a state the engine cannot reach — it calls these only after
+  `createRun` — and mandating the answer would have memory invent a slot, i.e.
+  resurrect a run, which is the worse of the two.
+- **`readSteps` is ordered by `finishedAt`, ties broken by `key`.** Both
+  databases already do exactly that (`order by finished_at, key`); memory returns
+  insertion order, which agrees except on a same-millisecond tie. The one-line
+  change memory owes: sort a COPY of `steps` by `finishedAt` then `key` before
+  mapping. One limit worth stating rather than pretending away — a database
+  breaks the tie in the column's COLLATION, which for `text` under a non-C
+  collation is not code-unit order, and step keys are punctuation-heavy
+  (`fetch#0`, `sleep!0`). It is unobservable in practice: a tie needs two steps
+  settling in one millisecond, and the engine indexes what `readSteps` returns by
+  `key`. Do not tighten it to a byte order without `collate "C"` on the column.
+
 ## An upload's bytes are OBJECTS, and its record has two homes
 
 **An upload ID is checked at the ROUTER, for every `/uploads/:id` route.** The
@@ -786,6 +1080,41 @@ its bug — which was pairing a directory with runs in POSTGRES — and it is wh
 gives a databaseless studio agent uploads at all. `installWorkflowSupport`
 ANNOUNCES the local home once: a tradeoff absent from the log reads as a bug.
 
+**A FINISHED upload is immutable, at both layers.** A part write is keyed by its
+OFFSET and the merge replaces whatever window was there, so
+`PUT …/parts?offset=` against a completed upload used to answer 200 and rewrite
+the bytes under it — `size` and `complete` unchanged, so a step reading that
+window had nothing to notice; a SHORTER replacement collapsed `size` and flipped
+`complete` back to `false`; a LONGER one recorded two overlapping windows, after
+which a `read` of two megabytes returned three. Upload ids are the caller's to
+choose and the workflow API is unauthenticated unless `AAI_WORKFLOW_API_TOKEN`
+is set, so none of it needed a credential. `UploadCompleteError` (409) is the
+refusal, `assertUploadOpen` is the check, and two things about it are decisions:
+the KIND refusal is checked FIRST (a finished streamed upload keeps its 400 "not
+a parts upload" rather than changing status when its body ends), and a re-sent
+CLAIM naming only windows the record already holds at the same lengths is a
+NO-OP rather than a 409 — a claim is re-sent on a dropped response, so the
+request that COMPLETED an upload is exactly the one whose answer can be lost,
+and 409 is in neither `RETRYABLE_STATUS` nor the resume vocabulary. The BYTE
+route refuses in parallel and independently
+(`aai-server/upload-handler.ts`'s `assertUploadOpen`): a rewrite there changes
+no record at all, so the store's refusal cannot see it.
+
+**A STREAMED upload's first windows are CUT SMALL**, and that is a progress fix
+rather than tuning. Nothing in a window is readable — and therefore nothing is
+published as `size` — until the whole window is stored, so at a flat
+`UPLOAD_PART_BYTES` a stream under 8 MiB reported `size: 0` for its entire life
+and then the whole file at once. `size` was honest throughout (it is the
+contiguous READABLE prefix), which is why the fix is the CUT and not the number:
+a `size` counting bytes that merely arrived would send a reader to a window that
+is not there. `windows(body, limit, grow)` doubles from `UPLOAD_CHUNK_BYTES` to
+`UPLOAD_PART_BYTES` — 1, 2, 4, 8, 8, … MiB — so a maximal upload gains three
+windows and `platform-uploads.ts`'s O(N²) `parts` tripwire is untouched, where a
+flat 1 MiB cut would have been eight times the windows. `grow` is exactly
+`publish`: only a published window's arrival is observable, and only a published
+cut may be non-uniform, because `create` derives its boundary list from
+`windowList`, which assumes the grid.
+
 **Neither direction takes turns with the socket.** A whole-file write puts
 `UPLOAD_WINDOW_CONCURRENCY` windows while the next one is still arriving, and the
 byte route reads `UPLOAD_READ_AHEAD` chunks ahead of what it has written — both
@@ -810,8 +1139,11 @@ landed on the global against 16/16 on HTTP/1.1.
 five of them were still on the global: the upload broker's byte operations
 (`_upload-blobs-brokered.ts`), the operator-bucket ones beside them
 (`_upload-blobs-http.ts`), every platform RPC (`platform-rpc.ts`), and the
-run-event STREAM read (`workflow-platform-storage.ts`) — which is the worst case
-of all, a read meant to stay open on the same window as a burst of byte probes.
+run-event STREAM read in the DevKit-era `workflow-platform-storage.ts` — which
+was the worst case of all, a read meant to stay open on the same window as a
+burst of byte probes. That module is gone with the DevKit's storage RPC; the
+rule it motivated is not, and `platform-rpc.ts` is what every journal, queue,
+session-state and upload-record call goes through now.
 
 Observed on a deployed transcription workflow uploading ~64 MB in 8 MB windows:
 
@@ -837,11 +1169,18 @@ Four things about the pool worth not rediscovering:
   bearer. So it is a lazy singleton, and `closeEgressFetch()` RESETS it rather
   than poisoning it: a caller holding `egressFetch` across a close gets a fresh
   pool on its next request.
-- **undici's timeouts are LEFT ALONE, deliberately unlike the step pool**, which
-  turns them off because a step owns its own deadline. Here the callers bound the
-  REQUEST (`BYTE_OP_TIMEOUT_MS`, `PlatformCall.timeoutMs`) and nothing bounds
-  draining the body afterwards — exactly what a window `read` does — so undici's
-  body-inactivity timeout is the only limit that path has.
+- **undici's timeouts are LEFT ALONE at their 300s defaults, which are TIGHTER
+  than the step pool's.** Here the callers bound the REQUEST
+  (`BYTE_OP_TIMEOUT_MS`, `PlatformCall.timeoutMs`) and nothing bounds draining
+  the body afterwards — exactly what a window `read` does — so undici's
+  body-inactivity timeout is the only limit that path has. The step pool RAISES
+  both to `STEP_FETCH_INACTIVITY_MS` (10 min) because a step's body can be
+  gigabytes; it had them OFF, on an argument half of which ("or the DevKit's step
+  budget") was retired with the DevKit, so a user-written `stepFetch` passing no
+  signal was bounded by no layer at all. Both undici timers are
+  inactivity/phase timers rather than total-duration ones, which is what lets one
+  number serve a JSON call and a 660 MiB upload alike — the constant carries the
+  undici mechanics and the arithmetic.
 - **The `fetch?:` seam stays optional.** Only the DEFAULT was the bug, and making
   it required is a breaking change: `createHttpUploadBlobs` is a published export
   a self-hoster calls.
@@ -879,24 +1218,91 @@ answers 503 with `Retry-After: 1`. Three properties are decisions:
   and is checked first. An inbound socket that closed must not get a 503 written
   to it.
 
-## A callback URL comes from `publicWebhookUrl`, never from `hook.url`
+## A deployed guest has TWO copies of this package
 
-`createWebhook()` sets `hook.url`, and it is **guest-local**: the DevKit composes
-it from `getWorkflowMetadata().url`, which is `http://localhost:<port>` off the
-running process (its only other branch is `https://$VERCEL_URL`). Deployed, that
-names the inside of a sandbox which has self-exited by the time a payment
-provider calls back. So the SDK mints its own:
-`ctx.workflows.publicWebhookUrl(token)` — `RuntimeOptions.publicUrl` plus the
-same `WORKFLOW_WEBHOOK_PREFIX` the guest's own router parses, so the URL handed
-out and the path that answers it cannot drift.
+The harness bundles its own `aai-runtime` and calls `createServer` from it; the
+agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`, so a deployed
+agent runs the SDK version it was tested against
+(`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both are loaded in one
+process, and **anything this package uses to rendezvous between them has to be
+keyed on `globalThis`, not on a module-level value.**
 
-Three properties are load-bearing:
+The instance that got this wrong was the workflow run context, and its own doc
+had already stated the failure — "two stores would each see only their own
+`run()` calls, so a `report()` reaching the wrong one would silently find no
+context and degrade to log-only" — while taking a module-level
+`new AsyncLocalStorage()`, which is one store per COPY rather than one per
+process. So the reporter `installWorkflowSupport` published belonged to the
+harness's copy and the run context belonged to the bundle's:
+
+```text
+Workflow: Transcribing 45:00–46:32. {}
+```
+
+The empty context object is the whole symptom, and it reads as cosmetic. It is
+not: the same lookup decides whether a narration line is STREAMED, so a
+fifty-minute transcription reported no progress to a watching page at all, and
+the attempt suffix that tells a reader a fan-out is retrying could never appear.
+Every other signal was healthy, the log line being unconditional.
+
+**It survived the DevKit because the arms this replaced resolved once.**
+`getStepMetadata` and `getWritable` came from the `workflow` package, which the
+guest image resolved from its own `node_modules` and both copies shared.
+Removing those arms made the store's own warning come true — which is the
+general shape of this whole removal: a seam the DevKit's world covered, inherited
+without being enumerated.
+
+The store is `Symbol.for`-keyed now, the same mechanism the step reporter slot
+one module over already used, and for the same reason. **`vi.resetModules()` is
+a second copy**, which is what makes this testable in one process —
+`workflow-run-context.test.ts` loads two and asserts a context entered through
+one is visible through the other. A/B'd: both cross-copy cases fail against the
+module-level form.
+
+## A callback URL comes from `publicWebhookUrl`, and the route is on `createServer`
+
+`ctx.workflows.publicWebhookUrl(token)` mints the one workflow URL that LEAVES
+the system — `RuntimeOptions.publicUrl` plus `WORKFLOW_WEBHOOK_PREFIX`, the same
+constant the router parses, so the URL handed out and the path that answers it
+cannot drift. It exists because the DevKit's own `hook.url` was **guest-local**:
+composed from `getWorkflowMetadata().url`, i.e. `http://localhost:<port>` off
+the running process, which names the inside of a sandbox that has self-exited by
+the time a payment provider calls back.
+
+**The route is mounted in `createServer`, and that is a correction rather than a
+detail.** It used to be mounted by `createWorkflowSurface`, which returns early
+unless the bundle carries both `workflowCode` and `stepCode` — the DevKit
+transform's output. When the replay engine replaced the DevKit those strings
+stopped being produced and the route mounted on NO door, so every callback a
+deployed run had handed out answered 404 permanently.
+
+Nothing in the system could see that. A run waiting on a hook that never arrives
+is indistinguishable from a payer who never paid, so it reports as healthily
+suspended and the failure lands weeks later on somebody else's server, on a URL
+nobody can re-issue. Two properties keep it closed:
+
+- **It hangs off `createServer`**, which every front door goes through — `aai
+  dev`, a self-hosted `server.mjs`, a deployed guest — so it cannot come to
+  depend on a build artifact again.
+- **It reads `runtime.workflows` through a LAZY getter**, like the workflow API
+  beside it, because the guest builds its runtime on the first request that
+  needs one; a captured value is `undefined` for the life of the server.
+
+`WorkflowClient.signal` is the delivery, and a `false` from it is a **404, never
+a 5xx**: the caller is a third party whose retry loop reads 5xx as "come back",
+so a miss used to be retried against an error forever. 404 stops it, and it is
+stable — a closed hook does not reopen. `workflow-webhook.ts` owns that
+reasoning; `workflow-http-adapter.ts` is why the failure status is a parameter
+(a queue callback wants the 500 the world retries, and this route must never
+emit one).
+
+Three properties of the URL itself are load-bearing:
 
 - **`publicUrl` is an OPTION, never sniffed.** Each deployment supplies it — the
   platform bakes `AAI_PUBLIC_BASE_URL` into the guest's exec env and the harness
   passes it through, `server.mjs` reads `PUBLIC_URL`, `aai dev` passes its own
-  BACKEND origin (Vite proxies the browser surface and not the DevKit's
-  `/.well-known/` routes, so the port a developer opens would 404 a delivery).
+  BACKEND origin (Vite proxies the browser surface and not the `/.well-known/`
+  routes, so the port a developer opens would 404 a delivery).
   Reading an `AAI_*` variable here would make the SDK depend on the vocabulary of
   one of its three deployments.
 - **Unconfigured THROWS**, naming the option. A `localhost` URL would be the
@@ -906,10 +1312,20 @@ Three properties are load-bearing:
   already states. `createWebhook()`'s own token is random and body-side only,
   so a URL that has to be minted from a TOOL wants `createHook({ token })`.
 
-Not yet closed: a `"use workflow"` BODY, and a step it hands `hook.token` to,
-have no `ToolContext` and so no way to reach `publicUrl` — a run that must EMAIL
-its own callback URL still composes it from a value the author supplies.
-`stepEnv`'s `Symbol.for` slot is the shape that would close it.
+CLOSED for a BODY and its steps too, through the slot this note predicted:
+`stepWebhookUrl(token)` on `@alexkroman1/aai/step` reads a `Symbol.for` slot
+that a host fills with a MINTER — `publishWorkflowWebhookUrl(publicUrl)` in
+`workflow-serve.ts`, beside `workflowWebhookUrl`, which is the one place base +
+prefix + encoded token are composed. The minter, rather than the origin, is what
+is published: the route belongs to the package that ANSWERS it, so the SDK never
+spells this path and the two cannot drift. The guest publishes at bundle load
+(before the surface is built, so a boot-time queue delivery cannot race it) from
+the `AAI_PUBLIC_BASE_URL` in its exec env — which is why `requireStepEnv` could
+not have done this job: that variable is the SPAWNER's and never reaches the
+agent env. Unfilled, the reader THROWS naming the configuration; `aai dev` does
+not publish one yet, and a laptop origin would not be reachable anyway.
+`workflow-client.ts`'s own inline composition is the copy still owed a fold onto
+`workflowWebhookUrl`.
 
 ## `AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials, not what the guest dials
 
@@ -1122,6 +1538,38 @@ selectivity — truncating on a signal that arrives ~470ms after the first parti
 makes yields look instant. A correct client's yield rate against the old code
 was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
 reverting the gate.
+
+## A rollback at the cap used to cost a real turn
+
+`transports/pipeline-history.ts` keeps two capped views, and
+`dropTrailingUser` — what rolls back an injected prompt (a false-interruption
+resume, a silence nudge, `injectTurn`) whose turn left no trace — POPPED where
+the push had already TRIMMED. So a rollback landing at
+`DEFAULT_MAX_HISTORY` undid the append and not the eviction the append caused:
+push at 200 trims the oldest message and lands at 200, the pop leaves 199, and
+one real conversation turn was gone for the rest of the call. **Nothing in the
+system could see it** — both views are the right shape afterwards, one turn
+shallower — and it survived two complete unit suites because every depth
+anybody writes by hand is well under 200.
+
+A push now records what it evicted and a pop that undoes THAT push unshifts it
+back. Three properties of the bookkeeping are load-bearing and are argued at
+`PushUndo`: one slot PER VIEW (a turn pushes the user message into
+`conversation` and then into `llm`, so a shared slot would be invalidated by
+the second half of the pair that filled the first), recorded only for a push of
+exactly ONE message, and consumed by IDENTITY rather than by content. `capLlm`'s
+healed tool-pair halves count as part of the eviction, so a restore hands back
+the array the push found rather than a prefix of it.
+
+`transports/pipeline-history-rollback-property.test.ts` is the oracle — a
+fast-check property over generated fill scripts, driving both the module's door
+and the real one (`persistBargeIn` with a `syntheticPrompt`), whose oracle is a
+snapshot of the two views taken before the push. It was written RED and shrinks
+to a one-element script; two deterministic pins sit beside it in
+`pipeline-history.test.ts`. The defect was originally recorded, and deferred, in
+`session-history-replay-equivalence.test.ts`'s module doc; that property
+compares TAILS for an unrelated reason that still holds (the two sides trim
+different sequences), and its `liveTrims` floor stands after re-measurement.
 
 ## History records what was HEARD, not what was generated
 

@@ -60,6 +60,9 @@ describe("PipelineTransport — recovery when the LLM stream fails", () => {
       expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
         type: "agent-transcript.committed",
         text: expect.stringContaining("Sorry, I had a problem"),
+        // Tagged, so the caption can carry the phrase while no reader of the
+        // stream records it — see `AgentTranscriptRecovery`.
+        recovery: "turn-failed",
       });
     });
     await t.stop();

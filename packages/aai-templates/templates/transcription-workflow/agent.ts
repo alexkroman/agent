@@ -17,10 +17,12 @@
  *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. `requiredEnv` below is
  *   what makes a deploy check for it rather than letting the first run find out.
  *   A step reads it with `requireStepEnv`; see `@alexkroman1/aai/step`.
- * - **A `DATABASE_URL`** — a secret when deployed, `.env` under `aai dev` — and
- *   the platform provisions none, so it is a Postgres you bring. REQUIRED here,
- *   unlike most workflow apps: runs are durable on the platform either way, but
- *   an UPLOAD's record is a row, so the form below refuses by name without one.
+ * - **No database.** This used to ask for a `DATABASE_URL` and no longer does:
+ *   an upload's record is a platform row and its bytes are platform storage, so
+ *   the form below and every step that reads back what it stored work on a
+ *   deployed app with nothing provisioned — and under `aai dev` they go in the
+ *   project's `.workflow-data` directory beside the runs. Bring a database only
+ *   for data of your OWN that has to outlive a run.
  * - **ffmpeg, under `aai dev` only.** A deployed guest's image installs it; on a
  *   laptop it is whatever is on `PATH` (or `AAI_FFMPEG_PATH`). The `transcribe`
  *   flow needs it for anything that is not already a linear-PCM WAV, because the

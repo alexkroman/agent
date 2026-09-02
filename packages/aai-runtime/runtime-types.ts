@@ -22,6 +22,7 @@ import type { SessionCore } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
+import type { JournalStore } from "./workflow-journal-types.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
 
 /** Per-session options passed to {@link AgentRuntime.startSession}. */
@@ -66,6 +67,30 @@ export type AgentRuntime = {
    * pretending to a surface the agent does not have.
    */
   readonly workflows?: WorkflowClient | undefined;
+  /**
+   * Re-walk one durable run's body, for a delivery that arrived from outside.
+   *
+   * `ctx.workflows.start` hands a run to a DISPATCHER and executes nothing, which
+   * is what lets one engine serve every deployment. Where that dispatcher points
+   * differs: `aai dev` and a self-hosted server run the delivery on the next turn
+   * of the loop, and a deployed guest POSTs the platform's queue, which delivers
+   * back to `POST /workflow-queue` — and THIS is what that route calls.
+   *
+   * It exists on the runtime rather than on {@link workflows} because it is not
+   * something an agent's own code may do. A tool starting or cancelling a run is
+   * ordinary; a tool re-walking one on demand would let a body's own step drive
+   * its own replay, and the engine's idempotence is written for a queue rather
+   * than for a caller.
+   *
+   * Undefined for an agent that declares no workflows, so a delivery to one
+   * answers rather than throwing.
+   *
+   * **A delivery is AT-LEAST-ONCE and this is written for it.** Two overlapping
+   * deliveries of one run are safe because the journal answers a settled step
+   * from itself rather than because anything locks; what they cost is doing the
+   * work twice, which is why a deployment has exactly one dispatcher.
+   */
+  readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
   /**
    * This runtime's session event stream — what {@link createServer} serves
    * `/session-events/:id` from, and what a resuming session reads its
@@ -134,6 +159,47 @@ export type RuntimeOptions = {
    */
   workflows?: WorkflowClient | undefined;
   /**
+   * Where this runtime's durable runs live, when nothing more durable wins.
+   *
+   * **STORAGE per PROCESS, CODE per BUILD.** A runtime is built once per
+   * deployment everywhere except `aai dev`, which rebuilds one on every file
+   * save so a save reloads the agent's code — and a rebuilt runtime rebuilt the
+   * run store underneath it, because the engine defaults to a fresh
+   * `createMemoryJournal()` when nobody hands it one. A run started before a save
+   * was therefore gone after it, and `GET /workflows/runs/:id` answered 404 for a
+   * run whose id the caller was still holding. It reads as the run having failed
+   * rather than as the store having been replaced, which is the failure mode of
+   * every default made at the definition site on a caller's behalf.
+   *
+   * A host that wants the runs to outlive a rebuild builds ONE of these at
+   * process scope and passes it on every build — the engine still comes per
+   * build, which is what keeps hot reload honest.
+   *
+   * **It only reaches the MEMORY arm.** The journal is chosen platform, then
+   * postgres, then this — so supplying one cannot demote a deployed guest's
+   * platform journal or an agent's own database to something that dies with the
+   * process. The boot line names whichever actually won.
+   *
+   * **A run parked on `ctx.sleep` at the moment of a rebuild does WAKE.** It
+   * used not to: the in-process dispatcher holds only timers it created itself,
+   * so a rebuild discarded the schedule while leaving the journal intact, and
+   * the run sat `running` forever — the same handover hole a process RESTART had
+   * one level down, open in both places. `createInProcessWorkflowEngine`'s BOOT
+   * SWEEP closed both, by reading `JournalStore.resumableRuns` at construction
+   * and re-arming a delivery per run it still owes one; read that module's
+   * "The timers die with the process, so the JOURNAL is re-read at boot" for the
+   * bound, the stagger, and why an injected dispatcher gets no sweep. A journal
+   * that cannot enumerate its resumable runs is WARNED about at boot rather than
+   * silently forgotten.
+   *
+   * **The remainder, stated because it is the honest one:** this is a BOOT
+   * sweep, not a poll. A delivery lost while the process stays UP — a journal
+   * that was briefly unreachable — waits for the next boot; there is no `wakeUp`
+   * rescue path for it (an elapsed deadline is not a wait `wakeSleeps` may stop)
+   * and nothing repeats the pass.
+   */
+  journal?: JournalStore | undefined;
+  /**
    * Custom WebSocket factory for the S2S connection (testing seam).
    * @internal
    */
@@ -180,12 +246,19 @@ export type RuntimeOptions = {
    * in-process tool definitions and uses this function instead. Used by the
    * platform sandbox to RPC tool calls to the isolate.
    *
+   * **Paired with {@link RuntimeOptions.toolSchemas}, and `createRuntime` THROWS
+   * on half a pair** — see `setupTools` in `runtime-tools.ts` for what the old
+   * silent fallback cost.
+   *
    * @internal
    */
   executeTool?: ExecuteTool | undefined;
   /**
    * Override tool schemas sent to the S2S API. Required when `executeTool`
-   * is provided (the host doesn't have the tool definitions to derive schemas).
+   * is provided (the host doesn't have the tool definitions to derive schemas),
+   * and REFUSED without it — the two are one option, and `createRuntime` throws
+   * naming whichever is absent rather than quietly running the other tool path.
+   * `toolSchemas: []` is the legal spelling of a relay that advertises no tools.
    *
    * @internal
    */

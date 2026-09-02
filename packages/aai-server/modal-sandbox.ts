@@ -120,7 +120,9 @@ export async function spawnModalWarm(
         mode: "binary",
         stdout: "pipe",
         stderr: "pipe",
-        // Compile cache + CONTAINED — see guestExecBaseEnv.
+        // Compile cache, CONTAINED and the scratch directory — see
+        // `guestExecBaseEnv`, which is the whole of what a contained guest gets
+        // beyond its own two boot keys.
         env: {
           AAI_GUEST_TOKEN: token,
           AAI_GUEST_PORT: String(GUEST_PORT),

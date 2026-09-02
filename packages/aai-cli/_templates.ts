@@ -4,6 +4,7 @@ import { type Dirent, existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isRecord } from "@alexkroman1/aai/utils";
+import { IGNORED_WORKSPACE_DIRS, isLocalOnlyFile } from "@alexkroman1/aai/workspace-files";
 import { getMonorepoRoot } from "./_agent.ts";
 import { errorMessage } from "./_utils.ts";
 
@@ -167,8 +168,46 @@ export function scaffoldDir(): string {
 export async function layerScaffold(targetDir: string): Promise<void> {
   const dir = scaffoldDir();
   if (!existsSync(dir)) return;
-  await fs.cp(dir, targetDir, { recursive: true, force: false, errorOnExist: false });
+  await fs.cp(dir, targetDir, {
+    recursive: true,
+    force: false,
+    errorOnExist: false,
+    filter: templateCopyFilter,
+  });
   await layerScaffoldManifest(dir, targetDir);
+}
+
+/**
+ * `fs.cp` filter for every copy OUT of a template or the scaffold — the runtime
+ * ones here and the build-time one in `bundle-templates.mjs`.
+ *
+ * A template directory is also a runnable project, so a developer who runs
+ * `aai dev`, `aai build` or `aai publish` inside one leaves build output and
+ * machine state in it: `.aai/` (which holds `project.json` — a SLUG and a
+ * `serverUrl` — plus a built client), `.workflow-data/`, `node_modules/`, a
+ * `.env`. None of it is git-tracked, and an unfiltered `fs.cp` copied all of it
+ * anyway, to both destinations:
+ *
+ * - into every scaffolded project, so `aai init foo --template bar` produced a
+ *   directory already LINKED to `bar`'s last local deploy. `aai init` publishes
+ *   by default, so the first publish either targeted a slug the user never
+ *   chose or — for the `http://localhost:8080` a dev checkout leaves behind —
+ *   failed outright with "Refusing to send your API key to …", the project
+ *   staying mis-linked for every later `push`/`publish`/`secret`.
+ * - into `packages/aai-cli/dist/templates`, i.e. into the PUBLISHED tarball
+ *   (`files: ["bin.mjs", "dist"]`). Measured on a real build: 26 stray
+ *   `.aai/project.json` files and 9.4 MB of one developer's `.aai/client`
+ *   bundles out of a 12 MB `templates/`.
+ *
+ * The vocabulary is the SDK's, not a fourth list: {@link IGNORED_WORKSPACE_DIRS}
+ * is already "never walk this", and {@link isLocalOnlyFile} already means "this
+ * exists only on a developer's machine" — including a `.env` that must not ship
+ * to npm, and deliberately EXCLUDING `.env.example`, which the scaffold ships as
+ * source and a scaffolded project cannot do without.
+ */
+export function templateCopyFilter(src: string): boolean {
+  const name = path.basename(src);
+  return !(IGNORED_WORKSPACE_DIRS.has(name) || isLocalOnlyFile(name));
 }
 
 /**
@@ -184,7 +223,11 @@ export async function downloadAndMergeTemplate(template: string, targetDir: stri
   }
 
   // Copy template-specific files first
-  await fs.cp(path.join(templatesDir, template), targetDir, { recursive: true, force: true });
+  await fs.cp(path.join(templatesDir, template), targetDir, {
+    recursive: true,
+    force: true,
+    filter: templateCopyFilter,
+  });
 
   // Layer scaffold files underneath (don't overwrite template files)
   await layerScaffold(targetDir);

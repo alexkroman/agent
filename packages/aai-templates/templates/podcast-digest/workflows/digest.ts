@@ -39,7 +39,7 @@
  * ## Batch polling, which is this file's one genuinely new mechanism
  *
  * `spoken-summary` and `transcription-workflow` each wait for ONE transcript,
- * so their poll loop is `for (…) { if (done) return; await sleep(…) }`. Here N
+ * so their poll loop is `for (…) { if (done) return; await ctx.sleep(…) }`. Here N
  * episodes are in flight at once and they finish out of order, so the loop has
  * to carry a shrinking pending set and let the finished ones drop out — see
  * {@link waitForTranscripts}. It is the same idea one dimension up, and the
@@ -49,15 +49,16 @@
  * @module digest
  */
 
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { mapConcurrent, report, TRANSCRIBE_API } from "@alexkroman1/aai/step";
 import {
+  FatalError,
   stepGenerateJsonClassified,
   stepTranscribePollClassified,
   stepTranscribeSubmitClassified,
 } from "@alexkroman1/aai/step-errors";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
-import { FatalError, sleep } from "workflow";
 import { z } from "zod";
 import type { dailyDigest } from "../agent.ts";
 import { discoverEpisodes, type Episode } from "./feeds.ts";
@@ -70,7 +71,7 @@ import { sendDigestToSlack } from "./slack.ts";
  * restating the number — an eval skips the sleep, so the duration asked for is
  * the only observable there is.
  */
-export const POLL_DELAY = "20 seconds";
+export const POLL_DELAY_MS = 20_000;
 
 /**
  * 180 rounds x 20s = an hour, which is far past any podcast episode.
@@ -93,15 +94,17 @@ const MAX_TRANSCRIPT_CHARS = 18_000;
 /**
  * Submissions in flight at once — polite to the provider, still parallel.
  *
- * Inside the workflow world's default worker concurrency (three on the
- * `DATABASE_URL` path), so this width is what really runs — see "The WINDOW is
- * not the concurrency" in `mapConcurrent`.
+ * Inside `DEFAULT_STEP_CONCURRENCY` (`aai-runtime`, 16), so this width is what
+ * really runs — see "The WINDOW is not the concurrency" in `mapConcurrent`.
  */
 const SUBMIT_CONCURRENCY = 2;
 
-/** Status checks in flight at once. Cheaper calls, so a wider gate — and three is
- *  also where the world's default worker concurrency caps it, so this is the
- *  widest a stock deployment executes. */
+/**
+ * Status checks in flight at once. Cheaper calls, so a wider gate.
+ *
+ * Well inside `DEFAULT_STEP_CONCURRENCY` (`aai-runtime`, 16), like
+ * {@link SUBMIT_CONCURRENCY} above, so this width is what really runs.
+ */
 const POLL_CONCURRENCY = 3;
 
 /**
@@ -173,9 +176,10 @@ const SummaryReply = z.object({
  * that would answer differently on the second pass — {@link timestamp} is a step
  * for exactly that reason.
  */
-export async function dailyDigestFlow(input: DigestInput): Promise<DailyDigestOutput> {
-  "use workflow";
-
+export async function dailyDigestFlow(
+  input: DigestInput,
+  ctx: WorkflowCtx,
+): Promise<DailyDigestOutput> {
   // No `??` fallbacks: {@link DigestInput} is the schema's OUTPUT, so every
   // `.default()` has already run by the time a run reaches this line. The
   // chain this replaces restated all four of them, which is a second place for
@@ -188,26 +192,42 @@ export async function dailyDigestFlow(input: DigestInput): Promise<DailyDigestOu
   let digestsSent = 0;
 
   for (let digestNumber = 1; digestNumber <= totalDigests; digestNumber += 1) {
-    const episodes = await discoverEpisodes(input.podcastChannels, maxEpisodes);
-    const jobs = await mapConcurrent(episodes, SUBMIT_CONCURRENCY, submitTranscript);
-    const transcripts = await waitForTranscripts(jobs);
-    const digests = await mapConcurrent(transcripts, SUBMIT_CONCURRENCY, summarizeTranscript);
+    const episodes = await ctx.step("discoverEpisodes", () =>
+      discoverEpisodes(input.podcastChannels, maxEpisodes),
+    );
+    // `maxAttempts` was a `maxRetries` property on each function (4, 4, 5 —
+    // retries AFTER the first attempt, so 5, 5, 6 in all). It is an argument to
+    // the CALL now, which is where a policy belongs: the same function called
+    // from two places may deserve different patience.
+    const jobs = await mapConcurrent(episodes, SUBMIT_CONCURRENCY, (episode) =>
+      ctx.step("submitTranscript", () => submitTranscript(episode), { maxAttempts: 5 }),
+    );
+    const transcripts = await waitForTranscripts(jobs, ctx);
+    const digests = await mapConcurrent(transcripts, SUBMIT_CONCURRENCY, (transcript) =>
+      ctx.step("summarizeTranscript", () => summarizeTranscript(transcript), { maxAttempts: 6 }),
+    );
 
-    const slackStatus = await sendDigestToSlack({
-      slackWebhookUrl: input.slackWebhookUrl,
-      slackWorkflowTextParam: input.slackWorkflowTextParam,
-      podcastChannels: input.podcastChannels,
+    const slackStatus = await ctx.step("postDigest", () =>
+      sendDigestToSlack({
+        slackWebhookUrl: input.slackWebhookUrl,
+        slackWorkflowTextParam: input.slackWorkflowTextParam,
+        podcastChannels: input.podcastChannels,
+        episodes: digests,
+        digestNumber,
+        totalDigests,
+      }),
+    );
+
+    lastDigest = {
+      sentAt: await ctx.step("timestamp", () => timestamp()),
+      slackStatus,
       episodes: digests,
-      digestNumber,
-      totalDigests,
-    });
-
-    lastDigest = { sentAt: await timestamp(), slackStatus, episodes: digests };
+    };
     digestsSent += 1;
 
     // Not after the last one: a run that has delivered everything it owes
     // should end, not sleep for a day and then end.
-    if (digestNumber < totalDigests) await sleep(intervalMs);
+    if (digestNumber < totalDigests) await ctx.sleep(intervalMs);
   }
 
   return {
@@ -223,10 +243,10 @@ export async function dailyDigestFlow(input: DigestInput): Promise<DailyDigestOu
 /**
  * Wait for a whole BATCH of transcripts, letting them finish out of order.
  *
- * A plain async function rather than a step, and not because it is small: it
- * calls steps and it `sleep`s, neither of which a step may do. So it runs as
- * part of the body and is replayed with it — legal for the ordinary reason,
- * that every line is either a step call or a `sleep`.
+ * Part of the BODY rather than a step, and not because it is small: it CALLS
+ * steps and it sleeps, neither of which may happen inside one. So it is replayed
+ * with the body — legal for the ordinary reason, that every line is either a
+ * `ctx.step` or a `ctx.sleep` — and it takes the `ctx` for that reason.
  *
  * The shape to notice is that `pending` SHRINKS. A loop that waited for all N
  * on every round would hold the whole batch hostage to its slowest member, and
@@ -247,19 +267,24 @@ export async function dailyDigestFlow(input: DigestInput): Promise<DailyDigestOu
  * the top. Found by `agent.eval.test.ts`, which is the only tier that can see
  * it, a per-step spec having no batch to order.
  */
-async function waitForTranscripts(jobs: TranscriptJob[]): Promise<TranscriptState[]> {
+async function waitForTranscripts(
+  jobs: TranscriptJob[],
+  ctx: WorkflowCtx,
+): Promise<TranscriptState[]> {
   let pending = jobs;
   // Keyed by episode id rather than appended, and that is what keeps the digest
   // in PUBLICATION order — see this function's doc.
   const settled = new Map<string, TranscriptState>();
 
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS && pending.length > 0; attempt += 1) {
-    const polled = await mapConcurrent(pending, POLL_CONCURRENCY, pollTranscript);
+    const polled = await mapConcurrent(pending, POLL_CONCURRENCY, (job) =>
+      ctx.step("pollTranscript", () => pollTranscript(job), { maxAttempts: 5 }),
+    );
     for (const state of polled) {
       if (state.transcriptStatus !== "submitted") settled.set(state.id, state);
     }
     pending = polled.filter((state) => state.transcriptStatus === "submitted");
-    if (pending.length > 0) await sleep(POLL_DELAY);
+    if (pending.length > 0) await ctx.sleep(POLL_DELAY_MS);
   }
 
   for (const job of pending) settled.set(job.id, gaveUpOn(job));
@@ -305,8 +330,6 @@ function gaveUpOn(job: TranscriptJob): TranscriptState {
  * one-second default instead.
  */
 export async function submitTranscript(episode: Episode): Promise<TranscriptJob> {
-  "use step";
-
   await report(`Submitting ${episode.title} for transcription.`);
   try {
     const { id } = await stepTranscribeSubmitClassified(episode.audioUrl, {
@@ -320,8 +343,6 @@ export async function submitTranscript(episode: Episode): Promise<TranscriptJob>
   }
 }
 
-submitTranscript.maxRetries = 4;
-
 /**
  * Ask once whether one job has finished.
  *
@@ -332,8 +353,6 @@ submitTranscript.maxRetries = 4;
  * for "still going".
  */
 export async function pollTranscript(job: TranscriptJob): Promise<TranscriptState | TranscriptJob> {
-  "use step";
-
   if (job.transcriptStatus === "unavailable") return job;
 
   try {
@@ -358,12 +377,8 @@ export async function pollTranscript(job: TranscriptJob): Promise<TranscriptStat
   }
 }
 
-pollTranscript.maxRetries = 4;
-
 /** Reduce one transcript to the summary and points the digest carries. */
 export async function summarizeTranscript(state: TranscriptState): Promise<EpisodeDigest> {
-  "use step";
-
   if (state.transcriptStatus === "unavailable") {
     // Still an entry in the digest. A reader who sees four summaries and one
     // stated reason knows what happened; four summaries and silence looks like
@@ -404,17 +419,21 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
   };
 }
 
-summarizeTranscript.maxRetries = 5;
-
 /**
  * The clock, as a step.
  *
  * A step's result is journaled and therefore stable across replays, where
  * `new Date()` in the body would answer differently on every one — and a body
- * that is not deterministic is a body the DevKit cannot replay.
+ * that is not deterministic is a body the engine cannot replay.
+ *
+ * The read below is therefore a BASELINED occurrence of `guard-invariants`
+ * rule 30, and that is the reason: it is inside a step, not inside a body. The
+ * rule bans the call anywhere in a shipped `workflows/` file because the
+ * `ctx.step` callback boundary is not decidable from a line; `dailyDigestFlow`
+ * is what reaches this one, as `ctx.step("timestamp", () => timestamp())`.
+ * Anything at BODY level is the bug, not an exception.
  */
 export async function timestamp(): Promise<string> {
-  "use step";
   return new Date().toISOString();
 }
 

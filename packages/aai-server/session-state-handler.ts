@@ -2,18 +2,21 @@
 /**
  * `POST /:slug/session-state` — the guest's session slots and event log.
  *
- * Turn-level durability with no tenant database. The shape is the run-storage
- * route's, deliberately: `{ method, args }` behind one bearer check, because the
- * alternative is six routes and six places to restate the same scoping.
+ * Turn-level durability with no tenant database. The shape it shares with its
+ * three sibling platform routes is deliberate: `{ method, args }` behind one
+ * bearer check, because the alternative is six routes and six places to restate
+ * the same scoping.
  *
- * ## The scoping is simpler than run storage's, and the schema is why
+ * ## The scoping is a SCHEMA property, not a per-method table
  *
- * `workflow-storage-handler.ts` needs a per-method table because the DevKit's
- * schema has no tenant column, so five of its eleven methods are keyed by
- * something that is not a run. Here the slug is part of the primary key and part of
- * every statement (`platform-session-state.ts`), so the boundary is the SLUG
- * ARGUMENT — taken from the bearer, never from the request. There is nothing per
- * method to decide, and nothing to forget.
+ * The slug is part of the primary key and part of every statement
+ * (`platform-session-state.ts`), so the boundary is the SLUG ARGUMENT — taken
+ * from the bearer, never from the request. There is nothing per method to
+ * decide, and nothing to forget. The DevKit's run-storage route was the
+ * counter-example and is the reason this is worth stating: its schema had no
+ * tenant column, so five of its eleven methods were keyed by something that was
+ * not a run and each needed its own scoping rule. That route is gone;
+ * `workflow-journal-handler.ts` replaced it, with the slug in every key.
  *
  * A guessed session id therefore reaches nothing: no statement in the store can be
  * pointed at another agent's rows.
@@ -23,7 +26,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { isOneOf, requiredInt, requiredString } from "./_body-fields.ts";
-import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
+import { guestSlug, notConfigured, type PlatformCall, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
@@ -36,7 +39,6 @@ import {
   type PlatformSessionEvent,
   readEvents,
 } from "./platform-session-state.ts";
-import type { SqlExec } from "./secret-store.ts";
 
 const log = createLogger("session.state");
 
@@ -122,46 +124,61 @@ export function createSessionStateHandler(
     }
     const method = body.method;
     const sessionId = requiredString(body, "sessionId");
+    // Read BEFORE the reservation: a body this route is going to refuse must not
+    // take an admin connection to be refused. See `PlatformCall`.
+    const call = plan(method, { slug, sessionId }, body);
 
     return await withReserved(
       adminDb,
       { log, failure: "session-state call failed", detail: { slug, method } },
-      async (sql) => c.json({ result: await serve(method, { sql, slug, sessionId }, body) }, 200),
+      async (sql) => c.json({ result: await call(sql) }, 200),
     );
   };
 }
 
 type Ctx = {
-  sql: SqlExec;
   slug: string;
   sessionId: string;
 };
 
-/** Dispatch one call. The slug comes from `ctx`, never from the body. */
-async function serve(method: Method, ctx: Ctx, body: Record<string, unknown>): Promise<unknown> {
-  const { sql, slug, sessionId } = ctx;
+/**
+ * Read one call's fields and return the work that needs a connection.
+ *
+ * The slug comes from `ctx`, never from the body. Every `requiredInt`, `slotMap`
+ * and `eventList` below runs HERE — outside `withReserved` — which is the whole
+ * point of the shape: see `PlatformCall`.
+ */
+function plan(method: Method, ctx: Ctx, body: Record<string, unknown>): PlatformCall {
+  const { slug, sessionId } = ctx;
   switch (method) {
     case "load":
-      return loadSlots(sql, slug, sessionId);
-    case "commit":
-      await commitSlots(sql, slug, sessionId, slotMap(body));
-      return null;
+      return (sql) => loadSlots(sql, slug, sessionId);
+    case "commit": {
+      const values = slotMap(body);
+      return async (sql) => {
+        await commitSlots(sql, slug, sessionId, values);
+        return null;
+      };
+    }
     case "discard":
-      await discardSession(sql, slug, sessionId);
-      return null;
-    case "appendEvents":
-      await appendEvents(sql, slug, sessionId, eventList(body));
-      return null;
-    case "readEvents":
-      return readEvents(
-        sql,
-        slug,
-        sessionId,
-        requiredInt(body, "startIndex"),
-        requiredInt(body, "limit"),
-      );
+      return async (sql) => {
+        await discardSession(sql, slug, sessionId);
+        return null;
+      };
+    case "appendEvents": {
+      const events = eventList(body);
+      return async (sql) => {
+        await appendEvents(sql, slug, sessionId, events);
+        return null;
+      };
+    }
+    case "readEvents": {
+      const startIndex = requiredInt(body, "startIndex");
+      const limit = requiredInt(body, "limit");
+      return (sql) => readEvents(sql, slug, sessionId, startIndex, limit);
+    }
     case "countEvents":
-      return nextEventIndex(sql, slug, sessionId);
+      return (sql) => nextEventIndex(sql, slug, sessionId);
     default: {
       // Unreachable: the six arms above exhaust `Method`, and this ASSIGNMENT is
       // what keeps that true. `countEvents` used to live in this arm, which meant a

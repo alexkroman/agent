@@ -17,6 +17,7 @@ import {
   createUploadStore,
   UnknownUploadError,
   UPLOAD_WINDOW_CONCURRENCY,
+  UploadCompleteError,
   UploadIdTakenError,
   UploadPartError,
   type UploadStore,
@@ -192,6 +193,53 @@ describe("a parts upload", () => {
     // It declared no total, so nothing could ever decide it was complete — which
     // is exactly what makes this a 400 rather than a write that quietly works.
     await expect(store.writePart("abc", 0, body(ramp(4)))).rejects.toBeInstanceOf(UploadPartError);
+  });
+
+  test("refuses to REWRITE a window once the upload is complete", async () => {
+    // The security property, and it is measured rather than argued: a part write is
+    // keyed by its offset and the merge replaces whatever was there, so this used to
+    // answer 200, swap the bytes under a finished file, and report nothing. Upload
+    // ids are the caller's to choose and the workflow API is unauthenticated unless
+    // `AAI_WORKFLOW_API_TOKEN` is set, so it needed no credential.
+    const { store } = memoryStore();
+    await store.beginParts("abc", {}, TOTAL);
+    await store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES)));
+    const whole = await store.writePart("abc", UPLOAD_CHUNK_BYTES, body(ramp(UPLOAD_CHUNK_BYTES)));
+    expect(whole).toMatchObject({ size: TOTAL, complete: true });
+
+    const before = digest(await store.read("abc", 0, TOTAL));
+    await expect(
+      store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES, 99))),
+    ).rejects.toBeInstanceOf(UploadCompleteError);
+    // The bytes are the ones the record describes, and the record is untouched —
+    // including `complete`, which a SHORTER replacement used to flip back to false.
+    expect(digest(await store.read("abc", 0, TOTAL))).toBe(before);
+    expect(await store.info("abc")).toMatchObject({ size: TOTAL, complete: true });
+  });
+
+  test("a re-sent CLAIM on a complete upload is a no-op, not a refusal", async () => {
+    // The one write that must not become a 409, because a claim is re-sent on a 5xx
+    // or a dropped response and the request that COMPLETED an upload is exactly the
+    // one whose answer can be lost. Nothing has changed, so nothing is refused.
+    const { store, blobs } = memoryStore();
+    await store.beginParts("abc", {}, UPLOAD_CHUNK_BYTES);
+    await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES)), { limit: TOTAL });
+    const first = await store.recordParts("abc", [0]);
+    expect(first).toMatchObject({ size: UPLOAD_CHUNK_BYTES, complete: true });
+    await expect(store.recordParts("abc", [0])).resolves.toEqual(first);
+  });
+
+  test("refuses a claim that would REPLACE a window of a complete upload", async () => {
+    // The same request with the bytes swapped out from under it — a window whose
+    // object was rewritten between the two claims. Told apart from the no-op above
+    // by the LENGTH the bucket reports, which this path was already probing.
+    const { store, blobs } = memoryStore();
+    await store.beginParts("abc", {}, UPLOAD_CHUNK_BYTES);
+    await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES)), { limit: TOTAL });
+    await store.recordParts("abc", [0]);
+    await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES - 8)), { limit: TOTAL });
+    await expect(store.recordParts("abc", [0])).rejects.toBeInstanceOf(UploadCompleteError);
+    expect(await store.info("abc")).toMatchObject({ size: UPLOAD_CHUNK_BYTES, complete: true });
   });
 
   test("refuses an id that is already taken", async () => {

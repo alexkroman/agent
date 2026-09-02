@@ -53,7 +53,12 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
 import type { AppContext } from "./context.ts";
-import { forwardToGuest, NEVER_RETURNED, passThroughHeaders } from "./guest-forward.ts";
+import {
+  forwardToGuest,
+  GUEST_WEBHOOK_RESPONSE_HEADERS,
+  passThroughHeaders,
+  pickHeaders,
+} from "./guest-forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
 import { createLogger } from "./logger.ts";
 import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrl, notFoundMessage } from "./sandbox-broker.ts";
@@ -162,8 +167,14 @@ export function createWorkflowWebhookHandler(
         timeoutMs: WORKFLOW_WEBHOOK_TIMEOUT_MS,
       });
       return new Response(await res.arrayBuffer(), {
+        // An ALLOW-LIST, unlike the request direction above: a webhook sender
+        // reads a status code and the body it can interpret from a content type,
+        // and everything a tenant guest could otherwise say here is said in the
+        // platform's own voice on an origin it shares with the studio. See
+        // `GUEST_WEBHOOK_RESPONSE_HEADERS`, which also carries the `location`
+        // decision and what omitting it costs.
         status: res.status,
-        headers: passThroughHeaders(res.headers, NEVER_RETURNED),
+        headers: pickHeaders(res.headers, GUEST_WEBHOOK_RESPONSE_HEADERS),
       });
     } catch (err: unknown) {
       // The sandbox was brokered and then would not answer — a fault worth a

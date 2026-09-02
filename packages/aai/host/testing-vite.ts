@@ -27,7 +27,7 @@
  *
  * A plugin is standing INSIDE the build, so it can just do it:
  *
- * ```ts no-check
+ * ```ts
  * import agentDef from "virtual:aai/agent";
  * ```
  *
@@ -88,7 +88,7 @@ const RESOLVED = "\0aai-agent:";
  * Register it in `vitest.config.ts`; the scaffold does so already, so an
  * `aai init` project needs nothing.
  *
- * ```ts no-check
+ * ```ts
  * import { aaiAgentPlugin } from "@alexkroman1/aai/testing/vite";
  * import { defineConfig } from "vitest/config";
  *

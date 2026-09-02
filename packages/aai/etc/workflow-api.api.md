@@ -58,7 +58,15 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
+
+// @public
+export type SleepOptions = {
+    correlationId?: string;
+};
 
 // @public
 interface StandardSchemaIssue {
@@ -96,6 +104,11 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 export type StartOptions = {
     key?: string;
     notify?: boolean | string;
+};
+
+// @public
+export type StepOptions = {
+    maxAttempts?: number;
 };
 
 // @public
@@ -168,6 +181,11 @@ export type UploadRef = {
 };
 
 // @public
+export type WaitForOptions = {
+    timeoutMs: number;
+};
+
+// @public
 export type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -207,7 +225,7 @@ export type WorkflowApi = {
         fromIndex?: number;
         signal?: AbortSignal;
     }): AsyncIterable<unknown>;
-    wake(runId: string): Promise<number>;
+    wake(runId: string, options?: WakeUpOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     uploadInfo(id: string): Promise<UploadInfo>;
     download(id: string, options?: {
@@ -223,9 +241,7 @@ export type WorkflowApiClientOptions = {
 };
 
 // @public
-export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
-    workflowId?: string;
-};
+export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 
 // @public
 export type WorkflowClient = {
@@ -246,6 +262,16 @@ export type WorkflowClient = {
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
+};
+
+// @public
+export type WorkflowCtx = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public

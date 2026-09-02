@@ -31,7 +31,6 @@ export default defineConfig({
       /^@alexkroman1\/aai-cli(\/|$)/,
       /^@vitejs\/plugin-react(\/|$)/,
       /^@tailwindcss\/vite(\/|$)/,
-      /^@workflow\/world-postgres(\/|$)/,
     ],
   },
   // ONE artifact: the harness is baked into the guest image as a single

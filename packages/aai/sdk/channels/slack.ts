@@ -96,7 +96,6 @@ export type SlackChannel = Channel & {
  * import { sendToChannelClassified } from "@alexkroman1/aai/step-errors";
  *
  * export async function postDigest(webhookUrl: string, summary: string): Promise<string> {
- *   "use step";
  *   return await sendToChannelClassified(slackChannel({ webhookUrl }), {
  *     text: `Daily digest: ${summary}`,
  *     heading: "Daily digest",
