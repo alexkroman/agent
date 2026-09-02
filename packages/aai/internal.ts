@@ -210,12 +210,13 @@ export {
   MAX_WORKFLOW_WAIT_MS,
   TERMINAL_WORKFLOW_STATUSES,
 } from "./sdk/workflow-run.ts";
-// The engine's suspend BRAND, and only the brand — only `@alexkroman1/aai-runtime`
-// may set it. `isWorkflowSuspend` is deliberately NOT here: it was on both this
-// subpath and the root, one declaration published twice, and a body's `catch` is
-// where it is tested — so it belongs to the AUTHORING barrel. A name on two
-// surfaces is a name whose audience nobody decided.
-export { WORKFLOW_SUSPEND_BRAND } from "./sdk/workflow-suspend.ts";
+// There is no suspend BRAND here any more, and its absence records a design
+// that is gone rather than a name that moved. The engine's suspend signal was
+// branded with a `Symbol.for` because it travelled OUT through a workflow body
+// and back, so `instanceof` could not be trusted across the copies of this SDK a
+// guest bundle holds. It no longer travels anywhere: a suspension is raised on a
+// channel the body has no reference to and recognised by identity within one
+// `replayRun` call. See `aai-runtime/workflow-replay-suspend.ts`.
 
 // The unavailable-workflows trio. Here rather than on the root barrel because all
 // three are `@internal`: their readers are the tool executor, the two

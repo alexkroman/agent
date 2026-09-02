@@ -9,7 +9,6 @@
  */
 
 import type { WorkflowCtx } from "@alexkroman1/aai";
-import { isWorkflowSuspend } from "@alexkroman1/aai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import type { JournalStore, RunRecord } from "./workflow-journal-types.ts";
@@ -164,7 +163,9 @@ describe("a wait reached inside a step", () => {
 
   test("fails the run even when the body swallows the refusal", async () => {
     // The property `refused` exists for: a body that catches broadly must not be
-    // able to turn an engine refusal into `completed`.
+    // able to turn an engine refusal into `completed`. Unlike a SUSPENSION —
+    // which the body can no longer see at all — a refusal still travels as a
+    // throw, so this catch really does run and `refused` is what overrules it.
     const journal = await seed();
     const outcome = await replay(journal, async (_input, ctx) => {
       try {
@@ -172,8 +173,7 @@ describe("a wait reached inside a step", () => {
           await ctx.sleep(2000);
           return "x";
         });
-      } catch (err: unknown) {
-        if (isWorkflowSuspend(err)) throw err;
+      } catch {
         return "swallowed";
       }
       return "reached";

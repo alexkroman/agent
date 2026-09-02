@@ -149,8 +149,8 @@ export type {
  *
  * What a BODY is written against joins it, because that is authoring too:
  * {@link WorkflowCtx} (an author annotates a body's second parameter with it),
- * the three option bags its methods take, {@link DEFAULT_STEP_MAX_ATTEMPTS}, and
- * {@link isWorkflowSuspend}. Those replaced the Workflow DevKit's `"use step"` /
+ * the three option bags its methods take, and {@link DEFAULT_STEP_MAX_ATTEMPTS}.
+ * Those replaced the Workflow DevKit's `"use step"` /
  * `"use workflow"` directives and its `sleep`/`defineHook` imports — the engine
  * lives in this repo now, so the durability an author reaches for is a method on
  * `ctx` rather than a package this SDK had to track the surface of.
@@ -253,10 +253,13 @@ export {
 } from "./sdk/utils.ts";
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
-  // What a body's `catch` must test before doing cleanup — see the module doc
-  // for the shipped bug that makes this part of the authoring surface rather
-  // than an engine internal.
-  isWorkflowSuspend,
+  // There is deliberately no `isWorkflowSuspend` here any more. A body's `catch`
+  // used to have to test it and re-throw, which is advice — and one shipped
+  // template forgot, deleted the transcript its run was waiting for, and
+  // journaled the deletion as successful. A wait now hands back a promise that
+  // never settles, so a suspension cannot reach a `catch` at all and there is
+  // nothing left for an author to remember. See
+  // `aai-runtime/workflow-replay-suspend.ts`.
   type SleepOptions,
   type StepOptions,
   type WaitForOptions,

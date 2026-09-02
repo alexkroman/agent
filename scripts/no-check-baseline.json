@@ -54,7 +54,6 @@
     "packages/aai/sdk/testing-workflow-ctx.ts": 1,
     "packages/aai/sdk/testing.ts": 1,
     "packages/aai/sdk/workflow-ctx.ts": 3,
-    "packages/aai/sdk/workflow-suspend.ts": 1,
     "packages/aai/sdk/workflow.ts": 7
   }
 }
