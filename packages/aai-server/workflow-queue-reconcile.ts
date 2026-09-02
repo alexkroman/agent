@@ -55,8 +55,8 @@
  *   warning ("once they have been idle for 10 minutes") is finally true.
  * - **A PARK is not a stall.** `await ctx.waitFor(token)` with no `timeoutMs` is
  *   the steady state of the human-approval workflow the SDK documents, and it
- *   looks exactly like abandonment from here: `workflow-replay.ts` throws
- *   `SuspendSignal(undefined)` and `workflow-engine.ts` dispatches only when
+ *   looks exactly like abandonment from here: `workflow-replay.ts` suspends the
+ *   walk with `wakeAt: undefined` and `workflow-engine.ts` dispatches only when
  *   `wakeAt !== undefined`, "a HOOK does not [schedule its own delivery] …
  *   dispatching anyway would poll a run that may be parked for a week". So the
  *   predicate reads the hook table: an OPEN window (undelivered, unclosed) whose

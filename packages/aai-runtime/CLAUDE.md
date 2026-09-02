@@ -978,13 +978,20 @@ between them.
 grammar's `nestedWait` node (`_workflow-resume-program.ts`) generated exactly
 this shape and was the 10-out-of-10 regression for the lease fix above. It is
 gone: it can no longer generate a legal body. The arm it defended — a suspend
-GIVING BACK its charge — now has a deterministic test instead
-(`workflow-replay.test.ts`, "a suspend that reaches a step's attempt loop
-anyway", driven with a hand-branded signal), and the half of the lease that is
-still reachable through `ctx` — a charge NOT given back when an attempt dies — is
-held by `flaky`. Removing the node also lowered two coverage floors in
+GIVING BACK its charge — is gone too, and needs no replacement: a suspension is
+no longer a THROW, so nothing unwinds through a step's attempt loop and there is
+no charge to hand back (`workflow-replay-suspend.ts`). The half of the lease
+still reachable through `ctx` — a charge NOT given back when an attempt dies —
+is held by `flaky`. Removing the node also lowered two coverage floors in
 `workflow-resume-equivalence.test.ts`, re-measured over 20 runs with the old
 ranges kept beside the new ones.
+
+**And the refusal now guards LIVENESS as well.** A wait parks on a promise that
+never settles and quiescence means "no engine operation in flight", so a wait
+inside a step is a step awaiting something that cannot settle, holding the walk
+open against the check that would suspend it — `replayRun` would never return.
+A/B'd: with the check disabled, all eight cases in `workflow-replay-wait.test.ts`
+stop failing and start timing OUT. That module's own doc carries it.
 
 **That residual is REACHABLE, and the estimate beside it was measured wrong.**
 It read "far past what one dispatcher per deployment produces". One dispatcher

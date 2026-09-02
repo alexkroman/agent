@@ -92,7 +92,6 @@ export {
   type WaitForOptions,
   type WorkflowCtx,
 } from "./workflow-ctx.ts";
-export { isWorkflowSuspend } from "./workflow-suspend.ts";
 
 /**
  * A workflow body: an ordinary async function of its input and a

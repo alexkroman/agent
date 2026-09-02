@@ -437,47 +437,6 @@ function readStatus(body: string): string | undefined {
 
 ***
 
-### isWorkflowSuspend()
-
-```ts
-function isWorkflowSuspend(value: unknown): boolean;
-```
-
-Is this the engine asking the body to stop, rather than something failing?
-
-**A `catch` inside a workflow body must ask this first and re-throw.** The wait
-has not failed — the run is suspended, and the engine will deliver it again.
-
-```ts no-check
-try {
-  const job = await ctx.step("submit", () => submit(input.url));
-  undo.push(() => ctx.step("discard", () => discard(job.id)));
-  await ctx.sleep(60_000);
-  return await ctx.step("collect", () => collect(job.id));
-} catch (err) {
-  // Not a failure: the run is waiting, and everything above it still stands.
-  if (isWorkflowSuspend(err)) throw err;
-  await unwind(undo);
-  throw err;
-}
-```
-
-A body with no `try` around its waits never needs this. Reach for it only where
-cleanup runs on the failure path — which is exactly where swallowing a suspend
-does damage.
-
-#### Parameters
-
-##### value
-
-`unknown`
-
-#### Returns
-
-`boolean`
-
-***
-
 ### omitUndefined()
 
 ```ts
@@ -6459,19 +6418,29 @@ generated body-side for exactly this reason a problem.
 a schema before acting on it; the type parameter is a claim about what you
 expect, not a check.
 
-## A deadline is an OPTION, never a race
+## A deadline is an OPTION, and still the one to reach for
 
 "Wait for an answer, but not forever" is the common case — Temporal's
 `timeoutOrUserAction`, and what a retention gate or an approval window is.
 Write it as `waitFor(token, { timeoutMs })`, which resolves `undefined` when
 the window closes unanswered.
 
-**Do NOT reach for `Promise.race([ctx.waitFor(t), ctx.sleep(ms)])`.** Both
-suspend, and a suspend unwinds the stack — so the race rejects on whichever
-suspends first and the body stops before the other has been reached. That
-composes under an engine whose waits are real promises and does not compose
-here, which is why the deadline is a parameter: one call the engine can
-journal as one decision.
+**`Promise.race([ctx.waitFor(t), ctx.sleep(ms)])` does now COMPOSE**, and
+this paragraph used to say it could not. A wait no longer unwinds the stack:
+it hands back a promise that never settles, so the body walks on and reaches
+every wait a `race` or an `all` puts in front of it, and the run suspends
+ONCE afterwards carrying the earliest deadline among them. Whichever wait
+ends first is the one the race resolves on, on the delivery that ends it.
+
+The parameter is still the better API for a DEADLINE, and for two reasons
+the composition does not give you. `timeoutMs` is journaled with the hook,
+so one decision fixes the window; a raced `ctx.sleep` is a second wait whose
+own deadline is fixed at ITS first reach, so the two agree only by accident.
+And the timeout arm CLOSES the hook — a compare-and-set — before the body
+continues, which is what stops a signal landing a moment later from making
+the next replay answer a window this one timed out. A race has no such
+moment. So reach for a race when the two waits are genuinely independent (a
+review window beside a retry backoff), not to put a deadline on one wait.
 
 ###### Type Parameters
 

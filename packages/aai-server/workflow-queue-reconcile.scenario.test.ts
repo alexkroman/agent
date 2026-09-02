@@ -192,7 +192,7 @@ describeWithPg("re-enqueueing a stalled run", () => {
   test("leaves a run PARKED on an UNTIMED hook alone — the approval workflow", async () => {
     // `await ctx.waitFor(token)` with no `timeoutMs` is not a stalled run, it is
     // the steady state of the human-approval workflow the SDK documents:
-    // `workflow-replay.ts` throws `SuspendSignal(undefined)` and
+    // `workflow-replay.ts` suspends with `wakeAt: undefined` and
     // `workflow-engine.ts` dispatches only when `wakeAt !== undefined` ("a HOOK
     // does not [schedule its own delivery] … dispatching anyway would poll a run
     // that may be parked for a week"). So `running` + no queue row is EXACTLY

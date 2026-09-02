@@ -26,18 +26,15 @@
  *   `dev-workflow.scenario.test.ts` is the tier that builds a project and
  *   runs a real one.
  *
- * **One branch of the body is therefore UNPINNED here, and it is the most
- * expensive one in the file: `recapFlow`'s `isWorkflowSuspend(err)` re-throw.**
- * Its own comment says what its absence did — the first poll that had to wait
- * deleted the transcript the run was waiting for — so the missing test is worth
- * naming rather than leaving as a gap somebody assumes is covered.
- * `createWorkflowCtx` cannot produce a suspend by construction: its `sleep` is
+ * **The branch this file used to name as its biggest gap no longer exists.** It
+ * was `recapFlow`'s `if (isWorkflowSuspend(err)) throw err;` — the guard whose
+ * absence had once deleted the transcript the run was waiting for — and it was
+ * unpinnable here by construction, since `createWorkflowCtx`'s `sleep` is
  * RECORDED and its `waitFor` answers out of `hooks`, so no wait it serves ever
- * throws. Minting the engine's brand by hand would drive the branch against a
- * value no engine here produced — a test of this file's own fixture. The real
- * one is `aai-runtime`'s `workflow-replay.test.ts`, whose engine fails any run
- * whose body swallows a suspend, which is the guard under this rule for every
- * template at once.
+ * suspended. A wait now hands the body a promise that never settles, so a
+ * suspension cannot reach a `catch` at all and there is no branch left to test:
+ * `aai-runtime`'s `workflow-replay-suspend.ts` carries the mechanism and
+ * `workflow-replay.test.ts` the engine-level proof, for every template at once.
  */
 
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */

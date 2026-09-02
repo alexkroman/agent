@@ -42,31 +42,32 @@
  * that reads `claimAttempt`. What is here is only the wiring and the OUTCOME: a
  * refusal fails the run, and it does so even when the body swallows the throw.
  *
- * ## Suspension is a THROW
+ * ## Suspension is OUT OF BAND
  *
  * A body that must wait — `ctx.sleep`, `ctx.waitFor` — cannot return, because the
- * wait may be days long and the process must be free meanwhile. So it throws
- * {@link SuspendSignal}, which unwinds whatever depth the call was made at and
- * which `replayRun` reports as an outcome rather than a failure. That is also the
- * whole reason a deadline is a PARAMETER of `waitFor` rather than a `Promise.race`
- * against `sleep`: a race stops the body on whichever suspends first, before the
- * other has been reached.
+ * wait may be days long and the process must be free meanwhile. It is not thrown
+ * out either: `catch` catches everything, and a body that swallowed the engine's
+ * own signal ran its failure path against a run that was merely waiting, which
+ * shipped and cost a transcript. A wait hands back a promise that never settles
+ * and the walk suspends on a channel the body holds no reference to — the
+ * {@link ReplayOptions} walk races the body against
+ * `SuspendController.interruption`. `workflow-replay-suspend.ts` carries the
+ * argument, the aggregation of concurrent waits, and what quiescence means here.
  */
 
 import {
   DEFAULT_STEP_MAX_ATTEMPTS,
-  isWorkflowSuspend,
   type SleepOptions,
   type StepOptions,
   type WaitForOptions,
   type WorkflowCtx,
 } from "@alexkroman1/aai";
-import { WORKFLOW_SUSPEND_BRAND } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { createDeterminismReads } from "./workflow-replay-determinism.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
+import { createSuspendController, type SuspendController } from "./workflow-replay-suspend.ts";
 import { waitInsideStep } from "./workflow-replay-wait.ts";
 import { withRunContext } from "./workflow-run-context.ts";
 import type { StepGate } from "./workflow-step-gate.ts";
@@ -86,40 +87,6 @@ export type ReplayOutcome =
    * parked for a week.
    */
   | { kind: "suspended"; wakeAt: number | undefined };
-
-/**
- * A body reaching a wait that has not elapsed.
- *
- * A throw rather than a returned sentinel, because a suspend has to unwind an
- * arbitrarily deep call stack — `ctx.sleep` may be reached from inside a helper
- * the body called — and there is no way to signal "stop and come back later" up
- * through code that is not expecting it.
- *
- * **JavaScript `catch` catches everything, so a body CAN swallow this**, and one
- * shipped template did: `recap-workflow`'s saga wrapped its whole body in a
- * `try`/`catch` that unwound the compensation stack, so the first poll that had
- * to wait deleted the transcript the run was waiting for. `isWorkflowSuspend`
- * (`@alexkroman1/aai`) is what a body's `catch` tests, and {@link replayRun}'s
- * own check below is what catches a body that forgot — see `sdk/workflow-suspend.ts`.
- *
- * Branded rather than merely named, so the predicate works across however many
- * copies of either module a guest bundle holds.
- */
-class SuspendSignal extends Error {
-  /** `undefined` for a hook — see `ReplayOutcome`. */
-  readonly wakeAt: number | undefined;
-
-  constructor(wakeAt: number | undefined) {
-    super("workflow suspended");
-    this.name = "SuspendSignal";
-    this.wakeAt = wakeAt;
-    Object.defineProperty(this, WORKFLOW_SUSPEND_BRAND, {
-      value: true,
-      enumerable: false,
-      configurable: true,
-    });
-  }
-}
 
 /** What {@link replayRun} needs to run one body. */
 export type ReplayOptions = {
@@ -164,22 +131,6 @@ export type ReplayOptions = {
 };
 
 /**
- * What to record when a body swallowed its own suspend.
- *
- * Names the remedy rather than the symptom, because the symptom is whatever the
- * body did next and the cause is one line in a `catch`.
- */
-function swallowedSuspend(err: unknown): string {
-  const after = err === undefined ? "returned a value" : `threw: ${errorMessage(err)}`;
-  return (
-    `This workflow caught the engine's suspend signal and ${after}. ` +
-    "A catch in a workflow body must test it with isWorkflowSuspend from " +
-    "@alexkroman1/aai and throw it again — otherwise the body's failure path " +
-    "runs against a run that was only waiting."
-  );
-}
-
-/**
  * The absolute moment a `sleep(until)` names.
  *
  * A `Date` is taken as given; a number is a DURATION from now. Read once, at the
@@ -190,7 +141,7 @@ function wakeAtFrom(until: number | Date): number {
 }
 
 /**
- * What the body's own throw MEANS, once the walk's two flags are in hand.
+ * What the RACE settling with a rejection means, once the walk's state is in hand.
  *
  * Extracted from {@link replayRun}'s `catch` rather than inlined, because the
  * arms are a decision procedure with a fixed ORDER and nothing else in that
@@ -206,30 +157,28 @@ function classifyThrow(
   walk: {
     signal: AbortSignal | undefined;
     refused: string | undefined;
-    suspendThrown: boolean;
+    suspend: SuspendController;
   },
 ): ReplayOutcome | undefined {
   // The run was cancelled and its status is already whatever cancelled it.
   if (walk.signal?.aborted && err === walk.signal.reason) return undefined;
-  // A suspend is not a failure: the run is mid-flight and the caller schedules
-  // its next delivery.
-  if (isWorkflowSuspend(err)) {
-    return { kind: "suspended", wakeAt: err instanceof SuspendSignal ? err.wakeAt : undefined };
-  }
-  // A REFUSAL the engine raised about this walk wins over everything below, and
-  // over whatever the body threw after swallowing it. Three raise one: a
-  // divergence — once the walk has read a key the run never reached, every later
-  // line ran against a body that had lost its place, so its own failure
-  // describes a consequence rather than the cause — a step whose budget is
-  // held by attempts that never ended (`StepAbandonedError`), where the body
-  // never ran at all and whatever it did instead is not the finding — and a wait
-  // reached inside a step, where every wait AFTER it would read the wrong record.
+  // A REFUSAL the engine raised about this walk wins over everything below,
+  // INCLUDING a suspension — which is the one ordering that changed when
+  // suspension stopped being a throw, and it changed towards the truth. Three
+  // raise one: a divergence — once the walk has read a key the run never
+  // reached, every later line ran against a body that had lost its place, so its
+  // own failure describes a consequence rather than the cause — a step whose
+  // budget is held by attempts that never ended (`StepAbandonedError`), where
+  // the body never ran at all and whatever it did instead is not the finding —
+  // and a wait reached inside a step, where every wait AFTER it would read the
+  // wrong record. A walk that has lost its place must not be parked and
+  // re-delivered: the refusal is stable, so every later delivery would raise it
+  // again, and meanwhile the run reads as healthily waiting.
   if (walk.refused !== undefined) return { kind: "failed", error: { message: walk.refused } };
-  // A suspend went out and something ELSE came back: the body caught it. Fail
-  // rather than recording the failure it happens to have thrown, because the
-  // interesting fact is the swallow — everything the body did on its failure
-  // path ran against a run that was only waiting.
-  if (walk.suspendThrown) return { kind: "failed", error: { message: swallowedSuspend(err) } };
+  // The walk parked. Not a failure and not something the body did: this value
+  // was minted by the suspend controller and was never in the body's reach.
+  const suspension = walk.suspend.suspensionOf(err);
+  if (suspension) return { kind: "suspended", wakeAt: suspension.wakeAt };
   return { kind: "failed", error: { message: errorMessage(err) } };
 }
 
@@ -269,15 +218,13 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   let sleeps = 0;
   let hooks = 0;
   /**
-   * Whether a suspend was thrown during THIS walk.
+   * Where a wait PARKS, and the channel the walk suspends on.
    *
-   * The other half of `sdk/workflow-suspend.ts`'s two defences. A body that
-   * catches a suspend and does not re-throw has run its failure path against a
-   * run that was merely waiting — `recap-workflow`'s saga deleted the transcript
-   * it was waiting for — and the engine can see that without a build scan: a
-   * suspend went out, and something other than a suspend came back.
+   * One per walk, so its suspension value is unique to this call and can be
+   * recognised by identity. See `workflow-replay-suspend.ts` — the body holds no
+   * reference to any of it, which is the whole point.
    */
-  let suspendThrown = false;
+  const suspend = createSuspendController();
   /**
    * The message of a refusal the ENGINE raised about this walk, once one has.
    *
@@ -288,10 +235,13 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
    * which is a body the engine cannot execute correctly at all — see
    * `workflow-replay-wait.ts`.
    *
-   * Held rather than merely thrown, for the reason `suspendThrown` is: JavaScript
-   * `catch` catches everything, and one shipped template wraps its whole body in
-   * a `try`/`catch` — so a refusal a body swallows would come back out as
-   * `completed`, which is the exact silence this check exists to end.
+   * Held rather than merely thrown, because JavaScript `catch` catches
+   * everything and one shipped template wraps its whole body in a `try`/`catch`
+   * — so a refusal a body swallows would come back out as `completed`, which is
+   * the exact silence this check exists to end. A REFUSAL still travels as a
+   * throw, unlike a suspension: it is a verdict the body may usefully see
+   * (`stepFailure` is the same channel), and this field is what stops the body
+   * having the last word on it.
    */
   let refused: string | undefined;
   /** Record one. A callback, because `refused` is a variable and not a field. */
@@ -307,7 +257,14 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     // `ctx.now`/`ctx.random`/`ctx.uuid`, each journaled under its own positional
     // key. Their key space, their absent attempt lease and their part in the
     // divergence check are argued in `workflow-replay-determinism.ts`.
-    ...createDeterminismReads({ runId, journal, settled, divergence, refuse: setRefused }),
+    ...createDeterminismReads({
+      runId,
+      journal,
+      settled,
+      divergence,
+      refuse: setRefused,
+      hold: suspend.hold,
+    }),
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       // IDENTITY first: which journal key is this call? See `WorkflowCtx` in the
       // SDK for why it is a name plus an occurrence count.
@@ -324,51 +281,60 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       // answering a settled step from the journal is free and deterministic, and
       // refusing to would stop a cancelled run replaying far enough to record
       // why it stopped.
+      //
+      // `suspend.hold` keeps the walk OPEN for the attempt loop. A sibling wait
+      // that parks meanwhile — `Promise.all([ctx.step(…), ctx.sleep(…)])` — must
+      // not suspend the delivery out from under work in flight: the step would
+      // go unjournaled and the next delivery would run it again. It is also what
+      // replaced the attempt loop's release-on-suspend arm, which existed only
+      // because a suspend used to unwind THROUGH a running step.
       const entry =
         settled.get(key) ??
-        (await runStepAttempts({
-          runId,
-          name,
-          key,
-          maxAttempts: stepOptions?.maxAttempts ?? DEFAULT_STEP_MAX_ATTEMPTS,
-          journal,
-          signal,
-          // GATED around the attempt loop rather than around `fn`, so a step
-          // holds its slot across its own retries. Re-queueing between attempts
-          // would let a fan-out's stragglers interleave with fresh work and
-          // defeat the bound at exactly the moment it matters — when a provider
-          // is rate-limiting and every step is retrying.
-          //
-          // The journal reads above the gate are deliberately outside it: a
-          // settled step answers from `settled`/`readSteps` without executing
-          // anything, and making it queue behind live work would make a replay
-          // of a long finished run as slow as the run.
-          gate,
-          // Only ever supplied when the journal has unread work: with none, an
-          // unseen key is ordinary new work and there is nothing to refuse.
-          // `onFirstReach` fires only when `claimAttempt` answers 1 — see its
-          // doc for why a claimed attempt is what exonerates a crashed fan-out.
-          onFirstReach:
-            refusal === undefined
-              ? undefined
-              : () => {
-                  refused = refusal.message;
-                  throw refusal;
-                },
-          // The other refusal, recorded for the same reason: the step was never
-          // run, so whatever a body that catches does next describes a
-          // consequence rather than the cause. See `StepAbandonedError`.
-          onAbandoned: (message) => {
-            refused = message;
-          },
-          // The key was reached UNANSWERED — `settled` had nothing — and turned
-          // out to be journaled anyway, so the divergence cursor has to advance
-          // as if the snapshot had held it. Without this, a nested step answered
-          // on that path leaves its children displaced and the next
-          // first-reached key is refused on a healthy run.
-          onAnsweredLate: (late) => divergence.answeredLate(late),
-          fn,
-        }));
+        (await suspend.hold(() =>
+          runStepAttempts({
+            runId,
+            name,
+            key,
+            maxAttempts: stepOptions?.maxAttempts ?? DEFAULT_STEP_MAX_ATTEMPTS,
+            journal,
+            signal,
+            // GATED around the attempt loop rather than around `fn`, so a step
+            // holds its slot across its own retries. Re-queueing between attempts
+            // would let a fan-out's stragglers interleave with fresh work and
+            // defeat the bound at exactly the moment it matters — when a provider
+            // is rate-limiting and every step is retrying.
+            //
+            // The journal reads above the gate are deliberately outside it: a
+            // settled step answers from `settled`/`readSteps` without executing
+            // anything, and making it queue behind live work would make a replay
+            // of a long finished run as slow as the run.
+            gate,
+            // Only ever supplied when the journal has unread work: with none, an
+            // unseen key is ordinary new work and there is nothing to refuse.
+            // `onFirstReach` fires only when `claimAttempt` answers 1 — see its
+            // doc for why a claimed attempt is what exonerates a crashed fan-out.
+            onFirstReach:
+              refusal === undefined
+                ? undefined
+                : () => {
+                    refused = refusal.message;
+                    throw refusal;
+                  },
+            // The other refusal, recorded for the same reason: the step was never
+            // run, so whatever a body that catches does next describes a
+            // consequence rather than the cause. See `StepAbandonedError`.
+            onAbandoned: (message) => {
+              refused = message;
+            },
+            // The key was reached UNANSWERED — `settled` had nothing — and turned
+            // out to be journaled anyway, so the divergence cursor has to advance
+            // as if the snapshot had held it. Without this, a nested step answered
+            // on that path leaves its children displaced and the next
+            // first-reached key is refused on a healthy run.
+            onAnsweredLate: (late) => divergence.answeredLate(late),
+            fn,
+          }),
+        ));
       settled.set(key, entry);
 
       if (entry.status === "failed") throw stepFailure(entry);
@@ -391,18 +357,26 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       // durable wait (`sleep!0`). `!` is not producible by `${name}#${n}`.
       const occurrence = sleeps;
       sleeps++;
-      const record = await journal.claimSleep(
-        runId,
-        `sleep!${occurrence}`,
-        wakeAtFrom(until),
-        sleepOptions?.correlationId,
-      );
-      // Woken early, or the moment has passed — either way the wait is over. A
-      // deadline in the past is not an error: a run resuming after a long outage
-      // meets that case legitimately, and so does every replay after the wake.
-      if (record.woken || Date.now() >= record.wakeAt) return;
-      suspendThrown = true;
-      throw new SuspendSignal(record.wakeAt);
+      const slot = suspend.enter();
+      try {
+        const record = await journal.claimSleep(
+          runId,
+          `sleep!${occurrence}`,
+          wakeAtFrom(until),
+          sleepOptions?.correlationId,
+        );
+        // Woken early, or the moment has passed — either way the wait is over. A
+        // deadline in the past is not an error: a run resuming after a long
+        // outage meets that case legitimately, and so does every replay after
+        // the wake.
+        if (record.woken || Date.now() >= record.wakeAt) return;
+        // PARKED, never thrown. The body's `await` here never resumes, so no
+        // `catch` sees a suspension and no `finally` runs on one — see
+        // `workflow-replay-suspend.ts`.
+        return slot.park(record.wakeAt);
+      } finally {
+        slot.end();
+      }
     },
 
     async waitFor<T>(token: string, waitOptions?: WaitForOptions): Promise<T | undefined> {
@@ -417,51 +391,54 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       // Its own key space again, for the reason sleeps have one.
       const occurrence = hooks;
       hooks++;
-      const record = await journal.claimHook(runId, `hook!${occurrence}`, token);
-      // The FIRST payload, every replay. `claimHook` is idempotent on the key, so
-      // a re-walk reads what was delivered rather than registering a second wait.
-      if (record.delivered) return record.payload as T;
+      const slot = suspend.enter();
+      try {
+        const record = await journal.claimHook(runId, `hook!${occurrence}`, token);
+        // The FIRST payload, every replay. `claimHook` is idempotent on the key,
+        // so a re-walk reads what was delivered rather than registering a second
+        // wait.
+        if (record.delivered) return record.payload as T;
 
-      // No deadline: nothing but a signal ends this.
-      if (waitOptions === undefined) {
-        suspendThrown = true;
-        throw new SuspendSignal(undefined);
-      }
+        // No deadline: nothing but a signal ends this, so the wait contributes
+        // no wake time — `undefined` is what tells `earliestDeadline` to skip it.
+        if (waitOptions === undefined) return slot.park(undefined);
 
-      // A DEADLINE is journaled as its own sleep, sharing the hook's occurrence
-      // so the two travel together. That is what makes the window immune to
-      // replay: the wake time is decided the first time this wait is reached,
-      // where a `Promise.race` against a fresh `ctx.sleep` would restart it on
-      // every delivery and the window would never close.
-      const deadline = await journal.claimSleep(
-        runId,
-        `hookTimeout!${occurrence}`,
-        Date.now() + waitOptions.timeoutMs,
-        undefined,
-        // Not an ordinary sleep: a bare `wakeUp(runId)` cuts a SCHEDULE short and
-        // must not also close an approval window. See `SleepRecord.kind`.
-        "hookTimeout",
-      );
-      // Closed unanswered. The hook is CLOSED before the body continues, so a
-      // signal arriving a moment later cannot make the next replay read a
-      // payload and take the answered branch — see `HookRecord.closed`.
-      // `undefined` rather than a throw: a window closing is an outcome a body
-      // branches on, not a failure.
-      if (deadline.woken || Date.now() >= deadline.wakeAt) {
-        // The close is a COMPARE-AND-SET, and its answer is what decides the
-        // branch. A signal really can land between the deadline read above and
-        // this line, and closing over it was the divergence `HookRecord.closed`
-        // exists to prevent arriving by the other door: this walk would time out
-        // while every later replay read `delivered: true` and answered.
-        if (await journal.closeHook(runId, `hook!${occurrence}`)) return undefined;
-        // Refused, so the window was ANSWERED. Re-read it — `claimHook` is
-        // idempotent on the key, so this is the same read the next replay makes,
-        // which is exactly the point.
-        const answered = await journal.claimHook(runId, `hook!${occurrence}`, token);
-        return answered.payload as T;
+        // A DEADLINE is journaled as its own sleep, sharing the hook's occurrence
+        // so the two travel together. That is what makes the window immune to
+        // replay: the wake time is decided the first time this wait is reached,
+        // where a `Promise.race` against a fresh `ctx.sleep` would restart it on
+        // every delivery and the window would never close.
+        const deadline = await journal.claimSleep(
+          runId,
+          `hookTimeout!${occurrence}`,
+          Date.now() + waitOptions.timeoutMs,
+          undefined,
+          // Not an ordinary sleep: a bare `wakeUp(runId)` cuts a SCHEDULE short
+          // and must not also close an approval window. See `SleepRecord.kind`.
+          "hookTimeout",
+        );
+        // Closed unanswered. The hook is CLOSED before the body continues, so a
+        // signal arriving a moment later cannot make the next replay read a
+        // payload and take the answered branch — see `HookRecord.closed`.
+        // `undefined` rather than a throw: a window closing is an outcome a body
+        // branches on, not a failure.
+        if (deadline.woken || Date.now() >= deadline.wakeAt) {
+          // The close is a COMPARE-AND-SET, and its answer is what decides the
+          // branch. A signal really can land between the deadline read above and
+          // this line, and closing over it was the divergence `HookRecord.closed`
+          // exists to prevent arriving by the other door: this walk would time
+          // out while every later replay read `delivered: true` and answered.
+          if (await journal.closeHook(runId, `hook!${occurrence}`)) return undefined;
+          // Refused, so the window was ANSWERED. Re-read it — `claimHook` is
+          // idempotent on the key, so this is the same read the next replay
+          // makes, which is exactly the point.
+          const answered = await journal.claimHook(runId, `hook!${occurrence}`, token);
+          return answered.payload as T;
+        }
+        return slot.park(deadline.wakeAt);
+      } finally {
+        slot.end();
       }
-      suspendThrown = true;
-      throw new SuspendSignal(deadline.wakeAt);
     },
   };
 
@@ -471,14 +448,27 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       {
         runId,
         workflow,
-        write: (namespace, value) =>
-          options.streams?.write(runId, streamNamespace(namespace), value) ?? Promise.resolve(-1),
+        // HELD like a journal call, so a `report()` between two waits cannot be
+        // mistaken for quiescence and suspend the walk before the second one is
+        // reached. It is the one piece of engine work a BODY can start directly.
+        write: async (namespace, value) => {
+          const slot = suspend.enter();
+          try {
+            return (await options.streams?.write(runId, streamNamespace(namespace), value)) ?? -1;
+          } finally {
+            slot.end();
+          }
+        },
       },
-      async () => options.run(input, ctx),
+      // The body is RACED against the interruption rather than thrown into. It
+      // is a `race` and not a `p-timeout`: nothing here is a deadline — the
+      // other side is the walk's own suspension channel, which settles when the
+      // body has parked. See `workflow-replay-suspend.ts`.
+      async () => Promise.race([options.run(input, ctx), suspend.interruption]),
     );
     completed = { kind: "completed", output };
   } catch (err: unknown) {
-    const outcome = classifyThrow(err, { signal, refused, suspendThrown });
+    const outcome = classifyThrow(err, { signal, refused, suspend });
     // `undefined` is the abort arm: the caller's signal, re-thrown.
     if (outcome === undefined) throw err;
     return outcome;
@@ -488,11 +478,9 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // and carried on to an answer, so a run whose walk had already lost its place
   // reported `completed`.
   if (refused !== undefined) return { kind: "failed", error: { message: refused } };
-  // Resolved NORMALLY after suspending, which is the quieter half of the same
-  // bug: the body caught the suspend and carried on to an answer, so the output
-  // describes a run that skipped its own wait.
-  if (suspendThrown) {
-    return { kind: "failed", error: { message: swallowedSuspend(undefined) } };
-  }
+  // There is no companion check for a suspension any more, and its absence is
+  // the whole point: a body cannot resolve THROUGH a wait, because a parked wait
+  // hands it a promise that never settles. What used to need a post-hoc "did the
+  // body swallow it" test is now unrepresentable.
   return completed;
 }

@@ -111,7 +111,7 @@
  * just your shell.
  */
 
-import { isWorkflowSuspend, type WorkflowCtx } from "@alexkroman1/aai";
+import type { WorkflowCtx } from "@alexkroman1/aai";
 import { report, requireStepEnv, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
 import {
   FatalError,
@@ -333,18 +333,21 @@ export async function recapFlow(input: { url: string; requestedBy: string }, ctx
     const retention = await askWhetherToKeep(input.requestedBy, job.id, compensations, ctx);
     return { ...recap, ...retention, requestedBy: input.requestedBy };
   } catch (err) {
-    // **A suspend is not a failure, and this catch is why that matters.** The
-    // body above WAITS three ways now — `awaitTranscript` parks on the
-    // provider's callback, then sleeps between polls, and the gate waits for an
-    // answer — and every one of them suspends by throwing, so it lands here.
-    // Without this line the first poll that had to wait unwound the compensation
-    // stack, DELETED the transcript the run was waiting for, journaled the
-    // deletion as successful and re-threw; the engine saw its own signal come
-    // back out and recorded the run as healthily suspended. The data was gone and
-    // every signal said fine. `replayRun` now also fails a run that swallows one,
-    // so a body that forgets this is loud rather than silently destructive — but
-    // the body is the place it belongs.
-    if (isWorkflowSuspend(err)) throw err;
+    // **A suspension cannot arrive here, and it once could.** The body above
+    // WAITS three ways — `awaitTranscript` parks on the provider's callback,
+    // then sleeps between polls, and the gate waits for an answer — and each of
+    // those used to suspend by THROWING, so it landed in this catch. This saga
+    // is the code that paid for it: the first poll that had to wait unwound the
+    // compensation stack, DELETED the transcript the run was waiting for,
+    // journaled the deletion as successful and re-threw, and the engine saw its
+    // own signal come back out and recorded the run as healthily suspended. The
+    // data was gone and every signal said fine.
+    //
+    // The guard that lived here (`if (isWorkflowSuspend(err)) throw err;`) is
+    // gone because the hazard is: a wait now hands back a promise that never
+    // settles, so a parked body does not reach a `catch` at all. This block sees
+    // step failures, and nothing else.
+    //
     // The saga's whole point. Everything acquired above is released, in reverse,
     // before the failure is re-thrown — and because each undo is a STEP, a crash
     // during the unwind resumes with the finished ones replayed from the journal

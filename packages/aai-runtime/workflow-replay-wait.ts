@@ -49,6 +49,16 @@
  * do. So nothing correct is being refused, and a warning would leave a skipped
  * week-long schedule in place while narrating it.
  *
+ * **And since suspension stopped being a THROW, this refusal is what keeps the
+ * walk LIVE as well as correct.** A wait parks on a promise that never settles
+ * (`workflow-replay-suspend.ts`), and quiescence is "no engine operation in
+ * flight" — so a wait inside a step is a step awaiting a promise that cannot
+ * settle, holding the walk open against the very check that would suspend it.
+ * `replayRun` would never return. Measured by A/B: with this check disabled,
+ * all eight cases in the spec beside this module stop failing and start timing
+ * OUT at the suite's 5-second ceiling. That is a strictly worse failure than the
+ * two below, and it is why the refusal must land BEFORE the wait is claimed.
+ *
  * **A TYPE cannot reach this.** The `Literal<Name>` guard on `ctx.step`'s name
  * types an ARGUMENT; this would have to retype a CAPTURED BINDING — the outer
  * `ctx` is lexically in scope inside the closure and no step-scoped parameter can

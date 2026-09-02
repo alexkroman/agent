@@ -8,16 +8,22 @@
  * where this decides ATTEMPTS. Keeping them together put both in one function
  * Biome measured at complexity 20, and pushed the file to the 500-line cap.
  *
- * A step cannot wait: `ctx.sleep` and `ctx.waitFor` belong to the body, and both
- * now REFUSE when they are reached inside a step — `workflow-replay-wait.ts`
- * carries that check and the two bugs it ends. The closure a step is handed
- * CAPTURES `ctx`, so `ctx.step("waiting", () => ctx.sleep(60_000))` was one line
- * away at every call site, and the engine used to run it.
+ * **A suspension cannot reach this loop at all, and there is no arm for one.**
+ * That is true twice over now. A step cannot wait: `ctx.sleep` and `ctx.waitFor`
+ * belong to the body and both REFUSE when reached inside a step — the closure a
+ * step is handed CAPTURES `ctx`, so `ctx.step("waiting", () => ctx.sleep(60_000))`
+ * was one line away at every call site, and `workflow-replay-wait.ts` carries the
+ * check and the two bugs it ends. And a body-level wait no longer THROWS: it
+ * parks on a promise that never settles and the walk suspends out of band
+ * (`workflow-replay-suspend.ts`), so there is no signal to unwind through a step
+ * even if one could be reached.
  *
- * So no shipped path reaches the suspend arm below any more. It stays as DEPTH,
- * and the thing it knows is still right: a suspend is NOT an attempt's outcome —
- * {@link attemptLoop} lets it out untouched and gives the charge back — and
- * everything else here is the retry policy.
+ * This loop used to hold an arm for it — recognising the suspend, giving the
+ * attempt charge back, and re-throwing untouched — because before the refusal a
+ * suspend read as an ordinary retryable error and was JOURNALED
+ * (`{status: "failed", error: "workflow suspended"}`), an entry authoritative
+ * forever, so every later replay answered the wait as a failure. The arm is gone
+ * with the throw that needed it; everything left here is the retry policy.
  *
  * ## An attempt is a LEASE, and there are two budgets rather than one
  *
@@ -52,7 +58,6 @@
  * the SETTLED half of it from re-running the work meanwhile.
  */
 
-import { isWorkflowSuspend } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/host-internal";
 import { report } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
@@ -72,10 +77,11 @@ import type { StepGate } from "./workflow-step-gate.ts";
  * approximates rather than a promise it keeps.
  *
  * Stated plainly because it is the one place this engine is weaker than the
- * DevKit's, which re-enqueued instead of waiting — and it is still OPEN. A body
- * can suspend now (`SuspendSignal`, `journal.claimSleep`), so the shape of the
- * fix exists: a delay over this cap should become a suspend, costing nothing.
- * Nothing here does that yet — this clamps and blocks.
+ * DevKit's, which re-enqueued instead of waiting — and it is still OPEN. The
+ * machinery a fix would use exists (`journal.claimSleep` plus the suspension
+ * channel in `workflow-replay-suspend.ts`): a delay over this cap should park
+ * the walk instead, costing nothing. Nothing here does that yet — this clamps
+ * and blocks.
  */
 export const MAX_IN_PROCESS_RETRY_MS = 30_000;
 
@@ -349,31 +355,6 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
         finishedAt: Date.now(),
       });
     } catch (err: unknown) {
-      // A SUSPEND is not a verdict, so it is neither retried nor journaled — and
-      // the attempt it ended is GIVEN BACK, which is the half that was missing.
-      //
-      // Out of contract and one line away anyway — the closure captures `ctx`.
-      // Read as an ordinary retryable error it was catastrophic rather than
-      // merely wrong: the body re-ran once per attempt, each run minting a
-      // DISTINCT wait (`sleep!0/1/2`, the sleep counter advancing per re-walk, so
-      // the wait's own identity diverged), the budget burned in one delivery, and
-      // then `{status: "failed", error: "workflow suspended"}` appended — an
-      // entry that is authoritative FOREVER, so every later replay answers the
-      // wait as a failure. The run then failed with a `swallowedSuspend` message
-      // blaming the body for a swallow the engine had performed.
-      //
-      // Letting it out untouched was only half a fix: the attempt was CHARGED
-      // and never returned, so a wait inside a step still spent one charge per
-      // delivery and none of them settled anything. Three deliveries spent three
-      // of three, and the next reach journaled `failed` over a step that then
-      // succeeded on the walk beside it.
-      //
-      // Re-thrown bare, the signal reaches `replayRun`'s own catch, which is the
-      // one place that knows what to do with it.
-      if (isWorkflowSuspend(err)) {
-        await journal.releaseAttempt(runId, key);
-        throw err;
-      }
       // The WALK is over — a cancel, or the caller's own signal. This attempt
       // ends the way a DEATH ends one, and both halves of that are deliberate.
       //

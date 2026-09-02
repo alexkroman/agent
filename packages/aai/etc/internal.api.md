@@ -369,9 +369,6 @@ type WakeUpOptions = {
 // @public
 export const WORKFLOW_API_PREFIX = "/workflows";
 
-// @internal
-export const WORKFLOW_SUSPEND_BRAND: unique symbol;
-
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 

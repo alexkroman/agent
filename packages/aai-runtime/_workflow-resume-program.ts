@@ -30,10 +30,10 @@
  * exclusion above, arriving by the other door: a settled step's body is not
  * re-executed, so its wait stops being reached and every later wait in the run
  * slides one place down the key space. What that node was the 10-out-of-10
- * regression for — a suspend RELEASING its attempt charge — is now covered
- * deterministically instead, in `workflow-replay.test.ts` under "a suspend that
- * reaches a step's attempt loop anyway", because no generated body can reach
- * that arm through `ctx` any more.
+ * regression for — a suspend RELEASING its attempt charge — is not covered any
+ * more and does not need to be: the arm it defended is GONE. A suspension is no
+ * longer a throw at all, so nothing unwinds through a step's attempt loop and
+ * there is no charge for one to give back — see `workflow-replay-suspend.ts`.
  *
  * ## An orchestrating step body is not COUNTED work
  *

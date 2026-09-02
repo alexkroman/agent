@@ -34,9 +34,9 @@
  *
  * 1. **The uninterrupted run reaches the answer the grammar predicts.** An
  *    ABSOLUTE claim, not a comparison, and it is the one that catches a defect
- *    which breaks the crashed and the uncrashed run identically — which the
- *    suspend-in-step swallow does. `expectedOutput` computes the answer without
- *    the engine.
+ *    which breaks the crashed and the uncrashed run identically — as the
+ *    suspend-in-step swallow did, before the engine refused that body outright.
+ *    `expectedOutput` computes the answer without the engine.
  * 2. **Status, output, error, journal keys and per-step invocation counts are
  *    identical with and without the crash.** Counting real invocations rather
  *    than journal rows is deliberate: the two agreeing is part of what is under
@@ -196,7 +196,7 @@ const reached = {
 /**
  * The status the grammar predicts. An ABSOLUTE claim: the comparison against the
  * oracle cannot see a defect that breaks both schedules the same way, and the
- * suspend-in-step swallow is exactly one of those.
+ * suspend-in-step swallow was exactly one of those.
  */
 function soundStatus(program: Program): "completed" | "failed" {
   return fails(program) ? "failed" : "completed";

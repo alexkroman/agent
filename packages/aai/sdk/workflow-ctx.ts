@@ -33,6 +33,21 @@
  * exactly the same reason — a deadline recomputed from the clock on every replay
  * moves further out each time, and the run never wakes.
  *
+ * ## A suspension is not something a body can see
+ *
+ * There is nothing to catch and nothing to remember. A wait that has not elapsed
+ * hands back a promise that **never settles**, so a `try` around it catches
+ * nothing, a `finally` on it never runs, and every statement after it is simply
+ * unreachable on that delivery. The engine suspends the run on a channel the
+ * body holds no reference to (`aai-runtime/workflow-replay-suspend.ts`).
+ *
+ * This used to be a throw, and it was the one rule a body had to obey by hand:
+ * a `catch` was told to test the signal and re-throw it. One shipped template
+ * forgot — its saga unwound a compensation stack, deleted the transcript the run
+ * was waiting for, journaled the deletion as successful, and the run reported as
+ * healthily suspended. So `try`/`catch` in a body is now ordinary: it sees step
+ * failures and nothing else.
+ *
  * **THREE layers check this now, and none is a substitute for another.** For a
  * long time nothing did — the build scan that used to try went with the DevKit,
  * having read the BUILT flow bundle on the assumption that the builder had
@@ -414,19 +429,29 @@ export type WorkflowCtx = {
    * a schema before acting on it; the type parameter is a claim about what you
    * expect, not a check.
    *
-   * ## A deadline is an OPTION, never a race
+   * ## A deadline is an OPTION, and still the one to reach for
    *
    * "Wait for an answer, but not forever" is the common case — Temporal's
    * `timeoutOrUserAction`, and what a retention gate or an approval window is.
    * Write it as `waitFor(token, { timeoutMs })`, which resolves `undefined` when
    * the window closes unanswered.
    *
-   * **Do NOT reach for `Promise.race([ctx.waitFor(t), ctx.sleep(ms)])`.** Both
-   * suspend, and a suspend unwinds the stack — so the race rejects on whichever
-   * suspends first and the body stops before the other has been reached. That
-   * composes under an engine whose waits are real promises and does not compose
-   * here, which is why the deadline is a parameter: one call the engine can
-   * journal as one decision.
+   * **`Promise.race([ctx.waitFor(t), ctx.sleep(ms)])` does now COMPOSE**, and
+   * this paragraph used to say it could not. A wait no longer unwinds the stack:
+   * it hands back a promise that never settles, so the body walks on and reaches
+   * every wait a `race` or an `all` puts in front of it, and the run suspends
+   * ONCE afterwards carrying the earliest deadline among them. Whichever wait
+   * ends first is the one the race resolves on, on the delivery that ends it.
+   *
+   * The parameter is still the better API for a DEADLINE, and for two reasons
+   * the composition does not give you. `timeoutMs` is journaled with the hook,
+   * so one decision fixes the window; a raced `ctx.sleep` is a second wait whose
+   * own deadline is fixed at ITS first reach, so the two agree only by accident.
+   * And the timeout arm CLOSES the hook — a compare-and-set — before the body
+   * continues, which is what stops a signal landing a moment later from making
+   * the next replay answer a window this one timed out. A race has no such
+   * moment. So reach for a race when the two waits are genuinely independent (a
+   * review window beside a retry backoff), not to put a deadline on one wait.
    *
    * @param token - Who is being waited for. Two concurrent waits in one body
    *   must use different tokens, or a single signal resolves whichever the

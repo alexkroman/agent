@@ -191,6 +191,16 @@ export type DeterminismOptions = {
    * have there.
    */
   refuse: (message: string) => void;
+  /**
+   * Hold the walk open for this read's journal write.
+   *
+   * A read is an ENGINE operation like a step, so a sibling wait that parks
+   * while its `appendStep` is in flight must not suspend the delivery out from
+   * under it — the read would go unjournaled, and if the process then died the
+   * next delivery would produce a DIFFERENT value for the same key. Same reason
+   * `ctx.step` takes one; see `workflow-replay-suspend.ts` on quiescence.
+   */
+  hold: <T>(op: () => Promise<T>) => Promise<T>;
 };
 
 /**
@@ -205,7 +215,7 @@ export type DeterminismOptions = {
 export function createDeterminismReads(
   options: DeterminismOptions,
 ): Pick<WorkflowCtx, "now" | "random" | "uuid"> {
-  const { runId, journal, settled, divergence, refuse } = options;
+  const { runId, journal, settled, divergence, refuse, hold } = options;
   /** Reaches so far, per kind. A property of the WALK, like `ctx.step`'s. */
   const occurrences = new Map<DeterminismKind, number>();
 
@@ -232,15 +242,17 @@ export function createDeterminismReads(
     divergence.reach(key, kind, answered);
     if (answered !== undefined) return answered.output as T;
 
-    const stored = await journal.appendStep(runId, {
-      key,
-      name: kind,
-      status: "ok",
-      output: produce(),
-      // No attempt was charged. Decision 2 in the module doc.
-      attempts: 0,
-      finishedAt: Date.now(),
-    });
+    const stored = await hold(() =>
+      journal.appendStep(runId, {
+        key,
+        name: kind,
+        status: "ok",
+        output: produce(),
+        // No attempt was charged. Decision 2 in the module doc.
+        attempts: 0,
+        finishedAt: Date.now(),
+      }),
+    );
     settled.set(key, stored);
     // The STORE's value, never this walk's own: `appendStep` is idempotent on the
     // key, so a redelivery that raced this one has already decided the answer and
