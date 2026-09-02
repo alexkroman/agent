@@ -44,6 +44,7 @@
 
 import { beforeAll, beforeEach, expect, test } from "vitest";
 import { describeWithPg } from "./_pg-test-utils.ts";
+import { RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { useThrowawayPlatformDb } from "./_workflow-queue-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
 import {
@@ -107,6 +108,51 @@ describeWithPg("re-enqueueing a stalled run", () => {
     return found.filter((run) => run.slug === SLUG).map((run) => run.runId);
   }
 
+  test("a run out of re-walks is FAILED, and then the predicate stops finding it", async () => {
+    // The unit tier owns the branch; what only a real database can show is the
+    // consequence — that a failed run leaves `workflow_runs_stalled_idx`'s partial
+    // predicate, so the pass is FINITE. Nothing else on the platform ever writes a
+    // terminal status, so without this the run is re-enqueued every
+    // `STALL_GRACE_MS` for as long as the table holds it.
+    await sql(
+      `insert into aai_platform.workflow_runs
+         (slug, run_id, workflow, status, created_at, reconciles)
+       values ($1, 'wrun_wedged', 'digest', 'running', $2, $3)`,
+      [SLUG, stale(), RECONCILE_MAX_ATTEMPTS],
+    );
+
+    const pass = await reconcileStalledRuns(sql, { maxPerTick: 100 });
+    expect(pass.abandoned).toBe(1);
+    expect(pass.stalled).toBe(0);
+
+    const [run] = await sql(
+      "select status, error from aai_platform.workflow_runs where slug = $1 and run_id = $2",
+      [SLUG, "wrun_wedged"],
+    );
+    expect(run?.status).toBe("failed");
+    expect(String(run?.error)).toContain("stopped re-walking");
+    // No sixth message, and it is no longer a candidate.
+    expect(await queued()).toEqual([]);
+    expect(await stalledIds()).toEqual([]);
+  });
+
+  test("`markReconciled` COUNTS the attempt, which is what the budget reads", async () => {
+    // The stamp is the one write per pass that names exactly the runs a repair was
+    // issued for, so the count rides it. Two passes, two strikes — and a run under
+    // the budget is repaired rather than failed, which is the other half.
+    await seedRun("wrun_counted", "running");
+    const before = await findStalledRuns(sql, { maxPerTick: 100 });
+    expect(before.find((run) => run.runId === "wrun_counted")?.reconciles).toBe(0);
+
+    await markReconciled(sql, [{ slug: SLUG, runId: "wrun_counted" }]);
+    await markReconciled(sql, [{ slug: SLUG, runId: "wrun_counted" }]);
+    const [row] = await sql(
+      "select reconciles from aai_platform.workflow_runs where slug = $1 and run_id = $2",
+      [SLUG, "wrun_counted"],
+    );
+    expect(Number(row?.reconciles)).toBe(2);
+  });
+
   test("an unfinished run with no message is re-enqueued on its own topic", async () => {
     // The reported failure, end to end: `abandoned 1 message(s) after the retry
     // budget — those runs are stalled until something else boots their agent`,
@@ -167,7 +213,12 @@ describeWithPg("re-enqueueing a stalled run", () => {
     // the wrong sandbox.
     await seedRun("wrun_scoped", "running");
     const found = await findStalledRuns(sql, { maxPerTick: 100 });
-    expect(found).toContainEqual({ slug: SLUG, runId: "wrun_scoped" });
+    // `objectContaining`, because the claim is that the SLUG travels with the
+    // run — not what else the row carries. An exact match here broke on the day
+    // the predicate grew `reconciles`, and only against a real database: the
+    // strike count is what the abandonment budget reads, and the case above owns
+    // its default.
+    expect(found).toContainEqual(expect.objectContaining({ slug: SLUG, runId: "wrun_scoped" }));
   });
 
   const seedHook = (
@@ -359,7 +410,7 @@ describeWithPg("a reconcile pass survives one un-enqueueable run", () => {
 
     // One repaired, one skipped — and `skipped: 1` can only be reached through a
     // real `23503`, so this is also what proves the FK is present.
-    expect(pass).toEqual({ stalled: 1, skipped: 1 });
+    expect(pass).toEqual({ stalled: 1, skipped: 1, abandoned: 0 });
     // The assertion that matters: the OTHER tenant's work still happened.
     const queued = await sql("select slug, queue_name from aai_platform.workflow_queue");
     expect(queued.map((row) => String(row.queue_name))).toEqual(["__wkf_workflow_wrun_healthy"]);

@@ -27,7 +27,7 @@ import type { BundleStore } from "./bundle-store.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import { createQueueDeliverer } from "./workflow-queue-deliver.ts";
-import { startWorkflowQueueSweep } from "./workflow-queue-sweep.ts";
+import { startWorkflowQueueSweep } from "./workflow-queue-scheduler.ts";
 
 export type AgentSweepOptions = {
   store: BundleStore;

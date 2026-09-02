@@ -22,11 +22,14 @@
  *
  * **The BODIES live in `pg-cron-bodies.ts`** — the SQL, its `guarded()` wrapper
  * and the literal-safety assertions — split off along the seam the paragraph
- * above already draws between what a sweep DOES and when it runs. This file
- * stays the import surface; nothing else imports from that one.
+ * above already draws between what a sweep DOES and when it runs. The blob GC is
+ * a third file (`pg-cron-blob-gc.ts`), being a hundred lines of plpgsql where
+ * every other body is a one-line `delete`. This file stays the import surface;
+ * nothing else imports from either.
  */
 
-import type { PlatformCronStorage } from "./pg-cron-bodies.ts";
+import type { PlatformCronStorage } from "./pg-cron-blob-gc.ts";
+import { sweepBlobGc } from "./pg-cron-blob-gc.ts";
 import {
   SWEEP_CRON_HISTORY,
   SWEEP_ORPHAN_PREVIEWS,
@@ -36,14 +39,13 @@ import {
   SWEEP_STUDIO_SESSIONS,
   SWEEP_UPLOAD_RECORDS,
   SWEEP_WORKFLOW_RUNS,
-  sweepBlobGc,
 } from "./pg-cron-bodies.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 // Re-exported by NAME so `pg-cron.ts` stays the one import surface: this type is
 // half of `platformCronJobs`'s signature, and a caller reading that signature
 // should not have to learn where the sweep bodies live.
-export type { PlatformCronStorage } from "./pg-cron-bodies.ts";
+export type { PlatformCronStorage } from "./pg-cron-blob-gc.ts";
 
 export type CronJob = {
   /** Unique job name — `cron.schedule` upserts by it. */
@@ -108,12 +110,18 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
       command: SWEEP_UPLOAD_RECORDS,
     },
     // The journal half of the same rule, and the one whose absence was paid for by
-    // a query rather than by disk: see {@link SWEEP_WORKFLOW_RUNS}. Daily for the
-    // same reason the upload sweep is — a 30-day window scanned hourly finds
-    // nothing 23 times out of 24.
+    // a query rather than by disk: see {@link SWEEP_WORKFLOW_RUNS}.
+    //
+    // HOURLY, where every other retention sweep here is daily, and the reason is
+    // the ceiling rather than the freshness. One call deletes at most ten batches
+    // — the cap that keeps its transaction short — so daily was 50,000 runs a day
+    // against measured platform throughput of ~24 runs/second. Hourly turns that
+    // into 1.2M a day, which is headroom rather than a race. The objection to
+    // hourly for a 30-day window ("finds nothing 23 times out of 24") is answered
+    // by `workflow_runs_terminal_idx`: a no-op call is one index probe.
     {
       name: "aai-sweep-workflow-runs",
-      schedule: "17 4 * * *",
+      schedule: "17 * * * *",
       command: SWEEP_WORKFLOW_RUNS,
     },
     ...(opts.storage
