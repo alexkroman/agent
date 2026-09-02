@@ -13,6 +13,13 @@
  * and the two defects it shipped — a `Date` becoming `NaN`, a `Buffer` inside an
  * ARRAY — were both values nobody had typed. The envelope forgery this file was
  * written for is a third of the same kind.
+ *
+ * A fourth arrived with the `Map`/`Set` envelopes, and it is what the generated
+ * domain is for rather than a case list: a `Map` whose KEY is a `Uint8Array`, a
+ * `Map` inside a `Set` inside a record whose own key is `__proto__`, an
+ * author's `{ __type: "Map", entries: [] }` at depth. `treeOf`'s `collections`
+ * parameter generates the first two by construction and `envelopeShape` the
+ * third; nobody would have typed any of them out.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
@@ -50,6 +57,10 @@ describe("round-trip totality over a generated domain", () => {
     "type",
     "data",
     "iso",
+    // The two payload keys of the collection envelopes, so a record drawn from
+    // this pool can carry a complete forgery of one and not merely its tag.
+    "entries",
+    "values",
     "__proto__",
     "toJSON",
   ] as const;
@@ -66,6 +77,8 @@ describe("round-trip totality over a generated domain", () => {
   const STRING_POOL = [
     "Uint8Array",
     "Date",
+    "Map",
+    "Set",
     "aGVsbG8=",
     "AAB=",
     "aGVsbG8",
@@ -142,25 +155,68 @@ describe("round-trip totality over a generated domain", () => {
       ____type: fc.constant("Uint8Array"),
       iso: fc.constantFrom(...STRING_POOL),
     }),
+    // ONE record forges both collection envelopes, the tag deciding which: with
+    // `__type: "Map"` the array `entries` completes it and `values` rides along
+    // as an extra field, and the other way round for `Set`. Two birds, and the
+    // extra field is a case of its own — a reviver that matched on the key SET
+    // rather than structurally would treat this differently.
+    fc.record({
+      __type: fc.constantFrom("Map", "Set"),
+      entries: fc.array(fc.constantFrom(...STRING_POOL), { maxLength: 2 }),
+      values: fc.array(fc.integer({ min: 0, max: 3 }), { maxLength: 2 }),
+    }),
+    // A HALF-match, which must stay ordinary data on both codecs: the tag is
+    // right and the payload is not an array, so no envelope guard may fire.
+    fc.record({
+      __type: fc.constantFrom("Map", "Set"),
+      entries: fc.constantFrom(...STRING_POOL),
+      values: fc.constantFrom(...STRING_POOL),
+    }),
+    fc.record({
+      ___type: fc.constantFrom("Map", "Set"),
+      entries: fc.array(fc.constantFrom(...STRING_POOL), { maxLength: 2 }),
+    }),
   );
 
-  /** A recursive value over a chosen leaf set. */
-  const treeOf = (leaf: fc.Arbitrary<unknown>): fc.Arbitrary<unknown> =>
-    fc.letrec<{ node: unknown }>((tie) => ({
-      node: fc.oneof(
-        { maxDepth: 3, depthSize: "small" },
+  /**
+   * A recursive value over a chosen leaf set.
+   *
+   * `collections` gates `Map`/`Set` NODES rather than a leaf, deliberately: a
+   * collection's members are ordinary generated values, which is the whole
+   * point — a `Map` inside a `Set`, bytes as a KEY, a date as a value, all
+   * without listing a single one of those shapes.
+   *
+   * It is a PARAMETER because the two codecs differ on exactly this. The
+   * storage codec carries collections and the queue codec deliberately does
+   * not (see the module doc: its far end is not ours), so putting a real `Map`
+   * on the queue tree would be generating a value that codec never claimed to
+   * survive — a generator breaking its own contract, and the failure would
+   * read as a finding.
+   */
+  const treeOf = (leaf: fc.Arbitrary<unknown>, collections = false): fc.Arbitrary<unknown> =>
+    fc.letrec<{ node: unknown }>((tie) => {
+      const nodes: fc.Arbitrary<unknown>[] = [
         leaf,
         envelopeShape,
         fc.array(tie("node"), { maxLength: 4 }),
         fc
           .array(fc.tuple(fc.constantFrom(...KEY_POOL), tie("node")), { maxLength: 4 })
           .map((entries) => recordOf(entries)),
-      ),
-    })).node;
+      ];
+      if (collections) {
+        nodes.push(
+          fc
+            .array(fc.tuple(tie("node"), tie("node")), { maxLength: 3 })
+            .map((entries) => new Map(entries)),
+          fc.array(tie("node"), { maxLength: 3 }).map((items) => new Set(items)),
+        );
+      }
+      return { node: fc.oneof({ maxDepth: 3, depthSize: "small" }, ...nodes) };
+    }).node;
 
   const plainTree = treeOf(jsonLeaf);
   const binaryTree = treeOf(fc.oneof(jsonLeaf, binaryLeaf));
-  const storageTree = treeOf(fc.oneof(jsonLeaf, binaryLeaf, dateLeaf));
+  const storageTree = treeOf(fc.oneof(jsonLeaf, binaryLeaf, dateLeaf), true);
 
   /** What the generator actually reached, floored at the bottom of the block. */
   const seen = new Map<string, number>();
@@ -178,6 +234,13 @@ describe("round-trip totality over a generated domain", () => {
       note("date");
       return;
     }
+    // Before the `isRecord` branch, which answers TRUE for both — `Object.keys`
+    // of a `Map` is empty, so a collection walked as a record is counted as
+    // nothing and its members are never reached.
+    if (value instanceof Map || value instanceof Set) {
+      censusCollection(value);
+      return;
+    }
     if (Array.isArray(value)) {
       for (const item of value) census(item);
       return;
@@ -185,15 +248,49 @@ describe("round-trip totality over a generated domain", () => {
     if (isRecord(value)) censusRecord(value);
   }
 
+  /** {@link census} for a collection: counted, then walked through its members. */
+  function censusCollection(value: Map<unknown, unknown> | Set<unknown>): void {
+    if (value instanceof Set) {
+      note("set");
+      for (const item of value) census(item);
+      return;
+    }
+    note("map");
+    for (const [key, item] of value) {
+      census(key);
+      census(item);
+    }
+  }
+
+  /**
+   * The record shapes worth counting: a key the escape has to cover, or a
+   * COMPLETE envelope forgery — the tag AND a payload of the right kind in ONE
+   * record, which is exactly what the codec's guards match on.
+   *
+   * A TABLE rather than a run of `if`s because the eighth entry is what tipped
+   * `censusRecord` over biome's cognitive-complexity ceiling, and a list of
+   * predicates is what this always was.
+   *
+   * `Object.hasOwn` rather than `in`: `__proto__` is on every object's
+   * prototype chain, so `"__proto__" in value` is true for all of them and
+   * would count the one state this file exists to distinguish as universal.
+   */
+  const RECORD_STATES: readonly (readonly [string, (v: Record<string, unknown>) => boolean])[] = [
+    ["reservedKey", (v) => Object.hasOwn(v, "__type")],
+    ["escapedKey", (v) => Object.hasOwn(v, "___type")],
+    ["protoKey", (v) => Object.hasOwn(v, "__proto__")],
+    ["forgedBinary", (v) => v.__type === "Uint8Array" && typeof v.data === "string"],
+    ["forgedDate", (v) => v.__type === "Date" && typeof v.iso === "string"],
+    ["forgedMap", (v) => v.__type === "Map" && Array.isArray(v.entries)],
+    ["forgedSet", (v) => v.__type === "Set" && Array.isArray(v.values)],
+  ];
+
   /** {@link census} for a record: the shapes worth counting all live on one. */
   function censusRecord(value: Record<string, unknown>): void {
-    const keys = Object.keys(value);
-    if (keys.includes("__type")) note("reservedKey");
-    if (keys.includes("___type")) note("escapedKey");
-    if (keys.includes("__proto__")) note("protoKey");
-    if (value.__type === "Uint8Array" && typeof value.data === "string") note("forgedBinary");
-    if (value.__type === "Date" && typeof value.iso === "string") note("forgedDate");
-    for (const key of keys) census(value[key]);
+    for (const [what, matches] of RECORD_STATES) {
+      if (matches(value)) note(what);
+    }
+    for (const key of Object.keys(value)) census(value[key]);
   }
 
   const RUNS = 2000;
@@ -227,7 +324,7 @@ describe("round-trip totality over a generated domain", () => {
     );
   });
 
-  test("binary AND dates survive the storage codec, together", () => {
+  test("binary, dates AND collections survive the storage codec, together", () => {
     fc.assert(
       fc.property(storageTree, (value) => {
         census(value);
@@ -271,19 +368,37 @@ describe("round-trip totality over a generated domain", () => {
    */
   test("the generator actually reached the states that matter", () => {
     const count = (what: string): number => seen.get(what) ?? 0;
-    // Ranges are over 12 runs (2026-08-31), each summing the four properties
+    // Ranges are over 13 runs (2026-09-02), each summing the four properties
     // 8,000 generated values; every floor sits at roughly half the observed
     // MINIMUM rather than a fraction of the mean. The counts here are unusually
     // tight for this repo because each number is already an average over
     // thousands of draws — a per-run walk is what has the long left tail.
-    expect(count("reservedKey"), "never generated a __type key").toBeGreaterThan(1200); // 2311-2420
-    expect(count("escapedKey"), "never generated an escaped key").toBeGreaterThan(700); // 1408-1524
-    expect(count("protoKey"), "never generated a __proto__ key").toBeGreaterThan(250); // 535-634
-    // The two that matter most, and the two the first draft of this block reached
-    // ZERO times — see `envelopeShape`.
-    expect(count("forgedBinary"), "never forged a binary envelope").toBeGreaterThan(140); // 284-319
-    expect(count("forgedDate"), "never forged a date envelope").toBeGreaterThan(200); // 408-482
-    expect(count("binary"), "never generated real binary").toBeGreaterThan(1200); // 2318-2578
-    expect(count("date"), "never generated a real Date").toBeGreaterThan(450); // 899-1040
+    //
+    // **Every range was RE-MEASURED when the collection envelopes landed, and
+    // four floors moved — two of them DOWN.** Widening `KEY_POOL`,
+    // `STRING_POOL` and `envelopeShape` makes each individual state rarer per
+    // draw even though the domain is strictly better: `forgedBinary` fell from
+    // 284-319 to 156-195 and `forgedDate` from 408-482 to 223-269, so both old
+    // floors sat inside 10% of the new minimum and were flakes waiting for an
+    // unlucky seed. A floor that has to be lowered because the DOMAIN grew is
+    // not the same thing as one lowered to make a run pass, and the way to tell
+    // is that the ranges are recorded: the counts here are still hundreds.
+    expect(count("reservedKey"), "never generated a __type key").toBeGreaterThan(1200); // 2404-2576
+    expect(count("escapedKey"), "never generated an escaped key").toBeGreaterThan(700); // 1402-1569
+    expect(count("protoKey"), "never generated a __proto__ key").toBeGreaterThan(220); // 452-525
+    // The forgeries, and the states the first draft of this block reached ZERO
+    // times — see `envelopeShape`.
+    expect(count("forgedBinary"), "never forged a binary envelope").toBeGreaterThan(75); // 156-195
+    expect(count("forgedDate"), "never forged a date envelope").toBeGreaterThan(110); // 223-269
+    expect(count("forgedMap"), "never forged a Map envelope").toBeGreaterThan(110); // 232-273
+    expect(count("forgedSet"), "never forged a Set envelope").toBeGreaterThan(110); // 236-276
+    expect(count("binary"), "never generated real binary").toBeGreaterThan(1500); // 3211-3416
+    expect(count("date"), "never generated a real Date").toBeGreaterThan(800); // 1740-1978
+    // The two collection floors are ONE property's worth rather than four —
+    // only the storage tree carries collections, for the reason `treeOf`'s
+    // `collections` parameter gives — which is why they run below the counts
+    // above them and not because they are reached less often.
+    expect(count("map"), "never generated a real Map").toBeGreaterThan(500); // 1020-1151
+    expect(count("set"), "never generated a real Set").toBeGreaterThan(500); // 1051-1151
   });
 });

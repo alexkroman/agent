@@ -51,9 +51,11 @@
  * at all — so this one is invented, and **that is why there are TWO pairs here
  * rather than one.** A codec is safe to extend only where BOTH ends are ours:
  *
- * - **The storage RPC** ({@link encodeStorageJson} / {@link decodeStorageJson})
- *   is ours on both sides — `workflow-platform-storage.ts` and
- *   `aai-server/workflow-storage-handler.ts` — so it carries the Date envelope.
+ * - **The storage codec** ({@link encodeStorageJson} / {@link decodeStorageJson})
+ *   is ours on both sides — it is what every journal backend crosses on
+ *   (`workflow-journal-platform.ts`, `workflow-journal-postgres.ts`, and
+ *   `aai-server/platform-workflow-journal.ts` at the far end) — so it carries
+ *   the Date envelope.
  * - **The queue payload** ({@link encodeTypedJson}) is ours on the way OUT and
  *   THEIRS on the way in: `workflow-platform-queue.ts` encodes the message and
  *   the DevKit's own `createQueueHandler` reads it back. So it stays strictly
@@ -87,6 +89,42 @@
  * deliberate — the storage RPC emits the date envelope because both ends are
  * ours, the queue path never emits one because the DevKit's reviver is the far
  * end and has no date envelope to read. Shapes agree; emission differs.
+ *
+ * ## `Map` and `Set` are ours too, and they ride the STORAGE codec only
+ *
+ * A step's output is an AUTHOR's value, and `JSON.stringify(new Map(…))` is
+ * `{}` — no error, no key, nothing in the journal naming a collection. So a
+ * `ctx.step` answering a `Map` resumed with an EMPTY OBJECT: the same class of
+ * silent failure as the `Uint8Array` index map and the `NaN` date above, and
+ * one that hides better than either, since an index map at least still carries
+ * the bytes.
+ *
+ * `{ __type: "Map", entries: [[k, v], …] }` and `{ __type: "Set", values: […] }`
+ * are the envelopes. Three things about them are decisions rather than details:
+ *
+ * - **The entries are PAIRS, and both halves recurse.** A `Map`'s keys are
+ *   arbitrary values rather than strings, so the tempting
+ *   `Object.fromEntries(map)` would stringify every one of them and lose a
+ *   `Date` or a `Uint8Array` key outright. Encoding pairs instead costs nothing
+ *   and buys the rest for free: `JSON.stringify` calls the replacer for every
+ *   element of the array this hands back, so a nested `Map`, a `Map` inside a
+ *   `Set`, and bytes or a date in EITHER half all work with no further code.
+ *   {@link binaryReplacer}'s holder read is what makes a `Buffer` in one
+ *   survive — the pair array is a holder like any other.
+ * - **They join the storage codec and NOT the queue one**, exactly as the date
+ *   envelope does and for the same reason: the queue's far end is not ours. It
+ *   costs nothing here because a queue payload is engine-internal — a run id
+ *   and a step key — so no author value reaches it. A `Map` on that path would
+ *   still encode as `{}`, which is this codec's general unsupported-type hole
+ *   and is deliberately still open: closing it wants a structural check at the
+ *   step boundary, not a fourth envelope on a wire nobody sends one over.
+ * - **Adding a kind cannot weaken the escape, and that is the property to
+ *   preserve.** `workflow-typed-json-escape.ts` renames the reserved KEY family
+ *   `/^__+type$/` and never reads the tag's VALUE, so an author's own
+ *   `{ __type: "Map", entries: [] }` leaves as `{ ___type: "Map", entries: [] }`
+ *   and comes back as itself at any depth — and would do so for a tag spelling
+ *   this codec has never heard of. Totality is a property of the escape rather
+ *   than of the envelope set, which is what makes the set extensible at all.
  *
  * ## It is a REPLACER and a REVIVER, not a deep clone
  *
@@ -125,6 +163,28 @@ function isDateEnvelope(value: unknown): value is DateEnvelope {
     value.__type === "Date" &&
     (typeof value.iso === "string" || value.iso === null)
   );
+}
+
+/**
+ * What a `Map` becomes on the wire: its entries, as `[key, value]` pairs.
+ *
+ * `readonly unknown[]` rather than a pair tuple because the DECODE side reads
+ * this off untrusted JSON, where an element is whatever a peer sent — the pair
+ * shape is checked by {@link mapFromEntries} and cannot be assumed by a type.
+ */
+type MapEnvelope = { __type: "Map"; entries: readonly unknown[] };
+
+/** Is `value` one of those envelopes? */
+function isMapEnvelope(value: unknown): value is MapEnvelope {
+  return isRecord(value) && value.__type === "Map" && Array.isArray(value.entries);
+}
+
+/** What a `Set` becomes on the wire. */
+type SetEnvelope = { __type: "Set"; values: readonly unknown[] };
+
+/** Is `value` one of those envelopes? */
+function isSetEnvelope(value: unknown): value is SetEnvelope {
+  return isRecord(value) && value.__type === "Set" && Array.isArray(value.values);
 }
 
 /**
@@ -266,16 +326,79 @@ export function storageReplacer(this: unknown, key: string, value: unknown): unk
     const time = raw.getTime();
     return { __type: "Date", iso: Number.isNaN(time) ? null : raw.toISOString() };
   }
+  const collection = collectionEnvelope(value);
+  if (collection !== undefined) return collection;
   return binaryReplacer.call(this, key, value);
 }
 
 /**
- * `JSON.parse` reviver for the STORAGE RPC: binary, plus dates.
+ * A `Map` or `Set` as its envelope, or `undefined` when `value` is neither.
+ *
+ * **It reads `value`, not `raw`, and unlike the two checks above it that is the
+ * SAFE direction rather than a compromise.** `raw` exists to see past a
+ * `toJSON` the codec must look THROUGH — `Buffer`'s and `Date`'s. Neither
+ * `Map` nor `Set` has one, so `holder[key]` being a collection implies `value`
+ * is that same collection and the two checks agree; where they differ is an
+ * author's own `toJSON` RETURNING one, and there JSON's own semantics say its
+ * result is what gets serialized. So `value` is a strict superset, for the same
+ * reason {@link escapeIfPlain} reads it.
+ *
+ * Neither branch may fall through to {@link binaryReplacer}: a collection is
+ * not a plain object, so `escapeIfPlain` hands it back untouched and
+ * `JSON.stringify` writes `{}` — the silent loss this exists to prevent.
+ */
+function collectionEnvelope(value: unknown): MapEnvelope | SetEnvelope | undefined {
+  if (value instanceof Map) return { __type: "Map", entries: [...value] };
+  if (value instanceof Set) return { __type: "Set", values: [...value] };
+  return undefined;
+}
+
+/**
+ * `JSON.parse` reviver for the STORAGE RPC: binary, plus dates, plus
+ * collections.
+ *
+ * **A bottom-up reviver is what makes the collection cases free.** `JSON.parse`
+ * revives a value's children before the value, so by the time a `Map` envelope
+ * is seen its `entries` array holds pairs whose halves have already become
+ * whatever they were — bytes, a date, an inner `Map` — and there is nothing
+ * left to walk. It is also why the escape scheme renames a KEY rather than
+ * wrapping a value; `workflow-typed-json-escape.ts`'s doc carries that.
  *
  * @internal
  */
 export function storageReviver(key: string, value: unknown): unknown {
-  return isDateEnvelope(value) ? dateFromEnvelope(value.iso) : binaryReviver(key, value);
+  if (isDateEnvelope(value)) return dateFromEnvelope(value.iso);
+  if (isMapEnvelope(value)) return mapFromEntries(value.entries);
+  if (isSetEnvelope(value)) return new Set(value.values);
+  return binaryReviver(key, value);
+}
+
+/**
+ * A map envelope's entries as a `Map`, or a throw.
+ *
+ * `new Map(entries)` on its own is not an option: a forged `entries` of
+ * `[1, 2]` makes it raise `TypeError: Iterator value 1 is not an entry object`
+ * out of the middle of a `JSON.parse`, naming neither the wire nor the field —
+ * and one of `[["k"]]` does not raise at all, mapping `"k"` to `undefined`,
+ * which is an INVENTED value of exactly the kind {@link bytesFromBase64} and
+ * {@link dateFromEnvelope} exist to refuse. So the pair shape is checked and
+ * the failure is named where it happened.
+ *
+ * A duplicate key is NOT an error: `new Map` keeps the last, which is a `Map`'s
+ * own semantics rather than a guess, and nothing this codec emits can produce
+ * one — a real `Map`'s keys are distinct by construction.
+ */
+function mapFromEntries(entries: readonly unknown[]): Map<unknown, unknown> {
+  const out = new Map<unknown, unknown>();
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || entry.length !== 2) {
+      throw new Error(
+        `typed-json: Map envelope carries an entry that is not a [key, value] pair: ${JSON.stringify(entry)}`,
+      );
+    }
+    out.set(entry[0], entry[1]);
+  }
+  return out;
 }
 
 /**
