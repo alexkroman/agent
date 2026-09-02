@@ -1,5 +1,36 @@
 # aai-studio-server
 
+## 0.11.0
+
+### Minor Changes
+
+- 67274e7: Add Sync to GitHub: connect a GitHub App installation to a studio account and push a project's workspace to a repository as one commit.
+
+### Patch Changes
+
+- Updated dependencies [36a3f22]
+- Updated dependencies [0718b57]
+- Updated dependencies [165f9b2]
+- Updated dependencies [36a3f22]
+- Updated dependencies [fe3b6d6]
+- Updated dependencies [6bbef9b]
+- Updated dependencies [63e1c8e]
+- Updated dependencies [36a3f22]
+- Updated dependencies [36a3f22]
+- Updated dependencies [f10b6aa]
+- Updated dependencies [623a8bb]
+- Updated dependencies [0718b57]
+- Updated dependencies [36a3f22]
+- Updated dependencies [7ab47cf]
+- Updated dependencies [36a3f22]
+- Updated dependencies [36a3f22]
+- Updated dependencies [31459e8]
+  - @alexkroman1/aai@11.0.0
+  - @alexkroman1/aai-runtime@11.0.0
+  - aai-server@3.7.0
+  - aai-studio-client@0.6.17
+  - @alexkroman1/aai-ui@11.0.0
+
 ## 0.10.15
 
 ### Patch Changes
