@@ -1,5 +1,43 @@
 # @alexkroman1/aai-server
 
+## 3.6.19
+
+### Patch Changes
+
+- dd699c7: Release the composer follow-up queue's dispatch latch when the send itself settles, not only when a render happens to observe a busy turn — a dispatched follow-up whose turn opened and closed inside one commit left the latch armed forever, wedging the composer and Publish until a reload
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+  - @alexkroman1/aai-runtime@10.0.0
+  - @alexkroman1/aai@10.0.0
+  - @alexkroman1/aai-ui@10.0.0
+  - aai-guest@0.5.10
+
 ## 3.6.18
 
 ### Patch Changes

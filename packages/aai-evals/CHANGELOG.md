@@ -1,5 +1,19 @@
 # aai-evals
 
+## 0.1.27
+
+### Patch Changes
+
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+  - @alexkroman1/aai@10.0.0
+
 ## 0.1.26
 
 ### Patch Changes

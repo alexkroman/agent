@@ -1,5 +1,44 @@
 # aai-studio-server
 
+## 0.10.14
+
+### Patch Changes
+
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+  - @alexkroman1/aai-runtime@10.0.0
+  - @alexkroman1/aai@10.0.0
+  - aai-server@3.6.19
+  - @alexkroman1/aai-ui@10.0.0
+  - aai-studio-client@0.6.15
+
 ## 0.10.13
 
 ### Patch Changes

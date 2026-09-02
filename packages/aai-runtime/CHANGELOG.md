@@ -1,5 +1,44 @@
 # @alexkroman1/aai-runtime
 
+## 10.0.0
+
+### Major Changes
+
+- dd699c7: Remove the Workflow DevKit's world, compiled surface and queue callbacks. `AgentServerOptions` loses `workflowCode`/`stepCode` and the `SweepSkip` type is gone; neither has a mechanism behind it now.
+
+### Minor Changes
+
+- dd699c7: Raise the workflow step-concurrency default from 3 to 16, measured against a guest rather than inherited from graphile-worker. A fan-out was capped at three whatever the body asked for, so a template's own measured width was inert. Sixteen is what a real libkrun microVM holds at Modal's guaranteed reservation (1 CPU / 1024 MB): a concurrent transcription segment costs 26.1 MB at 48 kHz stereo, putting sixteen at 576 MB of 982 MB usable. Also raises the workflow progress-poll default from 1s to 5s — two of those hooks on one run spend a page's entire per-IP request budget and contend with the upload for the same link.
+- dd699c7: `SessionStateBackend.discard` now reclaims a session's EVENT LOG as well as its slots on every backend. `createPostgresStateBackend` dropped slots only and left the log to the retention sweep, so "discarded" meant two different things depending on whether a session ran self-hosted or on the platform; the append-only grant that justified the asymmetry no longer exists. One CTE, so the pair is atomic against a concurrent append, and the retention sweep stays as the backstop for a session whose guest died before it discarded.
+- dd699c7: Persist durable workflow runs to Postgres when a `DATABASE_URL` is configured, so a run survives a restart instead of living in the process that started it.
+- dd699c7: Make a deployed run's `ctx.sleep` come back: the platform's queue now holds a deployed workflow's schedule, instead of a `setTimeout` that dies with the sandbox.
+- dd699c7: Make a DEPLOYED durable workflow run actually durable: its journal now lives in the platform's database rather than in a sandbox that self-exits.
+- dd699c7: Bound how many workflow step bodies execute at once. The DevKit's world provided this and the replay engine did not, so a body's fan-out width became its execution concurrency and killed a guest.
+- dd699c7: Share the workflow API's one-shot run reads, bound the platform pool's reserve, and answer a platform shortage as 503 rather than 500. `GET /runs/:id` and `/runs/:id/stream` each opened their own journal read, so N concurrent readers of one run cost N round trips against a four-connection admin pool; they now join the same coalesced read. `createPostgresDb` gains an optional `reserveTimeoutMs`, and an exhausted pool is reported rather than waiting forever behind a caller that has already given up.
+
+### Patch Changes
+
+- dd699c7: Roll an injected prompt back completely when the conversation window is full. `dropTrailingUser` popped where the push had already trimmed, so a resume prompt, silence nudge or `injectTurn` rolled back at the 200-message cap permanently cost the oldest real conversation turn. The LLM view could lose two, since capping can orphan a `tool` result its removal split.
+- dd699c7: `createRuntime` now refuses `executeTool` without `toolSchemas` (and the reverse) instead of silently running the in-process tool path with no tools. A lone `executeTool` used to discard the caller's relay entirely and answer every call with `Unknown tool`.
+- dd699c7: Refuse a session event the platform cannot read instead of dropping it from the page. A read of the session event stream is a cursor, so a skipped entry was an event silently gone rather than a degraded answer — and an entry whose index coerced to `0` was worse, taking the place of the session's real first event. Both ends of the wire now refuse what they cannot read.
+- dd699c7: A streamed upload whose body dies now keeps the window it was filling. The growing window cut buffered up to 8 MiB against its next target and discarded it when the body failed, so a torn stream published less than had actually arrived.
+- dd699c7: Restore workflow progress streaming on deployed agents. The run context was a module-level AsyncLocalStorage, so the harness's copy of the runtime and the agent bundle's copy each had their own — a step's `report()` found no context, streamed nothing, and logged an empty context object.
+- dd699c7: Fix the in-memory workflow correlation-key index to record each run id at most once, matching the Postgres store's `on conflict (run_id) do nothing`. A retried `record` after a lost connection used to list the same run twice, promote it past a newer run, and index it under a second key — found by the new shared WorkflowKeyStore conformance table.
+- dd699c7: A malformed base64 audio frame is now reported — one warning per 10s per logger, carrying the running count — instead of being dropped silently. The three callers that own a session log there; the three provider openers use the default logger.
+- dd699c7: Bound a step's outbound HTTP again. The step fetch pool had undici's header and body timeouts disabled, justified partly by a step budget the DevKit removal deleted, so a `stepFetch` call passing no signal had a deadline from no layer at all. Both are set to a 10-minute INACTIVITY bound — undici's timers are phase timers, not total-duration ones, so the number does not scale with the payload — and the walk's `AbortSignal` now reaches every step request, so a cancelled run stops its in-flight I/O instead of finishing an upload nobody is waiting for.
+- dd699c7: A step that suspends no longer spends its own retry budget. An attempt is now a lease: tries are counted in the walk, and the durable charge is given back when a body suspends, so overlapping deliveries of one run can no longer exhaust a budget between them and journal `failed` over a step that had succeeded. The refusal is a verdict about the walk rather than a journal entry, so only a walk whose own body threw can write a `failed` entry.
+- dd699c7: A completed run's snapshot falls back to `WdkAdapter.readOutput` when the record carries no `output`, which is legal for an adapter written against a retained epoch. Such adapters silently reported `output: undefined` for every completed run.
+- dd699c7: Remove the Workflow DevKit adapter, which the replay engine replaced.
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+  - @alexkroman1/aai@10.0.0
+
 ## 9.2.0
 
 ### Patch Changes

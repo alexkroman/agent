@@ -1,5 +1,23 @@
 # @alexkroman1/aai-ui
 
+## 10.0.0
+
+### Minor Changes
+
+- dd699c7: Add `useRunKey()`: the opaque, storage-backed lookup key `useWorkflowSubmit({ key, recover: true })` needs, with the storage kind (`session`, the default, or `local`) left to the caller. Six templates had each minted their own; the key is now scoped to the page's URL, so two agents scaffolded from one template on a shared origin no longer recover each other's runs.
+
+### Patch Changes
+
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+- Updated dependencies [dd699c7]
+  - @alexkroman1/aai@10.0.0
+
 ## 9.2.0
 
 ### Patch Changes
