@@ -71,6 +71,7 @@ import {
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { createPlatformJournal } from "./workflow-journal-platform.ts";
 import type { JournalStore, RunStatus } from "./workflow-journal-types.ts";
+import { JournalConflictError } from "./workflow-journal-types.ts";
 
 /* -------------------------------------------------------------------------- */
 /* The memory arm                                                             */
@@ -325,10 +326,22 @@ function platformJournalOver(store: JournalStore): JournalStore {
         headers: { "content-type": "application/json" },
       });
     } catch (err: unknown) {
-      // Everything the route cannot serve is a 5xx or a 409, and the client's
-      // only correct behaviour for either is to propagate. Which status it is
-      // does not change that, so one arm covers both.
-      return new Response(err instanceof Error ? err.message : "failed", { status: 500 });
+      // **The STATUS is part of the contract now, and this used to flatten it.**
+      // The comment here read "which status it is does not change that, so one
+      // arm covers both" — true while the client's only behaviour for a non-2xx
+      // was to propagate, and false since it began mapping a 409 to a
+      // `JournalConflictError`: the engine reads that type to decide between
+      // failing the run and retrying the delivery
+      // (`workflow-replay-journal-failure.ts`). Answering 500 for a conflict
+      // made this arm structurally unable to see the mapping — the typed-refusal
+      // case failed here and passed everywhere else.
+      //
+      // So the fake mirrors the real route's `statusFor` hook: a refusal that is
+      // a verdict about the RUN is a 409, everything else a 500.
+      const conflict = JournalConflictError.is(err);
+      return new Response(err instanceof Error ? err.message : "failed", {
+        status: conflict ? 409 : 500,
+      });
     }
   };
   return createPlatformJournal({

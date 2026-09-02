@@ -90,7 +90,7 @@ import type {
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-types.ts";
-import { isTerminalStatus } from "./workflow-journal-types.ts";
+import { isTerminalStatus, JournalConflictError } from "./workflow-journal-types.ts";
 import { decodeStorageJson } from "./workflow-typed-json.ts";
 
 /**
@@ -311,7 +311,9 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       );
       const owner = existing[0];
       if (owner && !(owner.run_id === runId && owner.key === key)) {
-        throw new Error(
+        // Typed for the reason the memory backend's is — see
+        // `JournalConflictError`. Every arm owes this type for this case.
+        throw new JournalConflictError(
           `workflow hook token ${JSON.stringify(token)} is already held by run ${owner.run_id}`,
         );
       }

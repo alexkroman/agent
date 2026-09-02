@@ -17,6 +17,7 @@
 
 import { describe, expect, test } from "vitest";
 import { type JournalArm, keysFor, runOf } from "./journal-conformance-cases.ts";
+import { JournalConflictError } from "./workflow-journal-types.ts";
 
 /** Far enough out that no case's wall-clock reads it as elapsed. */
 const FAR = 60_000;
@@ -192,7 +193,19 @@ export function journalWaitConformance(arm: JournalArm): void {
         expect(await journal.claimHook(runId, "ask#0", token)).toEqual(first);
       });
 
-      test("a token another RUN holds is refused", async () => {
+      /**
+       * The refusal is typed, and `toThrow()` alone is not the claim.
+       *
+       * The engine reads `JournalConflictError` to decide between failing the run
+       * and treating the store as unavailable and retrying the delivery — see
+       * `workflow-replay-journal-failure.ts` — so an arm that refuses with a
+       * plain `Error` has a conflicted run retried until its budget runs out
+       * while every other arm fails it at once. That is invisible to a
+       * `toThrow()`, which is what these two asserted for as long as they
+       * existed, and it is exactly the kind of per-arm divergence this table is
+       * for.
+       */
+      test("a token another RUN holds is refused, as a typed CONFLICT", async () => {
         // Two waits sharing a token means one signal resolves whichever the store
         // happens to find and the other waits forever — a bug worth failing the
         // run over rather than resolving arbitrarily.
@@ -202,7 +215,9 @@ export function journalWaitConformance(arm: JournalArm): void {
         await journal.createRun(runOf({ runId: one.runId }));
         await journal.createRun(runOf({ runId: two.runId }));
         await journal.claimHook(one.runId, "ask#0", one.token);
-        await expect(journal.claimHook(two.runId, "ask#0", one.token)).rejects.toThrow();
+        await expect(journal.claimHook(two.runId, "ask#0", one.token)).rejects.toSatisfy(
+          JournalConflictError.is,
+        );
       });
 
       test("a token another KEY of the same run holds is refused too", async () => {
@@ -210,7 +225,9 @@ export function journalWaitConformance(arm: JournalArm): void {
         const { runId, token } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
         await journal.claimHook(runId, "ask#0", token);
-        await expect(journal.claimHook(runId, "ask#1", token)).rejects.toThrow();
+        await expect(journal.claimHook(runId, "ask#1", token)).rejects.toSatisfy(
+          JournalConflictError.is,
+        );
       });
     });
 

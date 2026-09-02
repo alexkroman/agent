@@ -66,6 +66,12 @@ export function isTerminalStatus(status: RunStatus): boolean {
   return (TERMINAL_WORKFLOW_STATUSES as readonly string[]).includes(status);
 }
 
+// Re-exported: the class is DECLARED in its own module for the file-length
+// reason that module's doc gives, and this stays the path every backend and the
+// engine already name. Same pattern as `StepAbandonedError` in
+// `workflow-replay-step.ts`.
+export { JournalConflictError } from "./workflow-journal-conflict.ts";
+
 /**
  * A journal that can be SWEPT — one that declares
  * {@link JournalStore.resumableRuns}.
@@ -380,6 +386,10 @@ export type JournalStore = {
    * throws: two waits sharing a token means one signal resolves whichever the
    * store happens to find and the other waits forever, which is a bug worth
    * failing the run over rather than resolving arbitrarily.
+   *
+   * **It throws a {@link JournalConflictError}**, which is what tells the engine
+   * to fail the run rather than treat the store as unavailable and retry the
+   * delivery forever. Every backend owes that type for this case.
    */
   claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
   /**

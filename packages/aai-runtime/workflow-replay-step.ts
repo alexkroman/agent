@@ -346,6 +346,26 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
       // No release: the entry below is authoritative from now on, so every later
       // walk answers from `readSteps` and nothing reads the charge again. That
       // is what keeps the happy path at one journal round trip per step.
+      //
+      // `return`, NEVER `return await`, and that is load-bearing rather than a
+      // style choice. A bare `return` inside a `try` hands the pending promise
+      // out without settling it here, so the `catch` below cannot see it; add
+      // `await` and a journal write that REJECTS becomes a value this loop
+      // classifies as the step body's own failure — so it would either retry the
+      // body (up to `maxAttempts`, re-running whatever the body was paid to do)
+      // or journal `failed` over a step that SUCCEEDED, which is the one thing
+      // "An attempt is a LEASE" says must never happen.
+      //
+      // Unawaited, the rejection propagates out of `replayRun` instead, which is
+      // exactly the documented contract: a failure of the JOURNAL means the
+      // run's state is unknown, so the delivery fails and is retried rather than
+      // the run being marked failed on a database blip.
+      //
+      // The `catch`-swallows-a-`return` interaction is not hypothetical here.
+      // The same shape, in the other direction, is why `deadlineOutcome` in
+      // `workflow-replay-waits.ts` answers a descriptor rather than parking: a
+      // bare `return` there ran the `finally` first and closed the slot the park
+      // needed, and `replayRun` never returned.
       return journal.appendStep(runId, {
         key,
         name,
@@ -383,6 +403,10 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
         await backOff(options, tries, err);
         continue;
       }
+      // Unawaited for the reason the `ok` arm above is — though here it is the
+      // weaker half of the same rule, this `return` being outside any `try`. It
+      // stays unawaited so both arms read the same and neither invites the
+      // `await` the other cannot afford.
       return journal.appendStep(runId, {
         key,
         name,

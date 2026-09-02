@@ -67,6 +67,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { createDeterminismReads } from "./workflow-replay-determinism.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
+import { watchJournalFailure } from "./workflow-replay-journal-failure.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
 import { createSuspendController, type SuspendController } from "./workflow-replay-suspend.ts";
 import { createWaitMethods } from "./workflow-replay-waits.ts";
@@ -159,11 +160,17 @@ function classifyThrow(
   walk: {
     signal: AbortSignal | undefined;
     refused: string | undefined;
+    journalFailed: boolean;
     suspend: SuspendController;
   },
 ): ReplayOutcome | undefined {
   // The run was cancelled and its status is already whatever cancelled it.
   if (walk.signal?.aborted && err === walk.signal.reason) return undefined;
+  // The JOURNAL failed, so the run's state is unknown and this is not a verdict
+  // about the run at all: `undefined` re-throws, the delivery fails, and the
+  // queue retries it. Ahead of the refusal below because a refusal is a reading
+  // of the journal, and a journal that is not answering cannot support one.
+  if (walk.journalFailed) return undefined;
   // A REFUSAL the engine raised about this walk wins over everything below,
   // INCLUDING a suspension — which is the one ordering that changed when
   // suspension stopped being a throw, and it changed towards the truth. Three
@@ -194,10 +201,27 @@ function classifyThrow(
  * and the right move is to let the delivery fail and be retried, not to mark a
  * run failed on the strength of a database blip.
  *
+ * **That second sentence used to be true only of `readSteps`.** Every other
+ * journal call the engine makes is reached FROM the body, so its rejection
+ * unwound through the body like any other throw and `classifyThrow` had nothing
+ * to tell it from an exception the body raised — a store that blinked marked a
+ * healthy run TERMINALLY failed, discarding a step that had already succeeded.
+ * `workflow-replay-journal-failure.ts` is what makes the sentence true: the
+ * store is wrapped once, any rejection is recorded on the walk, and this
+ * re-throws it — including when the body swallowed it. Its one exemption is a
+ * `JournalConflictError`, which is a verdict about the RUN rather than the
+ * store and must still fail it.
+ *
  * @internal
  */
 export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> {
-  const { runId, workflow, input, journal, signal } = options;
+  const { runId, workflow, input, signal } = options;
+  // Every journal call this walk makes goes through the watch, so a rejection is
+  // recorded before it unwinds — see `workflow-replay-journal-failure.ts`. It is
+  // shadowed deliberately: nothing below may reach the raw store, or a new
+  // journal call would be silently exempt from the rule.
+  const journalWatch = watchJournalFailure(options.journal);
+  const journal = journalWatch.journal;
 
   // One read for the whole replay — see `JournalStore`'s doc for why this is not
   // a lookup per step. Indexed by `key`, which is what `ctx.step` computes.
@@ -376,11 +400,23 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     );
     completed = { kind: "completed", output };
   } catch (err: unknown) {
-    const outcome = classifyThrow(err, { signal, refused, suspend });
+    const outcome = classifyThrow(err, {
+      signal,
+      refused,
+      journalFailed: journalWatch.failure() !== undefined,
+      suspend,
+    });
     // `undefined` is the abort arm: the caller's signal, re-thrown.
     if (outcome === undefined) throw err;
     return outcome;
   }
+  // Resolved NORMALLY after a journal failure is the same quiet half, and for a
+  // journal it is worse than for a refusal: the body swallowed the rejection and
+  // answered, so the run would be marked `completed` carrying a step the store
+  // never recorded — which the next read of that journal cannot reproduce.
+  // Re-thrown as it arrived, so the delivery is retried.
+  const journalFailure = journalWatch.failure();
+  if (journalFailure !== undefined) throw journalFailure;
   // Resolved NORMALLY after a refusal is the quieter half of the same bug, and
   // the one the measured reproduction actually took: the body caught the refusal
   // and carried on to an answer, so a run whose walk had already lost its place

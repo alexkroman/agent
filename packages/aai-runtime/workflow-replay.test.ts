@@ -556,3 +556,95 @@ describe("a hook answered while its own timeout is being read", () => {
     expect(await journal.deliverHook("tok", { late: true })).toBeUndefined();
   });
 });
+
+/**
+ * A journal write that FAILS is not the step's failure, and the distinction is
+ * carried by one missing `await`.
+ *
+ * `attemptLoop` ends its success arm with a bare `return journal.appendStep(…)`
+ * inside a `try`. The promise leaves the function unsettled, so the `catch`
+ * cannot see its rejection — which is what keeps a database blip from being
+ * classified as the body's own failure and retried. These pin the two halves of
+ * that, because the property is invisible in the diff: adding `await` changes
+ * nothing about the happy path and everything about this one.
+ */
+describe("a journal whose appendStep rejects", () => {
+  /** A journal that stores runs and waits normally and cannot write a step. */
+  function withBrokenAppend(journal: JournalStore, reason: string): JournalStore {
+    return {
+      ...journal,
+      appendStep: () => Promise.reject(new Error(reason)),
+    };
+  }
+
+  test("propagates out of replayRun rather than resolving a failed run", async () => {
+    // The documented contract: a failure of the JOURNAL means the run's state is
+    // unknown, so the delivery fails and is retried. Marking the run `failed` on
+    // the strength of a write error is what must not happen.
+    const { journal } = await seed();
+    const broken = withBrokenAppend(journal, "connection reset");
+
+    await expect(replay(broken, (_input, ctx) => ctx.step("work", () => 1))).rejects.toThrow(
+      "connection reset",
+    );
+  });
+
+  test("does NOT re-run the step body, which is what an `await` there would cost", async () => {
+    // With `return await`, the rejection lands in the loop's own `catch`, reads
+    // as an unclassified (therefore retryable) throw, and the body runs again —
+    // `maxAttempts` times, re-doing whatever the step was paid to do.
+    const { journal } = await seed();
+    const paid = vi.fn(() => "receipt");
+    const broken = withBrokenAppend(journal, "connection reset");
+
+    await expect(
+      replay(broken, (_input, ctx) => ctx.step("charge", paid, { maxAttempts: 3 })),
+    ).rejects.toThrow("connection reset");
+    expect(paid).toHaveBeenCalledTimes(1);
+  });
+
+  test("still propagates when the body SWALLOWS the rejection", async () => {
+    // The quieter half, and worse here than for a refusal: the body caught the
+    // store's error and answered, so the run would be marked `completed`
+    // carrying a step the journal never recorded.
+    const { journal } = await seed();
+    const broken = withBrokenAppend(journal, "connection reset");
+
+    await expect(
+      replay(broken, async (_input, ctx) => {
+        try {
+          await ctx.step("work", () => 1);
+        } catch {
+          return "swallowed";
+        }
+        return "answered";
+      }),
+    ).rejects.toThrow("connection reset");
+  });
+
+  test("does the same for a WAIT's claim, not only for appendStep", async () => {
+    // The reason this is a wrapper rather than a check at one call site: a
+    // `claimSleep` rejection unwinds through the body exactly as an `appendStep`
+    // one does, from a different file.
+    const { journal } = await seed();
+    const broken: JournalStore = {
+      ...journal,
+      claimSleep: () => Promise.reject(new Error("pool exhausted")),
+    };
+
+    await expect(replay(broken, (_input, ctx) => ctx.sleep("nap", 1000))).rejects.toThrow(
+      "pool exhausted",
+    );
+  });
+
+  test("writes no `failed` entry over a step whose body SUCCEEDED", async () => {
+    // The sharper half. A journaled `failed` is authoritative forever, so the
+    // step that really returned would replay as a failure for the life of the
+    // run. Asserted against the REAL journal underneath the broken facade.
+    const { journal } = await seed();
+    const broken = withBrokenAppend(journal, "connection reset");
+
+    await expect(replay(broken, (_input, ctx) => ctx.step("work", () => 1))).rejects.toThrow();
+    expect(await journal.readSteps("wrun_1")).toEqual([]);
+  });
+});

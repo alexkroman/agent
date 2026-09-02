@@ -599,3 +599,44 @@ same project:
 Rendered in ISOLATION it reports seven more, all `{@link Db}`-shaped links into
 `@alexkroman1/aai`. Those are an artifact of the SDK not being in the project,
 not a defect in these comments — do not "fix" them by deleting links.
+
+## What writing the `aai-runtime` epoch templates found
+
+Four things the surface cannot currently demonstrate about itself. None is a bug;
+each is a decision worth making rather than inheriting.
+
+- **`uploads` publishes a store TYPE and two blob implementations with no
+  contracted way to join them** — `createUploadStore` and `resolveUploadBlobs`
+  are `@internal`, so they are on `/internal` and the template has to take the
+  store as a parameter. Honest for an embedder handed one by `createServer`, and
+  it means the capability cannot show its own end-to-end wiring.
+- **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
+  contracted and `createWorkflowClient` is on `/internal`, so a template can
+  assemble the bag and not hand it to anything. Its `logger` field is required
+  and both shipped `Logger` values (`consoleLogger`, `createConsoleLogger`) are
+  on `/internal` too — only the `Logger` type is contracted.
+
+  It is at **epoch 2** for a reason worth knowing, because it is the SIBLING
+  version of the `TextTurnResult` hazard below: the export list did not move and
+  neither did a signature, only the PROVENANCE line in the rollup —
+  `WORKFLOW_API_PREFIX` reaches this package from `@alexkroman1/aai/internal`
+  now rather than `/workflow-api`, since the prefix is the server's half of that
+  API. A host that takes the constant from `@alexkroman1/aai-runtime` — every
+  host — sees nothing.
+- **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
+  the honest template is fifty lines of skeleton and anything in the wild will either
+  be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way
+  `aai` publishes `createToolContext` — would remove the incentive to launder it.
+- **`TextTurnResult` is `ReturnType<typeof streamText<ToolSet>>`**, so this
+  capability's contract hash moves when the `ai` package's `StreamTextResult`
+  moves. An upstream minor can force an epoch classification here with no change
+  of ours.
+
+And one real defect the templates caught, now FIXED: **`PassthroughServerOptions`
+could not be spread into `ServerOptions`.** Its fields were optional WITHOUT
+`| undefined`, so under `exactOptionalPropertyTypes` `{...hooks}` widens each to
+`T | undefined` and `createServer` rejected it (TS2379) — while the three wrapper
+doors exist precisely so one hook bag can reach all of them. The fix is on the
+TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
+`upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
+bag. Do not narrow them back.

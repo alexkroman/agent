@@ -270,44 +270,12 @@ the re-export clause does not help, for the API Extractor reason above.
 
 ### What writing the templates found
 
-Four things the surface cannot currently demonstrate about itself. None is a bug;
-each is a decision worth making rather than inheriting.
-
-- **`uploads` publishes a store TYPE and two blob implementations with no
-  contracted way to join them** — `createUploadStore` and `resolveUploadBlobs`
-  are `@internal`, so they are on `/internal` and the template has to take the
-  store as a parameter. Honest for an embedder handed one by `createServer`, and
-  it means the capability cannot show its own end-to-end wiring.
-- **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
-  contracted and `createWorkflowClient` is on `/internal`, so a template can
-  assemble the bag and not hand it to anything. Its `logger` field is required
-  and both shipped `Logger` values (`consoleLogger`, `createConsoleLogger`) are
-  on `/internal` too — only the `Logger` type is contracted.
-
-  It is at **epoch 2** for a reason worth knowing, because it is the SIBLING
-  version of the `TextTurnResult` hazard below: the export list did not move and
-  neither did a signature, only the PROVENANCE line in the rollup —
-  `WORKFLOW_API_PREFIX` reaches this package from `@alexkroman1/aai/internal`
-  now rather than `/workflow-api`, since the prefix is the server's half of that
-  API. A host that takes the constant from `@alexkroman1/aai-runtime` — every
-  host — sees nothing.
-- **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
-  the honest template is fifty lines of skeleton and anything in the wild will either
-  be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way
-  `aai` publishes `createToolContext` — would remove the incentive to launder it.
-- **`TextTurnResult` is `ReturnType<typeof streamText<ToolSet>>`**, so this
-  capability's contract hash moves when the `ai` package's `StreamTextResult`
-  moves. An upstream minor can force an epoch classification here with no change
-  of ours.
-
-And one real defect the templates caught, now FIXED: **`PassthroughServerOptions`
-could not be spread into `ServerOptions`.** Its fields were optional WITHOUT
-`| undefined`, so under `exactOptionalPropertyTypes` `{...hooks}` widens each to
-`T | undefined` and `createServer` rejected it (TS2379) — while the three wrapper
-doors exist precisely so one hook bag can reach all of them. The fix is on the
-TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
-`upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
-bag. Do not narrow them back.
+Four things this surface cannot demonstrate about itself (two capabilities
+publishing a type whose constructor is `@internal`, `WdkAdapter`'s nine methods
+with no partial-implementation affordance, `TextTurnResult` letting an upstream
+minor force an epoch), plus the one real defect they caught. **In
+[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "What writing the `aai-runtime` epoch
+templates found"** — that guide owns the epochs; this one is at its cap.
 
 ### Self-hosted durable workflows: there is no world to start any more
 
@@ -709,14 +677,11 @@ replaces. A MISSING directory throws for the same reason.
 
 ## Rendering this package is a docs decision, and it cannot be half-made
 
-There is no `typedoc.json` here, and its absence is a measured decision rather
-than an oversight — a package-local config alone turns the docs gate red, and
-the answer today is no. **The whole account is in
-[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "Rendering `aai-runtime` is a docs
-decision"**: the five files one change would have to touch together, what a real
-render measured (clean under `treatWarningsAsErrors`, with the two options that
-earned their place), and what would change the answer. It moved there when this
-guide hit its 120,000-char cap; that guide owns all three rendered artifacts.
+There is no `typedoc.json` here, and the absence is measured rather than an
+oversight: a package-local config alone turns the docs gate red, and the answer
+today is no. **[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "Rendering
+`aai-runtime` is a docs decision"** has the five files one change must touch
+together, what a real render measured, and what would change the answer.
 
 ## A run's journal has THREE homes, and the order between them is a decision
 
@@ -1042,6 +1007,36 @@ at-least-once cost, and the delivery door still starts walks it cannot stop. Bot
 want a heartbeat on the RUN so a ceiling cannot abandon a walk that is alive.
 The platform's own half — a slow delivery starving every OTHER tenant's claim —
 is fixed separately in `aai-server/workflow-queue-budget.ts`.
+
+### A failure of the JOURNAL is not a failure of the RUN
+
+`replayRun` has always documented that it propagates a store failure rather than
+marking a run failed on a database blip. **That was true only of `readSteps`** —
+the one journal call made before the body starts. Every other one is reached FROM
+the body, so its rejection unwound through the body like any other throw and
+`classifyThrow` could not tell it from an exception the body raised. It answered
+`{ kind: "failed" }`, which `setStatus` writes as a TERMINAL status, so one
+unavailable moment killed a healthy run permanently, discarded a step that had
+already SUCCEEDED (unjournaled, so a retry has nothing to answer from), and
+showed a caller the store's "connection reset" as their own workflow's error.
+
+**`workflow-replay-journal-failure.ts` closes it and carries the argument** — why
+a wrapper around the store rather than a check at each of seven methods across
+five files, why the body SWALLOWING the rejection is the quieter half, and why
+its one exemption is `JournalConflictError` (`claimHook`'s token conflict: a
+verdict about the run, so it must still fail it — without the exemption
+`workflow-engine-waits.test.ts` retries a conflicted run forever). Every backend
+owes that type for that case; the platform arm maps its route's 409, scoped to
+`claimHook` because postgres refuses a duplicate run id with a raw primary-key
+violation and a type only one arm keeps is worse than none.
+
+Two things this found are worth more than the fix. The unit platform conformance
+arm's fake transport answered **500 for every throw**, under a comment reasoning
+that status could not matter because the client propagates either way — true when
+written, false the moment status began deciding a type, and it made that arm
+structurally unable to see the mapping. And the conformance table asserted the
+conflict with a bare `toThrow()`, which cannot see an arm refusing with the wrong
+type at all.
 
 ### A parked delivery asks to come back PROPORTIONATELY
 

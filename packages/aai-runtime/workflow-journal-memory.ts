@@ -33,7 +33,7 @@ import type {
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-types.ts";
-import { isTerminalStatus } from "./workflow-journal-types.ts";
+import { isTerminalStatus, JournalConflictError } from "./workflow-journal-types.ts";
 
 /** One run's mutable state, kept together so a run is one map lookup. */
 type Slot = {
@@ -389,7 +389,10 @@ export function createMemoryJournal(): JournalStore {
       // other wait would never end. Failing the run says so.
       const owner = byToken.get(token);
       if (owner && !(owner.runId === runId && owner.key === key)) {
-        throw new Error(
+        // A `JournalConflictError`, never a plain one: this is a verdict about
+        // the RUN, and the engine reads the type to decide between failing the
+        // run and treating the store as unavailable and retrying forever.
+        throw new JournalConflictError(
           `workflow hook token ${JSON.stringify(token)} is already held by run ${owner.runId}`,
         );
       }
