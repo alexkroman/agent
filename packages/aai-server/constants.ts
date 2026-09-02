@@ -257,33 +257,62 @@ export function resolveHarnessPath(env: NodeJS.ProcessEnv = process.env): string
  * name. That warning is what makes raising this safe rather than a landmine —
  * a deployment without a pooler is told, at boot, exactly what it now costs.
  *
- * ## Why 16, and it is `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` that decides it
+ * ## It is the WHOLE PLATFORM's funnel, not one replica's share
  *
- * A replica dispatches up to `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` (8) queue
- * deliveries at once, and every walking guest posts its journal back at the
- * platform. So a pool under 8 STARVES THIS REPLICA'S OWN FAN-OUT: it hands out
- * eight walks and then cannot service the traffic they generate, which is a
- * deadlock shape rather than a slow one. Eight is therefore the floor, and it
- * is a floor the old 4 sat under — the pool could not clear the deliveries the
- * same process had started, before counting anything else.
+ * "Per replica" undersells it twice over. `MIN_CONTAINERS = 1` with
+ * `BUFFER_CONTAINERS = 0` (`modal_deploy.py`, which says so in as many words),
+ * so the steady state is ONE container — `MAX_CONTAINERS = 3` is a burst
+ * ceiling the autoscaler reaches under load, never the operating condition.
+ * And a sandbox opens no Postgres connection of its own: the platform
+ * provisions no tenant database, so every deployed agent's journal, session
+ * state and upload records reach Postgres ONLY through these routes.
  *
- * 16 is that floor doubled, and the second eight is the rest of the pool's
- * work: session state and upload records from LIVE sessions (guest-called,
- * same reservation), plus Vault, the agents row every broker call needs, and
- * the sweeps. Tune it with that constant, not by feel — if delivery
- * concurrency moves, this is the number that owes it a look.
+ * So this number is not four connections per replica across a fleet. It is
+ * four connections, total, for every deployed agent on the platform, sharing
+ * them with Vault, the agents row every broker call needs, and the sweeps.
+ * That is why one transcription run could saturate it.
  *
- * ## What it costs UNPOOLED, stated because the old note hand-waved it
+ * ## Why 16: `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` sets the floor
  *
- * This paragraph used to say 16 "keeps the fleet's unpooled worst case inside
- * what the boot capacity check can report", which is not a bound at all — the
- * check reports whatever it computes. The real arithmetic: unpooled, the fleet
- * opens `MAX_CONTAINERS x this` = 48 direct backends on top of a 30 budget, so
- * boot announces a 78-connection claim against a 60-connection instance whose
- * own Supabase workers already hold 23-30. That configuration was already over
- * at 4 (a 42 claim); it is now over by enough that it should be read as
- * UNSUPPORTED rather than degraded, and the boot warning is the thing to act
- * on rather than tolerate.
+ * The replica dispatches up to `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` (8) queue
+ * deliveries at once and every walking guest posts its journal back here, so a
+ * pool under 8 STARVES THE FAN-OUT THIS PROCESS ITSELF STARTED — a deadlock
+ * shape rather than a slow one, and a floor the old 4 sat under before
+ * counting anything else. 16 is that doubled, the second eight being the live
+ * sessions' own guest calls plus the platform's internal reads. Tune it
+ * against that constant rather than by feel.
+ *
+ * **16 is a first step, not a derived ceiling.** With the pooler on these are
+ * client-side slots that pin no server backend, and `MAX_INPUTS` lets one
+ * container hold 400 concurrent requests — so the honest input for a further
+ * raise is Supavisor's own `pool_size`. That is Supabase project config, not
+ * readable from this repo and not exposed by the CLI (`supabase config` has
+ * only `push`); read it off the dashboard's Connection Pooling settings, or
+ * the Management API's `/v1/projects/{ref}/config/database/pooler`. Past it
+ * the queueing moves one layer down rather than going away.
+ *
+ * ## What it costs UNPOOLED, measured
+ *
+ * An earlier note claimed 16 "keeps the fleet's unpooled worst case inside
+ * what the boot capacity check can report", which bounds nothing — the check
+ * reports whatever it computes. Measured against the real instance
+ * (`supabase inspect db role-stats`, 2026-09-02): `max_connections` **60**,
+ * with **16 in use** at rest — 10 `supabase_admin`, 2 `postgres` (ours), 2
+ * `authenticator`, 1 `pgbouncer`, 1 CLI. So ~44 free, not the ~30 the older
+ * "23-30 Supabase workers" note assumed.
+ *
+ * Against that baseline, per replica costing
+ * `platformDbConnectionsPerReplica()` (10) direct plus this pool when unpooled:
+ *
+ * - pooled, steady state (1 replica): 10 + 16 = **26 of 60**
+ * - pooled, `MAX_CONTAINERS` burst: 30 + 16 = **46 of 60**
+ * - UNPOOLED, steady state: 26 + 16 = **42 of 60** — fits
+ * - UNPOOLED, burst: 78 + 16 = **94 of 60** — does not
+ *
+ * So the unpooled configuration is survivable on one container and is an
+ * outage on a scale-up, where at 4 it was marginal in both. The boot warning
+ * is the thing to act on; `MIN_CONTAINERS = 1` is the only reason it is not
+ * already one.
  */
 export const ADMIN_POOL_MAX = 16;
 
