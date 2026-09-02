@@ -18,8 +18,7 @@ import {
   renderWithClient,
   stubFetch,
 } from "./_test-utils.ts";
-import type { ProjectData } from "./api-types.ts";
-import { GithubCard, syncStateText } from "./github-card.tsx";
+import { GithubCard, type GithubSyncState, lastCommitUrl, syncStateText } from "./github-card.tsx";
 import { consumeGithubResult, githubResultText } from "./github-result.ts";
 
 const CONNECTED = {
@@ -30,9 +29,9 @@ const CONNECTED = {
   manageUrl: "https://github.com/apps/aai-studio/installations/new",
 };
 
-const REPOS = { repos: [{ fullName: "acme/voice-agent", private: true, defaultBranch: "main" }] };
+const REPOS = { repos: [{ fullName: "acme/voice-agent", private: true }] };
 
-function renderCard(data?: ProjectData) {
+function renderCard(data?: GithubSyncState) {
   renderWithClient(<GithubCard bearer="tok" project="demo" data={data} />);
 }
 
@@ -46,13 +45,30 @@ describe("syncStateText", () => {
     // Three states one word apart, which is why they are a pure function
     // rather than nested ternaries inside the render.
     expect(syncStateText(undefined)).toBeNull();
-    expect(syncStateText({ files: {} })).toBeNull();
-    expect(syncStateText({ files: {}, githubRepo: "a/b", githubStale: false })).toContain(
-      "up to date",
-    );
-    expect(syncStateText({ files: {}, githubRepo: "a/b", githubStale: true })).toContain(
+    expect(syncStateText({})).toBeNull();
+    expect(syncStateText({ githubRepo: "a/b", githubStale: false })).toContain("up to date");
+    expect(syncStateText({ githubRepo: "a/b", githubStale: true })).toContain(
       "edits GitHub does not have",
     );
+  });
+});
+
+describe("lastCommitUrl", () => {
+  test("builds the commit link from the workspace stamps", () => {
+    // What makes `githubCommit` a stamp anything READS: the sync response's
+    // own link is gone after a reload, and "where did this last go" is exactly
+    // the question a cold open asks.
+    expect(lastCommitUrl({ githubRepo: "acme/app", githubCommit: "c0ffee" })).toBe(
+      "https://github.com/acme/app/commit/c0ffee",
+    );
+  });
+
+  test("is null until BOTH stamps exist", () => {
+    // Half a stamp builds a URL that 404s, which is worse than no link.
+    expect(lastCommitUrl(undefined)).toBeNull();
+    expect(lastCommitUrl({})).toBeNull();
+    expect(lastCommitUrl({ githubRepo: "acme/app" })).toBeNull();
+    expect(lastCommitUrl({ githubCommit: "c0ffee" })).toBeNull();
   });
 });
 
@@ -157,7 +173,7 @@ describe("GithubCard", () => {
       "/studio/github": () => jsonResponse(CONNECTED),
       "/studio/github/repos": () => jsonResponse(REPOS),
     });
-    renderCard({ files: {}, githubRepo: "acme/voice-agent", githubStale: true });
+    renderCard({ githubRepo: "acme/voice-agent", githubStale: true });
 
     await screen.findByText("acme/voice-agent (private)");
     expect(button(/Sync to GitHub/).disabled).toBe(false);
@@ -179,7 +195,7 @@ describe("GithubCard", () => {
           syncedHash: "h",
         }),
     });
-    renderCard({ files: {}, githubRepo: "acme/voice-agent", githubStale: true });
+    renderCard({ githubRepo: "acme/voice-agent", githubStale: true });
 
     await screen.findByText("acme/voice-agent (private)");
     fireEvent.click(button(/Sync to GitHub/));
@@ -206,11 +222,24 @@ describe("GithubCard", () => {
           syncedHash: "h",
         }),
     });
-    renderCard({ files: {}, githubRepo: "acme/voice-agent", githubStale: false });
+    renderCard({ githubRepo: "acme/voice-agent", githubStale: false });
 
     await screen.findByText("acme/voice-agent (private)");
     fireEvent.click(button(/Sync to GitHub/));
     expect(await screen.findByText(/Already up to date on/)).toBeTruthy();
+  });
+
+  test("a cold open links the LAST synced commit from the workspace stamps", async () => {
+    // No sync this session, so the response-carried link does not exist — the
+    // stamp is the only thing that can answer where the project last went.
+    stubFetch({
+      "/studio/github": () => jsonResponse(CONNECTED),
+      "/studio/github/repos": () => jsonResponse(REPOS),
+    });
+    renderCard({ githubRepo: "acme/voice-agent", githubCommit: "abc123", githubStale: false });
+
+    const link = await screen.findByText("View last commit");
+    expect(link.getAttribute("href")).toBe("https://github.com/acme/voice-agent/commit/abc123");
   });
 
   test("a failed sync shows the server's own sentence", async () => {
@@ -222,7 +251,7 @@ describe("GithubCard", () => {
       "POST /studio/projects/demo/github/sync": () =>
         jsonResponse({ error: "Grant it Contents: read and write." }, 502),
     });
-    renderCard({ files: {}, githubRepo: "acme/voice-agent", githubStale: true });
+    renderCard({ githubRepo: "acme/voice-agent", githubStale: true });
 
     await screen.findByText("acme/voice-agent (private)");
     fireEvent.click(button(/Sync to GitHub/));
@@ -255,7 +284,7 @@ describe("GithubCard", () => {
       "/studio/github": () => jsonResponse(CONNECTED),
       "/studio/github/repos": () => jsonResponse(REPOS),
       "POST /studio/github/repos": () =>
-        jsonResponse({ repo: { fullName: "acme/fresh", private: true, defaultBranch: "main" } }),
+        jsonResponse({ repo: { fullName: "acme/fresh", private: true } }),
     });
     renderCard();
     await screen.findByText("Or create a new one");
@@ -341,6 +370,7 @@ describe("githubResultText", () => {
   test("each outcome names what to do about it", () => {
     expect(githubResultText("connected")).toContain("connected");
     expect(githubResultText("expired")).toContain("try connecting again");
+    expect(githubResultText("unverified")).toContain("administer");
     expect(githubResultText("unconfigured")).toContain("not configured");
     expect(githubResultText("failed")).toContain("try again");
   });

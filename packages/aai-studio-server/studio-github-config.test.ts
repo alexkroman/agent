@@ -11,21 +11,31 @@ const env = (overrides: Record<string, string | undefined>): NodeJS.ProcessEnv =
   GITHUB_APP_ID: "123456",
   GITHUB_APP_PRIVATE_KEY: PEM,
   GITHUB_APP_SLUG: "aai-studio",
+  GITHUB_APP_CLIENT_ID: "Iv1.abc",
+  GITHUB_APP_CLIENT_SECRET: "shhh",
   ...overrides,
 });
 
 describe("createGithubAppConfig", () => {
-  test("all three variables, or nothing", () => {
+  test("every variable, or nothing", () => {
     expect(createGithubAppConfig(env({}))).toMatchObject({
       appId: "123456",
       slug: "aai-studio",
     });
     // A half-configured App is the state where the install link works and
     // every sync fails, so it reads as "not configured" rather than as a
-    // partially usable feature.
-    expect(createGithubAppConfig(env({ GITHUB_APP_ID: undefined }))).toBeUndefined();
-    expect(createGithubAppConfig(env({ GITHUB_APP_PRIVATE_KEY: undefined }))).toBeUndefined();
-    expect(createGithubAppConfig(env({ GITHUB_APP_SLUG: undefined }))).toBeUndefined();
+    // partially usable feature. The OAuth pair is sharper still: without it
+    // the callback cannot check entitlement at all, so a deployment missing it
+    // is not a degraded feature but an OPEN one.
+    for (const missing of [
+      "GITHUB_APP_ID",
+      "GITHUB_APP_PRIVATE_KEY",
+      "GITHUB_APP_SLUG",
+      "GITHUB_APP_CLIENT_ID",
+      "GITHUB_APP_CLIENT_SECRET",
+    ]) {
+      expect(createGithubAppConfig(env({ [missing]: undefined }))).toBeUndefined();
+    }
     expect(createGithubAppConfig({})).toBeUndefined();
   });
 

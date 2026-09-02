@@ -242,13 +242,13 @@ export const api = {
   /**
    * Push the project's files to GitHub as one commit.
    *
-   * `branch` omitted lets the server read the repository's own default rather
-   * than trusting the picker's copy, which may be a rename out of date.
+   * No branch: the server reads the repository's own default at push time,
+   * which is the only value that cannot be a rename out of date.
    */
-  syncToGithub: (key: string, project: string, repo: string, branch?: string) =>
+  syncToGithub: (key: string, project: string, repo: string) =>
     request<GithubSyncResult>(key, projectPath(project, "/github/sync"), {
       method: "POST",
-      body: JSON.stringify(omitUndefined({ repo, branch })),
+      body: JSON.stringify({ repo }),
     }),
 
   listProjects: (key: string) =>

@@ -42,12 +42,18 @@ const GITHUB_REQUEST_TIMEOUT_MS = 20_000;
 const MAX_REPO_PAGES = 10;
 const REPO_PAGE_SIZE = 100;
 
+/**
+ * One repository, as the picker shows it.
+ *
+ * Deliberately NOT carrying a default branch: a sync reads that from the
+ * repository at push time (`readRepoDefaultBranch`), because a copy captured
+ * when the list was fetched can be a rename out of date — so a field here
+ * would be a value nothing may act on.
+ */
 export type GithubRepoSummary = {
   /** `owner/repo` — the form the workspace stamps and the picker shows. */
   fullName: string;
   private: boolean;
-  /** The branch a sync targets unless the caller names another. */
-  defaultBranch: string;
 };
 
 /** Who an installation belongs to, as GitHub reports it. */
@@ -166,14 +172,7 @@ export async function listInstallationRepos(
       page,
     });
     for (const repo of data.repositories) {
-      repos.push({
-        fullName: repo.full_name,
-        private: repo.private,
-        // A repository with no commits reports no default branch in some API
-        // shapes; `main` is what GitHub itself would create on first push,
-        // and the sync re-reads the real value before it writes anyway.
-        defaultBranch: repo.default_branch || "main",
-      });
+      repos.push({ fullName: repo.full_name, private: repo.private });
     }
     if (data.repositories.length < REPO_PAGE_SIZE) break;
   }
@@ -228,9 +227,5 @@ export async function createOrgRepo(
     private: true,
     auto_init: false,
   });
-  return {
-    fullName: data.full_name,
-    private: data.private,
-    defaultBranch: data.default_branch || "main",
-  };
+  return { fullName: data.full_name, private: data.private };
 }

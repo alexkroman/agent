@@ -25,13 +25,7 @@
 
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import {
-  api,
-  type GithubRepo,
-  type GithubStatus,
-  type GithubSyncResult,
-  type ProjectData,
-} from "./api.ts";
+import { api, type GithubRepo, type GithubStatus, type GithubSyncResult } from "./api.ts";
 import { errorText } from "./api-error.ts";
 import {
   consumeGithubResult,
@@ -42,6 +36,20 @@ import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
 
 /**
+ * The workspace stamps this card reads — a narrow slice of `ProjectData`.
+ *
+ * Named rather than taking the whole payload, so `SettingsPane` does not
+ * become the place future cards reach for arbitrary project state and a field
+ * added to `ProjectData` does not re-type a pane that wants a repo name and
+ * two flags.
+ */
+export type GithubSyncState = {
+  githubRepo?: string | undefined;
+  githubCommit?: string | undefined;
+  githubStale?: boolean | undefined;
+};
+
+/**
  * What the card says about the last sync, given the workspace's own stamps.
  *
  * Pure and exported, because the three states are the whole point of the card
@@ -49,10 +57,22 @@ import { Card } from "./settings-card.tsx";
  * `githubStale` is computed server-side against the same `filesHash` the
  * deploy staleness uses — the client never hashes files.
  */
-export function syncStateText(data: ProjectData | undefined): string | null {
+export function syncStateText(data: GithubSyncState | undefined): string | null {
   if (!data?.githubRepo) return null;
   if (data.githubStale) return "This project has edits GitHub does not have yet.";
   return "GitHub is up to date with this project.";
+}
+
+/**
+ * The commit URL for a workspace's LAST sync, or null.
+ *
+ * This is what makes `githubCommit` a stamp anything reads: the sync response
+ * carries a commit link, but only until the page reloads, and "where did this
+ * project last go" is exactly the question a reader has on a cold open.
+ */
+export function lastCommitUrl(data: GithubSyncState | undefined): string | null {
+  if (!(data?.githubRepo && data.githubCommit)) return null;
+  return `https://github.com/${data.githubRepo}/commit/${data.githubCommit}`;
 }
 
 /** One muted line — the shape every report in this card takes. */
@@ -207,24 +227,36 @@ function SyncControls({
 }: {
   bearer: string;
   project: string;
-  data: ProjectData | undefined;
+  data: GithubSyncState | undefined;
   status: GithubStatus;
   onDisconnected: () => void;
 }) {
   const queryClient = useQueryClient();
   const [repo, setRepo] = useState(data?.githubRepo ?? "");
 
+  // Read once per pane open, like every other query in this client. The
+  // defaults (`staleTime: 0`, `refetchOnWindowFocus: true`) would re-run this
+  // on every window focus, and each run costs a fresh Supabase Auth round trip
+  // (`requireStudioUser`), a secret read, an installation-token exchange and a
+  // GitHub listing. The mutations below invalidate the key when it moves.
   const repos = useQuery({
     queryKey: queryKeys.githubRepos(bearer),
     queryFn: () => api.githubRepos(bearer),
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
   });
 
   // Default the picker to wherever this project last synced, so the common
   // case — press Sync again after an edit — needs no selection at all. An
   // effect as well as the initial state, because the workspace read can land
   // after this mounts (the pane renders while it is in flight).
+  //
+  // It only ever fills an EMPTY picker. Without that guard a repository chosen
+  // while the project query was still in flight is silently replaced when that
+  // read lands, and the next Sync pushes somewhere the user did not pick — the
+  // one wrong outcome this card must not have.
   useEffect(() => {
-    if (data?.githubRepo) setRepo(data.githubRepo);
+    if (data?.githubRepo) setRepo((current) => current || data.githubRepo || "");
   }, [data?.githubRepo]);
 
   const disconnect = useMutation({
@@ -245,6 +277,7 @@ function SyncControls({
   });
 
   const state = syncStateText(data);
+  const lastSync = lastCommitUrl(data);
   return (
     <div className="flex flex-col gap-4">
       <Note>
@@ -298,7 +331,16 @@ function SyncControls({
           </a>
         </Note>
       ) : (
-        state && <Note>{state}</Note>
+        state && (
+          <Note>
+            {state}{" "}
+            {lastSync && (
+              <a href={lastSync} target="_blank" rel="noreferrer" className="underline">
+                View last commit
+              </a>
+            )}
+          </Note>
+        )
       )}
       {sync.error && <Note error>{errorText(sync.error)}</Note>}
       {disconnect.error && <Note error>{errorText(disconnect.error)}</Note>}
@@ -320,15 +362,20 @@ export function GithubCard({
 }: {
   bearer: string;
   project: string;
-  /** The workspace payload — carries the last sync's target and staleness. */
-  data: ProjectData | undefined;
+  /** The workspace stamps — the last sync's target, commit and staleness. */
+  data: GithubSyncState | undefined;
 }) {
   /** The round-trip report from the install callback, shown once. */
   const [connectResult, setConnectResult] = useState<GithubConnectResult | null>(null);
 
+  // Same as the repository listing below it — see there for what a refetch
+  // costs. `api.githubStatus` documents itself as read once per pane open,
+  // which is only true with these two options set.
   const status = useQuery({
     queryKey: queryKeys.github(bearer),
     queryFn: () => api.githubStatus(bearer),
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
   });
 
   // The install round trip reports through the URL, so it is read once on

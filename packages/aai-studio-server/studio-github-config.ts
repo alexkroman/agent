@@ -41,6 +41,19 @@ export type GithubAppConfig = {
    * could report, so it is required rather than guessed.
    */
   slug: string;
+  /**
+   * The App's OAuth client credentials, used for ONE thing: proving at the
+   * install callback that the person finishing the flow actually controls the
+   * installation they are attaching (studio-github-user.ts).
+   *
+   * Required, like the other three, and for a sharper reason — without them
+   * the callback cannot verify entitlement, and an unverified callback accepts
+   * any `installation_id`, which is an enumerable integer. So a deployment
+   * missing them is not a degraded feature, it is an open one; absent, the
+   * whole App reads as unconfigured.
+   */
+  clientId: string;
+  clientSecret: string;
 };
 
 /**
@@ -80,25 +93,43 @@ function normalizePrivateKey(raw: string): string {
 /**
  * Read the App from the environment, or `undefined` when it is not configured.
  *
- * All three variables or none: a half-configured App is the state where the
- * install link works and every sync fails, so it reads as "not configured"
- * and the client never offers the button.
+ * ALL of them or none. A half-configured App is the state where the install
+ * link works and every sync fails — and, for the OAuth pair, the worse state
+ * where the callback cannot check entitlement at all. So a missing variable
+ * reads as "not configured" and the client never offers the button.
  */
 export function createGithubAppConfig(env: NodeJS.ProcessEnv): GithubAppConfig | undefined {
-  const { GITHUB_APP_ID: appId, GITHUB_APP_PRIVATE_KEY: privateKey, GITHUB_APP_SLUG: slug } = env;
-  if (!(appId && privateKey && slug)) return undefined;
-  return { appId, privateKey: normalizePrivateKey(privateKey), slug };
+  const {
+    GITHUB_APP_ID: appId,
+    GITHUB_APP_PRIVATE_KEY: privateKey,
+    GITHUB_APP_SLUG: slug,
+    GITHUB_APP_CLIENT_ID: clientId,
+    GITHUB_APP_CLIENT_SECRET: clientSecret,
+  } = env;
+  if (!(appId && privateKey && slug && clientId && clientSecret)) return undefined;
+  return { appId, privateKey: normalizePrivateKey(privateKey), slug, clientId, clientSecret };
 }
 
 /**
- * Where to send the browser to install (or reconfigure) the App.
+ * The App's install page — where a user picks which repositories it may write.
  *
  * `installations/new` rather than an OAuth authorize URL: this flow's product
- * is an INSTALLATION on chosen repositories, and GitHub returns the user here
- * with `installation_id` and our `state` echoed back.
+ * is an INSTALLATION on chosen repositories. The one place that URL is spelled,
+ * because it is NOT derivable from the app id and getting it wrong sends the
+ * user to a 404 on github.com rather than to an error we could report — a
+ * second copy would fix the connect flow and leave the settings pane's "Add or
+ * remove repositories" link pointing at that 404.
+ */
+export function githubInstallPageUrl(config: GithubAppConfig): string {
+  return `https://github.com/apps/${config.slug}/installations/new`;
+}
+
+/**
+ * The same page, carrying the signed `state` GitHub echoes back to the
+ * callback — the CONNECT entry point, as opposed to the bare page above.
  */
 export function githubInstallUrl(config: GithubAppConfig, state: string): string {
-  const url = new URL(`https://github.com/apps/${config.slug}/installations/new`);
+  const url = new URL(githubInstallPageUrl(config));
   url.searchParams.set("state", state);
   return url.toString();
 }

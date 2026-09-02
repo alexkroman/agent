@@ -16,10 +16,29 @@
  * arbitrary text on the page.
  */
 
-/** What the callback can report. See `studio-github-routes.ts`'s `back()`. */
-export type GithubConnectResult = "connected" | "failed" | "expired" | "unconfigured";
+/**
+ * What the callback can report. See `studio-github-routes.ts`'s `back()`.
+ *
+ * The type is DERIVED from the list rather than spelled beside it: two copies
+ * means adding an outcome type-checks while the runtime guard below silently
+ * drops it.
+ */
+const RESULTS = ["connected", "failed", "expired", "unverified", "unconfigured"] as const;
 
-const RESULTS: readonly string[] = ["connected", "failed", "expired", "unconfigured"];
+export type GithubConnectResult = (typeof RESULTS)[number];
+
+/**
+ * Is a GitHub connect result waiting in the URL? Peeks, consuming nothing.
+ *
+ * The install callback is a full NAVIGATION, so the tab selection resets — and
+ * the card that renders the result only mounts on the Settings pane. Without
+ * this the report was never shown at all: `?github=failed` produced no visible
+ * error, and the parameter sat in the URL to be consumed later out of context.
+ * `ProjectView` uses it to open on Settings, where the card then consumes it.
+ */
+export function hasGithubResult(): boolean {
+  return new URL(window.location.href).searchParams.has("github");
+}
 
 /**
  * Read `?github=` and remove it from the URL, or `null` when it names nothing.
@@ -34,7 +53,7 @@ export function consumeGithubResult(): GithubConnectResult | null {
   if (raw === null) return null;
   url.searchParams.delete("github");
   history.replaceState(history.state, "", url);
-  return RESULTS.includes(raw) ? (raw as GithubConnectResult) : null;
+  return RESULTS.includes(raw as GithubConnectResult) ? (raw as GithubConnectResult) : null;
 }
 
 /** What to tell the user about a completed (or failed) connect round trip. */
@@ -44,6 +63,12 @@ export function githubResultText(result: GithubConnectResult): string {
       return "GitHub connected.";
     case "expired":
       return "That connection link had expired — try connecting again.";
+    case "unverified":
+      // The entitlement check refused: the installation is not one this GitHub
+      // account administers, or the authorization did not complete. Worded as
+      // the honest instruction rather than an accusation — the overwhelmingly
+      // common cause is an interrupted flow, not an attack.
+      return "GitHub could not confirm you administer that installation — connect again from the account that owns it.";
     case "unconfigured":
       return "GitHub sync is not configured on this server.";
     default:

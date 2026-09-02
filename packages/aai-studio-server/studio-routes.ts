@@ -34,6 +34,17 @@
  *   for `wakeProjectPreview`, and the only one a tab that never re-opens the
  *   project can reach
  *
+ * - `GET/POST/DELETE /studio/github*` — the account's GitHub App link and
+ *   `POST /studio/projects/:project/github/sync`, the push
+ *   (studio-github-routes.ts, which lists the seven). One of them,
+ *   `GET /studio/github/callback`, is PUBLIC and is the only route in the
+ *   studio that cannot authenticate its caller — GitHub performs that
+ *   navigation, so a signed `state` stands in. Named here because this
+ *   inventory is where somebody auditing the surface from the top would look
+ *   for exactly that.
+ * - `GET /studio/events` and `GET /studio/projects/:project/events` — the two
+ *   SSE streams (studio-events-routes.ts).
+ *
  * Plus the browser-session surface:
  * - `GET /studio/auth`         — public: how to sign in (Supabase/dev/none)
  * - `GET /studio/account`      — session-authed: email + whether a key is stored

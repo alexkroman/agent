@@ -35,44 +35,15 @@ import { isStudioPath } from "aai-server/studio-paths";
 import { teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createMemoryPreviewQueue, createPgPreviewQueue } from "./studio-preview-queue.ts";
-import {
-  CHAT_IP_RATE_LIMIT,
-  CHAT_RATE_LIMIT,
-  createPgRateLimiter,
-  PREVIEW_WAKE_IP_RATE_LIMIT,
-  PREVIEW_WAKE_RATE_LIMIT,
-  PROJECT_CREATE_IP_RATE_LIMIT,
-  PROJECT_CREATE_RATE_LIMIT,
-  type StudioRateLimiters,
-} from "./studio-rate-limit.ts";
+import { createPgStudioRateLimiters, type StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createPgStudioSessionRegistry } from "./studio-session-registry.ts";
 
 /** Postgres rate limiters when the platform database is configured; else memory defaults apply. */
 function buildRateLimiters(base: ServiceConfig): StudioRateLimiters | undefined {
-  if (!base.sql) return;
-  return {
-    chat: createPgRateLimiter(base.sql, { name: "studio-chat", ...CHAT_RATE_LIMIT }),
-    projectCreate: createPgRateLimiter(base.sql, {
-      name: "studio-project-create",
-      ...PROJECT_CREATE_RATE_LIMIT,
-    }),
-    // The per-IP companions. Postgres-backed for the same reason as the
-    // scoped ones and more so: an abuse limit that multiplies by the replica
-    // count is a limit of ten times what it says.
-    chatIp: createPgRateLimiter(base.sql, { name: "studio-chat-ip", ...CHAT_IP_RATE_LIMIT }),
-    projectCreateIp: createPgRateLimiter(base.sql, {
-      name: "studio-project-create-ip",
-      ...PROJECT_CREATE_IP_RATE_LIMIT,
-    }),
-    previewWake: createPgRateLimiter(base.sql, {
-      name: "studio-preview-wake",
-      ...PREVIEW_WAKE_RATE_LIMIT,
-    }),
-    previewWakeIp: createPgRateLimiter(base.sql, {
-      name: "studio-preview-wake-ip",
-      ...PREVIEW_WAKE_IP_RATE_LIMIT,
-    }),
-  };
+  // ALL of them, from the factory beside the windows — never a hand-listed
+  // subset here. A window this root forgets falls through to the in-memory
+  // arm and silently enforces `MAX_CONTAINERS` times what it says.
+  return base.sql ? createPgStudioRateLimiters(base.sql) : undefined;
 }
 
 /**

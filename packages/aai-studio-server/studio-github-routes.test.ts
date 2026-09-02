@@ -19,6 +19,7 @@ import {
   TEST_INSTALLATION_ID,
   testGithubApp,
 } from "./_studio-github-test-utils.ts";
+import { createProject } from "./_studio-routes-test-utils.ts";
 import { githubLinkSecretName } from "./studio-github-link.ts";
 import { signInstallState } from "./studio-github-state.ts";
 
@@ -65,14 +66,15 @@ const post = (fetch: TestFetch, path: string, body: unknown = {}) =>
 async function connect(harness: Harness): Promise<void> {
   const state = signInstallState(testGithubApp, { uid: UID });
   const res = await harness.fetch(
-    `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&state=${encodeURIComponent(state)}`,
+    `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&code=user-code&state=${encodeURIComponent(state)}`,
   );
   if (res.status !== 302) throw new Error(`connect fixture failed: ${res.status}`);
 }
 
-/** A project with one file, so a sync has something to push. */
+/** A project with starter files, so a sync has something to push. */
 async function makeProject(harness: Harness, name = "demo"): Promise<void> {
-  const res = await post(harness.fetch, "/studio/projects", { name });
+  // The shared fixture, not a fourth spelling of the create call.
+  const res = await createProject(harness.fetch, name, bearer);
   if (res.status !== 201) throw new Error(`project fixture failed: ${res.status}`);
 }
 
@@ -124,7 +126,7 @@ describe("POST /studio/github/connect", () => {
     // it starts really lands.
     const state = url.searchParams.get("state") ?? "";
     const callback = await harness.fetch(
-      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&state=${encodeURIComponent(state)}`,
+      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&code=user-code&state=${encodeURIComponent(state)}`,
     );
     expect(callback.headers.get("location")).toBe("/studio/chat/demo?github=connected");
   });
@@ -145,7 +147,7 @@ describe("GET /studio/github/callback", () => {
   test("a valid state links the installation and returns the browser home", async () => {
     const state = signInstallState(testGithubApp, { uid: UID });
     const res = await harness.fetch(
-      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&state=${encodeURIComponent(state)}`,
+      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&code=user-code&state=${encodeURIComponent(state)}`,
     );
     expect(res.status).toBe(302);
     // No project hint: home, not a dead project URL.
@@ -161,7 +163,7 @@ describe("GET /studio/github/callback", () => {
       .toString("base64url")
       .replace(/=+$/, "")}.forged`;
     const res = await harness.fetch(
-      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&state=${encodeURIComponent(forged)}`,
+      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&code=user-code&state=${encodeURIComponent(forged)}`,
     );
     expect(res.headers.get("location")).toBe("/?github=expired");
     expect(await harness.secrets.get(githubLinkSecretName(UID))).toBeNull();
@@ -170,7 +172,7 @@ describe("GET /studio/github/callback", () => {
   test("an expired state links nothing", async () => {
     const stale = signInstallState(testGithubApp, { uid: UID }, Date.now() - 60 * 60_000);
     const res = await harness.fetch(
-      `/studio/github/callback?installation_id=1&state=${encodeURIComponent(stale)}`,
+      `/studio/github/callback?installation_id=1&code=user-code&state=${encodeURIComponent(stale)}`,
     );
     expect(res.headers.get("location")).toBe("/?github=expired");
     expect(await harness.secrets.get(githubLinkSecretName(UID))).toBeNull();
@@ -181,6 +183,9 @@ describe("GET /studio/github/callback", () => {
     // proves who is asking, never what they are attaching.
     const github = createFakeGithub({
       failWith: { pathIncludes: "/app/installations/", status: 404 },
+      // Entitled to it, so the refusal below is unambiguously "GitHub does not
+      // know this installation" rather than the ownership check firing.
+      userInstallations: [999],
     });
     const secrets = createMemorySecretStore();
     const withMissing = await withDevAuth({
@@ -191,17 +196,71 @@ describe("GET /studio/github/callback", () => {
     await onboardKey(withMissing.fetch, bearer);
     const state = signInstallState(testGithubApp, { uid: UID, project: "demo" });
     const res = await withMissing.fetch(
-      `/studio/github/callback?installation_id=999&state=${encodeURIComponent(state)}`,
+      `/studio/github/callback?installation_id=999&code=user-code&state=${encodeURIComponent(state)}`,
     );
     // Back to the project the user started from, with the failure named.
     expect(res.headers.get("location")).toBe("/studio/chat/demo?github=failed");
     expect(await secrets.get(githubLinkSecretName(UID))).toBeNull();
   });
 
+  test("an installation the signed-in user does NOT administer is refused", async () => {
+    // The cross-tenant escalation this check exists for. Everything the
+    // attacker supplies is legitimate: a state they minted for themselves at
+    // `POST /github/connect`, and an `installation_id` that really is an
+    // installation of this App. What they cannot produce is a user token whose
+    // `GET /user/installations` lists it — so the link is never written, and
+    // they never reach the victim's repositories.
+    const github = createFakeGithub({ userInstallations: [] });
+    const secrets = createMemorySecretStore();
+    const attacker = await withDevAuth({
+      githubApp: testGithubApp,
+      githubFetch: github.fetchFn,
+      secrets,
+    });
+    await onboardKey(attacker.fetch, bearer);
+
+    const state = signInstallState(testGithubApp, { uid: UID });
+    const res = await attacker.fetch(
+      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&code=user-code&state=${encodeURIComponent(state)}`,
+    );
+    expect(res.headers.get("location")).toBe("/?github=unverified");
+    expect(await secrets.get(githubLinkSecretName(UID))).toBeNull();
+  });
+
+  test("a callback with NO code links nothing", async () => {
+    // The entitlement check is not optional: a caller who simply omits the
+    // code must not fall through to the unverified path this replaced.
+    const state = signInstallState(testGithubApp, { uid: UID });
+    const res = await harness.fetch(
+      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&state=${encodeURIComponent(state)}`,
+    );
+    expect(res.headers.get("location")).toBe("/?github=unverified");
+    expect(await harness.secrets.get(githubLinkSecretName(UID))).toBeNull();
+  });
+
+  test("a code GitHub rejects links nothing", async () => {
+    // A replayed or forged code. Same refusal — the recovery is identical.
+    const github = createFakeGithub({ rejectUserCode: true });
+    const secrets = createMemorySecretStore();
+    const replay = await withDevAuth({
+      githubApp: testGithubApp,
+      githubFetch: github.fetchFn,
+      secrets,
+    });
+    await onboardKey(replay.fetch, bearer);
+
+    const state = signInstallState(testGithubApp, { uid: UID });
+    const res = await replay.fetch(
+      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&code=used-already&state=${encodeURIComponent(state)}`,
+    );
+    expect(res.headers.get("location")).toBe("/?github=unverified");
+    expect(await secrets.get(githubLinkSecretName(UID))).toBeNull();
+  });
+
   test("a non-numeric installation id links nothing", async () => {
     const state = signInstallState(testGithubApp, { uid: UID });
     const res = await harness.fetch(
-      `/studio/github/callback?installation_id=not-a-number&state=${encodeURIComponent(state)}`,
+      `/studio/github/callback?installation_id=not-a-number&code=user-code&state=${encodeURIComponent(state)}`,
     );
     expect(res.headers.get("location")).toBe("/?github=failed");
     expect(await harness.secrets.get(githubLinkSecretName(UID))).toBeNull();
@@ -213,7 +272,7 @@ describe("GET /studio/github/callback", () => {
     // `/studio/github/*` would break the flow with no other symptom.
     const state = signInstallState(testGithubApp, { uid: UID });
     const res = await harness.fetch(
-      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&state=${encodeURIComponent(state)}`,
+      `/studio/github/callback?installation_id=${TEST_INSTALLATION_ID}&code=user-code&state=${encodeURIComponent(state)}`,
     );
     expect(res.status).toBe(302);
   });
@@ -225,8 +284,10 @@ describe("GET /studio/github/repos", () => {
     await connect(harness);
     const res = await get(harness.fetch, "/studio/github/repos");
     expect(res.status).toBe(200);
+    // No default branch in the summary: a sync reads that from the repository
+    // at push time, so a copy captured here could be a rename out of date.
     expect(await res.json()).toEqual({
-      repos: [{ fullName: "acme/voice-agent", private: true, defaultBranch: "main" }],
+      repos: [{ fullName: "acme/voice-agent", private: true }],
     });
   });
 

@@ -7,6 +7,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
 import { generatedSlug } from "aai-server/slug-generate";
 import { z } from "zod";
+import { GITHUB_NAME_RE } from "./studio-github-sync.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_MESSAGE_BYTES } from "./studio-limits.ts";
 import { DEFAULT_PROJECT_KIND, PROJECT_KINDS } from "./studio-project-kind.ts";
 
@@ -253,38 +254,30 @@ export const UiMessageSchema = z
  * A `owner/repo` as a sync body carries it.
  *
  * Both halves become PATH SEGMENTS in every GitHub request the sync makes, so
- * the grammar is enforced before the value is ever interpolated —
- * `parseRepoFullName` (studio-github-sync.ts) re-checks the same rule at the
- * point of use, which is the layer that also runs for a value this schema
- * never saw (a stamp read back off a workspace document).
+ * the grammar is enforced before the value is ever interpolated — built from
+ * `GITHUB_NAME_RE` (studio-github-sync.ts) rather than restated, so the two
+ * layers that check it cannot drift apart.
  */
+const NAME = GITHUB_NAME_RE.source.slice(1, -1);
 export const GithubRepoSchema = z
   .string()
   .min(3)
   .max(201)
-  .regex(/^[\w.-]{1,100}\/[\w.-]{1,100}$/, "Expected owner/repo");
+  .regex(new RegExp(`^${NAME}/${NAME}$`), "Expected owner/repo");
 
 /**
- * A git branch name, restricted well inside what git allows.
+ * `POST /studio/projects/:project/github/sync` — where to push.
  *
- * Sync targets a branch a human named, so the permissive half of git's
- * `check-ref-format` grammar (spaces are legal, so is almost every byte) buys
- * nothing here and costs the certainty that the value is a safe path segment.
- * `..` is rejected outright — it is the one sequence that could climb out of
- * `heads/<branch>` in a request URL.
+ * The BRANCH is deliberately not a field. A sync always targets the
+ * repository's own default branch, read from GitHub at push time
+ * (`readRepoDefaultBranch`) rather than taken from the client: the picker's
+ * copy can be a rename out of date, and a branch name accepted from a request
+ * would be a validated-but-unreachable input surface — the studio has no UI
+ * that names one. Re-adding it means adding the control and the grammar
+ * together, not the grammar alone.
  */
-export const GithubBranchSchema = z
-  .string()
-  .min(1)
-  .max(255)
-  .regex(/^[\w][\w./-]*$/, "Invalid branch name")
-  .refine((branch) => !branch.includes(".."), "Invalid branch name");
-
-/** `POST /studio/projects/:project/github/sync` — where to push. */
 export const GithubSyncSchema = z.object({
   repo: GithubRepoSchema,
-  /** Omitted, the sync reads the repository's own default branch. */
-  branch: GithubBranchSchema.optional(),
 });
 
 /**

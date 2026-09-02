@@ -63,7 +63,6 @@ export type GithubStatus = {
 export type GithubRepo = {
   fullName: string;
   private: boolean;
-  defaultBranch: string;
 };
 
 /** What a sync answers. `changed: false` means the branch was already current. */

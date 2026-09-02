@@ -33,6 +33,8 @@ export const testGithubApp: GithubAppConfig = {
   appId: "123456",
   privateKey,
   slug: "aai-studio",
+  clientId: "Iv1.testclientid",
+  clientSecret: "test-client-secret",
 };
 
 export const TEST_INSTALLATION_ID = 42;
@@ -56,8 +58,19 @@ export type FakeGithubOptions = {
   repos?: readonly { full_name: string; private: boolean; default_branch: string }[];
   /** `User` or `Organization`, as the install callback reads it. */
   accountType?: "User" | "Organization";
+  /**
+   * Installations the callback's user-token check will report as theirs.
+   *
+   * Defaults to `[TEST_INSTALLATION_ID]` — the honest case. Set it to `[]` (or
+   * to someone else's id) to drive the escalation the check exists to refuse:
+   * a valid state of one's own, pointed at an installation one does not
+   * administer.
+   */
+  userInstallations?: readonly number[];
+  /** Make the `code` exchange fail, as a replayed or forged code does. */
+  rejectUserCode?: boolean;
   /** Force a status for the first request whose path contains this fragment. */
-  failWith?: { pathIncludes: string; status: number; message?: string };
+  failWith?: { pathIncludes: string; status: number };
 };
 
 export type FakeGithub = {
@@ -72,7 +85,8 @@ export type FakeGithub = {
   lastCall(pathIncludes: string): GithubCall | undefined;
 };
 
-const COMMIT_SHA = "c0ffee1234567890c0ffee1234567890c0ffee12";
+/** The commit sha the fake's commit route always returns. */
+export const FAKE_COMMIT_SHA = "c0ffee1234567890c0ffee1234567890c0ffee12";
 const TREE_SHA = "tree567890abcdef1234567890abcdef12345678";
 
 function json(body: unknown, status = 200): Response {
@@ -91,6 +105,8 @@ type FakeRoute = {
 };
 
 type FakeContext = {
+  userInstallations: readonly number[];
+  rejectUserCode: boolean;
   head: string | null;
   repos: readonly { full_name: string; private: boolean; default_branch: string }[];
   accountType: "User" | "Organization";
@@ -115,6 +131,26 @@ const contains =
  * complexity threshold does not have to be argued with.
  */
 const FAKE_ROUTES: readonly FakeRoute[] = [
+  // The OAuth `code` exchange — github.com rather than api.github.com, but the
+  // fake keys on pathname alone.
+  {
+    method: "POST",
+    matches: (path) => path === "/login/oauth/access_token",
+    reply: (_call, ctx) =>
+      ctx.rejectUserCode
+        ? json({ error: "bad_verification_code" })
+        : json({ access_token: "gho_user_token", token_type: "bearer" }),
+  },
+  // What the user finishing the install actually administers.
+  {
+    method: "GET",
+    matches: (path) => path === "/user/installations",
+    reply: (_call, ctx) =>
+      json({
+        total_count: ctx.userInstallations.length,
+        installations: ctx.userInstallations.map((id) => ({ id })),
+      }),
+  },
   // The installation-token exchange — @octokit/auth-app's own first call.
   {
     method: "POST",
@@ -169,17 +205,17 @@ const FAKE_ROUTES: readonly FakeRoute[] = [
   {
     method: "POST",
     matches: endsWith("/git/commits"),
-    reply: () => json({ sha: COMMIT_SHA }, 201),
+    reply: () => json({ sha: FAKE_COMMIT_SHA }, 201),
   },
   {
     method: "POST",
     matches: endsWith("/git/refs"),
-    reply: () => json({ ref: "refs/heads/main", object: { sha: COMMIT_SHA } }, 201),
+    reply: () => json({ ref: "refs/heads/main", object: { sha: FAKE_COMMIT_SHA } }, 201),
   },
   {
     method: "PATCH",
     matches: contains("/git/refs/"),
-    reply: () => json({ ref: "refs/heads/main", object: { sha: COMMIT_SHA } }),
+    reply: () => json({ ref: "refs/heads/main", object: { sha: FAKE_COMMIT_SHA } }),
   },
 ];
 
@@ -194,6 +230,8 @@ const FAKE_ROUTES: readonly FakeRoute[] = [
 export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
   const calls: GithubCall[] = [];
   const ctx: FakeContext = {
+    userInstallations: options.userInstallations ?? [TEST_INSTALLATION_ID],
+    rejectUserCode: options.rejectUserCode === true,
     head: options.head ?? null,
     repos: options.repos ?? [
       { full_name: "acme/voice-agent", private: true, default_branch: "main" },
@@ -216,14 +254,14 @@ export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
     const fail = options.failWith;
     // Never on the token exchange: a failure injected for the call under test
     // must not be spent on the auth round trip that precedes it.
-    const injectable =
+    if (
       fail &&
       !failed &&
       !call.path.endsWith("/access_tokens") &&
-      call.path.includes(fail.pathIncludes);
-    if (fail && injectable) {
+      call.path.includes(fail.pathIncludes)
+    ) {
       failed = true;
-      return json({ message: fail.message ?? "injected failure" }, fail.status);
+      return json({ message: "injected failure" }, fail.status);
     }
 
     const route = FAKE_ROUTES.find(
@@ -251,6 +289,3 @@ export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
     lastCall,
   };
 }
-
-/** The commit sha the fake's commit route always returns. */
-export const FAKE_COMMIT_SHA = COMMIT_SHA;

@@ -51,8 +51,13 @@ Required Modal Secret named ``aai-server`` with (at least):
 - ``SUPABASE_SERVICE_ROLE_KEY`` — with ``SUPABASE_URL``, the Supabase
   Realtime change streams (sandbox invalidation, studio preview push) AND
   Storage reads/writes of deploy artifacts
-- ``GITHUB_APP_ID`` / ``GITHUB_APP_PRIVATE_KEY`` / ``GITHUB_APP_SLUG`` —
-  the studio's "Sync to GitHub" App. All three or none: a half-configured App
+- ``GITHUB_APP_ID`` / ``GITHUB_APP_PRIVATE_KEY`` / ``GITHUB_APP_SLUG`` /
+  ``GITHUB_APP_CLIENT_ID`` / ``GITHUB_APP_CLIENT_SECRET`` —
+  the studio's "Sync to GitHub" App. The OAuth pair is what lets the install
+  callback verify the person finishing the flow actually administers the
+  installation they are attaching; without it that callback accepts any
+  (enumerable) ``installation_id``, so the App must have **"Request user
+  authorization (OAuth) during installation"** enabled. All of them or none: a half-configured App
   is the state where the install link works and every sync fails, so absence
   reads as "not configured" and the studio's GitHub card renders nothing (see
   "Sync to GitHub" in ``packages/aai-studio-server/CLAUDE.md``). The private

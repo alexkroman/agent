@@ -971,10 +971,21 @@ project's workspace to a branch as ONE commit.
   way, and it lists the INSTALLATION's repositories — the truthful answer to
   "where can this sync write", where the user's own list would offer
   destinations every sync would 404 on.
+- **The branch is the repository's OWN default, never a request field.** It is
+  read at push time (`readRepoDefaultBranch`), because the picker's copy can be
+  a rename out of date — and a client-named branch would be a validated but
+  unreachable input surface, which is how a security-relevant grammar rots.
+  Re-adding it means adding the control and the grammar together.
 - **Metered like every route that costs a third party** (`GITHUB_SYNC_RATE_LIMIT`,
   scope + IP): one sync is a blob upload per file against a service that
   meters us as one App across every tenant, so the window protects the App's
-  standing with GitHub as much as this service.
+  standing with GitHub as much as this service. **Every studio window now comes
+  from ONE factory** (`createPgStudioRateLimiters`), the shape the agent surface
+  already uses: the composition root hand-listed them, and a window it forgot
+  fell through to the in-memory arm and silently enforced `MAX_CONTAINERS` times
+  what it says — the exact bug this guide documents for the workflow limiters,
+  invisible because every route spec injects a limiter. `studio-rate-limit.test.ts`
+  holds the factory to the windows this module declares.
 - **Tested through the wire, not through a mock of our own wrappers.**
   `_studio-github-test-utils.ts` is a fake GitHub behind Octokit's own `fetch`
   seam, with a real RSA key so App JWT minting and the installation-token

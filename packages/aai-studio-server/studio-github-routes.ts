@@ -41,11 +41,16 @@ import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";
 import {
   createGithubOctokit,
   createOrgRepo,
+  type GithubOctokit,
   listInstallationRepos,
   readRepoDefaultBranch,
   resolveInstallation,
 } from "./studio-github-client.ts";
-import { type GithubAppConfig, githubInstallUrl } from "./studio-github-config.ts";
+import {
+  type GithubAppConfig,
+  githubInstallPageUrl,
+  githubInstallUrl,
+} from "./studio-github-config.ts";
 import {
   deleteGithubLink,
   type GithubLink,
@@ -55,10 +60,12 @@ import {
 import { signInstallState, verifyInstallState } from "./studio-github-state.ts";
 import {
   type GithubSyncResult,
+  githubCreateErrorMessage,
   githubSyncErrorMessage,
   parseRepoFullName,
   syncWorkspaceToGithub,
 } from "./studio-github-sync.ts";
+import { exchangeUserCode, userControlsInstallation } from "./studio-github-user.ts";
 import type { RefuseFn } from "./studio-route-limits.ts";
 import { GithubConnectSchema, GithubCreateRepoSchema, GithubSyncSchema } from "./studio-schemas.ts";
 import { getWorkspace, type StudioWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
@@ -77,6 +84,30 @@ const log = createLogger("studio.github");
  */
 function studioProjectPath(project?: string): string {
   return project ? `/studio/chat/${project}` : "/";
+}
+
+/**
+ * Does the person finishing this install actually control the installation?
+ *
+ * The signed `state` proves WHO is asking and `resolveInstallation` proves the
+ * id is real; neither proves entitlement — and `installation_id` is a small
+ * integer whose success is distinguishable from its failure, so it is
+ * enumerable. Without this, any studio user could attach somebody else's
+ * installation and force-push to every repository in it.
+ *
+ * A missing `code` is refused rather than waved through: the App is configured
+ * to request user authorization during installation, so a callback without one
+ * did not come from that flow.
+ */
+async function entitled(
+  config: GithubAppConfig,
+  code: string,
+  installationId: number,
+  fetchFn?: typeof globalThis.fetch,
+): Promise<boolean> {
+  if (!code) return false;
+  const userToken = await exchangeUserCode(config, code, fetchFn);
+  return userToken !== null && (await userControlsInstallation(userToken, installationId, fetchFn));
 }
 
 export type GithubRouteDeps = {
@@ -99,33 +130,29 @@ function notConnected(c: Context<StudioHonoEnv>): Response {
 }
 
 /**
- * Resolve the branch, push, and record where it landed.
+ * Push, and record where it landed.
  *
  * Split out of the route so each half is one thing: the route decides whether
  * this request may push at all, and this decides what pushing means.
+ *
+ * The branch is always the repository's OWN default, read here rather than
+ * accepted from the caller — the picker's copy can be a rename out of date,
+ * and a client-named branch would be a request field no studio control
+ * produces (see `GithubSyncSchema`).
  */
 async function pushToGithub(opts: {
-  config: GithubAppConfig;
-  link: GithubLink;
+  octokit: GithubOctokit;
   workspace: StudioWorkspace;
-  /** `owner/repo`, as stamped and as the client sent it. */
-  repo: string;
-  owner: string;
-  name: string;
-  branch?: string | undefined;
+  target: { owner: string; repo: string };
   scope: string;
   project: string;
   workspaces: StudioHonoEnv["Bindings"]["workspaces"];
-  fetchFn?: typeof globalThis.fetch;
 }): Promise<GithubSyncResult & { ok: true; repo: string; branch: string }> {
-  const { config, link, workspace, repo, scope, project } = opts;
-  // ONE client for the whole push: `createAppAuth` caches the installation
-  // token per instance, so a second instance is a second token exchange.
-  const octokit = createGithubOctokit(config, {
-    installationId: link.installationId,
-    ...omitUndefined({ fetchFn: opts.fetchFn }),
-  });
-  const branch = opts.branch ?? (await readRepoDefaultBranch(octokit, opts.owner, opts.name));
+  const { octokit, workspace, target, scope, project } = opts;
+  // Derived, never carried alongside: this and `target` are one value, and two
+  // spellings of it in one signature is a read hazard.
+  const repo = `${target.owner}/${target.repo}`;
+  const branch = await readRepoDefaultBranch(octokit, target.owner, target.repo);
 
   // The idempotence token only means anything against the SAME target: the
   // hash describes the FILES, never where they went, so a stamp left by a
@@ -135,7 +162,7 @@ async function pushToGithub(opts: {
   const result = await syncWorkspaceToGithub({
     octokit,
     workspace,
-    target: { owner: opts.owner, repo: opts.name, branch },
+    target: { ...target, branch },
     project,
     ...omitUndefined({ syncedHash: sameTarget ? workspace.githubHash : undefined }),
   });
@@ -155,20 +182,56 @@ export function registerGithubRoutes(studio: Hono<StudioHonoEnv>, deps: GithubRo
   const { config, fetchFn } = deps;
   const clientOptions = omitUndefined({ fetchFn });
 
-  /** This account's link, or null — the read every `/github` route opens with. */
-  const linkFor = (c: Context<StudioHonoEnv>, userId: string): Promise<GithubLink | null> =>
-    readGithubLink(c.env.secrets, userId);
+  /**
+   * The five guards every repository route repeats, in one place: a fresh
+   * session, a configured App, a linked installation, one Octokit built from
+   * it, and GitHub's failures translated to an actionable sentence.
+   *
+   * Two callers is usually a reason NOT to abstract; here the shared part is
+   * the whole body and the varying part is one expression, so a change to any
+   * guard would otherwise have to be made twice — with a silently skipped
+   * check as the failure mode.
+   */
+  const withInstallation = async (
+    c: Context<StudioHonoEnv>,
+    what: "repo list" | "repo create",
+    // A `Response` is returned as-is, anything else is the JSON body. That is
+    // what lets a handler answer with its OWN status (the personal-account
+    // 409) without routing a non-GitHub refusal through the 502 catch below.
+    run: (octokit: GithubOctokit, link: GithubLink) => Promise<unknown>,
+  ): Promise<Response> => {
+    const user = await requireStudioUser(c.req.raw, c.env);
+    if (!config) return notConfigured(c);
+    const link = await readGithubLink(c.env.secrets, user.id);
+    if (!link) return notConnected(c);
+    const octokit = createGithubOctokit(config, {
+      installationId: link.installationId,
+      ...clientOptions,
+    });
+    try {
+      const answer = await run(octokit, link);
+      return answer instanceof Response ? answer : c.json(answer);
+    } catch (err) {
+      log.warn(`github ${what} failed`, { reason: errorMessage(err) });
+      // The two operations read the same statuses differently — a 422 on a
+      // create is a taken name, not a branch that moved under a push — so the
+      // vocabulary follows the operation rather than the transport.
+      const message =
+        what === "repo create" ? githubCreateErrorMessage(err) : githubSyncErrorMessage(err);
+      return c.json({ error: message }, 502);
+    }
+  };
 
   studio.get("/github", async (c) => {
     const user = await requireStudioUser(c.req.raw, c.env);
     if (!config) return c.json({ configured: false, connected: false });
-    const link = await linkFor(c, user.id);
+    const link = await readGithubLink(c.env.secrets, user.id);
     return c.json({
       configured: true,
       connected: link !== null,
       // The App's own settings page — where a user adds a repository to the
       // installation, which is the fix for half the errors this flow produces.
-      manageUrl: `https://github.com/apps/${config.slug}/installations/new`,
+      manageUrl: githubInstallPageUrl(config),
       ...omitUndefined({ account: link?.account, accountType: link?.accountType }),
     });
   });
@@ -201,54 +264,32 @@ export function registerGithubRoutes(studio: Hono<StudioHonoEnv>, deps: GithubRo
     return c.json({ ok: true });
   });
 
-  studio.get("/github/repos", async (c) => {
-    const user = await requireStudioUser(c.req.raw, c.env);
-    if (!config) return notConfigured(c);
-    const link = await linkFor(c, user.id);
-    if (!link) return notConnected(c);
-    const octokit = createGithubOctokit(config, {
-      installationId: link.installationId,
-      ...clientOptions,
-    });
-    try {
-      return c.json({ repos: await listInstallationRepos(octokit) });
-    } catch (err) {
-      log.warn("github repo list failed", { reason: errorMessage(err) });
-      return c.json({ error: githubSyncErrorMessage(err) }, 502);
-    }
-  });
+  studio.get("/github/repos", (c) =>
+    withInstallation(c, "repo list", async (octokit) => ({
+      repos: await listInstallationRepos(octokit),
+    })),
+  );
 
-  studio.post("/github/repos", zValidator("json", GithubCreateRepoSchema), async (c) => {
-    const user = await requireStudioUser(c.req.raw, c.env);
-    if (!config) return notConfigured(c);
-    const link = await linkFor(c, user.id);
-    if (!link) return notConnected(c);
-    // GitHub's boundary, not ours: `POST /user/repos` is unavailable to an
-    // installation token at all, so a personal account's repository has to be
-    // created on github.com and then added to the installation. Saying so is
-    // the whole value of this branch — the alternative is a 403 the user
-    // reads as a bug in the studio.
-    if (link.accountType !== "Organization") {
-      return c.json(
-        {
-          error:
-            "GitHub only lets an App create repositories inside an organization. " +
-            "Create the repository on GitHub, then add it to the AAI installation.",
-        },
-        409,
-      );
-    }
-    const octokit = createGithubOctokit(config, {
-      installationId: link.installationId,
-      ...clientOptions,
-    });
-    try {
-      return c.json({ repo: await createOrgRepo(octokit, link.account, c.req.valid("json").name) });
-    } catch (err) {
-      log.warn("github repo create failed", { reason: errorMessage(err) });
-      return c.json({ error: githubSyncErrorMessage(err) }, 502);
-    }
-  });
+  studio.post("/github/repos", zValidator("json", GithubCreateRepoSchema), (c) =>
+    withInstallation(c, "repo create", async (octokit, link) => {
+      // GitHub's boundary, not ours: `POST /user/repos` is unavailable to an
+      // installation token at all, so a personal account's repository has to be
+      // created on github.com and then added to the installation. Saying so is
+      // the whole value of this branch — the alternative is a 403 the user
+      // reads as a bug in the studio.
+      if (link.accountType !== "Organization") {
+        return c.json(
+          {
+            error:
+              "GitHub only lets an App create repositories inside an organization. " +
+              "Create the repository on GitHub, then add it to the AAI installation.",
+          },
+          409,
+        );
+      }
+      return { repo: await createOrgRepo(octokit, link.account, c.req.valid("json").name) };
+    }),
+  );
 
   /**
    * Where GitHub returns the browser after an install or a reconfiguration.
@@ -277,8 +318,16 @@ export function registerGithubRoutes(studio: Hono<StudioHonoEnv>, deps: GithubRo
       return back("failed", claims.project);
     }
     try {
-      // The second check: the id is a number in a URL until GitHub confirms
-      // it exists and names its owner. Nothing is stored before this returns.
+      // The check that actually AUTHORIZES the link — see `entitled`.
+      if (!(await entitled(config, c.req.query("code") ?? "", installationId, fetchFn))) {
+        log.warn("github install callback refused an unverified installation", {
+          uid: claims.uid,
+          installationId,
+        });
+        return back("unverified", claims.project);
+      }
+      // Only now: the id names a real installation of this App, and the person
+      // finishing the flow administers it.
       const account = await resolveInstallation(config, installationId, clientOptions);
       if (!account) return back("failed", claims.project);
       await writeGithubLink(c.env.secrets, claims.uid, {
@@ -320,29 +369,33 @@ export function registerGithubRoutes(studio: Hono<StudioHonoEnv>, deps: GithubRo
     const limited = await deps.githubSync(scope, c.req.raw);
     if (limited) return limited;
 
-    const link = await readGithubLink(c.env.secrets, userId);
+    // Independent reads, so one round trip rather than two: the link says
+    // whether this account may push at all and the workspace says what there
+    // is to push, and neither answer depends on the other. The rare
+    // not-connected case fetches a workspace it discards, which is the cheaper
+    // half of the trade — the client only offers Sync once `connected`.
+    const [link, workspace] = await Promise.all([
+      readGithubLink(c.env.secrets, userId),
+      getWorkspace(c.env.workspaces, scope, project),
+    ]);
     if (!link) return notConnected(c);
-
-    const body = c.req.valid("json");
-    const target = parseRepoFullName(body.repo);
-    if (!target) return c.json({ error: "Expected owner/repo" }, 400);
-
-    const workspace = await getWorkspace(c.env.workspaces, scope, project);
     if (!workspace) return projectNotFound(c);
+
+    const target = parseRepoFullName(c.req.valid("json").repo);
+    if (!target) return c.json({ error: "Expected owner/repo" }, 400);
 
     try {
       return c.json(
         await pushToGithub({
-          config,
-          link,
+          octokit: createGithubOctokit(config, {
+            installationId: link.installationId,
+            ...clientOptions,
+          }),
           workspace,
-          repo: body.repo,
-          owner: target.owner,
-          name: target.repo,
+          target,
           scope,
           project,
           workspaces: c.env.workspaces,
-          ...omitUndefined({ branch: body.branch, fetchFn }),
         }),
       );
     } catch (err) {

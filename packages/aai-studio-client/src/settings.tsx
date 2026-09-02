@@ -18,9 +18,8 @@
 // outcome beside the control that did it (see "No studio action writes into
 // the transcript" in the package guide).
 
-import type { ProjectData } from "./api.ts";
 import { CliCommands } from "./cli-commands.tsx";
-import { GithubCard } from "./github-card.tsx";
+import { GithubCard, type GithubSyncState } from "./github-card.tsx";
 import { PaneShell } from "./pane-shell.tsx";
 import { Card } from "./settings-card.tsx";
 
@@ -37,11 +36,14 @@ type SettingsPaneProps = {
   /** Session bearer — the GitHub card's reads and its sync ride it. */
   bearer: string;
   /**
-   * The workspace payload, for the GitHub card's "up to date / has edits"
-   * line. Undefined while the project read is in flight, which the card
-   * renders as no line rather than as "never synced".
+   * The workspace's GitHub stamps, for the card's "up to date / has edits"
+   * line and its last-commit link. Undefined while the project read is in
+   * flight, which the card renders as no line rather than as "never synced".
+   *
+   * A narrow slice rather than the whole `ProjectData`, so this pane does not
+   * become the place future cards reach for arbitrary project state.
    */
-  data: ProjectData | undefined;
+  data: GithubSyncState | undefined;
   /** Delete the project (workspace + chat). The app navigates home after. */
   onDeleteProject: () => void;
   deleting: boolean;

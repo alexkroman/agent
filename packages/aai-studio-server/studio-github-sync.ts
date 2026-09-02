@@ -66,15 +66,22 @@ export type GithubSyncResult = {
   syncedHash: string;
 };
 
-/** Parse `owner/repo`, or null — the one place that grammar is decided. */
+/**
+ * What either half of an `owner/repo` may contain — GitHub's own grammar.
+ *
+ * Exported because `GithubRepoSchema` (studio-schemas.ts) is built from it.
+ * The request schema and the check below are two LAYERS on purpose — the
+ * schema never sees a value read back off a workspace stamp — but two layers
+ * do not need two copies of the pattern, and the dangerous direction of a
+ * drift is a sync interpolating a path segment the schema would have refused.
+ */
+export const GITHUB_NAME_RE = /^[\w.-]{1,100}$/;
+
+/** Parse `owner/repo`, or null. Both halves become request path segments. */
 export function parseRepoFullName(fullName: string): { owner: string; repo: string } | null {
   const [owner, repo, ...rest] = fullName.split("/");
   if (!(owner && repo) || rest.length > 0) return null;
-  // GitHub's own grammar for both halves. Enforced because these become path
-  // segments in every request below, and an unvalidated one is a request to
-  // an endpoint nobody wrote.
-  const valid = /^[\w.-]{1,100}$/;
-  return valid.test(owner) && valid.test(repo) ? { owner, repo } : null;
+  return GITHUB_NAME_RE.test(owner) && GITHUB_NAME_RE.test(repo) ? { owner, repo } : null;
 }
 
 /**
@@ -241,6 +248,38 @@ export async function syncWorkspaceToGithub(opts: {
  * anticipate is more useful verbatim than flattened into "sync failed".
  */
 export function githubSyncErrorMessage(err: unknown): string {
+  return githubErrorMessage(err, "sync");
+}
+
+/**
+ * The same translation for a repository CREATE, whose statuses mean something
+ * different: 422 is "that name is taken" (or otherwise invalid), not a branch
+ * that moved. Reusing the sync vocabulary here answered a duplicate name with
+ * "That branch moved while the sync was running", which is advice about a
+ * different operation entirely.
+ */
+export function githubCreateErrorMessage(err: unknown): string {
+  return githubErrorMessage(err, "create");
+}
+
+function githubErrorMessage(err: unknown, kind: "sync" | "create"): string {
+  if (kind === "create") {
+    switch (githubErrorStatus(err)) {
+      case 401:
+      case 404:
+        return "GitHub no longer grants access to that account — reconnect GitHub.";
+      case 403:
+        return "The GitHub App is not permitted to create repositories in that organization.";
+      case 422:
+        return "That repository name is already taken, or is not a name GitHub accepts.";
+      default:
+        return errorMessage(err);
+    }
+  }
+  return syncErrorMessage(err);
+}
+
+function syncErrorMessage(err: unknown): string {
   switch (githubErrorStatus(err)) {
     case 401:
     case 404:
