@@ -734,11 +734,11 @@ paragraph.
 
 Its spec stubs `ctx.workflows` for the TOOLS rather than driving a real client,
 and drives the STEPS directly against a stubbed `fetch` — they are ordinary
-exported async functions. The BODY is driven with `createWorkflowCtx`
-(`@alexkroman1/aai/testing`), which records the steps it was asked for and
-answers the waits; what that cannot show is durability, since nothing is
-journaled. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that runs a
-real engine.
+exported async functions. The BODY is driven twice: `createWorkflowCtx`
+(`@alexkroman1/aai/testing`) records the steps it asked for and answers the
+waits, and `runWorkflow` (`@alexkroman1/aai-runtime/testing`) runs it on the
+REAL replay engine, so the review wait suspends and the resume comes off the
+journal. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier above both.
 
 **A search that was REFUSED is not a web with nothing in it, and both templates
 that search got that wrong.** `webSearch`/`visitWebpage`/`fetchJson`
@@ -876,14 +876,45 @@ down, so the URL box and the language picker exist because `agent.ts` declares
 them and the `z.enum` is what makes the second a `<SelectField>`. See "Forms" in
 `packages/aai-ui/CLAUDE.md` for the mixed case.
 
-Its spec exercises the exported STEPS and the pure helpers directly rather than
-the body, which is where the honest line is: a step function is ordinary async
-code, so its `FatalError` guards and its HTTP handling are all testable, while
-durability, suspension and replay are not. The spec says so in place, because a
-body test that looked like a durability test would be the worse failure. The
+Its spec exercises the exported STEPS and the pure helpers directly, and drives
+ONE of its three bodies durably — `transcribeBatch`, the flow that reaches no
+ffmpeg. The other two normalize first and this repo's test environment has no
+ffmpeg, so their durability stays the scenario tier's; naming which of the three
+is covered is the point, since a durable spec that implied it covered all three
+would be the same failure as a body test dressed up as one. The
 WAV half carries its own weight there: a cut that lands mid-frame,
 or an off-by-one in the RIFF chunk walk, produces audio the decoder happily
 transcribes into confident nonsense rather than anything that fails.
+
+## Every template with a `workflows/` directory drives its body DURABLY
+
+`runWorkflow` (`@alexkroman1/aai-runtime/testing`) starts a declared workflow on
+the real replay engine over an in-memory journal, so a template spec can assert
+what its body is FOR: that a run suspended, resumed off its journal without
+redoing settled work, retried, was answered by a signal, and survived a worker
+that died mid-step. Each of the eight has a `describe("the run is DURABLE")`
+block, and each asserts ITS OWN claim rather than a generic one — redline's loop
+exit coming out of a journaled verdict, recap's window deleting unanswered,
+podcast-digest sleeping the schedule between digests, link-digest not re-reading
+the page.
+
+**`template-durability-gate.test.ts` is what makes that a floor rather than a
+habit.** When the capability landed exactly ONE template used it and every gate
+was green: `template-api-coverage.test.ts` asks that each export be exercised
+SOMEWHERE, which one worked example satisfies. Nothing would have stopped the
+ninth template shipping with none. The gate reads each template's own specs and
+requires the CALL, not the import — an import a deleted block left behind is how
+it would come to pass over nothing — and both arms are A/B'd.
+
+Two limits it deliberately accepts. `call-audit`'s first step runs ffmpeg, which
+this environment does not have, so its block asserts what is reachable (a
+`FatalError` failing a run on ONE attempt of the six that call site asks for) and
+says so; demanding a full run would make that template lie. And a step's HTTP —
+the MODEL CALL included — goes through the published `stepFetch` slot, so a whole
+run cannot stub the gateway over `globalThis.fetch` beside a page stub;
+`stubGatewayRoute` composed into one `installStubStepFetch` is the shape, and
+`stubTranscribe`'s `otherwise` is the same composition where that fake owns the
+slot.
 
 ## Every template ships an EVAL
 
@@ -1114,8 +1145,11 @@ against a stubbed `ctx.workflows`, the steps directly, and the body's HELPERS
 which is ordinary logic worth pinning (the poll's exit conditions, the unwind's
 direction, that a failing undo does not strand the ones behind it, and the
 gate's three outcomes with its safe default), and asserts nothing about
-durability. `recapFlow` itself is still not driven, for the reason every other
-workflow template gives.
+durability. A FOURTH tier drives `recapFlow` itself on the real replay engine,
+and reaches the two claims nothing else can: that a resume does not
+re-transcribe, and that the retention gate's UNANSWERED window deletes —
+`ctx.workflows.wakeUp` may not close an approval window, so `run.expireWaits()`
+is the only route to the branch the whole pattern exists for.
 
 **That tier is forty lines shorter than it was.** The gate used to be a hook
 raced against a `sleep`, so a spec had to mock both, hand-build a thenable, and

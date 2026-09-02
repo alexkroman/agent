@@ -7,8 +7,9 @@
  *
  * Three tiers, and the line between them is what this file is careful about:
  *
- * - **The tools**, against a stubbed `ctx.workflows`. That is the only honest
- *   way to unit-test them (the real client needs a Workflow DevKit world), and
+ * - **The tools**, against a stubbed `ctx.workflows`. That is the honest way to
+ *   unit-test a TOOL — what a tool owns is the call it makes, not what the run
+ *   does afterwards — and
  *   it is enough: what the agent half promises is that the handoff passes a
  *   correlation key, that a second request finds the live run instead of paying
  *   for a second transcription, and that a cancel says out loud what cancelling
@@ -20,11 +21,14 @@
  * - **The body's two helpers** — the poll loop and the compensation unwind —
  *   with `sleep` stubbed. What that asserts is ORDERING and BRANCHING, which is
  *   ordinary logic and worth pinning; it asserts nothing about durability,
- *   replay or suspension, and could not. `recapFlow` itself is deliberately not
- *   driven here for exactly that reason — a body test dressed up as a durability
- *   test would be the worse failure. `aai-cli`'s
- *   `dev-workflow.scenario.test.ts` is the tier that builds a project and
- *   runs a real one.
+ *   replay or suspension, and could not.
+ * - **`recapFlow` itself, durably.** The last block runs it on the real replay
+ *   engine over an in-memory journal (`runWorkflow`,
+ *   `@alexkroman1/aai-runtime/testing`), which this file used to say needed a
+ *   built world. It is the tier that reaches this desk's two most expensive
+ *   claims: that a resume does not re-transcribe, and that the RETENTION GATE's
+ *   unanswered window deletes. `aai-cli`'s `dev-workflow.scenario.test.ts` is
+ *   still the tier above it, with a project and a real queue.
  *
  * **The branch this file used to name as its biggest gap no longer exists.** It
  * was `recapFlow`'s `if (isWorkflowSuspend(err)) throw err;` — the guard whose
@@ -46,6 +50,7 @@ import {
   createWorkflowCtx,
   parseSchemaInput,
   schemaInputIssues,
+  stubGatewayRoute,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import {
@@ -54,6 +59,7 @@ import {
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
+import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { recap } from "./shared.ts";
 import {
@@ -991,5 +997,188 @@ describe("compensate — the saga port", () => {
     await expect(
       compensate([], "nothing was acquired", createWorkflowCtx()),
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * `recapFlow` itself, on the real replay engine.
+ *
+ * `runWorkflow` starts the declared workflow on `createInProcessWorkflowEngine`
+ * over an in-memory journal and drives one delivery at a time, with a suspension
+ * RECORDED rather than waited out. So the poll cadence a deployed run spends
+ * fifteen seconds a turn on costs this file nothing, and the run really parks,
+ * really resumes off its journal, and really closes its window.
+ *
+ * Two of this desk's claims are only reachable here, and both are expensive when
+ * wrong:
+ *
+ * - **A resume does not re-transcribe.** Twenty minutes of provider time is
+ *   already paid for, which is why `summarize` is its own step; nothing below
+ *   this tier can show that a second walk did not submit the recording again.
+ * - **The retention gate's unanswered window DELETES.** "A gate whose no-answer
+ *   branch keeps the data is not a gate", and for a desk holding transcripts of
+ *   other people's meetings the default is what the whole pattern is about.
+ *   `ctx.workflows.wakeUp` deliberately cannot end an approval window — that is
+ *   `SleepRecord.kind`'s entire reason — so `expireWaits()` is the only thing
+ *   that reaches the branch.
+ *
+ * Note the body takes the POLL arm throughout: `callbackUrl` degrades to
+ * `undefined` in a spec (no minter is published), so `job.callback` is `false`
+ * and the first-turn callback park is never entered. That is the same arm a
+ * local `aai dev` run takes, and its own doc says so.
+ */
+describe("the run is DURABLE", () => {
+  const URL = "https://example.com/standup.mp3";
+  const INPUT = { url: URL, requestedBy: "sess_1" };
+  const RECAP = '{"headline":"Standup","points":["a","b"],"spoken":"They shipped it."}';
+
+  /**
+   * The provider and the model, behind ONE published `stepFetch`.
+   *
+   * Every step's HTTP goes through the slot, the model call included, so a
+   * gateway stub installed over `globalThis.fetch` beside a provider stub would
+   * be bypassed — `link-digest/agent.test.ts` carries the same note.
+   * `stubGatewayRoute` is the composition for it.
+   *
+   * `transcript` is a list of successive `GET` answers, so a spec says how many
+   * polls the job takes by how many entries it gives.
+   */
+  function stubWorld(transcript: readonly Record<string, unknown>[]) {
+    const model = stubGatewayRoute(RECAP);
+    const deletes: string[] = [];
+    let polls = 0;
+    const provider = installStubStepFetch((request) => {
+      const routed = model.route(request);
+      if (routed) return routed;
+      if (request.method === "DELETE") {
+        deletes.push(request.url);
+        return { status: 200, body: {} };
+      }
+      if (request.method === "POST") return { status: 200, body: { id: "t_1", status: "queued" } };
+      // The last answer repeats, so a spec that wants one more poll than it
+      // scripted gets the terminal state rather than an index error.
+      const at = Math.min(polls++, transcript.length - 1);
+      return { status: 200, body: transcript[at] ?? {} };
+    });
+    return { model, deletes, provider, polls: () => polls };
+  }
+
+  const PROCESSING = { id: "t_1", status: "processing" };
+  const DONE = {
+    id: "t_1",
+    status: "completed",
+    text: "We shipped it.",
+    audio_duration: 600,
+  };
+
+  beforeEach(() => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+  });
+
+  test("submits once, then parks on the poll cadence rather than blocking", async () => {
+    stubWorld([PROCESSING, DONE]);
+    const started = Date.now();
+    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+
+    expect(run.status).toBe("running");
+    // The 15s poll interval, journaled — the run is in progress and not
+    // executing, which is what a caller polling it sees.
+    expect(run.wakeAt).toBeGreaterThan(started);
+    expect(run.steps.map((step) => step.key)).toEqual(["checkTranscript#0", "submitRecording#0"]);
+  });
+
+  test("resumes past the poll WITHOUT re-submitting the recording", async () => {
+    // The claim `summarize` is a separate step for: twenty minutes of provider
+    // time is already paid for, and a resume must not spend it again.
+    const world = stubWorld([PROCESSING, DONE]);
+    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    await run.advanceSleep();
+
+    // Parked again, now on the retention gate — a hook with a deadline.
+    expect(run.status).toBe("running");
+    expect(run.steps.map((step) => step.key)).toEqual([
+      "checkTranscript#0",
+      "checkTranscript#1",
+      "noteGate#0",
+      "submitRecording#0",
+      "summarize#0",
+    ]);
+    expect(run.deliveries).toBe(2);
+    // ONE submit across two walks — `submitRecording#0` came back out of the
+    // journal on the second — and one model call.
+    expect(
+      world.provider.calls.filter((call) => call.method === "POST" && !call.url.includes("chat")),
+    ).toHaveLength(1);
+    expect(world.model.calls).toHaveLength(1);
+  });
+
+  test("an answer of KEEP leaves the transcript on the account", async () => {
+    const world = stubWorld([DONE]);
+    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    await run.signal(retentionToken("sess_1"), { keep: true });
+
+    expect(run.status).toBe("completed");
+    expect(run.output).toMatchObject({ kept: true, answered: true, requestedBy: "sess_1" });
+    // No discard step reached at all, and nothing deleted.
+    expect(run.steps.map((step) => step.name)).not.toContain("discardOnDecline");
+    expect(world.deletes).toEqual([]);
+  });
+
+  test("an UNANSWERED window deletes, which is the safe default the gate exists for", async () => {
+    // The branch nothing else can reach: `ctx.workflows.wakeUp` must not close
+    // an approval window, and the deadline carries no correlation id, so the
+    // only public route to this outcome is to wait out two real minutes.
+    const world = stubWorld([DONE]);
+    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    expect(run.status).toBe("running");
+
+    await run.expireWaits();
+    expect(run.status).toBe("completed");
+    // `answered: false` is the distinction the type carries: the caller did not
+    // decline, they said nothing, and the desk deleted anyway.
+    expect(run.output).toMatchObject({ kept: false, answered: false });
+    expect(run.steps.map((step) => step.name)).toContain("discardOnDecline");
+    expect(world.deletes).toHaveLength(1);
+    expect(world.deletes[0]).toContain("t_1");
+  });
+
+  test("a signal that arrives after the window closed cannot reopen it", async () => {
+    // `closeHook` is a compare-and-set, so the walk that timed out and every
+    // later replay read the same branch — the divergence `HookRecord.closed`
+    // exists to prevent.
+    stubWorld([DONE]);
+    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    await run.expireWaits();
+    expect(run.output).toMatchObject({ kept: false });
+
+    await run.signal(retentionToken("sess_1"), { keep: true });
+    expect(run.signalled).toBe(false);
+    expect(run.output).toMatchObject({ kept: false });
+  });
+
+  test("a failure after the transcript exists UNWINDS it, and the run still fails", async () => {
+    // The saga. `summarize` is given prose instead of JSON on every attempt, so
+    // the step exhausts its patience and the body's catch runs the compensation
+    // stack — which must delete the transcript the run acquired.
+    const model = stubGatewayRoute("Here is a recap, in prose, as you did not ask.");
+    const deletes: string[] = [];
+    installStubStepFetch((request) => {
+      const routed = model.route(request);
+      if (routed) return routed;
+      if (request.method === "DELETE") {
+        deletes.push(request.url);
+        return { status: 200, body: {} };
+      }
+      if (request.method === "POST") return { status: 200, body: { id: "t_1", status: "queued" } };
+      return { status: 200, body: DONE };
+    });
+
+    const run = await runWorkflow(recap, INPUT, { name: "recap" });
+    expect(run.status).toBe("failed");
+    expect(run.error).toMatch(/JSON/i);
+    // The undo ran, as a STEP — which is what makes a crash during the unwind
+    // resume with the finished ones replayed rather than run twice.
+    expect(run.steps.map((step) => step.name)).toContain("discardTranscript");
+    expect(deletes).toHaveLength(1);
   });
 });

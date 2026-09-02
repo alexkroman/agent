@@ -196,10 +196,17 @@ describe("hooks", () => {
   });
 
   test("frees the token on a run that FAILED too, not only one that completed", async () => {
-    const { engine, journal } = harness(parking);
+    const world = harness(parking);
+    const { engine, journal } = world;
     const first = await engine.start("digest", [{}]);
     await engine.execute(first);
     await journal.setStatus(first, "failed", { error: { message: "gave up" } }, ["running"]);
+    // Written here rather than by a walk, so no replay of this journal can reach
+    // it — the body parks on its hook forever. See `settledOutOfBand`.
+    world.settledOutOfBand(
+      first,
+      "the spec fails the run directly, standing in for a body that threw",
+    );
 
     const second = await engine.start("digest", [{}]);
     expect(await engine.execute(second)).toBe("running");

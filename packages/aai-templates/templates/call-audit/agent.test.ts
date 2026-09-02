@@ -21,6 +21,12 @@
  * argv they will run, and the classification of a failure — which is where a
  * mistake is silent, since a `timeout` called fatal is a run that gives up on work
  * that would have finished.
+ *
+ * The last block adds a third: the ENGINE's half of that classification, on a
+ * real run. `runWorkflow` starts this desk's declared workflow on the replay
+ * engine, and with no ffmpeg the first step fails fatally — which is exactly the
+ * case worth asserting, because `FatalError` exists to stop the engine spending
+ * the six attempts this call site asks for on a file that will never convert.
  */
 
 import { readdir } from "node:fs/promises";
@@ -34,6 +40,7 @@ import {
   installStubTranscribe,
   installStubUploads,
 } from "@alexkroman1/aai/testing/vitest";
+import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { audit } from "./agent.ts";
 import {
@@ -890,5 +897,72 @@ describe("the body's step policy", () => {
     // And the clock is no longer a step, which is the other half of the claim: a
     // name here would mean the migration left one behind.
     expect(ctx.steps.map((step) => step.name)).not.toContain("clockStart");
+  });
+});
+
+/**
+ * `auditFlow` on the real replay engine — as far as this tier can take it.
+ *
+ * The block above drives the body through `createWorkflowCtx` with
+ * `runSteps: false` and a journaled result per step, which is what makes it
+ * affordable: `ingestRecording` runs ffmpeg, and this repo's test environment
+ * has none — the `ingestRecording` and `narrate` specs above assert the
+ * `FatalError` that produces, unconditionally.
+ *
+ * So a whole run of this desk is not reachable here and this file does not
+ * pretend otherwise; `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier
+ * with a built project. What IS reachable, and what nothing else asserts, is the
+ * ENGINE's half of the fatal/retryable contract: a step that throws a
+ * `FatalError` must fail its run on the first attempt rather than spending the
+ * six this body asks for. The step specs above assert the class; only a real
+ * engine can assert what the class is FOR.
+ */
+describe("the run is DURABLE, as far as ffmpeg allows", () => {
+  beforeEach(() => {
+    installStubUploads({
+      [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+    });
+    installStubReporter();
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
+  });
+
+  test("a FatalError in the first step fails the run on ONE attempt, not six", async () => {
+    const run = await runWorkflow(audit, { recording: UPLOAD_ID }, { name: "audit" });
+
+    expect(run.status).toBe("failed");
+    expect(run.error).toMatch(/ffmpeg/i);
+    const ingest = run.steps.find((step) => step.name === "ingestRecording");
+    // The whole point of `FatalError`: `maxAttempts: 6` is the budget this call
+    // site asks for, and a failure that cannot change must not spend it. A step
+    // that burned all six here would delay the real error by minutes in
+    // production and cost five more conversions of a file that is not going to
+    // convert.
+    expect(ingest?.status).toBe("failed");
+    expect(ingest?.attempts).toBe(1);
+  });
+
+  test("the failure is DURABLE: a redelivery reports it rather than trying again", async () => {
+    const run = await runWorkflow(audit, { recording: UPLOAD_ID }, { name: "audit" });
+    expect(run.status).toBe("failed");
+
+    // A terminal run is done, and a redelivery of one is ordinary rather than an
+    // error — the platform's queue acks on a 200, so any delivery whose ack was
+    // lost arrives again after the run finished.
+    await run.restart();
+    expect(run.status).toBe("failed");
+    expect(run.steps.filter((step) => step.name === "ingestRecording")).toHaveLength(1);
+    expect(run.deliveries).toBe(2);
+  });
+
+  test("the clock is journaled BEFORE the step that fails, so the run's start survives", async () => {
+    // `ctx.now()` and the ingest are issued together in one `Promise.all`, so a
+    // failing ingest must not lose the clock read that went out beside it. It is
+    // journaled through the same append a step is, into a key space of its own —
+    // which is why it reads back off `reads` rather than `steps`.
+    const run = await runWorkflow(audit, { recording: UPLOAD_ID }, { name: "audit" });
+
+    const clock = run.reads.find((read) => read.key === "now!0");
+    expect(clock?.kind).toBe("now");
+    expect(typeof clock?.value).toBe("number");
   });
 });

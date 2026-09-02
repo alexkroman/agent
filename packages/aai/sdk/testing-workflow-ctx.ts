@@ -42,7 +42,22 @@
  *
  * That is the same set of limits `@alexkroman1/aai-runtime/eval`'s workflow
  * engine has, stated the same way — the difference being that this needs no
- * engine at all, so it is what a TEMPLATE reaches for.
+ * engine at all.
+ *
+ * ## What to reach for when durability IS the subject
+ *
+ * `runWorkflow` from `@alexkroman1/aai-runtime/testing`. It starts the declared
+ * workflow on the real engine over a memory journal, so a spec can assert that
+ * a run suspended, resumed off its journal without redoing settled work,
+ * retried, was answered by a signal, and survived a worker that died mid-step.
+ * It lives on the runtime because the engine does, and `@alexkroman1/aai`
+ * imports no sibling package.
+ *
+ * The two are complements rather than alternatives, and the split is what each
+ * makes cheap: this records what a body ASKED FOR — a step's `maxAttempts`, a
+ * sleep's duration, the order — over one walk with no journal, so a spec about a
+ * POLICY stays three lines. That one runs the body for real, so a spec about
+ * DURABILITY is possible at all.
  *
  * @module testing-workflow-ctx
  */

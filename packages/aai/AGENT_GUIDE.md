@@ -624,6 +624,75 @@ trap somebody has already paid for:
   pnpm dev` is what makes it reachable. Until you set it, treat local runs as
   coverage of the backstop only.
 
+### Testing a workflow body
+
+Steps are ordinary exported functions, so a spec imports and calls them. The
+BODY needs an engine, and there are two, for two different questions.
+
+**"What did the body ask for?"** — `createWorkflowCtx` from
+`@alexkroman1/aai/testing`. It runs the steps and records the names, the retry
+policies and the sleeps, over one walk with no journal. Nothing replays, so a
+spec built on it must not claim to test durability.
+
+```ts no-check
+import { createWorkflowCtx } from "@alexkroman1/aai/testing";
+
+const ctx = createWorkflowCtx({ runSteps: false });
+await digestFlow({ url: "https://example.com/a" }, ctx);
+
+expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
+expect(ctx.steps.find((s) => s.name === "summarize")?.maxAttempts).toBe(6);
+expect(ctx.slept).toEqual([{ until: 10_000 }]);
+```
+
+**"Is the run actually durable?"** — `runWorkflow` from
+`@alexkroman1/aai-runtime/testing`. It starts the declared workflow on the real
+replay engine over an in-memory journal, one delivery at a time, with a
+suspension RECORDED rather than waited out. So a body that sleeps six hours
+costs a spec nothing, and the run really suspends, really resumes off its
+journal, and really survives a restart.
+
+```ts no-check
+import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+import { digest } from "./agent.ts";
+
+// Parks on the wait instead of blocking, with the work before it journaled.
+const run = await runWorkflow(digest, { url: "https://example.com/a" }, {
+  name: "digest",
+});
+expect(run.status).toBe("running");
+expect(run.wakeAt).toBeGreaterThan(Date.now());
+expect(run.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize"]);
+
+// Ends the wait the way `ctx.workflows.wakeUp` does, and the body continues.
+await run.advanceSleep();
+expect(run.status).toBe("completed");
+expect(run.deliveries).toBe(2);
+```
+
+Three more things it can do, each the thing a durable body is written for:
+
+- `run.signal(token, payload)` answers a `ctx.waitFor`, so an approval gate is
+  testable without a second process.
+- `{ crashAt: "summarize" }` kills the first delivery that reaches that step,
+  before its body runs — a worker that died mid-run. `await run.restart()` then
+  boots a fresh engine over the same journal, and only the step that never
+  settled runs again.
+- `{ journal }` shares one store between runs, so a spec can assert what a
+  second run sees.
+
+Stub the steps' collaborators at the seams they really use — a step's HTTP goes
+through the published `stepFetch` slot, so a model call and a page fetch are BOTH
+answered there. `stubGatewayRoute` composes the two:
+
+```ts no-check
+import { stubGatewayRoute } from "@alexkroman1/aai/testing";
+import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+
+const model = stubGatewayRoute('{"headline":"H","points":["a"]}');
+installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
+```
+
 ### A step's env, and calling a model from one
 
 A step has no `ctx`, so the two things tool code takes for granted come from

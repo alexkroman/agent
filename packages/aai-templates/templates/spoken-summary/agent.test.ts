@@ -2,13 +2,14 @@
 /**
  * Specs for the spoken-summary app's declaration and its four legs.
  *
- * **The body itself is not driven here**, and that is a property of what a
- * workflow template demonstrates rather than a gap: a step is an ordinary
- * exported async function — so its HTTP handling, its fatal/retryable classification and what
- * it returns are all testable, while durability, suspension and replay are not.
- * A body test that looked like a durability test would be the worse failure;
- * the real thing is exercised end to end by `aai-cli`'s
- * `dev-workflow.scenario.test.ts`.
+ * The four legs are ordinary exported async functions, so their HTTP handling,
+ * their fatal/retryable classification and what they return are all testable
+ * directly. **And the body IS driven**, on the real replay engine — the last
+ * block — which this file used to say was another tier's job. It is still true
+ * that a body test dressed up as a durability test would be the worse failure;
+ * what changed is that the durable one is available, so the claim can be made
+ * honestly rather than deferred. `aai-cli`'s `dev-workflow.scenario.test.ts`
+ * remains the tier above, with a built project and a real queue.
  *
  * The two legs worth their own sections are the ones the SDK grew for this
  * template. `speak` is where a step SPEAKS and STORES, and the assertion that
@@ -18,7 +19,7 @@
 
 import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowCtx } from "@alexkroman1/aai/testing";
+import { createWorkflowCtx, stubGatewayRoute } from "@alexkroman1/aai/testing";
 import {
   installStubGateway,
   installStubReporter,
@@ -26,6 +27,7 @@ import {
   installStubTranscribe,
   installStubUploads,
 } from "@alexkroman1/aai/testing/vitest";
+import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { spokenSummary } from "./agent.ts";
 import { speak, spokenSummaryFlow, summarize } from "./workflows/summarize.ts";
@@ -311,5 +313,112 @@ describe("the whole run", () => {
     await expect(spokenSummaryFlow({ recording: UPLOAD_ID }, createWorkflowCtx())).rejects.toThrow(
       "corrupt audio",
     );
+  });
+});
+
+/**
+ * The whole run, on the real replay engine.
+ *
+ * `runWorkflow` (`@alexkroman1/aai-runtime/testing`) starts the declared
+ * workflow on the engine `aai dev` uses, over an in-memory journal, and records
+ * a suspension rather than waiting it out. That is what makes the poll cadence
+ * — fifteen seconds a turn in a deployment — free here, and it is the only tier
+ * at which this app's central claim is checkable: **the recording is uploaded
+ * and transcribed ONCE**, however many times the body is walked.
+ *
+ * Three published slots have to agree for a whole run, and one of them is a
+ * shared seam: `stubTranscribe` publishes `stepFetch`, and publishing REPLACES —
+ * so the model call cannot have a stub of its own and is routed through
+ * `otherwise` instead. `installStubSpeech` and `installStubUploads` are
+ * different slots and compose freely.
+ */
+describe("the run is DURABLE", () => {
+  const SUMMARY = JSON.stringify({
+    headline: "Launch is on",
+    points: ["Ship Tuesday"],
+    spoken: "The launch is on for Tuesday.",
+  });
+
+  /** The provider, the model and the voice — one world for a whole run. */
+  function stubWorld({ pendingPolls = 0 } = {}) {
+    const model = stubGatewayRoute(SUMMARY);
+    const provider = installStubTranscribe({
+      pendingPolls,
+      text: "We shipped it on Tuesday.",
+      durationSec: 30,
+      // Anything that is not a transcription leg — which here is the model call
+      // — because this fake owns the one published `stepFetch`.
+      otherwise: (request) => model.route(request),
+    });
+    const speech = installStubSpeech({ pcmBytes: 48_000 });
+    installStubReporter();
+    return { model, provider, speech };
+  }
+
+  const INPUT = { recording: UPLOAD_ID };
+
+  test("uploads, submits, then parks on the poll cadence", async () => {
+    const world = stubWorld({ pendingPolls: 1 });
+    const started = Date.now();
+    const run = await runWorkflow(spokenSummary, INPUT, { name: "spokenSummary" });
+
+    expect(run.status).toBe("running");
+    expect(run.wakeAt).toBeGreaterThan(started);
+    expect(run.steps.map((step) => step.key)).toEqual([
+      "createJob#0",
+      "pollTranscript#0",
+      "uploadToProvider#0",
+    ]);
+    // The recording has crossed the wire once. It is the expensive step — it
+    // streams the whole file, which is why it is the one with extra patience.
+    expect(world.provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
+  });
+
+  test("resumes past the poll and finishes, without re-uploading the recording", async () => {
+    const world = stubWorld({ pendingPolls: 1 });
+    const run = await runWorkflow(spokenSummary, INPUT, { name: "spokenSummary" });
+    await run.advanceSleep();
+
+    expect(run.status).toBe("completed");
+    expect(run.output).toMatchObject({
+      headline: "Launch is on",
+      points: ["Ship Tuesday"],
+      transcript: "We shipped it on Tuesday.",
+      // An ID, never the bytes: audio in a journaled step result is megabytes
+      // replayed on every resume.
+      audio: "upl_stub_1",
+    });
+    expect(run.deliveries).toBe(2);
+    // ONE upload and ONE submit across two walks — both came back out of the
+    // journal on the second.
+    expect(world.provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
+    expect(world.provider.calls.filter((call) => call.leg === "submit")).toHaveLength(1);
+    // Two polls, which is the loop doing its job: `pollTranscript#0` was
+    // journaled and `#1` is the one that found it done.
+    expect(run.steps.filter((step) => step.name === "pollTranscript")).toHaveLength(2);
+  });
+
+  test("a worker that dies at the voice keeps the transcript and the summary", async () => {
+    // The whole point of three steps rather than one: reading a summary aloud
+    // is cheap, transcribing a recording is not, and a crash at the cheap end
+    // must not buy the expensive one again.
+    const world = stubWorld();
+    const run = await runWorkflow(spokenSummary, INPUT, {
+      name: "spokenSummary",
+      crashAt: "speak",
+    });
+
+    expect(run.crashed).toBe(true);
+    expect(run.steps.map((step) => step.name)).toContain("summarize");
+    expect(world.speech.calls).toHaveLength(0);
+
+    await run.restart();
+    expect(run.status).toBe("completed");
+    expect(run.output?.audio).toBe("upl_stub_1");
+    // The voice ran once, and neither the provider nor the model was asked
+    // again.
+    expect(world.speech.calls).toHaveLength(1);
+    expect(world.provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
+    expect(world.model.calls).toHaveLength(1);
   });
 });

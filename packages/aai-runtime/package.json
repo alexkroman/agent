@@ -31,6 +31,11 @@
       "types": "./dist/eval-vitest-barrel.d.ts",
       "import": "./dist/eval-vitest-barrel.js"
     },
+    "./testing": {
+      "@dev/source": "./testing-barrel.ts",
+      "types": "./dist/testing-barrel.d.ts",
+      "import": "./dist/testing-barrel.js"
+    },
     "./internal": {
       "@dev/source": "./internal.ts",
       "types": "./dist/internal.d.ts",

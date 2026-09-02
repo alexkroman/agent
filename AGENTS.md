@@ -1530,6 +1530,19 @@ documented in that package's guide, not here:
 | The eval runner, its assertion vocabulary, and both eval targets | `packages/aai-evals/CLAUDE.md` |
 | Sandbox/SSRF boundary tests, and why there is no load or chaos tier | `packages/aai-server/CLAUDE.md` |
 
+Five in `aai-runtime` are the exception that proves the rule, and they are
+listed here because that package's guide is AT the 120,000-char cap and cannot
+take a pointer: `_workflow-journal-log.ts` (every durable write as a log, and a
+world rebuilt from a PREFIX of one — never the log with a hole in it),
+`_workflow-journal-invariants.ts` (what a log must satisfy, re-derived rather
+than re-asked of the store that wrote it), `_workflow-engine-harness.ts` (both
+of those as an `onTestFinished` post-condition, so every engine spec is also a
+durability spec), `workflow-interleavings/` (shrunk counterexamples frozen as
+`fc.schedulerFor` orderings, each naming the guard whose removal it catches) and
+`testing/run-workflow.ts` (the author-facing half, published as
+`@alexkroman1/aai-runtime/testing`). Each module doc carries its own argument;
+the next change to `packages/aai-runtime/CLAUDE.md` has to split it first.
+
 #### Vitest config differences per package
 
 | Package | Pool | Environment | Special setup | Notes |

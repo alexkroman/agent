@@ -1070,6 +1070,15 @@
     "wireSessionSocket",
     "workflowJournalDdl"
   ],
+  "@alexkroman1/aai-runtime/testing": [
+    "DEFAULT_MAX_DELIVERIES",
+    "RunWorkflowOptions",
+    "WorkflowTestHandle",
+    "WorkflowTestRead",
+    "WorkflowTestRun",
+    "WorkflowTestStep",
+    "runWorkflow"
+  ],
   "@alexkroman1/aai-ui/client-dir": [
     "defaultClientDir"
   ],

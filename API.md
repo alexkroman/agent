@@ -46,6 +46,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-runtime/eval/vitest` — `packages/aai-runtime/etc/eval-vitest.api.md`
 - `@alexkroman1/aai-runtime` — `packages/aai-runtime/etc/index.api.md`
 - `@alexkroman1/aai-runtime/internal` — `packages/aai-runtime/etc/internal.api.md`
+- `@alexkroman1/aai-runtime/testing` — `packages/aai-runtime/etc/testing.api.md`
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
 - `@alexkroman1/aai-ui` — `packages/aai-ui/etc/index.api.md`
 - `@alexkroman1/aai-ui/internal` — `packages/aai-ui/etc/internal.api.md`
@@ -9039,6 +9040,159 @@ type WsSessionOptions = {
     sessionStartTimeoutMs?: number;
     keepaliveIntervalMs?: number;
     resumeFrom?: string;
+};
+```
+
+## `@alexkroman1/aai-runtime/testing`
+
+```ts
+import type { ToolInputSchema } from '@alexkroman1/aai';
+import type { WorkflowDef } from '@alexkroman1/aai';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+
+// @public
+export const DEFAULT_MAX_DELIVERIES = 50;
+
+// @public
+type DeterminismKind = "now" | "random" | "uuid";
+
+// @public
+type HookRecord = {
+    token: string;
+    delivered: boolean;
+    payload?: unknown;
+    closed?: boolean;
+};
+
+// @public
+type JournalStore = {
+    createRun(record: RunRecord): Promise<void>;
+    getRun(runId: string): Promise<RunRecord | undefined>;
+    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
+    setStatus(runId: string, next: RunStatus, patch?: {
+        output?: unknown;
+        error?: {
+            message: string;
+        };
+    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    readSteps(runId: string): Promise<StepEntry[]>;
+    claimAttempt(runId: string, key: string): Promise<number>;
+    releaseAttempt(runId: string, key: string): Promise<void>;
+    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
+    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+    closeHook(runId: string, key: string): Promise<boolean>;
+    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
+    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
+};
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (msg: string, ctx?: LogContext) => void;
+
+// @public
+type Logger = Record<LogLevel, LogFn>;
+
+// @public
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+type ResumableRun = {
+    runId: string;
+    wakeAt?: number | undefined;
+};
+
+// @public
+type RunRecord = {
+    runId: string;
+    workflow: string;
+    status: RunStatus;
+    createdAt: number;
+    input: unknown;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+type RunStatus = WorkflowRunStatus;
+
+// @public
+export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
+
+// @public
+export type RunWorkflowOptions = {
+    name?: string;
+    journal?: JournalStore;
+    logger?: Logger;
+    crashAt?: string;
+    maxDeliveries?: number;
+};
+
+// @public
+type SleepRecord = {
+    wakeAt: number;
+    woken: boolean;
+    correlationId?: string | undefined;
+    kind: "sleep" | "hookTimeout";
+};
+
+// @public
+type StepEntry = {
+    key: string;
+    name: string;
+    status: "ok" | "failed";
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    attempts: number;
+    finishedAt: number;
+};
+
+// @public
+export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
+    advanceSleep(correlationIds?: readonly string[]): Promise<WorkflowTestHandle<R>>;
+    signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+    readonly signalled: boolean;
+    expireWaits(): Promise<WorkflowTestHandle<R>>;
+    restart(): Promise<WorkflowTestHandle<R>>;
+    readonly journal: JournalStore;
+    close(): Promise<void>;
+};
+
+// @public
+export type WorkflowTestRead = {
+    readonly key: string;
+    readonly kind: DeterminismKind;
+    readonly value: unknown;
+};
+
+// @public
+export type WorkflowTestRun<R> = {
+    readonly runId: string;
+    readonly status: WorkflowRunStatus;
+    readonly output: R | undefined;
+    readonly error: string | undefined;
+    readonly steps: readonly WorkflowTestStep[];
+    readonly reads: readonly WorkflowTestRead[];
+    readonly wakeAt: number | undefined;
+    readonly deliveries: number;
+    readonly crashed: boolean;
+};
+
+// @public
+export type WorkflowTestStep = {
+    readonly key: string;
+    readonly name: string;
+    readonly status: "ok" | "failed";
+    readonly output?: unknown;
+    readonly error?: string | undefined;
+    readonly attempts: number;
 };
 ```
 

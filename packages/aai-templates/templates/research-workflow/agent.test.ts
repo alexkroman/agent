@@ -4,20 +4,26 @@
 /**
  * Specs for the research desk's four tools.
  *
- * All are exercised against a STUBBED `ctx.workflows`, which is the only honest
- * way to unit-test them: the real client needs a Workflow DevKit world, and the
- * bodies in `workflows/` are only durable once the build has transformed them.
+ * All are exercised against a STUBBED `ctx.workflows`, which is the honest way
+ * to unit-test a TOOL: what a tool owns is the call it makes, not what the run
+ * does afterwards.
  * What these assert is the agent's half of the contract — that the handoff tool
  * passes the correlation key, that the status tool narrows a snapshot correctly
  * before reading it aloud, and that the two tools reaching PAST a status (the
  * progress stream, the early wake) ask for what a voice reply can use.
  *
- * The STEPS are exercised separately, and directly: imported through vitest with
- * a step is an ordinary exported async function,
- * so its prompt handling, its parsing and its `FatalError` guards are all
- * testable — while durability, suspension and replay are not. The body itself is
- * not driven here for that reason; `aai-cli`'s `dev-workflow.scenario.test.ts`
- * builds a project and runs one.
+ * The STEPS are exercised separately, and directly: a step is an ordinary
+ * exported async function, so its prompt handling, its parsing and its
+ * `FatalError` guards are all testable without an engine.
+ *
+ * The BODY is driven here only through `createWorkflowCtx`, which records what
+ * it asked for and replays nothing. That is a choice rather than a limit now:
+ * `runWorkflow` from `@alexkroman1/aai-runtime/testing` will run this body on
+ * the real engine, and `link-digest` is the template that shows it — three
+ * steps and one suspension, where this desk's body is six model steps deep and a
+ * durable spec of it would be mostly stubs. `aai-cli`'s
+ * `dev-workflow.scenario.test.ts` is the tier above both, with a built project
+ * and a real queue.
  */
 
 import type { WorkflowClient } from "@alexkroman1/aai";
@@ -34,6 +40,7 @@ import {
 import { mockWorkflows, installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
+import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { research } from "./shared.ts";
 import {
@@ -42,6 +49,7 @@ import {
   findGaps,
   investigate,
   planAngles,
+  REVIEW_DELAY_MS,
   researchFlow,
   writeBrief,
   writeReport,
@@ -536,5 +544,119 @@ describe("the steps that research", () => {
     await expect(
       writeReport("otters", brief, [{ angle: "a", findings: "b", sources: [] }]),
     ).rejects.toThrow(/empty completion/);
+  });
+});
+
+/**
+ * `researchFlow` itself, on the real replay engine.
+ *
+ * The block above drives this body through `createWorkflowCtx`, which records
+ * what it ASKED for and replays nothing — right for the retry policy and the
+ * step order, and silent about the desk's actual promise: **answer the caller
+ * now, finish the work later**. `runWorkflow`
+ * (`@alexkroman1/aai-runtime/testing`) is the engine `aai dev` runs, over an
+ * in-memory journal, so the review wait really suspends and the resume really
+ * comes off the journal.
+ *
+ * The model is scripted POSITIONALLY, which is only safe because the run is made
+ * sequential: one angle, and a researcher that stops on its first turn, so the
+ * `mapConcurrent` fan-out has a single item and nothing races. A case that wants
+ * two angles at once wants a router keyed on the system prompt instead — the
+ * shape `link-digest` uses — because the order two concurrent step bodies reach
+ * the gateway in is the scheduler's business.
+ *
+ * Five calls make a whole run: the brief, the angles, the researcher's first
+ * action, the gap pass, and the report — plus its summary, which is a second
+ * call on the same step.
+ */
+describe("the run is DURABLE", () => {
+  const SCRIPT = [
+    // writeBrief
+    JSON.stringify({ brief: "How otters use tools", criteria: ["Which species"] }),
+    // planAngles — ONE, so the fan-out is sequential and the script positional.
+    JSON.stringify({ angles: ["Tool use"] }),
+    // investigate#0's first action: stop, which also skips `compress` (nothing
+    // was seen, so there is nothing to compress).
+    JSON.stringify({ action: "stop", why: "nothing to add" }),
+    // findGaps — none, so there is no second wave.
+    JSON.stringify({ angles: [] }),
+    // writeReport, then its summary.
+    "The report about otters.",
+    "Otters use tools.",
+  ];
+  const INPUT = { topic: "otters", requestedBy: "sess_1" };
+
+  beforeEach(() => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+  });
+
+  test("suspends on the review wait with the whole report already journaled", async () => {
+    const started = Date.now();
+    const model = stubGateway(SCRIPT);
+    const run = await runWorkflow(research, INPUT, { name: "research" });
+
+    // Not blocked — suspended. The sandbox is free here, which is the whole
+    // reason a caller can hang up.
+    expect(run.status).toBe("running");
+    expect(run.wakeAt).toBeGreaterThanOrEqual(started + REVIEW_DELAY_MS);
+    // Everything except the filing is durable already, and `file` has not run.
+    expect(run.steps.map((step) => step.key)).toEqual([
+      "findGaps#0",
+      "investigate#0",
+      "planAngles#0",
+      "writeBrief#0",
+      "writeReport#0",
+    ]);
+    expect(model).toHaveLength(6);
+  });
+
+  test("resumes past the review wait and files, without researching again", async () => {
+    const model = stubGateway(SCRIPT);
+    const run = await runWorkflow(research, INPUT, { name: "research" });
+    // `advanceSleep` is `ctx.workflows.wakeUp`'s own mechanism, which is what
+    // the `file_it_now` tool calls to cut the review short — so this is that
+    // tool's effect, asserted on the run rather than on the tool.
+    await run.advanceSleep();
+
+    expect(run.status).toBe("completed");
+    expect(run.output).toMatchObject({
+      topic: "otters",
+      summary: "Otters use tools.",
+      report: "The report about otters.",
+      angles: ["Tool use"],
+    });
+    expect(run.output?.filedAt).toBeTruthy();
+    expect(run.deliveries).toBe(2);
+    // The second walk re-entered the body from the top and paid the model
+    // NOTHING: every step above the wait came back out of the journal.
+    expect(model).toHaveLength(6);
+  });
+
+  test("a worker that dies at the report replays the research rather than repeating it", async () => {
+    // The expensive claim. A deep-research pass is five to twelve model calls
+    // and as many searches; a resume that redid them would cost the run twice.
+    const model = stubGateway(SCRIPT);
+    const run = await runWorkflow(research, INPUT, {
+      name: "research",
+      crashAt: "writeReport",
+    });
+
+    expect(run.crashed).toBe(true);
+    expect(run.steps.map((step) => step.key)).toEqual([
+      "findGaps#0",
+      "investigate#0",
+      "planAngles#0",
+      "writeBrief#0",
+    ]);
+    const spentBeforeTheCrash = model.length;
+    expect(spentBeforeTheCrash).toBe(4);
+
+    await run.restart();
+    await run.advanceSleep();
+    expect(run.status).toBe("completed");
+    // Six in total: the four the crash already paid for came back out of the
+    // journal, and only the report and its summary were re-issued.
+    expect(model).toHaveLength(6);
+    expect(run.output?.report).toBe("The report about otters.");
   });
 });
