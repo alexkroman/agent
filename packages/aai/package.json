@@ -2,6 +2,16 @@
   "name": "@alexkroman1/aai",
   "version": "10.0.1",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexkroman/agent.git",
+    "directory": "packages/aai"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "sideEffects": false,
   "files": [
     "dist",
     "AGENT_GUIDE.md",
@@ -125,15 +135,15 @@
     }
   },
   "scripts": {
+    "build": "tsdown && tsc -p tsconfig.build.json",
+    "check:attw": "attw --pack --profile esm-only",
+    "check:publint": "publint",
+    "check:scenario": "pnpm run test:scenario",
+    "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=host/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "check:scenario": "pnpm run test:scenario",
-    "build": "tsdown && tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit && tsc -p sdk/tsconfig.json",
-    "lint": "biome check .",
-    "check:publint": "publint",
-    "check:attw": "attw --pack --profile esm-only"
+    "typecheck": "tsc --noEmit && tsc -p sdk/tsconfig.json"
   },
   "dependencies": {
     "@sindresorhus/slugify": "^3.0.0",
@@ -147,14 +157,6 @@
     "xstate": "catalog:",
     "zod": "catalog:"
   },
-  "peerDependencies": {
-    "vitest": ">=3"
-  },
-  "peerDependenciesMeta": {
-    "vitest": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "catalog:",
@@ -163,12 +165,12 @@
     "tsdown": "catalog:",
     "vitest": "catalog:"
   },
-  "engines": {
-    "node": ">=24"
+  "peerDependencies": {
+    "vitest": ">=3"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/alexkroman/agent.git",
-    "directory": "packages/aai"
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   }
 }

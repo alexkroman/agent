@@ -2,6 +2,16 @@
   "name": "@alexkroman1/aai-runtime",
   "version": "10.0.1",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexkroman/agent.git",
+    "directory": "packages/aai-runtime"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "sideEffects": false,
   "files": [
     "dist"
   ],
@@ -29,17 +39,17 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
     "build": "tsdown && tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check .",
-    "check:publint": "publint",
     "check:attw": "attw --pack --profile esm-only",
     "check:integration": "pnpm run test:integration",
+    "check:publint": "publint",
     "check:scenario": "pnpm run test:scenario",
+    "lint": "biome check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:integration": "VITEST_INCLUDE=integration/**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts"
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.38",
@@ -83,13 +93,5 @@
     "vitest": {
       "optional": true
     }
-  },
-  "engines": {
-    "node": ">=24"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/alexkroman/agent.git",
-    "directory": "packages/aai-runtime"
   }
 }

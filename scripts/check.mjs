@@ -138,6 +138,7 @@ const TURBO_TASKS = {
     "lint",
     "check:publint",
     "check:syncpack",
+    "check:format",
     "check:sherif",
     // In the local subset despite being a "full CI" style gate: it needs no
     // build, costs ~2s, and it is the only thing that catches a dependency
@@ -155,6 +156,8 @@ const TURBO_TASKS = {
     "check:publint",
     "check:attw",
     "check:syncpack",
+    "check:format",
+    "check:dedupe",
     "check:sherif",
     "check:knip",
     "check:markdown",
@@ -359,6 +362,7 @@ const GATE_SELECTIONS = {
  */
 const NOT_RUN_BY_LOCAL = [
   ["check:attw", "published export types"],
+  ["check:dedupe", "duplicate versions in the lockfile — it resolves, so it needs a registry"],
   ["check:markdown", "markdownlint over every .md"],
   ["check:integration", "multiple modules in memory — the fast-check harnesses"],
   ["check:scenario", "a real subprocess, port, bundler, or Postgres (pnpm test:pg)"],

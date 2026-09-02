@@ -13,16 +13,16 @@
     }
   },
   "scripts": {
-    "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 26) { console.error('Node >=26 required (got ' + process.version + '). Run: fnm use 26'); process.exit(1); }\" && node ../../scripts/ensure-guest-harness.mjs && node ../../scripts/ensure-guest-image.mjs && pnpm --filter aai-studio-client build",
+    "build": "tsdown",
+    "check:scenario": "pnpm run test:scenario",
     "dev": "node ../../scripts/dev-server.mjs node --conditions=@dev/source index.ts",
+    "lint": "biome check .",
+    "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 26) { console.error('Node >=26 required (got ' + process.version + '). Run: fnm use 26'); process.exit(1); }\" && node ../../scripts/ensure-guest-harness.mjs && node ../../scripts/ensure-guest-image.mjs && pnpm --filter aai-studio-client build",
     "start": "node dist/index.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "check:scenario": "pnpm run test:scenario",
-    "build": "tsdown",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",

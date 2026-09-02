@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check:eval": "pnpm run test:eval",
+    "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:eval": "VITEST_PROFILE=eval VITEST_INCLUDE=templates/*/*.eval.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "check:eval": "pnpm run test:eval",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@alexkroman1/aai": "workspace:*",

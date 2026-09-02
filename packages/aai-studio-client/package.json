@@ -3,6 +3,9 @@
   "version": "0.6.16",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
   "exports": {
     "./package.json": "./package.json",
     "./starters": {
@@ -11,10 +14,10 @@
   },
   "scripts": {
     "build": "vite build",
+    "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.68",
@@ -44,8 +47,5 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"
-  },
-  "engines": {
-    "node": ">=26"
   }
 }
