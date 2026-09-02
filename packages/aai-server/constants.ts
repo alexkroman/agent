@@ -257,12 +257,33 @@ export function resolveHarnessPath(env: NodeJS.ProcessEnv = process.env): string
  * name. That warning is what makes raising this safe rather than a landmine —
  * a deployment without a pooler is told, at boot, exactly what it now costs.
  *
- * 16 rather than something larger: it is 4x the measured bottleneck, keeps the
- * fleet's unpooled worst case (`MAX_CONTAINERS` x this) inside what the boot
- * capacity check can report against a 60-connection instance, and leaves the
- * shape of the fix — collapsing duplicate reads at the source
- * (`aai-runtime/_journal-shared-reads.ts`) — doing the work rather than being
- * papered over by a wider pool.
+ * ## Why 16, and it is `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` that decides it
+ *
+ * A replica dispatches up to `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` (8) queue
+ * deliveries at once, and every walking guest posts its journal back at the
+ * platform. So a pool under 8 STARVES THIS REPLICA'S OWN FAN-OUT: it hands out
+ * eight walks and then cannot service the traffic they generate, which is a
+ * deadlock shape rather than a slow one. Eight is therefore the floor, and it
+ * is a floor the old 4 sat under — the pool could not clear the deliveries the
+ * same process had started, before counting anything else.
+ *
+ * 16 is that floor doubled, and the second eight is the rest of the pool's
+ * work: session state and upload records from LIVE sessions (guest-called,
+ * same reservation), plus Vault, the agents row every broker call needs, and
+ * the sweeps. Tune it with that constant, not by feel — if delivery
+ * concurrency moves, this is the number that owes it a look.
+ *
+ * ## What it costs UNPOOLED, stated because the old note hand-waved it
+ *
+ * This paragraph used to say 16 "keeps the fleet's unpooled worst case inside
+ * what the boot capacity check can report", which is not a bound at all — the
+ * check reports whatever it computes. The real arithmetic: unpooled, the fleet
+ * opens `MAX_CONTAINERS x this` = 48 direct backends on top of a 30 budget, so
+ * boot announces a 78-connection claim against a 60-connection instance whose
+ * own Supabase workers already hold 23-30. That configuration was already over
+ * at 4 (a 42 claim); it is now over by enough that it should be read as
+ * UNSUPPORTED rather than degraded, and the boot warning is the thing to act
+ * on rather than tolerate.
  */
 export const ADMIN_POOL_MAX = 16;
 
