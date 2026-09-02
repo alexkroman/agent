@@ -1183,6 +1183,12 @@ Any branch arming `deploy` must arm `migrate` with it, since the deploy job
 waits on migrate with a plain condition; `ship-workflow-gate.test.ts` pins that
 and that the reverted arm stays reverted.
 
+**And every `ship.yml` checkout resolves `github.sha`, never `github.ref`** —
+that gate pins this too. A ~20-minute release workflow whose jobs each fetch the
+BRANCH TIP ships whatever landed while it ran, and one run published a guest
+image from one commit while deploying a server built from another. That file's
+header carries the account; the rule is the gate's.
+
 ### Testing
 
 - **Vitest**. Test files co-located: `foo.ts` → `foo.test.ts`.

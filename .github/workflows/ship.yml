@@ -94,6 +94,38 @@
 # be set to public in the repo's Packages settings — otherwise Modal cannot pull
 # it without a registry Secret, which `guest-image-source.ts` deliberately does
 # not thread through.
+#
+# ## EVERY job checks out `github.sha`, never `github.ref`
+#
+# `github.ref` on a push is `refs/heads/main` — a MUTABLE pointer — and handing
+# it to `actions/checkout` fetches the branch tip AT CHECKOUT TIME rather than
+# the commit that triggered the run. This workflow takes ~20 minutes end to end,
+# so every job in it races whatever lands next, and the jobs disagree with each
+# other about what "this release" even is.
+#
+# That is run 33660483457, whose `github.sha` was the Version Packages commit
+# 5e3ddae1 and which checked out FOUR different commits across six jobs:
+#
+#     changed, version-pr, release, migrate   5e3ddae1   (ran before the next push)
+#     guest-image                             7ab47cf3   (checked out 17:26)
+#     deploy                                  fe3b6d60   (checked out 17:32)
+#
+# So npm got 5e3ddae1's packages, GHCR got a guest image built from 7ab47cf3's
+# harness bundle, and Modal got a service image built from fe3b6d60's. The guest
+# image tag is a CONTENT HASH of `(base image, harness bundle, toolchain)`, so
+# the deployed server asked the registry for `aai-guest-harness:727de91c75805440`
+# — a tag no job had ever built — and every sandbox spawn 503'd for the ~50
+# minutes until an unrelated later push happened to publish it.
+#
+# Content addressing is what made this SILENT rather than self-healing: nothing
+# fails when two producers hash two different trees, they simply name two
+# different images. And Modal reports a missing manifest as `Image build for
+# im-<id> failed with the exception:` and then nothing at all, so the app log
+# named no tag (`guest-image-source.ts` carries that account).
+#
+# `ship-workflow-gate.test.ts` pins the SHA form and rejects the `github.ref`
+# one, because the two differ by three characters and the failure appears only
+# when a second push lands mid-release.
 name: Ship
 
 on:
@@ -152,7 +184,7 @@ jobs:
           # before a Version Packages PR can be opened — 20 of 30 consecutive
           # pushes to main at the time it was found.
           fetch-depth: 0
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -211,7 +243,7 @@ jobs:
           # before a Version Packages PR can be opened or anything published —
           # 20 of 30 consecutive pushes to main at the time it was found.
           fetch-depth: 0
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
@@ -316,6 +348,11 @@ jobs:
   guest-image:
     needs: release
     runs-on: ubuntu-latest
+    outputs:
+      # The exact pull reference this job published, read by the deploy job's
+      # preflight below. A job output rather than a second `--print-tag` there:
+      # recomputing it is what let two jobs name two different images.
+      ref: ${{ steps.push.outputs.ref }}
     # The arm64 leg builds under QEMU emulation (the runner is amd64), and its
     # slow part is two npm installs of ~750 packages. Bounded so a pathological
     # run cannot burn an hour; if this becomes the norm, split the build across a
@@ -327,7 +364,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -453,7 +490,7 @@ jobs:
           # This job wants precisely `HEAD^..HEAD`; every other checkout in the
           # repo is depth 0.
           fetch-depth: 2
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - id: diff
         name: Detect changeset version bumps and schema changes
         run: |
@@ -515,7 +552,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with:
           # Pinned, not `latest`: the CLI decides how migrations are applied and
@@ -554,11 +591,52 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - run: pip install modal
+
+      # `needs: guest-image` proves the publisher went green. It does NOT prove
+      # the registry will serve what it pushed, and Modal pulls at SPAWN time —
+      # so without this, an unpullable image is discovered by the smoke step,
+      # which runs AFTER the rollout has already replaced production.
+      #
+      # Pulled ANONYMOUSLY on purpose, because that is how Modal pulls: a GHCR
+      # package is PRIVATE on first push (see the ONE-TIME MANUAL STEP above)
+      # and `guest-image-source.ts` deliberately threads no registry Secret. A
+      # publish to a private package is green in every log and unpullable in
+      # production, which is the exact shape this step exists to catch.
+      - name: Preflight the guest image
+        env:
+          GUEST_IMAGE_REF: ${{ needs.guest-image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GUEST_IMAGE_REF:-}" ]; then
+            echo "::error title=No guest image ref::The guest-image job published no ref." \
+                 "Deploying now would ship a server that asks the registry for a tag" \
+                 "nothing built, and every sandbox spawn would 503."
+            exit 1
+          fi
+          repo="${GUEST_IMAGE_REF%:*}"
+          tag="${GUEST_IMAGE_REF##*:}"
+          path="${repo#ghcr.io/}"
+          token="$(curl -fsS "https://ghcr.io/token?scope=repository:$path:pull&service=ghcr.io" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+          status="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $token" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json' \
+            -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+            "https://ghcr.io/v2/$path/manifests/$tag")"
+          if [ "$status" != "200" ]; then
+            echo "::error title=Guest image unpullable::$GUEST_IMAGE_REF answered HTTP $status" \
+                 "to an anonymous manifest read. Modal pulls it the same way and would fail" \
+                 "every sandbox spawn. If this is 401 or 403 the GHCR package is PRIVATE —" \
+                 "make it public in the repo's Packages settings."
+            exit 1
+          fi
+          echo "$GUEST_IMAGE_REF is pullable ✓"
+
       - name: Deploy platform
         id: deploy
         env:

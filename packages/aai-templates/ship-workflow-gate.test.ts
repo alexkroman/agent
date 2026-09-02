@@ -245,16 +245,65 @@ describe("a rollback can name its commit", () => {
   test("every checkout honours the ref input", () => {
     const source = workflow ?? "";
     const checkouts = source.match(/uses: actions\/checkout@/g) ?? [];
-    const refs = source.match(/ref: \$\{\{ inputs\.ref \|\| github\.ref \}\}/g) ?? [];
+    const refs = source.match(/ref: \$\{\{ inputs\.ref \|\| github\.sha \}\}/g) ?? [];
     // A checkout that ignored the input would ship main's head under a rollback
     // dispatch — the one outcome a rollback must never produce. There are as
     // many honouring checkouts as there are checkouts.
     expect(checkouts.length).toBeGreaterThan(0);
     expect(refs).toHaveLength(checkouts.length);
   });
+
+  /**
+   * The fallback is `github.sha` and never `github.ref`, which is a MUTABLE
+   * branch pointer on a push. This assertion used to pin the `github.ref` form
+   * — it was written to check that a checkout honours the rollback input and
+   * was indifferent to what the other half of the `||` named, so it locked in
+   * the bug and would have rejected the fix.
+   *
+   * The failure needs a second push mid-release to appear at all, so no run of
+   * this workflow reproduces it on demand: run 33660483457 checked out four
+   * different commits across six jobs, published a guest image built from one
+   * tree, deployed a server built from another, and took every sandbox spawn
+   * down for ~50 minutes on a content-addressed tag nothing had built. The
+   * workflow's own header carries the full account.
+   */
+  test("no checkout resolves a mutable branch ref", () => {
+    const source = workflow ?? "";
+    // Anchored on `ref:` — `github.ref` is legitimate in the concurrency GROUP,
+    // where one group per branch is exactly what is wanted, and asserting on the
+    // bare expression would forbid that too.
+    expect(source).not.toMatch(/\n\s*ref: .*github\.ref/);
+    // And the concurrency group still uses it, so this spec cannot pass by the
+    // expression disappearing from the file altogether.
+    expect(source).toMatch(/group: ship-\$\{\{ github\.ref \}\}/);
+  });
 });
 
 describe("the rollout is observed, not only predicted", () => {
+  /**
+   * `needs: guest-image` proves the PUBLISHER went green; it cannot prove the
+   * registry serves what it pushed. Modal pulls a guest image at SPAWN time, so
+   * an unpullable one is otherwise discovered by the smoke step — which runs
+   * after the rollout has already replaced production.
+   *
+   * Two properties, and both are load-bearing. It reads the publisher's own job
+   * OUTPUT rather than recomputing the tag, because two producers computing one
+   * content hash from two trees is the incident this file's rollback specs now
+   * describe. And it runs BEFORE `modal deploy`, since a check that runs after
+   * the traffic moved is a report and not a gate.
+   */
+  test("deploy preflights the guest image before it moves any traffic", () => {
+    const source = workflow ?? "";
+    expect(source).toContain("name: Preflight the guest image");
+    expect(source).toMatch(/GUEST_IMAGE_REF: \$\{\{ needs\.guest-image\.outputs\.ref \}\}/);
+    // The publisher has to expose it, or the expression above is an empty
+    // string and the preflight checks nothing.
+    expect(source).toMatch(/ref: \$\{\{ steps\.push\.outputs\.ref \}\}/);
+    expect(source.indexOf("name: Preflight the guest image")).toBeLessThan(
+      source.indexOf("name: Deploy platform"),
+    );
+  });
+
   test("deploy verifies the rollout and then spawns a real sandbox", () => {
     const source = workflow ?? "";
     expect(source).toContain("verify_modal_deploy.py");
