@@ -1561,20 +1561,21 @@ schedule" goes wrong, and the queue sweep keeps all five:
   `brokerSessionUrl` — the one routing point, which serves a live resident
   as-is, joins a boot in flight, routes to a live PEER rather than duplicating,
   and refuses while draining. The sweep touches no slot itself.
-- **A wake LOOP must be bounded three ways** — per slug, per tick, and per RUN.
-  A guest that boots and cannot make progress never clears its work, so without a
-  backoff it is a sandbox per interval, indefinitely. The first two bound a TICK's
-  width and rate and neither bounds how many times ONE run is repaired, which for
-  a while meant the pass had no end at all: nothing on the platform side writes a
-  terminal status (only the guest's engine calls `setStatus`), so a run whose
-  guest can never finish it was re-enqueued every `STALL_GRACE_MS` forever, at a
-  sandbox boot each, and stayed a permanent resident of the partial index the
-  pass reads. `RECONCILE_MAX_ATTEMPTS` (`_reconcile-abandon.ts`) is the third
-  bound: past it the run is moved to `failed` with a reason an author can read,
-  by a COMPARE-AND-SET on the live statuses — the predicate and that write are
-  two autocommit statements, so a `failed` written over a `completed` would
-  destroy real output on a stale read. That module carries why the count does not
-  decay and what abandonment costs in a platform-wide outage.
+- **A wake LOOP must be bounded three ways** — per slug, per tick, and per
+  RUN. A guest that boots and cannot make progress never clears its work, so
+  without a backoff it is a sandbox per interval, indefinitely. The first two
+  bound a TICK's width and rate and neither bounds how many times ONE run is
+  repaired, which for a while meant the pass had no end at all: nothing on the
+  platform side writes a terminal status (only the guest's engine calls
+  `setStatus`), so a run whose guest can never finish it was re-enqueued every
+  `STALL_GRACE_MS` forever, at a sandbox boot each, and stayed a permanent
+  resident of the partial index the pass reads. `RECONCILE_MAX_ATTEMPTS`
+  (`_reconcile-abandon.ts`) is the third bound: past it the run is moved to
+  `failed` with a reason an author can read, by a COMPARE-AND-SET on the live
+  statuses — the predicate and that write are two autocommit statements, so a
+  `failed` written over a `completed` would destroy real output on a stale
+  read. That module carries why the count does not decay and what abandonment
+  costs in a platform-wide outage.
 - **One replica sweeps per tick**, via a transaction-scoped advisory try-lock on
   the reserved admin connection. Efficiency, not correctness: `brokerSessionUrl`
   is idempotent fleet-wide, which is why a lost lock is a silent skip.
