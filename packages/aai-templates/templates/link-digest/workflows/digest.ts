@@ -26,8 +26,9 @@
 
 import type { WorkflowCtx } from "@alexkroman1/aai";
 import { htmlToText, pageMetadata } from "@alexkroman1/aai/html";
-import { report } from "@alexkroman1/aai/step";
+import { report, stepInfo } from "@alexkroman1/aai/step";
 import { FatalError, stepFetchOk, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 
 /**
@@ -50,6 +51,21 @@ const MAX_ARTICLE_CHARS = 24_000;
 
 /** Points the digest reduces a page to. */
 const POINTS = 3;
+
+/**
+ * The model a LAST attempt falls back to.
+ *
+ * `summarize` is given six attempts because two different things go wrong here
+ * — a rate limit, and a model that answered with prose — and by the sixth the
+ * cheap explanation is that this model is not going to produce the shape asked
+ * for. A smaller model that returns three plain sentences beats a failed run, so
+ * the last try asks a different one rather than the same one again.
+ *
+ * Unset means the gateway default, which is the same model the agent's own
+ * pipeline resolves. Point this at a smaller id for a real deployment; the
+ * useful part of the pattern is `stepInfo()?.isLastAttempt`, not the id.
+ */
+const FALLBACK_MODEL: string | undefined = undefined;
 
 /** The page fetch's deadline. HTTP has none of its own, and a hung step never ends. */
 const FETCH_TIMEOUT_MS = 30_000;
@@ -166,7 +182,20 @@ export async function fetchArticle(url: string): Promise<Article> {
  * whole Node runtime is available here, unlike in the body.
  */
 export async function summarize(article: Article): Promise<Digest> {
-  await report("Pulling out the claims worth keeping.");
+  // Which attempt is this? `undefined` outside a run — which is what a spec
+  // calling this directly gets — and a spec MEANS the ordinary path, so the
+  // fallback is keyed on `=== true` rather than on truthiness.
+  const step = stepInfo();
+  const lastChance = step?.isLastAttempt === true;
+  // `undefined` on every attempt but the last, which is what lets the option be
+  // built with `omitUndefined` rather than a conditional spread — the guard is
+  // then the value, which is the case that primitive is for.
+  const model = lastChance ? FALLBACK_MODEL : undefined;
+  await report(
+    lastChance
+      ? `Last attempt (${step?.attempt} of ${step?.maxAttempts}): asking for something simpler.`
+      : "Pulling out the claims worth keeping.",
+  );
 
   // `stepGenerateJsonClassified` unwraps the fence a model puts around JSON,
   // parses it, and validates it against `DigestReply` — and throws PLAINLY when
@@ -180,7 +209,16 @@ export async function summarize(article: Article): Promise<Digest> {
       schema: DigestReply,
       system:
         `You digest articles. Reply with JSON only: {"headline": string, "points": string[]}. ` +
-        `Give exactly ${POINTS} points. No markdown fence, no preamble.`,
+        `Give exactly ${POINTS} points. No markdown fence, no preamble.` +
+        // The instruction is blunter on the last try for the same reason the
+        // model is different: whatever it has been doing for five attempts is
+        // not working.
+        (lastChance ? " Keep every point to one short sentence." : ""),
+      // Read `isLastAttempt`, never `attempt === 6`: the ceiling lives at the
+      // `ctx.step` call site in `digestFlow`, so a number written here degrades
+      // early on every run the moment somebody changes it there — silently,
+      // because the step still returns an answer.
+      ...omitUndefined({ model }),
     },
   );
 

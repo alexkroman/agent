@@ -497,6 +497,29 @@ const digest = await ctx.step("summarize", () => summarize(input.url), {
 });
 ```
 
+**And a step body can read which attempt it is on**, so a step may degrade rather
+than fail — a smaller model on the last try beats a failed run:
+
+```ts
+import { stepInfo } from "@alexkroman1/aai/step";
+
+declare function callModel(url: string, model: string): Promise<string>;
+
+export async function summarize(url: string) {
+  const step = stepInfo();
+  // `undefined` outside a run — a spec calling this directly — which reads as
+  // "not retrying", the same branch a first attempt takes.
+  const model = step?.isLastAttempt === true ? "small" : "large";
+  return await callModel(url, model);
+}
+```
+
+Read `isLastAttempt` rather than comparing `attempt` against a number you have
+written down: the ceiling lives at the `ctx.step` call site, and a body that
+restates it degrades early on every run once the two disagree — silently, since
+it still returns an answer. `stubStepInfo` from `@alexkroman1/aai/testing` is how
+a test reaches the retry branch.
+
 ### A clock, a random number and a uuid: `ctx.now`, `ctx.random`, `ctx.uuid`
 
 The three undurable reads a body most often wants, each journaled — read once at

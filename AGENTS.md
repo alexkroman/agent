@@ -840,9 +840,10 @@ reference, and the `typescript@6` pin — **and, because they answer three
 versions of one question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
-A second file sits outside the table for a different reason:
-`packages/aai-server/MODAL-CLAUDE.md`, a SIBLING of that package's guide rather
-than a second package guide. `check:claude-md` measures it (its pathspec is
+Two files sit outside the table for a different reason:
+`packages/aai-server/MODAL-CLAUDE.md` and
+`packages/aai-runtime/JOURNAL-CLAUDE.md`, SIBLINGS of their package's guide
+rather than second package guides. `check:claude-md` measures it (its pathspec is
 `*CLAUDE.md`) and konsistent permits it (`workspace-package-layout` requires a
 `CLAUDE.md` and forbids nothing else), but Claude Code auto-loads only
 `CLAUDE.md`, so a sibling is read on demand and is only the right shape for

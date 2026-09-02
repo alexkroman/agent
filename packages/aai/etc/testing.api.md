@@ -583,7 +583,7 @@ export type StubReporter = {
     restore: () => void;
 };
 
-// @public
+// @public (undocumented)
 export function stubReporter(): StubReporter;
 
 // @public
@@ -625,6 +625,15 @@ export type StubStepFetch = {
 
 // @public
 export function stubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public
+export function stubStepInfo(step: {
+    attempt?: number | undefined;
+    maxAttempts?: number | undefined;
+    name?: string | undefined;
+}): {
+    restore: () => void;
+};
 
 // @public
 export type StubStepRequest = {

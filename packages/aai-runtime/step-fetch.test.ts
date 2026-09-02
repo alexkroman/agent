@@ -139,7 +139,7 @@ describe("the WALK's signal reaches a step's outbound request", () => {
       {
         runId: "wrun_1",
         workflow: "flow",
-        step: { name: "upload", key: "upload#0", attempt: 1, signal },
+        step: { name: "upload", key: "upload#0", attempt: 1, maxAttempts: 3, signal },
         write: () => Promise.resolve(0),
       },
       fn,
@@ -203,7 +203,7 @@ describe("the WALK's signal reaches a step's outbound request", () => {
       {
         runId: "wrun_1",
         workflow: "flow",
-        step: { name: "upload", key: "upload#0", attempt: 1 },
+        step: { name: "upload", key: "upload#0", attempt: 1, maxAttempts: 3 },
         write: () => Promise.resolve(0),
       },
       () => fetchFn("https://example.test/x"),

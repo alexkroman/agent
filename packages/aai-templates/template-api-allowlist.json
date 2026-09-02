@@ -284,6 +284,7 @@
     "stepGenerateJson",
     "StepGenerateJsonOptions",
     "StepGenerateOptions",
+    "StepInfo",
     "stepTranscribePoll",
     "stepTranscribeSubmit",
     "stepTranscribeSync",

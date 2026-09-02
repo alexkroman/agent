@@ -24,6 +24,7 @@ import {
   MAX_UPLOAD_BYTES_ENV,
   publishSpeechSynthesizer,
   publishStepFetch,
+  publishStepInfoReader,
   publishStepReporter,
   publishUploadReader,
 } from "@alexkroman1/aai/host-internal";
@@ -36,7 +37,7 @@ import { createStepFetch } from "./step-fetch.ts";
 import { speakOverWebSocket } from "./step-speak.ts";
 import { isPerProcessDataDir, localWorkflowDataDir } from "./workflow-data-dir.ts";
 import { platformGuestOptions } from "./workflow-platform-world.ts";
-import { createStepReporter } from "./workflow-report.ts";
+import { createStepInfoReader, createStepReporter } from "./workflow-report.ts";
 import {
   createUploadStore,
   resolveUploadBlobs,
@@ -193,6 +194,11 @@ export function installWorkflowSupport(opts: {
   }
   publishUploadReader(store);
   publishStepReporter(createStepReporter(opts.logger));
+  // The reader behind `stepInfo()`, published beside the reporter because both
+  // read the same `AsyncLocalStorage` and both are filled once per server. An
+  // unpublished one answers `undefined`, which a body reads as "not retrying" —
+  // see `sdk/step-attempt.ts`.
+  publishStepInfoReader(createStepInfoReader());
   // The speech slot. Nothing to close and nothing to pool: `stepSpeak` opens
   // one socket per utterance and drops it — see `host/step-speak.ts` for why a
   // step has nothing for a connection to be reused by.

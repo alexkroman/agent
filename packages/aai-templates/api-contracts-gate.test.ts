@@ -648,6 +648,7 @@ describe("API-EXPORTS.json", () => {
       "stubReporter",
       "stubSpeech",
       "stubStepFetch",
+      "stubStepInfo",
       "stubTranscribe",
       "stubUploads",
       "toolInputIssues",

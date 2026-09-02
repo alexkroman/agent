@@ -722,80 +722,18 @@ carries the rest.
 the log reads as a bug, and this is the one an author is most likely to hit by
 accident.
 
-### What the tiers of test each cover, and why none substitutes
+### The journal's test topology and its decided contract points
 
-The claims are of four different kinds, which is why there are four files:
-
-- **`workflow-journal-platform.test.ts`** — our side of the wire. The CODEC (a
-  `Uint8Array` in a step's output crosses as an envelope, not as an index map,
-  which `JSON.stringify` produces with no error), and three answers REFUSED
-  rather than invented: `claimAttempt` on a non-number (a made-up ceiling does
-  not hold), `appendStep` on an unreadable answer (the STORED entry is what makes
-  a double execution deterministic), `claimSleep` likewise.
-- **`aai-server/platform-workflow-journal.test.ts`** — SHAPE, over all twelve
-  methods as a TABLE rather than a case each: every statement binds the slug as
-  `$1`, no statement binds a bare `$n::jsonb`, `claimAttempt` issues exactly one
-  query. A table because the interesting failure is one method forgetting, and a
-  hand-written case per method is what a thirteenth method would not get.
-- **`aai-server/platform-workflow-journal.scenario.test.ts`** — the only place
-  TENANCY is testable, that being a claim about column values in a shared table.
-  Two tenants' rows, and every cross-tenant read comes back empty.
-- **`aai-server/journal-conformance-platform.scenario.test.ts`** — the shared
-  CONTRACT, answered by the real route over a real database. The three above each
-  assert a property somebody thought to write down; this one asserts the same
-  cases every other backend answers, which is a different job. See below.
-
-Two things the scenario tier taught. **`jsonb` NORMALIZES**, so a value survives
-by MEANING and not by bytes — the memory journal preserves bytes and these do
-not, a divergence a spec might reasonably have asserted, so the cases compare
-parsed values. And the **`::text::jsonb`** binding is deliberate on both stores:
-postgres.js JSON-serializes a parameter bound to a jsonb position, and the
-self-hosted twin shipped with a bare cast that stored a JSON string containing
-the JSON, found only by a real server.
-
-### The FOURTH arm is the platform's own SQL, and it lives in `aai-server`
-
-`journal-conformance.ts` declares ONE case list and `JOURNAL_BACKENDS` registers
-the backends. Three arms run it from this package; the fourth cannot, and it is
-the one that finds platform bugs:
-
-| Arm | Tier | What it can see |
-| --- | --- | --- |
-| memory | unit | the reference |
-| platform over a FAKE transport | unit | THIS side of the wire — the codec, `toRun`/`toStep` |
-| postgres, real database | scenario | `on conflict`, a row count, a unique index |
-| **platform over the REAL route and a real Postgres** | scenario, in `aai-server` | the platform's own statements |
-
-The unit platform arm delegates every SEMANTIC to the memory reference (its own
-header says so), so a divergence in the platform's SQL is invisible to it. One
-was shipped: `createRun` was `on conflict (slug, run_id) do nothing` with no
-`returning`, so a duplicate run id was answered with SUCCESS — against an
-interface that says "rejects if `runId` already exists", a memory backend that
-throws, and a self-hosted store that trips its primary key. Two racing starts on
-one id both believed they had won and the loser's `input` was discarded, on the
-platform arm only, i.e. for every deployed agent. A/B'd: with that SQL in place
-the unit suite reports **123 passed** and the fourth arm fails the shared case.
-
-`aai-server/journal-conformance-platform.scenario.test.ts` is that arm. The
-refusal it now gets is a typed `PlatformWorkflowRunTakenError` mapped to a
-**409** by `withReserved`'s `statusFor` hook — the same shape as `claimHook`'s
-token conflict, and for the same reason: every plain `Error` there becomes a
-retryable **503**, so the engine spends the message's whole attempt budget on a
-refusal that cannot change.
-
-**The case list crosses the boundary through a LOADER, not a re-export clause.**
-`loadJournalConformance()` on `/internal` dynamically imports the case modules.
-They `import { describe, expect, test } from "vitest"`, which is an OPTIONAL peer
-of this package, and a static clause is bundled INTO `dist/internal.js` —
-measured: `import … from "vitest"` on line 4. `@alexkroman1/aai-cli`'s published
-`dist` imports a VALUE from that exact module (`consoleLogger`, in `_dev-env.ts`)
-with every bare specifier external, so the plain clause makes `aai dev`
-unrunnable in any install without the test runner: `ERR_MODULE_NOT_FOUND` from
-inside a published package, invisible to `publint` and to `attw`. Behind the
-dynamic import the same code splits into its own chunk (verified: zero `vitest`
-references in `dist/internal.js`) and is loaded only by the caller that asks.
-Same rule as `/eval/vitest` and `@alexkroman1/aai/testing/vitest`, but as a
-function because `/internal` cannot afford to be split in two.
+Three things that are REFERENCE rather than rules to keep resident, and they are
+in **[`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md)** beside this file: what each of
+the four tiers of journal test can see and why none substitutes for another; why
+the FOURTH conformance arm (the platform's own SQL, over a real route and a real
+Postgres) lives in `aai-server` and the shipped bug it caught; and the three
+`JournalStore` contract points the suite refused to decide — `setStatus`'s
+ADDITIVE patch, the four methods left under-specified for a run that does not
+exist, and `readSteps`'s tie order. Read that file when you are changing a
+backend or the conformance table; nothing in it is needed to work elsewhere in
+this package.
 
 ### A journal read is a round trip, and three shapes issued it N times
 
@@ -1038,6 +976,26 @@ structurally unable to see the mapping. And the conformance table asserted the
 conflict with a bare `toThrow()`, which cannot see an arm refusing with the wrong
 type at all.
 
+### A step body can read its own ATTEMPT
+
+`stepInfo()` on `@alexkroman1/aai/step` answers
+`{ name, key, attempt, maxAttempts, isLastAttempt }` inside a step and
+`undefined` everywhere else. The engine already tracked the number and nothing
+could read it, so the one decision a retry policy cannot make for an author was
+unavailable: degrade rather than fail. **`sdk/step-attempt.ts` carries the
+argument** — the two differences from the DevKit's `getStepMetadata()`, and why
+`maxAttempts` has to travel with the attempt rather than be restated at the body.
+
+What is this package's: `installWorkflowSupport` publishes the reader
+(`createStepInfoReader` in `workflow-report.ts`) into a `Symbol.for` slot like
+`report()`'s, because the answer lives in this package's `AsyncLocalStorage` and
+`/step` rides the browser bundle. It derives `isLastAttempt` with `>=` and not
+`===`, since a burned boot can push the count past the ceiling and that is
+exactly the try a body most wants to degrade on. And the EVAL engine fills the
+slot with a first-and-only attempt rather than leaving it empty — unfilled means
+`undefined`, which a body reads as "no run", so a step that degrades on its last
+attempt would be measured on that branch.
+
 ### A parked delivery asks to come back PROPORTIONATELY
 
 `workflow-queue-dispatch.ts` refuses a delivery whose run is already being
@@ -1074,46 +1032,6 @@ guest-owned" — the idle reaper counted HTTP responses, so the 60s abort read a
 an idle guest and a step longer than the idle window never completed. Parking is
 what made that reachable, because before it the redundant walks were the thing
 holding the guest open.
-
-### Three `JournalStore` contract points the suite refused to decide, decided
-
-A conformance table can only assert what the interface actually promises, and
-three points were underspecified — each with two backends doing one thing and the
-third doing another, and no case able to name a winner. The decisions:
-
-- **`setStatus`'s patch is ADDITIVE.** A field the patch does not carry is not
-  written, and an explicit `undefined` is the same as absent — so a stored
-  `output` can never be CLEARED. The platform already behaves this way (the
-  handler builds `{output, error}` and the SQL `coalesce`s), which makes memory's
-  and postgres's `"output" in patch` distinction dead code. Adopted rather than
-  fixed the other way for three reasons. It is what `error` has always done in
-  ALL THREE backends (`coalesce($6, error)`, `if (patch?.error)`), so the
-  alternative leaves two fields of one patch with two rules. Reaching the
-  distinction over HTTP needs a new wire field — the client sends
-  `output: encode(patch?.output)` and `JSON.stringify` drops an `undefined` key,
-  so "no patch" and "clear it" are already the same bytes — i.e. a protocol
-  change to serve a caller that does not exist: the engine passes either a
-  defined output or no patch at all. And clearing a terminal payload is a
-  mutation primitive in disguise, which this interface says outright it does not
-  have ("no `updateStep` and no `deleteRun`: the journal is APPEND-ONLY").
-- **`claimAttempt`, `claimSleep`, `claimHook` and `appendStep` are defined only
-  for a run that EXISTS, and a backend MAY throw.** Memory throws; both
-  databases insert a row with no run to belong to and answer normally. Left
-  under-specified ON PURPOSE, out loud, so nobody writes a caller that depends on
-  either: mandating the throw costs the databases a read (or a foreign key) per
-  step to detect a state the engine cannot reach — it calls these only after
-  `createRun` — and mandating the answer would have memory invent a slot, i.e.
-  resurrect a run, which is the worse of the two.
-- **`readSteps` is ordered by `finishedAt`, ties broken by `key`.** Both
-  databases already do exactly that (`order by finished_at, key`); memory returns
-  insertion order, which agrees except on a same-millisecond tie. The one-line
-  change memory owes: sort a COPY of `steps` by `finishedAt` then `key` before
-  mapping. One limit worth stating rather than pretending away — a database
-  breaks the tie in the column's COLLATION, which for `text` under a non-C
-  collation is not code-unit order, and step keys are punctuation-heavy
-  (`fetch#0`, `sleep!0`). It is unobservable in practice: a tie needs two steps
-  settling in one millisecond, and the engine indexes what `readSteps` returns by
-  `key`. Do not tighten it to a byte order without `collate "C"` on the column.
 
 ## An upload's bytes are OBJECTS, and its record has two homes
 

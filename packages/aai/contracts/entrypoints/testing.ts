@@ -109,6 +109,7 @@ export {
   stubReporter,
   stubSpeech,
   stubStepFetch,
+  stubStepInfo,
   stubTranscribe,
   stubUploads,
   type TestToolContext,

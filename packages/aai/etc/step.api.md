@@ -177,6 +177,18 @@ export type StepGenerateOptions = {
 };
 
 // @public
+export type StepInfo = {
+    readonly name: string;
+    readonly key: string;
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly isLastAttempt: boolean;
+};
+
+// @public
+export function stepInfo(): StepInfo | undefined;
+
+// @public
 export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
 
 // @public

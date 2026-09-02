@@ -46,7 +46,11 @@ it:
   [stepTranscribePoll](#steptranscribepoll) for the async job API or
   [stepTranscribeSync](#steptranscribesync) for the one-request one, back in.
 - **Retry classification** — [isTransientStatus](#istransientstatus) / [retryAfter](#retryafter-2),
-  for a body deciding whether a failure is worth another round.
+  for a body deciding whether a failure is worth another round, and
+  [stepInfo](#stepinfo-1), which says which ATTEMPT this is and whether it is the
+  last. That is what lets a step degrade rather than fail — a smaller model on
+  the final try beats a failed run — and it is the DevKit's `getStepMetadata()`
+  with the two differences its own module doc gives.
 
 The zod-free budget still applies here and is now a property of BOTH
 subpaths rather than the reason one of them exists: a `workflows/*.ts` module
@@ -819,6 +823,31 @@ export async function summarize(article: string): Promise<{ headline: string }> 
   });
 }
 ```
+
+***
+
+### stepInfo()
+
+```ts
+function stepInfo(): StepInfo | undefined;
+```
+
+Which step this code is running inside, or `undefined` when it is not in one.
+
+`undefined` is ORDINARY and is not an error: a workflow BODY is not a step, a
+tool is not a step, and a spec calling an exported step directly has no run at
+all. A body that branches on the attempt should read the `undefined` case as
+"not retrying", which is what a spec wants and what a first attempt would have
+said anyway.
+
+**Read it once, at the top.** The value is a snapshot of the attempt in
+flight, so calling it again after an `await` inside the same step answers the
+same thing — but a helper that reads it per call is asking a question whose
+answer cannot change and reads as though it could.
+
+#### Returns
+
+[`StepInfo`](#stepinfo) \| `undefined`
 
 ***
 
@@ -2162,6 +2191,77 @@ Request deadline in milliseconds. Defaults to 60s.
 
 ***
 
+### StepInfo
+
+```ts
+type StepInfo = {
+  attempt: number;
+  isLastAttempt: boolean;
+  key: string;
+  maxAttempts: number;
+  name: string;
+};
+```
+
+Which step is running, and which attempt of it.
+
+#### Properties
+
+##### attempt
+
+```ts
+readonly attempt: number;
+```
+
+Which try this is, 1-based.
+
+The WALK's count, not the journal's charge. Two overlapping deliveries of
+one run each start at 1, because `maxAttempts` means how many times to try
+and how many workers happen to be trying is not that number — see "An
+attempt is a LEASE, not a tally" in `packages/aai-runtime/CLAUDE.md`.
+
+##### isLastAttempt
+
+```ts
+readonly isLastAttempt: boolean;
+```
+
+Is this the last try, so that a throw fails the step for good?
+
+Provided rather than left as `attempt === maxAttempts` because the
+subtraction is where the mistake is: a body that hard-codes the ceiling
+degrades early on every run when the call site's `maxAttempts` changes, and
+nothing reports it.
+
+A `FatalError` still ends the step wherever it is thrown, so this being
+`false` is not a promise that another attempt will happen.
+
+##### key
+
+```ts
+readonly key: string;
+```
+
+`name#occurrence` — the journal key, which is what makes a loop's rounds distinct.
+
+##### maxAttempts
+
+```ts
+readonly maxAttempts: number;
+```
+
+The ceiling this step was given — `StepOptions.maxAttempts`, or its default.
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+The step's own name, as `ctx.step` was given it.
+
+***
+
 ### TranscribeProgress
 
 ```ts
@@ -2589,7 +2689,7 @@ optional name?: string;
 Filename to store, e.g. `"summary.wav"`.
 
 Worth passing even though nothing reads it: it is what
-[UploadInfo.name](#name-1) answers, so it is the name a page puts on a
+[UploadInfo.name](#name-2) answers, so it is the name a page puts on a
 download link and the string a person sees instead of an opaque id.
 
 ##### type?

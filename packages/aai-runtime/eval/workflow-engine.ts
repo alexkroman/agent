@@ -67,8 +67,11 @@
  *
  * ## The published slots ARE the observable surface
  *
- * Two are always filled: a step narrates through `publishStepReporter` and reads
- * credentials through `publishStepEnv`, which is what makes a body like
+ * Three are always filled: a step narrates through `publishStepReporter`, reads
+ * credentials through `publishStepEnv`, and reads its own attempt through
+ * `publishStepInfoReader` — which answers a first-and-only attempt, because
+ * nothing here replays and a step that degrades on its last try must not be
+ * measured on that branch. What makes a body like
  * `link-digest`'s drivable at all. A body's WAITS need no slot — `ctx.sleep` and
  * `ctx.waitFor` are `evalCtx`'s to answer, where the DevKit's `sleep()` looked
  * for a `Symbol.for("WORKFLOW_SLEEP")` global and threw without one. Two more are
@@ -93,6 +96,7 @@ import {
   publishSpeechSynthesizer,
   publishStepEnv,
   publishStepFetch,
+  publishStepInfoReader,
   publishStepReporter,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
@@ -158,6 +162,19 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
     else record.emitted.push({ namespace: options.namespace, chunk });
   });
   publishStepEnv(opts.env);
+  // A body driven here is not REPLAYED, so no step of it is ever retried and the
+  // honest answer to `stepInfo()` is a first-and-only attempt. Filled rather
+  // than left empty because unfilled means `undefined`, which a body reads as
+  // "no run at all" — so a step that degrades on its last attempt would take
+  // that branch in an eval and be measured on the path a real run only reaches
+  // when something has gone wrong. `maxAttempts: 1` is the truth here: this
+  // engine has no retry to spend, which is the same limit
+  // {@link EvalWorkflowEngineOptions} states about `maxRetries` being INERT.
+  publishStepInfoReader(() =>
+    current.getStore() === undefined
+      ? undefined
+      : { name: "eval", key: "eval#0", attempt: 1, maxAttempts: 1, isLastAttempt: true },
+  );
   // Both are caller-supplied and both default to NOTHING, which is what keeps
   // `undici` and `ws` out of the module graph an eval file drags into its own
   // package's program. See the two option docs.
@@ -415,6 +432,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
     release() {
       publishStepReporter(undefined);
       publishStepEnv(undefined);
+      publishStepInfoReader(undefined);
       // Unpublished unconditionally: a slot this call did not fill may still
       // hold a PREVIOUS engine's value, and leaving one published is the
       // cross-file leak `stubUploads` carries the same warning about.

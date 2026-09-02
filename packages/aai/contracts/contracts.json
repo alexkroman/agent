@@ -108,11 +108,12 @@
     }
   },
   "step": {
-    "current": 4,
-    "supported": [3, 4],
+    "current": 5,
+    "supported": [3, 5],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
-      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
+      "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
+      "4": "stepInfo/StepInfo join the capability: a step body can now read which attempt it is on and whether it is the last, which is what lets it degrade rather than fail."
     }
   },
   "step-errors": {
@@ -150,8 +151,8 @@
     }
   },
   "testing": {
-    "current": 16,
-    "supported": [16],
+    "current": 17,
+    "supported": [17],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -167,7 +168,8 @@
       "12": "createWorkflowCtx is new: a WorkflowCtx a spec drives a workflow BODY with, which nothing else could do — three templates had hand-rolled one.",
       "13": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "14": "WorkflowCtxOptions gains now/random/uuid overrides and WORKFLOW_CTX_NOW is added, both purely additive — and WorkflowCtx, which createWorkflowCtx returns, gains three methods, so a caller written against this epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "15": "createWorkflowCtx's ctx.sleep takes a label, and RecordedSleep carries it: a case asserting a schedule can now say WHICH wait the body reached."
+      "15": "createWorkflowCtx's ctx.sleep takes a label, and RecordedSleep carries it: a case asserting a schedule can now say WHICH wait the body reached.",
+      "16": "stubStepInfo joins the capability: it is how a spec reaches a step body's retry branch, which stepInfo() answering undefined outside a run made unreachable."
     }
   },
   "tool": {

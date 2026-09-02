@@ -67,7 +67,7 @@ describe("the run context crosses copies of this package", () => {
 
     const seen = await engine.withRunContext(runOf("wrun_2"), () =>
       engine.withStepContext(
-        { name: "transcribeSegment", key: "transcribeSegment#12", attempt: 2 },
+        { name: "transcribeSegment", key: "transcribeSegment#12", attempt: 2, maxAttempts: 3 },
         async () => reporter.currentRun()?.step,
       ),
     );
@@ -75,6 +75,7 @@ describe("the run context crosses copies of this package", () => {
       name: "transcribeSegment",
       key: "transcribeSegment#12",
       attempt: 2,
+      maxAttempts: 3,
     });
   });
 

@@ -25,13 +25,18 @@
  * fetching the page or paying the model again.
  */
 
-import { createWorkflowCtx, schemaInputIssues, stubGatewayRoute } from "@alexkroman1/aai/testing";
+import {
+  createWorkflowCtx,
+  schemaInputIssues,
+  stubGatewayRoute,
+  stubStepInfo,
+} from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import {
   digestFlow,
@@ -221,6 +226,30 @@ describe("summarize", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     stubGateway('{"headline":"H","points":["a"]}');
     await expect(summarize(ARTICLE)).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
+  });
+
+  test("asks for something simpler on the LAST attempt, not on the first", async () => {
+    // The branch the extra attempts exist for, and it is only reachable from a
+    // spec through `stubStepInfo`: outside a run `stepInfo()` answers
+    // `undefined`, which the step reads as the ordinary path. Five attempts of
+    // the same ask having failed, the sixth changes the ask.
+    onTestFinished(stubStepInfo({ attempt: 6, maxAttempts: 6 }).restore);
+    const calls = stubGateway('{"headline":"H","points":["a","b","c"]}');
+
+    await summarize(ARTICLE);
+
+    expect(calls[0]?.system).toContain("one short sentence");
+  });
+
+  test("asks the ordinary way when the attempt is not the last", async () => {
+    // The half that makes the case above mean something: a spec that only
+    // asserted the fallback would pass against a step that always degraded.
+    onTestFinished(stubStepInfo({ attempt: 1, maxAttempts: 6 }).restore);
+    const calls = stubGateway('{"headline":"H","points":["a","b","c"]}');
+
+    await summarize(ARTICLE);
+
+    expect(calls[0]?.system).not.toContain("one short sentence");
   });
 
   test("is called with more attempts than the default, because a rate limit and a bad format both happen", async () => {

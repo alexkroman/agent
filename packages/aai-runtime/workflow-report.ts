@@ -31,7 +31,10 @@
  * an exported step degrades to log-only rather than failing.
  */
 
-import type { StepReporter } from "@alexkroman1/aai/host-internal";
+import type { StepInfoReader, StepReporter } from "@alexkroman1/aai/host-internal";
+// `StepInfo` is the PUBLIC shape a step reads, so it comes from the subpath a
+// step author imports rather than from the host support surface beside it.
+import type { StepInfo } from "@alexkroman1/aai/step";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { currentRun } from "./workflow-run-context.ts";
@@ -107,4 +110,34 @@ async function writeChunk(chunk: unknown, namespace: string | undefined): Promis
   // `workflow-streams.ts` is the one owner, and an earlier draft's `?? ""` here
   // defeated it while a comment claimed the opposite.
   await run.write(namespace, chunk);
+}
+
+/**
+ * Build the step-info reader `createServer` publishes.
+ *
+ * Beside {@link createStepReporter} because both are the published half of a
+ * `@alexkroman1/aai/step` slot over the same `AsyncLocalStorage`, and both
+ * answer `undefined` outside a step for the same reason: a body, a tool and a
+ * spec are all legitimate callers and none of them is a step.
+ *
+ * `isLastAttempt` is DERIVED here rather than carried on the run context, so the
+ * one place that knows both numbers is the one place that compares them —
+ * `attempt >= maxAttempts` and not `===`, because a boot can burn an attempt and
+ * push the count past the ceiling, which is the case a strict equality reads as
+ * "not the last try" on the try that really is.
+ *
+ * @internal
+ */
+export function createStepInfoReader(): StepInfoReader {
+  return (): StepInfo | undefined => {
+    const step = currentRun()?.step;
+    if (step === undefined) return undefined;
+    return {
+      name: step.name,
+      key: step.key,
+      attempt: step.attempt,
+      maxAttempts: step.maxAttempts,
+      isLastAttempt: step.attempt >= step.maxAttempts,
+    };
+  };
 }

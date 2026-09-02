@@ -1174,6 +1174,9 @@ export function publishStepEnv(env: Readonly<Record<string, string | undefined>>
 export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 
 // @internal
+export function publishStepInfoReader(reader: StepInfoReader | undefined): void;
+
+// @internal
 export function publishStepReporter(reporter: StepReporter | undefined): void;
 
 // @internal
@@ -1430,6 +1433,18 @@ type StepFetchInit = {
     body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
     signal?: AbortSignal | undefined;
 };
+
+// @public
+type StepInfo = {
+    readonly name: string;
+    readonly key: string;
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly isLastAttempt: boolean;
+};
+
+// @internal
+export type StepInfoReader = () => StepInfo | undefined;
 
 // @public
 type StepOptions = {
@@ -4677,6 +4692,18 @@ export type StepGenerateOptions = {
 };
 
 // @public
+export type StepInfo = {
+    readonly name: string;
+    readonly key: string;
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly isLastAttempt: boolean;
+};
+
+// @public
+export function stepInfo(): StepInfo | undefined;
+
+// @public
 export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
 
 // @public
@@ -5739,7 +5766,7 @@ export type StubReporter = {
     restore: () => void;
 };
 
-// @public
+// @public (undocumented)
 export function stubReporter(): StubReporter;
 
 // @public
@@ -5781,6 +5808,15 @@ export type StubStepFetch = {
 
 // @public
 export function stubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public
+export function stubStepInfo(step: {
+    attempt?: number | undefined;
+    maxAttempts?: number | undefined;
+    name?: string | undefined;
+}): {
+    restore: () => void;
+};
 
 // @public
 export type StubStepRequest = {
