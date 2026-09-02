@@ -539,19 +539,6 @@ Four decisions worth not relitigating:
   there is no text seam to drive, and silently running it as a pipeline agent
   would evaluate a configuration nobody deployed.
 
-### What a TEMPLATE owes an eval, and what 25 of them found
-
-`templates/simple/agent.eval.test.ts` is the reference use of
-`@alexkroman1/aai-runtime/eval/vitest`, and the first template file that drives
-a model at all: a template's `agent.test.ts` asserts about the CONFIG and
-`toAgentConfig` runs no agent. **Everything about it — the harness, the two
-modes, why a keyless run is scripted rather than skipped, why CI gates on the
-scripted one, and the two things a TEMPLATE owes (the `.eval.` unit-tier
-exclusion in `vitest.config.ts`, and reading the environment for a credential
-and never a developer's CLI config) — is in `packages/aai-runtime/CLAUDE.md`,
-"Driving an agent from text is a published surface".** This guide is at its
-character cap; that one owns the mechanism.
-
 ### A template eval imports from `/eval` and `/eval/vitest`, and NOWHERE else
 
 The root `@alexkroman1/aai-runtime` barrel drags this runtime's node-reaching
@@ -874,6 +861,26 @@ dynamic import the same code splits into its own chunk (verified: zero `vitest`
 references in `dist/internal.js`) and is loaded only by the caller that asks.
 Same rule as `/eval/vitest` and `@alexkroman1/aai/testing/vitest`, but as a
 function because `/internal` cannot afford to be split in two.
+
+### A journal read is a round trip, and three shapes issued it N times
+
+Every platform-arm `JournalStore` call is one `POST /:slug/workflow-journal`,
+measured at **~840 ms of server time**, on a route holding one of
+`ADMIN_POOL_MAX` connections for the whole request — so these are the pool a
+run's own WRITES queue behind. `use-transcript-workflow` sustained ~2 a second
+on ONE run: a fan-out's `settledSince` re-reads the WHOLE journal once per step,
+the overlapping walks above each do it again, and a delivery takes three
+SEQUENTIAL opening reads.
+
+`_journal-shared-reads.ts` collapses the first two — `getRun` and `readSteps`
+are the only methods that are pure functions of a run id — and its module doc
+carries the argument. The one thing to know first: it is a **COALESCER, not a
+cache**, so a caller arriving mid-flight gets a TRAILING read and none is
+answered from a read that started before it asked. `settledSince` exists to
+rely on exactly that; a cache would silently defeat it.
+`ReplayOptions.steps` is the third — the step read is issued BESIDE the
+`running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them (the
+admin pool note under "Stateless server", `packages/aai-server/CLAUDE.md`).
 
 ### An attempt is a LEASE, not a tally
 

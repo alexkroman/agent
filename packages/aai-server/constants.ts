@@ -220,12 +220,101 @@ export function resolveHarnessPath(env: NodeJS.ProcessEnv = process.env): string
 // its own.
 
 /**
- * Connections the platform admin pool may open per replica. Every statement
- * on it is a short query (Vault, agents rows, workspaces, chats, the sweeps)
- * — the one long-held resource, a slug lock's reserved connection, has its
- * own pool below.
+ * Connections the platform admin pool may open per replica.
+ *
+ * Every statement on it is a short query (Vault, agents rows, workspaces,
+ * chats, the sweeps) — the one long-held resource, a slug lock's reserved
+ * connection, has its own pool below.
+ *
+ * ## It was 4, and 4 was a ceiling on GUEST throughput that nothing intended
+ *
+ * The four guest-called platform routes — the workflow journal, the queue,
+ * session state, upload records — each run their work on a RESERVATION from
+ * this pool (`_platform-route.ts`'s `withReserved`), held for the whole
+ * request. So this number is not merely a connection budget: it is the count
+ * of guest platform calls a replica may have in flight AT ALL, and the fifth
+ * queues on `reserve()`.
+ *
+ * That was reached in production. A deployed transcription run sustained ~2
+ * `POST /:slug/workflow-journal` a second at ~840 ms of server time each — one
+ * run, on a replica that also serves Vault, the agents row every broker call
+ * needs, and the sweeps. At 4 slots x ~1.2 calls a second a slot, one busy
+ * durable run is most of the replica's control plane.
+ *
+ * ## Raising it costs the instance nothing, and that is a fact about the pooler
+ *
+ * `MAX_PLATFORM_DB_CONNECTIONS` deliberately does NOT count this pool, on the
+ * premise that it reaches the instance through `PLATFORM_POOLER_URL` in
+ * TRANSACTION mode, which really does multiplex — the argument, and the one
+ * thing that would break it (session-scoped `pg_advisory_lock`, which lives on
+ * the slug pool and stays direct), is in `platformDbConnectionsPerReplica`.
+ * Under it a reserved-but-idle client connection pins no server backend, so
+ * these are cheap client-side slots rather than `max_connections`.
+ *
+ * The number that is NOT free is the unpooled one: with `PLATFORM_POOLER_URL`
+ * unset every replica opens this many DIRECT session-mode backends, which
+ * `unpooledAdminConnections` counts into the budget and boot warns about by
+ * name. That warning is what makes raising this safe rather than a landmine —
+ * a deployment without a pooler is told, at boot, exactly what it now costs.
+ *
+ * ## It is the WHOLE PLATFORM's funnel, not one replica's share
+ *
+ * "Per replica" undersells it twice over. `MIN_CONTAINERS = 1` with
+ * `BUFFER_CONTAINERS = 0` (`modal_deploy.py`, which says so in as many words),
+ * so the steady state is ONE container — `MAX_CONTAINERS = 3` is a burst
+ * ceiling the autoscaler reaches under load, never the operating condition.
+ * And a sandbox opens no Postgres connection of its own: the platform
+ * provisions no tenant database, so every deployed agent's journal, session
+ * state and upload records reach Postgres ONLY through these routes.
+ *
+ * So this number is not four connections per replica across a fleet. It is
+ * four connections, total, for every deployed agent on the platform, sharing
+ * them with Vault, the agents row every broker call needs, and the sweeps.
+ * That is why one transcription run could saturate it.
+ *
+ * ## Why 16: `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` sets the floor
+ *
+ * The replica dispatches up to `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` (8) queue
+ * deliveries at once and every walking guest posts its journal back here, so a
+ * pool under 8 STARVES THE FAN-OUT THIS PROCESS ITSELF STARTED — a deadlock
+ * shape rather than a slow one, and a floor the old 4 sat under before
+ * counting anything else. 16 is that doubled, the second eight being the live
+ * sessions' own guest calls plus the platform's internal reads. Tune it
+ * against that constant rather than by feel.
+ *
+ * **16 is a first step, not a derived ceiling.** With the pooler on these are
+ * client-side slots that pin no server backend, and `MAX_INPUTS` lets one
+ * container hold 400 concurrent requests — so the honest input for a further
+ * raise is Supavisor's own `pool_size`. That is Supabase project config, not
+ * readable from this repo and not exposed by the CLI (`supabase config` has
+ * only `push`); read it off the dashboard's Connection Pooling settings, or
+ * the Management API's `/v1/projects/{ref}/config/database/pooler`. Past it
+ * the queueing moves one layer down rather than going away.
+ *
+ * ## What it costs UNPOOLED, measured
+ *
+ * An earlier note claimed 16 "keeps the fleet's unpooled worst case inside
+ * what the boot capacity check can report", which bounds nothing — the check
+ * reports whatever it computes. Measured against the real instance
+ * (`supabase inspect db role-stats`, 2026-09-02): `max_connections` **60**,
+ * with **16 in use** at rest — 10 `supabase_admin`, 2 `postgres` (ours), 2
+ * `authenticator`, 1 `pgbouncer`, 1 CLI. So ~44 free, not the ~30 the older
+ * "23-30 Supabase workers" note assumed.
+ *
+ * Against that baseline, per replica costing
+ * `platformDbConnectionsPerReplica()` (10) direct plus this pool when unpooled:
+ *
+ * - pooled, steady state (1 replica): 10 + 16 = **26 of 60**
+ * - pooled, `MAX_CONTAINERS` burst: 30 + 16 = **46 of 60**
+ * - UNPOOLED, steady state: 26 + 16 = **42 of 60** — fits
+ * - UNPOOLED, burst: 78 + 16 = **94 of 60** — does not
+ *
+ * So the unpooled configuration is survivable on one container and is an
+ * outage on a scale-up, where at 4 it was marginal in both. The boot warning
+ * is the thing to act on; `MIN_CONTAINERS = 1` is the only reason it is not
+ * already one.
  */
-export const ADMIN_POOL_MAX = 4;
+export const ADMIN_POOL_MAX = 16;
 
 /**
  * Connections reserved for per-slug mutation locks. Each concurrent
