@@ -15,6 +15,8 @@
  * @internal
  */
 
+import { firstWriteWins } from "./_journal-claim.ts";
+import { text } from "./platform-workflow-journal-rows.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
@@ -26,10 +28,6 @@ import type { SqlExec } from "./secret-store.ts";
  * @internal
  */
 export const HOOKS = "aai_platform.workflow_hooks";
-
-/** A stored value, as the codec wrote it. `null` from the driver means absent. */
-const text = (value: unknown): string | undefined =>
-  typeof value === "string" ? value : undefined;
 
 /** One hook window. */
 export type JournalHookRow = {
@@ -79,8 +77,20 @@ export class PlatformWorkflowHookTokenError extends Error {
  *
  * The main query reads the pre-statement snapshot and cannot see the CTE's own
  * insert, which is why the two halves are `union all`ed rather than selected
- * afterwards. Zero rows means something invisible to that snapshot blocked the
- * insert — i.e. a concurrent claim of the same token — so it is the conflict too.
+ * afterwards.
+ *
+ * **Zero rows is INDETERMINATE, and reporting it as the conflict was a bug.** It
+ * means something invisible to that snapshot blocked the insert — a rival's
+ * UNCOMMITTED claim, of this same window as readily as of the token — and calling
+ * that a conflict answers 409 to a claim that was about to succeed. A 409 here is
+ * not a retry: it is `claimHook` telling the engine the token is taken, so the
+ * body's `waitFor` fails and a saga COMPENSATES. That is the shape the memory
+ * backend's own comment describes ("a second recap in one session hit
+ * `claimHook`'s conflict, which is not a suspend, so the saga compensated and
+ * deleted that transcript too"), reachable here by a race rather than by a
+ * released token. So the statement is re-run while the answer is empty
+ * ({@link firstWriteWins}), and 409 is answered only when an owner is really
+ * VISIBLE.
  */
 export async function claimHook(
   sql: SqlExec,
@@ -89,31 +99,38 @@ export async function claimHook(
   key: string,
   token: string,
 ): Promise<JournalHookRow> {
-  const rows = await sql(
-    `with claimed as (
-       insert into ${HOOKS} (slug, run_id, key, token)
-       values ($1, $2, $3, $4)
-       on conflict do nothing
-       returning run_id, key, token, delivered, payload::text as payload, closed
-     )
-     select run_id, key, token, delivered, payload, closed from claimed
-     union all
-     select run_id, key, token, delivered, payload::text as payload, closed
-       from ${HOOKS}
-      where slug = $1 and ((run_id = $2 and key = $3) or token = $4)`,
-    [slug, runId, key, token],
+  return await firstWriteWins(
+    async () => {
+      const rows = await sql(
+        `with claimed as (
+           insert into ${HOOKS} (slug, run_id, key, token)
+           values ($1, $2, $3, $4)
+           on conflict do nothing
+           returning run_id, key, token, delivered, payload::text as payload, closed
+         )
+         select run_id, key, token, delivered, payload, closed from claimed
+         union all
+         select run_id, key, token, delivered, payload::text as payload, closed
+           from ${HOOKS}
+          where slug = $1 and ((run_id = $2 and key = $3) or token = $4)`,
+        [slug, runId, key, token],
+      );
+      // Empty is the indeterminate answer, and the ONLY one worth re-running: a
+      // visible owner is a decision, so it is thrown from inside and the retry
+      // never sees it.
+      const owner = rows[0];
+      if (!owner) return;
+      const mine = rows.find((row) => String(row.run_id) === runId && String(row.key) === key);
+      if (!mine) throw new PlatformWorkflowHookTokenError(String(owner.run_id));
+      return {
+        token: String(mine.token),
+        delivered: Boolean(mine.delivered),
+        payload: text(mine.payload),
+        closed: Boolean(mine.closed),
+      };
+    },
+    () => `workflow hook ${key} could not be claimed for run ${runId}`,
   );
-  const mine = rows.find((row) => String(row.run_id) === runId && String(row.key) === key);
-  if (!mine) {
-    const owner = rows[0];
-    throw new PlatformWorkflowHookTokenError(owner ? String(owner.run_id) : undefined);
-  }
-  return {
-    token: String(mine.token),
-    delivered: Boolean(mine.delivered),
-    payload: text(mine.payload),
-    closed: Boolean(mine.closed),
-  };
 }
 
 /**

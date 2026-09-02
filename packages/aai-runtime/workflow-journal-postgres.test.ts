@@ -154,9 +154,9 @@ describe("no statement ever binds `undefined`", () => {
     ],
   ])("%s binds null", async (_label, act) => {
     const { db, issued } = recorder([
-      [{ run_id: "wrun_1" }],
       [
         {
+          run_id: "wrun_1",
           key: "a#0",
           name: "a",
           status: "ok",
@@ -208,14 +208,68 @@ describe("claimHook", () => {
 
   test("accepts a re-claim by the SAME run and key, which is what a replay does", async () => {
     const { db } = recorder([
-      [{ run_id: "wrun_1", key: "hook!0" }],
-      [],
-      [{ token: "tok", delivered: false, payload: null, closed: false }],
+      [
+        {
+          run_id: "wrun_1",
+          key: "hook!0",
+          token: "tok",
+          delivered: false,
+          payload: null,
+          closed: false,
+        },
+      ],
     ]);
     await expect(journalOf(db).claimHook("wrun_1", "hook!0", "tok")).resolves.toMatchObject({
       token: "tok",
       delivered: false,
     });
+  });
+
+  test("is ONE statement, so the ownership check IS the claim", async () => {
+    // The ownership `select` used to run first, on an untransacted connection, so
+    // two waits racing on one token both read no owner and the loser tripped the
+    // unique index — a raw 23505 where the store promises an authored refusal.
+    // A bare `on conflict do nothing` absorbs the primary key and the token index
+    // alike, so the row the statement reports is what decides whose claim it was.
+    const { db, issued } = recorder([
+      [
+        {
+          run_id: "wrun_1",
+          key: "hook!0",
+          token: "tok",
+          delivered: false,
+          payload: null,
+          closed: false,
+        },
+      ],
+    ]);
+    await journalOf(db).claimHook("wrun_1", "hook!0", "tok");
+    expect(issued).toHaveLength(1);
+    expect(issued[0]?.sql).toContain("union all");
+  });
+
+  test("RE-RUNS the statement when both arms came back empty", async () => {
+    // A rival's UNCOMMITTED claim is invisible to the statement's snapshot AND
+    // makes `on conflict do nothing` decline, so both arms are empty — which is
+    // indeterminate, not a conflict. By the next attempt the rival has committed
+    // or aborted.
+    const { db, issued } = recorder([
+      [],
+      [
+        {
+          run_id: "wrun_1",
+          key: "hook!0",
+          token: "tok",
+          delivered: false,
+          payload: null,
+          closed: false,
+        },
+      ],
+    ]);
+    await expect(journalOf(db).claimHook("wrun_1", "hook!0", "tok")).resolves.toMatchObject({
+      token: "tok",
+    });
+    expect(issued).toHaveLength(2);
   });
 });
 
