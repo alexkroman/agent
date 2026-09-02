@@ -449,6 +449,41 @@
         ".syncpackrc.json"
       ]
     },
+    // The other half of the same tool, on the same inputs: `check:syncpack`
+    // reads dependency VERSIONS, this reads manifest SHAPE (key order, and the
+    // order of the conditions inside `exports`). It was installed and invoked
+    // by nothing, and all eleven manifests failed it.
+    //
+    // `sortExports` in `.syncpackrc.json` is load-bearing rather than
+    // cosmetic. Under the default list `@dev/source` is unknown and sorts
+    // LAST, which puts `import` ahead of it — and condition resolution takes
+    // the first match, so every dev-source path would silently resolve to
+    // `dist/` and the custom condition the whole workspace is built on would
+    // stop working. The config names it first.
+    "//#check:format": {
+      "inputs": [
+        "package.json",
+        "packages/*/package.json",
+        ".syncpackrc.json"
+      ]
+    },
+    // Duplicate versions of one package resolved side by side in the lockfile.
+    // pnpm answers this directly and nothing asked it: the tree carried
+    // rolldown 1.2.0 beside 1.2.4, two @types/node, two @oxc-project/types and
+    // sixteen duplicate @rolldown/binding-* platform packages. That is bytes in
+    // the guest harness bundle `artifact-size-report.mjs` budgets, and a second
+    // copy of a type package is also two versions of one global type surface.
+    //
+    // Keyed on the lockfile, so a clean tree is a cache hit rather than a
+    // resolution.
+    "//#check:dedupe": {
+      "inputs": [
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "package.json",
+        "packages/*/package.json"
+      ]
+    },
     "//#check:sherif": {
       "inputs": [
         "package.json",

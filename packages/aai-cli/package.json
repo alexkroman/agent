@@ -2,6 +2,19 @@
   "name": "@alexkroman1/aai-cli",
   "version": "10.0.1",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexkroman/agent.git",
+    "directory": "packages/aai-cli"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "bin.mjs",
+    "dist"
+  ],
   "bin": {
     "aai": "bin.mjs"
   },
@@ -27,22 +40,18 @@
       "import": "./dist/project-config.mjs"
     }
   },
-  "files": [
-    "bin.mjs",
-    "dist"
-  ],
   "scripts": {
+    "build": "tsdown && tsc -p tsconfig.build.json && node ./bundle-templates.mjs",
+    "check:attw": "attw --pack --profile esm-only",
+    "check:e2e": "pnpm run test:e2e",
+    "check:publint": "publint",
+    "check:scenario": "pnpm run test:scenario",
+    "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "tsdown && tsc -p tsconfig.build.json && node ./bundle-templates.mjs",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check .",
-    "check:publint": "publint",
-    "check:attw": "attw --pack --profile esm-only",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_SETUP=./_test-setup.ts VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "check:scenario": "pnpm run test:scenario",
     "test:e2e": "VITEST_PROFILE=e2e VITEST_SETUP=./_test-setup.ts VITEST_INCLUDE=e2e*.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "check:e2e": "pnpm run test:e2e"
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_SETUP=./_test-setup.ts VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
@@ -74,13 +83,5 @@
     "vitest": {
       "optional": true
     }
-  },
-  "engines": {
-    "node": ">=24"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/alexkroman/agent.git",
-    "directory": "packages/aai-cli"
   }
 }

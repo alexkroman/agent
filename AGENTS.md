@@ -1055,17 +1055,60 @@ range out of a package.json now yields `catalog:`, which it copied verbatim
 into a manifest npm cannot resolve. See `check:scaffold` under "Quality
 ratchets".
 
-**`catalog:` must never reach npm, and `check:publish-protocols` proves it does
-not.** It is a pnpm protocol — npm treats `"zod": "catalog:"` as an
-unsatisfiable range — and pnpm rewrites it (and `workspace:`) when it packs.
-That rewrite belongs to the packer, not to us: `changeset publish` picks its
-publish command from the lockfile, so a future changesets release shelling out
-to `npm publish` would ship `catalog:` verbatim. The gate packs each publishable
-package and reads the manifest back out of the tarball, because this is
-invisible to a diff (the manifests are correct — the protocol IS the intended
-source form), invisible to a build, and invisible to `publint`, which reads the
-SOURCE manifest. The symptom would be a 100% broken published version, found by
-consumers, with unpublishing inside 72 hours the only remedy.
+### A manifest has a SHAPE, and two more checks read it
+
+Two tools that read `package.json` were installed and invoked by nothing. Both
+are turbo tasks beside `check:syncpack` now, and both were RED on first run —
+which is the argument for the pair.
+
+- **`pnpm check:format`** (`syncpack format --check`) — key order, and the
+  order of the conditions inside `exports`. All eleven manifests failed.
+
+  **`sortExports` in `.syncpackrc.json` is load-bearing.** Under syncpack's
+  default list `@dev/source` is unknown, so it sorts LAST and `import` lands
+  ahead of it — and condition resolution takes the FIRST match, so every
+  dev-source path would quietly resolve to `dist/` and the condition this
+  workspace is built on would stop working, with a green formatter. The config
+  names it first. Verified before adopting: every manifest is DEEP-EQUAL across
+  the reformat, so it reorders and changes no value.
+- **`pnpm check:dedupe`** (`pnpm dedupe --check`) — duplicate versions resolved
+  side by side. Found rolldown 1.2.0 beside 1.2.4, two `@types/node`, two
+  `@oxc-project/types` and sixteen duplicate `@rolldown/binding-*`; deduping
+  cut 195 lockfile lines. Those are bytes in the harness bundle
+  `artifact-size-report.mjs` budgets. **Full mode only** — it RESOLVES, so it
+  wants a registry, and a pre-commit gate that fails on a flaky network is one
+  developers learn to skip. Named in `NOT_RUN_BY_LOCAL`.
+
+`check:sherif` passes `--fail-on-warnings` now: clean when added, which is when
+a ratchet is cheapest to set.
+
+### What a PUBLISHED manifest owes, beyond packaging
+
+`publint` and `attw` ask whether a package RESOLVES;
+`publishable-package-layout` asks which FILES it has, and konsistent's
+predicates cannot read a JSON field at all. `check-publish-names.mjs` holds
+what falls between — it already walks these manifests and already argues this
+failure class (its header, on `repository` and the E422 only a push to main
+could see).
+
+- **`license`, plus a `LICENSE` in the package's own directory.** All four
+  published packages had neither. The repo is MIT at the root, but **npm packs
+  only the LICENSE in the package dir**, never an ancestor's — so four tarballs
+  declared no terms, which registries and license scanners read as
+  all-rights-reserved, and `npm publish` only WARNS. The field is checked by
+  consensus among the four; the file, by existence.
+- **`sideEffects` is a CLAIM** — the only field here whose wrong value breaks a
+  consumer rather than our publish. `aai-ui` exports `./styles.css` and all
+  fifteen templates `import "@alexkroman1/aai-ui/styles.css"`, an import for
+  effect that `sideEffects: false` licenses a bundler to drop, unstyling every
+  scaffolded app silently. So a package exporting CSS may not claim `false`; it
+  names the css. `aai` and `aai-runtime` are `false` on evidence (no
+  `registerProcessor`, no `customElements.define`, no top-level global
+  mutation, no side-effect-only import of either anywhere); `aai-cli` is
+  absent, being an executable rather than a library a consumer shakes.
+
+All four assertions were A/B'd against a broken manifest before landing — a
+check that has never failed is indistinguishable from one that cannot.
 
 ### A new version is quarantined for 48 hours
 

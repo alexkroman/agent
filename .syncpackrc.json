@@ -10,5 +10,36 @@
       "dependencyTypes": ["peer"],
       "isIgnored": true
     }
+  ],
+  "sortFirst": [
+    "name",
+    "version",
+    "description",
+    "private",
+    "type",
+    "license",
+    "repository",
+    "engines",
+    "sideEffects",
+    "files",
+    "bin",
+    "exports",
+    "scripts",
+    "dependencies",
+    "devDependencies",
+    "peerDependencies"
+  ],
+  "sortExports": [
+    "@dev/source",
+    "types",
+    "node-addons",
+    "node",
+    "browser",
+    "module",
+    "import",
+    "require",
+    "development",
+    "production",
+    "default"
   ]
 }

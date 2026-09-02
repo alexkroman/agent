@@ -3,18 +3,21 @@
   "version": "0.5.11",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
   "exports": {
     "./package.json": "./package.json",
     "./harness": "./dist/harness.mjs"
   },
   "scripts": {
     "build": "tsdown",
+    "check:scenario": "pnpm run test:scenario",
+    "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "check:scenario": "pnpm run test:scenario",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
@@ -44,8 +47,5 @@
     "@types/ws": "catalog:",
     "tsdown": "catalog:",
     "vitest": "catalog:"
-  },
-  "engines": {
-    "node": ">=26"
   }
 }

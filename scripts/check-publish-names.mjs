@@ -35,8 +35,36 @@
  * constant here, so the repo can be renamed or moved without editing this
  * gate — the real failure mode is one package diverging from its siblings,
  * which is what a new package added to the release group does.
+ *
+ * ## `license`, and the LICENSE file beside it
+ *
+ * Same shape as `repository`, found the same way. All four publishable
+ * packages shipped with NO `license` field and no `LICENSE` in their own
+ * directory: the repo is MIT and says so at the root, but the root file is
+ * outside every package, and npm only ever packs the LICENSE it finds in the
+ * package dir. So four tarballs went out declaring no terms at all, which
+ * registries and every downstream license scanner read as "all rights
+ * reserved" — the most restrictive possible reading, on a package published to
+ * be depended on.
+ *
+ * Neither half was visible to anything: `publint` and `attw` ask packaging
+ * questions, konsistent's `publishable-package-layout` checks which files a
+ * package has (and its predicates cannot read a JSON field at all), and
+ * `npm publish` only WARNS. So both are checked here, the field by consensus
+ * and the file by existence.
+ *
+ * ## Why `sideEffects: false` is a claim, not a default
+ *
+ * `sideEffects` is the one manifest field in this set whose wrong value breaks
+ * a CONSUMER's build rather than our publish, and silently. `aai-ui` exports
+ * `./styles.css` and all fifteen templates say
+ * `import "@alexkroman1/aai-ui/styles.css";` — an import for effect, which a
+ * bundler told the package has no side effects may drop, unstyling every
+ * scaffolded app with no error anywhere. A package that exports CSS therefore
+ * may not claim `false`; it names the css instead.
  */
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { publishablePackages, readJson, repoRoot } from "./_fs.mjs";
@@ -129,6 +157,67 @@ for (const { dir, path, pkg } of manifests) {
   }
 }
 
+// The license every publishable package must agree on — consensus, for the
+// same reason the url is: a new package joining the release group is what
+// diverges, and it should be told which value its siblings use.
+const licenses = manifests
+  .map(({ pkg }) => pkg.license)
+  .filter((license) => typeof license === "string" && license !== "");
+const licenseTally = new Map();
+for (const l of licenses) licenseTally.set(l, (licenseTally.get(l) ?? 0) + 1);
+let expectedLicense;
+for (const [l, n] of licenseTally) {
+  if (expectedLicense === undefined || n > (licenseTally.get(expectedLicense) ?? 0)) {
+    expectedLicense = l;
+  }
+}
+
+for (const { dir, path, pkg } of manifests) {
+  if (typeof pkg.license !== "string" || pkg.license === "") {
+    errors.push(
+      `${path}: missing "license". npm only WARNS, so this ships: a tarball ` +
+        "with no license field is read as all-rights-reserved by registries " +
+        "and by every downstream license scanner" +
+        (expectedLicense === undefined ? "." : `. Expected: ${expectedLicense}`),
+    );
+  } else if (expectedLicense !== undefined && pkg.license !== expectedLicense) {
+    errors.push(
+      `${path}: license "${pkg.license}" disagrees with the other publishable ` +
+        `packages ("${expectedLicense}"). One repo, one LICENSE file, so only ` +
+        "one of these can be true.",
+    );
+  }
+
+  // The FILE, which is a separate fact from the field. npm packs the LICENSE
+  // in the package directory and never one from an ancestor, so the repo-root
+  // copy reaches no tarball however correct the field is.
+  if (!existsSync(join(ROOT, dir, "LICENSE"))) {
+    errors.push(
+      `${dir}/LICENSE does not exist. npm packs only the LICENSE inside the ` +
+        "package directory, so the repo-root copy never reaches this " +
+        "package's tarball — the field alone states terms it does not ship.",
+    );
+  }
+
+  // `sideEffects: false` on a package that exports CSS. Optional field: absent
+  // is the conservative default and always legal.
+  // No record guard: `??` covers an absent `exports`, and the string form (a
+  // single entry point, no subpaths) is read as the one path it names. All four
+  // of these use the object form.
+  const exportsField = pkg.exports;
+  const subpaths =
+    typeof exportsField === "string" ? [exportsField] : Object.keys(exportsField ?? {});
+  const css = subpaths.filter((subpath) => subpath.endsWith(".css"));
+  if (pkg.sideEffects === false && css.length > 0) {
+    errors.push(
+      `${path}: claims "sideEffects": false while exporting ${css.join(", ")}. ` +
+        'A consumer\'s `import "…css"` is an import for EFFECT, and that claim ' +
+        "lets a bundler drop it — no error, just an unstyled app. Name the css " +
+        'instead: ["*.css", "**/*.css"].',
+    );
+  }
+}
+
 // A floor, for the reason every gate here now has one: this script's entire
 // success output is a sentence, so a scan that stopped finding packages would
 // print it over nothing.
@@ -145,5 +234,5 @@ if (errors.length > 0) {
 
 console.log(
   `check-publish-names: all ${manifests.length} publishable packages use an allowed ` +
-    "scope and name their repository.",
+    `scope, name their repository, and ship ${expectedLicense ?? "a"} license terms.`,
 );

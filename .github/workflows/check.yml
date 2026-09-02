@@ -132,7 +132,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main
       # The tasks that are NOT rows of the gate table: the turbo tasks, plus
-      # the five root-level scripts turbo cannot own.
+      # the seven root-level scripts turbo cannot own.
       - run: |
           pnpm exec turbo run check:publint check:attw docs
           pnpm run check:knip
@@ -141,6 +141,13 @@ jobs:
           # the repo that no lint job touched.
           pnpm run lint:root
           pnpm run check:syncpack
+          # Manifest SHAPE, the other half of syncpack. See `//#check:format`
+          # in turbo.json for why `sortExports` has to name `@dev/source`.
+          pnpm run check:format
+          # Duplicate versions resolved side by side in the lockfile. Here
+          # rather than in `check:local` because it resolves against the
+          # registry, which is a flake a pre-commit gate should not own.
+          pnpm run check:dedupe
           pnpm run check:sherif
           pnpm run check:markdown
       # EVERY quality gate, DERIVED — the ratchets and the after-build gates,
