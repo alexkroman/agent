@@ -15,11 +15,14 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { deliverQueueMessage, queueNameKind } from "./workflow-queue-dispatch.ts";
+// The park CADENCE is its own module, and its own spec — `workflow-queue-park.
+// test.ts` owns the curve. What is asserted HERE is what the DOOR answers, which
+// the curve's own tests cannot claim: the door is what reads the clock.
 import {
-  deliverQueueMessage,
   QUEUE_DELIVERY_BUSY_SECONDS,
-  queueNameKind,
-} from "./workflow-queue-dispatch.ts";
+  QUEUE_DELIVERY_LONG_WALK_SECONDS,
+} from "./workflow-queue-park.ts";
 
 describe("queueNameKind", () => {
   // The grammar is `__[<namespace>_]wkf_(workflow|step)_<id>` — `parseQueueName`
@@ -264,7 +267,7 @@ describe("a park is reported, with how long the walk has been running", () => {
     error: vi.fn(),
   });
 
-  test("names the run and the elapsed walk time, at warn", async () => {
+  test("names the run and the elapsed walk time", async () => {
     const first = Promise.withResolvers<string>();
     const deliver = vi.fn(async () => await first.promise);
     const logger = fakeLogger();
@@ -282,14 +285,18 @@ describe("a park is reported, with how long the walk has been running", () => {
     const walking = deliverQueueMessage(deliver, post("__wkf_workflow_report_1"), { logger });
     await deliverQueueMessage(deliver, post("__wkf_workflow_report_1"), { logger });
 
-    expect(logger.warn).toHaveBeenCalledTimes(1);
-    expect(logger.warn).toHaveBeenCalledWith(
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith(
       expect.stringContaining("parked"),
       expect.objectContaining({ runId: "report_1", walkingForSeconds: 125 }),
     );
-    // `warn` and not `error`: nothing has failed. A run in this state is
-    // healthy, which is the whole reason the line has to carry a number.
+    // Never `error`: nothing has failed. A run in this state is healthy, which
+    // is the whole reason the line has to carry a number. Which LEVEL a park
+    // takes is a function of the elapsed walk — 125s is under
+    // `QUEUE_DELIVERY_LONG_WALK_SECONDS`, so this one is `info`; the escalation
+    // is pinned in "a park asks to come back proportionately" below.
     expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
 
     first.resolve("completed");
     await walking;
@@ -303,7 +310,13 @@ describe("a park is reported, with how long the walk has been running", () => {
     const deliver = vi.fn(async () => "completed");
     const logger = fakeLogger();
     await deliverQueueMessage(deliver, post("__wkf_workflow_quiet_2"), { logger });
+    // EVERY level a reader sees, inlined at each site because `expect` inside a
+    // helper trips Biome's `noMisplacedAssertion`. Naming only `warn` would pass
+    // against a version that parked chattily at `info`, which — the level being
+    // a function of the elapsed walk now — is the regression this guards.
+    expect(logger.info).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   test("a walk that SETTLED parks nothing further, so the report cannot run forever", async () => {
@@ -318,7 +331,13 @@ describe("a park is reported, with how long the walk has been running", () => {
     await deliverQueueMessage(deliver, post("__wkf_workflow_settled_3"), { logger });
     await deliverQueueMessage(deliver, post("__wkf_workflow_settled_3"), { logger });
     expect(deliver).toHaveBeenCalledTimes(2);
+    // EVERY level a reader sees, inlined at each site because `expect` inside a
+    // helper trips Biome's `noMisplacedAssertion`. Naming only `warn` would pass
+    // against a version that parked chattily at `info`, which — the level being
+    // a function of the elapsed walk now — is the regression this guards.
+    expect(logger.info).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   test("a walk that THREW parks nothing further either", async () => {
@@ -334,7 +353,13 @@ describe("a park is reported, with how long the walk has been running", () => {
       deliverQueueMessage(deliver, post("__wkf_workflow_threw_3"), { logger }),
     ).rejects.toThrow(/journal unreachable/);
     expect(deliver).toHaveBeenCalledTimes(2);
+    // EVERY level a reader sees, inlined at each site because `expect` inside a
+    // helper trips Biome's `noMisplacedAssertion`. Naming only `warn` would pass
+    // against a version that parked chattily at `info`, which — the level being
+    // a function of the elapsed walk now — is the regression this guards.
+    expect(logger.info).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   test("a logger is optional, so a caller without one still parks correctly", async () => {
@@ -345,5 +370,94 @@ describe("a park is reported, with how long the walk has been running", () => {
     expect(await parked.json()).toEqual({ timeoutSeconds: QUEUE_DELIVERY_BUSY_SECONDS });
     first.resolve("completed");
     await walking;
+  });
+});
+
+/**
+ * What the DOOR answers, at both ends of the curve — the claim the unit tests
+ * above cannot make, because the door is what reads the clock.
+ */
+describe("a park asks to come back proportionately", () => {
+  const post = (queueName: string) =>
+    new Request("http://guest.local/workflow-queue", {
+      method: "POST",
+      headers: { "x-vqs-queue-name": queueName },
+    });
+
+  const fakeLogger = () => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  });
+
+  /** Park one delivery with the clock `elapsedMs` past the walk's start. */
+  const parkAt = async (
+    runId: string,
+    elapsedMs: number,
+  ): Promise<{ body: unknown; logger: ReturnType<typeof fakeLogger> }> => {
+    const first = Promise.withResolvers<string>();
+    const deliver = vi.fn(async () => await first.promise);
+    const logger = fakeLogger();
+    const base = 1_700_000_000_000;
+    // A `Date.now` spy rather than fake timers: there is no timer in this path,
+    // and `restoreMocks` undoes a spy for free.
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(base)
+      .mockReturnValue(base + elapsedMs);
+    const walking = deliverQueueMessage(deliver, post(`__wkf_workflow_${runId}`), { logger });
+    const parked = await deliverQueueMessage(deliver, post(`__wkf_workflow_${runId}`), { logger });
+    const body: unknown = await parked.json();
+    first.resolve("completed");
+    await walking;
+    return { body, logger };
+  };
+
+  test("a SHORT overlap gets the floor back, at info", async () => {
+    const { body, logger } = await parkAt("curve_short", 2000);
+    expect(body).toEqual({ timeoutSeconds: QUEUE_DELIVERY_BUSY_SECONDS });
+    // `info`, not `warn`: a walk two seconds old is two deliveries racing.
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("parked"),
+      expect.objectContaining({ walkingForSeconds: 2, retryInSeconds: 5 }),
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("the PRODUCTION case backs off, and is still only info", async () => {
+    // 285 seconds in, where the flat version answered 5 and printed its ~45th
+    // line. Under `QUEUE_DELIVERY_LONG_WALK_SECONDS`, so it is not yet a warn:
+    // the threshold sits between the two measured healthy runs (3m21s nobody
+    // minded, 15m00s its author cancelled).
+    const { body, logger } = await parkAt("curve_long", 285_000);
+    expect(body).toEqual({ timeoutSeconds: 36 });
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("parked"), {
+      // The REPORTED retry is the one on the wire — two computations of one
+      // curve is how they would drift.
+      runId: "curve_long",
+      walkingForSeconds: 285,
+      retryInSeconds: 36,
+    });
+  });
+
+  test("a walk past the long-walk threshold ESCALATES to warn", async () => {
+    // The 15-minute upload. One line every ~2 minutes here, against 12 a
+    // minute before.
+    const { body, logger } = await parkAt("curve_warn", 900_000);
+    expect(body).toEqual({ timeoutSeconds: 113 });
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(`over ${QUEUE_DELIVERY_LONG_WALK_SECONDS / 60} minutes`),
+      { runId: "curve_warn", walkingForSeconds: 900, retryInSeconds: 113 },
+    );
+  });
+
+  test("both lines share a prefix, so one grep finds a walk at either magnitude", async () => {
+    const short = await parkAt("curve_grep_a", 1000);
+    const long = await parkAt("curve_grep_b", 900_000);
+    const line = (calls: unknown[][]): string => String(calls[0]?.[0]);
+    expect(line(short.logger.info.mock.calls)).toContain("Workflow delivery parked");
+    expect(line(long.logger.warn.mock.calls)).toContain("Workflow delivery parked");
   });
 });

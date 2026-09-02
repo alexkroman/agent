@@ -36,6 +36,10 @@
 // Type-only, so this module stays the leaf it was: the door REPORTS a park and
 // never resolves a logger of its own.
 import type { Logger } from "./runtime-config.ts";
+// The park CADENCE — how long a busy run asks to be brought back, and the line
+// that says so. Its own module because the door decides whether a delivery may
+// walk and that decides what to answer one that may not; see its module doc.
+import { reportPark } from "./workflow-queue-park.ts";
 
 /**
  * The platform's delivery door.
@@ -62,24 +66,6 @@ export const WORKFLOW_QUEUE_PATH = "/workflow-queue";
 export const QUEUE_NAME_HEADER = "x-vqs-queue-name";
 
 /**
- * How long the platform is asked to hold a message whose run is ALREADY being
- * walked here — see {@link deliverQueueMessage}, "A run is walked once at a
- * time".
- *
- * Short, because the only thing this delay costs is how long a message sits
- * behind a walk that has ALREADY ended in a way this process could not observe
- * — and there is no such way: the entry is dropped in a `finally`, and the one
- * outcome that skips a `finally` is the process dying, which takes the whole
- * set with it. So the number is not a liveness bound; it is the poll interval
- * of an honest "still busy", and one round trip against a resident guest every
- * five seconds is cheap next to the alternative it replaces (a second walk of
- * the same run, re-running every step).
- *
- * @internal
- */
-export const QUEUE_DELIVERY_BUSY_SECONDS = 5;
-
-/**
  * The runs this process is walking right now, mapped to WHEN each walk started.
  *
  * Module-scope because the scope is right: a guest serves every run of its slug
@@ -93,53 +79,6 @@ export const QUEUE_DELIVERY_BUSY_SECONDS = 5;
  * promise nobody is measuring.
  */
 const walking = new Map<string, number>();
-
-/**
- * Say that a delivery was parked, and how long the walk it deferred to has been
- * running.
- *
- * ## A park used to emit NOTHING, and that cost fifteen minutes
- *
- * The park is correct and it is silent, and silence is what a wedge looks like.
- * Measured on the run that prompted this, a 660.8 MB upload to a provider's
- * async API: the step logged one line as it started (`Uploading … to the async
- * API.`) and the next thing anybody saw was the run finishing **3m21s** later.
- * The same file on the run before it took **15m00s** — attempts `1`, no retry,
- * no divergence, nothing wrong — and its author waited out fourteen of those
- * minutes, concluded the run was wedged, and cancelled it 13 seconds before the
- * upload landed. Both runs were healthy. Neither was distinguishable from a
- * hang at any level anybody looked at: not the guest log, not the run's event
- * stream, not the journal.
- *
- * So the state a reader cannot see is not "parked" — it is **"parked, and for
- * how long"**. A park at 61s is an ordinary slow step; a park at 900s is a step
- * an operator wants to know about, and the only difference between the two log
- * lines is a number this map holds.
- *
- * ## Every park is worth a line, because a park is NOT routine
- *
- * This looks chatty — one line per `QUEUE_DELIVERY_BUSY_SECONDS` for as long as
- * a walk runs long — and it is self-limiting by construction. A delivery is only
- * ever re-presented after `QUEUE_DELIVERY_TIMEOUT_MS` (60s) has closed the
- * previous one's response, so the FIRST park of any run happens ~61s into its
- * walk. A healthy run parks **zero** times. Every line this prints is therefore
- * about a walk that has already outlived a delivery ceiling, which is exactly
- * the case the log was empty for.
- *
- * `warn` rather than `info`, for the same reason: nothing reaches here unless a
- * walk has outrun the platform's patience once already.
- */
-function reportPark(logger: Logger | undefined, runId: string, startedAt: number): void {
-  // Absent is not a silent skip — `handleWorkflowRequest` defaults it to
-  // `consoleLogger`, and the only callers with none are specs.
-  logger?.warn("Workflow delivery parked: run is still being walked", {
-    runId,
-    // SECONDS, because the interesting magnitudes here are minutes and the
-    // reader is comparing against a 60s ceiling and a 30-minute step deadline.
-    walkingForSeconds: Math.round((Date.now() - startedAt) / 1000),
-    retryInSeconds: QUEUE_DELIVERY_BUSY_SECONDS,
-  });
-}
 
 /**
  * The DevKit's queue-name prefix, up to the kind — `__[<namespace>_]wkf_`.
@@ -274,8 +213,15 @@ export function queueNameKind(queueName: string | null): "workflow" | "step" | u
  * So a delivery for a run this process is already walking is PARKED rather than
  * walked: `{"timeoutSeconds": n}`, which the platform reads as "bring this back
  * later" and which **touches no attempt** (`reschedule` in
- * `aai-server/workflow-queue-store.ts` says so in those words). Three
- * properties, and each is why it is a park rather than one of the alternatives:
+ * `aai-server/workflow-queue-store.ts` says so in those words — its UPDATE
+ * writes `locked_at` and `available_at` and nothing else, so only the FIRST
+ * delivery's 60s abort ever spends one of `QUEUE_MAX_ATTEMPTS`, and a walk of any
+ * length parks at attempt 1 forever). `n` is
+ * {@link queueDeliveryBusySeconds} of the elapsed walk rather than a constant,
+ * and the platform HONOURS it up: `parkedFor` accepts any finite non-negative
+ * number and `reschedule` clamps only at zero, so there is no ceiling on that
+ * side to fit under. Three properties, and each is why it is a park rather than
+ * one of the alternatives:
  *
  * - **The message SURVIVES.** Acking it would be the cheap answer and it throws
  *   away the only redelivery a dead walk has left — at-least-once is the whole
@@ -328,9 +274,10 @@ export async function deliverQueueMessage(
   const startedAt = walking.get(runId);
   if (startedAt !== undefined) {
     // REPORTED, because the park is otherwise the one state in this engine that
-    // is both correct and indistinguishable from a hang. See {@link reportPark}.
-    reportPark(opts.logger, runId, startedAt);
-    return Response.json({ timeoutSeconds: QUEUE_DELIVERY_BUSY_SECONDS });
+    // is both correct and indistinguishable from a hang — and the report is what
+    // computes the delay, so the line and this body carry the same number. See
+    // {@link reportPark} and {@link queueDeliveryBusySeconds}.
+    return Response.json({ timeoutSeconds: reportPark(opts.logger, runId, startedAt) });
   }
   walking.set(runId, Date.now());
   try {
