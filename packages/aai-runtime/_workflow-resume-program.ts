@@ -16,20 +16,25 @@
  *
  * Four shapes whose non-determinism belongs to the AUTHOR rather than to the
  * engine, and which would therefore produce false findings. A wait inside a
- * FAN-OUT: sleeps and hooks are keyed positionally (`sleep!N` by reach order),
- * so two branches racing to reach one key the same wait differently on two
- * walks — `ctx.step` is keyed by name, which is why steps may fan out and waits
- * may not. More than one step per `mapConcurrent` CALLBACK, which that
- * function's own doc refuses. And a body that CATCHES: legitimate, and covered
- * by `workflow-replay.test.ts`, but a generated one would swallow the abort a
+ * FAN-OUT: a wait's key is `sleep!<label>#<n>`, and the OCCURRENCE half of that
+ * is assigned by REACH ORDER — which two racing branches do not agree on across
+ * walks. Naming the waits did not change this and could not: it made a wait's
+ * key independent of how many OTHER waits were reached, where a fan-out's
+ * problem is how many of the SAME one were reached first. It is precisely the
+ * rule `mapConcurrent` states for steps ("the same sequence of step calls for
+ * every item"), and it is why the grammar fans out steps and not waits. More
+ * than one step per `mapConcurrent` CALLBACK, which that function's own doc
+ * refuses. And a body that CATCHES: legitimate, and covered by
+ * `workflow-replay.test.ts`, but a generated one would swallow the abort a
  * simulated crash is made of and turn it into a run failure.
  *
  * The fourth is a wait inside a STEP, which used to be generated as `nestedWait`
  * and is now a program the engine REFUSES — `workflow-replay-wait.ts` carries
- * both bugs it produced. It is the same positional-key argument as the fan-out
- * exclusion above, arriving by the other door: a settled step's body is not
- * re-executed, so its wait stops being reached and every later wait in the run
- * slides one place down the key space. What that node was the 10-out-of-10
+ * the bugs it produced. Its own key argument is retired: a settled step's body
+ * is not re-executed, so its wait stops being reached, and under positional keys
+ * every later wait slid one place down the key space. Named keys close that; the
+ * refusal is still owed for the duplicate step execution and for liveness. What
+ * that node was the 10-out-of-10
  * regression for — a suspend RELEASING its attempt charge — is not covered any
  * more and does not need to be: the arm it defended is GONE. A suspension is no
  * longer a throw at all, so nothing unwinds through a step's attempt loop and
@@ -44,7 +49,7 @@
  * claim is about LEAF step bodies, each of which has its own journal row.
  */
 
-import type { StepOptions, WorkflowCtx } from "@alexkroman1/aai";
+import type { SleepOptions, StepOptions, WorkflowCtx } from "@alexkroman1/aai";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 
@@ -66,7 +71,7 @@ export type Node =
   | Leaf
   | { readonly t: "boom"; readonly name: string }
   | { readonly t: "loop"; readonly name: string; readonly count: number }
-  | { readonly t: "sleep" }
+  | { readonly t: "sleep"; readonly waitLabel: string }
   | { readonly t: "hook"; readonly token: string; readonly mode: HookMode }
   | { readonly t: "all"; readonly children: readonly Leaf[] }
   | { readonly t: "map"; readonly width: number; readonly children: readonly Leaf[] }
@@ -86,12 +91,19 @@ export type Recorder = {
 };
 
 /**
- * Give every step and token a name derived from its POSITION.
+ * Give every step, token and wait a name derived from its POSITION.
  *
  * Unique by construction, which is deliberate: a fan-out's branches reach their
  * steps in whatever order the loop resumes them, so shared names would make the
  * `name#occurrence` key depend on scheduling. `loop` is the one node that reuses
  * a name, and it is strictly sequential — which is the case occurrences exist for.
+ *
+ * **A `sleep` gets one too, and it has to be per NODE rather than one shared
+ * label.** A wait is keyed `sleep!<label>#<occurrence>`, so a single label for
+ * every generated sleep collapses the whole program's waits back onto one
+ * counter — positional keying under a new spelling, and the property would stop
+ * exercising the thing it is generating waits to exercise. Two sleeps at two
+ * positions are two labels, which is what a real body with two waits looks like.
  */
 export function label(program: Program): Program {
   let n = 0;
@@ -106,7 +118,7 @@ export function label(program: Program): Program {
       case "loop":
         return { ...node, name: next() };
       case "sleep":
-        return node;
+        return { ...node, waitLabel: `w${n++}` };
       case "hook":
         return { ...node, token: `tok${n++}` };
       case "all":
@@ -171,18 +183,24 @@ export function tokensOf(program: Program): { token: string; mode: HookMode }[] 
 }
 
 /**
- * `ctx`, with `ctx.step` narrowed to accept a name this harness COMPUTES.
+ * `ctx`, with `ctx.step` and `ctx.sleep` narrowed to accept a name this harness
+ * COMPUTES.
  *
- * `WorkflowCtx.step` refuses a name widened to `string` — the call-site layer of
- * the step-identity rule, `Literal<Name>` resolving to `never` — and every name
- * here comes from {@link label}, a node's POSITION in a generated program:
- * unbounded, so not a union of literals. This is the escape that constraint is
- * designed to allow, in the shape `workflow-ctx.ts` names — one typed alias
- * where {@link runProgram} receives the context, not a cast per site. No `as`,
- * so `check:hatches` is owed nothing.
+ * Both refuse a name widened to `string` — the call-site layer of the identity
+ * rule, `Literal<Name>` resolving to `never` — and every name here comes from
+ * {@link label}, a node's POSITION in a generated program: unbounded, so not a
+ * union of literals. This is the escape that constraint is designed to allow, in
+ * the shape `workflow-ctx.ts` names — one typed alias where {@link runProgram}
+ * receives the context, not a cast per site. No `as`, so `check:hatches` is owed
+ * nothing.
+ *
+ * `sleep` joined it when waits stopped being keyed positionally: a generated
+ * wait needs a label, and a label per NODE is the only kind that keeps the
+ * program's waits on separate counters.
  */
-type GeneratedCtx = Omit<WorkflowCtx, "step"> & {
+type GeneratedCtx = Omit<WorkflowCtx, "step" | "sleep"> & {
   step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+  sleep(label: string, until: number | Date, options?: SleepOptions): Promise<void>;
 };
 
 /** One leaf step: the body, wrapped so its invocation is counted. */
@@ -236,7 +254,7 @@ async function runNode(node: Node, ctx: GeneratedCtx, rec: Recorder): Promise<un
       return out;
     }
     case "sleep":
-      await ctx.sleep(WAIT_MS);
+      await ctx.sleep(node.waitLabel, WAIT_MS);
       return null;
     case "hook":
       if (node.mode === "signal") return ctx.waitFor(node.token);

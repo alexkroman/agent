@@ -98,7 +98,7 @@ function nodeArb(
   const shapes: fc.Arbitrary<Node>[] = [
     leafArb,
     fc.integer({ min: 2, max: 3 }).map((count): Node => ({ t: "loop", name: "", count })),
-    fc.constant<Node>({ t: "sleep" }),
+    fc.constant<Node>({ t: "sleep", waitLabel: "" }),
     fc.constantFrom(...hookModes).map((mode): Node => ({ t: "hook", token: "", mode })),
     fc
       .array(leafArb, { minLength: 1, maxLength: 2 })
@@ -354,7 +354,7 @@ function suspendingProgramArb(): fc.Arbitrary<Program> {
     .tuple(fc.array(nodeArb(true, false, ["timeout"]), { maxLength: 4 }), fc.integer({ min: 0 }))
     .map(([nodes, at]): Program => {
       const out = [...nodes];
-      out.splice(Math.min(at, out.length), 0, { t: "sleep" });
+      out.splice(Math.min(at, out.length), 0, { t: "sleep", waitLabel: "" });
       return out;
     });
 }

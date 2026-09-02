@@ -31,7 +31,7 @@
  * nothing to key a map on, and sharing would let an author's own
  * `ctx.step("now")` alias a journaled clock read. `!` is not producible by
  * `name#occurrence`, which is what makes the two spaces disjoint by construction
- * rather than by convention — the same trick `sleep!N` and `hook!N` use, and they
+ * rather than by convention — the same trick the waits' `sleep!`/`hook!` prefixes use, and they
  * are disjoint from THOSE too because a sleep lives in `claimSleep`'s records and
  * these live in `appendStep`'s entries.
  *

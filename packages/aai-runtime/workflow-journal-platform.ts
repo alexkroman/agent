@@ -28,7 +28,7 @@
  *   step, which is what keeps that ceiling a bound on abandonment rather than on
  *   reaches; a retried release is harmless for the mirror reason, being floored.
  * - **`claimSleep` and `appendStep` answer with what is STORED**, not with what
- *   was sent. First write wins; a replay that recomputes `ctx.sleep(60_000)` must
+ *   was sent. First write wins; a replay that recomputes `ctx.sleep("poll", 60_000)` must
  *   read back the original deadline or the run never wakes.
  *
  * ## The codec runs HERE, and the platform never sees a decoded value

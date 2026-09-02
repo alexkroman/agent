@@ -21,7 +21,7 @@
  * ```ts no-check
  * const coin = Math.random() < 0.5 ? "h" : "t";
  * await ctx.step(`charge-${coin}`, charge);
- * await ctx.sleep(1000); // suspends; the next delivery re-walks the body
+ * await ctx.sleep("settle", 1000); // suspends; the next delivery re-walks the body
  * ```
  *
  * **7 of 10 runs executed the side effect twice, and all 10 reported
@@ -44,11 +44,30 @@
  *
  * ## What it does NOT cover
  *
- * Identity that comes from a COUNTER rather than a name. `sleep!${n}` and
- * `hook!${n}` are positional, so a body reaching a different NUMBER of waits
- * reads another wait's record and nothing here sees it. Closing that needs
- * `claimSleep`/`claimHook` to report whether the key was NEW, which is a
- * `JournalStore` change across all four backends rather than a change here.
+ * **The WAITS used to be the headline gap here, and they are not any more.**
+ * `sleep!${n}` and `hook!${n}` were positional, so a body reaching a different
+ * NUMBER of waits read another wait's record and nothing here saw it — measured
+ * at a week-long `ctx.sleep` skipped in full with the run reporting `completed`
+ * (`workflow-replay-wait.ts` has that transcript). This section used to say that
+ * closing it needed `claimSleep`/`claimHook` to report whether the key was NEW,
+ * i.e. a `JournalStore` change across all four backends. It did not: the keys
+ * are `sleep!${label}#${occurrence}` and `hook!${token}#${occurrence}` now, so a
+ * wait that moves keeps its own record and the whole class is unrepresentable.
+ * `ctx.sleep` grew a `label` for it; `ctx.waitFor`'s token was already a name.
+ *
+ * What is left of it is one shape, and it is strictly better than what it
+ * replaced: a label or token that is ITSELF non-deterministic mints a key no
+ * walk has reached, so the run registers a fresh wait and PARKS on something
+ * nobody can signal. That hangs rather than answering wrongly. Nothing detects
+ * it — {@link waitTokenDiverged} is the nearest thing and cannot fire on a key
+ * that names its own token — and detecting it really would need the NEW-key
+ * report this paragraph used to ask for. It is not built, because a hang is
+ * visible in a way a wrong payload was not.
+ *
+ * The three determinism reads (`now!${n}`, `random!${n}`, `uuid!${n}`) are still
+ * positional, deliberately: they take no argument to name, and they journal
+ * through `appendStep`, so a reach is at least RECORDED here rather than
+ * invisible. `sdk/workflow-ctx.ts` carries why naming them is a worse trade.
  *
  * A reordering UNDER ONE NAME is likewise invisible, and deliberately so:
  * `mapConcurrent` names every call in a fan-out the same, so a changed item
@@ -204,4 +223,68 @@ export function watchDivergence(entries: readonly StepEntry[]): DivergenceWatch 
       readThrough = Math.max(readThrough, entry.finishedAt);
     },
   };
+}
+
+/**
+ * What to say when a wait read a record that belongs to a DIFFERENT wait.
+ *
+ * `claimHook` is idempotent on its key, so what comes back on a replay is
+ * whatever the first walk registered there — and the token on that record is the
+ * one thing in the answer that identifies which `ctx.waitFor` really wrote it.
+ * A mismatch is therefore not a suspicion the way an unreached step key is: it
+ * is the journal stating that this walk is reading somebody else's answer.
+ *
+ * **Names both tokens, because the pair is the diagnosis.** The reader has to
+ * see which wait they asked for and which one the run had journaled in that slot
+ * — the two names are usually recognisable on sight in their own source, where
+ * the key alone (`hook!0`) says nothing at all.
+ */
+function waitDivergedMessage(key: string, reached: string, stored: string): string {
+  return (
+    `Workflow replay diverged: this walk reached ctx.waitFor(${JSON.stringify(reached)}) ` +
+    `as journal key ${key}, but that key was registered by ` +
+    `ctx.waitFor(${JSON.stringify(stored)}) — so this walk is reading another ` +
+    "wait's record, and would be handed that wait's payload as its own answer.\n" +
+    "The body reached a different NUMBER of waits than the walk that journaled " +
+    "them: a wait behind a condition that answered differently, or a wait added, " +
+    "removed or reordered while this run was in flight. Runs started against the " +
+    "old body cannot be resumed against the new one — drain them before " +
+    "deploying, or let them fail. If neither is true, the condition guarding a " +
+    "wait is non-deterministic: move whatever it reads inside a ctx.step, or use " +
+    "ctx.now/ctx.random/ctx.uuid."
+  );
+}
+
+/**
+ * The refusal for a wait whose journaled record carries a different token, or
+ * `undefined` when the record is this wait's own.
+ *
+ * ## This is an assertion about the KEY SCHEME, not about the body
+ *
+ * A wait's key embeds its token (`hook!${token}#${occurrence}`), so a record
+ * fetched under it can only ever carry that token, and this cannot fire — which
+ * is exactly why it is worth keeping. Waits were POSITIONAL (`hook!0`) when this
+ * check was written, and then it was the only thing standing between a body that
+ * reached a different number of waits and being handed the wrong payload:
+ *
+ * `no-check`: the DEFECT, not a teaching example — `ctx` is the reader's and the
+ * two lines are the whole point.
+ * ```ts no-check
+ * if (somethingAboutTheClock) await ctx.waitFor("late");
+ * await ctx.waitFor("final"); // hook!1 on walk 1, hook!0 on walk 2
+ * ```
+ *
+ * Naming the token in the key is what turned that from a wrong answer into two
+ * different keys, and this is what says so out loud: if the scheme is ever
+ * changed back — or changed to a key that does not determine the token — the
+ * silent-wrong-payload failure comes back, and this refuses the run instead. It
+ * costs one comparison on a call that already made a round trip.
+ */
+export function waitTokenDiverged(
+  key: string,
+  reached: string,
+  stored: string,
+): ReplayDivergenceError | undefined {
+  if (stored === reached) return undefined;
+  return new ReplayDivergenceError(waitDivergedMessage(key, reached, stored));
 }

@@ -199,7 +199,8 @@ describe("cancel", () => {
 describe("a delivery whose re-enqueue fails", () => {
   const down = () => Promise.reject(new Error("queue is down"));
   /** A body that suspends, over a dispatcher that cannot reach its queue. */
-  const unreachableQueue = () => harness({ nap: (_i, ctx) => ctx.sleep(60_000) }, vi.fn(down));
+  const unreachableQueue = () =>
+    harness({ nap: (_i, ctx) => ctx.sleep("nap", 60_000) }, vi.fn(down));
 
   test("REJECTS, so the delivery is not acked for a run nothing will come back for", async () => {
     // It used to be `void send(...).catch(log)`, so `execute` resolved and

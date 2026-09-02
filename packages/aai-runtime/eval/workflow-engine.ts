@@ -218,8 +218,8 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // seconds and the six hours its own comment says are mechanically
       // identical differ by nothing that runs here. What a case CAN assert is
       // that the body asked, and for how long.
-      sleep: async (until) => {
-        record.slept.push({ duration: until });
+      sleep: async (label, until) => {
+        record.slept.push({ label, duration: until });
       },
       // REFUSED, and named. A hook is the one thing on `WorkflowCtx` this engine
       // cannot fake: a sleep can be skipped because the body continues either

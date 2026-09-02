@@ -53,22 +53,23 @@
  * {@link ReplayOptions} walk races the body against
  * `SuspendController.interruption`. `workflow-replay-suspend.ts` carries the
  * argument, the aggregation of concurrent waits, and what quiescence means here.
+ *
+ * The two wait METHODS are not here either. `workflow-replay-waits.ts` holds
+ * them, split at the seam `createDeterminismReads` already drew — a
+ * `Pick<WorkflowCtx, …>` factory bound to one walk — and it carries the key
+ * grammar (`sleep!<label>#<occurrence>`, `hook!<token>#<occurrence>`) and what
+ * naming the waits closed. What is left here is the STEP, which is the one
+ * method whose identity the walk itself decides.
  */
 
-import {
-  DEFAULT_STEP_MAX_ATTEMPTS,
-  type SleepOptions,
-  type StepOptions,
-  type WaitForOptions,
-  type WorkflowCtx,
-} from "@alexkroman1/aai";
+import { DEFAULT_STEP_MAX_ATTEMPTS, type StepOptions, type WorkflowCtx } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { createDeterminismReads } from "./workflow-replay-determinism.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
 import { createSuspendController, type SuspendController } from "./workflow-replay-suspend.ts";
-import { waitInsideStep } from "./workflow-replay-wait.ts";
+import { createWaitMethods } from "./workflow-replay-waits.ts";
 import { withRunContext } from "./workflow-run-context.ts";
 import type { StepGate } from "./workflow-step-gate.ts";
 import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
@@ -140,16 +141,6 @@ export type ReplayOptions = {
    */
   gate?: StepGate | undefined;
 };
-
-/**
- * The absolute moment a `sleep(until)` names.
- *
- * A `Date` is taken as given; a number is a DURATION from now. Read once, at the
- * first reach, and journaled — see `JournalStore.claimSleep`.
- */
-function wakeAtFrom(until: number | Date): number {
-  return until instanceof Date ? until.getTime() : Date.now() + until;
-}
 
 /**
  * What the RACE settling with a rejection means, once the walk's state is in hand.
@@ -226,11 +217,6 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // same names in the same order and so recomputes the same keys.
   const occurrences = new Map<string, number>();
 
-  // Sleeps are counted positionally rather than by name — a wait has no name, so
-  // there is nothing to key a map on. Same replay property: the body walks the
-  // same sleeps in the same order, so the Nth reach is the Nth wait.
-  let sleeps = 0;
-  let hooks = 0;
   /**
    * Where a wait PARKS, and the channel the walk suspends on.
    *
@@ -279,6 +265,11 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       refuse: setRefused,
       hold: suspend.hold,
     }),
+    // `ctx.sleep`/`ctx.waitFor`, each keyed by NAME under its own `!` space.
+    // Split out for the reason the reads above are — see
+    // `workflow-replay-waits.ts`, which also carries what naming the waits
+    // closed and the one residual it did not.
+    ...createWaitMethods({ runId, journal, suspend, refuse: setRefused }),
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       // IDENTITY first: which journal key is this call? See `WorkflowCtx` in the
       // SDK for why it is a name plus an occurrence count.
@@ -356,103 +347,6 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       // raced this one may have appended first, and both executions must return
       // the same thing or the two replays diverge from here on.
       return entry.output as T;
-    },
-
-    async sleep(until: number | Date, sleepOptions?: SleepOptions): Promise<void> {
-      // BEFORE the counter advances: a step body may not wait, and the two ways
-      // that used to go wrong are in `workflow-replay-wait.ts`.
-      const noWait = waitInsideStep("ctx.sleep");
-      if (noWait) {
-        refused = noWait.message;
-        throw noWait;
-      }
-      // Sleeps get their own key space rather than sharing the step counter, so
-      // an author's step LITERALLY named "sleep" (`sleep#0`) cannot alias a
-      // durable wait (`sleep!0`). `!` is not producible by `${name}#${n}`.
-      const occurrence = sleeps;
-      sleeps++;
-      const slot = suspend.enter();
-      try {
-        const record = await journal.claimSleep(
-          runId,
-          `sleep!${occurrence}`,
-          wakeAtFrom(until),
-          sleepOptions?.correlationId,
-        );
-        // Woken early, or the moment has passed — either way the wait is over. A
-        // deadline in the past is not an error: a run resuming after a long
-        // outage meets that case legitimately, and so does every replay after
-        // the wake.
-        if (record.woken || Date.now() >= record.wakeAt) return;
-        // PARKED, never thrown. The body's `await` here never resumes, so no
-        // `catch` sees a suspension and no `finally` runs on one — see
-        // `workflow-replay-suspend.ts`.
-        return slot.park(record.wakeAt);
-      } finally {
-        slot.end();
-      }
-    },
-
-    async waitFor<T>(token: string, waitOptions?: WaitForOptions): Promise<T | undefined> {
-      // Same refusal as `sleep` above, and for the same two reasons — a hook's
-      // `hook!N` key space shifts exactly like a sleep's, and reading a
-      // predecessor's record here hands the body somebody else's PAYLOAD.
-      const noWait = waitInsideStep("ctx.waitFor");
-      if (noWait) {
-        refused = noWait.message;
-        throw noWait;
-      }
-      // Its own key space again, for the reason sleeps have one.
-      const occurrence = hooks;
-      hooks++;
-      const slot = suspend.enter();
-      try {
-        const record = await journal.claimHook(runId, `hook!${occurrence}`, token);
-        // The FIRST payload, every replay. `claimHook` is idempotent on the key,
-        // so a re-walk reads what was delivered rather than registering a second
-        // wait.
-        if (record.delivered) return record.payload as T;
-
-        // No deadline: nothing but a signal ends this, so the wait contributes
-        // no wake time — `undefined` is what tells `earliestDeadline` to skip it.
-        if (waitOptions === undefined) return slot.park(undefined);
-
-        // A DEADLINE is journaled as its own sleep, sharing the hook's occurrence
-        // so the two travel together. That is what makes the window immune to
-        // replay: the wake time is decided the first time this wait is reached,
-        // where a `Promise.race` against a fresh `ctx.sleep` would restart it on
-        // every delivery and the window would never close.
-        const deadline = await journal.claimSleep(
-          runId,
-          `hookTimeout!${occurrence}`,
-          Date.now() + waitOptions.timeoutMs,
-          undefined,
-          // Not an ordinary sleep: a bare `wakeUp(runId)` cuts a SCHEDULE short
-          // and must not also close an approval window. See `SleepRecord.kind`.
-          "hookTimeout",
-        );
-        // Closed unanswered. The hook is CLOSED before the body continues, so a
-        // signal arriving a moment later cannot make the next replay read a
-        // payload and take the answered branch — see `HookRecord.closed`.
-        // `undefined` rather than a throw: a window closing is an outcome a body
-        // branches on, not a failure.
-        if (deadline.woken || Date.now() >= deadline.wakeAt) {
-          // The close is a COMPARE-AND-SET, and its answer is what decides the
-          // branch. A signal really can land between the deadline read above and
-          // this line, and closing over it was the divergence `HookRecord.closed`
-          // exists to prevent arriving by the other door: this walk would time
-          // out while every later replay read `delivered: true` and answered.
-          if (await journal.closeHook(runId, `hook!${occurrence}`)) return undefined;
-          // Refused, so the window was ANSWERED. Re-read it — `claimHook` is
-          // idempotent on the key, so this is the same read the next replay
-          // makes, which is exactly the point.
-          const answered = await journal.claimHook(runId, `hook!${occurrence}`, token);
-          return answered.payload as T;
-        }
-        return slot.park(deadline.wakeAt);
-      } finally {
-        slot.end();
-      }
     },
   };
 

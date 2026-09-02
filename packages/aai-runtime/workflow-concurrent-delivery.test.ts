@@ -154,7 +154,7 @@ function nodeArb(failing: boolean, fanOut = true): fc.Arbitrary<Node> {
   const shapes: fc.Arbitrary<Node>[] = [
     leafArb(),
     fc.integer({ min: 2, max: 3 }).map((count): Node => ({ t: "loop", name: "", count })),
-    fc.constant<Node>({ t: "sleep" }),
+    fc.constant<Node>({ t: "sleep", waitLabel: "" }),
     // A `ctx.step` whose body SUSPENDS — "one line away at every call site", and
     // the shape that found the attempt-budget defect. See the module doc.
     fc.constantFrom(...ALL_HOOK_MODES).map((mode): Node => ({ t: "hook", token: "", mode })),
@@ -366,7 +366,7 @@ function companionArb(): fc.Arbitrary<Program> {
   const shapes: fc.Arbitrary<Node>[] = [
     leafArb(),
     fc.integer({ min: 2, max: 3 }).map((count): Node => ({ t: "loop", name: "", count })),
-    fc.constant<Node>({ t: "sleep" }),
+    fc.constant<Node>({ t: "sleep", waitLabel: "" }),
     fc
       .array(leafArb(), { minLength: 1, maxLength: 2 })
       .map((children): Node => ({ t: "nested", name: "", children })),

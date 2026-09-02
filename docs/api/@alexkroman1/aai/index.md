@@ -6219,7 +6219,10 @@ and the reason a BULK draw belongs in a step:
 ##### sleep()
 
 ```ts
-sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+sleep<Label>(
+   label: Label & Literal<Label>, 
+   until: number | Date, 
+options?: SleepOptions): Promise<void>;
 ```
 
 Wait, durably — for a duration in milliseconds, or until an absolute `Date`.
@@ -6228,6 +6231,22 @@ Wait, durably — for a duration in milliseconds, or until an absolute `Date`.
 SUSPENDS: the body stops, the process is free, and the engine re-delivers the
 run when the time comes — which is what makes "check back tomorrow" a thing a
 workflow can express at all.
+
+## `label` is the wait's IDENTITY, exactly as a step's name is
+
+It is journaled as `sleep!<label>#<occurrence>`, so a `label` is what makes
+a wait survive a body that reaches a different NUMBER of waits than the walk
+that journaled them — a wait behind a condition, a wait added or removed
+while a run is in flight. Waits used to be keyed by POSITION alone, and then
+every wait after the one that moved read its predecessor's record: measured,
+a week-long `ctx.sleep` was skipped in full and the run reported
+`completed`, with the clock unmoved. `aai-runtime/workflow-replay-divergence.ts`
+carries that reproduction.
+
+So the same rules apply as to [WorkflowCtx.step](#step)'s name, and the
+`Literal` constraint says so at the call site: make it a string literal,
+give two call sites two labels, and let a loop reuse one — the occurrence
+count is what separates the iterations.
 
 **How long it really survives is a property of the JOURNAL**, which the
 DEPLOYMENT picks and the runtime's boot line names. On the platform and
@@ -6246,11 +6265,25 @@ step body that waits fails the run, and the message names the fix.
 
 ```ts no-check
 await ctx.step("draft", () => draft(input.topic));
-await ctx.sleep(6 * 60 * 60 * 1000, { correlationId: "review-window" });
+await ctx.sleep("review-window", 6 * 60 * 60 * 1000, { correlationId: "review" });
 await ctx.step("publish", () => publish(input.topic));
 ```
 
+###### Type Parameters
+
+###### Label
+
+`Label` *extends* `string`
+
 ###### Parameters
+
+###### label
+
+`Label` & `Literal`\<`Label`\>
+
+This wait's identity in the journal. A string LITERAL, for
+  the reason above; it is also what `aai workflow` prints for a suspended
+  run, so "review-window" reads where `sleep!0` did not.
 
 ###### until
 
@@ -6271,6 +6304,12 @@ Milliseconds to wait, or the `Date` to wait until. A value
   naming no ids wakes every outstanding SLEEP on the run — and deliberately
   not a `waitFor`'s deadline, so cutting a schedule short cannot also close
   an approval window.
+
+  Deliberately NOT defaulted from `label`, which is a different question:
+  `label` decides which JOURNAL ROW this wait is, and `correlationId`
+  decides which waits one `wakeUp` ends. A schedule polled in a loop wants
+  one label and one correlation id across every iteration; two independent
+  waits want two labels and may well want one shared id.
 
 ###### Returns
 
@@ -6456,9 +6495,12 @@ What the signaller is expected to send.
 
 `string`
 
-Who is being waited for. Two concurrent waits in one body
-  must use different tokens, or a single signal resolves whichever the
-  journal registered first and the other waits forever.
+Who is being waited for, and also this wait's IDENTITY in
+  the journal — it is keyed `hook!<token>#<occurrence>`, which is what makes
+  a wait survive a body that reaches a different number of them (see the
+  module doc). Two concurrent waits in one body must use different tokens,
+  or a single signal resolves whichever the journal registered first and the
+  other waits forever.
 
 ###### Returns
 

@@ -246,7 +246,7 @@ export async function researchFlow(
   // Suspended, not blocked. On resume the body re-runs from the top and every
   // step above returns its journaled result rather than researching again —
   // which is also what `file_it_now` ends early, through `ctx.workflows.wakeUp`.
-  await ctx.sleep(REVIEW_DELAY_MS);
+  await ctx.sleep("reviewWindow", REVIEW_DELAY_MS);
 
   // Whatever this returns is what `ctx.workflows.get(runId)` reports as `output`
   // on a completed run — so it is what the agent reads back, and what the

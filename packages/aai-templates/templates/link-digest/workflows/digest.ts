@@ -104,7 +104,7 @@ export async function digestFlow(input: { url: string }, ctx: WorkflowCtx) {
   // resumes when it comes due. Nothing about the code changes if it is six
   // hours — which is the interesting version, and the one that makes an
   // overnight digest a digest rather than a slow request.
-  await ctx.sleep(SETTLE_MS);
+  await ctx.sleep("settle", SETTLE_MS);
 
   const filedAt = await ctx.step("file", () => file(digest));
   return { ...digest, filedAt };

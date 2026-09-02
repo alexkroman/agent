@@ -10,10 +10,11 @@
     }
   },
   "eval": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "The eval workflow engine's WorkflowCtx gained sleep (recorded, not taken) and waitFor (refused with a named message, a hook's payload coming from outside the run). Its types also moved to workflow-engine-types.ts under the 500-line cap, which the rollup's provenance shows."
+      "1": "The eval workflow engine's WorkflowCtx gained sleep (recorded, not taken) and waitFor (refused with a named message, a hook's payload coming from outside the run). Its types also moved to workflow-engine-types.ts under the 500-line cap, which the rollup's provenance shows.",
+      "2": "EvalSleep carries the wait's label, so a workflow eval can assert which of a body's waits it reached rather than only a duration."
     }
   },
   "keys": {

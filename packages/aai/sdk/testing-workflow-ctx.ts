@@ -73,6 +73,12 @@ export type RecordedStep = {
 
 /** One wait the body asked for — and did NOT take. */
 export type RecordedSleep = {
+  /**
+   * The wait's `label` — its identity in a real run's journal, and the field a
+   * case asserting a SCHEDULE actually wants: a body with two waits is telling
+   * you WHICH one it reached, which a duration cannot.
+   */
+  label: string;
   /** Exactly what the body passed: milliseconds, or a `Date`. */
   until: number | Date;
   correlationId?: string | undefined;
@@ -166,7 +172,7 @@ export const WORKFLOW_CTX_NOW = 1_767_225_600_000;
  *
  * expect(output.headline).toBe("…");
  * expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
- * expect(ctx.slept).toEqual([{ until: 10_000 }]);
+ * expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
  * ```
  *
  * @public
@@ -216,8 +222,8 @@ export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtx
       return fn();
     },
 
-    async sleep(until: number | Date, sleepOptions?: SleepOptions): Promise<void> {
-      slept.push({ until, correlationId: sleepOptions?.correlationId });
+    async sleep(label: string, until: number | Date, sleepOptions?: SleepOptions): Promise<void> {
+      slept.push({ label, until, correlationId: sleepOptions?.correlationId });
     },
 
     // The three journaled reads, answered from the options above. NOT recorded

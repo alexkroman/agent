@@ -35,7 +35,7 @@ const narrator = workflow({
   run: async (input: { topic: string }, ctx) => {
     await report(`reading ${input.topic}`);
     await emit("results", { topic: input.topic });
-    await ctx.sleep(SLEEP_MS);
+    await ctx.sleep("nap", SLEEP_MS);
     await report("done");
     return { topic: input.topic, key: stepEnv("FIXTURE_KEY") };
   },
@@ -84,7 +84,7 @@ describe("createEvalWorkflowEngine", () => {
     expect(record.emitted).toEqual([{ namespace: "results", chunk: { topic: "otters" } }]);
     // RECORDED, not taken: a ten-second wait in a unit test would be the harness
     // pretending it can suspend.
-    expect(record.slept).toEqual([{ duration: SLEEP_MS }]);
+    expect(record.slept).toEqual([{ label: "nap", duration: SLEEP_MS }]);
     expect(record.elapsedMs).toBeTypeOf("number");
   });
 

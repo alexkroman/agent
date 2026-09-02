@@ -62,7 +62,7 @@ describe("a body that tries to observe its own suspend", () => {
     const cleanup = vi.fn(() => "undone");
     const outcome = await replay(journal, async (_input, ctx) => {
       try {
-        await ctx.sleep(60_000);
+        await ctx.sleep("week", 60_000);
         return "unreachable";
       } catch {
         // The shipped shape: cleanup, then an answer of its own. Under the throw
@@ -95,7 +95,7 @@ describe("a body that tries to observe its own suspend", () => {
     const outcome = await replay(journal, async (_input, ctx) => {
       let answer = "unreachable";
       try {
-        await ctx.sleep(60_000);
+        await ctx.sleep("week", 60_000);
         answer = "waited";
       } finally {
         answer = decide();
@@ -111,7 +111,7 @@ describe("a body that tries to observe its own suspend", () => {
     const { journal } = await seed();
     const after = vi.fn(() => "later");
     const outcome = await replay(journal, async (_input, ctx) => {
-      await ctx.sleep(60_000);
+      await ctx.sleep("week", 60_000);
       return ctx.step("after", after);
     });
 
@@ -148,16 +148,18 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
   test("a race over two sleeps wakes at the EARLIER deadline", async () => {
     const { journal } = await seed();
     const outcome = await replay(journal, async (_input, ctx) => {
-      await Promise.race([ctx.sleep(WEEK_MS), ctx.sleep(1000)]);
+      await Promise.race([ctx.sleep("far", WEEK_MS), ctx.sleep("near", 1000)]);
       return "raced";
     });
 
     expect(outcome.kind).toBe("suspended");
     // Both waits were REACHED and journaled, and the wake is the near one. Under
     // the throw this reported the WEEK and the second wait did not exist.
+    // Read back by LABEL — the keys name the waits, so this no longer depends
+    // on which arm of the race the walk happened to reach first.
     const [near, far] = await Promise.all([
-      journal.claimSleep("wrun_1", "sleep!1", Date.now() + 999_999, undefined),
-      journal.claimSleep("wrun_1", "sleep!0", Date.now() + 999_999, undefined),
+      journal.claimSleep("wrun_1", "sleep!near#0", Date.now() + 999_999, undefined),
+      journal.claimSleep("wrun_1", "sleep!far#0", Date.now() + 999_999, undefined),
     ]);
     expect(outcome).toEqual({ kind: "suspended", wakeAt: near.wakeAt });
     expect(far.wakeAt).toBeGreaterThan(near.wakeAt);
@@ -169,7 +171,10 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
     // what is left. Driven here by waking only the near wait.
     const { journal } = await seed();
     const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
-      await Promise.all([ctx.sleep(WEEK_MS), ctx.sleep(1000, { correlationId: "near" })]);
+      await Promise.all([
+        ctx.sleep("far", WEEK_MS),
+        ctx.sleep("near", 1000, { correlationId: "near" }),
+      ]);
       return "both";
     };
 
@@ -180,18 +185,23 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
     const second = await replay(journal, body);
     // Still suspended, and now on the WEEK — which is what "aggregate the
     // OUTSTANDING waits" means: a settled one contributes nothing.
-    const week = await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 999_999, undefined);
+    const week = await journal.claimSleep("wrun_1", "sleep!far#0", Date.now() + 999_999, undefined);
     expect(second).toEqual({ kind: "suspended", wakeAt: week.wakeAt });
   });
 
   test("a hook contributes no wake time, so a sleep beside it decides", async () => {
     const { journal } = await seed();
     const outcome = await replay(journal, async (_input, ctx) => {
-      await Promise.race([ctx.waitFor("tok_gate"), ctx.sleep(1000)]);
+      await Promise.race([ctx.waitFor("tok_gate"), ctx.sleep("near", 1000)]);
       return "raced";
     });
 
-    const stored = await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 999_999, undefined);
+    const stored = await journal.claimSleep(
+      "wrun_1",
+      "sleep!near#0",
+      Date.now() + 999_999,
+      undefined,
+    );
     expect(outcome).toEqual({ kind: "suspended", wakeAt: stored.wakeAt });
   });
 
@@ -221,7 +231,7 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
       return "done";
     });
     const outcome = await replay(journal, async (_input, ctx) => {
-      await Promise.all([ctx.sleep(WEEK_MS), ctx.step("slow", work)]);
+      await Promise.all([ctx.sleep("week", WEEK_MS), ctx.step("slow", work)]);
       return "both";
     });
 
@@ -249,7 +259,7 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
     });
 
     const outcome = await replay(journal, async (_input, ctx) => {
-      await Promise.all([ctx.sleep(WEEK_MS), ctx.uuid()]);
+      await Promise.all([ctx.sleep("week", WEEK_MS), ctx.uuid()]);
       return "both";
     });
 
@@ -265,7 +275,7 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
     // honest reading of a body that asked for whichever came first.
     const { journal } = await seed();
     const outcome = await replay(journal, async (_input, ctx) =>
-      Promise.race([ctx.sleep(WEEK_MS), ctx.step("fast", () => "work won")]),
+      Promise.race([ctx.sleep("week", WEEK_MS), ctx.step("fast", () => "work won")]),
     );
 
     expect(outcome).toEqual({ kind: "completed", output: "work won" });

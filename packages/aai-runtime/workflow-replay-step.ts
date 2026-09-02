@@ -11,7 +11,7 @@
  * **A suspension cannot reach this loop at all, and there is no arm for one.**
  * That is true twice over now. A step cannot wait: `ctx.sleep` and `ctx.waitFor`
  * belong to the body and both REFUSE when reached inside a step — the closure a
- * step is handed CAPTURES `ctx`, so `ctx.step("waiting", () => ctx.sleep(60_000))`
+ * step is handed CAPTURES `ctx`, so `ctx.step("waiting", () => ctx.sleep("nap", 60_000))`
  * was one line away at every call site, and `workflow-replay-wait.ts` carries the
  * check and the two bugs it ends. And a body-level wait no longer THROWS: it
  * parks on a promise that never settles and the walk suspends out of band

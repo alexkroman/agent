@@ -37,7 +37,7 @@ const digest = workflow({
   input: z.object({ url: z.string() }),
   run: async (input: { url: string }, ctx) => {
     await report(`reading ${input.url}`);
-    await ctx.sleep(SLEEP_MS);
+    await ctx.sleep("nap", SLEEP_MS);
     return { headline: `about ${input.url}` };
   },
 });
@@ -125,7 +125,7 @@ describe("openEvalWorkflows", () => {
     expect(run.reported).toEqual(["reading https://example.test/post"]);
     // The honest report: the body ASKED for ten seconds and the harness did not
     // wait, because a suspension is the property it cannot reproduce.
-    expect(run.slept).toEqual([{ duration: SLEEP_MS }]);
+    expect(run.slept).toEqual([{ label: "nap", duration: SLEEP_MS }]);
     expect(run.error).toBeUndefined();
   });
 

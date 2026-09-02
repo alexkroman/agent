@@ -344,7 +344,7 @@ export type JournalStore = {
    * whatever is stored on every reach after.
    *
    * Idempotent on `key`, and that is the property the whole mechanism rests on:
-   * a body is replayed, so `ctx.sleep(60_000)` is evaluated again on every
+   * a body is replayed, so `ctx.sleep("poll", 60_000)` is evaluated again on every
    * delivery. Storing the newly-computed deadline each time would push it 60
    * seconds further out per replay and the run would never wake. So the first
    * write wins and later calls are reads.

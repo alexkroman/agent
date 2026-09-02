@@ -249,7 +249,7 @@ const output = await digestFlow({ url: "https://example.com/a" }, ctx);
 
 expect(output.headline).toBe("…");
 expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
-expect(ctx.slept).toEqual([{ until: 10_000 }]);
+expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
 ```
 
 ***
@@ -1635,6 +1635,7 @@ an error, not a no-op: see [deployedAgent](#deployedagent).
 ```ts
 type RecordedSleep = {
   correlationId?: string;
+  label: string;
   until: number | Date;
 };
 ```
@@ -1648,6 +1649,16 @@ One wait the body asked for — and did NOT take.
 ```ts
 optional correlationId?: string;
 ```
+
+##### label
+
+```ts
+label: string;
+```
+
+The wait's `label` — its identity in a real run's journal, and the field a
+case asserting a SCHEDULE actually wants: a body with two waits is telling
+you WHICH one it reached, which a duration cannot.
 
 ##### until
 

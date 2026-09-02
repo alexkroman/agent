@@ -73,7 +73,7 @@ describe("a suspended run", () => {
     const { engine } = harness(async (_input, ctx) => {
       // Short enough to observe, long enough that the first delivery really does
       // suspend rather than walking straight through.
-      await ctx.sleep(20);
+      await ctx.sleep("nap", 20);
       return ctx.step("after", after);
     });
     const runId = await engine.start("digest", [{}]);
@@ -109,7 +109,7 @@ describe("a suspended run", () => {
     // to wait a month would wake at once, re-suspend on the same journaled wake
     // time, and spin for the life of the process. The re-arm is what stops that.
     const body = vi.fn(async (_input: Record<string, unknown>, ctx: WorkflowCtx) => {
-      await ctx.sleep(40 * 24 * 60 * 60 * 1000);
+      await ctx.sleep("month", 40 * 24 * 60 * 60 * 1000);
       return "much later";
     });
     const { engine } = harness(body);
@@ -129,7 +129,7 @@ describe("a suspended run", () => {
 describe("a run suspended when the engine went away", () => {
   /** A body that sleeps once and then does one step. */
   const napper = (ms: number, after: () => unknown) => async (_i: unknown, ctx: WorkflowCtx) => {
-    await ctx.sleep(ms);
+    await ctx.sleep("nap", ms);
     return ctx.step("after", after);
   };
 

@@ -30,7 +30,7 @@ export function journalWaitConformance(arm: JournalArm): void {
   describe(`journal conformance (waits): ${arm.label}`, () => {
     describe("claimSleep decides a deadline ONCE", () => {
       test("the first write wins and every later call is a READ", async () => {
-        // A body is replayed, so `ctx.sleep(60_000)` is evaluated again on every
+        // A body is replayed, so `ctx.sleep("poll", 60_000)` is evaluated again on every
         // delivery. Storing the newly-computed deadline each time pushes it 60
         // seconds further out per replay and the run never wakes.
         const journal = arm.journal();

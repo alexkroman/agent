@@ -354,7 +354,7 @@ export function createMemoryJournal(): JournalStore {
     ): Promise<SleepRecord> {
       const slot = slotOf(runId);
       if (!slot) throw new Error(`workflow run ${runId} not found`);
-      // First write wins. A replay re-evaluates `ctx.sleep(60_000)` and would
+      // First write wins. A replay re-evaluates `ctx.sleep("poll", 60_000)` and would
       // otherwise store a deadline 60s further out on every delivery.
       const existing = slot.sleeps.get(key);
       if (existing) return { ...existing };

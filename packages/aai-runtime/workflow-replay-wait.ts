@@ -3,9 +3,10 @@
  * A step body may not WAIT, and this is the check that says so.
  *
  * `ctx.sleep` and `ctx.waitFor` belong to the body. The closure a step is handed
- * CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep(2000))` is one
- * line away at every call site — and until this module existed the engine ran it,
- * silently and wrongly, in two distinct ways.
+ * CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep("nap", 2000))`
+ * is one line away at every call site — and until this module existed the engine
+ * ran it, silently and wrongly, in three distinct ways. Naming the waits closed
+ * one of them; the refusal is still owed for the other two.
  *
  * ## What it really cost, measured
  *
@@ -17,13 +18,13 @@
  * - **The body re-runs from the top on every delivery.** A step that calls a paid
  *   provider or writes a file does it once per suspend. Reproduced: a one-step
  *   body logged `napper` **twice** across two deliveries and reported `completed`.
- * - **And every LATER wait in the run reads the wrong record.** This is the
- *   sharper half and it is not a duplicate-work problem at all. Waits are keyed
- *   POSITIONALLY (`sleep!0`, `hook!0`) off a counter that advances only when a
- *   wait is REACHED — and a settled step's body is not re-executed, so its wait
- *   stops being reached the moment the step lands. Every wait after it slides one
- *   place down the key space and reads its predecessor's record. Reproduced, and
- *   this is the whole run:
+ * - **And every LATER wait in the run read the wrong record — until the waits
+ *   were NAMED.** This was the sharper half and is not a duplicate-work problem
+ *   at all. Waits were keyed POSITIONALLY (`sleep!0`, `hook!0`) off a counter
+ *   that advances only when a wait is REACHED — and a settled step's body is not
+ *   re-executed, so its wait stops being reached the moment the step lands. Every
+ *   wait after it slid one place down the key space and read its predecessor's
+ *   record. Reproduced, and this is the whole run:
  *
  *   ```text
  *   walk 1  napper enters, sleep!0 claimed          -> suspended
@@ -36,12 +37,22 @@
  *
  *   The week-long wait was skipped in full, with the clock unmoved between walks
  *   2 and 3, and the run reported `completed`. A durable schedule silently did
- *   not happen. `sdk/workflow-ctx.ts` already names this hazard in the abstract
- *   ("a body reaching a different NUMBER of waits reads another wait's record");
- *   a wait inside a step is the one shape that GUARANTEES it, since settling the
- *   step is what changes the count.
+ *   not happen. A wait inside a step was the one shape that GUARANTEED it, since
+ *   settling the step is what changes the count.
+ *
+ *   **This half is CLOSED, and not by this check.** Keys are
+ *   `sleep!${label}#${occurrence}` and `hook!${token}#${occurrence}` now, so the
+ *   walk-3 line above reads `sleep!final#0` whether or not `napper`'s wait was
+ *   reached, and the count changing costs nothing. It is recorded here because
+ *   the transcript is the clearest statement of what positional keys did, and
+ *   because it is one of three reasons for this refusal rather than the whole of
+ *   it — the other two are below and both stand.
  *
  * ## Why refusing, rather than warning or typing it
+ *
+ * So TWO of the three reasons survive named keys: the duplicate execution above,
+ * and the liveness argument below — which is the strongest of the three and
+ * would carry the refusal on its own.
  *
  * There is no legitimate use. A step body that wants a real delay wants a timer
  * (`sleep` from `@alexkroman1/aai/internal`), not a durable suspension — a
@@ -56,8 +67,9 @@
  * settle, holding the walk open against the very check that would suspend it.
  * `replayRun` would never return. Measured by A/B: with this check disabled,
  * all eight cases in the spec beside this module stop failing and start timing
- * OUT at the suite's 5-second ceiling. That is a strictly worse failure than the
- * two below, and it is why the refusal must land BEFORE the wait is claimed.
+ * OUT at the suite's 5-second ceiling. That is a strictly worse failure than a
+ * duplicated step body, and it is why the refusal must land BEFORE the wait is
+ * claimed.
  *
  * **A TYPE cannot reach this.** The `Literal<Name>` guard on `ctx.step`'s name
  * types an ARGUMENT; this would have to retype a CAPTURED BINDING — the outer
@@ -96,9 +108,9 @@ export function waitInsideStep(method: string): FatalError | undefined {
   return new FatalError(
     `${method} was called inside ctx.step("${step.name}"), and a step body may not wait. ` +
       "A suspend unwinds out of the step without journaling it, so the body re-runs " +
-      "from the top — side effects included — on every delivery, and once the step " +
-      "does settle its wait stops being reached and every later wait in the run reads " +
-      "the wrong record. Move the wait out of the step and into the workflow body: " +
-      `await ctx.step("${step.name}", …) then await ${method}(…).`,
+      "from the top — side effects included — on every delivery; and a wait parks on " +
+      "a promise that never settles, so the step awaits something that cannot happen " +
+      "and this delivery never returns at all. Move the wait out of the step and into " +
+      `the workflow body: await ctx.step("${step.name}", …) then await ${method}(…).`,
   );
 }

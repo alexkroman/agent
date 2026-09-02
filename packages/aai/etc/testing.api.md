@@ -181,6 +181,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 
 // @public
 export type RecordedSleep = {
+    label: string;
     until: number | Date;
     correlationId?: string | undefined;
 };
@@ -829,7 +830,7 @@ type WorkflowCtx = {
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
-    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };

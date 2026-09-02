@@ -709,44 +709,14 @@ replaces. A MISSING directory throws for the same reason.
 
 ## Rendering this package is a docs decision, and it cannot be half-made
 
-There is no `typedoc.json` here, and its absence is now a measured decision
-rather than an oversight. Two things make it one.
-
-**A package-local config alone turns the suite red.**
-`packages/aai-templates/docs-markdown-gate.test.ts` globs `packages/*/typedoc.json`
-and asserts that every package holding one has committed markdown under
-`docs/api/` — so the file cannot land before the render that produces its page.
-The coupling is deliberate and it is wider than that one test: flipping this on
-means `docs/typedoc.json`'s `entryPoints`, the `include` in
-`docs/tsconfig.typedoc.json`, the `dependsOn` + `inputs` of turbo's `docs` task,
-the retraction of `UNDOCUMENTED_SUBPATHS["aai-runtime"]["."]` in
-`scripts/docs-markdown.mjs` (which errors on a subpath that is both documented
-AND excused), and the regenerated `docs/api/` — one change, or a red gate.
-
-**And the answer today is no.** `docs/CLAUDE.md` argues it: a ~220-export
-surface aimed at somebody EMBEDDING an agent, rendered beside the SDK, rebuilds
-the two-thirds-of-a-combined-reference the runtime split undid. The deny-list
-entry says what would change the answer — "revisit if embedders ask for a
-rendered page, then it gets its own, not a share of the SDK's".
-
-What is worth not rediscovering is that the config is a five-line file plus two
-options, both earned by a warning an actual render produced, and that with them
-this package renders CLEAN — zero warnings under `treatWarningsAsErrors`, one
-~7,100-line `@alexkroman1/aai-runtime.md`, against `aai` and `aai-ui` in the
-same project:
-
-- `entryPoints: ["dist/runtime-barrel.d.ts"]` — the only documentable subpath,
-  since `./internal` is deny-listed for the reason its own module doc gives.
-- `intentionallyNotExported: ["EventsNamed"]` — the `Extract` helper
-  `TransportEventBody` is written as. Same call as `DistributiveOmit` in
-  `packages/aai/typedoc.json`: a reader gets the resolved union in the rendered
-  signature and can never name the helper.
-- `externalSymbolLinkMappings` for `ai`'s `LanguageModel`, which `resolveLlm`
-  returns and `LlmRegistryEntry.create` builds.
-
-Rendered in ISOLATION it reports seven more, all `{@link Db}`-shaped links into
-`@alexkroman1/aai`. Those are an artifact of the SDK not being in the project,
-not a defect in these comments — do not "fix" them by deleting links.
+There is no `typedoc.json` here, and its absence is a measured decision rather
+than an oversight — a package-local config alone turns the docs gate red, and
+the answer today is no. **The whole account is in
+[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "Rendering `aai-runtime` is a docs
+decision"**: the five files one change would have to touch together, what a real
+render measured (clean under `treatWarningsAsErrors`, with the two options that
+earned their place), and what would change the answer. It moved there when this
+guide hit its 120,000-char cap; that guide owns all three rendered artifacts.
 
 ## A run's journal has THREE homes, and the order between them is a decision
 
@@ -932,12 +902,62 @@ a healthy resume, and raising is unsound without `claimAttempt`'s corroboration.
 **Inside a `ctx.step` they are REFUSED**, by the same `currentRun()?.step` test
 and for the same key-shift reason as the section below.
 
+### A wait is keyed by NAME, and `ctx.sleep` takes a label for it
+
+`ctx.sleep(label, until, options?)` and `ctx.waitFor(token, options?)` journal
+their waits as `sleep!<label>#<occurrence>` and `hook!<token>#<occurrence>` —
+name plus occurrence, exactly like `ctx.step`. The occurrence counters are PER
+NAME, so a loop is one label and N rows, and inserting a wait shifts nothing.
+
+They were two bare ordinals, and then a body reaching a different NUMBER of waits
+read its predecessor's record. Two shapes, both legal code with no author mistake
+in them beyond a condition:
+
+```ts no-check
+if (somethingAboutTheClock) await ctx.sleep("early", 1000);
+await ctx.sleep("schedule", WEEK_MS); // sleep!1 on walk 1, sleep!0 on walk 2
+```
+
+Positionally, walk 2 read the elapsed `early` record and the week-long wait
+resolved instantly, reporting `completed` with the clock unmoved. The hook
+version is worse: the body is handed the other wait's PAYLOAD.
+`workflow-replay-wait.test.ts`'s "a body that reaches a different NUMBER of
+waits" pins all three cases and A/Bs green against positional keys.
+
+Three things not to relitigate:
+
+- **`label` is REQUIRED, and `Literal<Label>` types it.** The same constraint
+  `ctx.step`'s name carries, for the same reason — an identity computed at run
+  time is the hazard the whole scheme exists to remove. It was a breaking
+  signature change, taken while there are no external consumers.
+- **`correlationId` is NOT defaulted from `label`.** They answer different
+  questions: `label` decides which journal ROW this wait is, `correlationId`
+  decides which waits one `wakeUp` ends. A polled schedule wants one label and one
+  id across every iteration; two independent waits want two labels and may want a
+  shared id.
+- **The three determinism reads stay positional** (`now!0`, `random!0`,
+  `uuid!0`). They take no argument to name, and they journal through `appendStep`
+  so a reach is at least recorded for the divergence check. `sdk/workflow-ctx.ts`
+  carries why requiring a literal there is the worse trade.
+
+What is left is one shape, and it is strictly better than what it replaced: a
+label or token that is ITSELF non-deterministic mints a key no walk has reached,
+so the run registers a fresh wait and PARKS on something nobody can signal. That
+hangs rather than answering wrongly, and nothing detects it —
+`workflow-replay-divergence.ts` states the residual and why the NEW-key report
+that would catch it is not built. `waitTokenDiverged` there is the nearest thing:
+it compares the token `claimHook` hands back against the one the walk reached, so
+it is an assertion about the KEY SCHEME (unreachable while a key names its token)
+rather than about the body, and it is what caught the positional case.
+
 ### A step body may not WAIT, and the engine refuses one that does
 
 `ctx.sleep` and `ctx.waitFor` belong to the body. The closure `ctx.step` is
-handed CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep(2000))` is
-one line away at every call site, and until `workflow-replay-wait.ts` existed the
-engine ran it — silently, and wrongly in two separate ways. Both are measured:
+handed CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep("nap",
+2000))` is one line away at every call site, and until `workflow-replay-wait.ts`
+existed the engine ran it — silently, and wrongly in three separate ways. Two of
+them are measured below and both still stand; the third was the key slide, which
+naming the waits closed independently (see "A wait is keyed by NAME").
 
 - **The step body re-ran from the top on every delivery.** The suspend unwinds
   out of the step, the attempt charge is released (correct — a suspend settles
@@ -945,23 +965,11 @@ engine ran it — silently, and wrongly in two separate ways. Both are measured:
   closure. A one-step body logged its effect **twice** across two deliveries and
   reported `completed`. For a step that calls a paid provider that is a duplicate
   charge, which is how this was found.
-- **And every LATER wait in the run read the wrong record.** This is the sharper
-  half and it is not a duplicate-work problem at all. Waits are keyed
-  POSITIONALLY (`sleep!0`, `hook!0`) off a counter that advances only when a wait
-  is REACHED — and a settled step's body is not re-executed, so its wait stops
-  being reached the moment the step lands, and every wait after it slides one
-  place down the key space. Reproduced, clock unmoved between walks 2 and 3:
-
-  ```text
-  walk 1  napper enters, sleep!0 claimed                      -> suspended
-  walk 2  napper enters again, sleep!0 elapsed, napper#0
-          journaled, body-level wait claims sleep!1           -> suspended, +7 days
-  walk 3  napper answered from the journal (body NOT run),
-          body-level wait is now sleep!0 — elapsed on walk 2  -> completed
-  ```
-
-  A week-long durable wait skipped in full, reported `completed`. For
-  `ctx.waitFor` the same shift hands the body somebody else's PAYLOAD.
+- **And every LATER wait in the run READ the wrong record.** That half is CLOSED,
+  and not by this check — see "A wait is keyed by NAME" above, which carries the
+  transcript. It is listed here because it was one of three reasons for the
+  refusal rather than the whole of it, and because `workflow-replay-wait.ts`'s
+  own doc is still the clearest statement of what positional keys cost.
 
 So both methods now refuse when `currentRun()?.step` is set — which is true for
 the whole of a step's execution, including inside every helper it awaits, since
@@ -971,15 +979,10 @@ through `replayRun`'s `refused`, so a body that catches broadly cannot turn it
 into `completed` — the third verdict on that channel, beside a divergence and an
 abandoned step.
 
-**It cannot be a TYPE, and that is worth stating because the repo has precedent
-that looks like it transfers.** `ctx.step`'s `Literal<Name>` guard types an
-ARGUMENT; this would have to retype a CAPTURED BINDING. The outer `ctx` is
-lexically in scope inside the callback and TypeScript has no effect system, so a
-step-scoped `ctx` parameter would be advice a one-line closure ignores, not a
-gate. Runtime is the only layer that sees it. Nor is it worth making RESUMABLE:
-journaling a step's partial progress needs continuations, and the affordance for
-"work, then wait, then more work" already exists — two steps with the wait
-between them.
+**It cannot be a TYPE**, and it is not worth making RESUMABLE either;
+`workflow-replay-wait.ts`'s module doc argues both (a captured binding is not an
+argument, and TypeScript has no effect system; "work, then wait, then more work"
+is already two steps with the wait between them).
 
 **What the refusal cost, recorded because it is a real loss.** The property
 grammar's `nestedWait` node (`_workflow-resume-program.ts`) generated exactly
