@@ -154,3 +154,100 @@ JS SDK exposes sandbox MEMORY snapshots (today it exposes only
 `snapshotFilesystem`; memory snapshots are Python-SDK experimental),
 restore-from-snapshot slots into this single spawn path — do NOT
 reintroduce a host-managed pool to approximate it.
+
+## Nothing is region-pinned — not guest sandboxes, and not the services
+
+**Capacity beats locality.** `MODAL_SANDBOX_REGION`
+(comma-separated for multiple) still pins SANDBOX placement via Modal's
+`regions` create param, but it is an operator override that production
+leaves unset; `build_image` (scripts/modal_image.py) deliberately bakes no
+value, and neither app's `@app.function` passes `region=`.
+
+The WEB service's pin (once `us-east-2`) was removed after it took
+production down, and it is worth knowing the shape because no symptom names
+a region: the app sits at `deployed` with **zero tasks** despite
+`MIN_CONTAINERS=1`, requests hang until the client times out having received
+**zero bytes**, and there are **no container logs at all** — not a crash,
+because no container is ever created, so `modal app logs` replays the last
+image build and then streams silence. Everything that normally localizes a
+fault says healthy: the image builds, the secrets resolve, and booting the
+entry by hand inside the function's own spec (`modal shell <file>::server
+-c 'node …'`) serves fine. Neither a redeploy nor `modal app rollover`
+helps — both only re-ask for a container that still cannot be placed. A
+warm floor is what makes a pin dangerous, so if a measurement ever justifies
+re-pinning, prefer Modal's region LIST (a fallback order) over one value.
+
+It used to be exported as `MODAL_SANDBOX_REGION` too, so every guest was
+confined to one region's spare capacity. The failure that buys is a spawn
+Modal cannot schedule inside the ~50s `sandbox.tunnels()` waits, surfacing
+as `SandboxTimeoutError: Sandbox operation timed out` — the whole session
+fails, and the more regions are available the less often it happens.
+
+The locality it bought was narrower than the note that justified it claimed:
+AGENT guests have no host channel at all, so a voice turn crosses that hop
+**zero** times and only the studio's control-channel RPCs pay it, outside any
+latency budget. Re-pin per environment if that stops being true; don't re-bake
+it into the shared image.
+
+## Guest resources are a BURST RANGE
+
+**Reserve the idle shape, cap the build shape.** `SANDBOX_MEMORY_MB` /
+`SANDBOX_CPU` reserve; `SANDBOX_MEMORY_LIMIT_MB`
+/ `SANDBOX_CPU_LIMIT` cap. Modal constrains the pair from both sides — a bare
+cap fails sandbox creation ("must also specify cpu when cpuLimit is
+specified") and a reservation above its cap is rejected — so
+`parseSandboxLimitsFromEnv` reconciles them in one place and **throws on a
+cap with no reservation**, naming the env var, rather than letting the spawn
+die inside Modal on parameters the operator never set.
+
+**Why they must stay two numbers is argued in `modal_deploy.py`'s own
+guest-sandbox resources block** — the bimodal load, the direct-reclaim wedge
+a single number produced, and why the cgroup cap defeats moving the bundler
+into a child process (#845, reverted in #863). Read it there; this guide is
+the copy at a size cap. What it does not carry is the MEASUREMENT, so: on a
+wedged production sandbox, RSS pinned flat at 1.29 GB, ~1 core split seven
+ways across 4 V8 GC workers + the main thread + 2 rolldown workers, **zero**
+I/O, 453 CPU-seconds and no progress, versus 253 MB / 0.97 CPU-seconds on an
+idle sibling. It reads as a hung build, never as an OOM — and
+`--max-old-space-size` cannot help, because the memory is native rather than
+V8's.
+
+**The burst range is set in ONE place** — the guest-sandbox resources block
+in `aai-server/modal_deploy.py`, the only Modal app there is. Studio
+sandboxes (coding-agent sessions, Publish) are spawned by that same process
+and inherit it, which matters because their `test_agent`/Publish builds are
+the workload the cap exists for. (This said "BOTH Modal apps … keep the two
+blocks in lockstep" until the second one went with the split deployment.)
+
+## The guest snapshot image is resolved AT BOOT, not on the first spawn
+
+`prewarmModal(harnessPath)` in modal-context.ts, called from
+`assertSandboxBackendOrWarn`. Two memoized stages otherwise charged to
+whoever spawns first: the Modal app lookup (a gRPC round trip), and the
+harness image — reading the ~13 MB harness, the synchronous SHA-256 that
+forms its content-addressed tag, and resolving that tag. On a harness
+version nobody has published yet — i.e. right after EVERY deploy —
+"resolving" means BUILDING: toolchain layer, builder sandbox, 13 MB write,
+`snapshotFilesystem`, publish. That landed on one unlucky user's first
+voice session or studio chat. `createGuestSandbox` awaits the same memoized
+promise, so a spawn racing the prewarm joins it rather than starting a
+second build, and replicas racing each other are no worse than the
+concurrent cold spawns that raced before (the resolver tries
+`images.fromName(tag)` first). Fire-and-forget: a failure only warns and
+the memo resets, exactly as when the first spawn was the first caller.
+
+## A `skopeo` manifest miss is reported as nothing at all
+
+**Modal reports it as `Image build for im-<id> failed with the exception:` and
+then NOTHING** — no tag, no registry, no remedy. One outage per image path so
+far, and the two paths failed differently. PINNED: the TAG is
+source-independent, the IMAGE is not (each source publishes one place
+only), so setting
+`GUEST_IMAGE_REGISTRY` orphaned every earlier `harness_image_tag`;
+`resolvePinAcrossSources` probes Modal first and logs the ref. CURRENT — a
+studio session, a first-ever spawn — logged nothing, that promise having been
+kept on the pinned half alone, and its create escaped
+`SandboxUnavailableError`, both spawners calling `createGuestSandbox` OUTSIDE
+the terminating `try`: a 500 where the taxonomy owes a 503. See
+`translateSpawnFailure`, and `guest-image-wait-gate.test.ts` for the gate that
+no-op'd over a broken publisher for three green deploys.

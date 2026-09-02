@@ -30,7 +30,7 @@
  * complete files (parts of a multi-file upload, {@link stepSpeak}'s output)
  * passes them through untouched.
  *
- * ```ts no-check
+ * ```ts
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  * import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
  *

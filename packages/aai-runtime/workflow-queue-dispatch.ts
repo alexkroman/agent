@@ -58,6 +58,33 @@ export const WORKFLOW_QUEUE_PATH = "/workflow-queue";
 export const QUEUE_NAME_HEADER = "x-vqs-queue-name";
 
 /**
+ * How long the platform is asked to hold a message whose run is ALREADY being
+ * walked here — see {@link deliverQueueMessage}, "A run is walked once at a
+ * time".
+ *
+ * Short, because the only thing this delay costs is how long a message sits
+ * behind a walk that has ALREADY ended in a way this process could not observe
+ * — and there is no such way: the entry is dropped in a `finally`, and the one
+ * outcome that skips a `finally` is the process dying, which takes the whole
+ * set with it. So the number is not a liveness bound; it is the poll interval
+ * of an honest "still busy", and one round trip against a resident guest every
+ * five seconds is cheap next to the alternative it replaces (a second walk of
+ * the same run, re-running every step).
+ *
+ * @internal
+ */
+export const QUEUE_DELIVERY_BUSY_SECONDS = 5;
+
+/**
+ * The runs this process is walking right now, by id.
+ *
+ * Module-scope because the scope is right: a guest serves every run of its slug
+ * from one process, and this door is the only way a platform delivery gets in.
+ * Same shape as `aai-studio-server/studio-workspace.ts`'s `workspaceLock`.
+ */
+const walking = new Set<string>();
+
+/**
  * The DevKit's queue-name prefix, up to the kind — `__[<namespace>_]wkf_`.
  *
  * Exported as a PATTERN STRING rather than a `RegExp` because the platform's
@@ -168,6 +195,47 @@ export function queueNameKind(queueName: string | null): "workflow" | "step" | u
  * 500 for a corrupt message spends the whole budget on it and then abandons it
  * anyway, several minutes later.
  *
+ * ## A run is walked once at a time, and the door is the only place that knows
+ *
+ * `QUEUE_DELIVERY_TIMEOUT_MS` (60s, `aai-server/workflow-queue-deliver.ts`)
+ * aborts the platform's `fetch`, and an abort closes the RESPONSE — it does not
+ * stop the walk. Nothing here is plumbed to the request's signal, `serveFetch`
+ * merely `await`s this handler, and a promise is not cancellable, so a step
+ * still running at 60s carries on to completion while the platform records the
+ * delivery as failed and re-presents the message.
+ *
+ * On its own that would be harmless. What makes it expensive is that
+ * `replayRun` reads the journal ONCE per walk, so a walk that starts before the
+ * first one has journaled anything re-executes EVERY step of the run rather
+ * than only the slow one. Measured on a deployed workflow app whose first step
+ * ran 75s: the redelivery landed 61.15s after the first (60,000 abort plus
+ * `RETRY_BACKOFF_MS[0]`), the second walk re-ran that step in full, and then —
+ * on a run the first walk had already marked `completed` — re-ran the plan, all
+ * four provider calls and the merge. Twice the provider bill, twice the temp
+ * disk, and on a long recording a guest's `/tmp` is what runs out first.
+ *
+ * So a delivery for a run this process is already walking is PARKED rather than
+ * walked: `{"timeoutSeconds": n}`, which the platform reads as "bring this back
+ * later" and which **touches no attempt** (`reschedule` in
+ * `aai-server/workflow-queue-store.ts` says so in those words). Three
+ * properties, and each is why it is a park rather than one of the alternatives:
+ *
+ * - **The message SURVIVES.** Acking it would be the cheap answer and it throws
+ *   away the only redelivery a dead walk has left — at-least-once is the whole
+ *   contract, and the walk this defers to is one nothing can see the health of.
+ * - **It spends no retry budget**, so a genuinely slow run cannot be abandoned
+ *   for being slow. Answering a busy run's message with a 500, or blocking
+ *   behind the walk until the platform's own 60s lapses again, both burn
+ *   `QUEUE_MAX_ATTEMPTS` and end in an abandoned message.
+ * - **It is per PROCESS, which is exactly what it can promise.** Two replicas
+ *   would each keep their own set — but the platform's claim serializes a run's
+ *   orchestration messages, so there is only ever one message in flight for a
+ *   run, and overlapping walks come from redelivery to ONE guest rather than
+ *   from two guests at once. Do not read this as a distributed lock: the
+ *   run-level lease with an expiry that WOULD be one — the same heartbeat
+ *   `workflow-replay-step.ts` names as what would close its own residual — is
+ *   not built, and this gate is not a substitute for it.
+ *
  * @internal
  */
 export async function deliverQueueMessage(
@@ -182,7 +250,19 @@ export async function deliverQueueMessage(
       { status: 400 },
     );
   }
-  await deliver(runId);
+  // Checked BEFORE the walk is entered, and answered with a park rather than a
+  // failure — see "A run is walked once at a time".
+  if (walking.has(runId)) {
+    return Response.json({ timeoutSeconds: QUEUE_DELIVERY_BUSY_SECONDS });
+  }
+  walking.add(runId);
+  try {
+    await deliver(runId);
+  } finally {
+    // In a `finally`, so a walk that THREW does not wedge its run: the door
+    // answers 500, the platform retries, and the retry must be able to walk.
+    walking.delete(runId);
+  }
   // The STATUS is not reported, and that is deliberate: the platform acks on a
   // 200 and a run that is merely still suspended has been fully served. Reporting
   // "suspended" as anything but success would have the queue retry a wait.

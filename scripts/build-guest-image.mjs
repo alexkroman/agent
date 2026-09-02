@@ -18,15 +18,27 @@
  * | `BASE_IMAGE`     | `DEFAULT_SANDBOX_IMAGE` (modal-context.ts)         |
  * | `SYSTEM_PACKAGES`| `GUEST_SYSTEM_PACKAGES` (modal-system-packages.ts) |
  * | `SDK_SPECS`      | `SDK_PACKAGES` (modal-harness-image.ts) — as PACKED TARBALLS (the workspace's, or a release's `changeset pack` output) or `name@version`; see `resolveSdkSource` |
- * | `GUEST_ROOT`     | `GUEST_ROOT` (modal-harness-image.ts)              |
+ * | `GUEST_ROOT`     | `GUEST_ROOT` (guest-exec-env.ts)                   |
+ *
+ * That last column is a copy, and it went stale exactly as a copy does —
+ * `GUEST_ROOT` moved to `guest-exec-env.ts` and this table still said
+ * `modal-harness-image.ts` while the build broke. The table with authority is
+ * `GUEST_IMAGE_CONSTANTS` in `build-guest-image-extract.mjs`; this one is prose
+ * about it, and `guest-image-extractors.test.ts` asserts the two agree.
  *
  * A regex read of a source file is a liability wherever it can fail QUIETLY, so
  * every extractor here throws when its declaration does not match — the same
  * discipline `_patch_paths` in `scripts/modal_image.py` documents, where staging
  * nothing would surface as an ENOENT one layer later with no clue pointing back.
- * `guest-image-dockerfile.test.ts` closes the loop from the other side: it
- * IMPORTS the real constants and asserts these extractors agree with them, so a
- * renamed constant fails a test rather than building a subtly wrong image.
+ * Throwing is not enough on its own, though: it moves the failure from a wrong
+ * image to a broken `predev`, which is louder but still not a test.
+ * `guest-image-extractors.test.ts` is the loop closed from the other side — it
+ * IMPORTS the real constants and asserts every extractor resolves to the same
+ * value, so a MOVED or renamed constant fails a test. It exists because
+ * `guest-image-dockerfile.test.ts`, which this doc used to credit with the job,
+ * does something adjacent and weaker: it compares the Dockerfile's committed ARG
+ * defaults against the constants and never calls an extractor at all, so it
+ * stayed green through the move.
  *
  * The version resolution mirrors `resolveSdkSpecs()` deliberately, including its
  * refusal to accept a range: the image tag and the layer cache both key on these
@@ -67,7 +79,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { extractString, extractStringArray } from "./build-guest-image-extract.mjs";
+import { guestImageString, guestImageStringArray } from "./build-guest-image-extract.mjs";
 import {
   packWorkspaceSdk,
   sdkInstalledVersions,
@@ -94,10 +106,7 @@ const GUEST_IMAGE_STAMP = ".guest-image-stamp.json";
 
 /** The base image, honouring the same env override the server reads. */
 function resolveBaseImage() {
-  const declared = extractString(
-    path.join(SERVER_DIR, "modal-context.ts"),
-    "DEFAULT_SANDBOX_IMAGE",
-  );
+  const declared = guestImageString("DEFAULT_SANDBOX_IMAGE");
   return process.env.MODAL_SANDBOX_IMAGE?.trim() || declared;
 }
 
@@ -134,12 +143,8 @@ function sdkSpecsFor(source, guestRoot, packDir) {
  * Dockerfile's layer-1 comment).
  */
 function resolveBuildArgs({ sdkSource, sdkPackDir }) {
-  const harnessImage = path.join(SERVER_DIR, "modal-harness-image.ts");
-  const systemPackages = extractStringArray(
-    path.join(SERVER_DIR, "modal-system-packages.ts"),
-    "GUEST_SYSTEM_PACKAGES",
-  );
-  const guestRoot = extractString(harnessImage, "GUEST_ROOT");
+  const systemPackages = guestImageStringArray("GUEST_SYSTEM_PACKAGES");
+  const guestRoot = guestImageString("GUEST_ROOT");
   return {
     BASE_IMAGE: resolveBaseImage(),
     // SORTED, so reordering the declaration is not a change — the same

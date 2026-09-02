@@ -103,7 +103,9 @@ embedder writes against: `server`, `runtime`, `session`, `session-state`,
 `providers`, `telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`,
 `text`, `tools`, `eval`. The
 mechanism is the repo's — see "The authoring surface is versioned in epochs" in
-the root `AGENTS.md` — and what it means here is that a signature change on any
+`docs/CLAUDE.md`, which owns all three artifacts over this surface (the reports,
+the epochs and the renderings); `AGENTS.md` keeps the four obligations a change
+owes — and what it means here is that a signature change on any
 of the 125 public names is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
 rather than discovered by whoever's build breaks.
 
@@ -873,6 +875,74 @@ references in `dist/internal.js`) and is loaded only by the caller that asks.
 Same rule as `/eval/vitest` and `@alexkroman1/aai/testing/vitest`, but as a
 function because `/internal` cannot afford to be split in two.
 
+### An attempt is a LEASE, not a tally
+
+`claimAttempt` charges an attempt before a step's body runs — a crash therefore
+burns it, which is the whole reason the charge precedes the body — and
+`releaseAttempt` gives one back. The number a claim answers is not "how many
+times has this step been tried"; it is **how many attempts are outstanding
+right now**, this one included. Only an attempt that never ENDED keeps its
+charge, and only a dead worker fails to end one, so the pre-body ceiling bounds
+ABANDONMENT.
+
+It used to be a bare tally, and one number served two budgets that pull in
+opposite directions — how many times to TRY (the author's `maxAttempts`) and how
+many workers may die holding this step. A property harness
+(`workflow-concurrent-delivery.test.ts`) shrank the defect to a ONE-node body
+under three deliveries: a `ctx.step` whose body sleeps, all three suspending
+inside it having charged one each, so the next reach found the budget spent and
+appended `{status: "failed", error: "step s0 exhausted 3 attempt(s)"}` over a
+step that then SUCCEEDED — whose own walk read that failure back out of the
+idempotent append and failed the run. Tries are counted in the WALK now, and the
+pre-body refusal is no longer a journal entry at all
+(`StepAbandonedError`, classified like a divergence: a verdict about the walk,
+never about the step). **A step that succeeded is never journaled `failed`,
+because only a walk whose own body threw may write a `failed` entry.**
+`workflow-replay-step.ts`'s module doc carries the rest, including the one
+residual — a charge cannot tell an abandoned attempt from a LIVE one, so
+`maxAttempts` simultaneous in-flight deliveries of one step is the most this
+tolerates, which needs a heartbeat to close.
+
+**That residual is REACHABLE, and the estimate beside it was measured wrong.**
+It read "far past what one dispatcher per deployment produces". One dispatcher
+produces up to FIVE, whenever a single step exceeds 60 seconds: the platform's
+`QUEUE_DELIVERY_TIMEOUT_MS` (60s, `aai-server/workflow-queue-deliver.ts`) closes
+the delivery's HTTP response but does **not** stop the walk, so every redelivery
+adds a CONCURRENT walk of the same run in the same guest — measured at 61.15s
+then 65.23s against a live dev server, i.e. the ceiling plus
+`RETRY_BACKOFF_MS[0..1]`. Each of those walks charges the same step key, so a
+step running longer than roughly 2.2 minutes takes a fourth charge against a
+budget of three and is REFUSED. A slow-but-healthy step is exactly the case the
+lease was supposed to protect.
+
+Worse, the duplicate walks were not merely wasteful: `replayRun` reads the
+journal ONCE per walk, so a walk that starts before an earlier one has journaled
+anything re-executed **every** step. Measured on the transcription template, a
+second walk re-ran `normalizeRecording`, `splitRecording`, four
+`transcribeSegment` calls against the real provider and `mergeTranscript` on a
+run already marked `completed`.
+
+**That half is CLOSED, by `settledSince` in `workflow-replay-step.ts`.** A
+snapshot can only be stale about a key somebody ELSE reached, and `claimAttempt`
+already answers exactly that: `1` means this attempt is the only one
+outstanding, so nothing has been missed. So a miss in the snapshot re-reads the
+journal **only when the charge says another walk touched this key**, and a
+settled entry answers the step instead of running it — which also makes a
+settled step answer from the journal rather than take the `StepAbandonedError`
+the blown budget above would otherwise produce (the two checks are ordered on
+that ground). The happy path pays nothing: a first walk reaching a fresh step
+sees `1` and never re-reads. `workflow-concurrent-delivery.test.ts` measured the
+effect — generated `duplicateSteps` fell from **44-107 to 6-21**, and its floor
+came down with a re-measured range — and
+`workflow-replay-stale-snapshot.test.ts` pins the two interleavings by hand.
+
+What is NOT closed is the race it was never about: two walks reaching a step
+NEITHER has settled still both run it, which is the engine's stated
+at-least-once cost, and the delivery door still starts walks it cannot stop. Both
+want a heartbeat on the RUN so a ceiling cannot abandon a walk that is alive.
+The platform's own half — a slow delivery starving every OTHER tenant's claim —
+is fixed separately in `aai-server/workflow-queue-budget.ts`.
+
 ### Three `JournalStore` contract points the suite refused to decide, decided
 
 A conformance table can only assert what the interface actually promises, and
@@ -1399,6 +1469,38 @@ selectivity — truncating on a signal that arrives ~470ms after the first parti
 makes yields look instant. A correct client's yield rate against the old code
 was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
 reverting the gate.
+
+## A rollback at the cap used to cost a real turn
+
+`transports/pipeline-history.ts` keeps two capped views, and
+`dropTrailingUser` — what rolls back an injected prompt (a false-interruption
+resume, a silence nudge, `injectTurn`) whose turn left no trace — POPPED where
+the push had already TRIMMED. So a rollback landing at
+`DEFAULT_MAX_HISTORY` undid the append and not the eviction the append caused:
+push at 200 trims the oldest message and lands at 200, the pop leaves 199, and
+one real conversation turn was gone for the rest of the call. **Nothing in the
+system could see it** — both views are the right shape afterwards, one turn
+shallower — and it survived two complete unit suites because every depth
+anybody writes by hand is well under 200.
+
+A push now records what it evicted and a pop that undoes THAT push unshifts it
+back. Three properties of the bookkeeping are load-bearing and are argued at
+`PushUndo`: one slot PER VIEW (a turn pushes the user message into
+`conversation` and then into `llm`, so a shared slot would be invalidated by
+the second half of the pair that filled the first), recorded only for a push of
+exactly ONE message, and consumed by IDENTITY rather than by content. `capLlm`'s
+healed tool-pair halves count as part of the eviction, so a restore hands back
+the array the push found rather than a prefix of it.
+
+`transports/pipeline-history-rollback-property.test.ts` is the oracle — a
+fast-check property over generated fill scripts, driving both the module's door
+and the real one (`persistBargeIn` with a `syntheticPrompt`), whose oracle is a
+snapshot of the two views taken before the push. It was written RED and shrinks
+to a one-element script; two deterministic pins sit beside it in
+`pipeline-history.test.ts`. The defect was originally recorded, and deferred, in
+`session-history-replay-equivalence.test.ts`'s module doc; that property
+compares TAILS for an unrelated reason that still holds (the two sides trim
+different sequences), and its `liveTrims` floor stands after re-measurement.
 
 ## History records what was HEARD, not what was generated
 

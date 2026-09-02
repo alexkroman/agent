@@ -1,16 +1,27 @@
 /**
- * The TIMING rules — 3, 4, 19 and 21. One family, four remedies.
+ * The TIMING rules — 3, 4, 19, 21 and 23 — plus the two WORKFLOW-BODY rules,
+ * 26 and 30.
  *
- * They are grouped because they are the same question asked four ways ("how
- * is this code waiting?") and because they share a failure history: all of them
- * are substring guards over a language with syntax, and every gap found in
- * this gate has been in one of them.
+ * The timing five are grouped because they are the same question asked five
+ * ways ("how is this code waiting?") and because they share a failure history:
+ * all of them are substring guards over a language with syntax, and every gap
+ * found in this gate has been in one of them.
  *
- * Rule 21 is the newest and the only one whose hazard is not the wait itself:
- * `expect.poll` waits correctly and reads the RUNNER's current test to do it,
- * which under `test.concurrent` a sibling has already cleared. It sits here
- * because the remedy is the same shape as the other three — a different wait
- * primitive, named.
+ * Rule 21's hazard is not the wait itself: `expect.poll` waits correctly and
+ * reads the RUNNER's current test to do it, which under `test.concurrent` a
+ * sibling has already cleared. It sits here because the remedy is the same
+ * shape as the other four — a different wait primitive, named. Rule 23 is the
+ * `async` listener, whose promise the emitter discards.
+ *
+ * **26 and 30 are a PAIR and are here together.** Neither is about waiting;
+ * they are the two rules over `WORKFLOW_BODY_PATHSPECS`, both answering "what
+ * may a shipped `workflows/` body contain?", and both settling the same
+ * undecidable-from-a-line question the same way — the `ctx.step` callback
+ * boundary is invisible to `git grep`, so each bans the call anywhere in the
+ * corpus and leaves the legitimate case to the baseline WITH a reason at the
+ * occurrence. 30 arrived in `-rules-shape.mjs`, which is the module its author
+ * owned rather than the one it belongs to; the id is unchanged by the move,
+ * `LINE_RULES` being sorted by id rather than by module order.
  *
  * Three widenings landed together, each against LIVE occurrences the previous
  * pattern could not see:
@@ -37,6 +48,49 @@ import {
   TIMERS_PROMISES,
 } from "./guard-invariants-ere.mjs";
 import { SOURCE_PATHSPECS, WORKFLOW_BODY_PATHSPECS } from "./guard-invariants-scopes.mjs";
+
+/**
+ * Rule 30's banned reads, one alternation.
+ *
+ * The five a workflow body must not perform at body level: three spellings'
+ * worth of clock, an id, and the network.
+ *
+ * **`new +Date` is the one the rule shipped BLIND to**, and it was blind to it
+ * by decision rather than by oversight — the fragment's own doc recorded the
+ * omission and deferred the measurement. The measurement: two live occurrences,
+ * both `new Date().toISOString()`, spelled that way rather than `Date.now()`
+ * only because the value wanted is an ISO string. That difference is nothing to
+ * the rule. A clock read at body level answers differently on every replay, so
+ * a step NAME built from one re-executes the step — the failure rule 30 exists
+ * for, reached by the spelling it could not see.
+ *
+ * The `+` is load-bearing in both directions. TypeScript requires whitespace
+ * between `new` and the class, so demanding it costs no real occurrence; and it
+ * is what keeps `renewDate(` out on the mandatory space alone, without leaning
+ * on `NOT_MEMBER_BEFORE`. The trailing `\\(` in the rule does the rest:
+ * `new DateRange(` is a different constructor and does not match.
+ *
+ * BUILT from an array rather than spelled as one literal, for
+ * `CLASSIFIABLE_STEP_CALLS`'s reason: end to end this alternation is long
+ * enough that biome's `noSecrets` entropy heuristic scores it as a credential,
+ * and the formatter folds any concatenation written to dodge that.
+ */
+const NONDETERMINISTIC_READS = [
+  "Math\\.random",
+  "Date\\.now",
+  "new +Date",
+  "crypto\\.randomUUID",
+  "fetch",
+].join("|");
+
+/**
+ * Not preceded by an identifier character OR a dot — i.e. the GLOBAL of that
+ * name rather than somebody's method.
+ *
+ * `NOT_IDENT_BEFORE` admits `.`, which is correct for a name that is never a
+ * method (rule 26's step callers) and wrong for `fetch`.
+ */
+const NOT_MEMBER_BEFORE = "(^|[^A-Za-z0-9_$.])";
 
 /** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
 export const TIMING_RULES = [
@@ -342,5 +396,104 @@ export const TIMING_RULES = [
       "Scoped to shipped `workflows/` bodies because those are what a user\n" +
       "copies, and because the SDK's own `sdk/step-errors.ts` calls all six —\n" +
       "being the wrappers.",
+  },
+  {
+    id: 30,
+    key: "rule30_nondeterministicWorkflowBody",
+    label: "non-deterministic read in a shipped workflow body",
+    // A CALL position, and the leading class excludes a preceding `.` as well as
+    // an identifier character — without that, `client.fetch(` and
+    // `this.fetch(` score as the global. `NOT_IDENT_BEFORE` cannot be reused
+    // here for exactly that reason: it admits `.`, which is right for
+    // `stepGenerate` (never a method) and wrong for `fetch`.
+    //
+    // Composed rather than written out, for rule 26's reason just above:
+    // spelled as one literal this alternation is long enough that biome's
+    // `noSecrets` entropy heuristic scores it as a credential, and the formatter
+    // folds any concatenation written to dodge that.
+    re: `${NOT_MEMBER_BEFORE}(${NONDETERMINISTIC_READS})\\(`,
+    paths: WORKFLOW_BODY_PATHSPECS,
+    skipComments: true,
+    samples: {
+      matches: [
+        "  const coin = Math.random() < 0.5 ? 'h' : 't';",
+        "  const startedAt = Date.now();",
+        "  const id = crypto.randomUUID();",
+        "  const res = await fetch(url);",
+        // First on the line, which is what the `^` alternative is for.
+        "Date.now();",
+        // `new Date(` — the spelling the rule was blind to while the fragment's
+        // doc recorded the omission. Both live occurrences read exactly like
+        // the first of these; the second proves the pattern does not depend on
+        // `()` being empty.
+        "  const filedAt = new Date().toISOString();",
+        "  const at = new Date(raw).toISOString();",
+      ],
+      ignores: [
+        // The remedy: the same read, INSIDE a step callback, reached through a
+        // helper the body cannot inline. A line-based scan cannot see the
+        // callback boundary — see the remedy — so what it can see is that the
+        // body names a step instead of a clock. The third is the remedy for the
+        // `new Date(` half specifically: `file` is the baselined step helper in
+        // `link-digest`, and this is the line its body is reached from.
+        '  const startedAt = await ctx.step("startClock", startClock);',
+        '  const id = await ctx.step("mintId", newId);',
+        '  const filedAt = await ctx.step("file", () => file(digest));',
+        // A METHOD of that name is not the global.
+        "  const res = await client.fetch(url);",
+        "  const body = await this.fetch(url);",
+        // A type position and an import are not calls.
+        'import { fetchTranscript } from "../lib/api.ts";',
+        "  const at: ReturnType<typeof Date.now> = stamp;",
+        // A different member of the same object.
+        "  const iso = Date.parse(raw);",
+        // `new` glued to a preceding identifier is a different NAME, and the
+        // mandatory space in `new +Date` is what excludes it — so this holds
+        // even where `NOT_MEMBER_BEFORE` cannot reach, e.g. first on a line.
+        "  const next = renewDate(subscription);",
+        // A constructor whose name merely STARTS with `Date`. The trailing
+        // paren is what pins the name exactly.
+        "  const window = new DateRange(from, to);",
+      ],
+    },
+    remedy:
+      "Move the read INSIDE a `ctx.step` callback and use the journaled value.\n" +
+      "\n" +
+      "A workflow body is REPLAYED — the engine re-runs it from the top on every\n" +
+      "resume and answers each `ctx.step` from the journal — so anything read at\n" +
+      "body level is re-read on every walk and answers differently each time. A\n" +
+      "step's internals are not replayed, only its result, which is what makes a\n" +
+      "step the one place a clock, a random number, a uuid or a network read\n" +
+      "belongs:\n" +
+      "\n" +
+      '  const startedAt = await ctx.step("startClock", () => Date.now());\n' +
+      "\n" +
+      "The sharp case is a read that reaches a step NAME. Measured on a body one\n" +
+      "line long — a coin flip interpolated into the name a `ctx.step` is given,\n" +
+      "followed by a `ctx.sleep` — **7 of 10 runs charged twice and all 10\n" +
+      "reported `completed`**. `workflow-replay-divergence.ts` refuses that at\n" +
+      "runtime now, and this rule is the cheap half: the runtime check is the only\n" +
+      "layer that sees a name read from a config table, and this is the only layer\n" +
+      "that sees the mistake before it ships.\n" +
+      "\n" +
+      "It restores a guard that was LOST rather than inventing one. The DevKit's\n" +
+      "build scan tried and went with the DevKit — see `sdk/workflow-ctx.ts`,\n" +
+      "which records that it read the BUILT flow bundle, warned about a `Date.now()`\n" +
+      "INSIDE a step callback, and was blind to the boundary it existed to police.\n" +
+      "\n" +
+      "`new Date(` counts, and counted late: the alternation shipped without it\n" +
+      "and missed two live occurrences that spell the clock read that way because\n" +
+      "what they want is an ISO string. A clock is a clock — on replay it answers\n" +
+      "differently, which is the whole hazard, so the spelling is not a\n" +
+      "distinction the rule can afford to make.\n" +
+      "\n" +
+      "**The callback boundary is not decidable from a line**, so this rule bans\n" +
+      "the call anywhere in a shipped `workflows/*.ts` and leaves the legitimate\n" +
+      "case to the baseline — rule 26's contract, the rule just above, for the\n" +
+      "same corpus. Baseline a line that is genuinely inside a step body and say\n" +
+      "so in a comment beside it; every baselined entry is a step helper whose\n" +
+      "own comment already states the rule (`startClock`, `now`, `timed`,\n" +
+      "`probeUpload`, `file`, `timestamp`). Anything at BODY level is the bug,\n" +
+      "not an exception.",
   },
 ];

@@ -8,14 +8,45 @@
  * where this decides ATTEMPTS. Keeping them together put both in one function
  * Biome measured at complexity 20, and pushed the file to the 500-line cap.
  *
- * A step cannot wait: `ctx.sleep` and `ctx.waitFor` belong to the body, which is
- * what makes a step the unit this engine can neither interrupt nor un-journal.
- * But the closure a step is handed CAPTURES `ctx`, so
+ * A step cannot wait: `ctx.sleep` and `ctx.waitFor` belong to the body. But the
+ * closure a step is handed CAPTURES `ctx`, so
  * `ctx.step("waiting", () => ctx.sleep(60_000))` is one line away at every call
  * site — which is why "nothing here knows about suspension" was the wrong reading
  * of that rule. The one thing this knows is that a suspend is NOT an attempt's
  * outcome: {@link attemptLoop} lets it out untouched, and everything else here is
  * the retry policy.
+ *
+ * ## An attempt is a LEASE, and there are two budgets rather than one
+ *
+ * `claimAttempt` was a tally, charged before the body and never given back, and
+ * ONE number served two jobs that pull in opposite directions: how many times to
+ * TRY (what an author writes `maxAttempts` for) and how many workers may DIE
+ * holding this step. **`packages/aai-runtime/CLAUDE.md`, "An attempt is a LEASE,
+ * not a tally", carries the whole account** — the property harness that shrank
+ * the defect to a two-node body, the `failed` entry it appended over a step that
+ * then succeeded, and the measurement showing the residual below is reachable.
+ * What is here is the shape:
+ *
+ * - **Tries are counted LOCALLY**, in the walk, so two overlapping deliveries
+ *   cannot spend each other's retries.
+ * - **The charge is a LEASE over one REACH of the step**, taken before the body
+ *   and given back only when the body SUSPENDS — the one outcome that settles
+ *   nothing and yet is ordinary progress. A settled step never reads the charge
+ *   again, and a walk that was killed cannot give one back, so the pre-body
+ *   ceiling bounds ABANDONMENT, which is what it was written to bound.
+ * - **The refusal is not a journal entry** ({@link StepAbandonedError}): only a
+ *   walk whose own body threw may write a `failed` entry.
+ *
+ * The charge itself — `chargeAttempt`, the refusal, and the stale-snapshot read
+ * that keeps a walk from re-running a step the journal has SETTLED — is in
+ * `workflow-replay-attempt.ts`, split off at the seam this paragraph draws.
+ *
+ * **The residual, stated rather than hidden**: a charge cannot tell an abandoned
+ * attempt from a LIVE one, so `maxAttempts` simultaneous in-flight deliveries of
+ * one step is the most this tolerates — a fourth, with a budget of three, is
+ * refused although nothing has died. Closing it needs a lease with an expiry,
+ * i.e. a heartbeat. `settledSince` (in the module beside this one) is what keeps
+ * the SETTLED half of it from re-running the work meanwhile.
  */
 
 import { isWorkflowSuspend } from "@alexkroman1/aai";
@@ -24,6 +55,7 @@ import { report } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
+import { chargeAttempt, StepAbandonedError } from "./workflow-replay-attempt.ts";
 import { withStepContext } from "./workflow-run-context.ts";
 import type { StepGate } from "./workflow-step-gate.ts";
 
@@ -43,6 +75,10 @@ import type { StepGate } from "./workflow-step-gate.ts";
  * Nothing here does that yet — this clamps and blocks.
  */
 export const MAX_IN_PROCESS_RETRY_MS = 30_000;
+
+// Re-exported: the class is DECLARED beside the charge that raises it, and this
+// stays the module every reader (and `workflow-replay.ts`) already names.
+export { StepAbandonedError } from "./workflow-replay-attempt.ts";
 
 /**
  * A step that settled `failed`, as an error to throw into the body.
@@ -196,6 +232,28 @@ export type StepAttemptOptions = {
    * forever — the same trap {@link attemptLoop} already avoids for a suspend.
    */
   onFirstReach?: (() => void) | undefined;
+  /**
+   * Called with the refusal's own message when the step's budget is spent,
+   * immediately before {@link StepAbandonedError} is thrown.
+   *
+   * The caller's half of "a refusal is not a verdict": `replayRun` records the
+   * message so a body that catches broadly cannot turn the engine's refusal into
+   * a `completed`, exactly as it already does for a divergence. Recorded rather
+   * than returned, because the throw has to unwind whatever depth the step was
+   * reached at.
+   */
+  onAbandoned?: ((message: string) => void) | undefined;
+  /**
+   * Called with the journaled entry when this key turns out to have SETTLED
+   * while the walk was elsewhere, so the step is answered rather than run.
+   *
+   * The walk's own business, exactly like {@link StepAttemptOptions.onFirstReach}
+   * above: what the charge can see is that another walk touched the key, and
+   * what to do about it — advance the divergence cursor, so a nested step's
+   * children are not read as displaced — belongs to the walk that knows what its
+   * journal held. See `DivergenceWatch.answeredLate`.
+   */
+  onAnsweredLate?: ((entry: StepEntry) => void) | undefined;
   fn: () => unknown;
 };
 
@@ -218,42 +276,76 @@ export async function runStepAttempts(options: StepAttemptOptions): Promise<Step
   return gate ? gate(() => attemptLoop(options)) : attemptLoop(options);
 }
 
+/**
+ * Wait out a failed attempt's backoff.
+ *
+ * Journals nothing and touches no charge: this walk still holds the one it took
+ * when it reached the step, and an in-process retry is not a second attempt as
+ * far as the journal is concerned — see {@link attemptLoop}.
+ */
+async function backOff(options: StepAttemptOptions, tries: number, err: unknown): Promise<void> {
+  const delayMs = retryDelay(err);
+  // BEFORE the wait, not after it: a `retryAfter` of half a minute is ordinary
+  // (see MAX_IN_PROCESS_RETRY_MS), and a line explaining the wait is worth
+  // nothing once the wait is over.
+  await reportRetry(options.name, tries, options.maxAttempts, delayMs, err);
+  await sleep(delayMs);
+}
+
 async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
   const { runId, name, key, maxAttempts, journal, signal, fn } = options;
 
+  /**
+   * How many times THIS walk has run the body — the retry budget, and it is
+   * deliberately local.
+   *
+   * It used to be the journal's charge, so a duplicate delivery spent from the
+   * author's retry budget: `workflow-platform-dispatch.ts` records that cost in
+   * so many words — *"it burns a second `claimAttempt` against the step's
+   * ceiling, and a retry budget spent on our own duplicate is a step that fails
+   * earlier than the author asked for"*. What `maxAttempts` means is how many
+   * times to try, and how many workers happen to be trying is not that number.
+   * The charge still bounds the case a local count cannot see — an attempt that
+   * never ends; see {@link chargeAttempt}.
+   */
+  let tries = 0;
+
+  // ONE charge for the whole reach, taken before the body and given back only
+  // if the reach ends in a durable WAIT. A retry below re-runs the body without
+  // re-taking it, which is what makes the charge unbroken: every window in which
+  // this walk could be killed is a window in which it holds one, so a death
+  // always leaves the evidence a death is supposed to leave. Claiming per TRY
+  // instead left a gap between the release and the next claim, and a kill
+  // landing in it made the resume property fail — `all([flaky, step]), boom`
+  // resumed to a divergence refusal on `s0#0`, the flaky step's own charge
+  // having been handed back a moment before its walk died.
+  signal?.throwIfAborted();
+  // An entry back means the key settled while this walk was elsewhere, and the
+  // body must not run: see {@link settledSince}.
+  const already = await chargeAttempt(options);
+  if (already) return already;
+
   for (;;) {
     signal?.throwIfAborted();
-
-    // Before the body, never after — see `JournalStore.claimAttempt`.
-    const attempt = await journal.claimAttempt(runId, key);
-    // `1` means no earlier walk ever reached this key. Outside the try, so a
-    // refusal escapes unretried and unjournaled — see `onFirstReach`.
-    if (attempt === 1) options.onFirstReach?.();
-    if (attempt > maxAttempts) {
-      return journal.appendStep(runId, {
-        key,
-        name,
-        status: "failed",
-        error: { message: `step ${name} exhausted ${maxAttempts} attempt(s)` },
-        attempts: attempt - 1,
-        finishedAt: Date.now(),
-      });
-    }
-
+    tries++;
     try {
       // Inside the step's own context, so a `report()` from the body or any
       // helper it calls is attributed to THIS step and this attempt.
-      const output = await withStepContext({ name, key, attempt }, async () => fn());
+      const output = await withStepContext({ name, key, attempt: tries }, async () => fn());
+      // No release: the entry below is authoritative from now on, so every later
+      // walk answers from `readSteps` and nothing reads the charge again. That
+      // is what keeps the happy path at one journal round trip per step.
       return journal.appendStep(runId, {
         key,
         name,
         status: "ok",
         output,
-        attempts: attempt,
+        attempts: tries,
         finishedAt: Date.now(),
       });
     } catch (err: unknown) {
-      // A SUSPEND is not a verdict, so it is neither retried nor journaled.
+      // A SUSPEND is not a verdict, so it is neither retried nor journaled — and
+      // the attempt it ended is GIVEN BACK, which is the half that was missing.
       //
       // Out of contract and one line away anyway — the closure captures `ctx`.
       // Read as an ordinary retryable error it was catastrophic rather than
@@ -265,16 +357,44 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
       // wait as a failure. The run then failed with a `swallowedSuspend` message
       // blaming the body for a swallow the engine had performed.
       //
+      // Letting it out untouched was only half a fix: the attempt was CHARGED
+      // and never returned, so a wait inside a step still spent one charge per
+      // delivery and none of them settled anything. Three deliveries spent three
+      // of three, and the next reach journaled `failed` over a step that then
+      // succeeded on the walk beside it.
+      //
       // Re-thrown bare, the signal reaches `replayRun`'s own catch, which is the
       // one place that knows what to do with it.
-      if (isWorkflowSuspend(err)) throw err;
-      if (!(FatalError.is(err) || attempt >= maxAttempts)) {
-        const delayMs = retryDelay(err);
-        // BEFORE the wait, not after it: a `retryAfter` of half a minute is
-        // ordinary (see MAX_IN_PROCESS_RETRY_MS), and a line explaining the
-        // wait is worth nothing once the wait is over.
-        await reportRetry(name, attempt, maxAttempts, delayMs, err);
-        await sleep(delayMs);
+      if (isWorkflowSuspend(err)) {
+        await journal.releaseAttempt(runId, key);
+        throw err;
+      }
+      // The WALK is over — a cancel, or the caller's own signal. This attempt
+      // ends the way a DEATH ends one, and both halves of that are deliberate.
+      //
+      // Nothing is journaled: an abort is not a verdict about the step, and a
+      // `failed` entry here would be authoritative forever over a run somebody
+      // stopped — which is what the last attempt used to write, the loop having
+      // read a cancellation as the step's own final failure.
+      //
+      // And the charge is NOT given back. A walk that was killed left this
+      // attempt unfinished, so `claimAttempt`'s next answer must still say so:
+      // that is the fact `workflow-replay-divergence.ts` exonerates a crashed
+      // fan-out with, and releasing here made the resume property fail on its
+      // sixth generated body — the outer step of a `nested` was refused as a key
+      // "no earlier walk ever reached", one line after the walk that reached it
+      // was killed inside it.
+      //
+      // `err === signal.reason` and not merely `signal.aborted`, which is the
+      // same test `replayRun`'s `classifyThrow` makes and it is load-bearing in
+      // both directions. A kill lands most often in a step's own `finally`, so
+      // an attempt that had already decided — a `boom` that threw its
+      // `FatalError` — must still journal that verdict, and the broader test
+      // took `counts: {s0: 1}` to `{s0: 2}` on the resume property by throwing
+      // the decision away.
+      if (signal?.aborted && err === signal.reason) throw err;
+      if (!(FatalError.is(err) || tries >= maxAttempts)) {
+        await backOff(options, tries, err);
         continue;
       }
       return journal.appendStep(runId, {
@@ -282,7 +402,7 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
         name,
         status: "failed",
         error: { message: errorMessage(err) },
-        attempts: attempt,
+        attempts: tries,
         finishedAt: Date.now(),
       });
     }

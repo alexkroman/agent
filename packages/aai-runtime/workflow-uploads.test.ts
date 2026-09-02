@@ -336,16 +336,23 @@ describe("a streamed upload", () => {
   test("leaves a failed stream INCOMPLETE and readable, not deleted", async () => {
     const { store } = memoryStore();
     async function* dies() {
-      // A whole window, so something is actually published before the failure — one
-      // CHUNK, which is what the ramp makes the first window of a stream.
-      yield ramp(UPLOAD_CHUNK_BYTES);
+      // Deliberately NOT a window's worth: two chunks is one full window on the
+      // ramp (1 MiB) plus one the cut is still holding against its 2 MiB target,
+      // and the held one is bytes that ARRIVED — so a store that published only
+      // 1 MiB here would be throwing away a megabyte it has in hand. Every body
+      // in this suite used to be window-aligned, which is how that went unseen
+      // until `aai-server/workflow-uploads.scenario.test.ts` caught it.
+      yield ramp(UPLOAD_CHUNK_BYTES * 2);
       throw new Error("client hung up");
     }
     await expect(store.stream("abc", {}, dies())).rejects.toThrow("client hung up");
     // The opposite of `create`, deliberately: a reader may already have used the
     // part that arrived, and `complete` is what stops anything mistaking it for the
     // whole file.
-    expect(await store.info("abc")).toMatchObject({ size: UPLOAD_CHUNK_BYTES, complete: false });
+    expect(await store.info("abc")).toMatchObject({
+      size: UPLOAD_CHUNK_BYTES * 2,
+      complete: false,
+    });
     expect([...(await store.read("abc", 0, 4))]).toEqual([...ramp(4)]);
   });
 

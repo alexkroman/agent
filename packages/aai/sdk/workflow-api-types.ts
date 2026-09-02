@@ -16,6 +16,7 @@
 
 import type { UploadInfo } from "./step-uploads.ts";
 import type { WorkflowSummary } from "./workflow.ts";
+import type { WakeUpOptions } from "./workflow-options.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 import type { UploadBody, UploadOptions, UploadRef } from "./workflow-upload-client.ts";
 
@@ -235,8 +236,20 @@ export type WorkflowApi = {
    * `0` is an answer, not a failure — the run finished, was never sleeping, or is
    * gone. Same shape as {@link WorkflowApi.cancel} answering false, and for the
    * same reason: two tabs pressing "send it now" is ordinary.
+   *
+   * {@link WakeUpOptions.correlationIds} narrows it to the waits declared with
+   * those ids, which is the same bag `ctx.workflows.wakeUp` takes and reaches the
+   * route's repeatable `?correlationId=`. Reach for it when the caller means one
+   * particular wait rather than "everything this run is waiting on" — and note it
+   * is the ONLY spelling that can end a hook's approval deadline, since a bare
+   * wake deliberately cannot (the journal filters a `hookTimeout` out of one).
+   *
+   * An id that is blank, or longer than 256 characters, REJECTS here without a
+   * request being sent. The route answers 400 for both, and there is nothing a
+   * caller can do with that answer that it could not do with a rejection it never
+   * had to make a round trip for.
    */
-  wake(runId: string): Promise<number>;
+  wake(runId: string, options?: WakeUpOptions): Promise<number>;
   /**
    * Store a file under an id YOU chose, so a run can start before it is all in.
    *

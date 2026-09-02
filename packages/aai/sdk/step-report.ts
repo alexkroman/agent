@@ -12,7 +12,7 @@
  *
  * So a step narrates with one call and it lands in both places:
  *
- * ```ts no-check
+ * ```ts
  * import { report } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {

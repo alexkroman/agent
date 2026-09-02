@@ -180,12 +180,23 @@ export type RuntimeOptions = {
    * platform journal or an agent's own database to something that dies with the
    * process. The boot line names whichever actually won.
    *
-   * **What it buys is the RECORD, not a pending delivery.** A run parked on
-   * `ctx.sleep` at the moment of a rebuild is readable afterwards and does not
-   * wake on its own: the in-process dispatcher only holds timers it created
-   * itself, and the new engine scans no journal for waits it inherited. That is
-   * the same handover hole a process RESTART has with a durable journal, one
-   * level down, and it is open in both places.
+   * **A run parked on `ctx.sleep` at the moment of a rebuild does WAKE.** It
+   * used not to: the in-process dispatcher holds only timers it created itself,
+   * so a rebuild discarded the schedule while leaving the journal intact, and
+   * the run sat `running` forever — the same handover hole a process RESTART had
+   * one level down, open in both places. `createInProcessWorkflowEngine`'s BOOT
+   * SWEEP closed both, by reading `JournalStore.resumableRuns` at construction
+   * and re-arming a delivery per run it still owes one; read that module's
+   * "The timers die with the process, so the JOURNAL is re-read at boot" for the
+   * bound, the stagger, and why an injected dispatcher gets no sweep. A journal
+   * that cannot enumerate its resumable runs is WARNED about at boot rather than
+   * silently forgotten.
+   *
+   * **The remainder, stated because it is the honest one:** this is a BOOT
+   * sweep, not a poll. A delivery lost while the process stays UP — a journal
+   * that was briefly unreachable — waits for the next boot; there is no `wakeUp`
+   * rescue path for it (an elapsed deadline is not a wait `wakeSleeps` may stop)
+   * and nothing repeats the pass.
    */
   journal?: JournalStore | undefined;
   /**
@@ -235,12 +246,19 @@ export type RuntimeOptions = {
    * in-process tool definitions and uses this function instead. Used by the
    * platform sandbox to RPC tool calls to the isolate.
    *
+   * **Paired with {@link RuntimeOptions.toolSchemas}, and `createRuntime` THROWS
+   * on half a pair** — see `setupTools` in `runtime-tools.ts` for what the old
+   * silent fallback cost.
+   *
    * @internal
    */
   executeTool?: ExecuteTool | undefined;
   /**
    * Override tool schemas sent to the S2S API. Required when `executeTool`
-   * is provided (the host doesn't have the tool definitions to derive schemas).
+   * is provided (the host doesn't have the tool definitions to derive schemas),
+   * and REFUSED without it — the two are one option, and `createRuntime` throws
+   * naming whichever is absent rather than quietly running the other tool path.
+   * `toolSchemas: []` is the legal spelling of a relay that advertises no tools.
    *
    * @internal
    */

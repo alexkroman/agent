@@ -1,12 +1,22 @@
 /**
- * The SHAPE rules — 2, 17 and 18. Each replaces an open-coded expression with a
- * primitive the repo already publishes.
+ * The SHAPE rules — 2, 17, 18, 22 and 28.
  *
- * Grouped because all three are about a value's shape being re-derived at a
- * call site rather than asked for once, and because all three shipped a
+ * Each replaces an open-coded expression with a primitive the repo already
+ * publishes.
+ *
+ * Grouped because all of them are about a value's shape being re-derived at a
+ * call site rather than asked for once, and because several shipped a
  * one-polarity pattern first and had to be widened to the spelling the code
  * actually uses (rule 2 saw one of three spread forms; rule 17 saw the positive
  * conjunction and missed the negated disjunction, grading 1 of 21).
+ *
+ * **Rule 30 used to live here and does not any more.** It bans a call rather
+ * than reshaping an expression, so by cohesion it belongs beside rule 26 in
+ * `-rules-timing.mjs`, which shares its scope (`WORKFLOW_BODY_PATHSPECS`) and
+ * its argument (what a shipped `workflows/` body may contain). It was here only
+ * because that is the module its author owned, and moving it cost nothing — the
+ * ids being stable, `LINE_RULES` being sorted by id rather than by module order,
+ * and the baseline therefore not moving a byte.
  *
  * Rule IDs are STABLE across the split from `guard-invariants-rules.mjs`.
  */

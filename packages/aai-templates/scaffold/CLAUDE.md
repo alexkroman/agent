@@ -25,7 +25,7 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 
    **A spec that needs the agent as DEPLOYED imports one module:**
 
-   ```ts no-check
+   ```ts
    import agentDef from "virtual:aai/agent";
    ```
 
@@ -581,7 +581,7 @@ A step has no `ctx`, so the two things tool code takes for granted come from
 `@alexkroman1/aai` — a `workflows/*.ts` module is bundled separately, and the
 root barrel would drag the whole SDK into that bundle.
 
-```ts no-check
+```ts
 import { stepEnv } from "@alexkroman1/aai/step";
 import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
 
@@ -794,7 +794,7 @@ generated PDF — needs two things a first draft reaches for and does not find.
 Both are on `@alexkroman1/aai/step`, and `spoken-summary` is the template that
 shows the whole round trip.
 
-```ts no-check
+```ts
 import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(script: string) {
@@ -1311,7 +1311,7 @@ fixing one call site at a time.
 **A `sessionSlot` is the only way to keep state across a session's tool calls**,
 and it is one declaration in a shared module:
 
-```ts no-check
+```ts
 // shared.ts — the one place the shape is written down.
 import { sessionSlot } from "@alexkroman1/aai";
 
@@ -1406,7 +1406,7 @@ collect an address before taking payment is a suggestion; a dialog is a rule.
 that leave it. It is a slot underneath, so the position is persisted with the
 rest of the session and survives a reconnect.
 
-```ts no-check
+```ts
 import { dialog } from "@alexkroman1/aai";
 
 export const checkout = dialog("checkout", {
@@ -1613,7 +1613,7 @@ export default tool({
 });
 ```
 
-```ts no-check
+```ts
 // agent.ts — nothing about tools appears here
 import { agent } from "@alexkroman1/aai";
 

@@ -135,7 +135,8 @@ The gap it closes: **nothing else looked at a type SIGNATURE.**
 `sdk/exports.test.ts` pins runtime export NAMES and says nothing about shape;
 `publint` and `attw` ask packaging questions; the `.test-d.ts` files cover
 `aai`'s root entry and `aai-ui`'s four hooks, and "Known limitations" in the
-root `AGENTS.md` states outright that the subpath exports are not covered. So widening a
+root `AGENTS.md` states outright that the subpath exports are not covered. So
+widening a
 parameter, making a field optional, or changing a return type on any OTHER
 entry point was invisible in review — which matters most for the
 decision it feeds, since the changeset bump type is currently a judgement made
@@ -248,9 +249,39 @@ Six properties are load-bearing:
   "dropped" means it no longer compiles, and a leftover file would turn a
   recorded decision into a red typecheck.
 
-  **`contracts/compatibility/` holds one frozen example per RETAINED epoch**,
-  written the way that epoch was authored — so `pnpm typecheck` is a real
-  compatibility test rather than a claim about one.
+  **`contracts/compatibility/` holds one example per retained epoch**, so the
+  mechanism is a test rather than a claim for the first time. The count is
+  deliberately not written here: a `--bump --drop` deletes a fixture, so any
+  number in this paragraph is one classification away from wrong. Four things
+  are enforced on each: it exists, it is not the scaffold, it imports from
+  `..`, and — the fourth — **every name its capability's retained epochs
+  promised is imported by one of that capability's examples.** Per capability
+  rather than per fixture, because a capability with two retained epochs splits
+  its surface between them deliberately and says so in place; per-fixture
+  completeness flags most of the tree, which is a rule fighting a documented
+  design. All names, never a percentage: a floor cannot say which
+  name went uncovered. A name the current epoch has REMOVED is forgiven by
+  derivation (nothing importing it would compile); a name still on the surface
+  and unexercised takes an entry in
+  `scripts/api-contracts-coverage-denylist.json`, with a reason, which may
+  shrink and never grow — the spec fails on an exemption that has become true.
+  **It is EMPTY**: every name every retained epoch promises is exercised by a
+  compiling example, with no exemption anywhere. It reached zero when
+  `aai-runtime:telephony` epoch 1 was dropped — its eight entries were the
+  last, and the spec reported them dead in the same run, which is the ratchet
+  doing precisely its job. Note what "never grow" is and is not: the spec
+  mechanically refuses a DEAD entry, and refuses a typo'd capability id, but it
+  cannot refuse an honest new one. Adding an exemption is a hand edit in a
+  reviewable diff — the same contract as the two `--update` baselines — so
+  keeping this file empty is a review question, not a settled one.
+  `packages/aai-templates/api-contracts-gate.test.ts` owns all four, because
+  `--bump --retain` cannot check a scaffold it has just written empty.
+
+  **A retained epoch that promised a name the current surface has since REMOVED
+  is a drop nobody made**: it cannot compile if anything names it, and it reads
+  as supported only for as long as the frozen example stays quiet about it.
+  `aai-runtime:db` epoch 2 is the standing instance (`SweepSkip`), and epoch 4
+  was dropped for precisely that removal.
 - **The hash covers the rollup BODY, not the report file.** API Extractor's
   preamble is identical in every report and is the tool's, not ours; hashing it
   would make an api-extractor upgrade that reworded one line bump every epoch at

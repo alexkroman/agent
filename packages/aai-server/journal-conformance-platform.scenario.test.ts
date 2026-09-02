@@ -158,6 +158,12 @@ describeWithPg("the journal contract over the platform's REAL handler", () => {
     label: "platform (real handler, real Postgres)",
     journal: () => journal,
     uid: journalIds("pf"),
+    // Same omission as the unit platform arm, and for the same reason: the
+    // CLIENT is what declares the method, so a real route underneath does not
+    // change the answer. There is no `POST … {method:"resumableRuns"}` to reach
+    // even if it did — a deployed run's recovery is the platform queue's
+    // reconcile. The resume half is EXCLUDED here, out loud.
+    resumable: false,
   });
 });
 

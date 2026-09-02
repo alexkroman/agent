@@ -215,9 +215,8 @@ describe("reading a run", () => {
 
   test("a completed run is ONE journal read, not two", async () => {
     // `readOutput` is `getRun(runId).output` in every implementation of this
-    // seam — the engine's and the eval engine's both — so calling it after
-    // `getRun` is a SECOND platform POST for a value the record already
-    // carried, on a status that is terminal and cannot have changed between
+    // seam, so calling it after `getRun` is a SECOND platform POST for a value
+    // the record carried, on a terminal status that cannot have changed between
     // them. Every browser reload of a finished form paid it.
     let reads = 0;
     const stored = record({ status: "completed", output: { ok: true } });
@@ -236,6 +235,35 @@ describe("reading a run", () => {
     });
     expect(await client.get("wrun_1")).toMatchObject({ status: "completed", output: { ok: true } });
     expect(reads).toBe(1);
+    expect(readOutput).not.toHaveBeenCalled();
+  });
+
+  test("an adapter whose record carries no output falls back to readOutput", async () => {
+    // `WdkRunRecord.output` is OPTIONAL and the RETAINED epoch 2 template carries
+    // none — retained on the written grounds that such an adapter's callers "fall
+    // back to `readOutput` exactly as they did". They had stopped.
+    const readOutput = vi.fn(async () => ({ late: true }));
+    const { client } = makeClient({
+      wdk: { getRun: async () => record({ status: "completed" }), readOutput },
+    });
+    expect(await client.get("wrun_1")).toMatchObject({
+      status: "completed",
+      output: { late: true },
+    });
+    expect(readOutput).toHaveBeenCalledOnce();
+  });
+
+  test("a completed run that returned nothing costs no round trip", async () => {
+    // PRESENCE, not definedness: a returning-nothing body is a completed run whose
+    // output IS `undefined`; a read to learn that costs the common case.
+    const readOutput = vi.fn(async () => "never");
+    const { client } = makeClient({
+      wdk: {
+        getRun: async () => ({ ...record({ status: "completed" }), output: undefined }),
+        readOutput,
+      },
+    });
+    expect(await client.get("wrun_1")).toMatchObject({ status: "completed" });
     expect(readOutput).not.toHaveBeenCalled();
   });
 
@@ -551,6 +579,35 @@ describe("listing declared workflows", () => {
     expect(first?.inputSchema).toMatchObject({
       type: "object",
       properties: { topic: { type: "string" } },
+    });
+  });
+
+  /**
+   * The FAILING observation: `safeJsonSchema` converted with zod's default
+   * `io: "output"`, which describes the PARSED value — so every `.default()`
+   * field came back `required`, and `WorkflowSummary.input` is documented as
+   * "the input schema to render". Both `podcast-digest` (five defaulted fields)
+   * and `redline` (two) therefore served a form marking as mandatory exactly the
+   * fields their author had given a fallback, while `validate()` next door
+   * accepts the same input WITHOUT them — the two halves of one schema
+   * disagreeing about one submission.
+   *
+   * Same fix, and the same direction, as the tool-parameter surface:
+   * `toToolJsonSchema(schema, "input")`.
+   */
+  test("a `.default()` field is OPTIONAL in the served schema, never required", () => {
+    const scheduled = workflow({
+      input: z.object({ topic: z.string(), everyDays: z.number().int().default(1) }),
+      run: body(),
+    });
+    const { client } = makeClient({ workflows: { scheduled } });
+    const [summary] = client.listing();
+    expect(summary?.inputSchema).toMatchObject({
+      // The default still RIDES on the property, which is what a form pre-fills
+      // the control from — `WorkflowFields` reads `default` and `required`
+      // separately, so this is the pair that has to move together.
+      properties: { everyDays: { default: 1 } },
+      required: ["topic"],
     });
   });
 

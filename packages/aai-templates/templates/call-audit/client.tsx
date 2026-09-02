@@ -22,6 +22,51 @@
  *   lines here, because the two lines that matter are the ones around them: the
  *   `URL.revokeObjectURL` on cleanup, and the guard that stops a slow first
  *   download landing under a second run's output.
+ *
+ * ## A reload here costs the UPLOAD as well as the run
+ *
+ * A `runId` names a run for as long as something holds it, and this page held it
+ * in React state — so a refresh lost it while the desk carried on decoding,
+ * cutting and auditing. On this template that is the most expensive orphaning
+ * in `templates/`: the recording is already stored, so the work is paid for, and
+ * a page with no handle on it invites somebody to upload a 700 MB call a second
+ * time and run the whole pipeline again. `key` is the handle that survives a
+ * reload and `recover: true` is what reads it back.
+ *
+ * The upload half of a reload is already the SDK's: `useWorkflowSubmit`
+ * remembers the id it minted, so picking the same file again sends only the
+ * windows that did not land. What it needs from the page is the same LIFETIME
+ * on both halves, which is the first reason this desk takes `useRunKey()`'s
+ * default — `sessionStorage`, the same store the upload recall uses. A handle
+ * that outlived it would promise a return the other half cannot keep.
+ *
+ * ## Why the artifact being shareable does NOT make the key shareable
+ *
+ * This is the template where a `?key=` parameter is most tempting: what a run
+ * produces is an audit somebody wants to send a colleague, and a URL is how
+ * people send things. Weigh what the parameter would actually hand over, though,
+ * because there is no per-user filtering behind `find` — the key IS the access
+ * control, so anyone holding it gets, on this agent:
+ *
+ * - the full TRANSCRIPT of a recorded call, plus the risks and actions somebody
+ *   had audited out of it,
+ * - the audio, which is a real person's voice, recorded with consent to record
+ *   and not consent to circulate,
+ * - `cancel()` and `wake()` on a live run, and
+ * - every other run this desk has filed under the same key, not just the one
+ *   that was shared.
+ *
+ * And a URL leaks by ordinary use: pasted into a chat, kept in history, sent as
+ * a referrer to whatever the page links out to. Against that, sharing the ARTIFACT
+ * needs none of it — the page renders the audit and offers `Download audit.mp3`,
+ * so a person sends the file and the findings deliberately, to exactly who they
+ * meant. A shareable key would trade a deliberate send for an accidental one, on
+ * the most sensitive input any template here accepts. It stays in
+ * `sessionStorage`, which covers the reload this section is about and dies with
+ * the tab.
+ *
+ * A key derived from the recording would be worse still: two desks auditing one
+ * call would recover each other's runs.
  */
 
 import "@alexkroman1/aai-ui/styles.css";
@@ -36,10 +81,12 @@ import {
   SubmitButton,
   UploadProgressBar,
   useDownloadUrl,
+  useRunKey,
   useWorkflowSubmit,
   WorkflowFields,
   WorkflowProgress,
 } from "@alexkroman1/aai-ui";
+import { useState } from "react";
 import type { audit } from "./agent.ts";
 
 /**
@@ -58,6 +105,20 @@ const WORKFLOW = "audit";
  * every time and reads as though it were free.
  */
 const api = createWorkflowApi();
+
+/**
+ * What the desk says while a run is in flight — three situations, one line
+ * each.
+ *
+ * The reload case gets its own words deliberately: somebody who did not press
+ * the button is owed an explanation for an audit appearing in front of them,
+ * and it is the line that keeps them from uploading the call again.
+ */
+function pendingNote(startedHere: boolean, found: boolean): string {
+  if (startedHere) return "Reloading is safe — this page will find the audit again.";
+  if (!found) return "Looking for an audit this tab started earlier…";
+  return "Still auditing a call this tab uploaded earlier — no need to send it again.";
+}
 
 /** One labelled number in the pipeline panel. */
 function Stat({ label, value }: { label: string; value: string }) {
@@ -85,11 +146,20 @@ function Findings({ title, items }: { title: string; items: string[] }) {
 }
 
 export function App() {
+  // This tab's handle on its own audits, in the store the upload recall uses —
+  // see the module doc for why a `?key=` is the wrong trade on this desk.
+  const key = useRunKey();
+  // Did THIS load start the run? A reload cannot have, and that is the only way
+  // the page can tell "auditing what you just uploaded" from "picking up where
+  // you left off" — the hook reports the run, not who asked for it.
+  const [startedHere, setStartedHere] = useState(false);
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
-  // `run.output` instead of `unknown`.
+  // `run.output` instead of `unknown`. Neither half of the recovery is useful
+  // alone: without `key` there is nothing to find the run by, and without
+  // `recover` the key is only ever written.
   const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = useWorkflowSubmit<
     typeof audit
-  >(WORKFLOW, { api });
+  >(WORKFLOW, { api, key, recover: true });
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the
@@ -106,13 +176,27 @@ export function App() {
         </p>
       </header>
 
-      <Form onSubmit={submitForm} error={error} className="flex flex-col gap-4">
+      <Form
+        onSubmit={(values) => {
+          setStartedHere(true);
+          return submitForm(values);
+        }}
+        error={error}
+        className="flex flex-col gap-4"
+      >
         {/* Every control, from the workflow's own input schema. See the module doc. */}
         <WorkflowFields workflow={WORKFLOW} />
         <SubmitButton pending={pending} pendingLabel="Auditing…">
           Audit the call
         </SubmitButton>
       </Form>
+
+      {/* `pending` covers the RUN rather than the request, and on a reload it is
+          also true while the run is being looked up by key — the stretch where
+          an empty form would invite a second 700 MB upload of the same call. */}
+      {pending && (
+        <p className="text-sm opacity-70">{pendingNote(startedHere, run !== undefined)}</p>
+      )}
 
       {/* The upload is its own wait, and the one nothing else can describe: the run
           does not EXIST until the bytes are in, so there is no run id and nothing

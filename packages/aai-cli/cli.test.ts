@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderUsage } from "citty";
@@ -79,6 +80,28 @@ describe("cli", () => {
     // secret the author points at their own provider. Asserted as an ABSENCE
     // because the removal is the user-visible part of that change.
     expect((mainCommand.subCommands as Record<string, unknown>).storage).toBeUndefined();
+  });
+
+  /**
+   * The absence above was asserted and the GUIDES still named `storage` for
+   * every release after it was removed — this package's `CLAUDE.md` in its
+   * opening `Binary: aai — subcommands: …` line, and the root `AGENTS.md` in
+   * its package table. A user reading either got a subcommand that prints the
+   * top-level help and exits 1.
+   *
+   * So the sentence is pinned to the registry rather than hand-kept. `deploy`
+   * is excluded because it is deliberately undocumented (in-guest Publish is
+   * its only caller), which is the one asymmetry the list is allowed.
+   */
+  test("the subcommand list in this package's guide names exactly what cli.ts registers", async () => {
+    const guide = await readFile(path.join(import.meta.dirname, "CLAUDE.md"), "utf-8");
+    const line = /Binary: `aai` — subcommands: ([^.]+)\./.exec(guide);
+    expect(line?.[1], "guide is missing its `Binary: aai — subcommands: …` line").toBeDefined();
+    const documented = (line?.[1] ?? "").split(/,\s*/).map((s) => s.trim());
+    const registered = Object.keys(mainCommand.subCommands as Record<string, unknown>).filter(
+      (name) => name !== "deploy",
+    );
+    expect([...documented].sort()).toEqual([...registered].sort());
   });
 });
 

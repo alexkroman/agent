@@ -198,8 +198,14 @@ export async function summarize(article: Article): Promise<Digest> {
  * replays the expensive half for free and re-issues only the cheap one.
  * Returning the timestamp rather than reading a clock in the BODY is the same
  * rule — a step's result is journaled and therefore stable across replays,
- * where `Date.now()` in the body would change on every one. Nothing CHECKS
- * that — there is no build scan for it — so the boundary is the author's.
+ * where the same read in the body would change on every one.
+ *
+ * The `new Date()` below is therefore a BASELINED occurrence of
+ * `guard-invariants` rule 30, and this is the reason: it is inside a step, not
+ * inside a body. The rule bans a clock read anywhere in a shipped `workflows/`
+ * file because the `ctx.step` callback boundary is not decidable from a line;
+ * `digestFlow` is what reaches this one, as `ctx.step("file", () =>
+ * file(digest))`. Anything at BODY level is the bug, not an exception.
  */
 export async function file(_digest: Digest): Promise<string> {
   await report("Filing the digest.");

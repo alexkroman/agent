@@ -65,6 +65,9 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName:
 }>;
 
 // @internal
+export function createPlatformStateBackend(opts: PlatformSessionStateOptions): SessionStateBackend;
+
+// @internal
 export function createPostgresJournal(opts: {
     db: Db;
 }): JournalStore;
@@ -169,6 +172,7 @@ type JournalArm = {
     label: string;
     journal: () => JournalStore;
     uid: () => string;
+    resumable: boolean;
 };
 
 // @public
@@ -190,16 +194,21 @@ type JournalStore = {
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
     claimAttempt(runId: string, key: string): Promise<number>;
+    releaseAttempt(runId: string, key: string): Promise<void>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
     closeHook(runId: string, key: string): Promise<boolean>;
     deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
     appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
 };
 
 // @public (undocumented)
 export function loadJournalConformance(): Promise<JournalConformanceSuite>;
+
+// @public (undocumented)
+export function loadSessionStateConformance(): Promise<SessionStateConformanceSuite>;
 
 // @public
 type LogContext = Record<string, unknown>;
@@ -212,6 +221,9 @@ type Logger = Record<LogLevel, LogFn>;
 
 // @public
 type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export function parseBearer(header: string | null | undefined): string;
 
 // @internal
 export function payloadRunId(message: unknown): string | undefined;
@@ -238,6 +250,9 @@ export type PlatformQueueOptions = PlatformEndpoint;
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
 // @public
+type PlatformSessionStateOptions = PlatformEndpoint;
+
+// @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
 
 // @internal
@@ -252,6 +267,12 @@ export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void;
 export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined;
 
 export { resolveAllBuiltins }
+
+// @public
+type ResumableRun = {
+    runId: string;
+    wakeAt?: number | undefined;
+};
 
 // @internal
 export function routeMatches(route: ServerRoute, url: string, method?: string): boolean;
@@ -374,6 +395,13 @@ type SessionEventStream = {
 };
 
 // @public
+type SessionStateArm = {
+    label: string;
+    backend: () => SessionStateBackend;
+    uid: () => string;
+};
+
+// @public
 type SessionStateBackend = {
     readonly name: "memory" | "postgres" | "platform";
     readonly durable: boolean;
@@ -383,6 +411,12 @@ type SessionStateBackend = {
     appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
     readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
     countEvents(sessionId: string): Promise<number>;
+};
+
+// @public
+export type SessionStateConformanceSuite = {
+    sessionStateConformance: (arm: SessionStateArm) => void;
+    sessionStateIds: (label: string) => () => string;
 };
 
 // @internal

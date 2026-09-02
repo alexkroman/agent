@@ -63,10 +63,21 @@
  *   and three backends reach the two spellings by three different routes. A
  *   strict compare would fail on the spelling and say nothing about the
  *   behaviour — which is the opposite of what an absence matrix is for.
- * - **Register the backend below.** A table listing two of three arms reports
- *   the same green as one listing all three; `journal-conformance.test.ts`
- *   sweeps the tree and fails when a `workflow-journal-*.ts` factory is missing
- *   from {@link JOURNAL_BACKENDS}.
+ * - **Register the backend below, AND every file that answers over it.** A table
+ *   listing two of three arms reports the same green as one listing all three;
+ *   `journal-conformance.test.ts` sweeps the tree and fails when a
+ *   `workflow-journal-*.ts` factory is missing from {@link JOURNAL_BACKENDS},
+ *   and `journal-conformance-arms.test.ts` fails when a declared
+ *   {@link JournalArmSite} does not exist, does not invoke the case list, or
+ *   sits in a tier other than the one it claims. The second gate is the newer
+ *   one and it closed a real hole: the `aai-server` arm was named in a doc
+ *   comment and registered nowhere, so deleting it left every gate in the repo
+ *   green but one, and that one reported the wrong finding about the wrong file.
+ * - **An arm DECLARES what it can do, and the ten `resumableRuns` cases are
+ *   the only conditional ones.** {@link JournalArm.resumable} is required, read
+ *   at collection time, and drives a reported skip; a case that decides its own
+ *   applicability in its BODY and `return`s prints a green checkmark over an
+ *   empty test. That is what those ten used to do on both platform arms.
  *
  * @internal
  */
@@ -99,54 +110,101 @@ export type JournalBackend = {
   module: string;
   /** The factory it exports — pinned to the filename by `konsistent.json`. */
   factory: string;
-  /** Which tier its arm runs in. */
-  tier: "unit" | "scenario";
+  /**
+   * Every file that answers the shared case list over this backend.
+   *
+   * This replaced a single `tier: "unit" | "scenario"`, and the platform entry
+   * is why. A backend may have arms in more than one tier AND in more than one
+   * PACKAGE — the platform's fake-transport arm is here, and the arm that finds
+   * platform bugs is `aai-server`'s, which this package cannot import. `tier`
+   * could describe only one of them, so the second lived in the entry's PROSE:
+   * named in a doc comment, registered nowhere, asserted by nothing.
+   *
+   * Deleting that file therefore cost no gate anything it could name. (One went
+   * red by ACCIDENT — `store-conformance-registry.test.ts` scans for exported
+   * `*Conformance` names reached from a test, and `loadJournalConformance`'s
+   * only call site is that arm — so the finding read "loadJournalConformance is
+   * reached from a test: expected false to be true", which is the wrong finding
+   * about the wrong file, and evaporates the moment a second caller appears or
+   * the loader is renamed.)
+   *
+   * A path is relative to `packages/`, so an arm a package away is as declared
+   * as one beside the registry, and `journal-conformance-arms.test.ts` reads
+   * every one of them out of the tree.
+   */
+  arms: readonly JournalArmSite[];
   /** Set when the backend is deliberately NOT conformable. */
   conformance?: false;
   /** Why not — a claim a reviewer can argue with. */
   why?: string;
 };
 
+/** One file that runs the shared case list over one backend. */
+export type JournalArmSite = {
+  /** The test file, relative to `packages/`. */
+  file: string;
+  /** Which tier it runs in — checked against the filename, not trusted. */
+  tier: "unit" | "scenario";
+  /** What this arm can see that its siblings cannot. */
+  sees: string;
+};
+
 /**
- * Every {@link JournalStore} implementation, and the tier its arm runs in.
+ * Every {@link JournalStore} implementation, and every FILE that answers the
+ * shared case list over it.
  *
  * `module` and `factory` are what the sweep in `journal-conformance.test.ts`
  * matches the tree against, so this list is the one place a fourth backend is
- * declared. `conformance: false` says a backend is deliberately NOT conformable
- * and why — a claim a reviewer can argue with, where an absent entry is just an
- * omission.
+ * declared; `arms` is what `journal-conformance-arms.test.ts` reads, and is the
+ * one place an arm — in this package or a package over — is declared.
+ * `conformance: false` says a backend is deliberately NOT conformable and why —
+ * a claim a reviewer can argue with, where an absent entry is just an omission.
  */
 export const JOURNAL_BACKENDS: readonly JournalBackend[] = [
   {
     backend: "memory",
     module: "workflow-journal-memory.ts",
     factory: "createMemoryJournal",
-    /** The reference. Unit tier, unconditionally, on every machine. */
-    tier: "unit",
+    arms: [
+      {
+        file: "aai-runtime/journal-conformance.test.ts",
+        tier: "unit",
+        sees: "the reference, unconditionally, on every machine",
+      },
+    ],
   },
   {
     backend: "platform",
     module: "workflow-journal-platform.ts",
     factory: "createPlatformJournal",
-    /**
-     * Unit tier, over the handler-shaped fake transport. The platform's SQL half
-     * is out of this package's reach and has TWO arms in `aai-server`:
-     * `platform-workflow-journal.scenario.test.ts` for tenancy, and
-     * `journal-conformance-platform.scenario.test.ts`, which answers the shared
-     * case list from the real route over a real Postgres. The second is the arm
-     * this fake is structurally blind to, and it earned its place on landing: a
-     * `createRun` that answered a duplicate run id with SUCCESS left the unit
-     * suite at 123 passed while that arm failed the shared case, same tree, same
-     * moment. See the module doc.
-     */
-    tier: "unit",
+    arms: [
+      {
+        file: "aai-runtime/journal-conformance.test.ts",
+        tier: "unit",
+        sees: "THIS side of the wire — the codec, `toRun`/`toStep`, the count-as-string — over a handler-shaped fake transport that delegates every SEMANTIC to the memory reference",
+      },
+      {
+        // The arm that finds platform bugs, and the one a `tier` field could not
+        // name. It earned its place on landing: a `createRun` that answered a
+        // duplicate run id with SUCCESS left the unit suite at 123 passed while
+        // this arm failed the shared case, same tree, same moment.
+        file: "aai-server/journal-conformance-platform.scenario.test.ts",
+        tier: "scenario",
+        sees: "the platform's OWN statements — the real route, the guest bearer, and the tables under `aai_platform`",
+      },
+    ],
   },
   {
     backend: "postgres",
     module: "workflow-journal-postgres.ts",
     factory: "createPostgresJournal",
-    /** Scenario tier: `on conflict`, a row count and a unique index are the point. */
-    tier: "scenario",
+    arms: [
+      {
+        file: "aai-runtime/journal-conformance-postgres.scenario.test.ts",
+        tier: "scenario",
+        sees: "`on conflict`, a row count and a unique index as the database's answers rather than a fake's",
+      },
+    ],
   },
 ];
 

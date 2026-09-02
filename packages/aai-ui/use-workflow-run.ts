@@ -123,6 +123,15 @@ function pollUntilTerminal<R>(
  * not: it can complete while the tab is closed, on a different sandbox, hours
  * later. There is no session to reconnect — the id is the whole state.
  *
+ * Which is also the limit of what this hook can do on its own. An id is state a
+ * RELOAD destroys, so a page holding nothing else comes back unable to name a
+ * run that is still going. The durable handle is `StartOptions.key`, read back
+ * with `find(workflow, key)`, and the hook that owns the id is where that
+ * belongs: `useWorkflowSubmit({ key, recover: true })` adopts the key's newest
+ * run as it mounts and passes the id here. See `_recover-run.ts` — the reason
+ * recovery is NOT in this hook is `reset()`, which leaves the owner holding no
+ * id on purpose, and a watcher that re-resolved one from a key would undo it.
+ *
  * The stream (`GET /runs/:id/events`) is tried first and the poll is its
  * fallback, so an agent deployed before that route existed still works. Watching
  * STOPS on a terminal status, so a finished run costs nothing; passing

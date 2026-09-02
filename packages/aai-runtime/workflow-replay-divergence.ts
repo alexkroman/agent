@@ -15,6 +15,9 @@
  * non-determinism that reaches a step name mints a key the journal has never
  * seen — and an unseen key used to mean "run it". On a body one line long:
  *
+ * `no-check`: a reproduction of the DEFECT, not a teaching example — `ctx`
+ * and `charge` are the reader's, and the two lines are the whole point.
+ * Scaffolding it into a compiling body would bury the one thing it shows.
  * ```ts no-check
  * const coin = Math.random() < 0.5 ? "h" : "t";
  * await ctx.step(`charge-${coin}`, charge);
@@ -35,7 +38,7 @@
  *   at least as often as it is a fault. A step that was reached and lost has an
  *   attempt on the record; one the body has never issued has none. The counter
  *   is claimed on a round trip the engine was making anyway, so this costs
- *   nothing. That half lives in `workflow-replay-step.ts`, at the claim.
+ *   nothing. That half lives in `workflow-replay-attempt.ts`, at the claim.
  * - **The journal holds a skipped entry that nothing this walk read can
  *   explain** — {@link DivergenceWatch.reach} below.
  *
@@ -119,7 +122,31 @@ export type DivergenceWatch = {
    * Answers the refusal to throw when the key turns out never to have been
    * claimed, or `undefined` when there is nothing to suspect.
    */
-  reach(key: string, name: string, answered: StepEntry | undefined): ReplayDivergenceError | undefined;
+  reach(
+    key: string,
+    name: string,
+    answered: StepEntry | undefined,
+  ): ReplayDivergenceError | undefined;
+  /**
+   * Record that a key this walk reached UNANSWERED turned out to be settled
+   * after all, so its journaled entry counts as read.
+   *
+   * The walk's snapshot is one read, and `workflow-replay-attempt.ts` takes a
+   * second one when the charge says another walk touched the key — so a step
+   * can be answered from the journal without ever having been in `entries`.
+   * That is indistinguishable from an EXECUTION to {@link reach}, which is
+   * handed the snapshot's answer, and the difference is load-bearing: the
+   * `readThrough` cursor below is what excuses a nested step's children, and a
+   * parent answered on this path used to leave its children displaced. Measured
+   * — the concurrent-delivery property refused `[outer(inner), …]` with the
+   * renamed-step message on a run nobody had renamed.
+   *
+   * A refusal already computed for an EARLIER key is not revisited, which is a
+   * MISS rather than a false accusation and is the direction this whole check
+   * errs in. It is only reachable for a fan-out, whose siblings all reach
+   * synchronously before any of them settles.
+   */
+  answeredLate(entry: StepEntry): void;
 };
 
 /**
@@ -167,13 +194,14 @@ export function watchDivergence(entries: readonly StepEntry[]): DivergenceWatch 
       unreadKeys.delete(key);
       if (answered !== undefined) {
         readThrough = Math.max(readThrough, answered.finishedAt);
-        return undefined;
+        return;
       }
       const skipped = displaced();
-      if (skipped === undefined) return undefined;
-      return new ReplayDivergenceError(
-        divergedMessage(key, name, skipped.key, unreadKeys.size),
-      );
+      if (skipped === undefined) return;
+      return new ReplayDivergenceError(divergedMessage(key, name, skipped.key, unreadKeys.size));
+    },
+    answeredLate(entry) {
+      readThrough = Math.max(readThrough, entry.finishedAt);
     },
   };
 }

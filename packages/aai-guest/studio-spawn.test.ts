@@ -14,10 +14,10 @@ import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { useTempDir } from "./_test-utils.ts";
 import {
+  cliChildEnv,
   NPM_OUTPUT_CAP,
   NPM_TIMEOUT_MS,
   PACKAGE_NAME_RE,
-  pathOnlyEnv,
   runCapped,
   runNpm,
   WORKSPACE_CHILD_ENV_ALLOWLIST,
@@ -189,11 +189,65 @@ describe("workspaceChildEnv", () => {
     expect(result.stdout.trim()).toBe(dir());
   });
 
-  test("is a superset of pathOnlyEnv, which is the same shape for a stricter child", () => {
-    // The build and deploy children take `pathOnlyEnv`; this is that policy
-    // widened by exactly what a shell and an install need.
-    for (const [name, value] of Object.entries(pathOnlyEnv())) {
+  test("is a superset of cliChildEnv, which is the same shape for a stricter child", () => {
+    // The in-guest deploy child takes `cliChildEnv`; this is that policy widened
+    // by exactly what a shell and an install need. A name that lands in the
+    // stricter list and NOT here would mean the child running tenant code lost
+    // something the child running ours needs — `TMPDIR` being the live example.
+    for (const [name, value] of Object.entries(cliChildEnv())) {
       expect(workspaceChildEnv()[name]).toBe(value);
+    }
+  });
+});
+
+/**
+ * The env for the one child that runs OUR code: the in-guest `aai deploy`.
+ *
+ * It was `pathOnlyEnv`, forwarding PATH and nothing else, so the CLI bundler's
+ * ~8 MB `mkdtemp(join(tmpdir(), …))` fell back to `/tmp` — a 512 MiB tmpfs
+ * charged to guest RAM under the local microVM. The guest itself is on
+ * `/var/tmp`; its own deploy child was not, and the function's doc claimed
+ * "nothing but PATH" as a feature. See the function for what is still left out
+ * and why.
+ */
+describe("cliChildEnv", () => {
+  test("forwards the scratch directory the guest around it is using", () => {
+    vi.stubEnv("TMPDIR", "/var/tmp");
+    expect(cliChildEnv().TMPDIR).toBe("/var/tmp");
+  });
+
+  test("forwards every name os.tmpdir() reads, not just the first", () => {
+    // `os.tmpdir()` reads TMPDIR, then TMP, then TEMP. Forwarding one would let
+    // the child resolve a different directory than its parent.
+    vi.stubEnv("TMPDIR", undefined);
+    vi.stubEnv("TMP", "/var/tmp/a");
+    vi.stubEnv("TEMP", "/var/tmp/b");
+    expect(cliChildEnv()).toMatchObject({ TMP: "/var/tmp/a", TEMP: "/var/tmp/b" });
+  });
+
+  test("leaves an absent name ABSENT rather than the string undefined", () => {
+    // `spawn` coerces an own `undefined` to `"undefined"`, which is how a child
+    // ends up with a literal `TMPDIR=undefined`.
+    vi.stubEnv("TMPDIR", undefined);
+    vi.stubEnv("TMP", undefined);
+    vi.stubEnv("TEMP", undefined);
+    const env = cliChildEnv();
+    for (const name of ["TMPDIR", "TMP", "TEMP"]) {
+      expect(Object.hasOwn(env, name), name).toBe(false);
+    }
+  });
+
+  test("carries no credential and no boot key", () => {
+    // The narrow half of the claim, and the reason this is not
+    // `workspaceChildEnv`: the guest's bearer and every `AAI_*` boot key stay out.
+    vi.stubEnv("AAI_GUEST_TOKEN", "secret");
+    vi.stubEnv("AAI_BUNDLE_URL", "https://blobs.test/signed");
+    vi.stubEnv("HOME", "/root");
+    // A SUBSET rather than an exact list: which of the three temp names the host
+    // running this spec happens to set is not the claim — that nothing else gets
+    // through is.
+    for (const name of Object.keys(cliChildEnv())) {
+      expect(["PATH", "TMPDIR", "TMP", "TEMP"], name).toContain(name);
     }
   });
 });

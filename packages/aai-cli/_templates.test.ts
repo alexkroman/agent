@@ -13,8 +13,13 @@ vi.mock("./_agent.ts", () => ({
   getMonorepoRoot: vi.fn().mockReturnValue(null),
 }));
 
-const { bundledTemplatesDir, downloadAndMergeTemplate, layerScaffold, mergeScaffoldManifest } =
-  await import("./_templates.ts");
+const {
+  bundledTemplatesDir,
+  downloadAndMergeTemplate,
+  layerScaffold,
+  mergeScaffoldManifest,
+  templateCopyFilter,
+} = await import("./_templates.ts");
 
 /** Create a fake templates root with scaffold + two templates, and point resolution at it. */
 async function useFakeRoot(dir: string): Promise<void> {
@@ -49,6 +54,95 @@ describe("bundled templates", () => {
       await expect(downloadAndMergeTemplate("simple", path.join(dir, "out"))).rejects.toThrow(
         "Templates directory is missing or unreadable",
       );
+    });
+  });
+});
+
+/**
+ * A template directory is also a runnable project, so a developer who ran
+ * `aai dev`/`aai publish` in one leaves untracked build output behind. Both
+ * copies out of it — this one and `bundle-templates.mjs`, which packs the
+ * published tarball — took all of it: `aai init foo --template bar` produced a
+ * project already linked to `bar`'s last local deploy, and its first publish
+ * either claimed a slug the user never chose or refused the `localhost` origin
+ * a dev checkout leaves in `.aai/project.json`.
+ */
+describe("templateCopyFilter", () => {
+  test.for([".aai", "node_modules", "dist", ".workflow-data", ".swc", ".git"])(
+    "%s is never copied out of a template",
+    (name) => {
+      expect(templateCopyFilter(path.join("/templates/simple", name))).toBe(false);
+    },
+  );
+
+  test.for([".env", ".env.local", "pnpm-lock.yaml", "package-lock.json", ".DS_Store"])(
+    "%s is never copied out of a template",
+    (name) => {
+      expect(templateCopyFilter(path.join("/templates/simple", name))).toBe(false);
+    },
+  );
+
+  // The scaffold SHIPS `.env.example` and a scaffolded project cannot do
+  // without it, so the filter has to let it through — the whole reason
+  // `LOCAL_ONLY_FILES` excludes that one name.
+  test.for([".env.example", "agent.ts", "client.tsx", "package.json", ".gitignore"])(
+    "%s is copied",
+    (name) => {
+      expect(templateCopyFilter(path.join("/templates/simple", name))).toBe(true);
+    },
+  );
+
+  test("does not reject the template directory it is copying", () => {
+    expect(templateCopyFilter("/templates/simple")).toBe(true);
+    expect(templateCopyFilter("/root/scaffold")).toBe(true);
+  });
+
+  // The BUILD-time copy is the one that packs the published tarball
+  // (`files: ["bin.mjs", "dist"]`), and it is a plain script no other test
+  // reaches — it copies from the working tree into `dist/`, so running it here
+  // would rewrite a build artifact. Its wiring is what has to hold: measured on
+  // a real build before the filter, `dist/templates` carried 26 stray
+  // `.aai/project.json` files and 9.4 MB of one developer's `.aai/client`
+  // bundles out of 12 MB.
+  test("the build-time copy uses this same filter", async () => {
+    const script = await fs.readFile(
+      path.join(import.meta.dirname, "bundle-templates.mjs"),
+      "utf-8",
+    );
+    expect(script).toContain('import { templateCopyFilter } from "./_templates.ts"');
+    expect(script).toContain("filter: templateCopyFilter");
+  });
+
+  test("skips a template's build output and machine state end to end", async () => {
+    await withTempDir(async (dir) => {
+      const rootDir = await writeFiles(path.join(dir, "templates-root"), {
+        "scaffold/.env.example": "API_KEY=",
+        "templates/simple/agent.ts": 'export default { name: "simple" };',
+        // What `aai publish` and `aai dev` leave in a template directory.
+        "templates/simple/.aai/project.json":
+          '{"slug":"simple","serverUrl":"http://localhost:8080"}',
+        "templates/simple/.aai/client/index.html": "<html></html>",
+        "templates/simple/.workflow-data/run.json": "{}",
+        "templates/simple/node_modules/zod/package.json": "{}",
+        "templates/simple/.env": "ASSEMBLYAI_API_KEY=sk-real-secret",
+        "templates/simple/pnpm-lock.yaml": "lockfileVersion: '9.0'",
+      });
+      vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
+      const target = path.join(dir, "output");
+      await downloadAndMergeTemplate("simple", target);
+
+      expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
+      expect(await fileExists(path.join(target, ".env.example"))).toBe(true);
+      for (const rel of [
+        ".aai/project.json",
+        ".aai/client/index.html",
+        ".workflow-data/run.json",
+        "node_modules/zod/package.json",
+        ".env",
+        "pnpm-lock.yaml",
+      ]) {
+        expect.soft(await fileExists(path.join(target, rel)), rel).toBe(false);
+      }
     });
   });
 });

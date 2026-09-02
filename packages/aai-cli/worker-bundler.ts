@@ -41,6 +41,7 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { invariant } from "@alexkroman1/aai/internal";
 import { build, type PluginOption, type Rollup } from "vite";
 import { errorCode } from "./_utils.ts";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
@@ -287,8 +288,14 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   }
 
   const output = Array.isArray(result) ? result[0] : (result as Rollup.RollupOutput);
-  if (!output) throw new Error("Vite produced no output for agent.ts");
+  // Both are properties of the config a few lines up rather than of anything a
+  // caller passed: one `input`, `codeSplitting: false`, and a `build()` (not a
+  // watch), so exactly one output carrying exactly one entry chunk. A miss is
+  // this module having mis-built its own config.
+  invariant(output !== undefined, "bundle.worker.output");
   const chunk = output.output.find((o): o is Rollup.OutputChunk => o.type === "chunk" && o.isEntry);
-  if (!chunk) throw new Error("Vite produced no entry chunk for agent.ts");
+  invariant(chunk !== undefined, "bundle.worker.entry-chunk", () => ({
+    kinds: output.output.map((o) => o.type),
+  }));
   return chunk.code;
 }

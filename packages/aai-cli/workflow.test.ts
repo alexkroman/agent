@@ -14,6 +14,8 @@
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { getServerInfo } from "./_agent.ts";
+
 vi.mock("./_agent.ts", () => ({
   getServerInfo: vi.fn().mockResolvedValue({
     // No trailing slash, because the real `getServerInfo` cannot return one:
@@ -27,6 +29,19 @@ vi.mock("./_agent.ts", () => ({
     apiKey: "test-api-key",
   }),
 }));
+
+/**
+ * The project pin, read for its SLUG before any credential is resolved.
+ *
+ * `target` reads this rather than letting `getServerInfo` reach
+ * `requireDeployedSlug`, because that helper resolves the API key first: an
+ * undeployed project's first error was `not_logged_in`, naming `aai login` for
+ * a command that sends no key. Mocked here as a DEPLOYED project so the
+ * platform-path cases below reach the client; `readProjectConfig` returning
+ * null is its own case further down.
+ */
+const mockReadProjectConfig = vi.hoisted(() => vi.fn());
+vi.mock("./_config.ts", () => ({ readProjectConfig: mockReadProjectConfig }));
 
 const mockLog = vi.hoisted(() => ({
   info: vi.fn(),
@@ -58,6 +73,8 @@ beforeEach(() => {
   // file: three of the list/runs cases print the same "declares no workflows"
   // and "No runs of digest yet" lines.
   vi.clearAllMocks();
+  // After the clear, so the default survives it.
+  mockReadProjectConfig.mockResolvedValue({ slug: "digest-x7k2mq" });
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -220,5 +237,99 @@ describe("executeWorkflowCancel", () => {
     const result = await executeWorkflowCancel("/proj", "wrun_1", {});
     expect(result.ok).toBe(true);
     expect(mockLog.info).toHaveBeenCalledWith("wrun_1 had already finished");
+  });
+});
+
+describe("--agent targets a server the caller is running themselves", () => {
+  /**
+   * The whole capability, and the one thing a reader cannot check by eye: a dev
+   * server mounts the workflow API on the ORIGIN, where the platform serves it
+   * under `/:slug`. So the platform URL is not this URL with a different host —
+   * the slug segment is ABSENT, which is why no `--server` value could reach a
+   * dev server and why `aai dev` was unreachable from this command at all.
+   */
+  test("builds a slug-LESS base URL, not the platform's /:slug shape", async () => {
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000" });
+    expect(call()[0]).toBe("http://localhost:3000/workflows");
+  });
+
+  test("resolves NO project config and NO API key", async () => {
+    // The two things that made `aai dev` unreachable. `getServerInfo` resolves
+    // the key BEFORE it looks for a slug, so an undeployed project's first
+    // error was `not_logged_in` — pointing at `aai login` for a command that
+    // never sends the key. Asserted on the mocks rather than on the URL,
+    // because a URL assertion passes whether or not either was consulted.
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000" });
+    expect(getServerInfo).not.toHaveBeenCalled();
+    expect(mockReadProjectConfig).not.toHaveBeenCalled();
+  });
+
+  test("still sends no authorization, and still honours --token", async () => {
+    // Same posture as the platform path: the workflow API is the agent's own
+    // surface. A local target must not become an excuse to send a credential.
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000" });
+    expect(new Headers(call()[1].headers).get("authorization")).toBe(null);
+
+    fetchMock.mockClear();
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000", token: "t0k" });
+    expect(new Headers(call()[1].headers).get("authorization")).toBe("Bearer t0k");
+  });
+
+  test("strips a trailing slash, so the joined path has no empty segment", async () => {
+    // `resolveServerUrl` does this for every OTHER origin reaching this module,
+    // at resolution time — `--agent` is the one it does not produce, so the
+    // strip is owned here rather than at the join.
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000///" });
+    expect(call()[0]).toBe("http://localhost:3000/workflows");
+  });
+
+  test("names the ORIGIN when the agent declares nothing", async () => {
+    // There is no slug to print, and "undefined declares no workflows" is what
+    // a `slug`-shaped Target would have produced.
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000" });
+    expect(mockLog.info).toHaveBeenCalledWith("http://localhost:3000 declares no workflows");
+  });
+
+  test.each([
+    ["not a URL at all", "localhost:3000"],
+    ["a non-HTTP scheme", "ftp://localhost:3000"],
+    ["a file URL", "file:///etc/passwd"],
+  ])("refuses %s before it reaches a request", async (_label, value) => {
+    // This value is joined into a request path, so it is checked at the point it
+    // becomes a target rather than interpolated — the rule
+    // `resolveDeployTarget`'s slug guard follows. The assertion that matters is
+    // that NOTHING was dialled.
+    await expect(executeWorkflowList("/proj", { agent: value })).rejects.toThrow(/--agent/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("a project with no deployment", () => {
+  test("names the cause FIRST, and both ways out", async () => {
+    // The reproduction: `aai workflow list` in an undeployed project reported
+    // `not_logged_in` when the caller was not logged in, and "run `aai publish`
+    // first" when they were — neither naming `aai dev`, whose workflow API was
+    // answering on localhost the whole time. The credential is never resolved
+    // on this path now, so the sentence cannot be pre-empted by a login error.
+    mockReadProjectConfig.mockResolvedValue(null);
+    await expect(executeWorkflowList("/proj", {})).rejects.toMatchObject({
+      code: "no_deployment",
+      hint: expect.stringContaining("--agent"),
+    });
+    expect(getServerInfo).not.toHaveBeenCalled();
+  });
+
+  test("a config with no slug is the same case as no config", async () => {
+    // `aai pull` of a never-published project, and `aai delete`, both leave a
+    // project.json that keeps `serverUrl` and carries no slug.
+    mockReadProjectConfig.mockResolvedValue({ serverUrl: "https://agents.example" });
+    await expect(executeWorkflowList("/proj", {})).rejects.toMatchObject({
+      code: "no_deployment",
+    });
   });
 });

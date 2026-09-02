@@ -605,6 +605,9 @@ importers:
       '@types/ws':
         specifier: 'catalog:'
         version: 8.18.1
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.9.0
       microsandbox:
         specifier: 0.6.10
         version: 0.6.10

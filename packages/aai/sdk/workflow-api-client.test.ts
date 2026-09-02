@@ -229,6 +229,60 @@ describe("createWorkflowApiClient", () => {
     expect(call()[0]).toContain("/workflows/runs/wrun_1/wake");
   });
 
+  /**
+   * The FAILING observation: `POST /runs/:id/wake` reads a repeatable
+   * `?correlationId=`, and nothing in the repo could send one — `wake(runId)`
+   * took no options at all. That made a TARGETED wake unreachable over this
+   * client, and with it the only spelling that can end a hook's approval
+   * deadline: a BARE wake deliberately cannot reach a `kind: "hookTimeout"`
+   * (the journal filters it), so the deadline had no reachable request.
+   */
+  test("wake sends each correlation id as a repeated query parameter", async () => {
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_1", woken: 1 }));
+    await client().wake("wrun_1", { correlationIds: ["review", "audit"] });
+    expect(call()[0]).toBe(
+      "https://agents.example/my-agent/workflows/runs/wrun_1/wake?correlationId=review&correlationId=audit",
+    );
+  });
+
+  test("wake sends no query at all for a bare call", async () => {
+    // The absence is the request: a bare wake is the blunt "send it now" button,
+    // and `?correlationId=` (blank) is a 400 on the route rather than a synonym
+    // for it — so an empty list must not become one either.
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_1", woken: 1 }));
+    const api = client();
+    await api.wake("wrun_1");
+    await api.wake("wrun_1", { correlationIds: [] });
+    expect(call(0)[0]).not.toContain("?");
+    expect(call(1)[0]).not.toContain("?");
+  });
+
+  test.each([
+    ["blank", ""],
+    ["whitespace", "   "],
+  ])("wake refuses a %s correlation id before sending anything", async (_label, id) => {
+    // The route answers 400 for exactly this, because the journal is explicit
+    // that an empty-string id is not an absent one — two backends used to fold
+    // them and woke every uncorrelated sleep on the run. A client that can
+    // construct a request the server will refuse is one that should refuse first.
+    await expect(client().wake("wrun_1", { correlationIds: [id] })).rejects.toThrow(
+      /must not be empty/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("wake refuses a correlation id past the route's length cap", async () => {
+    const api = client();
+    // The exact boundary in both directions, so the refusal cannot drift a
+    // character away from the 400 the route answers.
+    await expect(api.wake("wrun_1", { correlationIds: ["a".repeat(257)] })).rejects.toThrow(
+      /at most 256 characters/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_1", woken: 1 }));
+    await expect(api.wake("wrun_1", { correlationIds: ["a".repeat(256)] })).resolves.toBe(1);
+  });
+
   test("wake resolves 0 for a 404 — nothing was sleeping, which is an answer", async () => {
     fetchMock.mockImplementation(async () => json({ error: "gone" }, 404));
     await expect(client().wake("gone")).resolves.toBe(0);

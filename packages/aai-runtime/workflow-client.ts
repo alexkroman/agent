@@ -201,13 +201,26 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   /**
    * The engine's run record as our discriminated snapshot.
    *
-   * `output` comes off the RECORD, never from a second `readOutput` call. It
-   * used to be the latter, and that cost a journal round trip per snapshot of a
+   * `output` comes off the RECORD when the record CARRIES it, which every
+   * adapter in this repo does. It used to be a second `readOutput` call
+   * unconditionally, and that cost a journal round trip per snapshot of a
    * finished run — two POSTs to the platform where one would do, paid again on
    * every browser reload of a completed form, and `recent()` paid one per
    * completed run in the page. The re-read bought nothing: `completed` is
    * terminal and the status and the output are written by one statement, so the
    * record already in hand carries the final value.
+   *
+   * **`readOutput` is still the FALLBACK, and dropping it was a real gap.**
+   * `WdkRunRecord.output` is OPTIONAL, so an adapter written against an earlier
+   * epoch legitimately carries none — and `contracts/compatibility/workflow/
+   * v2.ts`, a RETAINED epoch, is exactly that adapter, its own doc justifying
+   * the retain on the grounds that "an adapter that carries no `output` is one
+   * whose callers fall back to `readOutput` exactly as they did". They had
+   * stopped: every completed run of such an adapter reported `output:
+   * undefined`, silently, and the epoch's stated contract was false. The test is
+   * PRESENCE of the key rather than definedness, because a body that returns
+   * nothing is a completed run whose output really is `undefined` and must not
+   * cost a round trip to say so.
    */
   async function toSnapshot(
     record: WdkRunRecord,
@@ -226,7 +239,11 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     };
     switch (record.status) {
       case "completed":
-        return { ...base, status: "completed", output: record.output };
+        return {
+          ...base,
+          status: "completed",
+          output: "output" in record ? record.output : await wdk.readOutput(record.runId),
+        };
       case "failed":
         // A run can be recorded `failed` with no message — a killed container,
         // a delivery that never got to write one. An empty `error` on a `failed`
@@ -403,14 +420,32 @@ function streamOptions(options: StreamOptions | undefined): WdkStreamOptions {
   return { namespace: options?.namespace, startIndex: options?.startIndex };
 }
 
-/** Convert a declared input schema for the wire, warning rather than throwing. */
+/**
+ * Convert a declared input schema for the wire, warning rather than throwing.
+ *
+ * **`"input"`, and it is the direction by definition.** This feeds
+ * {@link WorkflowSummary.inputSchema} — "the input schema to render" — and
+ * `validate` above runs the SAME schema over what the caller then sends, so
+ * whatever a `.default()` fills in is exactly what the caller may omit. Under
+ * zod's own default (`"output"`, the PARSED value) every defaulted field is
+ * advertised `required`, so a rendered form marked as mandatory the fields whose
+ * author had supplied a fallback while the validator beside it accepted the
+ * submission without them. Two shipped templates were living with it.
+ *
+ * Two other things move with the direction, and neither costs this surface
+ * anything. A plain `z.object()` stops claiming `additionalProperties: false` —
+ * honest, since zod ACCEPTS an unknown key on the way in and silently drops it,
+ * and no reader of this schema (`WorkflowFields`, the studio's sampler) looks at
+ * the keyword. And a `.transform()` field reports its PRE-transform type instead
+ * of failing conversion, which is the type a caller actually has to send.
+ */
 function safeJsonSchema(
   schema: NonNullable<WorkflowDef["input"]>,
   name: string,
   logger: Logger,
 ): unknown {
   try {
-    return toToolJsonSchema(schema);
+    return toToolJsonSchema(schema, "input");
   } catch (err: unknown) {
     logger.warn?.("Workflow input schema could not be converted to JSON Schema", {
       workflow: name,

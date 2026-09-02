@@ -31,14 +31,34 @@
  * exactly the same reason — a deadline recomputed from the clock on every replay
  * moves further out each time, and the run never wakes.
  *
- * **Nothing checks this, and that is worth knowing rather than implying.** The
- * build scan that used to try went with the DevKit: it read the BUILT flow
- * bundle and assumed the builder had stripped step bodies out of it, so against
- * an ordinary Vite build it warned about a `Date.now()` INSIDE a step callback —
- * legal — while blind to the boundary it existed to police. A lexical AST pass
- * would be the honest replacement, and there is no such pass today: code inside
- * a `ctx.step(...)` callback runs once and code outside it replays, a boundary
- * decidable without running anything, and nothing decides it.
+ * **THREE layers check this now, and none is a substitute for another.** For a
+ * long time nothing did — the build scan that used to try went with the DevKit,
+ * having read the BUILT flow bundle on the assumption that the builder had
+ * stripped step bodies out of it, so against an ordinary Vite build it warned
+ * about a `Date.now()` INSIDE a step callback (legal) while blind to the
+ * boundary it existed to police. What replaced it:
+ *
+ * - **`Literal`, at the call site.** A name that has widened to `string`
+ *   is a compile error. Cheap, and it cannot reach a name whose type is a union
+ *   of literals — that type's own doc carries the gap and why closing it with an
+ *   `IsUnion` rejection was refused.
+ * - **`guard-invariants` rule 30, before it ships.** A clock, a random number, a
+ *   uuid or a `fetch` in a shipped `workflows/*.ts` is a gate failure; the
+ *   legitimate case — the same read inside a step body — is baselined with its
+ *   reason at the line. This is the honest lexical pass the DevKit's scan was
+ *   not, and it is line-based rather than an AST walk, which is why it bans the
+ *   call in the file and leaves the boundary to the baseline.
+ * - **The ENGINE, at run time.** A walk that mints a journal key no earlier walk
+ *   ever reached, while the journal still holds work it cannot explain, is
+ *   refused rather than executed — `aai-runtime/workflow-replay-divergence.ts`,
+ *   which carries the measurement (7 of 10 runs executing a side effect twice,
+ *   all 10 reporting `completed`). It is the only layer that sees a name read
+ *   from a config table, so it is necessary regardless of the other two.
+ *
+ * What NONE of them sees is a wait's identity. `ctx.sleep` and
+ * {@link WorkflowCtx.waitFor} are keyed POSITIONALLY (`sleep!0`, `hook!0`), so a
+ * body reaching a different NUMBER of waits reads another wait's record — and a
+ * pure-sleep divergence reaches no step name for any layer to catch.
  *
  * ## Step identity is `(name, occurrence)`, and neither half is optional
  *
@@ -69,6 +89,36 @@
  *
  * @module
  */
+
+/**
+ * A string LITERAL — the same type, unless it has widened to `string`.
+ *
+ * `string extends S` is only true when `S` IS `string`, so a widened argument
+ * resolves to `never` and the call site is a compile error naming the parameter.
+ * That turns "make it a string LITERAL" from advice in the doc below into
+ * something the checker says.
+ *
+ * ## What it CANNOT catch, stated because the gap is the interesting part
+ *
+ * Determinism is a fact about how a value was PRODUCED; a type records only what
+ * shape it HAS, and `Math.random() < 0.5 ? "h" : "t"` and `config.mode` are the
+ * SAME TYPE. So this rejects a widened `string` and nothing subtler:
+ *
+ * - `` `charge-${coin}` `` where `coin` is `"h" | "t"` infers a UNION OF
+ *   LITERALS, which is not `string`, so it passes. That is the measured bug — 7
+ *   of 10 runs executing a side effect twice, see
+ *   `aai-runtime/workflow-replay-divergence.ts` — and it is caught at RUNTIME
+ *   instead.
+ * - `` `charge-${Date.now()}` `` is `` `charge-${number}` ``, also not `string`,
+ *   also passes. `guard-invariants` rule 30 is the layer that sees that one, by
+ *   banning the clock in a shipped body rather than by typing the name.
+ *
+ * An `IsUnion` rejection would catch the first case and was deliberately NOT
+ * added: it false-positives on a name derived from a legitimate config union,
+ * and a gate that refuses correct code is worse than the runtime check catching
+ * the mistake. Three layers, none a substitute for another.
+ */
+type Literal<S extends string> = string extends S ? never : S;
 
 /**
  * Per-step overrides. Everything here has a default that is right for most
@@ -143,8 +193,20 @@ export type WorkflowCtx = {
    * built from the run's own data is unreadable in that run's history besides.
    * A loop needs no name of its own per round: the occurrence count is what
    * separates the iterations.
+   *
+   * The `Literal` constraint is what makes "a string LITERAL" a compile error
+   * rather than a sentence in this paragraph. It is deliberately not exported —
+   * an author meets it as the message tsc prints, never by name — so its doc,
+   * carrying the two shapes it cannot reach and which layer catches each, is in
+   * `sdk/workflow-ctx.ts` beside the declaration. A harness that means
+   * to pass an unbounded name narrows `ctx.step` through one typed alias rather
+   * than casting at each site.
    */
-  step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+  step<T, const Name extends string>(
+    name: Name & Literal<Name>,
+    fn: () => Promise<T> | T,
+    options?: StepOptions,
+  ): Promise<T>;
   /**
    * Wait, durably — for a duration in milliseconds, or until an absolute `Date`.
    *

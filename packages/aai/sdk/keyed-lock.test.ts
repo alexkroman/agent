@@ -32,7 +32,14 @@ describe("createKeyedLock", () => {
       release();
     });
 
-    await Promise.all([first, second]);
+    // Bounded rather than plainly awaited, for the reason spelled out on the
+    // sibling case below: a lock that never handed "k" to the second acquirer
+    // would leave this promise pending and the test would HANG to the suite
+    // timeout rather than failing on the claim in its own name.
+    await pTimeout(Promise.all([first, second]), {
+      milliseconds: 500,
+      message: '"k" was never handed to the second acquirer',
+    });
     expect(events).toEqual(["first:start", "first:end", "second:start"]);
   });
 
@@ -79,7 +86,16 @@ describe("createKeyedLock", () => {
     const pending2 = lock("k");
 
     release1();
-    const release2 = await pending2;
+    // Bounded, like the different-keys case above and for the same reason:
+    // `await pending2` is the whole claim of this test, and a release that
+    // failed to hand the key on leaves it pending — so the failure would be a
+    // suite timeout on a test whose name explains nothing, rather than a
+    // message naming what did not happen. `p-timeout` rather than a hand-rolled
+    // race against a timer (`guard-invariants` rule 3).
+    const release2 = await pTimeout(pending2, {
+      milliseconds: 500,
+      message: "the queued acquirer never got the key after release",
+    });
     expect(lock.size).toBe(1);
 
     release2();

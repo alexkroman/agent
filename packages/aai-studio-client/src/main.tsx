@@ -48,6 +48,7 @@ import { PublicApiPage } from "./public-api.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { installStaleBuildRecovery } from "./stale-build.ts";
 import "./styles.css";
+import { invariant } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 
 // Before anything renders: a chunk this build names can stop existing under
@@ -176,7 +177,10 @@ function Root() {
 }
 
 const container = document.getElementById("root");
-if (!container) throw new Error("Studio shell is missing its #root element");
+// The document this runs in is the studio's own `index.html`, which declares
+// `#root` — so this is a property of an artifact in this package rather than
+// anything a reader of the page could get wrong.
+invariant(container !== null, "studio.shell.root");
 
 /**
  * The public API page is chosen HERE rather than inside `Root`, and that is the

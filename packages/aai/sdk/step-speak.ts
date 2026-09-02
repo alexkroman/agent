@@ -8,7 +8,7 @@
  * present — is not in scope. `stepGenerate` closed that for the model.
  * This closes it for the voice.
  *
- * ```ts no-check
+ * ```ts
  * import { requireStepEnv, stepSpeak } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string) {

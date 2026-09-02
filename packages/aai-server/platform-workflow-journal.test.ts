@@ -118,6 +118,11 @@ const CALLS: readonly {
     run: (sql) => journal.claimAttempt(sql, SLUG, "wrun_1", "a#0"),
   },
   {
+    name: "releaseAttempt",
+    rows: [[]],
+    run: (sql) => journal.releaseAttempt(sql, SLUG, "wrun_1", "a#0"),
+  },
+  {
     name: "claimSleep",
     rows: [[], [SLEEP_ROW]],
     run: (sql) => journal.claimSleep(sql, SLUG, "wrun_1", "sleep!0", 1000, undefined, "sleep"),

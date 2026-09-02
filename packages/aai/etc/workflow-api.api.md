@@ -58,6 +58,9 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
 
 // @public
@@ -222,7 +225,7 @@ export type WorkflowApi = {
         fromIndex?: number;
         signal?: AbortSignal;
     }): AsyncIterable<unknown>;
-    wake(runId: string): Promise<number>;
+    wake(runId: string, options?: WakeUpOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     uploadInfo(id: string): Promise<UploadInfo>;
     download(id: string, options?: {
@@ -265,7 +268,7 @@ export type WorkflowClient = {
 export type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;

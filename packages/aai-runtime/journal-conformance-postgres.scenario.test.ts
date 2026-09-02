@@ -88,5 +88,11 @@ describeWithPg("the journal contract over a real Postgres", () => {
     label: "postgres",
     journal: () => journal,
     uid: journalIds("pg"),
+    // The self-hosted store declares `resumableRuns` — the boot sweep is what a
+    // self-hosted deployment recovers a stranded run with, there being no
+    // platform queue to reconcile it. Pinned in
+    // `workflow-journal-postgres.test.ts`; asserted against the live store by
+    // the declaration case in `journal-conformance-resume.ts`.
+    resumable: true,
   });
 });

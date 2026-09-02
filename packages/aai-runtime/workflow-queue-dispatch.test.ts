@@ -15,7 +15,11 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { deliverQueueMessage, queueNameKind } from "./workflow-queue-dispatch.ts";
+import {
+  deliverQueueMessage,
+  QUEUE_DELIVERY_BUSY_SECONDS,
+  queueNameKind,
+} from "./workflow-queue-dispatch.ts";
 
 describe("queueNameKind", () => {
   // The grammar is `__[<namespace>_]wkf_(workflow|step)_<id>` — `parseQueueName`
@@ -128,5 +132,103 @@ describe("deliverQueueMessage", () => {
     await expect(deliverQueueMessage(deliver, post("__wkf_workflow_r1"))).rejects.toThrow(
       /journal unreachable/,
     );
+  });
+});
+
+/**
+ * The door's own concurrency, which is a UNIT claim: `deliver` is injected, so
+ * "does a second delivery walk this run" is answerable with no journal, no
+ * engine and no database. The tier that owns the other half — whether an
+ * overlapping walk re-executes steps — is the engine's, and its harness
+ * (`workflow-concurrent-delivery.test.ts`) drives the engine directly.
+ *
+ * Run ids are distinct per test on purpose: the in-flight set is module-scope
+ * (it is a fact about the PROCESS), so a shared id would couple these cases.
+ */
+describe("a run is walked once at a time", () => {
+  const post = (queueName: string) =>
+    new Request("http://guest.local/workflow-queue", {
+      method: "POST",
+      headers: { "x-vqs-queue-name": queueName },
+    });
+
+  test("PARKS a delivery whose run is already being walked, without walking it again", async () => {
+    // The measured bug this exists for: `QUEUE_DELIVERY_TIMEOUT_MS` aborts the
+    // platform's fetch at 60s, the abort closes the RESPONSE and not the walk,
+    // and the redelivery ~61s later used to start a second concurrent walk —
+    // which, because `replayRun` reads the journal once per walk, re-ran every
+    // step of the run rather than only the slow one.
+    const first = Promise.withResolvers<string>();
+    const deliver = vi.fn(async () => await first.promise);
+
+    const walking = deliverQueueMessage(deliver, post("__wkf_workflow_busy_1"));
+    // The first delivery is inside `deliver` and has not answered.
+    expect(deliver).toHaveBeenCalledTimes(1);
+
+    const redelivery = await deliverQueueMessage(deliver, post("__wkf_workflow_busy_1"));
+    // NOT walked a second time — that is the whole assertion.
+    expect(deliver).toHaveBeenCalledTimes(1);
+    // A park, which the platform reads as "bring this back later" and which
+    // touches no attempt. 200 rather than a 5xx, because a busy run is not a
+    // failed delivery and a 5xx would spend the message's retry budget.
+    expect(redelivery.status).toBe(200);
+    expect(await redelivery.json()).toEqual({ timeoutSeconds: QUEUE_DELIVERY_BUSY_SECONDS });
+
+    first.resolve("completed");
+    expect((await walking).status).toBe(200);
+  });
+
+  test("walks a DIFFERENT run while one is in flight, so the gate is per run", async () => {
+    // The gate must not serialize the whole guest: one slug's guest serves every
+    // run of that slug, and a fan-out of independent runs is the ordinary case.
+    const first = Promise.withResolvers<string>();
+    const deliver = vi.fn(async (runId: string) =>
+      runId === "busy_2" ? await first.promise : "completed",
+    );
+
+    const walking = deliverQueueMessage(deliver, post("__wkf_workflow_busy_2"));
+    const other = await deliverQueueMessage(deliver, post("__wkf_workflow_other_2"));
+
+    expect(other.status).toBe(200);
+    expect(await other.json()).toEqual({ ok: true });
+    expect(deliver).toHaveBeenCalledWith("other_2");
+
+    first.resolve("completed");
+    await walking;
+  });
+
+  test("releases the run after the walk answers, so the next delivery walks it", async () => {
+    const deliver = vi.fn(async () => "completed");
+    expect((await deliverQueueMessage(deliver, post("__wkf_workflow_serial_3"))).status).toBe(200);
+    expect(
+      await (await deliverQueueMessage(deliver, post("__wkf_workflow_serial_3"))).json(),
+    ).toEqual({ ok: true });
+    expect(deliver).toHaveBeenCalledTimes(2);
+  });
+
+  test("releases the run after the walk THREW, so a retry is not wedged forever", async () => {
+    // Without the `finally` this would be a permanent park: the door answers 500,
+    // the platform retries, and every retry would be told the run is still busy
+    // until the message was abandoned.
+    const deliver = vi.fn(async () => {
+      throw new Error("journal unreachable");
+    });
+    await expect(deliverQueueMessage(deliver, post("__wkf_workflow_threw_4"))).rejects.toThrow(
+      /journal unreachable/,
+    );
+
+    await expect(deliverQueueMessage(deliver, post("__wkf_workflow_threw_4"))).rejects.toThrow(
+      /journal unreachable/,
+    );
+    expect(deliver).toHaveBeenCalledTimes(2);
+  });
+
+  test("an UNROUTABLE delivery reserves nothing, so it cannot park a live run", async () => {
+    // The 400 is answered before the gate is consulted. A gate entry taken for a
+    // message with no run id in it would be keyed on nothing.
+    const deliver = vi.fn(async () => "completed");
+    expect((await deliverQueueMessage(deliver, post("__wkf_step_r5"))).status).toBe(400);
+    expect((await deliverQueueMessage(deliver, post("__wkf_workflow_r5"))).status).toBe(200);
+    expect(deliver).toHaveBeenCalledTimes(1);
   });
 });

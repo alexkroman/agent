@@ -69,3 +69,7 @@ packages/aai-cli/.dev-workflow-fixture/
 # it is unconditional and a missing path fails the build.
 packages/aai-guest/sdk-tarballs/*.tgz
 packages/aai-evals/.eval-workspaces/
+
+# Agent scratch: reproductions and probes, never committed.
+zz-*
+.zz-*

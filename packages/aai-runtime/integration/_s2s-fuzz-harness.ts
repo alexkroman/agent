@@ -21,6 +21,7 @@
  */
 
 import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
+import { invariant } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import type { Logger } from "../runtime-config.ts";
@@ -213,7 +214,11 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
 
   let core: SessionCore | null = null;
   const bind = (): SessionCore => {
-    if (core === null) throw new Error("session core used before construction");
+    // An invariant rather than an oracle failure: `core` is this function's own
+    // local, filled in below, so a null here is the HARNESS mis-ordering itself
+    // and must not read as a finding about the transport under test. Same shape
+    // as `bindCore` in `runtime.ts`.
+    invariant(core !== null, "s2s.fuzz.core.bound");
     return core;
   };
   // Twelve flat forwards, one per event name, until the transport boundary became

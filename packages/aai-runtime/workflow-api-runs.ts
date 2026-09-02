@@ -19,7 +19,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import { isWorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
-import { MAX_WORKFLOW_INPUT_BYTES, readBody, sendJson } from "./workflow-api-http.ts";
+import { MAX_WORKFLOW_INPUT_BYTES, numberParam, readBody, sendJson } from "./workflow-api-http.ts";
 import { waitForRun } from "./workflow-api-wait.ts";
 import { MAX_WORKFLOW_FIND_LIMIT } from "./workflow-keys.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
@@ -58,6 +58,14 @@ export type RouteContext = {
   directParts?: boolean | undefined;
   logger: Logger;
 };
+
+/**
+ * The ONE query key `POST /workflows/runs/:id/wake` reads — see {@link wakeRun}.
+ *
+ * Singular and repeatable, and named here rather than written twice so the
+ * refusal below and the read cannot name different keys.
+ */
+const WAKE_QUERY_KEY = "correlationId";
 
 /**
  * The four fields `POST /workflows/runs` serves, and the whole of them.
@@ -214,6 +222,15 @@ export async function startRun(
  * caller with an id resumes the synchronous mode after a `POST` that timed out.
  * The BODY is the same either way — a snapshot — so waiting is invisible to
  * anything that parses the answer.
+ *
+ * A wait with NO reading is a 400, and a wait `clampWorkflowWait` already
+ * documents a reading for is left to it. This was `Number(query.get("wait"))`,
+ * which reads a blank parameter as `0` and `abc` as `NaN` and clamps both to
+ * "do not wait" — the same defect `?startIndex=` had, where it was harmful, so
+ * it goes through the same `numberParam`. `0`, a negative and an infinity keep
+ * meaning "do not wait" because that IS the clamp's published contract, shared
+ * by both ends; refusing them here would be this route re-deriving it and would
+ * fail `api.get(runId, { wait: -1 })` against a rule the SDK does not state.
  */
 export async function readRun(
   req: http.IncomingMessage,
@@ -221,7 +238,12 @@ export async function readRun(
   engine: WorkflowApiEngine,
   runId: string,
 ): Promise<void> {
-  const wait = Number(requestQuery(req.url).get("wait"));
+  const waitParam = requestQuery(req.url).get("wait");
+  const wait = waitParam === null ? 0 : numberParam(waitParam);
+  if (Number.isNaN(wait)) {
+    sendJson(res, 400, { error: "`wait` must be a number" });
+    return;
+  }
   const run = runId
     ? await (clampWorkflowWait(wait) > 0 ? waitForRun(engine, runId, wait, res) : engine.get(runId))
     : undefined;
@@ -293,6 +315,18 @@ export async function cancelRun(
  * backends used to fold them together and woke every uncorrelated sleep on the
  * run), so a caller that meant to send an id and sent nothing must not be served
  * the blunt wake by accident. Same call `?limit=` and `?startIndex=` get.
+ *
+ * **And an unknown query key is refused for the same reason**, which is
+ * {@link START_RUN_FIELDS}' argument one route over: accept-and-drop is
+ * indistinguishable from success at every level a caller can look at, and here
+ * what it degrades to is the BLUNT wake — every outstanding sleep on the run,
+ * where the caller named one. The mistake is not hypothetical: the parameter is
+ * singular and repeatable while the SDK field it fills is
+ * `WakeUpOptions.correlationIds`, so `?correlationIds=review-window` is the
+ * natural spelling, and it answered `200 {woken: 1}` having woken a wait whose
+ * id was nothing like it — found by hand against a dev server. A wake is a
+ * permanent, widening effect, so the refusal is worth the strictness here in a
+ * way it is not on the `GET` reads beside it.
  */
 export async function wakeRun(
   req: http.IncomingMessage,
@@ -304,7 +338,18 @@ export async function wakeRun(
     sendJson(res, 404, { error: "No workflow run named" });
     return;
   }
-  const correlationIds = requestQuery(req.url).getAll("correlationId");
+  const query = requestQuery(req.url);
+  const unknown = [...new Set(query.keys())].filter((key) => key !== WAKE_QUERY_KEY);
+  if (unknown.length > 0) {
+    sendJson(res, 400, {
+      error:
+        `Unknown query parameter(s) ${unknown.join(", ")}. ` +
+        `This route takes \`${WAKE_QUERY_KEY}\`, repeated once per wait; ` +
+        "a wake with none named ends every outstanding sleep on the run.",
+    });
+    return;
+  }
+  const correlationIds = query.getAll(WAKE_QUERY_KEY);
   if (correlationIds.some((id) => id.trim() === "")) {
     sendJson(res, 400, { error: "`correlationId` must not be empty" });
     return;

@@ -23,10 +23,9 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path, { posix } from "node:path";
 import process from "node:process";
-import { extractStringArray } from "./build-guest-image-extract.mjs";
+import { guestImageStringArray } from "./build-guest-image-extract.mjs";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
-const SERVER_DIR = path.join(REPO_ROOT, "packages", "aai-server");
 const GUEST_DIR = path.join(REPO_ROOT, "packages", "aai-guest");
 
 /**
@@ -73,7 +72,7 @@ const SDK_TARBALL_DIR = "sdk-tarballs";
  * tarballs, one `npm install`, one `@alexkroman1/*` copy of each.
  */
 export function packWorkspaceSdk(guestRoot) {
-  const names = extractStringArray(path.join(SERVER_DIR, "modal-harness-image.ts"), "SDK_PACKAGES");
+  const names = sdkPackageNames();
   const dest = path.join(GUEST_DIR, SDK_TARBALL_DIR);
   mkdirSync(dest, { recursive: true });
   // Stale tarballs from an earlier version would otherwise sit beside the new
@@ -285,7 +284,7 @@ function assertIntegrity(file, integrity) {
 
 /** The four SDK package names, read out of the constant that declares them. */
 export function sdkPackageNames() {
-  return extractStringArray(path.join(SERVER_DIR, "modal-harness-image.ts"), "SDK_PACKAGES");
+  return guestImageStringArray("SDK_PACKAGES");
 }
 
 /**

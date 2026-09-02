@@ -20,9 +20,17 @@
  *
  * ## What is asserted, and which of the four claims each covers
  *
- * Every generated program is run three ways: once uninterrupted (the ORACLE),
- * once per step boundary with the worker killed there, and — for the sequential
- * grammar — once per step boundary with `cancel` called there.
+ * Every generated program is run four ways: once uninterrupted (the ORACLE),
+ * once per step boundary with the worker killed there, once per SUSPENSION with
+ * the whole engine torn down and rebuilt over the same journal, and — for the
+ * sequential grammar — once per step boundary with `cancel` called there.
+ *
+ * The third is a second CRASH MODEL rather than a third interruption point, and
+ * it exists because the first two cannot see the dispatcher: they build the
+ * engine with `dispatch: () => undefined` and hand-drive resumption, so a run
+ * that was never re-delivered after a restart passed them for as long as the
+ * defect lived. `_workflow-rebuild-harness.ts` carries the table of what each
+ * model destroys.
  *
  * 1. **The uninterrupted run reaches the answer the grammar predicts.** An
  *    ABSOLUTE claim, not a comparison, and it is the one that catches a defect
@@ -52,9 +60,11 @@
 
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
+import { type RebuildScenario, runRebuildScenario } from "./_workflow-rebuild-harness.ts";
 import {
   expectedOutput,
   fails,
+  type HookMode,
   type Leaf,
   label,
   type Node,
@@ -67,21 +77,29 @@ const leafArb: fc.Arbitrary<Leaf> = fc
   .tuple(fc.constantFrom("step" as const, "flaky" as const), fc.integer({ min: 0, max: 9 }))
   .map(([t, value]): Leaf => ({ t, name: "", value }));
 
+/** Every way a generated `waitFor` can be answered. */
+const ALL_HOOK_MODES: readonly HookMode[] = ["signal", "timedSignal", "timeout"];
+
 /**
  * One statement of a body.
  *
  * `concurrent` adds the fan-out shapes and `failing` adds the step that fails
  * the run — both off for the cancel property, whose claim ("nothing starts after
  * the cancel resolves") is only crisp when the body issues one step at a time.
+ *
+ * `hookModes` narrows which waits may be generated, which only the rebuild
+ * property uses and whose reason is stated where it does.
  */
-function nodeArb(concurrent: boolean, failing: boolean): fc.Arbitrary<Node> {
+function nodeArb(
+  concurrent: boolean,
+  failing: boolean,
+  hookModes: readonly HookMode[] = ALL_HOOK_MODES,
+): fc.Arbitrary<Node> {
   const shapes: fc.Arbitrary<Node>[] = [
     leafArb,
     fc.integer({ min: 2, max: 3 }).map((count): Node => ({ t: "loop", name: "", count })),
     fc.constant<Node>({ t: "sleep" }),
-    fc
-      .constantFrom("signal" as const, "timedSignal" as const, "timeout" as const)
-      .map((mode): Node => ({ t: "hook", token: "", mode })),
+    fc.constantFrom(...hookModes).map((mode): Node => ({ t: "hook", token: "", mode })),
     fc
       .array(leafArb, { minLength: 1, maxLength: 2 })
       .map((children): Node => ({ t: "nested", name: "", children })),
@@ -146,6 +164,34 @@ const reached = {
   failures: 0,
   /** Cancels that landed while the body still had steps ahead of it. */
   earlyCancels: 0,
+  /** Engine REBUILDS, each of which is one boot sweep that had to re-deliver. */
+  rebuilds: 0,
+  /** Rebuilds whose fresh engine inherited at least one journaled step. */
+  rebuildsOffJournal: 0,
+  /** Step bodies that ran only AFTER the run had been handed to a fresh engine. */
+  stepsAfterRebuild: 0,
+  /** Scenarios that had to be handed on more than once. */
+  multiRebuilds: 0,
+  /**
+   * Rebuilt scenarios that had a step nested inside a step AND inherited
+   * journaled work.
+   *
+   * The sharp edge, and it is not hypothetical: on replay a settled OUTER step
+   * answers from the journal without entering its callback, so its children's
+   * keys are written, never re-read, and sit unread for the rest of the walk. A
+   * divergence check that read "journaled work this walk cannot explain" as a
+   * fault therefore failed an ordinary resumable run with no author mistake in
+   * it — caught by the sibling property, which shrank both of its
+   * counterexamples to a `nested` step. This is the state that keeps the same
+   * claim honest across a REBUILD, where the inherited journal is the whole
+   * input.
+   *
+   * The weaker "a nested program was rebuilt at all" was counted too and dropped
+   * as decoration: it measured IDENTICAL to this on all 20 calibration runs, and
+   * a second floor whose information the first already carries is the compliance
+   * floor `check:property-floors` exists to discourage.
+   */
+  nestedOffJournal: 0,
 };
 
 /**
@@ -280,5 +326,95 @@ describe("a run cancelled mid-body", () => {
     // there was nothing left to stop — so the floor is on the ones that landed
     // with work still ahead.
     expect(reached.earlyCancels, "every cancel landed on the last step").toBeGreaterThan(22); // 46-97
+  });
+});
+
+/**
+ * A body that is GUARANTEED to suspend, with a `ctx.sleep` spliced in at a
+ * generated position.
+ *
+ * Forced by INSERTION rather than by filtering, so every generated value maps to
+ * a legal one and shrinking stays well behaved — a rejected draw would shrink
+ * toward a program with nothing to hand over, which is the one case this
+ * property cannot see anything in.
+ *
+ * Two shapes the grammar leaves out, both because nothing in this model would
+ * ever move the run again and the finding would be the harness's:
+ *
+ * - **A hook that PARKS** (`signal`, and `timedSignal`, whose answer the other
+ *   driver supplies). `resumableRuns` deliberately EXCLUDES a run holding an
+ *   open window and no outstanding sleep — a park is not a stall — so a rebuild
+ *   correctly declines to re-deliver it. Only the already-shut `timeout` window
+ *   is generated, which suspends nothing.
+ * - **A step that fails the run.** A `boom` reached before the spliced sleep
+ *   ends the run terminally, and the scenario then exercises no rebuild at all.
+ *   The killed-worker property above is where the failure path is compared.
+ */
+function suspendingProgramArb(): fc.Arbitrary<Program> {
+  return fc
+    .tuple(fc.array(nodeArb(true, false, ["timeout"]), { maxLength: 4 }), fc.integer({ min: 0 }))
+    .map(([nodes, at]): Program => {
+      const out = [...nodes];
+      out.splice(Math.min(at, out.length), 0, { t: "sleep" });
+      return out;
+    });
+}
+
+/** What one rebuilt scenario exercised. */
+function noteRebuilt(program: Program, run: RebuildScenario): void {
+  reached.rebuilds += run.rebuilds;
+  reached.rebuildsOffJournal += run.resumedOffJournal;
+  reached.stepsAfterRebuild += run.stepsAfterRebuild;
+  if (run.rebuilds > 1) reached.multiRebuilds++;
+  if (run.resumedOffJournal > 0 && program.some((node) => node.t === "nested")) {
+    reached.nestedOffJournal++;
+  }
+}
+
+describe("a run handed to a FRESH engine over the same journal", () => {
+  // The other crash model keeps the process and takes the delivery away. This
+  // one keeps the JOURNAL and takes the process's timers away, which is what a
+  // restart and an `aai dev` rebuild both are — and it is the only one of the
+  // two that constructs `createInProcessWorkflowEngine`, so it is the only one
+  // in which the boot sweep is under test. No dispatcher is injected, because
+  // injecting one switches the sweep off.
+  test("answers what the uninterrupted run answered, having run each step body as often", async () => {
+    await fc.assert(
+      fc.asyncProperty(suspendingProgramArb(), async (raw) => {
+        const program = label(raw);
+        const oracle = await runScenario(program);
+        expect(oracle.status, "the uninterrupted run did not answer soundly").toBe(
+          soundStatus(program),
+        );
+        expect(oracle.output, "the uninterrupted output disagrees with the grammar").toEqual(
+          soundOutput(program),
+        );
+
+        const rebuilt = await runRebuildScenario(program);
+        // Terminal is part of this: `soundStatus` is `completed` for every
+        // program this grammar generates, so a run the sweep never re-delivered
+        // answers `running` here and fails.
+        expect(comparable(rebuilt), "the rebuilt run diverged").toEqual(comparable(oracle));
+        noteRebuilt(program, rebuilt);
+      }),
+      { numRuns: 40 },
+    );
+
+    // Ranges over 20 runs, each floor set under the OBSERVED MINIMUM. Without
+    // these the equality assertion is satisfied by a corpus that never handed a
+    // run over at all — which is precisely the vacuity that let the sibling
+    // property sit green through the stranded-run bug for as long as it lived.
+    expect(reached.rebuilds, "no run was ever handed to a fresh engine").toBeGreaterThan(30); // 50-61
+    expect(reached.rebuildsOffJournal, "no rebuild inherited a journaled step").toBeGreaterThan(15); // 29-44
+    // The widest distribution of the four by far, and the one the root guide's
+    // long-left-tail warning is about: what a walk reaches is correlated within
+    // a run, so this floor sits a third under its own minimum rather than a
+    // fixed fraction of the mean.
+    expect(reached.stepsAfterRebuild, "no step body ran after a rebuild").toBeGreaterThan(4); // 12-51
+    expect(reached.multiRebuilds, "no run was handed on more than once").toBeGreaterThan(3); // 8-19
+    expect(
+      reached.nestedOffJournal,
+      "no fresh engine inherited a nested step's journaled children",
+    ).toBeGreaterThan(1); // 3-12
   });
 });

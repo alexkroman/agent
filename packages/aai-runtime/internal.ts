@@ -69,6 +69,11 @@
 // is written as a literal at its one call site), and this subpath's rule is that
 // a name here owes an importer. A consumer that wants it can have the line.
 import type { JournalArm } from "./journal-conformance-cases.ts";
+// The same, for the `SessionStateBackend` contract's own suite type below. Also
+// type-only, so the case module it is declared in — and the `vitest` import at
+// the top of that module — is erased rather than bundled; see "Why this is a
+// LOADER" at the foot of this file.
+import type { SessionStateArm } from "./session-state-conformance-slots.ts";
 
 export {
   CONTAINED_ENV,
@@ -137,6 +142,14 @@ export { isPathInside } from "./server-static.ts";
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel.
 export { createSessionEventStream, stampSessionEvent } from "./session-event-stream.ts";
+// Session state's PLATFORM backend — the HTTP client `aai-server` serves on
+// `POST /:slug/session-state`. Here for the same reason `createPlatformJournal`
+// below is, and it is the same arm: `session-state-conformance-platform.scenario.test.ts`
+// in `aai-server` builds one over the real route and a real Postgres, which is
+// the only thing anywhere that exercises this client and the platform's own SQL
+// together (its unit arm's transport is a fake over the memory reference). Not
+// an embedder's to call — `createRuntime` selects a backend from the boot env.
+export { createPlatformStateBackend } from "./session-state-platform.ts";
 // Session state's Postgres backend. `createRuntime` wires it itself, so what a
 // consumer needs is the TABLE NAME: the platform's TTL sweep reads it out of
 // every app schema, and spelling it here rather than in that sweep is what
@@ -312,4 +325,57 @@ export type JournalConformanceSuite = {
 export async function loadJournalConformance(): Promise<JournalConformanceSuite> {
   const { journalConformance, journalIds } = await import("./journal-conformance.ts");
   return { journalConformance, journalIds };
+}
+
+/**
+ * The {@link SessionStateBackend} CONFORMANCE suite, loaded on demand.
+ *
+ * The second loader on this subpath, and it is here for the reason the first one
+ * is: `session-state-conformance.ts` declares one case list over every backend a
+ * session's durable state really lands in, three of whose four arms live in this
+ * package. The fourth is `createPlatformStateBackend` wired to the platform's
+ * REAL handler and a real Postgres, which can only be stood up in `aai-server` —
+ * so the case list has to cross the package boundary, and this is the subpath
+ * that direction is allowed on.
+ *
+ * **A separate function rather than a widened return, deliberately.** One loader
+ * handing back both suites would make an `aai-server` file that registers the
+ * journal's cases import the session-state case modules too — a second dynamic
+ * chunk pulled in for nothing — and would put two contracts' vocabularies behind
+ * one name. One clause per contract; the cost is a paragraph.
+ *
+ * Why a LOADER and not `export { sessionStateConformance } from …` is measured,
+ * and the measurement is `loadJournalConformance`'s above: the case modules
+ * `import { describe, expect, test } from "vitest"`, an OPTIONAL peer of this
+ * package, and a static clause here lands that import in `dist/internal.js`
+ * (line 4, verified) — which `@alexkroman1/aai-cli`'s published `dist` imports a
+ * VALUE from with every bare specifier external. `aai dev` would then die with
+ * `ERR_MODULE_NOT_FOUND` in any install without the test runner, invisible to
+ * both `publint` and `attw`.
+ *
+ * A consumer awaits it at the TOP of its test file and registers the cases
+ * synchronously afterwards, which is what a `describe` body needs:
+ *
+ * `no-check`: `describeWithPg` is an `aai-server` test helper a doc example
+ * cannot import (fences compile under the SCAFFOLD tsconfig, where a private
+ * workspace package does not resolve), and `backend` is the arm the reader is
+ * registering. Not the `await` and not the loader — both of those type-check.
+ * ```ts no-check
+ * const { sessionStateConformance, sessionStateIds } = await loadSessionStateConformance();
+ * describeWithPg("…", () => {
+ *   sessionStateConformance({ label: "platform", backend: () => backend, uid: sessionStateIds("pf") });
+ * });
+ * ```
+ */
+export type SessionStateConformanceSuite = {
+  /** Declares the whole case list over one arm. Call inside a `describe` body. */
+  sessionStateConformance: (arm: SessionStateArm) => void;
+  /** The arm-independent session-id factory every case mints its keys from. */
+  sessionStateIds: (label: string) => () => string;
+};
+export async function loadSessionStateConformance(): Promise<SessionStateConformanceSuite> {
+  const { sessionStateConformance, sessionStateIds } = await import(
+    "./session-state-conformance.ts"
+  );
+  return { sessionStateConformance, sessionStateIds };
 }

@@ -25,7 +25,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { StreamOptions } from "@alexkroman1/aai/workflow-api";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import type { RunReader } from "./workflow-api-events.ts";
-import { SSE_HEADERS, sendJson, sseFrame } from "./workflow-api-http.ts";
+import { numberParam, SSE_HEADERS, sendJson, sseFrame } from "./workflow-api-http.ts";
 
 /** What this route needs of the client: the run, its stream, and the stream's end. */
 export type StreamReader = RunReader & {
@@ -107,8 +107,9 @@ export async function streamRunOutput(
   // passed the integer check below as a legitimate `0`, and `startIndex` is an
   // INCLUSIVE floor, so `0` is the whole stream. A caller that meant to send a
   // cursor and sent nothing was answered with a full replay of everything it had
-  // already read, once per poll. Same call `?limit=` gets one route over.
-  const startIndex = startIndexParam === null ? undefined : indexOf(startIndexParam);
+  // already read, once per poll. Same call `?limit=` and `?wait=` get one route
+  // over — `numberParam` is the one spelling all three read blank through.
+  const startIndex = startIndexParam === null ? undefined : numberParam(startIndexParam);
   // An integer check rather than `isFinite`: a chunk index is a position, and
   // `startIndex=1.5` is a caller mistake worth naming rather than truncating.
   if (startIndex !== undefined && !Number.isInteger(startIndex)) {
@@ -145,17 +146,6 @@ export async function streamRunOutput(
   }
   const stream = await engine.stream(runId, options);
   await pipeChunksAsSse(res, stream, { runId, budget, complete });
-}
-
-/**
- * A `startIndex` parameter as a number, with a BLANK one reading as `NaN`.
- *
- * `Number("")` is `0`, not `NaN`, which is the whole defect this exists for —
- * see the call site. Its own function rather than a nested ternary, which the
- * linter refuses and which would be the harder half of this to read anyway.
- */
-function indexOf(value: string): number {
-  return value.trim() === "" ? Number.NaN : Number(value);
 }
 
 /**

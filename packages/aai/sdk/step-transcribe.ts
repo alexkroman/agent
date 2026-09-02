@@ -28,7 +28,7 @@
  * everything inside them.** That is the same division `stepGenerate` and
  * `stepFetch` already keep.
  *
- * ```ts no-check
+ * ```ts
  * import type { WorkflowCtx } from "@alexkroman1/aai/workflow-api";
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  * import { stepTranscribePoll, stepTranscribeSubmit, stepTranscribeUpload } from "@alexkroman1/aai/step";

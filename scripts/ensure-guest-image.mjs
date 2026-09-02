@@ -61,11 +61,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { parseScriptArgs } from "./_args.mjs";
-import { extractString, extractStringArray } from "./build-guest-image-extract.mjs";
+import { guestImageString, guestImageStringArray } from "./build-guest-image-extract.mjs";
 import { sdkSourceDigest } from "./build-guest-image-sdk.mjs";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
-const SERVER_DIR = path.join(REPO_ROOT, "packages", "aai-server");
 const GUEST_DIR = path.join(REPO_ROOT, "packages", "aai-guest");
 const HARNESS = path.join(GUEST_DIR, "dist", "harness.mjs");
 
@@ -118,19 +117,9 @@ function fingerprint() {
   const hash = createHash("sha256");
   hash.update(readFileSync(HARNESS));
   hash.update(`\0sdk:${sdkSourceDigest()}\0`);
-  const harnessImage = path.join(SERVER_DIR, "modal-harness-image.ts");
-  hash.update(
-    `base:${extractString(path.join(SERVER_DIR, "modal-context.ts"), "DEFAULT_SANDBOX_IMAGE")}\0`,
-  );
-  hash.update(`root:${extractString(harnessImage, "GUEST_ROOT")}\0`);
-  hash.update(
-    `apt:${extractStringArray(
-      path.join(SERVER_DIR, "modal-system-packages.ts"),
-      "GUEST_SYSTEM_PACKAGES",
-    )
-      .sort(byCodeUnit)
-      .join(" ")}`,
-  );
+  hash.update(`base:${guestImageString("DEFAULT_SANDBOX_IMAGE")}\0`);
+  hash.update(`root:${guestImageString("GUEST_ROOT")}\0`);
+  hash.update(`apt:${guestImageStringArray("GUEST_SYSTEM_PACKAGES").sort(byCodeUnit).join(" ")}`);
   return hash.digest("hex");
 }
 

@@ -108,8 +108,6 @@ from unnest($2::text[], $3::text[]) as s(slot, value)
 on conflict (session_id, slot)
 do update set value = excluded.value, updated_at = now()`;
 
-const DISCARD_SQL = `delete from ${SESSION_STATE_TABLE} where session_id = $1`;
-
 /**
  * The session EVENT log's table — the second contract both ends derive from, for
  * the same reason as {@link SESSION_STATE_TABLE} and swept by the same job.
@@ -117,6 +115,32 @@ const DISCARD_SQL = `delete from ${SESSION_STATE_TABLE} where session_id = $1`;
  * @internal
  */
 export const SESSION_EVENT_TABLE = "aai_session_events";
+
+/**
+ * BOTH tables, in ONE statement.
+ *
+ * A CTE rather than two awaited queries, the same shape
+ * `aai-server/platform-session-state.ts`'s `discardSession` already had: the two
+ * deletes are independent — no ordering requirement either way — so a second
+ * round trip bought nothing, and a CTE makes the pair atomic where two
+ * statements on an unwrapped connection were not.
+ *
+ * The `where session_id = $1` is on BOTH arms. Widening what a statement deletes
+ * is exactly when a scoping predicate gets dropped, which is why the shared
+ * conformance table asks "discard drops NOBODY else's event log" beside the
+ * reach itself.
+ *
+ * **It sits BELOW `SESSION_EVENT_TABLE` and has to.** Naming the second table
+ * moved this constant into that `const`'s temporal dead zone, which is a
+ * module-load `ReferenceError` rather than a type error — three suites failed to
+ * IMPORT (`Cannot access 'SESSION_EVENT_TABLE' before initialization`) while
+ * `tsc` was clean, because every statement in this file is a template literal
+ * evaluated at module scope in source order.
+ */
+const DISCARD_SQL = `with slots as (
+  delete from ${SESSION_STATE_TABLE} where session_id = $1
+)
+delete from ${SESSION_EVENT_TABLE} where session_id = $1`;
 
 /**
  * `(session_id, event_index)` is the primary key, which is what makes a retried flush
@@ -302,16 +326,29 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
       await db.query(COMMIT_SQL, [sessionId, [...values.keys()], [...values.values()]]);
     },
     async discard(sessionId) {
-      // SLOTS only, and a log a tool can delete is not a log. This used to cite
-      // `grantSessionTables` in aai-server, which narrowed a per-app role to
-      // `select, insert` on the event table; that role went with per-app
-      // databases and the function no longer exists — the table is now reached
-      // only on an admin connection, which is what keeps a tool away from it.
-      // Either way this call does not delete events — so their rows are
-      // reclaimed by the retention sweep, which runs as the admin. The cost is
-      // that a discarded session's events outlive its slots by up to the
-      // retention window rather than going at the same moment; they are a few
-      // KB in the tenant's own database, and the sweep already exists.
+      // BOTH tables, and this backend is the one that CHANGED to say so.
+      //
+      // It dropped slots only, on the rule that "a log a tool can delete is not
+      // a log" — which rested on `grantSessionTables` in aai-server narrowing a
+      // per-app role to `select, insert` on the event table. That role went with
+      // per-app databases and the function no longer exists; what
+      // `provisionAppDatabase` issues today is
+      // `grant select, insert, update, delete` on BOTH tables (spelled out in
+      // `aai-server/session-state.scenario.test.ts`, which fails when the real
+      // grants change), so the mechanism the asymmetry was justified by has been
+      // gone for a while and only the asymmetry was left.
+      //
+      // What it cost is a word meaning two things: the same agent's ended
+      // session kept a readable event log for up to `SESSION_STATE_RETENTION` on
+      // a self-hosted database and lost it immediately on the platform, so a
+      // caller could not act on "discarded" without knowing where the session
+      // ran. Both other backends reclaimed both all along. The log is a
+      // debugging convenience rather than a record anything reads back, so the
+      // platform's answer is the contract now and the shared conformance table
+      // asserts it on every arm.
+      //
+      // The retention sweep STAYS, as the backstop it always was for the case
+      // this call cannot reach: a session whose guest died before it discarded.
       await db.query(DISCARD_SQL, [sessionId]);
     },
     async appendEvents(sessionId, pending) {

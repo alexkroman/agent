@@ -17,6 +17,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { invariant } from "@alexkroman1/aai/internal";
 import type { NetworkPolicyBuilder } from "microsandbox";
 import { createLogger } from "./logger.ts";
 import {
@@ -245,7 +246,9 @@ export function defaultMicrosandboxContext(): MicrosandboxSpawnContext {
       return {
         exec: async (command) => {
           const [cmd, ...args] = command;
-          if (cmd === undefined) throw new Error("empty guest command");
+          // Every `exec` in this package passes a literal argv this repo wrote;
+          // an empty one is a mis-assembly here, not a caller's bad input.
+          invariant(cmd !== undefined, "guest.exec.argv", () => ({ command }));
           return procFromExec(await sandbox.execStream(cmd, args));
         },
         writeFile: (path, data) => sandbox.fs().write(path, data),

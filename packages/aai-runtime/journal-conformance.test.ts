@@ -70,6 +70,8 @@ const memoryArm: JournalArm = {
   // store per case would let a case that leaks state pass here and fail there.
   journal: () => memoryStore,
   uid: memoryIds,
+  /** The reference declares every method, `resumableRuns` included. */
+  resumable: true,
 };
 
 journalConformance(memoryArm);
@@ -220,6 +222,10 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
       );
     case "claimAttempt":
       return store.claimAttempt(str(body, "runId"), str(body, "key"));
+    case "releaseAttempt":
+      // `null` rather than `undefined`: the route answers JSON, and the client
+      // reads nothing off it — see `releaseAttempt` in `workflow-journal-platform.ts`.
+      return store.releaseAttempt(str(body, "runId"), str(body, "key")).then(() => null);
     case "claimSleep":
       return store
         .claimSleep(
@@ -324,6 +330,12 @@ journalConformance({
   label: "platform (handler-shaped transport)",
   journal: () => platformStore,
   uid: platformIds,
+  // `createPlatformJournal` deliberately omits `resumableRuns` — a deployed
+  // guest's recovery is the platform queue's reconcile, and the omission is
+  // pinned in `workflow-journal-platform.test.ts`. So the resume half is
+  // EXCLUDED here and the reporter says so; it used to report ten green
+  // checkmarks over ten empty bodies.
+  resumable: false,
 });
 
 /* -------------------------------------------------------------------------- */
@@ -383,20 +395,17 @@ describe("the journal conformance registry", () => {
     }
   });
 
-  test("every registered backend's arm really runs the case list, in its own tier", () => {
-    // The assertion the whole exercise is about. A case list constructed but
-    // never handed to `journalConformance`, or handed to it from no file at all,
-    // looks identical to one that runs.
-    const armFiles = [...READ].filter(([, source]) => source.includes("journalConformance("));
-    expect(armFiles.length).toBeGreaterThan(0);
+  test("every registered backend declares at least one arm", () => {
+    // A case list constructed but never handed to `journalConformance`, or
+    // handed to it from no file at all, looks identical to one that runs. What
+    // this file can assert is that a backend CLAIMS an arm; whether the file it
+    // names exists, invokes the list, builds that backend and sits in the tier
+    // it declares is `journal-conformance-arms.test.ts`, which reads the whole
+    // `packages/` tree because one of the four arms is a package away and no
+    // scan of this directory could ever have seen it.
     for (const backend of JOURNAL_BACKENDS) {
       if (backend.conformance === false) continue;
-      const want = backend.tier === "scenario";
-      const found = armFiles.some(
-        ([file, source]) =>
-          /\.scenario\.test\.ts$/.test(file) === want && source.includes(`${backend.factory}(`),
-      );
-      expect.soft(found, `${backend.backend} arm in the ${backend.tier} tier`).toBe(true);
+      expect.soft(backend.arms.length, `${backend.backend} arms`).toBeGreaterThan(0);
     }
   });
 

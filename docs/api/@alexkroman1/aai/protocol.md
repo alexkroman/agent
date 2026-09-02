@@ -315,6 +315,7 @@ event(e:
      at: number;
      id: string;
   };
+  recovery?: "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -493,6 +494,7 @@ event the stream had already recorded under another.
      `at`: `number`;
      `id`: `string`;
   \};
+  `recovery?`: `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -1042,6 +1044,10 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
+  recovery: z.ZodOptional<z.ZodEnum<{
+     session-failed: "session-failed";
+     turn-failed: "turn-failed";
+  }>>;
   text: z.ZodString;
   type: z.ZodLiteral<"agent-transcript.committed">;
 }, z.core.$strip>, z.ZodObject<{

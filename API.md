@@ -999,6 +999,9 @@ export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 export function isPrivateIp(ip: string): boolean;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -1569,7 +1572,7 @@ type ToolSchema = {
 };
 
 // @public
-export function toToolJsonSchema(schema: StandardSchemaV1): JSONSchema7;
+export function toToolJsonSchema(schema: StandardSchemaV1, io?: "input" | "output"): JSONSchema7;
 
 // @internal
 export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
@@ -1727,7 +1730,7 @@ type WorkflowClient = {
 type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
@@ -2094,6 +2097,9 @@ export class KeyedLockTimeoutError extends Error {
 }
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -2325,6 +2331,10 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -2716,7 +2726,7 @@ export type WorkflowClient = {
 export type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
@@ -2936,6 +2946,9 @@ export function isTextAssetPath(assetPath: string): boolean;
 
 // @public
 export function linkConfirmationCode(code: string): string;
+
+// @public
+type Literal<S extends string> = string extends S ? never : S;
 
 // @public
 export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
@@ -3162,7 +3175,7 @@ type WorkflowClient = {
 type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
@@ -3526,6 +3539,9 @@ export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -3665,6 +3681,10 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -3969,7 +3989,7 @@ type WorkflowClient = {
 type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
@@ -4265,6 +4285,10 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -5192,6 +5216,9 @@ type GenerateResult = {
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -5363,6 +5390,10 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -5878,7 +5909,7 @@ type WorkflowClient = {
 type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
@@ -5998,6 +6029,9 @@ export function installStubTranscribe(options?: StubTranscribeOptions): StubTran
 
 // @public
 export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
+
+// @public
+type Literal<S extends string> = string extends S ? never : S;
 
 // @public
 export function mockWorkflows(options?: MockWorkflowsOptions): WorkflowClient;
@@ -6238,7 +6272,7 @@ type WorkflowClient = {
 type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
@@ -6546,6 +6580,9 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
 
 // @public
@@ -6710,7 +6747,7 @@ export type WorkflowApi = {
         fromIndex?: number;
         signal?: AbortSignal;
     }): AsyncIterable<unknown>;
-    wake(runId: string): Promise<number>;
+    wake(runId: string, options?: WakeUpOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     uploadInfo(id: string): Promise<UploadInfo>;
     download(id: string, options?: {
@@ -6753,7 +6790,7 @@ export type WorkflowClient = {
 export type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
@@ -7751,11 +7788,13 @@ type JournalStore = {
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
     claimAttempt(runId: string, key: string): Promise<number>;
+    releaseAttempt(runId: string, key: string): Promise<void>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
     closeHook(runId: string, key: string): Promise<boolean>;
     deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
     appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
 };
 
@@ -7879,6 +7918,12 @@ export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
 
 // @public
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
+
+// @public
+type ResumableRun = {
+    runId: string;
+    wakeAt?: number | undefined;
+};
 
 export { RunCodeExecutor }
 
@@ -8386,6 +8431,9 @@ export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName:
 }>;
 
 // @internal
+export function createPlatformStateBackend(opts: PlatformSessionStateOptions): SessionStateBackend;
+
+// @internal
 export function createPostgresJournal(opts: {
     db: Db;
 }): JournalStore;
@@ -8490,6 +8538,7 @@ type JournalArm = {
     label: string;
     journal: () => JournalStore;
     uid: () => string;
+    resumable: boolean;
 };
 
 // @public
@@ -8511,16 +8560,21 @@ type JournalStore = {
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
     claimAttempt(runId: string, key: string): Promise<number>;
+    releaseAttempt(runId: string, key: string): Promise<void>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
     closeHook(runId: string, key: string): Promise<boolean>;
     deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
     appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
 };
 
 // @public (undocumented)
 export function loadJournalConformance(): Promise<JournalConformanceSuite>;
+
+// @public (undocumented)
+export function loadSessionStateConformance(): Promise<SessionStateConformanceSuite>;
 
 // @public
 type LogContext = Record<string, unknown>;
@@ -8533,6 +8587,9 @@ type Logger = Record<LogLevel, LogFn>;
 
 // @public
 type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export function parseBearer(header: string | null | undefined): string;
 
 // @internal
 export function payloadRunId(message: unknown): string | undefined;
@@ -8559,6 +8616,9 @@ export type PlatformQueueOptions = PlatformEndpoint;
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
 // @public
+type PlatformSessionStateOptions = PlatformEndpoint;
+
+// @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
 
 // @internal
@@ -8573,6 +8633,12 @@ export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void;
 export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined;
 
 export { resolveAllBuiltins }
+
+// @public
+type ResumableRun = {
+    runId: string;
+    wakeAt?: number | undefined;
+};
 
 // @internal
 export function routeMatches(route: ServerRoute, url: string, method?: string): boolean;
@@ -8695,6 +8761,13 @@ type SessionEventStream = {
 };
 
 // @public
+type SessionStateArm = {
+    label: string;
+    backend: () => SessionStateBackend;
+    uid: () => string;
+};
+
+// @public
 type SessionStateBackend = {
     readonly name: "memory" | "postgres" | "platform";
     readonly durable: boolean;
@@ -8704,6 +8777,12 @@ type SessionStateBackend = {
     appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
     readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
     countEvents(sessionId: string): Promise<number>;
+};
+
+// @public
+export type SessionStateConformanceSuite = {
+    sessionStateConformance: (arm: SessionStateArm) => void;
+    sessionStateIds: (label: string) => () => string;
 };
 
 // @internal
@@ -9316,6 +9395,11 @@ export type UseDownloadUrlResult = {
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;
 
 // @public
+export function useRunKey(options?: {
+    storage?: "session" | "local";
+}): string;
+
+// @public
 export function useSession(): Session;
 
 // @public
@@ -9414,7 +9498,7 @@ export type UseWorkflowsResult = {
 export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
-export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
+export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
 
 // @public
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
@@ -9423,6 +9507,7 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, op
 export type UseWorkflowSubmitOptions = {
     api?: WorkflowApi;
     key?: string;
+    recover?: boolean;
     wait?: number;
     intervalMs?: number;
     parallel?: UploadParallel;

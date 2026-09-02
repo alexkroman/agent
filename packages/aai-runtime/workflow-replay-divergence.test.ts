@@ -124,7 +124,9 @@ describe("what the check must NOT accuse", () => {
   test("a FIRST walk, whose journal is empty, however many steps it mints", async () => {
     const journal = await seed();
     const outcome = await replay(journal, async (_input, ctx) => {
-      for (const name of ["a", "b", "c"]) await ctx.step(name, () => name);
+      // `as const` keeps these LITERALS, which is what `ctx.step` now
+      // constrains its name to — a bare `string[]` element is refused.
+      for (const name of ["a", "b", "c"] as const) await ctx.step(name, () => name);
       return "ok";
     });
     expect(outcome).toEqual({ kind: "completed", output: "ok" });

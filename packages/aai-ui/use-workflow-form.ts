@@ -44,6 +44,7 @@ import type {
   WorkflowSummary,
 } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRecoveredRun } from "./_recover-run.ts";
 import { useRunControls } from "./_run-controls.ts";
 import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
 import { useUploadPause } from "./_upload-pause.ts";
@@ -289,6 +290,29 @@ export type UseWorkflowSubmitOptions = {
   /** Correlation key recorded with the run, for finding it again without the id. */
   key?: string;
   /**
+   * On mount, adopt the newest run this `key` already has.
+   *
+   * **This is what makes a reload survivable.** The run id is this hook's own
+   * state, so a refresh loses it while the run carries on — and a page that
+   * cannot name a run cannot show it, cancel it or wake it. With a `key` and
+   * this flag the hook asks `find(workflow, key)` once as it mounts and follows
+   * whatever comes back, so the answer, the progress and the controls are all
+   * there again.
+   *
+   * Inert without a `key`, because the key IS the lookup. Opt-in because a
+   * `key` on its own means only "record this with the run", which is what a
+   * page passing an account id may well want; adopting a run is a decision
+   * about the page.
+   *
+   * The key has to be one the next load can produce, and choosing it is the
+   * caller's: it is a lookup CAPABILITY (there is no per-user filtering behind
+   * `find`), it must fit the route's 256-character bound, and anything derived
+   * from a person's own input both collides and carries what they typed.
+   * `useRunKey()` is that key, and its module argues every alternative; a page
+   * with accounts passes the account's own id instead.
+   */
+  recover?: boolean;
+  /**
    * Hold the `POST` open until the run settles, up to this many ms — the
    * synchronous mode. Omitted (the default) returns as soon as the run exists.
    */
@@ -348,7 +372,7 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   workflow: string,
   opts: UseWorkflowSubmitOptions = {},
 ): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
-  const { api, key, wait, intervalMs, parallel } = opts;
+  const { api, key, recover = false, wait, intervalMs, parallel } = opts;
   const [runId, setRunId] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | undefined>(undefined);
@@ -363,6 +387,20 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
 
   const tracked = useWorkflowRun<WorkflowOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
   const { wake, cancel } = useRunControls(runId, getClient);
+
+  // The other half of "a run outlives the page": `key` records the handle, this
+  // reads it back. See `_recover-run.ts` for why it happens once per mount and
+  // why the answer can never displace a run the person has already started.
+  const recovering = useRecoveredRun({
+    workflow,
+    key,
+    enabled: recover,
+    getClient,
+    onFound: (found) => {
+      setRunId((current) => current ?? found);
+    },
+    onError: setStartError,
+  });
 
   const submit = useCallback(
     async (input: unknown) => {
@@ -451,8 +489,10 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
     // exactly what `polling` exists to report, per its own doc: it cannot be
     // derived from the snapshot. `starting` still covers the gap between the
     // POST returning and the first read landing, which is otherwise a frame
-    // with no run and no spinner.
-    pending: starting || tracked.polling,
+    // with no run and no spinner. `recovering` is the same gap on a RELOAD,
+    // where there is no submit to have set `starting`: a form that offered
+    // Submit while a live run was arriving would invite a second one.
+    pending: recovering || starting || tracked.polling,
     upload,
     error: startError ?? tracked.error,
   };

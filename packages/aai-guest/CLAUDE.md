@@ -189,9 +189,11 @@ by a test: vitest patches `createRequire`, so `require.resolve("vite")` succeeds
 from any directory and the failure cannot be provoked in that tier.
 
 **Every child that runs workspace-authored code gets a scrubbed env.**
-`envWithoutGuestToken()` (`studio-spawn.ts`) is `process.env` minus
-`AAI_GUEST_TOKEN`, and `bash`, `runNpm` and the workspace TEST RUN all take it;
-the deploy and build children take `pathOnlyEnv()`, which is stricter still. The
+`workspaceChildEnv()` (`studio-spawn.ts`) is a 24-name ALLOW-list, and `bash`,
+`runNpm` and the workspace TEST RUN all take it; the in-guest deploy child takes
+`cliChildEnv()`, which is stricter still — `PATH` plus the three names
+`os.tmpdir()` reads, that last part being what keeps the CLI bundler's ~8 MB
+`mkdtemp` off the microVM's 512 MiB RAM disk. The
 test run was the one spawn site outside the policy for a while, and the files it
 executes are the coding agent's own `*.test.ts`. It is defence in depth rather
 than a boundary — `bash` can read `/proc/<pid>/environ` regardless — which is

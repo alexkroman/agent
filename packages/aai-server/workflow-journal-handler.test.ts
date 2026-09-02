@@ -26,7 +26,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { MAX_WORKFLOW_FIND_LIMIT } from "@alexkroman1/aai-runtime";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   bearerFor,
   createTestOrchestrator,
@@ -53,7 +53,7 @@ async function platform(rowsFor?: (sql: string) => Record<string, unknown>[] | u
   for (const slug of [MINE, THEIRS]) {
     await deploy(harness.fetch, { key: "key1", body: { slug } });
   }
-  return { ...harness, seen };
+  return { ...harness, seen, adminDb };
 }
 
 function callRoute(
@@ -126,6 +126,31 @@ describe("POST /:slug/workflow-journal", () => {
     });
   });
 
+  /**
+   * The stronger claim, and the one the statement recorder cannot make: a refused
+   * body costs no CONNECTION, not merely no statement.
+   *
+   * Per-field validation used to run inside `withReserved`, so every malformed
+   * call took one of `ADMIN_POOL_MAX` reserved admin connections, held it across
+   * the read that refused the request, and gave it back. `seen` stayed empty
+   * throughout — the cost was the door, not the query — which is why this needs
+   * its own spy. See `PlatformCall` in `_platform-route.ts`.
+   */
+  test("reserves no connection for a body it is going to refuse", async () => {
+    const p = await platform();
+    const reserve = vi.spyOn(p.adminDb, "reserve");
+    // `appendStep` with no `entry` — the 400 comes from `stepEntry`, the deepest of
+    // this route's twelve field readers.
+    const res = await callRoute(
+      p.fetch,
+      MINE,
+      { method: "appendStep", runId: "wrun_1" },
+      await bearerFor(p.store, MINE),
+    );
+    expect(res.status).toBe(400);
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
   describe("the method", () => {
     test.each([
       "createRun",
@@ -134,6 +159,7 @@ describe("POST /:slug/workflow-journal", () => {
       "setStatus",
       "readSteps",
       "claimAttempt",
+      "releaseAttempt",
       "claimSleep",
       "wakeSleeps",
       "claimHook",

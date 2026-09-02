@@ -12,6 +12,7 @@ import {
   createOwnedMap,
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
+import { invariant } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
@@ -309,7 +310,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // so we capture a reference and fill it in below.
     let core: SessionCore | null = null;
     function bindCore(): SessionCore {
-      if (!core) throw new Error("SessionCore not yet created");
+      // An invariant rather than a validation: `core` is this closure's own
+      // local, filled in below and readable by nobody else, so a null here is a
+      // mis-ordering in THIS function and never anything a caller did.
+      invariant(core !== null, "session.core.bound");
       return core;
     }
 

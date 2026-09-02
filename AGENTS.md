@@ -541,8 +541,13 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 26 | no raw step call in a shipped `workflows/` body | the `*Classified` sibling |
   | 27 | no explicit `[Symbol.dispose]()` call in shipped source | `using` / `await using` |
   | 28 | no hand-rolled `process.argv` scan in `scripts/` | `parseScriptArgs()` |
+  | 29 | no `globalThis.fetch` as a runtime egress default | `egressFetch()` |
+  | 30 | no non-deterministic read in a shipped `workflows/` body | move it inside `ctx.step` |
 
-  Hand-kept, and it HAS gone stale (it stopped at 23); `--rules` is derived.
+  Hand-kept, and it keeps going stale — it stopped at 23, then at 28, and
+  `--rules` is the derived source to read instead. The recurrence IS the
+  argument: this table is a convenience copy, so when it disagrees with
+  `--rules`, `--rules` is right.
   Rule IDs are **stable** — they appear in commit messages and in the baseline,
   so a deleted rule leaves its number retired rather than letting a later rule
   inherit it (6, retired with `ctx.state`; 10, with the `research/` directory it
@@ -719,7 +724,7 @@ Ten workspace packages under `packages/`:
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: agent config, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-runtime/` | `@alexkroman1/aai-runtime` | The HOST runtime: `createRuntime`/`createAgentServer`, the session core, transports, provider openers, the workflow API. What runs an `agent.ts`; an `agent.ts` imports none of it |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, list, pull, push, publish, delete, login, secret, storage, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs) |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, eval, build, list, pull, push, publish, delete, login, secret, logs, workflow, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs). The list is PINNED to the registry in `cli.test.ts` — it named a removed `storage` for several releases |
 | `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs` |
 | `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks |
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds. Also the composition root — its entry is the one every deployment runs |
@@ -776,9 +781,21 @@ rather than here:
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
 | `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels |
 
-One guide sits outside `packages/`: `docs/CLAUDE.md`, for the `aai-docs`
-workspace — both TypeDoc renderings, the committed markdown reference, and
-the `typescript@6` pin. See "API reference docs".
+One guide sits outside `packages/`: [`docs/CLAUDE.md`](docs/CLAUDE.md), for the
+`aai-docs` workspace — both TypeDoc renderings, the committed markdown
+reference, and the `typescript@6` pin — **and, because they answer three
+versions of one question, the API REPORTS and the capability EPOCHS as well.**
+See "The published surface is described by three committed artifacts".
+
+A second file sits outside the table for a different reason:
+`packages/aai-server/MODAL-CLAUDE.md`, a SIBLING of that package's guide rather
+than a second package guide. `check:claude-md` measures it (its pathspec is
+`*CLAUDE.md`) and konsistent permits it (`workspace-package-layout` requires a
+`CLAUDE.md` and forbids nothing else), but Claude Code auto-loads only
+`CLAUDE.md`, so a sibling is read on demand and is only the right shape for
+REFERENCE — a build recipe — never for a rule someone needs resident. Prefer
+moving a section to the package that owns the surface; reach for a sibling when
+no other package owns it and the guide is at the cap.
 
 ### A guide says what to do in code that EXISTS
 
@@ -1111,6 +1128,14 @@ coverage exclusion, and knip `entry` points — plus `packages/*/contracts/**`
 staying in the `aai-templates` turbo `inputs`, which is what stops the
 gate-under-the-gate being served from cache exactly when a contract tree
 changes.
+
+**This section used to be two, "Published type signatures are a committed
+report" and "The authoring surface is versioned in epochs"** — the titles three
+package guides still cite as living in the root. Both are now in
+[`docs/CLAUDE.md`](docs/CLAUDE.md) under those same headings, with the
+`@internal`-surface ratchet, the six load-bearing properties of an epoch, why
+capabilities rather than entry points, and the two mechanical notes.
+
 ### The authoring guide ships inside the SDK
 
 `scaffold/CLAUDE.md` is the one source of truth for how to write an aai agent,
@@ -1193,6 +1218,19 @@ mind when creating changesets — you only need to list one package.
   one test — `fuzz-voiceio`'s per-run `restore()`, `dev.test.ts`'s
   `withCapturedHandlers` — which needs a sub-test boundary the config cannot
   give it.
+
+  **And `restoreMocks` covers SPIES, not a `vi.fn()` born in a `vi.mock`
+  factory or `vi.hoisted` — those need an explicit
+  `beforeEach(() => vi.clearAllMocks())`.** `restoreAllMocks` restores what
+  `vi.spyOn` replaced; a bare `vi.fn()` was never a spy, so nothing resets it
+  and its call history is CUMULATIVE for the whole file. That turns every
+  "was not called" assertion into an assertion about test ORDER, which passes
+  in isolation and passes in the suite until somebody reorders it. Measured on
+  `service-boot.test.ts`, whose mocks are all factory `vi.fn()`s: without the
+  `clearAllMocks`, **7 of its 14 tests fail**. So the no-hand-rolled-teardown
+  rule above is specifically about `vi.spyOn` and `vi.stubEnv`; a module-mock
+  file still owns its own reset, and should say why in a comment, because it
+  looks exactly like the dead structure the rule bans.
 - **Prefer the tool's own bookkeeping to a local variable.** `Promise.withResolvers()`
   instead of `let resolve!: …` + `new Promise` (and instead of a local
   `gate()`/`deferred()` helper — two files had written one); `vi.fn()` instead

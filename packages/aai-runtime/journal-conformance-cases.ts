@@ -34,6 +34,29 @@ export type JournalArm = {
   journal: () => JournalStore;
   /** A fresh, collision-proof identifier per call — see the arm-independence rule. */
   uid: () => string;
+  /**
+   * Does this backend DECLARE `resumableRuns`?
+   *
+   * The one part of this contract a backend may legitimately not have —
+   * `workflow-journal-platform.ts` omits it because a deployed guest's recovery
+   * is the platform queue's reconcile. So `journal-conformance-resume.ts`'s ten
+   * cases are EXCLUDED on an arm that answers `false`, and the exclusion is
+   * REPORTED: the field is required, read at collection time, and drives a
+   * `describe` the reporter prints as skipped.
+   *
+   * It is a DECLARATION and not a probe, which is the whole point. The probe
+   * (`isResumableJournal(arm.journal())`) cannot run at collection time — the
+   * Postgres arm builds its store in `beforeAll` — so the ten cases used to
+   * probe in their own BODIES and `return` when the answer was no. That reports
+   * a green checkmark per case, at 0 ms, indistinguishable in the reporter from
+   * the ten real passes of the memory arm printed directly above them: 10 of 69
+   * shared cases silently checking nothing on both platform arms. A declaration
+   * is available before collection, so the skip can be announced instead — and
+   * `journal-conformance-resume.ts` pins the declaration against the probe in a
+   * case that always runs, so a wrong `resumable` is a FAILURE rather than a
+   * quieter version of the same silence.
+   */
+  resumable: boolean;
 };
 
 /**
@@ -433,6 +456,31 @@ export function journalRunConformance(arm: JournalArm): void {
           journal.claimAttempt(runId, "charge#0"),
         ]);
         expect([...claimed].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+      });
+
+      test("a release gives one back, and the next claim re-takes it", async () => {
+        // A charge is a LEASE — see `JournalStore.releaseAttempt`. Only an
+        // attempt that never ENDED keeps one, which is what makes the ceiling a
+        // bound on abandonment rather than on reaches.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        await journal.claimAttempt(runId, "charge#0");
+        expect(await journal.claimAttempt(runId, "charge#0")).toBe(2);
+        await journal.releaseAttempt(runId, "charge#0");
+        expect(await journal.claimAttempt(runId, "charge#0")).toBe(2);
+      });
+
+      test("a release can never take the count below zero", async () => {
+        // Floored, so a release that lands twice may only under-charge a budget
+        // the next claim re-takes — where a negative count is an unbounded budget
+        // for a step that wedges the guest.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        await journal.releaseAttempt(runId, "charge#0");
+        await journal.releaseAttempt(runId, "charge#0");
+        expect(await journal.claimAttempt(runId, "charge#0")).toBe(1);
       });
     });
   });

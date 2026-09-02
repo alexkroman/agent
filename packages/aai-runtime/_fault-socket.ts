@@ -47,6 +47,7 @@
  */
 
 import net from "node:net";
+import { invariant } from "@alexkroman1/aai/internal";
 
 /** One connection the proxy is relaying, with the two sockets it owns. */
 type Relay = { client: net.Socket; upstream: net.Socket };
@@ -144,9 +145,13 @@ export async function createSeveringProxy(opts: {
     server.listen(0, "127.0.0.1", resolve);
   });
   const address = server.address();
-  if (address === null || typeof address === "string") {
-    throw new Error("severing proxy did not bind a TCP port");
-  }
+  // A `net.Server` this module just listened on at `127.0.0.1:0` reports an
+  // `AddressInfo` — the string form is a pipe/UDS and the null one is "not
+  // listening", and this call chose neither. Stated rather than validated, so
+  // the narrowing below is the check rather than a second reading of it.
+  invariant(address !== null && typeof address !== "string", "fault.proxy.bound", () => ({
+    address,
+  }));
 
   return {
     port: address.port,

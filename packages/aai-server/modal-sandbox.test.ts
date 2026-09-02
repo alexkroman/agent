@@ -16,6 +16,7 @@ import {
   makeFakeSandbox,
   makeHarnessFile,
 } from "./_sandbox-vm-test-utils.ts";
+import { GUEST_SCRATCH_DIR } from "./guest-exec-env.ts";
 import { GUEST_PORT, type ModalSpawnContext } from "./modal-context.ts";
 import { _internals, spawnModalWarm } from "./modal-sandbox.ts";
 import {
@@ -23,7 +24,6 @@ import {
   DEFAULT_SANDBOX_TIMEOUT_MS,
 } from "./modal-sandbox-env.ts";
 import type { RpcConnection } from "./rpc-transport.ts";
-import { GUEST_SCRATCH_DIR } from "./warm-harness.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -501,6 +501,10 @@ describe("spawnModalWarm", () => {
     // fact a spawner should know. The local microVM DOES mount a 512 MiB RAM
     // disk there, and a studio guest that only got the key on one backend is a
     // dev/prod split in the one place this repo has already paid for it.
+    //
+    // It arrives through `guestExecBaseEnv()` rather than being named here, which
+    // is what `guest-exec-env.test.ts` pins; this spec is the four-sites half of
+    // that — the value has to be in the env this backend really execs with.
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
     const socket = createFakeGuestSocket();

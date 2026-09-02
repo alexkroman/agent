@@ -39,13 +39,32 @@ describe("the workflow command group", () => {
     expect(subs[name]).toBeDefined();
   });
 
-  test("every verb takes --token, --server and --json", () => {
+  test("every verb takes --token, --server, --agent and --json", () => {
     for (const [name, cmd] of Object.entries(subs)) {
       expect(cmd.args, name).toMatchObject({
         token: expect.anything(),
         server: expect.anything(),
+        agent: expect.anything(),
         json: expect.anything(),
       });
+    }
+  });
+
+  test("--agent REACHES every executor, not just the ones it was added to", async () => {
+    // Declaring a flag and forwarding it are separate edits, and there are four
+    // verbs — the shape this suite exists for. A verb that declares `--agent`
+    // and drops it on the way to the executor silently targets the platform,
+    // i.e. asks for `aai publish` while a dev server is answering.
+    const url = "http://localhost:3000";
+    await subs.list?.run({ args: { agent: url, json: false } });
+    await subs.runs?.run({ args: { workflow: "digest", agent: url, json: false } });
+    await subs.show?.run({ args: { runId: "wrun_1", agent: url, json: false } });
+    await subs.cancel?.run({ args: { runId: "wrun_1", agent: url, json: false } });
+    // The options bag is every executor's LAST parameter — the one thing the
+    // four signatures share, `runs` and `show` carrying a positional before it.
+    for (const [name, exec] of Object.entries(executors)) {
+      const args = exec.mock.calls[0] as unknown[];
+      expect(args.at(-1), name).toMatchObject({ agent: url });
     }
   });
 

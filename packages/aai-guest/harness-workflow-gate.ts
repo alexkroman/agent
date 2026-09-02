@@ -21,7 +21,10 @@
  *
  * `aai dev` and a self-hosted `createServer` have no platform and no
  * `AAI_GUEST_TOKEN`, so this gate lives in the DEPLOYED-guest request hook only
- * (`createAgentRequestHandler`) and never runs there.
+ * (`createAgentRequestHandler`) and never runs there. What it must NOT rest on is
+ * that fact plus `harness.ts`'s boot refusal — see
+ * {@link gateDirectWorkflowDial} on why a blank token is refused at both ends
+ * here rather than trusted to a check in another file.
  */
 
 import type http from "node:http";
@@ -61,12 +64,59 @@ function isWorkflowApiPath(url: string): boolean {
 }
 
 /**
+ * A token neither end can present — no token at all, rather than a short one.
+ *
+ * Whitespace-only counts as blank because a header value arrives with its
+ * optional whitespace already stripped, so `x-aai-guest-token:` and
+ * `x-aai-guest-token:   ` are the same `""` on this side and a whitespace-only
+ * EXPECTED token is one nothing can be sent to match.
+ *
+ * This is a fourth copy of `isBlankSecret` (`aai-runtime/bearer.ts`), whose doc
+ * carries the argument, and it is a copy on purpose: that function is
+ * deliberately NOT on `@alexkroman1/aai-runtime/internal` — `internal.ts` says so
+ * in as many words, on the reasoning that its one out-of-package caller
+ * (`aai-server/guest-bearer.ts`) is safe by its own ordering. This gate is the
+ * second such caller and is not, so it re-derives the predicate rather than
+ * widening a published surface.
+ */
+function isBlankToken(token: string): boolean {
+  return token.trim() === "";
+}
+
+/**
  * Refuse a direct tunnel dial of the workflow API.
  *
  * Returns true when it has ANSWERED (a 401 — the caller must leave the response
  * alone), and false to fall through: either the path is not the workflow API, or
  * the manage bearer checks out and the runtime's own API should serve it (and
  * apply the `AAI_WORKFLOW_API_TOKEN` gate).
+ *
+ * ## A blank token at EITHER end is refused, and the two catch different things
+ *
+ * `constantTimeEquals("", "")` is TRUE — `timingSafeEqual` on two empty buffers
+ * matches — so a caller sending an empty `x-aai-guest-token` against a blank
+ * `proxyToken` used to fall straight through this gate onto the public tunnel.
+ * It was safe only because `harness.ts` exits when `AAI_GUEST_TOKEN` is falsy,
+ * which is a defence in a DIFFERENT FILE guarding a comparison in this one — the
+ * shape that breaks the day somebody edits the other file, and precisely why
+ * `bearerMatches` in the runtime was taught to refuse a blank expected secret at
+ * the comparison as well as at the env read that feeds it.
+ *
+ * So both ends are guarded, with distinct jobs:
+ *
+ * - **The EXPECTED side** (`proxyToken`) is what closes the hole. A blank
+ *   expected token is not a credential anyone can satisfy, so it 401s every
+ *   workflow request rather than admitting one — failing CLOSED, which is the
+ *   right way round for a surface reachable from a public tunnel. It catches the
+ *   MISCONFIGURATION wherever it comes from, including a caller of this exported
+ *   function that never went through the harness's boot check at all. That is
+ *   what makes the gate safe on its own terms rather than by a distant `exit(1)`.
+ * - **The SUPPLIED side** catches nothing the expected guard does not — a
+ *   non-blank expected token can never equal an empty supplied one, the length
+ *   compare refusing first. What it buys is that an empty comparison is
+ *   STRUCTURALLY unreachable: the property `aai-server/guest-bearer.ts` describes
+ *   as being safe "by two independent facts", so weakening either guard later
+ *   does not reopen the door by itself.
  */
 export function gateDirectWorkflowDial(
   req: http.IncomingMessage,
@@ -76,7 +126,14 @@ export function gateDirectWorkflowDial(
 ): boolean {
   if (!isWorkflowApiPath(url)) return false;
   const supplied = req.headers[GUEST_PROXY_TOKEN_HEADER];
-  if (typeof supplied === "string" && constantTimeEquals(supplied, proxyToken)) return false;
+  if (
+    typeof supplied === "string" &&
+    !isBlankToken(supplied) &&
+    !isBlankToken(proxyToken) &&
+    constantTimeEquals(supplied, proxyToken)
+  ) {
+    return false;
+  }
   res.writeHead(401, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "unauthorized" }));
   return true;

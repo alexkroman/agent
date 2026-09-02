@@ -10,7 +10,10 @@
  *   messages (the assistant tool-call message AND its `tool` result), so tool
  *   calls and their results carry into the next turn — not just spoken text.
  *
- * Both views are capped at `DEFAULT_MAX_HISTORY` (oldest trimmed).
+ * Both views are capped at `DEFAULT_MAX_HISTORY` (oldest trimmed) — and each
+ * push records what its own cap evicted, so `dropTrailingUser` can undo the
+ * eviction along with the append. See that member's doc for the turn a rollback
+ * at the cap used to cost.
  */
 
 import type { Message } from "@alexkroman1/aai";
@@ -43,6 +46,19 @@ export interface PipelineHistory {
    *
    * Matched on content rather than trimmed blindly so this can never eat a
    * message it did not write.
+   *
+   * **It is an INVERSE of the push, which took new state to make true.** Both
+   * views are CAPPED, so an append at `DEFAULT_MAX_HISTORY` trims the oldest
+   * message; popping the append undid the append and not the eviction it caused,
+   * and the rolled-back prompt — a message the caller never said — permanently
+   * cost one real conversation turn: push at 200 trims the front and lands at
+   * 200, the pop leaves 199, and the trimmed message was never restored. So a
+   * push records what it evicted ({@link PushUndo}) and a pop that undoes THAT
+   * push unshifts it back. Nothing in the system could see the loss — both views
+   * are the right shape afterwards, one turn shallower — which is why the claim
+   * is now stated as a property over generated depths
+   * (`pipeline-history-rollback-property.test.ts`) rather than at the one depth a
+   * unit test picks.
    */
   dropTrailingUser(content: string): void;
   /** Seed both views from resent text history (e.g. reconnect/resume). */
@@ -60,10 +76,17 @@ export interface PipelineHistory {
   readonly revision: Pick<Epoch, "current" | "isCurrent">;
 }
 
-function cap(arr: unknown[]): void {
-  if (arr.length > DEFAULT_MAX_HISTORY) {
-    arr.splice(0, arr.length - DEFAULT_MAX_HISTORY);
-  }
+/**
+ * Trim `arr` to the cap, ANSWERING what came off the front.
+ *
+ * The return value is what makes {@link PipelineHistory.dropTrailingUser} an
+ * inverse — see {@link PushUndo}. It is `splice`'s own answer, so the eviction
+ * is recorded by the operation that performs it rather than reconstructed by a
+ * caller that would have to know the cap.
+ */
+function cap<T>(arr: T[]): T[] {
+  if (arr.length <= DEFAULT_MAX_HISTORY) return [];
+  return arr.splice(0, arr.length - DEFAULT_MAX_HISTORY);
 }
 
 /**
@@ -86,9 +109,16 @@ function cap(arr: unknown[]): void {
  * produce — dropping those is sufficient, and it costs at most a few messages
  * below the cap.
  */
-function capLlm(arr: ModelMessage[]): void {
-  cap(arr);
-  while (arr.length > 0 && arr[0]?.role === "tool") arr.shift();
+function capLlm(arr: ModelMessage[]): ModelMessage[] {
+  const evicted = cap(arr);
+  while (arr.length > 0 && arr[0]?.role === "tool") {
+    const shifted = arr.shift();
+    if (shifted) evicted.push(shifted);
+  }
+  // Front order, and the healed pair halves come after the capped ones because
+  // that is where they sat: a rollback unshifts this list whole, so the array it
+  // restores is byte-for-byte the one the push found.
+  return evicted;
 }
 
 /**
@@ -214,6 +244,33 @@ export function persistInterruptedTurn(args: {
   args.updateAgentContext(spoken);
 }
 
+/**
+ * What one single-message push evicted, so the pop that undoes that push can
+ * put it back.
+ *
+ * **A push is capped and a pop is not, so without this a rollback is not a
+ * rollback.** An append at the cap trims the oldest message; popping the append
+ * leaves the window one message shallower than it was, permanently — see
+ * {@link PipelineHistory.dropTrailingUser}, and `pipeline-history-rollback-property.test.ts`
+ * for the property that states it.
+ *
+ * Three properties, each of which is what keeps a restore from being a
+ * corruption:
+ *
+ * - **One slot PER VIEW.** A turn pushes the user message into `conversation`
+ *   and then into `llm` (`pipeline-turn-body.ts`), so a single shared slot would
+ *   be invalidated by the second half of the pair that fills the first.
+ * - **Recorded only for a push of exactly ONE message**, and `null` otherwise.
+ *   `dropTrailingUser` pops one message; a two-message push that evicted two
+ *   cannot be undone by it, and restoring both would leave the view longer than
+ *   it started.
+ * - **Consumed by identity**, not by content: the restore happens only when the
+ *   message popped IS the message this slot recorded, so an intervening push
+ *   (which overwrites the slot) can never have its own eviction unshifted under
+ *   a later pop, which would reorder the window.
+ */
+type PushUndo<T> = { readonly pushed: T; readonly evicted: readonly T[] } | null;
+
 /** Create a {@link PipelineHistory}, optionally seeded from prior text history. */
 export function createPipelineHistory(seed?: readonly Message[]): PipelineHistory {
   const conversation: Message[] = seed ? [...seed] : [];
@@ -221,6 +278,32 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
   // The existing primitive rather than a hand-rolled counter — see
   // `PipelineHistory.revision`.
   const revision = createEpoch();
+  let conversationUndo: PushUndo<Message> = null;
+  let llmUndo: PushUndo<ModelMessage> = null;
+
+  /**
+   * Pop `content` off the back of `arr` if it is a trailing user message, and
+   * restore what that message's own push evicted.
+   *
+   * The caller clears the slot afterwards WHETHER OR NOT anything was popped: an
+   * undo describes one push, and once a pop has looked at it the description is
+   * spent — a second pop of the same content must not unshift the same eviction
+   * twice, and a slot left standing across an unrelated pop is a window
+   * reordered.
+   */
+  const undoPush = <T extends Message | ModelMessage>(
+    arr: T[],
+    undo: PushUndo<T>,
+    content: string,
+  ): void => {
+    const last = arr.at(-1);
+    if (last === undefined || last.role !== "user" || last.content !== content) return;
+    arr.pop();
+    // The front of the restored list is whatever sat at index 0 before the push,
+    // which `capLlm`'s invariant says is never a `tool` message — so restoring a
+    // healed pair half cannot re-expose an orphan result.
+    if (undo?.pushed === last) arr.unshift(...undo.evicted);
+  };
 
   return {
     conversation,
@@ -228,22 +311,33 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
     revision: { current: revision.current, isCurrent: revision.isCurrent },
     pushConversation(...msgs: Message[]): void {
       conversation.push(...msgs);
-      cap(conversation);
+      const evicted = cap(conversation);
+      const pushed = msgs.length === 1 ? msgs[0] : undefined;
+      conversationUndo = pushed ? { pushed, evicted } : null;
       revision.bump();
     },
     pushLlm(...msgs: ModelMessage[]): void {
+      // The message RECORDED is the cleaned one that reached the array, not the
+      // argument: `withoutReasoning` may rewrite it, or drop it entirely, and an
+      // undo keyed on a message the view does not hold could never be consumed.
+      const pushed: ModelMessage[] = [];
       for (const m of msgs) {
         const cleaned = withoutReasoning(m);
-        if (cleaned) llm.push(cleaned);
+        if (cleaned) {
+          llm.push(cleaned);
+          pushed.push(cleaned);
+        }
       }
-      capLlm(llm);
+      const evicted = capLlm(llm);
+      const only = pushed.length === 1 ? pushed[0] : undefined;
+      llmUndo = only ? { pushed: only, evicted } : null;
       revision.bump();
     },
     dropTrailingUser(content: string): void {
-      const last = conversation.at(-1);
-      if (last?.role === "user" && last.content === content) conversation.pop();
-      const lastLlm = llm.at(-1);
-      if (lastLlm?.role === "user" && lastLlm.content === content) llm.pop();
+      undoPush(conversation, conversationUndo, content);
+      conversationUndo = null;
+      undoPush(llm, llmUndo, content);
+      llmUndo = null;
       revision.bump();
     },
     seed(msgs: readonly Message[]): void {
@@ -252,11 +346,19 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
       cap(conversation);
       llm.push(...msgs.map(toModelMessage));
       capLlm(llm);
+      // A reconnect seed is never rolled back — nothing pushes a synthetic
+      // prompt through this door — and its eviction is therefore not owed back
+      // to anybody. Cleared rather than recorded so a stale slot cannot outlive
+      // the push it describes.
+      conversationUndo = null;
+      llmUndo = null;
       revision.bump();
     },
     reset(): void {
       conversation.length = 0;
       llm.length = 0;
+      conversationUndo = null;
+      llmUndo = null;
       revision.bump();
     },
   };

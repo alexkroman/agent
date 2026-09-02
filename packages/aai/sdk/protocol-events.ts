@@ -173,6 +173,45 @@ export const RestoredToolCallSchema = z.object({
 /** One tool call as a resume reports it. @internal */
 export type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
 
+/**
+ * Zod schema for {@link AgentTranscriptRecovery}.
+ * @public
+ */
+export const AgentTranscriptRecoverySchema = z.enum(["turn-failed", "session-failed"]);
+
+/**
+ * Why the TRANSPORT spoke a committed transcript on its own behalf.
+ *
+ * @remarks
+ * Absent — the overwhelming majority — means the agent's own words: an ordinary
+ * reply, or the declared greeting. Present names one of the two failure phrases
+ * a pipeline session speaks when the model cannot:
+ *
+ * - `turn-failed` — `errorPhrase`, after an LLM turn failed, so a provider
+ *   outage hands the conversation back instead of going quiet.
+ * - `session-failed` — `startFailurePhrase`, when a provider failed to open and
+ *   there is no conversation to have.
+ *
+ * **A recovery utterance is SPOKEN but never RECORDED, and this field is the
+ * only thing on the wire that says so.** Both phrases reach the caller's ears
+ * and the caller's caption — that is deliberate, the UI matching the audio — and
+ * both are kept out of history and out of `ctx.messages` for a measured reason:
+ * teaching the model that its own replies open with apologies is how it starts
+ * producing them unprompted. Without the field the two rules composed into the
+ * outcome both forbid, because a reader of the retained stream could not tell a
+ * failure phrase from a reply: the phrase was excluded from history for a whole
+ * call and then seeded back into it by the first reconnect (and into
+ * `ctx.messages` immediately, by the live event dispatch).
+ *
+ * So a reader that reconstructs the CONVERSATION must skip an event carrying
+ * this; a reader that renders the TRANSCRIPT must not. An older reader that
+ * knows nothing of the field keeps its previous behaviour on both counts —
+ * unknown keys are stripped, never rejected.
+ *
+ * @public
+ */
+export type AgentTranscriptRecovery = z.infer<typeof AgentTranscriptRecoverySchema>;
+
 export const SessionEventSchema = z.discriminatedUnion("type", [
   /**
    * The handshake: audio negotiation plus the session's own id.
@@ -279,11 +318,16 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
    * So the rule is: this event fires once per reply that is recorded, and never
    * for one that was interrupted. That makes the log's assistant turns exactly
    * the session's own, rather than a re-derivation that can disagree with it.
+   *
+   * ...with ONE exception, which is why `recovery` exists: the transport also
+   * speaks for itself when a turn or a session FAILS, and the caller heard those
+   * words, so they belong in the caption. See {@link AgentTranscriptRecovery}.
    */
   z.object({
     type: z.literal("agent-transcript.committed"),
     meta: SessionEventMetaSchema,
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
+    recovery: AgentTranscriptRecoverySchema.optional(),
   }),
   z.object({
     type: z.literal("tool.called"),

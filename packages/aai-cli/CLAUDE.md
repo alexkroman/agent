@@ -7,7 +7,15 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 ## Commands and exports
 
 Binary: `aai` — subcommands: init, dev, test, eval, build, list, pull,
-push, publish, delete, login, secret, logs, storage, workflow, templates.
+push, publish, delete, login, secret, logs, workflow, templates.
+
+**That list is PINNED to the registry** (`cli.test.ts`, "the subcommand list in
+this package's guide names exactly what `cli.ts` registers"), because it went
+stale the moment something was removed: `storage` was deleted in "Remove per-app
+databases from the platform" and stayed named here — and in the root
+`AGENTS.md` — for every release since, while `cli.test.ts` already asserted its
+ABSENCE from the registry. A guide claiming a subcommand that exits 1 is worse
+than no list.
 
 **`aai eval` is a separate command from `aai test`, and the split is the
 point** (`eval.ts`). A test asserts about the config and calls no model; an eval
@@ -180,7 +188,7 @@ body gets `cwd: undefined`, typed, so it cannot read one it never asked for).
 Forgetting is unrepresentable; the alternative spelling is a policy name that
 does not exist. The lazy `await import` of the executor stays in each body —
 that is what keeps a subcommand's dependencies off every other invocation's
-startup path. Group commands (`secret`, `storage`, `workflow`) are plain
+startup path. Group commands (`secret`, `workflow`) are plain
 citty `defineCommand`s: meta plus subcommands, no body and so no policy.
 
 **A returned `fail(...)` and a thrown error converge on ONE emitter, and the

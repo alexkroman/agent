@@ -1364,7 +1364,7 @@ exactly as it reads a single streaming `PUT`.
 ##### wake()
 
 ```ts
-wake(runId: string): Promise<number>;
+wake(runId: string, options?: WakeUpOptions): Promise<number>;
 ```
 
 End a run's `sleep()` early, resolving how many pending sleeps were
@@ -1374,11 +1374,27 @@ interrupted.
 gone. Same shape as [WorkflowApi.cancel](#cancel) answering false, and for the
 same reason: two tabs pressing "send it now" is ordinary.
 
+[WakeUpOptions.correlationIds](#correlationids) narrows it to the waits declared with
+those ids, which is the same bag `ctx.workflows.wakeUp` takes and reaches the
+route's repeatable `?correlationId=`. Reach for it when the caller means one
+particular wait rather than "everything this run is waiting on" — and note it
+is the ONLY spelling that can end a hook's approval deadline, since a bare
+wake deliberately cannot (the journal filters a `hookTimeout` out of one).
+
+An id that is blank, or longer than 256 characters, REJECTS here without a
+request being sent. The route answers 400 for both, and there is nothing a
+caller can do with that answer that it could not do with a rejection it never
+had to make a round trip for.
+
 ###### Parameters
 
 ###### runId
 
 `string`
+
+###### options?
+
+[`WakeUpOptions`](#wakeupoptions)
 
 ###### Returns
 

@@ -6250,8 +6250,8 @@ Milliseconds to wait, or the `Date` to wait until. A value
 ##### step()
 
 ```ts
-step<T>(
-   name: string, 
+step<T, Name>(
+   name: Name & Literal<Name>, 
    fn: () => T | Promise<T>, 
 options?: StepOptions): Promise<T>;
 ```
@@ -6266,17 +6266,29 @@ built from the run's own data is unreadable in that run's history besides.
 A loop needs no name of its own per round: the occurrence count is what
 separates the iterations.
 
+The `Literal` constraint is what makes "a string LITERAL" a compile error
+rather than a sentence in this paragraph. It is deliberately not exported —
+an author meets it as the message tsc prints, never by name — so its doc,
+carrying the two shapes it cannot reach and which layer catches each, is in
+`sdk/workflow-ctx.ts` beside the declaration. A harness that means
+to pass an unbounded name narrows `ctx.step` through one typed alias rather
+than casting at each site.
+
 ###### Type Parameters
 
 ###### T
 
 `T`
 
+###### Name
+
+`Name` *extends* `string`
+
 ###### Parameters
 
 ###### name
 
-`string`
+`Name` & `Literal`\<`Name`\>
 
 ###### fn
 

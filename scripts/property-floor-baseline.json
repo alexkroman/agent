@@ -1,6 +1,4 @@
 {
   "_description": "Per-file budget of coverage floors that record NO measured actual, for check-property-floors.mjs. Occurrences, not lines. A file absent from a group may hold none. `--update` lowers an entry and REFUSES to raise one, so paying debt down is one command and blessing an addition needs a hand edit in a reviewable diff. The reason for an entry lives at the OCCURRENCE, in a comment beside the floor — not here, which `--update` rewrites. There is deliberately no group for a stateful suite with NO floor at all: an entry there would assert that some machine-walking property rightly proves nothing about the state it walks, which is never true.",
-  "unmeasured-floor": {
-    "packages/aai-runtime/integration/pipeline-fuzz.integration.test.ts": 1
-  }
+  "unmeasured-floor": {}
 }

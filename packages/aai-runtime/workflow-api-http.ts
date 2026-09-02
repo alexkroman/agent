@@ -41,6 +41,26 @@ export type JsonResponse = {
   destroy(): unknown;
 };
 
+/**
+ * A numeric query parameter as a number, with a BLANK one reading as `NaN`.
+ *
+ * `Number("")` is `0`, not `NaN`, which is the whole reason this exists: a caller
+ * that meant to send a value and computed nothing gets served a legitimate-looking
+ * `0` rather than a refusal. `?startIndex=` is where it was harmful — that floor
+ * is INCLUSIVE, so `0` is a full replay of everything the reader had already read,
+ * once per poll — and `?wait=` had the same shape one route over, where `0` means
+ * "do not wait". Both refuse a `NaN` with a 400 rather than clamping it.
+ *
+ * A FUNCTION rather than the expression at each site, and shared rather than
+ * copied, because the two call sites disagreeing about blank is precisely the
+ * failure: the reading a route gives an empty parameter is the same question
+ * whatever the parameter means. Its own function rather than a nested ternary
+ * besides, which the linter refuses.
+ */
+export function numberParam(value: string): number {
+  return value.trim() === "" ? Number.NaN : Number(value);
+}
+
 /** Write a JSON body and end the response. */
 export function sendJson(res: JsonResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });

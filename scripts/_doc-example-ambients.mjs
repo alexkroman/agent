@@ -6,7 +6,7 @@
  * `scripts/check-doc-examples.mjs` compiles every ```ts fence in the corpus as
  * ONE TypeScript program. That is what makes the gate cheap, and it used to make
  * a fence's ambients a property of the CORPUS: a
- * `/// <reference types="vite/client" />` written inside four
+ * triple-slash reference to Vite's client types written inside four
  * `scaffold/CLAUDE.md` fences augmented `ImportMeta` for all 193 compiled
  * fences, so a fence in one package could be green because of a sibling in
  * another, and red the moment that sibling was edited.

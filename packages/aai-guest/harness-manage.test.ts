@@ -291,6 +291,53 @@ describe("createAgentRequestHandler", () => {
       expect(out.statusCode).toBe(401);
     });
 
+    /**
+     * The FAILING observation: `constantTimeEquals("", "")` is TRUE, so an empty
+     * `x-aai-guest-token` against a blank expected token fell straight through
+     * this gate — a direct dial of a deployed agent's workflow API off the public
+     * Modal tunnel, with every platform rate limiter off the path.
+     *
+     * It was safe only because `harness.ts` exits on a falsy `AAI_GUEST_TOKEN`:
+     * a defence in a different file guarding a comparison in this one. Same class
+     * `bearerMatches` closed in the runtime, and the same remedy — refuse at the
+     * COMPARISON too, and fail closed.
+     */
+    describe("a blank token", () => {
+      const blank = () => createAgentRequestHandler({ manage: { ...manage, token: "" } });
+
+      test.each([
+        ["an empty header", ""],
+        ["a whitespace-only header", "   "],
+        ["a guessed token", "0".repeat(64)],
+      ])("refuses %s against a blank expected token", (_label, token) => {
+        const out = fakeRes();
+        const url = "/workflows/runs";
+        expect(blank()(withProxyToken(token, url), out.res, url, "POST")).toBe(true);
+        expect(out.statusCode).toBe(401);
+      });
+
+      test("refuses an empty header against a REAL expected token", () => {
+        // The supplied-side half. It catches nothing the expected-side guard does
+        // not — a 64-hex token cannot equal `""` — and what it buys is that an
+        // empty comparison is unreachable whatever the other guard becomes.
+        const out = fakeRes();
+        const url = "/workflows/runs";
+        expect(handler()(withProxyToken("", url), out.res, url, "POST")).toBe(true);
+        expect(out.statusCode).toBe(401);
+      });
+
+      test("refuses a whitespace-only expected token, which nothing can present", () => {
+        // A header's optional whitespace is already stripped by the time it is
+        // read, so `"  "` is unpresentable rather than merely odd — the same line
+        // `isBlankSecret` draws, and it stops there: a PADDED token is left alone.
+        const out = fakeRes();
+        const url = "/workflows/runs";
+        const padded = createAgentRequestHandler({ manage: { ...manage, token: "  " } });
+        expect(padded(withProxyToken("  ", url), out.res, url, "POST")).toBe(true);
+        expect(out.statusCode).toBe(401);
+      });
+    });
+
     test("a valid proxy token falls through untouched, so the runtime API serves it", () => {
       const out = fakeRes();
       const url = "/workflows/runs";

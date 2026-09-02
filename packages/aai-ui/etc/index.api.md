@@ -431,6 +431,11 @@ export type UseDownloadUrlResult = {
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;
 
 // @public
+export function useRunKey(options?: {
+    storage?: "session" | "local";
+}): string;
+
+// @public
 export function useSession(): Session;
 
 // @public
@@ -529,7 +534,7 @@ export type UseWorkflowsResult = {
 export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public
-export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
+export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
 
 // @public
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
@@ -538,6 +543,7 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, op
 export type UseWorkflowSubmitOptions = {
     api?: WorkflowApi;
     key?: string;
+    recover?: boolean;
     wait?: number;
     intervalMs?: number;
     parallel?: UploadParallel;

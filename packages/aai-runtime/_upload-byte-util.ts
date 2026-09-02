@@ -100,6 +100,29 @@ export type PlacedWindow = { at: number; bytes: Uint8Array };
  * Every offset stays on the megabyte GRID a part upload's offsets are checked
  * against (`assertPartOffset`), so a streamed window and a part window remain the
  * same kind of object addressed the same way.
+ *
+ * ## A body that DIES still yields the window it was filling
+ *
+ * The bytes held for the window in progress have already arrived and are already
+ * in this process's memory, so dropping them on the way out is losing data nobody
+ * has to lose — and on the streamed path it is losing data a reader was promised:
+ * `stream` writes its record FIRST precisely so a torn upload reads as "incomplete
+ * and this much is readable" rather than as an absent file. So the cut yields what
+ * it holds and THEN rethrows.
+ *
+ * It cost a megabyte the day the ramp landed. A torn 8 MiB stream published
+ * 1 + 2 + 4 MiB and discarded the fourth megabyte it was holding against an 8 MiB
+ * target, which `aai-server/workflow-uploads.scenario.test.ts` is the only thing in
+ * the repo that could see. The flat cut had the same hole — up to a whole
+ * `UPLOAD_PART_BYTES` of arrived bytes went out with it — and only ever looked
+ * correct for a body whose length happened to land on a window boundary.
+ *
+ * The flush is one more window rather than a partial one: `chunked` holds its own
+ * sub-chunk remainder and loses it on the same failure, so what is left here is
+ * always whole `UPLOAD_CHUNK_BYTES` pieces and the offset stays on the grid. And it
+ * really is STORED before the failure surfaces — `mapStream` awaits everything in
+ * flight in its `finally` before rethrowing, so this is a deterministic extra
+ * window and not a race with the unwinding.
  */
 export async function* windows(
   body: AsyncIterable<Uint8Array>,
@@ -110,16 +133,24 @@ export async function* windows(
   let bytes = 0;
   let at = 0;
   let emitted = 0;
-  for await (const piece of chunked(body, limit)) {
-    held.push(piece);
-    bytes += piece.length;
-    if (bytes >= windowTarget(emitted, grow)) {
-      yield { at, bytes: concat(held, bytes) };
-      at += bytes;
-      held = [];
-      bytes = 0;
-      emitted += 1;
+  try {
+    for await (const piece of chunked(body, limit)) {
+      held.push(piece);
+      bytes += piece.length;
+      if (bytes >= windowTarget(emitted, grow)) {
+        yield { at, bytes: concat(held, bytes) };
+        at += bytes;
+        held = [];
+        bytes = 0;
+        emitted += 1;
+      }
     }
+  } catch (error: unknown) {
+    // Caught rather than left to a `finally`, which a consumer that walks away
+    // mid-cut would also run — and a `yield` in a generator being returned throws
+    // over the caller's own reason for leaving.
+    if (bytes > 0) yield { at, bytes: concat(held, bytes) };
+    throw error;
   }
   if (bytes > 0) yield { at, bytes: concat(held, bytes) };
 }

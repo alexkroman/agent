@@ -38,12 +38,11 @@ import {
   requiredSize,
   requiredString,
 } from "./_body-fields.ts";
-import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
+import { guestSlug, notConfigured, type PlatformCall, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import * as journal from "./platform-workflow-journal.ts";
-import type { SqlExec } from "./secret-store.ts";
 
 const log = createLogger("workflow.journal");
 
@@ -111,6 +110,7 @@ const METHODS = [
   "setStatus",
   "readSteps",
   "claimAttempt",
+  "releaseAttempt",
   "claimSleep",
   "wakeSleeps",
   "claimHook",
@@ -212,6 +212,9 @@ export function createWorkflowJournalHandler(
       throw new HTTPException(400, { message: "unknown workflow-journal method" });
     }
     const method = fields.method;
+    // Read BEFORE the reservation: a body this route is going to refuse must not
+    // take an admin connection to be refused. See `PlatformCall`.
+    const call = plan(method, slug, fields);
 
     return await withReserved(
       adminDb,
@@ -237,95 +240,106 @@ export function createWorkflowJournalHandler(
             ? new HTTPException(409, { message: err.message, cause: err })
             : undefined,
       },
-      async (sql) => c.json({ result: await serve(method, { sql, slug }, fields) }, 200),
+      async (sql) => c.json({ result: await call(sql) }, 200),
     );
   };
 }
 
-type Ctx = { sql: SqlExec; slug: string };
-
-/** Dispatch one call. The slug comes from `ctx`, never from the body. */
-async function serve(method: Method, ctx: Ctx, body: Record<string, unknown>): Promise<unknown> {
-  const { sql, slug } = ctx;
+/**
+ * Read one call's fields and return the work that needs a connection.
+ *
+ * The slug is the BEARER's, never the body's. Every `requiredString`,
+ * `requiredInt`, `listLimit`, `optionalStrings` and `stepEntry` below runs HERE —
+ * outside `withReserved` — which is the whole point of the shape: see
+ * `PlatformCall`. Thirteen arms, so the discipline is worth stating: an arm reads
+ * its fields into locals and the returned closure names only those, never `body`.
+ */
+function plan(method: Method, slug: string, body: Record<string, unknown>): PlatformCall {
   switch (method) {
-    case "createRun":
-      await journal.createRun(sql, slug, {
+    case "createRun": {
+      const run = {
         runId: requiredString(body, "runId"),
         workflow: requiredString(body, "workflow"),
         status: requiredString(body, "status"),
         createdAt: requiredInt(body, "createdAt"),
         input: optionalString(body, "input"),
-      });
-      return null;
-    case "getRun":
-      return (await journal.getRun(sql, slug, requiredString(body, "runId"))) ?? null;
-    case "listRuns":
-      return journal.listRuns(sql, slug, requiredString(body, "workflow"), listLimit(body));
-    case "setStatus":
-      return journal.setStatus(
-        sql,
-        slug,
-        requiredString(body, "runId"),
-        requiredString(body, "status"),
-        { output: optionalString(body, "output"), error: optionalString(body, "error") },
-        optionalStrings(body, "expect"),
-      );
-    case "readSteps":
-      return journal.readSteps(sql, slug, requiredString(body, "runId"));
-    case "claimAttempt":
-      return journal.claimAttempt(
-        sql,
-        slug,
-        requiredString(body, "runId"),
-        requiredString(body, "key"),
-      );
-    case "claimSleep":
-      return journal.claimSleep(
-        sql,
-        slug,
-        requiredString(body, "runId"),
-        requiredString(body, "key"),
-        requiredInt(body, "wakeAt"),
-        optionalString(body, "correlationId"),
-        requiredString(body, "kind"),
-      );
-    case "wakeSleeps":
-      return journal.wakeSleeps(
-        sql,
-        slug,
-        requiredString(body, "runId"),
-        requiredInt(body, "now"),
-        optionalStrings(body, "correlationIds"),
-      );
-    case "claimHook":
-      return journal.claimHook(
-        sql,
-        slug,
-        requiredString(body, "runId"),
-        requiredString(body, "key"),
-        requiredString(body, "token"),
-      );
-    case "closeHook":
+      };
+      return async (sql) => {
+        await journal.createRun(sql, slug, run);
+        return null;
+      };
+    }
+    case "getRun": {
+      const runId = requiredString(body, "runId");
+      return async (sql) => (await journal.getRun(sql, slug, runId)) ?? null;
+    }
+    case "listRuns": {
+      const workflow = requiredString(body, "workflow");
+      const limit = listLimit(body);
+      return (sql) => journal.listRuns(sql, slug, workflow, limit);
+    }
+    case "setStatus": {
+      const runId = requiredString(body, "runId");
+      const status = requiredString(body, "status");
+      const result = {
+        output: optionalString(body, "output"),
+        error: optionalString(body, "error"),
+      };
+      const expect = optionalStrings(body, "expect");
+      return (sql) => journal.setStatus(sql, slug, runId, status, result, expect);
+    }
+    case "readSteps": {
+      const runId = requiredString(body, "runId");
+      return (sql) => journal.readSteps(sql, slug, runId);
+    }
+    case "claimAttempt": {
+      const runId = requiredString(body, "runId");
+      const key = requiredString(body, "key");
+      return (sql) => journal.claimAttempt(sql, slug, runId, key);
+    }
+    case "releaseAttempt": {
+      const runId = requiredString(body, "runId");
+      const key = requiredString(body, "key");
+      return (sql) => journal.releaseAttempt(sql, slug, runId, key);
+    }
+    case "claimSleep": {
+      const runId = requiredString(body, "runId");
+      const key = requiredString(body, "key");
+      const wakeAt = requiredInt(body, "wakeAt");
+      const correlationId = optionalString(body, "correlationId");
+      const kind = requiredString(body, "kind");
+      return (sql) => journal.claimSleep(sql, slug, runId, key, wakeAt, correlationId, kind);
+    }
+    case "wakeSleeps": {
+      const runId = requiredString(body, "runId");
+      const now = requiredInt(body, "now");
+      const correlationIds = optionalStrings(body, "correlationIds");
+      return (sql) => journal.wakeSleeps(sql, slug, runId, now, correlationIds);
+    }
+    case "claimHook": {
+      const runId = requiredString(body, "runId");
+      const key = requiredString(body, "key");
+      const token = requiredString(body, "token");
+      return (sql) => journal.claimHook(sql, slug, runId, key, token);
+    }
+    case "closeHook": {
+      const runId = requiredString(body, "runId");
+      const key = requiredString(body, "key");
       // The BOOLEAN, not `null`: it is a compare-and-set now, and its answer is
       // what decides whether the guest's body takes the timed-out branch or the
       // answered one.
-      return journal.closeHook(
-        sql,
-        slug,
-        requiredString(body, "runId"),
-        requiredString(body, "key"),
-      );
-    case "deliverHook":
-      return (
-        (await journal.deliverHook(
-          sql,
-          slug,
-          requiredString(body, "token"),
-          optionalString(body, "payload"),
-        )) ?? null
-      );
-    case "appendStep":
-      return journal.appendStep(sql, slug, requiredString(body, "runId"), stepEntry(body));
+      return (sql) => journal.closeHook(sql, slug, runId, key);
+    }
+    case "deliverHook": {
+      const token = requiredString(body, "token");
+      const payload = optionalString(body, "payload");
+      return async (sql) => (await journal.deliverHook(sql, slug, token, payload)) ?? null;
+    }
+    case "appendStep": {
+      const runId = requiredString(body, "runId");
+      const entry = stepEntry(body);
+      return (sql) => journal.appendStep(sql, slug, runId, entry);
+    }
     default: {
       // Unreachable: the arms above exhaust `Method`, and this ASSIGNMENT is what
       // keeps that true — a thirteenth `METHODS` entry stops compiling here rather

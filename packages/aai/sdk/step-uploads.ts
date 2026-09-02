@@ -49,7 +49,7 @@
  * So a body polls `uploadInfo` in a step and transcribes whatever windows are
  * fully present, exactly as it would over a finished file:
  *
- * ```ts no-check
+ * ```ts
  * import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
  * import type { WorkflowCtx } from "@alexkroman1/aai/workflow-api";
  *

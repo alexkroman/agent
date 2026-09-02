@@ -2,12 +2,12 @@
 /**
  * The SECOND crash model: the journal survives, the process's timers do not.
  *
- * `_workflow-resume-harness.ts` owns the grammar, the body compiler and the
- * first model — a killed WORKER, simulated by aborting the caller's signal at a
- * step boundary. This one interrupts the same generated bodies a different way:
- * `stop()` the engine and build a FRESH `createInProcessWorkflowEngine` over the
- * same journal, which is what a process restart and an `aai dev` rebuild both
- * are.
+ * `_workflow-resume-program.ts` owns the grammar and the body compiler, shared;
+ * `_workflow-resume-harness.ts` owns the FIRST model — a killed WORKER,
+ * simulated by aborting the caller's signal at a step boundary. This one
+ * interrupts the same generated bodies a different way: `stop()` the engine and
+ * build a FRESH `createInProcessWorkflowEngine` over the same journal, which is
+ * what a process restart and an `aai dev` rebuild both are.
  *
  * ## Why a second model, stated as the defect it would have caught
  *
@@ -68,15 +68,8 @@
 
 import { workflow } from "@alexkroman1/aai";
 import { vi } from "vitest";
-import {
-  byCodeUnit,
-  type Program,
-  type Recorder,
-  runProgram,
-  type Scenario,
-  silent,
-  WAIT_MS,
-} from "./_workflow-resume-harness.ts";
+import { byCodeUnit, type Scenario, silent } from "./_workflow-resume-harness.ts";
+import { type Program, type Recorder, runProgram, WAIT_MS } from "./_workflow-resume-program.ts";
 import { createInProcessWorkflowEngine } from "./workflow-in-process.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { isTerminalStatus, type JournalStore } from "./workflow-journal-types.ts";
@@ -97,18 +90,32 @@ const MAX_REBUILDS = 12;
  * `RESUME_STAGGER_MS` is 25 and one scenario has one run, so the real figure is
  * zero; this is slack against that constant changing rather than a measurement.
  */
-const STAGGER_SLACK_MS = 1_000;
+const STAGGER_SLACK_MS = 1000;
 
 /**
- * Turns of the loop one settle spends looking for quiescence.
+ * Turns of the loop one settle spends looking for quiescence, and how far each
+ * one moves the fake clock.
  *
  * Everything inside a delivery is microtasks and zero-delay timers (a retryable
- * step's `retryDelay` is 0 for a plain `Error`), so a bounded number of
- * zero-length advances reaches the parked state; only a durable WAIT needs the
- * clock moved. Generous, and cheap — a tick over an idle fake clock is a
- * microtask flush.
+ * step's `retryDelay` is 0 for a plain `Error`), so a bounded number of small
+ * advances reaches the parked state; only a durable WAIT needs the clock moved
+ * properly.
+ *
+ * **The step is 1 ms and not 0, and that is the one place virtual time fought
+ * back.** A fake `setTimeout(fn, 0)` scheduled from INSIDE a tick is filed at
+ * `now + 1` rather than `now` — the fake clock's own guard against a zero-delay
+ * timer re-arming itself forever within one tick — so
+ * `advanceTimersByTimeAsync(0)` fires the delivery `start` schedules (queued
+ * outside a tick) and never the retry `sleep(0)` queued during one. The symptom
+ * was not a hang, which is why it is worth writing down: `settle` reported the
+ * run PARKED while its first attempt was still waiting to be retried, the driver
+ * handed a mid-walk run to a fresh engine, and the oracle reported the double
+ * execution the engine had not caused. Cost of the fix: {@link SETTLE_TICKS} ms
+ * of virtual time per settle, three orders of magnitude short of
+ * {@link WAIT_MS}.
  */
 const SETTLE_TICKS = 24;
+const SETTLE_STEP_MS = 1;
 
 /** One rebuilt-engine scenario, as the oracle compares it. */
 export type RebuildScenario = Scenario & {
@@ -121,8 +128,7 @@ export type RebuildScenario = Scenario & {
 };
 
 /**
- * Advance virtual time by nothing until the run settles, and say whether it is
- * over.
+ * Nudge virtual time until the run settles, and say whether it is over.
  *
  * `false` means "parked": every immediate continuation has run and what is left
  * is a durable deadline nobody has reached. It deliberately does not ask the
@@ -132,7 +138,7 @@ export type RebuildScenario = Scenario & {
  */
 async function settle(journal: JournalStore, runId: string): Promise<boolean> {
   for (let i = 0; i < SETTLE_TICKS; i++) {
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(SETTLE_STEP_MS);
     const record = await journal.getRun(runId);
     if (record && isTerminalStatus(record.status)) return true;
   }

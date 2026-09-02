@@ -24,6 +24,9 @@
  *   attempt and a wedged step reaches its ceiling instead of retrying forever.
  *   That is a property of when the engine calls it, and this backend must not
  *   soften it by retrying the call itself — a retried claim would burn two.
+ *   `releaseAttempt` gives one back when the attempt ENDED without settling the
+ *   step, which is what keeps that ceiling a bound on abandonment rather than on
+ *   reaches; a retried release is harmless for the mirror reason, being floored.
  * - **`claimSleep` and `appendStep` answer with what is STORED**, not with what
  *   was sent. First write wins; a replay that recomputes `ctx.sleep(60_000)` must
  *   read back the original deadline or the run never wakes.
@@ -256,6 +259,13 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
         throw new Error(`workflow-journal claimAttempt answered ${typeof n} for ${runId}`);
       }
       return n;
+    },
+
+    async releaseAttempt(runId: string, key: string): Promise<void> {
+      // Nothing to validate: the answer is that the release happened, and the
+      // call rejects when it did not. A charge that is not given back only
+      // brings a step's ceiling closer, which is the safe direction.
+      await call(opts, "releaseAttempt", { runId, key });
     },
 
     async claimSleep(

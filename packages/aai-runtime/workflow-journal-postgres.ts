@@ -23,6 +23,10 @@
  * - **`claimAttempt`** — `insert … on conflict do update set n = n + 1
  *   returning n`. One statement, so two concurrent deliveries cannot read the
  *   same number and let a step exceed its ceiling.
+ * - **`releaseAttempt`** — `update … set n = greatest(n - 1, 0)`. One statement
+ *   too, and the `greatest` is the floor rather than tidiness: a release that
+ *   lands twice may only under-charge a budget the next claim re-takes, where a
+ *   negative count is an unbounded budget for a step that wedges the guest.
  * - **`appendStep`** — `on conflict do nothing`, then read back. The stored
  *   entry stays authoritative, so the loser of a race adopts the winner's value
  *   rather than its own.
@@ -63,6 +67,14 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import {
+  encodedOrNull,
+  millis,
+  type RunRow,
+  type StepRow,
+  toRunRecord,
+  toStepEntry,
+} from "./_workflow-journal-postgres-rows.ts";
+import {
   WORKFLOW_ATTEMPT_TABLE,
   WORKFLOW_HOOK_TABLE,
   WORKFLOW_RUN_TABLE,
@@ -79,88 +91,7 @@ import type {
   StepEntry,
 } from "./workflow-journal-types.ts";
 import { isTerminalStatus } from "./workflow-journal-types.ts";
-import { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
-
-/** A run row, as the driver hands it back. */
-type RunRow = {
-  run_id: string;
-  workflow: string;
-  status: RunStatus;
-  created_at: string | number;
-  /** `null` when the run was started with no input — the column is nullable. */
-  input: string | null;
-  output: string | null;
-  error: string | null;
-};
-
-/** A step row. */
-type StepRow = {
-  key: string;
-  name: string;
-  status: "ok" | "failed";
-  output: string | null;
-  error: string | null;
-  attempts: number;
-  finished_at: string | number;
-};
-
-/**
- * `bigint` arrives as a STRING from the driver, and `Number` is the read.
- *
- * Not a bug waiting to happen: these are epoch milliseconds, so the values are
- * ~1.7e12 against `Number.MAX_SAFE_INTEGER`'s 9e15 — four orders of magnitude of
- * room. `bigint` rather than `integer` because a 32-bit column overflows in 1970
- * + 24 days, which is the mistake this column shape exists to avoid.
- */
-const millis = (value: string | number): number => Number(value);
-
-/**
- * An author value on its way into a `jsonb` position, or SQL `NULL`.
- *
- * `encodeStorageJson` is `JSON.stringify` underneath, which answers `undefined`
- * for `undefined` however its return type is spelled — and postgres.js REFUSES
- * an undefined parameter outright (`UNDEFINED_VALUE: Undefined values are not
- * allowed`, `handleValue` in its `types.js`; `sql.unsafe` is untagged, so every
- * parameter goes through it). So a workflow body that returns nothing —
- * ordinary, for one that exists to do side effects — made `setStatus`'s
- * `{ output: outcome.output }` throw from inside the driver, the run never left
- * `running`, and the delivery failed and was retried against the same fault.
- *
- * `null` here rather than a guard per call site, because there are four of them
- * and the next one added would be the one that forgets. It is also what makes
- * the three backends agree: the platform journal already omits the field and the
- * memory one stores `undefined`, so a stored SQL `NULL` reads back as absent
- * from all three.
- */
-const encodedOrNull = (value: unknown): string | null =>
-  value === undefined ? null : encodeStorageJson(value);
-
-function toRunRecord(row: RunRow): RunRecord {
-  return {
-    runId: row.run_id,
-    workflow: row.workflow,
-    status: row.status,
-    createdAt: millis(row.created_at),
-    // `undefined` and not `null` for an absent input, which is what the memory
-    // and platform journals answer — `isRecord` refuses both, but only one of
-    // them makes the three backends comparable.
-    input: row.input === null ? undefined : decodeStorageJson(row.input),
-    ...(row.output === null ? {} : { output: decodeStorageJson(row.output) }),
-    ...(row.error === null ? {} : { error: { message: row.error } }),
-  };
-}
-
-function toStepEntry(row: StepRow): StepEntry {
-  return {
-    key: row.key,
-    name: row.name,
-    status: row.status,
-    ...(row.output === null ? {} : { output: decodeStorageJson(row.output) }),
-    ...(row.error === null ? {} : { error: { message: row.error } }),
-    attempts: row.attempts,
-    finishedAt: millis(row.finished_at),
-  };
-}
+import { decodeStorageJson } from "./workflow-typed-json.ts";
 
 /**
  * Build a journal over `db`.
@@ -283,6 +214,18 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       const n = rows[0]?.n;
       if (n === undefined) throw new Error(`workflow attempt claim returned nothing for ${runId}`);
       return n;
+    },
+
+    async releaseAttempt(runId: string, key: string): Promise<void> {
+      // ONE statement, and `greatest` is the floor: a release that lands twice
+      // may only under-charge a budget the next claim re-takes, where a negative
+      // count is an unbounded budget for a step that wedges the guest. A missing
+      // row is a no-op — there is nothing charged to give back.
+      await db.query(
+        `update ${WORKFLOW_ATTEMPT_TABLE} set n = greatest(n - 1, 0)
+         where run_id = $1 and key = $2`,
+        [runId, key],
+      );
     },
 
     async claimSleep(

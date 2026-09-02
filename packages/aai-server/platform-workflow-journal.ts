@@ -373,6 +373,28 @@ export async function claimAttempt(
 }
 
 /**
+ * Give an attempt back, because it ENDED without settling the step.
+ *
+ * ONE statement, and `greatest` is the floor rather than tidiness: a release
+ * that lands twice may only under-charge a budget the next claim re-takes, where
+ * a negative count is an unbounded budget for a step that wedges the guest. A
+ * missing row is a no-op — there is nothing charged to give back.
+ */
+export async function releaseAttempt(
+  sql: SqlExec,
+  slug: string,
+  runId: string,
+  key: string,
+): Promise<null> {
+  await sql(
+    `update ${ATTEMPTS} set n = greatest(n - 1, 0)
+     where slug = $1 and run_id = $2 and key = $3`,
+    [slug, runId, key],
+  );
+  return null;
+}
+
+/**
  * Record a wait, or read the one already recorded.
  *
  * First write wins and later calls are READS — which is what stops a replay

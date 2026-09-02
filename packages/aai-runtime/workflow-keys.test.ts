@@ -1,13 +1,30 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Specs for the correlation-key index.
+ * Specs for the correlation-key index — the per-store half.
  *
- * The Postgres half is exercised against a recording `Db` rather than a real
- * server: what can go wrong here is the SHAPE of the work — the DDL running more
- * than once under concurrency, the ordering clause losing its ULID tiebreak, an
- * idempotent re-record turning into an error — and all of those are visible in
- * the statements issued. A real-Postgres pass over the same store belongs in the
- * integration tier.
+ * **The CONTRACT is `workflow-keys-conformance.ts`**, one case list over both
+ * stores, and this file is what that list cannot assert. Read it before adding
+ * anything here: a case about what `record` and `lookup` PROMISE belongs there,
+ * where it is answered by a `Map` and by a real database, and a case added here
+ * is a claim about one store that the other is never asked.
+ *
+ * What is left, and why each piece stays:
+ *
+ * - **`resolveFindLimit`** is a pure clamp ABOVE the seam, so no arm of the
+ *   table reaches it.
+ * - **The Postgres store against a recording `Db`.** What that can see is the
+ *   SHAPE of the work — which statements were issued, in what order, with which
+ *   parameters — so it is where the DDL's once-per-store memoization under
+ *   CONCURRENCY lives, and where "the limit is a parameter and not
+ *   interpolated" lives. It is deliberately not where behaviour lives: a
+ *   recorder replays statement TEXT, so `on conflict (run_id) do nothing` and
+ *   the ULID tiebreak are green here whether or not the schema backs them.
+ *   `workflow-keys-conformance-postgres.scenario.test.ts` answers the contract
+ *   against a real server, and `aai-server/workflow-keys.scenario.test.ts`
+ *   answers the SCHEMA and the PLAN.
+ * - **The memory store's four cases** predate the table and now overlap it.
+ *   They are kept because they are the cheapest possible statement of the happy
+ *   path at this seam and cost nothing; they are not the place to add a fifth.
  */
 
 import { describe, expect, test } from "vitest";

@@ -49,12 +49,12 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
-import { createIntervalSweep } from "./_interval-sweep.ts";
 import { mapConcurrent } from "./_pool.ts";
 import { envCount, envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
+import { createDeliveryBudget, type DeliveryBudget } from "./workflow-queue-budget.ts";
 import { claimDue } from "./workflow-queue-claim.ts";
 import { reconcileStalledRuns, STALL_GRACE_MS } from "./workflow-queue-reconcile.ts";
 import {
@@ -103,6 +103,11 @@ export const WORKFLOW_QUEUE_INTERVAL_MS = envMs(process.env.WORKFLOW_QUEUE_INTER
  * claimed stays due and the next tick (or another replica) takes it. Sized above
  * a plausible burst — a fan-out enqueues one message per branch — so a fan-out
  * does not spread across ticks and pay the interval per branch.
+ *
+ * **A started sweep claims the SMALLER of this and its free delivery slots**, and
+ * that is not a narrowing of it: a claim writes `locked_at`, so a message claimed
+ * beyond the in-flight bound is one this replica cannot deliver yet AND has
+ * hidden from every other replica. See `workflow-queue-budget.ts`.
  */
 export const WORKFLOW_QUEUE_MAX_PER_TICK = envCount(process.env.WORKFLOW_QUEUE_MAX_PER_TICK, 32);
 
@@ -113,6 +118,9 @@ export const WORKFLOW_QUEUE_MAX_PER_TICK = envCount(process.env.WORKFLOW_QUEUE_M
  * database connections — the claim has already committed by the time any
  * delivery starts. Distinct from `claimDue`'s one-per-run rule, which is about
  * one RUN's ordering; this is about one replica's fan-out across many runs.
+ *
+ * **It is a bound ACROSS passes, not only within one**, and that is the whole
+ * fix for the starvation `workflow-queue-budget.ts` describes.
  */
 export const WORKFLOW_QUEUE_DELIVER_CONCURRENCY = envCount(
   process.env.WORKFLOW_QUEUE_DELIVER_CONCURRENCY,
@@ -163,34 +171,37 @@ export type QueueSweepOptions = {
   isDraining?: (() => boolean) | undefined;
   maxPerTick?: number | undefined;
   concurrency?: number | undefined;
+  /**
+   * The replica's delivery budget, shared by every pass — see
+   * `workflow-queue-budget.ts`, which carries the starvation it fixes.
+   *
+   * Absent means unbounded across passes, which is what a direct
+   * `runQueuePass` call gets: a caller driving one pass has no other pass to be
+   * starved by. {@link startWorkflowQueueSweep} always supplies one.
+   */
+  inFlight?: DeliveryBudget | undefined;
 };
 
 /**
- * Run one pass: claim, deliver, settle.
+ * The CLAIM half of a pass: take up to `limit` due messages, and reconcile when
+ * there were none.
  *
- * Exported for the tests, which drive a pass directly rather than waiting out an
- * interval — the interval is `createIntervalSweep`'s business and has its own
- * spec.
- *
- * @internal
+ * Its own function only so {@link runQueuePass} stays under the complexity
+ * ceiling once the slot bookkeeping around it arrived. The seam is real enough —
+ * this is the whole of what runs on a reserved connection, which is the property
+ * both comments below are about.
  */
-export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> {
-  const empty: SweepPass = { claimed: 0, delivered: 0, rescheduled: 0, retried: 0, dropped: 0 };
-  const adminDb = opts.adminDb;
-  if (!adminDb || opts.isDraining?.()) return empty;
-
+async function claimAndReconcile(
+  adminDb: AdminDb,
+  limit: number,
+): Promise<{ claimed: QueuedMessage[]; repaired: { stalled: number } }> {
   // A RESERVED connection for the claim, released before any delivery starts: a
   // delivery is an HTTP request into a guest and may take seconds, and holding a
   // pooled connection across it is how a slow guest becomes a connection
   // shortage. The claim is one statement, so the reservation is brief.
   const reserved = await adminDb.reserve();
-  let claimed: QueuedMessage[];
-  let repaired = { stalled: 0 };
   try {
-    claimed = await claimDue(
-      (q, p) => reserved.query(q, p),
-      opts.maxPerTick ?? WORKFLOW_QUEUE_MAX_PER_TICK,
-    );
+    const claimed = await claimDue((q, p) => reserved.query(q, p), limit);
     // NOTHING DUE is exactly when a stalled run should be looked for: the queue
     // is idle, the admin pool is free, and a run that is unfinished with no
     // message is invisible to every other pass. It rides the connection the
@@ -212,13 +223,66 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
     // either the status scan or the `(slug, queue_name)` anti-join), plus the
     // retention sweep that stops terminal runs, which the predicate can never
     // select, growing that scan forever.
-    if (claimed.length === 0) {
-      repaired = await reconcileStalledRuns((q, p) => reserved.query(q, p));
-    }
+    const repaired =
+      claimed.length === 0
+        ? await reconcileStalledRuns((q, p) => reserved.query(q, p))
+        : { stalled: 0 };
+    return { claimed, repaired };
   } finally {
     reserved.release();
   }
+}
+
+/**
+ * Run one pass: claim, deliver, settle.
+ *
+ * Exported for the tests, which drive a pass directly rather than waiting out an
+ * interval — the interval is {@link startWorkflowQueueSweep}'s business.
+ *
+ * A pass driven directly gets NO {@link QueueSweepOptions.inFlight}, so it
+ * behaves as it always did: claim up to `maxPerTick`, fan out at `concurrency`,
+ * await the batch. The cross-pass budget is a property of a started sweep, where
+ * there is another pass for a slow delivery to starve.
+ *
+ * @internal
+ */
+export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> {
+  const empty: SweepPass = { claimed: 0, delivered: 0, rescheduled: 0, retried: 0, dropped: 0 };
+  const adminDb = opts.adminDb;
+  if (!adminDb || opts.isDraining?.()) return empty;
+
+  const maxPerTick = opts.maxPerTick ?? WORKFLOW_QUEUE_MAX_PER_TICK;
+  // BEFORE the claim, and a refusal returns before touching the pool: a tick
+  // that finds the replica's deliveries saturated must cost nothing, since it is
+  // now the ordinary shape of a tick while a slow delivery runs.
+  const slots = await opts.inFlight?.take(maxPerTick);
+  if (slots && slots.length === 0) return empty;
+  // Releases are idempotent, so the per-message release below and this
+  // catch-all cannot double-free — see `_semaphore.ts`.
+  const releaseAllSlots = (): void => {
+    for (const release of slots ?? []) release();
+  };
+
+  let claimed: QueuedMessage[];
+  let repaired: { stalled: number };
+  try {
+    ({ claimed, repaired } = await claimAndReconcile(
+      adminDb,
+      slots ? Math.min(maxPerTick, slots.length) : maxPerTick,
+    ));
+  } catch (err) {
+    // A claim that threw took no delivery, so every slot it reserved has to go
+    // back — otherwise a replica whose database is briefly unreachable leaks its
+    // whole budget and stops claiming for good.
+    releaseAllSlots();
+    throw err;
+  }
+  // The surplus, before any delivery starts: the claim asked for as many as we
+  // hold and may answer fewer, and a slot held for a message that does not exist
+  // is one the next tick cannot use.
+  for (const release of (slots ?? []).slice(claimed.length)) release();
   if (claimed.length === 0) {
+    releaseAllSlots();
     if (repaired.stalled > 0) {
       log.warn(
         `scheduled a re-walk for ${repaired.stalled} stalled run(s) — unfinished with nothing ` +
@@ -246,10 +310,13 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   // Bounded fan-out over a fixed list, in ITEM order — `_pool.ts`'s own doc
   // argues why a worker pool rather than a semaphore: a lapsed acquire in a
   // background pass is work silently not done.
+  // The trailing catch-all is BELT AND BRACES: `_pool.ts` cancels nothing, so
+  // each message's own `finally` below runs even when a sibling rejects.
+  // Releases are idempotent, so saying it twice costs nothing.
   const outcomes = await mapConcurrent(
     claimed,
     opts.concurrency ?? WORKFLOW_QUEUE_DELIVER_CONCURRENCY,
-    async (message) => {
+    async (message, at) => {
       try {
         const outcome = await opts.deliver(message);
         if (outcome.type === "reschedule") {
@@ -269,9 +336,15 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
           error: errorMessage(err),
         });
         return await settle((sql) => fail(sql, message.id, message.attempt));
+      } finally {
+        // ONE slot, as soon as THIS message settles — not the whole batch when
+        // the pass returns. Freeing them together would leave the head-of-line
+        // block in place, narrowed from "any delivery on the replica" to "the
+        // slowest delivery in this batch".
+        slots?.[at]?.();
       }
     },
-  );
+  ).finally(releaseAllSlots);
 
   const pass: SweepPass = {
     claimed: claimed.length,
@@ -301,8 +374,9 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
  * Start delivering. Returns its stop.
  *
  * Sync and fire-and-forget per tick, like every other sweep here: the process
- * must not wait on it, and `createIntervalSweep` drops a tick whose predecessor
- * is still running rather than queueing them.
+ * must not wait on it. Unlike every other sweep here a tick is NOT dropped while
+ * its predecessor runs — see the comment on the interval below, and
+ * `workflow-queue-budget.ts` for what bounds the work instead.
  */
 export function startWorkflowQueueSweep(
   opts: QueueSweepOptions & { intervalMs?: number | undefined },
@@ -322,18 +396,44 @@ export function startWorkflowQueueSweep(
     return () => undefined;
   }
 
-  // ONE runner behind both triggers, and it must be one: a notification arriving
-  // mid-pass would otherwise start a second concurrent pass on the same replica.
-  // That is safe for correctness — `claimDue` re-checks its predicate under the row
-  // lock, so two passes take disjoint sets — but it is pointless work, and a burst
-  // of N enqueues would start N passes. `createCoalescingRunner` collapses them
-  // into at most one in flight plus one trailing, and the trailing run re-reads the
-  // queue when it runs rather than carrying anything from the trigger. The
-  // notification carries no payload for the same reason.
-  const runner = createCoalescingRunner(() => runQueuePass(opts));
+  // The replica's DELIVERY budget, shared by every pass this sweep starts —
+  // `workflow-queue-budget.ts` carries the whole argument and the measurement.
+  // It lives here rather than inside `runQueuePass` because it has to outlive one
+  // pass: that is the entire point.
+  const inFlight = createDeliveryBudget(opts.concurrency ?? WORKFLOW_QUEUE_DELIVER_CONCURRENCY);
+  const passOpts: QueueSweepOptions = { ...opts, inFlight };
 
-  const sweep = createIntervalSweep(() => runner.trigger());
-  const stopInterval = sweep.start(intervalMs);
+  // A NOTIFY burst COALESCES, and the interval deliberately does NOT go through
+  // the same runner.
+  //
+  // A notification is an EVENT, and ten enqueues landing together must not start
+  // ten passes — `createCoalescingRunner` collapses them into at most one in
+  // flight plus one trailing, and the trailing run re-reads the queue when it
+  // runs rather than carrying anything from the trigger. The notification carries
+  // no payload for the same reason.
+  //
+  // A TICK is not an event, and gating it on "a pass is already in flight" was
+  // the starvation bug: a pass runs as long as its slowest DELIVERY, up to
+  // `QUEUE_DELIVERY_TIMEOUT_MS`, so one slow step anywhere on the replica stopped
+  // every other tenant's message from being claimed for up to a minute. Ticks
+  // therefore overlap now, and what bounds the work is `inFlight` above — a tick
+  // with no free slot returns before it reserves a connection, so an overlapping
+  // tick during a slow delivery costs nothing. `claimDue` re-checks its predicate
+  // under the row lock, so concurrent passes take DISJOINT sets; that was always
+  // true (see this module's doc) and is what makes the overlap safe rather than
+  // merely cheap.
+  const runner = createCoalescingRunner(() => runQueuePass(passOpts));
+
+  const timer = setInterval(() => {
+    void runQueuePass(passOpts).catch((error: unknown) => {
+      // `createIntervalSweep` used to own this catch. A tick's pass has no other
+      // caller, so a rejection here would be unhandled — same shape as the
+      // notified path below.
+      log.warn("queue pass failed", { error: errorMessage(error) });
+    });
+  }, intervalMs);
+  timer.unref?.();
+  const stopInterval = (): void => clearInterval(timer);
 
   // The interval STAYS, and this is the part worth reading twice. A notification
   // is not durable: Postgres drops it when nothing is listening, and a listener

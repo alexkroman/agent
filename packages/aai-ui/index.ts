@@ -106,6 +106,9 @@ export {
   type UseDownloadUrlResult,
   useDownloadUrl,
 } from "./use-download-url.ts";
+// The opaque, storage-backed key `useWorkflowSubmit({ recover: true })` looks a
+// run up by — the twenty lines six templates had each written to get one right.
+export { useRunKey } from "./use-run-key.ts";
 // The caller's in-progress turn, with `null` (silent) and `""` (speech
 // detected, no words yet) kept apart — see the module doc.
 export { type UseUserTranscriptResult, useUserTranscript } from "./use-user-transcript.ts";

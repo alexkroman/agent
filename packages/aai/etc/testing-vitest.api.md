@@ -39,6 +39,9 @@ export function installStubTranscribe(options?: StubTranscribeOptions): StubTran
 export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 export function mockWorkflows(options?: MockWorkflowsOptions): WorkflowClient;
 
 // @public
@@ -277,7 +280,7 @@ type WorkflowClient = {
 type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;

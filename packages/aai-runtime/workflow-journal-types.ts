@@ -283,7 +283,7 @@ export type JournalStore = {
    */
   readSteps(runId: string): Promise<StepEntry[]>;
   /**
-   * Consume one attempt for `key` and resolve the attempt's 1-based number.
+   * Charge one attempt for `key` and resolve the attempt's 1-based number.
    *
    * Called BEFORE the step body runs, and that order is the whole contract: a
    * process that dies mid-step has already burned the attempt, so a step whose
@@ -292,11 +292,53 @@ export type JournalStore = {
    * rather than a field the settling entry carries — an entry is written when a
    * step FINISHES, which is exactly the event a crash denies us.
    *
-   * Monotonic per `(runId, key)`. A backend implements it as an
-   * upsert-and-increment; anything that reads then writes can hand the same
+   * **A charge is a LEASE, not a tally** — see {@link JournalStore.releaseAttempt},
+   * which gives one back. So the number this answers is not "how many times has
+   * this step been tried", it is **how many attempts are outstanding right now,
+   * this one included**: attempts still running, plus every attempt that ended
+   * in no outcome at all because the worker holding it died. That is the
+   * quantity a pre-body ceiling was always trying to bound. It used to be a bare
+   * tally, and the difference is a durable-execution defect rather than a nuance
+   * — a suspend, a duplicate delivery and an in-process retry each spent from
+   * one budget that only a crash was supposed to spend, so two overlapping
+   * deliveries of a step whose body sleeps burned four attempts of three and the
+   * loser journaled `failed` over a step that had SUCCEEDED. See
+   * `workflow-replay-step.ts`, "An attempt is a lease".
+   *
+   * Monotonic per `(runId, key)` in the only sense that matters for correctness:
+   * two concurrent charges never answer the same number. A backend implements it
+   * as an upsert-and-increment; anything that reads then writes can hand the same
    * number to two concurrent deliveries and let a step exceed its ceiling.
    */
   claimAttempt(runId: string, key: string): Promise<number>;
+  /**
+   * Give back one attempt charged for `key`. Floored at zero.
+   *
+   * Called when the attempt ended in a durable WAIT — the body suspended, so the
+   * run is mid-flight and the next delivery will reach this step again. That is
+   * the one outcome which leaves no journal entry AND is not the condition
+   * {@link JournalStore.claimAttempt}'s ceiling exists to catch. Everything else
+   * either settles the step, in which case the entry is authoritative and the
+   * charge is never read again, or leaves the charge deliberately standing:
+   *
+   * - **A death keeps it, and that asymmetry is the whole mechanism.** A worker
+   *   that dies mid-body cannot release, so the charge is the only evidence the
+   *   attempt happened — which is also what the divergence check reads (see
+   *   `workflow-replay-divergence.ts`, "two facts decide it").
+   * - **An in-process retry keeps it**, being the same walk working on the same
+   *   step. A charge per TRY would leave a window between the release and the
+   *   next claim in which a kill leaves no evidence at all.
+   * - **An ABORT keeps it**, for the same reason a death does: the walk is over
+   *   and it did not finish.
+   *
+   * Idempotent at the floor rather than matched to a token: a release that lands
+   * twice can only under-charge a budget the next charge re-takes, where one
+   * that could go negative would hand a wedging step an unbounded budget.
+   *
+   * The happy path therefore still costs exactly one journal round trip per
+   * step: no release at all.
+   */
+  releaseAttempt(runId: string, key: string): Promise<void>;
   /**
    * Record this sleep's wake time the FIRST time it is reached, and read back
    * whatever is stored on every reach after.

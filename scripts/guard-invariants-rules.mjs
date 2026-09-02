@@ -24,9 +24,9 @@
  * | --- | --- |
  * | `guard-invariants-ere.mjs`          | the regex vocabulary |
  * | `guard-invariants-scopes.mjs`       | the eight corpora, and `SCAN_CORPORA`, the floor under each |
- * | `guard-invariants-rules-timing.mjs` | rules 3, 4, 19, 21 — how code waits |
- * | `guard-invariants-rules-shape.mjs`  | rules 2, 17, 18 — a value's shape, re-derived |
- * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16, 29 — state someone else owns |
+ * | `guard-invariants-rules-timing.mjs` | rules 3, 4, 19, 21, 23 — how code waits; plus 26 and 30, the two over a shipped `workflows/` body |
+ * | `guard-invariants-rules-shape.mjs`  | rules 2, 17, 18, 22, 28 — a value's shape, re-derived |
+ * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16, 24, 25, 27, 29 — state someone else owns |
  *
  * Everything downstream imports from HERE and nothing changed for it:
  * `LINE_RULES` and the scope constants are re-exported.

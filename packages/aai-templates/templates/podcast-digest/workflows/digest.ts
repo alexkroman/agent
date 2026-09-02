@@ -425,6 +425,13 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
  * A step's result is journaled and therefore stable across replays, where
  * `new Date()` in the body would answer differently on every one — and a body
  * that is not deterministic is a body the engine cannot replay.
+ *
+ * The read below is therefore a BASELINED occurrence of `guard-invariants`
+ * rule 30, and that is the reason: it is inside a step, not inside a body. The
+ * rule bans the call anywhere in a shipped `workflows/` file because the
+ * `ctx.step` callback boundary is not decidable from a line; `dailyDigestFlow`
+ * is what reaches this one, as `ctx.step("timestamp", () => timestamp())`.
+ * Anything at BODY level is the bug, not an exception.
  */
 export async function timestamp(): Promise<string> {
   return new Date().toISOString();

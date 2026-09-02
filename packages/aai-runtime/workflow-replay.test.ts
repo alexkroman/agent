@@ -315,6 +315,13 @@ describe("attempts", () => {
     const outcome = await replay(journal, async (_input, ctx) => ctx.step("spent", work));
     expect(work).not.toHaveBeenCalled();
     expect(outcome.kind).toBe("failed");
+    // And JOURNALS NOTHING, which is the half that used to be a defect. The
+    // refusal is a verdict about the WALK — nothing failed, the body never ran —
+    // so a `failed` entry here is authoritative forever over a step that the
+    // walk beside this one may be in the middle of succeeding at. See
+    // `StepAbandonedError`, and the attempt-budget finding in
+    // `workflow-concurrent-delivery.test.ts`.
+    expect(await journal.readSteps("wrun_1")).toEqual([]);
   });
 
   test("a body may catch a step that ran out of attempts and carry on", async () => {
@@ -606,9 +613,15 @@ describe("a suspend thrown from INSIDE a step", () => {
     // Nothing journaled. A `failed` entry here would answer the wait as a
     // failure on every replay from now on.
     expect(await journal.readSteps("wrun_1")).toEqual([]);
-    // One attempt consumed by this delivery, not the whole budget: the next
-    // claim is 2.
-    expect(await journal.claimAttempt("wrun_1", "waiting#0")).toBe(2);
+    // And the attempt is GIVEN BACK, so this delivery consumed none of the
+    // budget: the next claim is 1, as it would be on a step never reached.
+    //
+    // It used to be 2, and that one number was the defect. A charge is only ever
+    // spent by an attempt that never ENDED — see "An attempt is a LEASE" in
+    // `workflow-replay-step.ts`. A suspend ends one, so three deliveries of a
+    // step whose body sleeps used to burn three of a budget of three, and the
+    // fourth reach journaled `failed` over a step that then succeeded.
+    expect(await journal.claimAttempt("wrun_1", "waiting#0")).toBe(1);
   });
 
   test("resumes on the next delivery instead of failing the run", async () => {

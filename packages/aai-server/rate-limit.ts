@@ -29,6 +29,7 @@
  * is what lets a second consumer share the table without one.
  */
 
+import { invariant } from "@alexkroman1/aai/internal";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -164,7 +165,16 @@ export function createPgRateLimiter(
     async check(key) {
       const rows = await sql(CHECK_SQL, [options.name, key, options.windowMs]);
       const row = rows[0];
-      if (!row) throw new Error(`Rate-limit upsert returned no row for ${options.name}/${key}`);
+      // `CHECK_SQL` is an upsert with a `returning` clause and no `where` on the
+      // insert, so it answers exactly one row for every input — a property of a
+      // statement written right here, not of what the caller asked for. The
+      // index read is only unchecked because `noUncheckedIndexedAccess` cannot
+      // see that.
+      invariant(row !== undefined, "ratelimit.upsert.row", () => ({
+        limiter: options.name,
+        key,
+        rows: rows.length,
+      }));
       const count = Number(row.count);
       if (count <= options.limit) return { ok: true };
       return {

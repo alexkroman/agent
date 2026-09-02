@@ -92,5 +92,14 @@
   },
   "rule29_globalFetchInRuntime": {
     "packages/aai-runtime/providers/_openai-stream-repair.ts": 1
+  },
+  "rule30_nondeterministicWorkflowBody": {
+    "packages/aai-templates/templates/call-audit/workflows/audit.ts": 1,
+    "packages/aai-templates/templates/link-digest/workflows/digest.ts": 1,
+    "packages/aai-templates/templates/podcast-digest/workflows/digest.ts": 1,
+    "packages/aai-templates/templates/transcription-workflow/workflows/batch.ts": 1,
+    "packages/aai-templates/templates/transcription-workflow/workflows/stream.ts": 1,
+    "packages/aai-templates/templates/transcription-workflow/workflows/sync-api.ts": 2,
+    "packages/aai-templates/templates/transcription-workflow/workflows/transcribe.ts": 2
   }
 }

@@ -10,7 +10,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   bearerFor,
   createTestOrchestrator,
@@ -21,16 +21,23 @@ import {
 const MINE = "mine-agent";
 const THEIRS = "theirs-agent";
 
-/** A platform that records the statements and the params it was handed. */
-async function platform() {
+/**
+ * A platform that records the statements and the params it was handed.
+ *
+ * `countAnswer` is what the `coalesce(max(event_index))` statement resolves to.
+ * It defaults to a well-formed row; the cases that pass something else are
+ * asking what the route does with an answer it cannot read, which is the one
+ * question a fake `SqlExec` can put better than a real database can.
+ */
+async function platform(countAnswer: Record<string, unknown>[] = [{ next: 4 }]) {
   const seen: { sql: string; params: unknown[] }[] = [];
   const adminDb = fakeAdminDbOver((sql, params) => {
     seen.push({ sql, params: params ?? [] });
-    return sql.includes("coalesce(max(event_index)") ? [{ next: 4 }] : [];
+    return sql.includes("coalesce(max(event_index)") ? countAnswer : [];
   });
   const harness = await createTestOrchestrator({ adminDb });
   for (const slug of [MINE, THEIRS]) await deploy(harness.fetch, slug);
-  return { ...harness, seen };
+  return { ...harness, seen, adminDb };
 }
 
 async function deploy(fetch: TestFetch, slug: string): Promise<void> {
@@ -154,6 +161,31 @@ describe("POST /:slug/session-state", () => {
       expect(p.seen).toEqual([]);
     });
 
+    /**
+     * The stronger claim, and the one `p.seen` cannot make: a refused body costs no
+     * CONNECTION, not merely no statement.
+     *
+     * Validation used to run inside `withReserved`, so every malformed call took
+     * one of `ADMIN_POOL_MAX` reserved admin connections, held it across the
+     * `requiredString` that refused the request, and gave it back — four of these
+     * in flight and a legitimate call waits on a pool exhausted by requests that
+     * were never going to run a query. `p.seen` stayed empty throughout, which is
+     * why this needs its own spy: the statement recorder sees the work, and the
+     * cost was the door.
+     */
+    test("reserves no connection for a body it is going to refuse", async () => {
+      const p = await platform();
+      const reserve = vi.spyOn(p.adminDb, "reserve");
+      const res = await callRoute(
+        p.fetch,
+        MINE,
+        { method: "readEvents", sessionId: "s1", limit: 10 },
+        await bearerFor(p.store, MINE),
+      );
+      expect(res.status).toBe(400);
+      expect(reserve).not.toHaveBeenCalled();
+    });
+
     test("does not echo the caller's method name back", async () => {
       const p = await platform();
       const res = await callRoute(
@@ -177,6 +209,32 @@ describe("POST /:slug/session-state", () => {
       await bearerFor(p.store, MINE),
     );
     expect(await res.json()).toEqual({ result: 4 });
+  });
+
+  test.each([
+    // `Number(null)` is 0, which is why this one is the dangerous shape rather
+    // than the obvious one: a NULL column used to pass the route's integer
+    // check and answer the ONE value that must never be guessed.
+    ["a NULL column", [{ next: null }]],
+    ["no row at all", []],
+  ])("refuses %s from countEvents with a 503, never `result: 0`", async (_label, answer) => {
+    // `0` means "this session has no events", so a guessed 0 hands a resuming
+    // guest an index it has already used and its appends overwrite the log from
+    // the start — dropped in silence by `on conflict do nothing`. The runtime's
+    // client refuses an unreadable `countEvents` for exactly that reason
+    // (`aai-runtime/session-state-platform.ts`), and this end used to do the
+    // opposite: the fallback made a broken read look like an empty session. A
+    // 503 is `withReserved`'s mapping for a store failure, and the guest turns
+    // it into a failed `hydrate`, which is the honest outcome.
+    const p = await platform(answer);
+    const res = await callRoute(
+      p.fetch,
+      MINE,
+      { method: "countEvents", sessionId: "s1" },
+      await bearerFor(p.store, MINE),
+    );
+    expect(res.status).toBe(503);
+    expect(await res.text()).not.toContain("result");
   });
 
   test("answers 501 with no platform database, because a retry will not make one", async () => {

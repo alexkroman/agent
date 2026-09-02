@@ -235,7 +235,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   function handleAudioDelta(obj: Record<string, unknown>): void {
     if (typeof obj.delta === "string") {
-      opts.callbacks.onAudioChunk(base64ToUint8(obj.delta));
+      // `log`, not the module default: a drop here is this session's.
+      opts.callbacks.onAudioChunk(base64ToUint8(obj.delta, log));
     }
   }
 

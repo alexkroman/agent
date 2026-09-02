@@ -25,8 +25,8 @@ import { scrubDir, workspaceDependencyOptions } from "./studio-build.ts";
 import { ensureProjectShape, fileExists } from "./studio-project-shape.ts";
 import {
   CLI_OUTPUT_CAP,
+  cliChildEnv,
   parseLastJsonLine,
-  pathOnlyEnv,
   runCapped,
   type SpawnCappedResult,
 } from "./studio-spawn.ts";
@@ -186,7 +186,10 @@ export async function deployWorkspaceDir(
       ],
       {
         cwd: dir,
-        env: { AAI_CONFIG_DIR: configHome, ...pathOnlyEnv() },
+        // `cliChildEnv`, not `workspaceChildEnv`: this child is the aai CLI rather
+        // than workspace-authored code. It carries `TMPDIR`, which is what keeps
+        // the bundler's ~8 MB `mkdtemp` off the microVM's 512 MiB RAM disk.
+        env: { AAI_CONFIG_DIR: configHome, ...cliChildEnv() },
         timeoutMs: DEPLOY_TIMEOUT_MS,
         cap: CLI_OUTPUT_CAP,
       },

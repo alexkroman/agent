@@ -16,7 +16,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   bearerFor,
   captureLogs,
@@ -58,7 +58,7 @@ async function platform(over: { failWrites?: boolean } = {}) {
   const harness = await createTestOrchestrator({ adminDb });
   await deployAgent(harness.fetch, SLUG);
   await deployAgent(harness.fetch, OTHER);
-  return { ...harness, statements };
+  return { ...harness, statements, adminDb };
 }
 
 /** The bearer this slug's running guest would hold. */
@@ -198,6 +198,23 @@ describe("POST /:slug/workflow-enqueue", () => {
         raw: '"a string"',
       });
       expect(res.status).toBe(400);
+    });
+
+    /**
+     * This route already parsed its body before reserving, and the spec is here so
+     * that stays true rather than being re-derived. Its three siblings did NOT — see
+     * `PlatformCall` in `_platform-route.ts` — so the shape is the same on all four
+     * and one of them keeping it by accident is not the guarantee.
+     */
+    test("reserves no connection for a body it is going to refuse", async () => {
+      const p = await platform();
+      const reserve = vi.spyOn(p.adminDb, "reserve");
+      const res = await enqueue(p.fetch, SLUG, {
+        bearer: await bearerFor(p.store, SLUG),
+        json: { ...body(), runId: "" },
+      });
+      expect(res.status).toBe(400);
+      expect(reserve).not.toHaveBeenCalled();
     });
 
     test("answers 413 rather than buffering an unbounded body", async () => {

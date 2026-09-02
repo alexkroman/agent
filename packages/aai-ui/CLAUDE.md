@@ -21,8 +21,9 @@ conventions and testing rules live in the root `CLAUDE.md`.
 
 **This package's exports are authored code, and they are contracted the same way
 the SDK's are.** The mechanism, the classification workflow (`--retain` /
-`--drop`), and why an epoch obliges a frozen compiling example all live in the
-root guide's "The authoring surface is versioned in epochs"; what is local to
+`--drop`), and why an epoch obliges a frozen compiling example all live in
+`docs/CLAUDE.md`'s "The authoring surface is versioned in epochs" (moved there
+from the root when `AGENTS.md` hit its cap); what is local to
 here is the naming. `contracts/entrypoints/` declares **nine capabilities**, and
 between them they must name every `@public` export of `.` and `/client-dir` — a
 new one fails `pnpm check:api-contracts` until it joins one:

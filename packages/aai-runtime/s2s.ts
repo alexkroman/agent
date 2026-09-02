@@ -333,7 +333,9 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       log.debug("S2S << tool.call payload", { payload: JSON.stringify(obj) });
     }
     if (obj.type === "reply.audio" && typeof obj.data === "string") {
-      const bytes = base64ToUint8(obj.data);
+      // The session's own logger, so a dropped reply frame is a line beside the
+      // rest of this session's — see `_base64.ts` for the rate and the default.
+      const bytes = base64ToUint8(obj.data, log);
       countReplyAudio(dispatchState.reply, bytes.length);
       callbacks.onAudio(bytes);
       return;

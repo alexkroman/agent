@@ -5,9 +5,46 @@
  *
  * Mounted with `page()` rather than `client()`: there is no session to build, so
  * no socket, no audio graph, no microphone request. `useWorkflowSubmit()` starts
- * the run, follows its STATUS, and hands back the controls bound to it. The API
- * is durable, so the `runId` is the whole state — it survives a reload, another
- * device, or `curl`.
+ * the run, follows its STATUS, and hands back the controls bound to it.
+ *
+ * ## The `runId` is durable; the PAGE holding it was not
+ *
+ * This doc used to say the run id "survives a reload, another device, or
+ * `curl`", and every word of that is true of the id and none of it was true of
+ * this page: the id lived in React state, so a refresh dropped it while a
+ * schedule that may run for a month carried on posting. That is the worst case
+ * in `templates/` for losing a handle — the other workflow apps lose a wait of
+ * minutes, this one loses the only Stop button a thirty-digest commitment has,
+ * and the run is invisible from then on to everything but `curl`.
+ *
+ * `key` is the handle that survives and `recover: true` is what reads it back,
+ * so a later load lands on the same count, the same newest line, and the same
+ * Wake and Cancel buttons bound to the same run.
+ *
+ * **The key is `useRunKey({ storage: "local" })`, and this is the one workflow
+ * app that passes that option.** Its siblings take the default,
+ * `sessionStorage`, which dies with the tab and covers exactly the interruption
+ * they have — a reload, a same-tab navigation, a crashed tab. A schedule
+ * outlives all of that by design: closing the browser on Tuesday and coming
+ * back on Friday to stop it is the ordinary case here, not an edge one, and a
+ * tab-scoped key would answer that with an empty form beside a run still
+ * posting to somebody's Slack. So the handle is scoped to the BROWSER, which is
+ * as far as it can go without a login (`find` has no per-user filtering; the
+ * key is the whole scoping mechanism) — and no further:
+ *
+ * - **Not the page's own URL.** A `?key=` parameter is pasted into chats,
+ *   copied into referrers and kept in history, and what a leaked one buys here
+ *   is not just reading the digest: it is `cancel()` on somebody's schedule,
+ *   and a completed run's output NAMES the delivery target it has been posting
+ *   to.
+ * - **Not derived from the feeds or the webhook.** Two people watching the same
+ *   show would recover each other's schedules, and a key derived from a webhook
+ *   URL would carry a credential into a lookup token — which is why the
+ *   platform stopped writing keys to the operator's log.
+ *
+ * A real app with accounts passes the account's own id instead, and then the
+ * schedule follows the person to a new device — a promise only a login can
+ * keep.
  *
  * ## The form is DECLARED, not written
  *
@@ -51,6 +88,7 @@ import {
   Form,
   page,
   SubmitButton,
+  useRunKey,
   useWorkflowSubmit,
   WorkflowFields,
   WorkflowProgress,
@@ -59,18 +97,54 @@ import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
 // digest.ts` already declares.
+import { useState } from "react";
 import type { dailyDigest } from "./agent.ts";
 
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
 const WORKFLOW = "dailyDigest";
 
+/**
+ * What the page says while a schedule is live — three situations, one line
+ * each, and none of them the sentence this page used to print.
+ *
+ * That one was "You can close this tab — the run continues without it": true
+ * about the run and false about the page, which is the worst shape a
+ * reassurance can have. The run did continue, for up to a month, and nothing
+ * could name it again. Now the promise can be stronger AND narrower — this
+ * browser, not any tab anywhere — and the load that did not press the button
+ * gets its own words, because a schedule appearing in front of somebody is owed
+ * an explanation.
+ */
+function pendingNote(startedHere: boolean, found: boolean): string {
+  if (startedHere)
+    return "You can close this tab — the digest keeps posting, and this browser will find it again.";
+  if (!found) return "Looking for a schedule this browser started earlier…";
+  return "This is a schedule this browser started earlier. It is still posting.";
+}
+
 export function App() {
+  // This BROWSER's handle on its schedules — minted once and kept for as long
+  // as storage lives for this origin, which is the option this template exists
+  // to argue for. See the module doc.
+  const key = useRunKey({ storage: "local" });
+  // Did THIS load start the schedule? A later load cannot have, and that is the
+  // only way the page can tell "scheduled just now" from "still running from
+  // Tuesday" — the hook reports the run, not who asked for it.
+  const [startedHere, setStartedHere] = useState(false);
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. `error` is the agent's own sentence for a
   // rejected input — better copy than anything this page could write, and the
   // reason there is no `try`/`catch` here.
-  const { submitForm, run, pending, error, wake, cancel } =
-    useWorkflowSubmit<typeof dailyDigest>(WORKFLOW);
+  const { submitForm, run, pending, error, wake, cancel } = useWorkflowSubmit<typeof dailyDigest>(
+    WORKFLOW,
+    {
+      // Recorded with the run, and read back on the next load. Neither half is
+      // useful alone: without the key there is nothing to find the run by, and
+      // without `recover` the key is only ever written.
+      key,
+      recover: true,
+    },
+  );
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
@@ -78,7 +152,13 @@ export function App() {
 
       {/* `submit()` resolves as soon as the run EXISTS — deliberately not when it
           finishes, which here could be a month away. */}
-      <Form onSubmit={submitForm} error={error}>
+      <Form
+        onSubmit={(values) => {
+          setStartedHere(true);
+          return submitForm(values);
+        }}
+        error={error}
+      >
         <WorkflowFields workflow={WORKFLOW} />
         <SubmitButton pending={pending}>
           {pending ? "Digest scheduled" : "Start digest"}
@@ -87,8 +167,9 @@ export function App() {
 
       {/* A run that has not settled says so. `pending` is not derivable from the
           snapshot alone — an id the agent never knew leaves `run` undefined,
-          which would otherwise read as "still waiting" forever. */}
-      {pending && <p>You can close this tab — the run continues without it.</p>}
+          which would otherwise read as "still waiting" forever, and on a later
+          load it is also true while the schedule is being looked up by key. */}
+      {pending && <p>{pendingNote(startedHere, run !== undefined)}</p>}
 
       {/* The run's own narration, newest line only. `lines={1}` is the window;
           everything else — the replay, and the "serves no stream" case that is

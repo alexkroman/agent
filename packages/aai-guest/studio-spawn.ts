@@ -159,8 +159,8 @@ export function parseLastJsonLine<T>(stdout: string): T | null {
  * code the whole DEVELOPER environment, `SUPABASE_SERVICE_ROLE_KEY` and
  * `ANTHROPIC_API_KEY` included.
  *
- * {@link pathOnlyEnv} two functions down is already the allow-list shape and is
- * what the build and deploy children take. This is the same idea widened by
+ * {@link cliChildEnv} two functions down is already the allow-list shape and is
+ * what the in-guest deploy child takes. This is the same idea widened by
  * exactly what a `bash` and an `npm install` genuinely need — breaking
  * `npm install` in a studio workspace would be worse than the risk being
  * closed, so every entry below is here for a named reason rather than for
@@ -280,10 +280,53 @@ export function workspaceChildEnv(): NodeJS.ProcessEnv {
 }
 
 /**
- * Nothing from this process's env but PATH — for children that need no
- * credentials at all (the build child, the deploy CLI), where the guest's
- * bearer token must not reach them either.
+ * The env for a child that runs OUR OWN code and holds no credentials — today
+ * exactly one caller, the in-guest `aai deploy` Publish runs (`studio-publish.ts`).
+ *
+ * ## It was `pathOnlyEnv`, and "nothing but PATH" was one variable too narrow
+ *
+ * That claim was deliberate and it silently cost the thing `TMPDIR` exists to
+ * fix. The CLI's bundler writes its worker into
+ * `mkdtemp(join(tmpdir(), "aai-worker-"))` — ~8 MB — and with no `TMPDIR`
+ * forwarded, `os.tmpdir()` in that child falls back to `/tmp`, which under the
+ * local microVM is a **512 MiB tmpfs charged to guest RAM** (measured:
+ * `MemAvailable` fell 508,632 kB across a 512 MiB write there and not at all for
+ * the same write to `/var/tmp`). The GUEST is on `/var/tmp`
+ * (`aai-server/guest-exec-env.ts`); its Publish child was the one process still
+ * on the RAM disk, and nothing in a failure would name the env.
+ *
+ * `TMP` and `TEMP` ride along because `os.tmpdir()` reads all three in that
+ * order: forwarding only the first would let the child resolve a DIFFERENT
+ * directory than its parent whenever a deployment sets one of the other two.
+ *
+ * ## Why not {@link workspaceChildEnv}, and why not its 24 names
+ *
+ * That list is for children running WORKSPACE-authored code — a `bash` command,
+ * an `npm install`, the workspace test run — and is sized by what those genuinely
+ * need. This child is the aai CLI, which is ours: it needs no npm userconfig, no
+ * locale, no `TERM`, no `CI`, and no `HOME` (Publish hands it an explicit
+ * `AAI_CONFIG_DIR`, which is the whole of its configuration).
+ *
+ * Egress config (`HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, ...) is the one omission
+ * worth naming, because the deploy DOES make a network call. It is left out
+ * because inside a contained guest there is nothing to forward: that process's
+ * env is its exec env — `guestExecBaseEnv()` plus a token and a port — so those
+ * names are unset, and copying them would only widen the `subprocess` backend,
+ * where they are the developer's. If a Publish behind a proxy or a private CA
+ * ever fails on a misleading resolution error, the names to add are the egress
+ * block of {@link WORKSPACE_CHILD_ENV_ALLOWLIST} and this paragraph is the
+ * argument they answer.
  */
-export function pathOnlyEnv(): Record<string, string> {
-  return process.env.PATH === undefined ? {} : { PATH: process.env.PATH };
+export function cliChildEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  // PATH resolves whatever the CLI shells out to. The temp names are `os.tmpdir()`'s
+  // own precedence list, forwarded together so the child cannot resolve a different
+  // scratch directory than the guest around it.
+  for (const name of ["PATH", "TMPDIR", "TMP", "TEMP"]) {
+    const value = process.env[name];
+    // ABSENT stays absent: an own property whose value is `undefined` is coerced to
+    // the STRING "undefined" by `spawn` — see `workspaceChildEnv`.
+    if (value !== undefined) env[name] = value;
+  }
+  return env;
 }

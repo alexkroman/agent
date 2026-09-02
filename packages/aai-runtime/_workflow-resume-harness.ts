@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * A GENERATED workflow body, plus a way to kill the worker at a chosen step
- * boundary and hand the run to a fresh delivery.
+ * A killed WORKER, and the run handed to a fresh delivery afterwards.
  *
  * This exists so `workflow-resume-equivalence.test.ts` can state the engine's
  * defining property — "resuming at any interruption point yields the same answer
@@ -9,18 +8,19 @@
  * bodies nobody wrote by hand. The engine's other suites cover MECHANISMS (does
  * `appendStep` write a row?); this covers the thing those mechanisms exist for.
  *
+ * The bodies themselves are `_workflow-resume-program.ts`, shared with the other
+ * crash model and re-exported at the bottom of this file so a reader has one
+ * import to make.
+ *
  * ## Two crash models, and this file owns the FIRST
  *
  * A killed WORKER lives here; a rebuilt ENGINE lives in
- * `_workflow-rebuild-harness.ts`, which reuses this file's grammar and body
- * compiler and differs in what survives the interruption. The one below keeps
- * the process (and so the dispatcher's timers) and takes the delivery away; the
- * one next door keeps the journal and takes the TIMERS away, which is the
- * combination `createInProcessWorkflowEngine`'s boot sweep exists for and which
- * nothing here can reach — this driver builds the engine with
- * `dispatch: () => undefined` and hand-drives resumption, so the dispatcher is
- * not in its path at all. That blind spot cost a real defect; read that module's
- * doc before adding a scenario here.
+ * `_workflow-rebuild-harness.ts`. The model below keeps the process (and its
+ * timers) and takes the delivery away; the one next door keeps the journal and
+ * takes the TIMERS away. Nothing here can reach that second case — this driver
+ * builds the engine with `dispatch: () => undefined` and hand-drives
+ * resumption, so the dispatcher is not in its path at all, and that blind spot
+ * cost a real defect.
  *
  * ## A crash is the CALLER's abort signal, and that is the faithful model
  *
@@ -39,67 +39,46 @@
  * Without it, whether that sibling's row lands before or after the resuming
  * walk's `readSteps` is a scheduling coin-flip, and the oracle would report a
  * double execution that the engine did not cause.
- *
- * ## What the grammar deliberately does NOT generate
- *
- * Three shapes whose non-determinism belongs to the AUTHOR rather than to the
- * engine, and which would therefore produce false findings. A wait inside a
- * FAN-OUT: sleeps and hooks are keyed positionally (`sleep!N` by reach order),
- * so two branches racing to reach one key the same wait differently on two
- * walks — `ctx.step` is keyed by name, which is why steps may fan out and waits
- * may not. More than one step per `mapConcurrent` CALLBACK, which that
- * function's own doc refuses. And a body that CATCHES: legitimate, and covered
- * by `workflow-replay.test.ts`, but a generated one would swallow the abort a
- * simulated crash is made of and turn it into a run failure.
- *
- * ## An orchestrating step body is not COUNTED work
- *
- * `nested` and `nestedWait` wrap other steps in an outer `ctx.step`, whose entry
- * is not written until its children's are — so a crash inside one re-runs the
- * outer body on resume. That is honest at-least-once behaviour of nesting rather
- * than a defect, so the outer body performs no counted work: the exactly-once
- * claim is about LEAF step bodies, each of which has its own journal row.
  */
 
-import { type WorkflowCtx, workflow } from "@alexkroman1/aai";
-import { mapConcurrent } from "@alexkroman1/aai/step";
-import { FatalError } from "@alexkroman1/aai/step-errors";
+import { workflow } from "@alexkroman1/aai";
 import { tick } from "./_test-utils.ts";
+import {
+  type HookMode,
+  type Program,
+  type Recorder,
+  runProgram,
+  tokensOf,
+} from "./_workflow-resume-program.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { isTerminalStatus, type JournalStore, type RunStatus } from "./workflow-journal-types.ts";
 import { createMemoryStreams } from "./workflow-streams.ts";
 
-/** Long enough that no generated wait can elapse on its own. */
-export const WAIT_MS = 60_000;
+/**
+ * The grammar the SUITE names, re-exported so one import serves it.
+ *
+ * Listed rather than `export *`: a wildcard needs Biome's `noReExportAll`
+ * suppressed, `check:hatches` counts every such suppression, and the sanctioned
+ * place for that one is a real `*-barrel.ts` — a pure re-export surface — which
+ * this is not. (Spelling the suppression's NAME in this paragraph is enough to
+ * fail that gate, the five suppression patterns deliberately not skipping
+ * comment-only lines.) Anything not named here is imported from
+ * `_workflow-resume-program.ts` directly, as `_workflow-rebuild-harness.ts`
+ * does.
+ */
+export {
+  expectedOutput,
+  fails,
+  type HookMode,
+  type Leaf,
+  label,
+  type Node,
+  type Program,
+} from "./_workflow-resume-program.ts";
 
 /** Deliveries one scenario may take before it is declared stuck. */
 const MAX_DELIVERIES = 40;
-
-/** A step that settles on its own. `flaky` throws once, then succeeds. */
-export type Leaf = {
-  readonly t: "step" | "flaky";
-  readonly name: string;
-  readonly value: number;
-};
-
-/** How a `ctx.waitFor` is answered. `timeout` never suspends: its window is already shut. */
-export type HookMode = "signal" | "timedSignal" | "timeout";
-
-/** One statement of a generated body, run in order. */
-export type Node =
-  | Leaf
-  | { readonly t: "boom"; readonly name: string }
-  | { readonly t: "loop"; readonly name: string; readonly count: number }
-  | { readonly t: "sleep" }
-  | { readonly t: "hook"; readonly token: string; readonly mode: HookMode }
-  | { readonly t: "all"; readonly children: readonly Leaf[] }
-  | { readonly t: "map"; readonly width: number; readonly children: readonly Leaf[] }
-  | { readonly t: "nested"; readonly name: string; readonly children: readonly Leaf[] }
-  | { readonly t: "nestedWait"; readonly name: string };
-
-/** A whole generated body. */
-export type Program = readonly Node[];
 
 /** What one execution of a program did, as the oracle compares it. */
 export type Scenario = {
@@ -131,192 +110,6 @@ export type ScenarioOptions = {
   /** The engine's step gate width. 1 is what deadlocked on a nested step. */
   stepConcurrency?: number | undefined;
 };
-
-/** The bookkeeping a generated body reports through. */
-export type Recorder = {
-  /** Record an invocation of `name`'s body, and answer its global sequence number. */
-  count(name: string): number;
-  /** How many times `name`'s body has run so far, this invocation included. */
-  runs(name: string): number;
-  /** The end of an invocation, where a crash or a cancel is injected. */
-  after(seq: number): Promise<void>;
-};
-
-/**
- * Give every step and token a name derived from its POSITION.
- *
- * Unique by construction, which is deliberate: a fan-out's branches reach their
- * steps in whatever order the loop resumes them, so shared names would make the
- * `name#occurrence` key depend on scheduling. `loop` is the one node that reuses
- * a name, and it is strictly sequential — which is the case occurrences exist for.
- */
-export function label(program: Program): Program {
-  let n = 0;
-  const next = () => `s${n++}`;
-  const leaves = (children: readonly Leaf[]): Leaf[] =>
-    children.map((child) => ({ ...child, name: next() }));
-  return program.map((node): Node => {
-    switch (node.t) {
-      case "step":
-      case "flaky":
-      case "boom":
-      case "loop":
-      case "nestedWait":
-        return { ...node, name: next() };
-      case "sleep":
-        return node;
-      case "hook":
-        return { ...node, token: `tok${n++}` };
-      case "all":
-      case "map":
-        return { ...node, children: leaves(node.children) };
-      case "nested":
-        return { ...node, name: next(), children: leaves(node.children) };
-      default:
-        return unreachable(node);
-    }
-  });
-}
-
-/**
- * A node the switches above do not handle.
- *
- * Every switch here is exhaustive over {@link Node}, which is what makes the
- * parameter `never` — so adding a node kind without teaching the walkers about
- * it is a compile error rather than a `default` that quietly does nothing.
- */
-function unreachable(node: never): never {
-  throw new Error(`unhandled generated node: ${JSON.stringify(node)}`);
-}
-
-/** Does this program reach a step that fails the run? */
-export function fails(program: Program): boolean {
-  return program.some((node) => node.t === "boom");
-}
-
-/** What the run's output must be, computed WITHOUT the engine. */
-export function expectedOutput(program: Program): unknown[] {
-  return program.map(nodeValue);
-}
-
-function nodeValue(node: Node): unknown {
-  switch (node.t) {
-    case "step":
-    case "flaky":
-      return node.value;
-    case "boom":
-      return undefined;
-    case "loop":
-      return Array.from({ length: node.count }, (_unused, i) => i);
-    case "sleep":
-    case "nestedWait":
-      return null;
-    case "hook":
-      return node.mode === "timeout" ? undefined : { ok: node.token };
-    case "all":
-    case "map":
-    case "nested":
-      return node.children.map(nodeValue);
-    default:
-      return unreachable(node);
-  }
-}
-
-/** Every hook token the program declares, in reach order. */
-function tokensOf(program: Program): { token: string; mode: HookMode }[] {
-  return program.flatMap((node) =>
-    node.t === "hook" ? [{ token: node.token, mode: node.mode }] : [],
-  );
-}
-
-/** One leaf step: the body, wrapped so its invocation is counted. */
-function leafBody(leaf: Leaf, rec: Recorder): () => Promise<number> {
-  return async () => {
-    const seq = rec.count(leaf.name);
-    try {
-      if (leaf.t === "flaky" && rec.runs(leaf.name) === 1) {
-        // A plain Error, so `retryDelay` is 0 and the retry costs no wall clock.
-        throw new Error(`flaky ${leaf.name}`);
-      }
-      return leaf.value;
-    } finally {
-      await rec.after(seq);
-    }
-  };
-}
-
-function runLeaf(leaf: Leaf, ctx: WorkflowCtx, rec: Recorder): Promise<number> {
-  return ctx.step(leaf.name, leafBody(leaf, rec));
-}
-
-async function runNode(node: Node, ctx: WorkflowCtx, rec: Recorder): Promise<unknown> {
-  switch (node.t) {
-    case "step":
-    case "flaky":
-      return runLeaf(node, ctx, rec);
-    case "boom":
-      return ctx.step(node.name, async () => {
-        const seq = rec.count(node.name);
-        try {
-          throw new FatalError(`boom ${node.name}`);
-        } finally {
-          await rec.after(seq);
-        }
-      });
-    case "loop": {
-      const out: number[] = [];
-      for (let i = 0; i < node.count; i++) {
-        out.push(
-          await ctx.step(node.name, async () => {
-            const seq = rec.count(node.name);
-            try {
-              return i;
-            } finally {
-              await rec.after(seq);
-            }
-          }),
-        );
-      }
-      return out;
-    }
-    case "sleep":
-      await ctx.sleep(WAIT_MS);
-      return null;
-    case "hook":
-      if (node.mode === "signal") return ctx.waitFor(node.token);
-      // A deadline already in the past closes the window without suspending,
-      // which is the other branch of `waitFor` and the one `closeHook` decides.
-      return ctx.waitFor(node.token, { timeoutMs: node.mode === "timeout" ? -1 : WAIT_MS });
-    case "all":
-      return Promise.all(node.children.map((child) => runLeaf(child, ctx, rec)));
-    case "map":
-      return mapConcurrent(node.children, node.width, (child) => runLeaf(child, ctx, rec));
-    case "nested":
-      // The outer body does no counted work — see this module's doc.
-      return ctx.step(node.name, async () => {
-        const inner: unknown[] = [];
-        for (const child of node.children) inner.push(await runLeaf(child, ctx, rec));
-        return inner;
-      });
-    case "nestedWait":
-      return ctx.step(node.name, async () => {
-        await ctx.sleep(WAIT_MS);
-        return null;
-      });
-    default:
-      return unreachable(node);
-  }
-}
-
-export async function runProgram(
-  program: Program,
-  ctx: WorkflowCtx,
-  rec: Recorder,
-): Promise<unknown[]> {
-  const out: unknown[] = [];
-  for (const node of program) out.push(await runNode(node, ctx, rec));
-  return out;
-}
 
 /** Discards. A generated body's abandonment warnings are not the finding. */
 export const silent = {

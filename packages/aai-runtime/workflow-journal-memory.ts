@@ -336,6 +336,15 @@ export function createMemoryJournal(): JournalStore {
       return next;
     },
 
+    async releaseAttempt(runId: string, key: string): Promise<void> {
+      const slot = slotOf(runId);
+      if (!slot) throw new Error(`workflow run ${runId} not found`);
+      // Floored at zero, never below: an extra release may only under-charge a
+      // budget the next claim re-takes, where a negative one is an unbounded
+      // budget for a step that wedges the guest.
+      slot.attempts.set(key, Math.max((slot.attempts.get(key) ?? 0) - 1, 0));
+    },
+
     async claimSleep(
       runId: string,
       key: string,

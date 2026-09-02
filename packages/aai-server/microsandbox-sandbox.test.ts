@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createFakeGuestSocket } from "./_sandbox-vm-test-utils.ts";
+import { GUEST_SCRATCH_DIR } from "./guest-exec-env.ts";
 import { GUEST_ROUTES } from "./guest-routes.ts";
 import {
   _internals,
@@ -26,7 +27,6 @@ import {
   spawnMicrosandboxWarm,
 } from "./microsandbox-sandbox.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
-import { GUEST_SCRATCH_DIR } from "./warm-harness.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -283,10 +283,11 @@ describe("spawnMicrosandboxWarm", () => {
     // `test_agent` invokes (`@alexkroman1/aai/step-files` is `join(tmpdir(),
     // …)`) were spending the VM's MEMORY: MemAvailable fell 508,632 kB for a
     // 512 MiB write to `/tmp` and not at all for the same write to `/var/tmp`.
-    // Agent mode got this from `agentBootEnv`; the studio guest builds no such
-    // env, so the key is declared here for the same reason containment is —
-    // which runtime mounts what over `/tmp` is not a fact a spawner should
-    // know.
+    // It arrives through `guestExecBaseEnv()`, the one env every contained guest
+    // gets, for the same reason containment does — which runtime mounts what over
+    // `/tmp` is not a fact a spawner should know. It was named HERE and in two
+    // other builders until that function had room for it (`guest-exec-env.ts`),
+    // and `guest-exec-env.test.ts` is what keeps the copies from coming back.
     const fake = makeCtx();
     const socket = createFakeGuestSocket();
 

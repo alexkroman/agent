@@ -25,6 +25,15 @@
     }
   },
   "intentionallyNotExported": [
+    // The step-name literal guard, the same shape as everything else in this
+    // list: `Literal<Name>` is the IMPLEMENTATION of a compile error — an
+    // author meets it as the message tsc prints when a step name has widened
+    // to `string`, never by name — so it stays off the root barrel and out of
+    // the docs while still rendering inline in `step`'s signature, which is
+    // where a reader needs it. Exporting it instead would put a pure
+    // type-level constraint on the published surface AND, with the contract
+    // coverage deny-list now empty, oblige a frozen example naming it.
+    "Literal",
     // The two mutation-window guards. Same shape as the `AgentParams` misuse
     // types below: they are the IMPLEMENTATION of a compile error — an author
     // meets `RejectThenable` as the message tsc prints when a slot mutation

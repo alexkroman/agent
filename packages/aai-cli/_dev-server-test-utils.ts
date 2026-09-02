@@ -209,6 +209,12 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     // rather than failing it. That the literal still matches the SDK is
     // asserted in `_dev-server-serve.test.ts`, which does not mock the barrel.
     WORKFLOW_API_PREFIX: "/workflows",
+    // `viteDevConfig` binds Vite to the same loopback the backend does, rather
+    // than to Vite's own `localhost` DEFAULT — which resolves to `::1` first on
+    // macOS, leaving the port `aai dev` prints unreachable at the IPv4 literal.
+    // Spelled out here for the same reason the prefix above is, and pinned
+    // against the real constant by `_dev-server-serve.test.ts`.
+    DEFAULT_LISTEN_HOST: "127.0.0.1",
     // Applied once at boot when the project declares a `DATABASE_URL`. It was
     // keyed on the `/internal` factory below until it went PUBLIC — the
     // scaffold's `server.mjs` needs it and may only import the published

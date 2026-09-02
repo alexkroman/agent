@@ -715,6 +715,9 @@ export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 export function isPrivateIp(ip: string): boolean;
 
 // @public
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
@@ -1285,7 +1288,7 @@ type ToolSchema = {
 };
 
 // @public
-export function toToolJsonSchema(schema: StandardSchemaV1): JSONSchema7;
+export function toToolJsonSchema(schema: StandardSchemaV1, io?: "input" | "output"): JSONSchema7;
 
 // @internal
 export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
@@ -1443,7 +1446,7 @@ type WorkflowClient = {
 type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
-    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;

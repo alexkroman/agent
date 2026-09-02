@@ -63,8 +63,8 @@ import {
 } from "@alexkroman1/aai";
 import { WORKFLOW_SUSPEND_BRAND } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { watchDivergence } from "./workflow-replay-divergence.ts";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
+import { watchDivergence } from "./workflow-replay-divergence.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
 import { withRunContext } from "./workflow-run-context.ts";
 import type { StepGate } from "./workflow-step-gate.ts";
@@ -188,6 +188,49 @@ function wakeAtFrom(until: number | Date): number {
 }
 
 /**
+ * What the body's own throw MEANS, once the walk's two flags are in hand.
+ *
+ * Extracted from {@link replayRun}'s `catch` rather than inlined, because the
+ * arms are a decision procedure with a fixed ORDER and nothing else in that
+ * function shares state with them — and inlined they took `replayRun` over
+ * Biome's cognitive-complexity ceiling, the same seam
+ * `workflow-replay-step.ts` was split at.
+ *
+ * `undefined` means "this is not this function's business": an abort is the
+ * caller's own signal coming back out, and `replayRun` re-throws it.
+ */
+function classifyThrow(
+  err: unknown,
+  walk: {
+    signal: AbortSignal | undefined;
+    refused: string | undefined;
+    suspendThrown: boolean;
+  },
+): ReplayOutcome | undefined {
+  // The run was cancelled and its status is already whatever cancelled it.
+  if (walk.signal?.aborted && err === walk.signal.reason) return undefined;
+  // A suspend is not a failure: the run is mid-flight and the caller schedules
+  // its next delivery.
+  if (isWorkflowSuspend(err)) {
+    return { kind: "suspended", wakeAt: err instanceof SuspendSignal ? err.wakeAt : undefined };
+  }
+  // A REFUSAL the engine raised about this walk wins over everything below, and
+  // over whatever the body threw after swallowing it. Two raise one: a
+  // divergence — once the walk has read a key the run never reached, every later
+  // line ran against a body that had lost its place, so its own failure
+  // describes a consequence rather than the cause — and a step whose budget is
+  // held by attempts that never ended (`StepAbandonedError`), where the body
+  // never ran at all and whatever it did instead is not the finding.
+  if (walk.refused !== undefined) return { kind: "failed", error: { message: walk.refused } };
+  // A suspend went out and something ELSE came back: the body caught it. Fail
+  // rather than recording the failure it happens to have thrown, because the
+  // interesting fact is the swallow — everything the body did on its failure
+  // path ran against a run that was only waiting.
+  if (walk.suspendThrown) return { kind: "failed", error: { message: swallowedSuspend(err) } };
+  return { kind: "failed", error: { message: errorMessage(err) } };
+}
+
+/**
  * Run one workflow body to a terminal answer.
  *
  * Never throws for an ordinary failure — a body that throws resolves
@@ -233,14 +276,19 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
    */
   let suspendThrown = false;
   /**
-   * The divergence message, once one has been raised.
+   * The message of a refusal the ENGINE raised about this walk, once one has.
+   *
+   * Two raise one, and both are verdicts about the walk rather than about a
+   * step: a DIVERGENCE (a key the run never reached, while work it has done is
+   * still unread) and an ABANDONED step (its whole budget held by attempts that
+   * never ended, so the body was not run at all).
    *
    * Held rather than merely thrown, for the reason `suspendThrown` is: JavaScript
    * `catch` catches everything, and one shipped template wraps its whole body in
    * a `try`/`catch` — so a refusal a body swallows would come back out as
    * `completed`, which is the exact silence this check exists to end.
    */
-  let diverged: string | undefined;
+  let refused: string | undefined;
 
   const gate = options.gate;
 
@@ -294,9 +342,21 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
             refusal === undefined
               ? undefined
               : () => {
-                  diverged = refusal.message;
+                  refused = refusal.message;
                   throw refusal;
                 },
+          // The other refusal, recorded for the same reason: the step was never
+          // run, so whatever a body that catches does next describes a
+          // consequence rather than the cause. See `StepAbandonedError`.
+          onAbandoned: (message) => {
+            refused = message;
+          },
+          // The key was reached UNANSWERED — `settled` had nothing — and turned
+          // out to be journaled anyway, so the divergence cursor has to advance
+          // as if the snapshot had held it. Without this, a nested step answered
+          // on that path leaves its children displaced and the next
+          // first-reached key is refused on a healthy run.
+          onAnsweredLate: (late) => divergence.answeredLate(late),
           fn,
         }));
       settled.set(key, entry);
@@ -393,31 +453,16 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     );
     completed = { kind: "completed", output };
   } catch (err: unknown) {
-    // An abort is the caller's own signal coming back out, not a run failure —
-    // the run was cancelled and its status is already whatever cancelled it.
-    if (signal?.aborted && err === signal.reason) throw err;
-    // A suspend is not a failure either: the run is mid-flight and the caller
-    // schedules its next delivery.
-    if (isWorkflowSuspend(err)) {
-      return { kind: "suspended", wakeAt: err instanceof SuspendSignal ? err.wakeAt : undefined };
-    }
-    // DIVERGENCE wins over everything below, and over whatever the body threw
-    // after swallowing it: once the walk has read a key the run never reached,
-    // every later line ran against a body that had lost its place, so its own
-    // failure describes a consequence rather than the cause.
-    if (diverged !== undefined) return { kind: "failed", error: { message: diverged } };
-    // A suspend went out and something ELSE came back: the body caught it. Fail
-    // rather than recording the failure it happens to have thrown, because the
-    // interesting fact is the swallow — everything the body did on its failure
-    // path ran against a run that was only waiting.
-    if (suspendThrown) return { kind: "failed", error: { message: swallowedSuspend(err) } };
-    return { kind: "failed", error: { message: errorMessage(err) } };
+    const outcome = classifyThrow(err, { signal, refused, suspendThrown });
+    // `undefined` is the abort arm: the caller's signal, re-thrown.
+    if (outcome === undefined) throw err;
+    return outcome;
   }
-  // Resolved NORMALLY after diverging is the quieter half of the same bug, and
+  // Resolved NORMALLY after a refusal is the quieter half of the same bug, and
   // the one the measured reproduction actually took: the body caught the refusal
   // and carried on to an answer, so a run whose walk had already lost its place
   // reported `completed`.
-  if (diverged !== undefined) return { kind: "failed", error: { message: diverged } };
+  if (refused !== undefined) return { kind: "failed", error: { message: refused } };
   // Resolved NORMALLY after suspending, which is the quieter half of the same
   // bug: the body caught the suspend and carried on to an answer, so the output
   // describes a run that skipped its own wait.

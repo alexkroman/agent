@@ -375,6 +375,109 @@ describe("a run that parked itself", () => {
  * this needs a Postgres — the wire is `postgres-db.ts`'s `listen`, and the fact
  * that a real notification arrives is the scenario tier's business.
  */
+/**
+ * A SLOW delivery must not stop the replica claiming for everybody else.
+ *
+ * The pass awaits every delivery it claimed and a delivery is bounded only by
+ * `QUEUE_DELIVERY_TIMEOUT_MS` (60 s), because it runs a tenant's step inline. The
+ * interval used to drop a tick while a pass was in flight, so one slow step
+ * anywhere on the replica stopped every other tenant's message from being
+ * claimed for up to a minute — measured on a dev server at 21.1 s for a
+ * two-step, wait-free workflow against 0.5 s idle, cross-tenant.
+ *
+ * `workflow-queue-budget.ts` is the fix and carries the argument. What is
+ * asserted here is the property, not the mechanism: a second message becomes
+ * claimable while the first delivery is still in flight, and it is delivered.
+ */
+describe("a slow delivery", () => {
+  /**
+   * An `AdminDb` whose claim answers one message per call, in order.
+   *
+   * `fakeDb` above hands its whole batch to the FIRST claim and nothing after,
+   * which cannot express "a message arrived while a delivery was running" — the
+   * only shape this defect has.
+   */
+  function fakeDbPerClaim(batches: QueuedMessage[][]): { db: AdminDb; claims: () => number } {
+    let claims = 0;
+    const inner = fakeAdminDbOver((sql) => {
+      if (!sql.includes("distinct on")) return [];
+      const batch = batches[claims++] ?? [];
+      return batch.map((m) => ({
+        id: m.id,
+        slug: m.slug,
+        queue_name: m.queueName,
+        payload: m.payload,
+        headers: null,
+        deployment_id: null,
+        attempt: m.attempt,
+      }));
+    });
+    return {
+      db: { reserve: inner.reserve, listen: () => Promise.resolve(() => undefined) },
+      claims: () => claims,
+    };
+  }
+
+  test("does not stop the next message from being claimed and delivered", async () => {
+    const { db } = fakeDbPerClaim([[msg("slow")], [msg("next")]]);
+    const holding = Promise.withResolvers<Delivered>();
+    const started: string[] = [];
+    const stop = startWorkflowQueueSweep({
+      adminDb: db,
+      intervalMs: 5,
+      deliver: async (m) => {
+        started.push(m.id);
+        // The slow one never settles until this test lets it, which is what a
+        // 60-second step looks like to the sweep.
+        return m.id === "slow" ? await holding.promise : { type: "completed" };
+      },
+    });
+    try {
+      await vi.waitFor(() => expect(started).toContain("next"));
+      // And the slow delivery really was still in flight — a `next` delivered
+      // only after `slow` settled would satisfy the line above while proving
+      // nothing.
+      expect(started).toEqual(["slow", "next"]);
+    } finally {
+      holding.resolve({ type: "completed" });
+      stop();
+    }
+  });
+
+  /**
+   * The bound is on DELIVERIES, so a saturated replica stops claiming — and it
+   * must stop before it reserves a connection, since a tick during a slow
+   * delivery is now the ordinary case rather than the rare one.
+   */
+  test("holds the claim once every delivery slot is taken", async () => {
+    const { db, claims } = fakeDbPerClaim([[msg("a")], [msg("b")], [msg("c")]]);
+    const holding = Promise.withResolvers<Delivered>();
+    const started: string[] = [];
+    const stop = startWorkflowQueueSweep({
+      adminDb: db,
+      intervalMs: 5,
+      // Two slots for the whole replica, and both go to deliveries that never
+      // settle.
+      concurrency: 2,
+      deliver: async (m) => {
+        started.push(m.id);
+        return await holding.promise;
+      },
+    });
+    try {
+      await vi.waitFor(() => expect(started).toEqual(["a", "b"]));
+      const claimsWhenFull = claims();
+      await sleep(60);
+      // Ticks kept firing and every one of them declined to claim.
+      expect(started).toEqual(["a", "b"]);
+      expect(claims()).toBe(claimsWhenFull);
+    } finally {
+      holding.resolve({ type: "completed" });
+      stop();
+    }
+  });
+});
+
 describe("delivery on NOTIFY", () => {
   /** A sweep whose interval is long enough that no tick can fire during a test. */
   const startIdle = (db: AdminDb, deliver = vi.fn(completes)) => ({
@@ -392,12 +495,13 @@ describe("delivery on NOTIFY", () => {
   });
 
   /**
-   * A burst COALESCES, which is why one runner sits behind both triggers.
+   * A burst COALESCES, which is why the runner sits behind the NOTIFY trigger.
    *
    * Concurrent passes are not incorrect — `claimDue` re-checks its predicate under
    * the row lock, so N passes take disjoint sets — they are wasted. Ten enqueues
    * landing together must not start ten passes, and `createCoalescingRunner`
-   * collapses them to the one in flight plus one trailing.
+   * collapses them to the one in flight plus one trailing. The INTERVAL
+   * deliberately does not share it; see the starvation spec below.
    */
   test("a burst of notifications does not start a pass each", async () => {
     const { db, statements, notify } = fakeDb([]);

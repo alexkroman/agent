@@ -22,6 +22,17 @@
  * load-bearing rather than advisory, and it is why this module exists instead of
  * a hand-rolled pool at each call site.
  *
+ * **The engine DOES now refuse a walk that changes a step's NAME**
+ * (`aai-runtime/workflow-replay-divergence.ts`, which is where the
+ * `ReplayDivergenceError` this doc once promised finally lives). That is a
+ * different fault from this one and it is worth being precise about which is
+ * which, because the two look alike in prose: a changed name mints a journal
+ * key nobody ever reached, and the engine can see that. A fan-out reordered
+ * UNDER ONE NAME mints no new key at all — every call still reads
+ * `segment#0..N`, in the same order, and the only thing that moved is which
+ * ITEM call N was for. There is nothing for the journal to disagree with, so
+ * the rule below remains the whole defence.
+ *
  * The requirement that falls out of this is narrower than it looks: **the
  * SEQUENCE OF ITEMS whose calls are issued must be a pure function of the
  * list.** It is not "no call may be issued after another settles" — a body that

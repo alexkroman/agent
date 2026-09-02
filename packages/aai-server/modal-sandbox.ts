@@ -53,13 +53,7 @@ import type { RpcWebSocket } from "./rpc-transport.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
-import {
-  type DialGuest,
-  dialGuest,
-  GUEST_SCRATCH_DIR,
-  startGuestLogging,
-  warmFromGuest,
-} from "./warm-harness.ts";
+import { type DialGuest, dialGuest, startGuestLogging, warmFromGuest } from "./warm-harness.ts";
 
 const log = createLogger("modal.sandbox");
 
@@ -126,17 +120,12 @@ export async function spawnModalWarm(
         mode: "binary",
         stdout: "pipe",
         stderr: "pipe",
-        // Compile cache + CONTAINED — see guestExecBaseEnv.
+        // Compile cache, CONTAINED and the scratch directory — see
+        // `guestExecBaseEnv`, which is the whole of what a contained guest gets
+        // beyond its own two boot keys.
         env: {
           AAI_GUEST_TOKEN: token,
           AAI_GUEST_PORT: String(GUEST_PORT),
-          // The scratch directory, for the same reason containment is declared
-          // rather than sniffed: inherited, `os.tmpdir()` is whatever the
-          // sandbox runtime mounted. Modal mounts nothing over `/tmp`, so this
-          // changes nothing here — the local microVM mounts a 512 MiB RAM disk,
-          // and a studio guest carrying the key on only one backend is a
-          // dev/prod split. See GUEST_SCRATCH_DIR.
-          TMPDIR: GUEST_SCRATCH_DIR,
           ...guestExecBaseEnv(),
         },
       }),

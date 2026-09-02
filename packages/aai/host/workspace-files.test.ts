@@ -58,13 +58,34 @@ describe("isLockfile", () => {
 
 describe("isLocalOnlyFile", () => {
   test("covers secrets AND every lockfile — push drops the whole set", () => {
-    for (const name of [".env", ".env.local", ".DS_Store", "package-lock.json", "pnpm-lock.yaml"]) {
+    for (const name of [
+      ".env",
+      ".env.local",
+      ".env.production",
+      ".DS_Store",
+      "package-lock.json",
+      "pnpm-lock.yaml",
+    ]) {
       expect.soft(isLocalOnlyFile(name), name).toBe(true);
     }
   });
 
+  /**
+   * `.env.example` is the ONE `.env*` name that is source, and the scaffold's
+   * own `.gitignore` says so (`.env`, `.env.*`, then `!.env.example`): it is
+   * where an author writes down which secrets the agent needs. Caught by the
+   * `.env` pattern it was dropped from every push with no warning — the skip
+   * rule is deliberately silent — and the next `aai pull` re-supplied the
+   * scaffold's boilerplate over the top, so the author's documentation
+   * round-tripped away. It is also what lets this predicate filter a template
+   * COPY, where dropping the scaffold's copy leaves a project with no `.env`.
+   */
+  test("does not drop .env.example, which the scaffold ships as source", () => {
+    expect(isLocalOnlyFile(".env.example")).toBe(false);
+  });
+
   test("does not drop ordinary source", () => {
-    for (const name of ["agent.ts", "package.json", "client.tsx", "envs.ts"]) {
+    for (const name of ["agent.ts", "package.json", "client.tsx", "envs.ts", ".environment"]) {
       expect.soft(isLocalOnlyFile(name), name).toBe(false);
     }
   });

@@ -31,7 +31,8 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { getServerInfo } from "./_agent.ts";
-import { type CommandResult, fail, ok } from "./_output.ts";
+import { readProjectConfig } from "./_config.ts";
+import { CliError, type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 
 /**
@@ -47,37 +48,139 @@ type Run = WorkflowRunSnapshot;
 /** Runs listed when the caller names no limit — a terminal is not a dashboard. */
 const DEFAULT_RUN_LIMIT = 20;
 
-/** What every verb here needs: a client aimed at the agent, and its slug to name. */
-type Target = { api: WorkflowApi; slug: string };
+/**
+ * What every verb here needs: a client aimed at the agent, and what to CALL it
+ * in a printed line.
+ *
+ * `name`, not `slug`: `--agent` targets a server that has no slug, and the
+ * origin is what identifies it. The only reader is `list`'s "<x> declares no
+ * workflows".
+ */
+type Target = { api: WorkflowApi; name: string };
 
-type WorkflowOptions = { server?: string | undefined; token?: string | undefined };
+type WorkflowOptions = {
+  server?: string | undefined;
+  token?: string | undefined;
+  agent?: string | undefined;
+};
+
+/**
+ * The base URL {@link createWorkflowApiClient} is given for `--agent`.
+ *
+ * A dev server has no slug: `createServer` mounts the workflow API at
+ * `WORKFLOW_API_PREFIX` on the ORIGIN, where the platform serves it under
+ * `/:slug`. So targeting one is not a matter of a different origin — it is the
+ * absence of the path segment, which nothing in this command could express.
+ *
+ * Validated rather than interpolated. This value is joined into a request path,
+ * and the CLI's standing rule is that anything reaching a URL is checked at the
+ * one point it becomes a target (`resolveDeployTarget`'s slug guard is the same
+ * rule). It is also the only origin here that `resolveServerUrl` does not
+ * produce, so stripping the trailing slash is this function's job — the join
+ * site deliberately carries no copy of that.
+ *
+ * No trust check, deliberately, and the asymmetry with `--server` is the point:
+ * `--server` pairs an origin with the user's PLATFORM API KEY, which is why a
+ * repo-supplied loopback URL is refused there. Nothing credentialed goes to
+ * `--agent` — the workflow API takes the agent's own bearer or none — so there
+ * is nothing for a hostile origin to collect, and requiring `aai login` to read
+ * runs off a server on your own laptop is the defect this flag exists for.
+ */
+function agentBaseUrl(raw: string): string {
+  // `URL.parse` rather than `new URL` in a try: a malformed value is an ANSWER
+  // here, and the constructor's `TypeError` carries nothing the caller did not
+  // already type — so there is no cause worth threading and no catch to write.
+  const url = URL.parse(raw);
+  if (url === null) {
+    throw new CliError("bad_agent_url", `--agent is not a URL: ${JSON.stringify(raw)}`, HINT_URL);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new CliError(
+      "bad_agent_url",
+      `--agent must be http or https, not ${url.protocol.replace(":", "")}`,
+      HINT_URL,
+    );
+  }
+  return raw.replace(/\/+$/, "");
+}
 
 /**
  * A client for the agent's workflow API, plus the bearer when one was given.
  *
- * `getServerInfo` is what turns "this directory" into an origin and a published
- * slug, and it already refuses a project that has never been deployed with the
- * sentence naming `aai publish`. The client is handed the AGENT's base URL and
- * appends the route prefix itself, so the `/workflows` literal is not spelled
- * here — it is the same constant the server matches on.
+ * Two ways in. `--agent <url>` names a server the caller is running themselves
+ * — `aai dev`, or the scaffold's `npm start` — and takes that URL as the base:
+ * no project config, no published slug, and no `ensureApiKey`, none of which
+ * such a server has or wants. Otherwise `getServerInfo` turns "this directory"
+ * into a platform origin and a published slug.
+ *
+ * The client is handed the AGENT's base URL and appends the route prefix itself,
+ * so the `/workflows` literal is not spelled here — it is the same constant the
+ * server matches on.
  *
  * `serverUrl` is joined as-is: `resolveServerUrl` is the single producer of
- * every origin that reaches here and strips trailing slashes once, at
+ * every origin that reaches THAT branch and strips trailing slashes once, at
  * resolution time, precisely so join sites do not each carry a copy. The copy
  * this used to hold also DISAGREED with it — `/\/$/` takes one slash where the
  * upstream `/\/+$/` takes all — so the two would have differed on the only
  * input either was written for.
+ *
+ * **The no-deployment failure is raised HERE rather than by
+ * `requireDeployedSlug`, and the ordering is why.** `getServerInfo` resolves the
+ * API key BEFORE it looks for a slug, so in an undeployed project the first
+ * thing a developer running `aai dev` saw was `not_logged_in` — pointing at
+ * `aai login` for a command that never sends the key it was asking for, with
+ * the real cause two errors away. Reading the project config first puts the
+ * cause first and lets the sentence name every way out: publish it, or point at
+ * the server already running.
  */
 async function target(cwd: string, opts: WorkflowOptions): Promise<Target> {
+  if (opts.agent !== undefined) {
+    const baseUrl = agentBaseUrl(opts.agent);
+    return {
+      api: createWorkflowApiClient({ baseUrl, ...omitUndefined({ token: opts.token }) }),
+      name: baseUrl,
+    };
+  }
+  const config = await readProjectConfig(cwd);
+  if (!config?.slug) throw new CliError("no_deployment", NO_DEPLOYMENT, HINT_AGENT);
   const { serverUrl, slug } = await getServerInfo(cwd, opts.server);
   return {
     api: createWorkflowApiClient({
       baseUrl: `${serverUrl}/${slug}`,
       ...omitUndefined({ token: opts.token }),
     }),
-    slug,
+    name: slug,
   };
 }
+
+/**
+ * What a project with no deployment is told, and why it names two ways out.
+ *
+ * `requireDeployedSlug`'s sentence — "run `aai publish` first" — is right for
+ * `aai secret` and `aai delete`, which have nothing to talk to until the agent
+ * is on the platform. It is wrong here often enough to be a defect: a workflow
+ * API is the one agent surface that is fully live under `aai dev`, so the
+ * developer being told to publish frequently has the thing they asked about
+ * answering on localhost already.
+ */
+const NO_DEPLOYMENT =
+  "This project has no deployed agent, and no --agent URL was given — so there is " +
+  "nothing for `aai workflow` to ask.";
+
+/**
+ * What a malformed `--agent` is told.
+ *
+ * Its own hint rather than {@link HINT_AGENT}: the caller already knows about
+ * the flag — they typed it — so repeating "run `aai publish`" answers a
+ * question they did not ask.
+ */
+const HINT_URL = "Pass a full origin, e.g. --agent http://localhost:3000";
+
+/** How to reach a server you are running yourself. Paired with {@link NO_DEPLOYMENT}. */
+const HINT_AGENT =
+  "Run `aai publish` to deploy it, or pass --agent <url> to target a server you are " +
+  "already running — `--agent http://localhost:3000` for `aai dev`, which needs no " +
+  "login and no slug.";
 
 /** The failure arm of a {@link CommandResult}, which every verb here may return. */
 type Failure = Extract<CommandResult<never>, { ok: false }>;
@@ -114,12 +217,12 @@ export async function executeWorkflowList(
   cwd: string,
   opts: WorkflowOptions,
 ): Promise<CommandResult<{ workflows: WorkflowSummary[] }>> {
-  const { api, slug } = await target(cwd, opts);
+  const { api, name } = await target(cwd, opts);
   const res = await attempt("workflow_list_failed", () => api.list());
   if (!res.ok) return res;
   const workflows = res.value;
   if (workflows.length === 0) {
-    log.info(`${slug} declares no workflows`);
+    log.info(`${name} declares no workflows`);
   } else {
     for (const w of workflows) log.info(`${w.name}${w.description ? ` — ${w.description}` : ""}`);
   }

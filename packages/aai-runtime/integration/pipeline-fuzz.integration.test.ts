@@ -267,9 +267,18 @@ describe("pipeline transport — randomized interleaving", () => {
     }
     // The state this property exists for: past DEFAULT_MAX_HISTORY the cap
     // trims on every push, which is what can orphan a tool result.
+    //
+    // The one floor in this file that was never MEASURED — 10 was a guess, and
+    // a floor with no recorded actual cannot be re-checked (which is the whole
+    // argument of `check-property-floors`, where this line was the tree's only
+    // baselined entry). Measured 2026-09-01 over 24 consecutive runs:
+    // 229-425, minimum 229. The floor sits under that observed MINIMUM rather
+    // than under a fraction of the mean, on the rule the root guide states: a
+    // walk's counters are correlated within a run, so these distributions have
+    // long left tails and only the unluckiest run observed is evidence.
     expect(
       harness.cov.llmRequestAtHistoryCap ?? 0,
       "never reached the history cap",
-    ).toBeGreaterThan(10);
+    ).toBeGreaterThan(75); // 229-425 over 24 runs
   }, 60_000);
 });

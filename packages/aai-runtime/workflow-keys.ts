@@ -74,9 +74,42 @@ export function resolveFindLimit(limit: number | undefined): number {
  * ordering contract is "the order they were started", and the only clock
  * available here is the wall clock, whose resolution two `start()` calls in the
  * same millisecond would collapse.
+ *
+ * **A run id is recorded at most once, which is this store's spelling of the
+ * Postgres one's `on conflict (run_id) do nothing`.** See {@link recorded}: it
+ * closed two divergences from the store that runs in production, both found by
+ * `workflow-keys-conformance.ts` on its first run and both on the path that
+ * clause exists for.
  */
 export function createMemoryKeyStore(): WorkflowKeyStore {
   const byKey = new Map<string, string[]>();
+  /**
+   * Every run id this store has recorded, whatever key it was recorded under.
+   *
+   * FIRST WRITE WINS, which is `on conflict (run_id) do nothing` — the Postgres
+   * table keys on `run_id`, so it has this property from its schema and this
+   * store had to be told. Three cases in the conformance table failed without
+   * it, and each is a different symptom of the same one-line absence:
+   *
+   * - **A retried `record` after a lost connection LISTED the run twice.** The
+   *   unconditional `unshift` below appended a second copy, so one lookup
+   *   answered `[r, r]` where a real server answers `[r]` — and a caller reading
+   *   two entries as two conversations resumes the same run twice. That retry is
+   *   the exact case the Postgres store's own `on conflict` comment names, so
+   *   the REFERENCE disagreed with production on the one path the clause is for.
+   * - **The retry also MOVED the run.** `unshift` puts it at the front, so a
+   *   late retry of an older run promoted it past a newer one and "the newest
+   *   run for this caller" answered the wrong one.
+   * - **A run recorded under a SECOND key was findable by both.** Postgres keeps
+   *   the first key only (`aai-server/workflow-keys.scenario.test.ts` pins it),
+   *   where this store indexed the run twice — so `lookup`'s promise, "run ids
+   *   started for `key`", answered a run started for a different key.
+   *
+   * A `Set` rather than a scan of `byKey`, because the alternative is O(every
+   * run this process has ever started) per `record`. It grows with `byKey` and
+   * dies with it: this store is dev-only and deliberately not durable.
+   */
+  const recorded = new Set<string>();
   // `\u0000` and NOT a raw NUL byte. A single literal NUL makes the whole file
   // BINARY to `git grep`, which silently exempts it from every guard-invariants
   // line rule and every check-escape-hatches pattern while the corpus floor
@@ -86,6 +119,11 @@ export function createMemoryKeyStore(): WorkflowKeyStore {
   const compositeKey = (workflow: string, key: string): string => `${workflow}\u0000${key}`;
   return {
     record(workflow, key, runId) {
+      // A run id already known is a RETRY, not a new fact — see `recorded`. The
+      // guard is before the write and returns silently, because a retried
+      // `record` must be a no-op rather than an error the tool call surfaces.
+      if (recorded.has(runId)) return Promise.resolve();
+      recorded.add(runId);
       // Newest first, matching what the Postgres store's `order by ... desc`
       // hands back — `lookup` slices from the front.
       getOrCreate(byKey, compositeKey(workflow, key), () => []).unshift(runId);

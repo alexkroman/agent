@@ -5,8 +5,9 @@
  * (`telephony/telephony-bridge.ts`) decodes a payload a CARRIER chose.
  */
 import fc from "fast-check";
-import { describe, expect, test } from "vitest";
-import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
+import { describe, expect, type Mock, test, vi } from "vitest";
+import { BASE64_DROP_REPORT_MS, base64DropCount, base64ToUint8, uint8ToBase64 } from "./_base64.ts";
+import { makeLogger } from "./_test-utils.ts";
 
 /** Byte arrays, plus the windowed views a socket frame and a decode hand over. */
 const byteViews = fc
@@ -95,5 +96,48 @@ describe("base64ToUint8 on input it did not write", () => {
         expect([...base64ToUint8(uint8ToBase64(bytes))]).toEqual([...bytes]);
       }),
     );
+  });
+});
+
+describe("a dropped frame is OBSERVABLE", () => {
+  test("a malformed payload reports to the caller's logger", () => {
+    const logger = makeLogger();
+    expect([...base64ToUint8("not base64 at all!!", logger)]).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect((logger.warn as Mock).mock.calls[0]?.[0]).toMatch(/malformed/i);
+  });
+
+  test("the count is readable without a log line at all", () => {
+    // The reader an OPERATOR gets, and the one a caller with no logger in
+    // scope leaves behind: three of the six call sites are provider openers
+    // whose options bag carries no `Logger` (`TtsOpenOptions` is published on
+    // two packages), so the count is what says a live call lost frames.
+    const before = base64DropCount();
+    base64ToUint8("!!!!");
+    base64ToUint8("-_8=");
+    expect(base64DropCount()).toBe(before + 2);
+  });
+
+  test("a garbage STREAM is one line per window, carrying the total", () => {
+    // The rate answer. These are AUDIO frames — ~50 a second per session, and
+    // a mis-negotiated codec makes every one of them malformed — so a line per
+    // drop is a firehose that buries the turn-level events debugging needs.
+    // First drop immediate (an operator learns at once), then at most one per
+    // window with the CUMULATIVE count, which is the number that says whether
+    // it is one bad frame or the whole stream.
+    vi.useFakeTimers();
+    try {
+      // A FRESH logger, which is what makes this independent of every other
+      // decode in the file: the window is keyed on the logger, not the module.
+      const logger = makeLogger();
+      for (let i = 0; i < 500; i += 1) base64ToUint8("!!!!", logger);
+      expect(logger.warn).toHaveBeenCalledOnce();
+      vi.advanceTimersByTime(BASE64_DROP_REPORT_MS + 1);
+      base64ToUint8("!!!!", logger);
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      expect((logger.warn as Mock).mock.calls[1]?.[0]).toContain("501 dropped");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -8,11 +8,88 @@
  * file past the length cap.
  */
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
-import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
+import { statSync } from "node:fs";
+import path from "node:path";
+import { requestPath } from "@alexkroman1/aai/internal";
+import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { devBindHost } from "./_dev-env.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
+
+/**
+ * The request under {@link WORKFLOW_API_PREFIX} that VITE must answer, not the
+ * proxy — or `undefined` for every request the workflow API owns.
+ *
+ * `/workflows` is a proxy prefix key AND the directory the SDK tells authors to
+ * put workflow bodies in, so the two claim the same URL space. A string key
+ * prefix-matches, which is what makes one entry cover `/runs/:id/events` — and
+ * it also swallowed `transcription-workflow`'s `client.tsx:173`, a value import
+ * of `./workflows/stitch.ts`. Vite rewrites that specifier to the absolute
+ * `/workflows/stitch.ts` during import analysis, the proxy claimed it, and the
+ * agent server answered the `404 {"error":"Not found"}` its workflow router
+ * gives any unmatched path under the prefix. The browser refuses a module
+ * served as `application/json`, so the page rendered BLANK — and this lands on
+ * the naming convention every workflow template follows, not on one template's
+ * bad luck.
+ *
+ * ## Why the filesystem decides, and not a route table
+ *
+ * The obvious fix is to narrow the proxy to the API's real shape: the fourteen
+ * routes are enumerable (`/runs`, `/runs/:id`, `…/events`, `…/stream`,
+ * `…/wake`, `/uploads`, `…/parts`, `…/info`). That restates `aai-runtime`'s
+ * router here, in a package that cannot see it — and a route added there but
+ * missing from the copy 404s under `aai dev` while working deployed, which is
+ * the exact silent failure this proxy table exists to prevent and the reason
+ * the entry is keyed off the SDK's own constant rather than a literal. The
+ * drift runs the wrong way.
+ *
+ * Enumerating what VITE owns inverts it: a new API route has no file behind it
+ * and is proxied with nothing to update. The only thing that can shadow the API
+ * is a real file at a real route's exact path — `workflows/runs` with no
+ * extension, or a `workflows/runs/` directory — where an unreachable API is the
+ * lesser of the two failures and the author can see the file that caused it.
+ * Note `workflows/runs.ts` is NOT such a file: `/workflows/runs.ts` is neither
+ * `/workflows/runs` nor under `/workflows/runs/`.
+ *
+ * Moving the API off `/workflows` was the third option and is the expensive one
+ * — it is a wire change reaching the SDK client, the platform's broker and
+ * every deployed agent, to buy what a file check buys locally.
+ *
+ * ## Only an EXACT file counts
+ *
+ * No extension resolution, deliberately: `/workflows/runs` must not find
+ * `workflows/runs.ts`, and a workflow body named `runs.ts` is entirely
+ * plausible. Nothing is lost by it — Vite resolves specifiers SERVER-side and
+ * rewrites them to paths that exist, so an extensionless `./workflows/stitch`
+ * reaches the browser as `/workflows/stitch.ts` (verified: both the explicit
+ * and the bare import in one module come back with `.ts` appended). The browser
+ * only ever asks for files Vite already found.
+ *
+ * A path escaping the root is refused rather than served — a raw client can
+ * send `..` where a browser would normalize it — and a malformed percent-escape
+ * is left to the API, which is where a path we cannot resolve belongs.
+ */
+function workflowPathServedByVite(root: string, rawUrl: string | undefined): string | undefined {
+  if (rawUrl === undefined) return undefined;
+  let decoded: string;
+  try {
+    // The query is Vite's own (`?import`, `?t=`, `?raw`), never part of the path.
+    decoded = decodeURIComponent(requestPath(rawUrl));
+  } catch {
+    return undefined;
+  }
+  const base = path.resolve(root);
+  const resolved = path.resolve(base, `.${decoded}`);
+  if (resolved !== base && !resolved.startsWith(base + path.sep)) return undefined;
+  try {
+    if (!statSync(resolved).isFile()) return undefined;
+  } catch {
+    return undefined;
+  }
+  // Unchanged, so Vite sees the request it would have seen with no proxy at all
+  // — query included, which its transform pipeline reads.
+  return rawUrl;
+}
 
 /**
  * Vite dev-server config for the client SPA. Extracted so the proxy wiring
@@ -42,6 +119,27 @@ import { DEDUPED_PEERS } from "./_vite-env.ts";
  * `AAI_DEV_HOST` reaches BOTH servers. Binding only the backend left Vite —
  * the port the user is told to open — on loopback, i.e. failing exactly the
  * case that variable exists for (`aai dev` in a container, reached from the host).
+ *
+ * ## With no `AAI_DEV_HOST` the bind host is the BACKEND's, not Vite's default
+ *
+ * Vite's default `server.host` is the hostname `localhost`, so Node binds
+ * whatever `getaddrinfo` returns first — `::1` on macOS, usually `127.0.0.1` on
+ * Linux. Measured here: `vite.httpServer.address()` reported
+ * `{ address: "::1", family: "IPv6" }` and `http://127.0.0.1:<port>` was
+ * ECONNREFUSED while `http://localhost:<port>` worked. So the same command
+ * produced different reachability per machine, and `aai dev` reports
+ * `http://localhost:<port>` either way — a caller that resolves IPv4-only, or
+ * dials the literal, gets a connection refused against a server that is up.
+ *
+ * The two halves of `aai dev` also disagreed: `createServer` binds
+ * {@link DEFAULT_LISTEN_HOST} explicitly, Vite took its own default, and only a
+ * set `AAI_DEV_HOST` brought them back together. Taking the same constant is
+ * what makes them agree by construction rather than by two matching literals.
+ *
+ * IPv4 loopback is the SAFE side of that choice rather than a coin flip:
+ * browsers, curl and undici all try every address `localhost` resolves to, so a
+ * `127.0.0.1` bind stays reachable as `localhost`, while a `::1` bind is not
+ * reachable at all from a client holding the IPv4 literal.
  *
  * ## The target is an IP LITERAL, and that is a fix rather than a style choice
  *
@@ -95,15 +193,22 @@ export function viteDevConfig(
     server: {
       port: vitePort,
       strictPort: true,
-      // Omitted rather than `undefined`: Vite reads this key's PRESENCE.
-      ...omitUndefined({ host: devBindHost() }),
+      // Always set, and to the same constant the backend binds — see the
+      // IPv6 note above. Vite's own default is the HOSTNAME `localhost`,
+      // which resolves to `::1` first on macOS.
+      host: devBindHost() ?? DEFAULT_LISTEN_HOST,
       proxy: {
         "/health": target,
         "/client-config": target,
         "/websocket": { target, ws: true },
         // The workflow HTTP API. See the doc comment above: this is the entire
-        // front door of a `page: "static"` app, not an extra.
-        [WORKFLOW_API_PREFIX]: target,
+        // front door of a `page: "static"` app, not an extra. `bypass` is what
+        // keeps the project's own `workflows/` SOURCE out of the prefix's
+        // reach — see `workflowPathServedByVite`.
+        [WORKFLOW_API_PREFIX]: {
+          target,
+          bypass: (req) => workflowPathServedByVite(cwd, req.url),
+        },
       },
     },
   };

@@ -31,7 +31,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { isOneOf, requiredSize, requiredString } from "./_body-fields.ts";
-import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
+import { guestSlug, notConfigured, type PlatformCall, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
@@ -45,7 +45,6 @@ import {
   readUpload,
   updateUpload,
 } from "./platform-uploads.ts";
-import type { SqlExec } from "./secret-store.ts";
 
 const log = createLogger("uploads.records");
 
@@ -154,6 +153,9 @@ export function createUploadsHandler(
     }
     const method = body.method;
     const id = requiredString(body, "id");
+    // Read BEFORE the reservation: a body this route is going to refuse must not
+    // take an admin connection to be refused. See `PlatformCall`.
+    const call = plan(method, { slug, id }, body);
 
     return await withReserved(
       adminDb,
@@ -169,41 +171,62 @@ export function createUploadsHandler(
             ? new HTTPException(409, { message: "upload id already taken", cause: err })
             : undefined,
       },
-      async (sql) => c.json({ result: await serve(method, { sql, slug, id }, body) }, 200),
+      async (sql) => c.json({ result: await call(sql) }, 200),
     );
   };
 }
 
 type Ctx = {
-  sql: SqlExec;
   slug: string;
   id: string;
 };
 
-/** Dispatch one call. The slug comes from `ctx`, never from the body. */
-async function serve(method: Method, ctx: Ctx, body: Record<string, unknown>): Promise<unknown> {
-  const { sql, slug, id } = ctx;
+/**
+ * Read one call's fields and return the work that needs a connection.
+ *
+ * The slug comes from `ctx`, never from the body. Every `record`, `parts` and
+ * `requiredSize` below runs HERE — outside `withReserved` — which is the whole
+ * point of the shape: see `PlatformCall`.
+ */
+function plan(method: Method, ctx: Ctx, body: Record<string, unknown>): PlatformCall {
+  const { slug, id } = ctx;
   switch (method) {
     case "read":
       // `null` rather than omitting the key: the guest distinguishes "no record" from
       // a malformed reply, and `{ result: undefined }` serializes to neither.
-      return (await readUpload(sql, slug, id)) ?? null;
-    case "claim":
-      await claimUpload(sql, slug, id, record(body));
-      return null;
-    case "insert":
-      await insertUpload(sql, slug, id, record(body));
-      return null;
-    case "update":
-      await updateUpload(sql, slug, id, {
+      return async (sql) => (await readUpload(sql, slug, id)) ?? null;
+    case "claim": {
+      const claimed = record(body);
+      return async (sql) => {
+        await claimUpload(sql, slug, id, claimed);
+        return null;
+      };
+    }
+    case "insert": {
+      const inserted = record(body);
+      return async (sql) => {
+        await insertUpload(sql, slug, id, inserted);
+        return null;
+      };
+    }
+    case "update": {
+      const patch = {
         size: requiredSize(body, "size"),
         complete: body.complete === true,
         parts: parts(body),
-      });
-      return null;
-    case "finish":
-      await finishUpload(sql, slug, id, requiredSize(body, "size"));
-      return null;
+      };
+      return async (sql) => {
+        await updateUpload(sql, slug, id, patch);
+        return null;
+      };
+    }
+    case "finish": {
+      const size = requiredSize(body, "size");
+      return async (sql) => {
+        await finishUpload(sql, slug, id, size);
+        return null;
+      };
+    }
     default: {
       // Unreachable, and the ASSIGNMENT is what keeps it so — see the twin in
       // `session-state-handler.ts`. `finish` used to live in this arm, so a sixth

@@ -299,7 +299,8 @@ const examples = fences.filter((fence) => fence.checked);
  * legitimately deleted; re-measure and re-raise when it moves, from the run's
  * own closing line.
  *
- * **MEASURED 2026-09-01: 193 compiled, of 306 ts/tsx fences (113 `no-check`).**
+ * **MEASURED 2026-09-01: 205 compiled, of 310 ts/tsx fences (105 `no-check`).**
+ * 193 before eleven `no-check` fences that already compiled were retired.
  * 181 before `scaffold/global.d.ts` joined the `include` below: seven fences
  * were `no-check` only because the harness gave the program no ambient
  * declarations, and five more were debt that already compiled. The note here
@@ -307,7 +308,7 @@ const examples = fences.filter((fence) => fence.checked);
  * under the real count, which is the drift this line exists to prevent —
  * re-measure from the run's own closing line whenever it moves.
  */
-const MIN_EXAMPLES = 190;
+const MIN_EXAMPLES = 200;
 if (examples.length < MIN_EXAMPLES) {
   console.error(
     `check-doc-examples: extracted only ${examples.length} examples, expected at least ` +
@@ -388,12 +389,17 @@ try {
       // module is declared here, served by `@alexkroman1/aai/testing/vite`),
       // `import.meta.glob` failed TS2339, and
       // `import "@alexkroman1/aai-ui/styles.css"` failed TS2882 — the last two
-      // because this file carries `/// <reference types="vite/client" />`.
+      // because that file carries a triple-slash reference to Vite's client
+      // types. Named in prose rather than spelled: knip reads a quoted
+      // reference directive as a real one and reports the types package as an
+      // unlisted dependency of this script, the same trap that made the
+      // lint-suppression mention above describe itself without spelling it
+      // (the hatch gate counts a suppression named in prose, deliberately).
       // All three compile clean with it in the program.
       //
       // It also makes those ambients a property of the HARNESS. They used to
       // arrive by leakage: every fence is compiled as ONE program, so a
-      // `/// <reference types="vite/client" />` written inside four
+      // triple-slash reference to Vite's client types written inside four
       // scaffold/CLAUDE.md fences augmented `ImportMeta` for every other
       // fence in the corpus — a fence in one package staying green because of
       // a sibling in another, and breaking when that sibling is edited.

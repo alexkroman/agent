@@ -55,6 +55,7 @@
 import type { AgentDef } from "@alexkroman1/aai";
 import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/host-internal";
+import { invariant } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -419,7 +420,11 @@ async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promis
     toolCalls: () => toolCallsIn(events),
     async say(text) {
       const stt = fake.sttSession();
-      if (stt === undefined) throw new Error("eval session has no open STT stream");
+      // The handle this closure belongs to is only returned after
+      // `session.start()` resolved, which is what opens the STT stage, and the
+      // fake never clears the stream it last opened — so an absent one is this
+      // module having reordered its own start, not a case doing anything.
+      invariant(stt !== undefined, "eval.session.stt.open", () => ({ sessionId }));
       const from = events.length;
       stt.commit(text);
       await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);

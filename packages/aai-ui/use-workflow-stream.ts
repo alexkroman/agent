@@ -112,13 +112,22 @@ import type { SubmitInputOf } from "./workflow-def-types.ts";
  * mode: it holds the `POST` open until the run settles, and here the run is
  * started before its bytes are, so there is nothing left to hold it for.
  *
+ * Without `recover` either, and REFUSED rather than ignored: an option a hook
+ * accepts and does nothing with is the silent-no-op failure this repo keeps
+ * paying for. Adopting an earlier run by key would hand this hook a run whose
+ * input names an upload id it did not mint and is not filling — so the run
+ * would sit waiting for bytes nobody is sending until its own abandonment
+ * bound. That is the same reason `_upload-recall.ts` deliberately does not
+ * recall for this hook, one layer up: here the id is part of a run's INPUT.
+ * `key` itself still works, and still makes the run findable.
+ *
  * `parallel` COMPOSES with what this hook is for rather than competing with it.
  * The run still starts before the bytes, and the store still publishes how far
  * the file is readable — that number is the CONTIGUOUS prefix, so a run reading
  * ahead of the uplink sees the same growing file whether one connection or four
  * are filling it. What changes is only how fast it grows.
  */
-export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
+export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
 
 /**
  * What {@link useWorkflowStream} returns: a {@link WorkflowSubmission}, exactly.
