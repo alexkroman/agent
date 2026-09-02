@@ -3,13 +3,13 @@
  * The workflow body, and the fan-out it plans.
  *
  * ```text
- *   now                 one step   →  when the run began
+ *   ctx.now()           journaled  →  when the run began
  *   ingestRecording     one step   →  levelled PCM + every pause   (ingest.ts)
  *   planSegments        the BODY   →  where to cut                 (media.ts, pure)
  *   transcribeSegment   N steps    →  one sync API request each, bounded
  *   summarize           one step   →  headline, risks, actions      (summarize.ts)
  *   narrate             one step   →  an MP3 of the summary         (summarize.ts)
- *   now                 one step   →  when it finished
+ *   ctx.now()           journaled  →  when it finished
  * ```
  *
  * Read `transcription-workflow` first: it owns the fan-out — why the sync
@@ -163,10 +163,11 @@ export async function auditFlow(
   // of this expression — the two calls go out synchronously, left to right — which
   // is what a replay reproduces.
   //
-  // `clockStart` and `clockEnd` are two NAMES for one function, deliberately.
-  // `(name, occurrence)` step identity would tell two `now` calls apart on its
-  // own (`now#0`, `now#1`), but a run's history is read by a person: `clockEnd`
-  // says which end it is where `now#1` makes the reader count call sites.
+  // `ctx.now()` rather than a step of its own: the engine journals the read under
+  // its own key, so it is the moment the run really reached this line however
+  // many times the line is walked. This was a `ctx.step("clockStart", now)` over
+  // an exported one-line clock read, which is what everybody writes until the
+  // affordance exists.
   // `maxAttempts: 6` was `ingestRecording.maxRetries = 5` — five retries AFTER
   // the first, so six in all. More than the default 3, and not because a
   // conversion is flaky: a corrupt file fails identically forever, and
@@ -175,7 +176,7 @@ export async function auditFlow(
   // out of the store and writes a whole one back, and either can lose a
   // connection on a file this size.
   const [startedAt, ingested] = await Promise.all([
-    ctx.step("clockStart", () => now()),
+    ctx.now(),
     ctx.step("ingestRecording", () => ingestRecording(input.recording), { maxAttempts: 6 }),
   ]);
 
@@ -206,7 +207,7 @@ export async function auditFlow(
     summarize(transcript, ingested.source, ingested.durationMs),
   );
   const spoken = await ctx.step("narrate", () => narrate(summary.spoken, input.voice));
-  const finishedAt = await ctx.step("clockEnd", () => now());
+  const finishedAt = await ctx.now();
 
   // Whatever this returns is what a caller reads as `output` on a completed run —
   // so it is what the page renders, typed through `WorkflowOutputOf`. Assembled in
@@ -271,24 +272,6 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
   );
 
   return { index: segment.index, text };
-}
-
-/**
- * When it is now, as epoch ms.
- *
- * A STEP, and that is the whole reason it exists rather than a `Date.now()` in the
- * body: a body replays from the top on every resume, so a clock read there returns
- * a different value each time and every duration derived from it would be a
- * different duration. A step's result is journaled, so this is the moment the run
- * really reached this line however many times it is replayed.
- *
- * Called twice — once at each end — rather than a `startClock`/`elapsed` pair,
- * because the alternative is a step taking every field of the output so it can
- * subtract inside itself. Two journal entries and a subtraction in the body is the
- * smaller thing.
- */
-export async function now(): Promise<number> {
-  return Date.now();
 }
 
 /**

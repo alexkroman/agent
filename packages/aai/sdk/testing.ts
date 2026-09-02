@@ -123,6 +123,7 @@ export {
   createWorkflowCtx,
   type RecordedSleep,
   type RecordedStep,
+  WORKFLOW_CTX_NOW,
   type WorkflowCtxOptions,
   type WorkflowCtxRecorder,
 } from "./testing-workflow-ctx.ts";

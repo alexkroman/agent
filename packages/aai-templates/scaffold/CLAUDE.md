@@ -455,8 +455,10 @@ them:
 
 - **The body replays from the top on every resume**, so it holds no live handle
   and makes no undurable decision — no `Date.now()`, no `Math.random()`, no
-  `crypto.randomUUID()`, no `fetch`. Those go inside a `ctx.step`, whose result
-  is journaled and returned unchanged on replay.
+  `crypto.randomUUID()`, no `fetch`. The three commonest have methods of their
+  own (`ctx.now()`, `ctx.random()`, `ctx.uuid()` — see below); anything else goes
+  inside a `ctx.step`, whose result is journaled and returned unchanged on
+  replay.
 - **A step's arguments and return value cross a queue**, so they must be
   JSON-shaped and small. Put bytes in storage and pass the key.
 - **A step gets no tool context.** There is no `ctx.db` and no `ctx.generate`
@@ -480,6 +482,43 @@ const digest = await ctx.step("summarize", () => summarize(input.url), {
   maxAttempts: 6,
 });
 ```
+
+### A clock, a random number and a uuid: `ctx.now`, `ctx.random`, `ctx.uuid`
+
+The three undurable reads a body most often wants, each journaled — read once at
+the first reach, and the same value on every later walk:
+
+```ts
+import type { WorkflowCtx } from "@alexkroman1/aai";
+
+declare function charge(amount: number, idempotencyKey: string, jitter: number): Promise<void>;
+
+export async function chargeFlow(input: { amount: number }, ctx: WorkflowCtx) {
+  const startedAt = await ctx.now(); // epoch ms, decided once
+  const idempotencyKey = await ctx.uuid(); // still the same id after a crash
+  const jitter = await ctx.random(); // one float in [0, 1), journaled per call
+
+  await ctx.step("charge", () => charge(input.amount, idempotencyKey, jitter));
+  return { elapsedMs: (await ctx.now()) - startedAt };
+}
+```
+
+`ctx.uuid()` is what an idempotency key for a downstream API wants: minted once,
+and the same value after a resume, so a retried request is recognisably the same
+request rather than a second one. `ctx.random()` draws one float per CALL, so a
+loop is correct as written; a BULK draw belongs in a step
+(`ctx.step("jitter", () => Array.from({ length: 1000 }, Math.random))`), which is
+one journal entry instead of a thousand.
+
+Two rules:
+
+- **Call them from the BODY, never inside a `ctx.step`** — the engine refuses one
+  there and the message names the fix. Inside a step there is nothing to fix: a
+  step's internals are not replayed, only its result, so a plain `Date.now()` in
+  a step body is already durable and is what to write.
+- **A `ctx.uuid()` is not a hook TOKEN.** `ctx.waitFor`'s token has to be
+  DERIVED from the run's own input, because whoever signals is usually a tool and
+  a tool cannot see the body's local variables. See below.
 
 ### Waiting: `ctx.sleep` and `ctx.waitFor`
 

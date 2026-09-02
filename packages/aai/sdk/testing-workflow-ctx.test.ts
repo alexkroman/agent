@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { createWorkflowCtx } from "./testing-workflow-ctx.ts";
+import { createWorkflowCtx, WORKFLOW_CTX_NOW } from "./testing-workflow-ctx.ts";
 import type { WorkflowCtx } from "./workflow-ctx.ts";
 
 /** A body exercising all three ctx methods, as a real `workflows/` module would. */
@@ -132,6 +132,42 @@ describe("hooks", () => {
     // the missing payload.
     const ctx = createWorkflowCtx();
     await expect(ctx.waitFor("tok_gate")).rejects.toThrow(/no payload for hook "tok_gate"/);
+  });
+});
+
+describe("the three journaled reads", () => {
+  test("answer FIXED values by default, so a derived duration is a constant", async () => {
+    const ctx = createWorkflowCtx();
+
+    // Against the real engine each of these is journaled, so the same value
+    // comes back on every walk. There is one walk here and nothing to memoize,
+    // which is why what matters is that the default not be a live clock: a spec
+    // over a body that stamps a duration is otherwise unwritable.
+    await expect(ctx.now()).resolves.toBe(WORKFLOW_CTX_NOW);
+    await expect(ctx.now()).resolves.toBe(WORKFLOW_CTX_NOW);
+    await expect(ctx.random()).resolves.toBe(0.5);
+  });
+
+  test("answer a DISTINCT uuid per reach, so two ids are not silently one", async () => {
+    const ctx = createWorkflowCtx();
+
+    // A body minting two ids and getting one back is a bug a fixed default
+    // would hide — which is the same failure the engine refuses inside a step.
+    await expect(ctx.uuid()).resolves.toBe("uuid-0");
+    await expect(ctx.uuid()).resolves.toBe("uuid-1");
+  });
+
+  test("take a value or a producer, and the producer runs once per reach", async () => {
+    const fixed = createWorkflowCtx({ now: 42, random: 0.25, uuid: "id_1" });
+    await expect(fixed.now()).resolves.toBe(42);
+    await expect(fixed.random()).resolves.toBe(0.25);
+    await expect(fixed.uuid()).resolves.toBe("id_1");
+
+    // A producer is what a body reading the clock at BOTH ends needs.
+    let reach = 0;
+    const walking = createWorkflowCtx({ now: () => 1000 + reach++ * 3000 });
+    await expect(walking.now()).resolves.toBe(1000);
+    await expect(walking.now()).resolves.toBe(4000);
   });
 });
 

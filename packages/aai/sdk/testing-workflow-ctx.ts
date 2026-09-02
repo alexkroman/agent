@@ -6,8 +6,9 @@
  * ordinary exported functions a spec calls directly, and its declaration is a
  * value a spec reads — but the body itself takes a `ctx` only an engine
  * constructs, so before this a spec could either not call it at all or hand-roll
- * the four-method object. Three templates hand-rolled it, which is this repo's
- * threshold for extracting.
+ * every method on it. Three templates hand-rolled it, which is this repo's
+ * threshold for extracting — and the count is the argument for keeping it here
+ * rather than in each spec: it was four methods and is seven.
  *
  * ## It RUNS the steps, and records them
  *
@@ -31,6 +32,13 @@
  * because a hook's payload comes from outside the run and inventing one would
  * evaluate a run nobody could have produced. Replay, resume and retry belong to
  * the engine's own specs and to the scenario tier.
+ *
+ * `ctx.now`, `ctx.random` and `ctx.uuid` are the same story from the other end:
+ * against the real engine each is journaled, so the same value comes back on
+ * every walk. There is one walk here, so there is nothing to memoize — what
+ * matters instead is that the defaults are FIXED (see `now`, `random`, `uuid`
+ * below), because a spec over a body that stamps a duration or mints an id is
+ * unwritable against a live clock.
  *
  * That is the same set of limits `@alexkroman1/aai-runtime/eval`'s workflow
  * engine has, stated the same way — the difference being that this needs no
@@ -103,7 +111,35 @@ export type WorkflowCtxOptions = {
    * reports a timeout naming the runner instead of the missing payload.
    */
   hooks?: Record<string, unknown>;
+  /**
+   * What `ctx.now()` answers — a fixed number, or a function called per reach.
+   *
+   * Defaults to {@link WORKFLOW_CTX_NOW}, a FIXED instant, so a body's derived
+   * durations are constants a spec can write down. There is no journal here, so
+   * nothing is memoized: a function is called once per reach, which is what a
+   * spec asserting on two reads (a start and an end) wants.
+   */
+  now?: number | (() => number);
+  /** What `ctx.random()` answers. Defaults to a fixed `0.5`. */
+  random?: number | (() => number);
+  /**
+   * What `ctx.uuid()` answers.
+   *
+   * Defaults to a DISTINCT value per reach — `"uuid-0"`, `"uuid-1"`, … — because
+   * a body that mints two ids and gets one is a body whose bug the spec would
+   * hide. Not a real UUID, deliberately: a spec asserting on a shape rather than
+   * on a value is asserting on the fake.
+   */
+  uuid?: string | (() => string);
 };
+
+/**
+ * The instant {@link createWorkflowCtx} freezes `ctx.now()` at.
+ *
+ * `2026-01-01T00:00:00.000Z`. Exported so a spec computes an expected duration
+ * from it rather than copying the number.
+ */
+export const WORKFLOW_CTX_NOW = 1_767_225_600_000;
 
 /**
  * Build a `WorkflowCtx` that runs a body and records what it asked for.
@@ -127,6 +163,21 @@ export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtx
   const runSteps = options.runSteps ?? true;
   const hooks = options.hooks ?? {};
   const results = options.results ?? {};
+  // `T extends number | string` is what lets `typeof given === "function"`
+  // narrow with no cast: an unbounded `T` might itself be a function type, so
+  // the check would say nothing about which arm this is.
+  function answer<T extends number | string>(
+    given: T | (() => T) | undefined,
+    fallback: () => T,
+  ): () => T {
+    if (given === undefined) return fallback;
+    if (typeof given === "function") return given;
+    return () => given;
+  }
+  const nowOf = answer(options.now, () => WORKFLOW_CTX_NOW);
+  const randomOf = answer(options.random, () => 0.5);
+  let minted = 0;
+  const uuidOf = answer(options.uuid, () => `uuid-${minted++}`);
 
   return {
     runId: options.runId ?? "wrun_test",
@@ -152,6 +203,24 @@ export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtx
 
     async sleep(until: number | Date, sleepOptions?: SleepOptions): Promise<void> {
       slept.push({ until, correlationId: sleepOptions?.correlationId });
+    },
+
+    // The three journaled reads, answered from the options above. NOT recorded
+    // the way `steps`/`slept`/`waited` are, and the asymmetry is deliberate: a
+    // step's name and a sleep's duration are invisible in what the body returns,
+    // where a determinism read's value flows INTO the output — so the output is
+    // already the assertion, and a second log of it would be a second thing to
+    // keep in step with the first.
+    async now(): Promise<number> {
+      return nowOf();
+    },
+
+    async random(): Promise<number> {
+      return randomOf();
+    },
+
+    async uuid(): Promise<string> {
+      return uuidOf();
     },
 
     async waitFor<T>(token: string, waitOptions?: WaitForOptions): Promise<T | undefined> {

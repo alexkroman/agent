@@ -118,6 +118,7 @@ export {
   toolInputIssues,
   toolOf,
   toolRunner,
+  WORKFLOW_CTX_NOW,
   type WorkflowCtxOptions,
   type WorkflowCtxRecorder,
 } from "../../sdk/testing.ts";

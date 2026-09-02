@@ -196,6 +196,15 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       runId: record.runId,
       workflow: record.workflowName,
       step: async (_name, fn) => await fn(),
+      // LIVE, not journaled — the same pass-through `step` is, and for the same
+      // reason: there is no journal here, so there is nothing to answer a second
+      // walk from and no second walk to answer. A case that needs a FIXED clock
+      // or a fixed id wants `createWorkflowCtx` from `@alexkroman1/aai/testing`,
+      // which freezes all three; what this preserves is that the body can be
+      // WRITTEN the way a deployed body is written.
+      now: async () => Date.now(),
+      random: async () => Math.random(),
+      uuid: async () => crypto.randomUUID(),
       // RECORDED, not taken — the same treatment the DevKit's `sleep()` gets
       // through the global slot above, and for the same reason: a suspension is
       // the one thing this engine cannot reproduce, and really waiting would

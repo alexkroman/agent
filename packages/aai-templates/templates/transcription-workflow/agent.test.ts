@@ -77,10 +77,10 @@ const UPLOAD_ID = "upl_test";
 /**
  * A fixed run-start epoch, so `elapsedMs` is assertable at all.
  *
- * `startClock` is a step in production; a spec supplies the value directly, which is
- * the point of threading it as an argument rather than reading a clock inside the
- * merge — the duration is then a function of journaled values and not of how long the
- * test took.
+ * The body reads it with `ctx.now()`, which the engine journals; a spec supplies
+ * the value directly, which is the point of threading it as an argument rather
+ * than reading a clock inside the merge — the duration is then a function of
+ * journaled values and not of how long the test took.
  */
 const STARTED_AT = 1_000_000;
 
@@ -946,7 +946,6 @@ describe("transcribeSegment", () => {
     const ctx = createWorkflowCtx({
       runSteps: false,
       results: {
-        startClock: 0,
         normalizeRecording: { recording: UPLOAD_ID, converted: false },
         splitRecording: { format: FORMAT, segments: [SEGMENT], durationMs: 1000 },
         transcribeSegment: { index: 0, text: "hello" },
@@ -977,7 +976,7 @@ describe("transcribeSegment", () => {
     // And the two that take the default, which is the other half of the claim.
     // Asserted as PRESENT-with-no-budget rather than as `get(…) === undefined`,
     // which a step the body never reached at all would also satisfy.
-    for (const name of ["startClock", "splitRecording"]) {
+    for (const name of ["mergeTranscript", "splitRecording"]) {
       expect(budgets.has(name)).toBe(true);
       expect(budgets.get(name)).toBeUndefined();
     }

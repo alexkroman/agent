@@ -26,7 +26,7 @@
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowCtx, stubSpeech } from "@alexkroman1/aai/testing";
+import { createWorkflowCtx, stubSpeech, WORKFLOW_CTX_NOW } from "@alexkroman1/aai/testing";
 import {
   installStubGateway,
   installStubReporter,
@@ -39,7 +39,6 @@ import agentDef, { audit } from "./agent.ts";
 import {
   auditFlow,
   joinSegments,
-  now,
   SEGMENT_CONCURRENCY,
   transcribeSegment,
 } from "./workflows/audit.ts";
@@ -732,20 +731,6 @@ describe("classifying a failure", () => {
   });
 });
 
-describe("the run's clock", () => {
-  test("is a STEP, so a replay does not re-measure it", async () => {
-    // A `Date.now()` in the body returns a different value on every replay, and
-    // every duration derived from it would be a different duration.
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(1_700_000_000_000);
-      await expect(now()).resolves.toBe(1_700_000_000_000);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
 describe("the mastered narration", () => {
   test("is not driven here, and the spec says why rather than pretending", () => {
     // `narrate` speaks, writes a temp file, spawns ffmpeg and stores the result. A
@@ -822,6 +807,18 @@ describe("the ffmpeg steps, up to the spawn", () => {
 
 describe("the body's step policy", () => {
   /**
+   * A `ctx.now` that answers each reach from `samples`, in order.
+   *
+   * The last value repeats rather than running out: a spec naming two reads
+   * should fail on the DURATION if the body grows a third, not on an
+   * `undefined` from the fake.
+   */
+  const clockReads = (...samples: readonly number[]) => {
+    let reach = 0;
+    return () => samples[Math.min(reach++, samples.length - 1)] ?? 0;
+  };
+
+  /**
    * A `ctx` that walks the whole body without running a single step.
    *
    * `runSteps: false` plus one journaled result per step name: no ffmpeg, no
@@ -831,9 +828,13 @@ describe("the body's step policy", () => {
   const walkedCtx = () =>
     createWorkflowCtx({
       runSteps: false,
+      // The body reads the clock at both ends with `ctx.now()`, which the engine
+      // journals under `now!0` and `now!1`. A PRODUCER here rather than a fixed
+      // number, so the two reaches differ and `elapsedMs` is assertable — based
+      // on `WORKFLOW_CTX_NOW`, the instant the fake otherwise freezes at, rather
+      // than on a second arbitrary epoch nobody can relate to the first.
+      now: clockReads(WORKFLOW_CTX_NOW, WORKFLOW_CTX_NOW + 3000),
       results: {
-        clockStart: 1000,
-        clockEnd: 4000,
         ingestRecording: {
           audio: "upl_pcm",
           source: "call.wav",
@@ -867,23 +868,27 @@ describe("the body's step policy", () => {
     // other half of the claim: a raised budget is a decision about ONE step.
     // Asserted as PRESENT-with-no-budget rather than as `get(…) === undefined`,
     // which a step the body never reached at all would also satisfy.
-    for (const name of ["clockStart", "summarize"]) {
+    for (const name of ["narrate", "summarize"]) {
       expect(budgets.has(name)).toBe(true);
       expect(budgets.get(name)).toBeUndefined();
     }
   });
 
-  test("reads the clock at each end under its own name, so a run's history is legible", async () => {
-    // `(name, occurrence)` would tell two `now` calls apart on its own
-    // (`now#0`, `now#1`); distinct names are for the person reading the history.
+  test("reads the clock with `ctx.now()` at each end, and subtracts in the body", async () => {
+    // Two reaches of one method, keyed `now!0` and `now!1` and journaled
+    // separately by the engine. This used to be two NAMED steps over an exported
+    // one-line clock read, and the names existed only so a person reading the
+    // run's history could tell the ends apart; the affordance journals the read
+    // itself. What is left to assert is that the body subtracts two journaled
+    // values rather than re-reading a clock, which is what makes a replay report
+    // the same elapsed.
     const ctx = walkedCtx();
 
     const output = await auditFlow({ recording: UPLOAD_ID }, ctx);
 
-    expect(ctx.steps[0]?.name).toBe("clockStart");
-    expect(ctx.steps.at(-1)?.name).toBe("clockEnd");
-    // Subtracted in the BODY from two journaled values, so a replay reports the
-    // same elapsed rather than re-reading a clock.
     expect(output.elapsedMs).toBe(3000);
+    // And the clock is no longer a step, which is the other half of the claim: a
+    // name here would mean the migration left one behind.
+    expect(ctx.steps.map((step) => step.name)).not.toContain("clockStart");
   });
 });

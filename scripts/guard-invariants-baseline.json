@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budgets for guard-invariants' line rules \u2014 see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 26, rule 28.",
+  "_description": "Per-file budgets for guard-invariants' line rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 26, rule 28.",
   "rule2_spreadTernary": {
     "packages/aai-cli/_utils.ts": 1,
     "packages/aai-server/subprocess-sandbox.ts": 1,
@@ -94,12 +94,11 @@
     "packages/aai-runtime/providers/_openai-stream-repair.ts": 1
   },
   "rule30_nondeterministicWorkflowBody": {
-    "packages/aai-templates/templates/call-audit/workflows/audit.ts": 1,
     "packages/aai-templates/templates/link-digest/workflows/digest.ts": 1,
     "packages/aai-templates/templates/podcast-digest/workflows/digest.ts": 1,
     "packages/aai-templates/templates/transcription-workflow/workflows/batch.ts": 1,
     "packages/aai-templates/templates/transcription-workflow/workflows/stream.ts": 1,
     "packages/aai-templates/templates/transcription-workflow/workflows/sync-api.ts": 2,
-    "packages/aai-templates/templates/transcription-workflow/workflows/transcribe.ts": 2
+    "packages/aai-templates/templates/transcription-workflow/workflows/transcribe.ts": 1
   }
 }

@@ -2748,9 +2748,12 @@ that binds it.
 ```ts
 type WorkflowCtxOptions = {
   hooks?: Record<string, unknown>;
+  now?: number | (() => number);
+  random?: number | (() => number);
   results?: Record<string, unknown>;
   runId?: string;
   runSteps?: boolean;
+  uuid?: string | (() => string);
   workflow?: string;
 };
 ```
@@ -2769,6 +2772,27 @@ Payloads for `ctx.waitFor`, by token.
 
 A token that is absent THROWS rather than hanging, because a spec that hangs
 reports a timeout naming the runner instead of the missing payload.
+
+##### now?
+
+```ts
+optional now?: number | (() => number);
+```
+
+What `ctx.now()` answers — a fixed number, or a function called per reach.
+
+Defaults to [WORKFLOW\_CTX\_NOW](#workflow_ctx_now), a FIXED instant, so a body's derived
+durations are constants a spec can write down. There is no journal here, so
+nothing is memoized: a function is called once per reach, which is what a
+spec asserting on two reads (a start and an end) wants.
+
+##### random?
+
+```ts
+optional random?: number | (() => number);
+```
+
+What `ctx.random()` answers. Defaults to a fixed `0.5`.
 
 ##### results?
 
@@ -2810,6 +2834,19 @@ no collaborator stubbed, so such a spec stays short.
 
 Note a recorded-only step resolves `undefined`, so a body that reads its
 result will see one. That is the honest cost of not running it.
+
+##### uuid?
+
+```ts
+optional uuid?: string | (() => string);
+```
+
+What `ctx.uuid()` answers.
+
+Defaults to a DISTINCT value per reach — `"uuid-0"`, `"uuid-1"`, … — because
+a body that mints two ids and gets one is a body whose bug the spec would
+hide. Not a real UUID, deliberately: a spec asserting on a shape rather than
+on a value is asserting on the fake.
 
 ##### workflow?
 
@@ -2868,3 +2905,16 @@ const STUB_SPEECH_PCM_BYTES: 12000 = 12000;
 ```
 
 PCM bytes [stubSpeech](#stubspeech-1) answers with when no size is named — ~0.25s at 24 kHz.
+
+***
+
+### WORKFLOW\_CTX\_NOW
+
+```ts
+const WORKFLOW_CTX_NOW: 1767225600000 = 1767225600000;
+```
+
+The instant [createWorkflowCtx](#createworkflowctx) freezes `ctx.now()` at.
+
+`2026-01-01T00:00:00.000Z`. Exported so a spec computes an expected duration
+from it rather than copying the number.
