@@ -67,6 +67,15 @@
     // `env` because it changes how many processes run the tests, never what they
     // conclude, so it must not fragment the cache across core counts.
     "TURBO_CONCURRENCY",
+    // Read by `scripts/dev-server.mjs`, which no turbo task runs — declared for
+    // the same reason `TURBO_CONCURRENCY` above is, so the declaration matches
+    // what the code reads and `noUndeclaredEnvVars` has something true to check.
+    // `globalPassThroughEnv` rather than a task `env` because both are ambient
+    // machine settings for a developer's own server (which port is free, which
+    // tunnel is in front of it) and neither changes what any cached task
+    // concludes.
+    "PORT",
+    "AAI_PUBLIC_ORIGIN",
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "NO_PROXY",
