@@ -632,16 +632,33 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
   refuses new direct-dial sessions (close 1013 → the client re-brokers) and
   exits the moment it empties or at its drain deadline.
 
-  **"Busy" is sessions PLUS in-flight durable-workflow callbacks**
+  **"Busy" is sessions PLUS running durable-workflow WALKS**
   (`createWorkflowActivity`, counted by `createIdleController` for both the idle
   window and a drain). A run the platform woke this sandbox for has no session
   at all (`aai-server/CLAUDE.md`, "Waking a run whose sandbox is gone"), so
   counting sessions alone made the wake nearly worthless: the guest exited five
   minutes into an hour-long run, mid-step, leaving the job locked until
-  graphile-worker's 4-hour expiry let another worker rescue it. Settlement is
-  the response's `close` rather than `finish`, so an aborted callback releases
-  the count instead of pinning the sandbox alive for its whole Modal timeout.
+  graphile-worker's 4-hour expiry let another worker rescue it.
   A drain's DEADLINE still wins — bounded work, not unbounded.
+
+  **The unit is the WALK, and this guide used to recommend the bug**: it said
+  settlement was "the response's `close` rather than `finish`, so an aborted
+  callback releases the count". `close` really is the safer of those two, and
+  both are facts about an HTTP RESPONSE rather than about the work — the
+  platform aborts a delivery's `fetch` at `QUEUE_DELIVERY_TIMEOUT_MS` (60s) and
+  the abort closes the response without stopping the walk. So a step longer
+  than the idle window **never completed in production**: `inFlight` hit zero at
+  60s, the guest exited `AGENT_IDLE_EXIT_MS` later mid-upload, and a fresh
+  sandbox started the same 552 MB file again, forever. The parking gate is what
+  made it reachable — before it, each redelivery started its own walk, so the
+  count stayed up by accident at the price of duplicate provider calls.
+  `createWorkflowActivity`'s doc carries the log timeline; the counter takes the
+  work now (`activity.walk(() => deliver(runId))`) and settles in the walk's own
+  `finally`. Two consequences worth knowing: a PARK is credited nothing (it never
+  calls the walker, and crediting it would keep a guest alive for a walk nothing
+  can see the health of — a leak in place of a livelock), and a walk whose promise
+  never settles pins this guest until `SANDBOX_TIMEOUT_SECS`, which is deliberate
+  — the bound a step ought to have is its own deadline.
 
   **A workflow guest also publishes a wake HINT** — the earliest time its queue
   could next have claimable work, written into its own `ctx.db` schema for the

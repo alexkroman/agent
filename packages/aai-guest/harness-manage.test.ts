@@ -36,6 +36,11 @@ type FakeRes = {
   close: () => void;
 };
 
+/** A `Response` body as `serveFetch` ends it: bytes, or nothing at all. */
+function bodyText(body: Uint8Array | undefined): string {
+  return body === undefined ? "" : Buffer.from(body).toString();
+}
+
 /**
  * The ONE fake response, `close` listeners included.
  *
@@ -55,10 +60,14 @@ function fakeRes(): FakeRes {
       out.statusCode = status;
       return this;
     },
-    end(body?: string) {
-      out.body = body ?? "";
-      // A real response emits `close` when it finishes, which is what settles
-      // the workflow-activity count.
+    end(body?: string | Uint8Array) {
+      // BYTES, for anything that went through `serveFetch` — a `Response` body
+      // arrives as a buffer, and reading it as a string gave `body` a comma
+      // separated list of char codes that `toContain` cannot match.
+      out.body = typeof body === "string" ? body : bodyText(body);
+      // A real response emits `close` when it finishes — which the activity
+      // counter used to settle on, and which the livelock spec below now fires
+      // deliberately to show that a WALK outlives it.
       close();
     },
     once(event: string, listener: () => void) {
@@ -91,8 +100,15 @@ function fakeReq(
     // a peer it cannot identify is not one it may call internal.
     socket: { remoteAddress: opts.remoteAddress ?? "127.0.0.1" } as http.IncomingMessage["socket"],
     ...omitUndefined({ url, method: opts.method }),
-    async *[Symbol.asyncIterator]() {
-      // No chunks: a queue callback's payload is irrelevant to the routing.
+    // `readBody` reads with `on("data" | "end" | "error")` rather than the async
+    // iterator this used to expose — which is why every delivery spec here used
+    // to log `Workflow delivery failed { error: 'req.on is not a function' }`
+    // and pass anyway: they asserted only that the request was CLAIMED, and the
+    // handler's own failure path answers a claimed request too. An empty body is
+    // one `end` on the next turn.
+    on(event: string, listener: () => void) {
+      if (event === "end") queueMicrotask(listener);
+      return this;
     },
   } as http.IncomingMessage;
 }
@@ -177,42 +193,39 @@ describe("createManageHandler", () => {
 // ── Workflow activity ──────────────────────────────────────────────────────
 
 describe("createWorkflowActivity", () => {
-  test("counts a callback until its response closes", () => {
+  test("counts a walk for as long as the walk RUNS", async () => {
     const activity = createWorkflowActivity();
-    const first = fakeRes();
-    const second = fakeRes();
+    const first = Promise.withResolvers<string>();
+    const second = Promise.withResolvers<string>();
 
-    activity.begin(first.res);
-    activity.begin(second.res);
+    const walks = [activity.walk(() => first.promise), activity.walk(() => second.promise)];
     expect(activity.inFlight()).toBe(2);
 
-    first.close();
+    first.resolve("done");
+    await walks[0];
     expect(activity.inFlight()).toBe(1);
-    second.close();
+    second.resolve("done");
+    await walks[1];
     expect(activity.inFlight()).toBe(0);
   });
 
-  test("settles on a socket that died rather than a response that finished", () => {
-    // `close` fires either way — which is the point. Waiting for `finish` would
-    // leak the count on an aborted mid-step callback and pin the sandbox alive
-    // for the rest of its Modal timeout.
+  test("answers the walk's own value, so it is a wrapper and not a fork", async () => {
+    // The door AWAITS what this returns — `deliverQueueMessage` answers 200 or
+    // rejects into a 500 off it — so a counter that dropped the value would
+    // report every delivery completed.
     const activity = createWorkflowActivity();
-    const aborted = fakeRes();
-    activity.begin(aborted.res);
-    aborted.close();
-    expect(activity.inFlight()).toBe(0);
+    await expect(activity.walk(async () => "completed")).resolves.toBe("completed");
   });
 
-  test("counts a callback as busy for as long as it is in flight", () => {
-    // The one consumer left. The `onSettled` notifier this file used to carry
-    // existed to republish the wake HINT — a per-app timestamp the platform read to
-    // know when to boot a guest — and the platform reads its own queue now, so the
-    // parameter is gone rather than left as a hook with no caller.
+  test("releases the count when a walk THREW", async () => {
+    // Otherwise one failed step pins the sandbox alive for its whole Modal
+    // lifetime — the leak this counter's `finally` is the whole of.
     const activity = createWorkflowActivity();
-    const one = fakeRes();
-    activity.begin(one.res);
-    expect(activity.inFlight()).toBe(1);
-    one.close();
+    await expect(
+      activity.walk(async () => {
+        throw new Error("journal unreachable");
+      }),
+    ).rejects.toThrow(/journal unreachable/);
     expect(activity.inFlight()).toBe(0);
   });
 });
@@ -237,24 +250,88 @@ describe("createAgentRequestHandler", () => {
     startDrain: vi.fn(),
   };
 
-  test("tracks a claimed workflow callback as in-flight work", async () => {
+  /**
+   * A delivery the platform would really send: the run id lives in the queue
+   * NAME and nothing else, so a request without this header is a 400 that walks
+   * nothing (which the old response-keyed counter counted anyway).
+   */
+  const queueReq = (queueName: string) =>
+    fakeReq(QUEUE_BEARER, WORKFLOW_QUEUE_PATH, {
+      method: "POST",
+      headers: { "x-vqs-queue-name": queueName },
+    });
+
+  test("counts a walk that OUTLIVES its response, which is the livelock", async () => {
+    // The measured production bug. The platform aborts the delivery's fetch at
+    // `QUEUE_DELIVERY_TIMEOUT_MS` (60s) and the abort closes the RESPONSE
+    // without stopping the walk, so a counter settled on `res.close` reported
+    // an idle guest 60s into every long step — and the guest exited mid-upload
+    // exactly `AGENT_IDLE_EXIT_MS` later, restarting the step in a fresh
+    // sandbox forever. Here: the response ends, the walk does not, and the
+    // count stays.
+    const walking = Promise.withResolvers<string>();
+    const activity = createWorkflowActivity();
+    const handler = createAgentRequestHandler({
+      manage,
+      deliverWorkflow: () => async () => await walking.promise,
+      activity,
+    });
+    const out = fakeRes();
+
+    expect(handler(queueReq("__wkf_workflow_live_1"), out.res, WORKFLOW_QUEUE_PATH, "POST")).toBe(
+      true,
+    );
+    await vi.waitFor(() => expect(activity.inFlight()).toBe(1));
+
+    // The response is gone — `close` has fired, which is precisely what the old
+    // signal keyed on — and the walk is still running.
+    out.close();
+    expect(activity.inFlight()).toBe(1);
+
+    walking.resolve("completed");
+    await vi.waitFor(() => expect(activity.inFlight()).toBe(0));
+  });
+
+  test("a PARKED redelivery counts nothing, so a dead walk cannot pin the guest", async () => {
+    // The other half, and the reason the count is on the walker rather than on
+    // the door: a park never calls the walker at all. Crediting one would keep
+    // the sandbox alive for a walk nothing can see the health of, trading this
+    // livelock for a leak.
+    const walking = Promise.withResolvers<string>();
+    const activity = createWorkflowActivity();
+    const handler = createAgentRequestHandler({
+      manage,
+      deliverWorkflow: () => async () => await walking.promise,
+      activity,
+    });
+
+    expect(
+      handler(queueReq("__wkf_workflow_park_1"), fakeRes().res, WORKFLOW_QUEUE_PATH, "POST"),
+    ).toBe(true);
+    await vi.waitFor(() => expect(activity.inFlight()).toBe(1));
+
+    // The same run again while the first walk runs: the door parks it.
+    const parked = fakeRes();
+    expect(
+      handler(queueReq("__wkf_workflow_park_1"), parked.res, WORKFLOW_QUEUE_PATH, "POST"),
+    ).toBe(true);
+    await vi.waitFor(() => expect(parked.body).toContain("timeoutSeconds"));
+    // Still ONE — the park added no credit of its own.
+    expect(activity.inFlight()).toBe(1);
+
+    walking.resolve("completed");
+    await vi.waitFor(() => expect(activity.inFlight()).toBe(0));
+  });
+
+  test("an UNROUTABLE delivery counts nothing, because it walks nothing", async () => {
+    // A claimed request is not work. This answers 400 before the walker is even
+    // resolved, and the response-keyed counter credited it a full idle window.
     const activity = createWorkflowActivity();
     const handler = createAgentRequestHandler({ manage, deliverWorkflow, activity });
     const out = fakeRes();
-
-    expect(
-      handler(
-        fakeReq(QUEUE_BEARER, WORKFLOW_QUEUE_PATH, { method: "POST" }),
-        out.res,
-        WORKFLOW_QUEUE_PATH,
-        "POST",
-      ),
-    ).toBe(true);
-    expect(activity.inFlight()).toBe(1);
-
-    // The handler serves in the background, so its own `res.end` is what
-    // settles the count — no test-side prodding.
-    await vi.waitFor(() => expect(activity.inFlight()).toBe(0));
+    expect(handler(queueReq("__wkf_step_r1"), out.res, WORKFLOW_QUEUE_PATH, "POST")).toBe(true);
+    await vi.waitFor(() => expect(out.statusCode).toBe(400));
+    expect(activity.inFlight()).toBe(0);
   });
 
   test("does not count manage or unclaimed requests", () => {

@@ -122,27 +122,80 @@ export function createManageHandler(
  * `QUEUE_CLAIM_STALE_MS` lapses and a later sweep reclaims it. The delivery would
  * then have bought at most one idle window of progress per message.
  *
- * Settlement is the RESPONSE's `close`, which fires whether the handler answered
- * or the socket died, so a callback cannot leak the counter and pin a sandbox
- * alive forever. It is also the completion signal `handleWorkflowRequest` itself
- * does not give: it returns `true` synchronously and serves in the background.
+ * ## The unit is the WALK, and it used to be the HTTP RESPONSE
+ *
+ * That is the whole of the fix here, and the bug it closes made every step longer
+ * than the idle window impossible to finish in production. Read
+ * {@link createWorkflowActivity}.
  *
  * @internal
  */
 export type WorkflowActivity = {
-  /** Callbacks currently being served. */
+  /** Walks currently running. */
   inFlight: () => number;
-  /** Note one claimed workflow request; its response settles it. */
-  begin: (res: http.ServerResponse) => void;
+  /**
+   * Count one walk for as long as it RUNS, and answer its own promise.
+   *
+   * Takes the work rather than being told when it started, because "when it
+   * ended" is the half a caller gets wrong: the settle has to be the walk's own
+   * `finally` and nothing else.
+   */
+  walk: <T>(run: () => Promise<T>) => Promise<T>;
 };
 
 /**
- * Track in-flight workflow callbacks, so the idle controller can see them.
+ * Track running workflow WALKS, so the idle controller can see them.
  *
- * A guest measures "nobody needs me" by its session count, which is the whole truth
- * for a voice agent and half of it for one with durable workflows: a run the
- * platform woke this sandbox to advance has NO session, so without this the sandbox
- * self-exits five minutes into an hour-long run.
+ * ## Keying on the response was a LIVELOCK, measured in production
+ *
+ * This used to take a `ServerResponse` and settle on its `close`, which is the
+ * signal `handleWorkflowRequest` makes easy to reach — it returns `true`
+ * synchronously and serves in the background — and it is not a signal about the
+ * work at all. The platform aborts a delivery's `fetch` at
+ * `QUEUE_DELIVERY_TIMEOUT_MS` (60s, `aai-server/workflow-queue-deliver.ts`), and
+ * an abort closes the RESPONSE without stopping the walk: nothing here is plumbed
+ * to the request's signal and a promise is not cancellable. So `inFlight` went to
+ * zero 60 seconds into every long step while the step ran on, and the idle clock
+ * started from there. Every parked redelivery afterwards answered instantly, so
+ * it went 1 → 0 again in the same tick and never reset anything.
+ *
+ * From `modal app logs aai-server-web`, on a 552.4 MB upload:
+ *
+ * ```text
+ * 12:10:38  Uploading … (552.4 MB) … uploadToProvider#0 attempt 1
+ * 12:11:39  first park (walkingForSeconds ~61) — inFlight had already hit 0
+ *    ...    parked redeliveries, each 1 -> 0 within a tick
+ * 12:16:33  agent guest idle for 300000ms; exiting        <- MID-UPLOAD
+ * 12:16:44  a NEW sandbox starts the SAME file's upload, attempt 1
+ * ```
+ *
+ * 12:11:33 + `AGENT_IDLE_EXIT_MS` is 12:16:33 exactly. **A step longer than the
+ * idle window therefore never completed** — it restarted from scratch in a fresh
+ * sandbox, forever, and `TRANSCRIBE_UPLOAD_TIMEOUT_MS` (30 min) says a healthy
+ * upload may legitimately outlive that window six times over.
+ *
+ * **The parking gate is what made it reachable**, which is worth recording rather
+ * than blaming. Before it, each redelivery started its own concurrent walk, so
+ * `inFlight` was non-zero for each 60s delivery and the guest survived — at the
+ * price of re-running every step. Parking removed the duplicate work and removed
+ * the accidental liveness signal with it.
+ *
+ * ## Why not count the PARK
+ *
+ * Because a park is evidence about a walk this door cannot see the health of. It
+ * would keep the guest alive for the right reason exactly when a walk is alive
+ * and for the wrong reason when one has died, and a dead walk parks forever — so
+ * that trades a livelock for a leak. The walk's own promise is the only honest
+ * answer, and it is the one the door already awaits.
+ *
+ * ## What a hung walk costs, said plainly
+ *
+ * A walk whose promise never settles pins this guest alive. That is deliberate: a
+ * guest running work is not idle, and the alternative — crediting a walk for a
+ * bounded time — is the livelock again with a longer fuse. The bound is the
+ * sandbox's, `SANDBOX_TIMEOUT_SECS` (4h), which terminates it regardless; the
+ * bound a step OUGHT to have is its own deadline, which is where a step's timeout
+ * belongs.
  *
  * It used to notify an `onSettled` callback as each finished, which is where the
  * wake HINT was republished — a per-app timestamp the platform read to know when to
@@ -155,12 +208,61 @@ export function createWorkflowActivity(): WorkflowActivity {
   let inFlight = 0;
   return {
     inFlight: () => inFlight,
-    begin(res) {
+    async walk(run) {
       inFlight += 1;
-      res.once("close", () => {
+      try {
+        return await run();
+      } finally {
+        // The walk's OWN settle, which is the entire point — a `finally` here
+        // cannot be reached by an aborted response, a park, or a socket that
+        // died, none of which say anything about the body still running.
         inFlight -= 1;
-      });
+      }
     },
+  };
+}
+
+/**
+ * Wrap the run-walker so every walk it starts counts as activity.
+ *
+ * Wrapping the WALKER rather than instrumenting the door is what keeps the
+ * liveness signal where the work is: `deliverQueueMessage` awaits exactly this
+ * promise, and a PARKED delivery never calls it at all — so a park is
+ * uncounted by construction rather than by a check somebody has to remember.
+ *
+ * ## Why not read the ENGINE's own in-flight set
+ *
+ * `createWorkflowEngine` already keeps `Map<runId, Set<AbortController>>`, added
+ * on walk start and cleared in a `finally` tied to `replayRun` — the same signal,
+ * and the obvious place to ask. Two things rule it out, and the second is not a
+ * preference:
+ *
+ * - **It is the BUNDLE's engine, not ours.** `harness-bundle.ts` resolves
+ *   `deliverWorkflow` through `ensureRuntime`, which builds the runtime from the
+ *   worker bundle's OWN `@alexkroman1/aai-runtime` (see "User-shipped runtime").
+ *   So a new field on `AgentRuntime` is `undefined` on every already-deployed
+ *   agent until it is rebuilt — the livelock would go on until each tenant
+ *   redeployed. The walker's PROMISE is on every bundle that has the door at all,
+ *   so wrapping it fixes the whole fleet the moment the guest image ships. (It
+ *   would also owe a `runtime` epoch bump, which is the cheap half of the cost.)
+ * - **The idle poll must not build a runtime.** It ticks every
+ *   `AGENT_IDLE_POLL_MS` from before the bundle loads, and reading the runtime is
+ *   what CONSTRUCTS it — `handleWorkflowRequest`'s `deliver` parameter carries
+ *   what that cost when it was eager: `ensureRuntime` throws for a bundle that
+ *   has not loaded, into a hook called with no `try`, so the guard exited the
+ *   process and took every live voice session with it.
+ *
+ * The getter is preserved as a getter for that second reason. So the wrapper is
+ * minted per resolution and closes over nothing but the walk.
+ */
+function trackWalks(
+  deliver: (() => ((runId: string) => Promise<unknown>) | undefined) | undefined,
+  activity: WorkflowActivity | undefined,
+): (() => ((runId: string) => Promise<unknown>) | undefined) | undefined {
+  if (deliver === undefined || activity === undefined) return deliver;
+  return () => {
+    const walk = deliver();
+    return walk && ((runId: string) => activity.walk(() => walk(runId)));
   };
 }
 
@@ -192,6 +294,10 @@ export function createAgentRequestHandler(deps: {
   activity?: WorkflowActivity | undefined;
 }): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
   const manage = createManageHandler(deps.manage);
+  // Counted at the WALK, not at the request — see {@link trackWalks}. Composed
+  // once, here, so the door below cannot be given the untracked walker by
+  // accident.
+  const deliverWorkflow = trackWalks(deps.deliverWorkflow, deps.activity);
   return (req, res, url, method) => {
     if (
       handleWorkflowRequest(req, res, url, method, {
@@ -210,10 +316,13 @@ export function createAgentRequestHandler(deps: {
         // The getter itself, NOT its result: reading it builds the runtime, and
         // `handleWorkflowRequest` resolves it only after the path and the bearer.
         // Passed as a value it was evaluated on every request reaching this hook.
-        ...omitUndefined({ deliver: deps.deliverWorkflow }),
+        ...omitUndefined({ deliver: deliverWorkflow }),
       })
     ) {
-      deps.activity?.begin(res);
+      // NOTHING is counted here any more. A claimed request is not work — the
+      // walk it may start is, and it is counted for its own lifetime one layer
+      // in. `deps.activity.begin(res)` used to sit on this line and is the
+      // livelock `createWorkflowActivity` documents.
       return true;
     }
     // Refuse a direct tunnel dial of the workflow API — it skips the platform's rate limiters (see harness-workflow-gate.ts); falls through on success.

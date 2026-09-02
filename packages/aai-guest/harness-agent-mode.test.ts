@@ -6,6 +6,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useTempDirs } from "./_test-utils.ts";
 import { createIdleController, readAgentBoot } from "./harness-agent-mode.ts";
+import { createWorkflowActivity, type WorkflowActivity } from "./harness-manage.ts";
 import { BUNDLE_FETCH_TIMEOUT_MS } from "./limits.ts";
 
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf-8").digest("hex");
@@ -285,6 +286,88 @@ describe("createIdleController", () => {
     });
     vi.advanceTimersByTime(3_600_000);
     expect(exit).not.toHaveBeenCalled();
+    ctl.stop();
+  });
+});
+
+/**
+ * The two halves of the livelock, asserted against the REAL activity counter
+ * rather than a hand-held number.
+ *
+ * Every case in `createIdleController` above supplies `activeWorkflows` as a
+ * literal, which is right for testing the controller and is exactly why the
+ * livelock was invisible: the defect was in what FED that number, and both
+ * modules' suites were green throughout. What is claimed here is the
+ * composition — `createWorkflowActivity` wired into `createIdleController`, as
+ * `mainAgent` wires them.
+ */
+describe("a running walk versus the idle reaper", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const controller = (activity: WorkflowActivity, exit: (code: number) => void) =>
+    createIdleController({
+      activeSessions: () => 0,
+      activeWorkflows: activity.inFlight,
+      idleExitMs: 10_000,
+      pollMs: 1000,
+      exit,
+    });
+
+  test("a walk in progress keeps the guest alive past the idle window", async () => {
+    // Production: a 552.4 MB upload's step was still running when the guest
+    // exited `AGENT_IDLE_EXIT_MS` after the platform's 60s ceiling closed the
+    // delivery's response, and the fresh sandbox started the same upload again.
+    // `TRANSCRIBE_UPLOAD_TIMEOUT_MS` is 30 minutes, so a healthy step may
+    // legitimately outlive this window many times over.
+    const exit = vi.fn();
+    const activity = createWorkflowActivity();
+    const step = Promise.withResolvers<string>();
+    const ctl = controller(activity, exit);
+
+    const walk = activity.walk(() => step.promise);
+    // Thirty windows' worth. Nothing here settles the walk, and nothing should.
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(exit).not.toHaveBeenCalled();
+
+    step.resolve("completed");
+    await walk;
+    expect(activity.inFlight()).toBe(0);
+    // And the window resumes from the walk's END, so the guest still dies.
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(exit).toHaveBeenCalledWith(0);
+    ctl.stop();
+  });
+
+  test("a guest with NO walk still exits promptly", async () => {
+    // The other direction, which is load-bearing: a guest must not bill
+    // forever, so the fix may not simply make the counter sticky.
+    const exit = vi.fn();
+    const activity = createWorkflowActivity();
+    const ctl = controller(activity, exit);
+    expect(activity.inFlight()).toBe(0);
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(exit).toHaveBeenCalledWith(0);
+    ctl.stop();
+  });
+
+  test("a walk that FAILED releases the guest, so one bad step is not a leak", async () => {
+    const exit = vi.fn();
+    const activity = createWorkflowActivity();
+    const ctl = controller(activity, exit);
+
+    await expect(
+      activity.walk(async () => {
+        throw new Error("journal unreachable");
+      }),
+    ).rejects.toThrow(/journal unreachable/);
+
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(exit).toHaveBeenCalledWith(0);
     ctl.stop();
   });
 });

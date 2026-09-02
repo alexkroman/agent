@@ -1005,6 +1005,43 @@ want a heartbeat on the RUN so a ceiling cannot abandon a walk that is alive.
 The platform's own half — a slow delivery starving every OTHER tenant's claim —
 is fixed separately in `aai-server/workflow-queue-budget.ts`.
 
+### A parked delivery asks to come back PROPORTIONATELY
+
+`workflow-queue-dispatch.ts` refuses a delivery whose run is already being
+walked, and `workflow-queue-park.ts` decides what to answer it:
+`clamp(walkingForSeconds / 8, 5, 120)`, reported on the same curve — one park is
+one line and one reschedule, so `reportPark` ANSWERS the delay it printed rather
+than either half computing it twice.
+
+It was a flat 5, argued as "self-limiting by construction" because the first park
+lands ~61s into a walk and a healthy run parks zero times. True, and the
+conclusion was not: after that it is a 5s LOOP, and each turn is a full queue
+round trip doing no work plus one of the replica's
+`WORKFLOW_QUEUE_DELIVER_CONCURRENCY` slots. Production, on a 660 MiB upload:
+`walkingForSeconds: 285` with ~45 behind it at 12 a minute; ~170 for a 15-minute
+one. The curve makes the count logarithmic — **13 to reach 285s, 24 to reach
+900s**.
+
+Three things not to relitigate, each argued at its own constant: the floor stays
+5 for a brief RACE between two deliveries (it binds only under 40s of walk); the
+ceiling is 120s against the four numbers it must stay under
+(`QUEUE_DELIVERY_TIMEOUT_MS`, `RETRY_BACKOFF_MS`'s longest, `STALL_GRACE_MS`,
+`TRANSCRIBE_UPLOAD_TIMEOUT_MS`); and the LEVEL is a pure function of the elapsed
+walk rather than "the first one is different", which needs per-run state and
+hides the falling rate that says nothing new is wrong.
+
+**A park spends no attempt and the platform caps nothing** — `reschedule` writes
+`locked_at` and `available_at` only, and `parkedFor` takes any finite
+non-negative number. So only the first delivery's 60s abort costs one of
+`QUEUE_MAX_ATTEMPTS`, and a walk of any length parks at attempt 1 forever.
+
+**The GUEST's liveness signal is a separate defect with the same cause**, and it
+is the sharper one: `packages/aai-guest/CLAUDE.md` under "Lifecycle is
+guest-owned" — the idle reaper counted HTTP responses, so the 60s abort read as
+an idle guest and a step longer than the idle window never completed. Parking is
+what made that reachable, because before it the redundant walks were the thing
+holding the guest open.
+
 ### Three `JournalStore` contract points the suite refused to decide, decided
 
 A conformance table can only assert what the interface actually promises, and
