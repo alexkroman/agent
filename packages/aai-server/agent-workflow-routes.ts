@@ -16,7 +16,7 @@
  *
  * | Route | Caller | Authorization |
  * | --- | --- | --- |
- * | `…/webhook/:token` | a third party | the DevKit's path token |
+ * | `…/webhook/:token` | a third party | the path token, on POST alone |
  * | `/workflows/*` | a page, or a script | the agent's own `AAI_WORKFLOW_API_TOKEN`, forwarded |
  * | `…/uploads/:id/:offset` | a browser, or the guest | an unguessable upload id |
  * | `/workflow-enqueue` | **this agent's guest** | the per-sandbox bearer, bound to one slug |
@@ -79,10 +79,7 @@ export type AgentWorkflowRouteOptions = {
   guestFetch?: typeof fetch | undefined;
   /** The platform's admin connection. Absent means there is no queue. */
   adminDb?: AdminDb | undefined;
-  /**
-   * The DevKit's world on the platform's database. Absent means this deployment
-   * serves no run storage, which the route answers 501 for.
-   */
+  /** Where an upload's bytes go — the platform's bucket, never a guest's disk. */
   uploadBytes: UploadBytes;
   workflowRateLimiter?: RateLimiter | undefined;
   workflowStartRateLimiter?: RateLimiter | undefined;
@@ -105,13 +102,19 @@ export function registerAgentWorkflowRoutes(
   agents: Hono<HonoEnv>,
   opts: AgentWorkflowRouteOptions,
 ): void {
-  // Durable-run webhook delivery. No auth of ours — the DevKit's path token is
-  // the only authorization on this endpoint, at the guest and here.
+  // Durable-run webhook delivery. No auth of ours — the path token is the only
+  // authorization on this endpoint, at the guest and here.
   //
   // The methods come STRAIGHT off the exposure declaration rather than being
-  // restated: the guest answers any verb the third party chose, and a platform
-  // route serving a subset of them is the exact bug guest-routes.ts exists to
-  // catch (a `DELETE` that worked in dev and 404'd deployed).
+  // restated, and that declaration is POST alone. It used to be all five, on
+  // "the guest answers any verb the third party chose" — which was true and was
+  // the bug: a delivery is permanent, so a crawler's `GET` on a leaked callback
+  // URL resolved a run's waitpoint with `{}`. The guest gates POST now, and
+  // narrowing here matters more than usual because this handler BROKERS — a
+  // forwarded `GET` boots a Modal sandbox before the guest can refuse it. The
+  // subset-of-the-guest's-verbs bug guest-routes.ts exists to catch (a `DELETE`
+  // that worked in dev and 404'd deployed) is guarded from the other side:
+  // guest-routes.test.ts pins this list against the runtime's route table.
   const handleWorkflowWebhook = createWorkflowWebhookHandler(opts.guestFetch);
   agents.on(
     [...GUEST_ROUTE_EXPOSURE.workflowWebhook.methods],
@@ -198,6 +201,10 @@ export function registerAgentWorkflowRoutes(
   agents.on(
     [...UPLOAD_BYTES_METHODS],
     UPLOAD_BYTES_ROUTE,
-    createUploadBytesHandler(opts.uploadBytes),
+    // The admin connection, because a WRITE asks the upload's own record one
+    // question: is this upload already finished, in which case its windows are
+    // immutable. See `assertUploadOpen` there for why that read is worth a round
+    // trip and why "the object exists" is the wrong condition.
+    createUploadBytesHandler(opts.uploadBytes, omitUndefined({ adminDb: opts.adminDb })),
   );
 }

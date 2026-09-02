@@ -4,6 +4,9 @@ node_modules/
 # build output (managed by CLI)
 .aai/
 
+# local workflow runs and uploads (written by `aai dev`)
+.workflow-data/
+
 # env files
 .env
 .env.*

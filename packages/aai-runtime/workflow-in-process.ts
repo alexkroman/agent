@@ -24,22 +24,49 @@
  * anything that rejects here is the journal itself being unreachable, which an
  * operator needs to see.
  *
- * ## What this is NOT
+ * ## The timers die with the process, so the JOURNAL is re-read at boot
  *
- * Durable across a restart. The runs live in whatever journal it is handed, and
- * the timers live in this process — so a `ctx.sleep` in flight when the process
- * exits is forgotten along with the run. That is the honest trade for `aai dev`
- * and it is the same one the DevKit's local world made; a deployed guest needs
- * the platform's queue and journal instead, which is why `dispatch` is a
- * parameter of the engine rather than something it decides.
+ * A `ctx.sleep` journals its deadline durably and arms an unreffed `setTimeout`
+ * here. Those are two different lifetimes, and for a long time only the first one
+ * was honoured: `stop()` cleared the timers, nothing enumerated the journal, and a
+ * run suspended when the process restarted — or when `aai dev` rebuilt its
+ * runtime, which is every file save — sat `running` FOREVER with its whole journal
+ * intact. `wake` could not rescue it, an elapsed deadline being no wait
+ * `wakeSleeps` may stop. So the boot line advertised a durable run store while the
+ * only case durability means anything in was unrecoverable.
+ *
+ * {@link JournalStore.resumableRuns} is what closed it, and the sweep below is the
+ * in-process twin of `aai-server/workflow-queue-reconcile.ts`. Three properties:
+ *
+ * - **It only runs where the SCHEDULE is ours.** A caller that injected a
+ *   `dispatch` — a deployed guest, whose schedule is a delayed message in the
+ *   platform's queue — gets no sweep: that queue has its own reconcile, and a
+ *   second recovery mechanism beside it is a sandbox boot per copy of this package.
+ * - **A journal that cannot be enumerated is ANNOUNCED, not assumed away.**
+ *   `resumableRuns` is optional, so a host-supplied store may lack it; the warning
+ *   is what stops that reading as durability it does not have.
+ * - **It cannot stampede.** {@link RESUME_SWEEP_LIMIT} bounds the pass and
+ *   {@link RESUME_STAGGER_MS} spreads the OVERDUE deliveries, so 500 runs whose
+ *   deadlines all elapsed while the process was down are not 500 replays in one
+ *   turn of the loop. A future deadline is simply re-armed at its own time.
+ *
+ * What is still NOT here is any repetition: this is a BOOT sweep, not a poll. A
+ * delivery lost while the process stays up (a journal that was briefly
+ * unreachable) waits for the next boot, which is the platform reconcile's grace
+ * window traded for not having one.
  */
 
 import { randomUUID } from "node:crypto";
 import type { WorkflowDef } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
-import type { JournalStore } from "./workflow-journal-types.ts";
+import {
+  isResumableJournal,
+  type JournalStore,
+  type ResumableJournal,
+} from "./workflow-journal-types.ts";
 import { createMemoryStreams, type StreamStore } from "./workflow-streams.ts";
 
 /**
@@ -53,6 +80,29 @@ import { createMemoryStreams, type StreamStore } from "./workflow-streams.ts";
  * harmless re-check that either re-arms or delivers.
  */
 const MAX_TIMER_MS = 2_147_483_647;
+
+/**
+ * How many stranded runs one boot sweep may re-enqueue.
+ *
+ * A bound rather than a pass over everything, for the reason
+ * `RECONCILE_MAX_PER_TICK` is one on the platform side: a database this process
+ * has been away from for a week can hold any number of overdue runs, and
+ * recovering all of them at once is its own outage. Generous — a self-hosted
+ * server's whole in-flight set is normally far under this — and the overflow is
+ * WARNED about rather than dropped silently, because the sweep does not repeat.
+ */
+const RESUME_SWEEP_LIMIT = 200;
+
+/**
+ * How far apart two OVERDUE deliveries are spread.
+ *
+ * A run whose deadline elapsed while the process was down is due immediately, and
+ * N of them dispatched on one turn is N concurrent replays each reading a journal.
+ * `workflow-step-gate.ts` bounds the step BODIES underneath, which is the real
+ * backstop; this bounds the read amplification above it. Small enough that the
+ * whole bounded pass drains in ~5s.
+ */
+const RESUME_STAGGER_MS = 25;
 
 /** What {@link createInProcessWorkflowEngine} takes. */
 export type InProcessWorkflowEngineOptions = {
@@ -94,6 +144,75 @@ export type InProcessWorkflowEngine = WorkflowEngine & {
   stop(): void;
 };
 
+/** What a boot sweep needs, which is deliberately not the whole engine. */
+type BootSweep = {
+  journal: JournalStore;
+  /** The LOCAL dispatcher's own scheduler — never an injected one. */
+  schedule: (runId: string, at?: number) => void;
+  /** Read late, because `stop()` may land mid-pass. */
+  stopped: () => boolean;
+  logger: Logger;
+};
+
+/**
+ * Re-enqueue every run this journal still owes a delivery.
+ *
+ * Fire-and-forget, like a delivery: `createInProcessWorkflowEngine` is
+ * synchronous because `createRuntime` is, and a host must not wait on a journal
+ * read to get a server bound. A failure is LOGGED rather than dropped — the whole
+ * point is that a run nothing re-enqueues is silent.
+ *
+ * Overlapping with a walk the PREVIOUS engine still has in flight is safe and is
+ * the ordinary case under `aai dev`: `stop()` cancels timers and not walks, and a
+ * delivery is at-least-once by design — see `workflow-engine.ts`.
+ *
+ * Module-level rather than a closure inside the factory, which Biome measured at
+ * cognitive complexity 18 with this in it.
+ */
+async function sweepOnce(sweep: BootSweep, journal: ResumableJournal): Promise<void> {
+  const owed = await journal.resumableRuns(RESUME_SWEEP_LIMIT);
+  if (owed.length === 0) return;
+  const now = Date.now();
+  let overdue = 0;
+  for (const run of owed) {
+    if (sweep.stopped()) return;
+    // A deadline still in the future is re-armed AT that deadline; anything due
+    // now joins the staggered queue, `overdue` being its position in it.
+    const future = run.wakeAt !== undefined && run.wakeAt > now;
+    sweep.schedule(run.runId, future ? run.wakeAt : now + overdue++ * RESUME_STAGGER_MS);
+  }
+  sweep.logger.info?.("Workflow runs re-enqueued at boot", { runs: owed.length, overdue });
+  // The sweep does not repeat, so a full pass means runs were left behind and
+  // nothing will come back for them until the next boot.
+  if (owed.length === RESUME_SWEEP_LIMIT) {
+    sweep.logger.warn?.("Workflow boot re-enqueue hit its ceiling", {
+      limit: RESUME_SWEEP_LIMIT,
+      detail: "runs beyond this pass are not re-enqueued until the next boot",
+    });
+  }
+}
+
+/**
+ * Sweep, or say why not.
+ *
+ * The warning is the half that matters when it fires: `resumableRuns` is optional
+ * on {@link JournalStore}, so a host-supplied store may lack it — and a
+ * durability tradeoff absent from the log reads as a bug.
+ */
+function startBootSweep(sweep: BootSweep): void {
+  if (!isResumableJournal(sweep.journal)) {
+    sweep.logger.warn?.("Workflow runs cannot be recovered at boot", {
+      detail:
+        "this journal does not enumerate resumable runs — a run suspended on " +
+        "ctx.sleep is not re-delivered after a restart or a rebuild",
+    });
+    return;
+  }
+  void sweepOnce(sweep, sweep.journal).catch((err: unknown) => {
+    sweep.logger.error?.("Workflow boot re-enqueue failed", { error: errorMessage(err) });
+  });
+}
+
 /**
  * Build an engine that executes its own runs in this process.
  *
@@ -118,10 +237,7 @@ export function createInProcessWorkflowEngine(
     // rule 23, and the reason it exists: a rejection escaping into the timer
     // callback is an unhandled rejection, which by default ends the process.
     void engine?.execute(runId).catch((err: unknown) => {
-      logger.error?.("Workflow delivery failed", {
-        runId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      logger.error?.("Workflow delivery failed", { runId, error: errorMessage(err) });
     });
   }
 
@@ -162,6 +278,12 @@ export function createInProcessWorkflowEngine(
     newRunId: () => `wrun_${randomUUID().replaceAll("-", "")}`,
     logger,
   });
+
+  // Only where the schedule is OURS — an injected dispatcher owns its own
+  // recovery, and the platform's queue reconcile is that recovery.
+  if (options.dispatch === undefined) {
+    startBootSweep({ journal, schedule, stopped: () => stopped, logger });
+  }
 
   return {
     ...engine,

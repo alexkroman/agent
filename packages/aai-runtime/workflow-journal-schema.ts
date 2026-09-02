@@ -18,6 +18,7 @@
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -38,12 +39,23 @@ export const WORKFLOW_ATTEMPT_TABLE = "aai_workflow_attempts";
 export const WORKFLOW_SLEEP_TABLE = "aai_workflow_sleeps";
 export const WORKFLOW_HOOK_TABLE = "aai_workflow_hooks";
 
+/**
+ * `input` is NULLABLE, matching `aai_platform.workflow_runs`.
+ *
+ * A run's input is whatever the caller passed and a workflow declaring no schema
+ * is handed it untouched, so `undefined` is representable — and the engine's own
+ * refusal of a non-record input is what turns that into a legible abandoned run.
+ * `not null` here made the same start fail inside the DRIVER instead, on the
+ * only one of the three backends that had the constraint, so the three stopped
+ * being one contract at exactly the boundary the platform migration's comment
+ * claims differs by tenancy alone.
+ */
 const CREATE_RUNS = (t: string) => `create table if not exists ${t} (
   run_id text primary key,
   workflow text not null,
   status text not null,
   created_at bigint not null,
-  input jsonb not null,
+  input jsonb,
   output jsonb,
   error text
 )`;
@@ -170,9 +182,7 @@ export async function applyWorkflowJournalDdl(opts: { db: Db; logger: Logger }):
     for (const statement of workflowJournalDdl()) await opts.db.query(statement);
     return true;
   } catch (err: unknown) {
-    opts.logger.warn?.("Workflow journal schema not applied", {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    opts.logger.warn?.("Workflow journal schema not applied", { error: errorMessage(err) });
     return false;
   }
 }

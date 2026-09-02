@@ -44,14 +44,14 @@ so what was left to write is the render-and-classify half.
   only a typo check.
 - [sendToChannel](#sendtochannel) — post, and throw a [ChannelDeliveryError](#channeldeliveryerror)
   carrying the retry verdict. `sendToChannelClassified`
-  (`@alexkroman1/aai/step-errors`) is the same call with the DevKit mapping
-  already applied.
+  (`@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
+  mapping already applied.
 - [renderChannelPayload](#renderchannelpayload) — the request that WOULD be sent, pure, so a
   spec can assert the body without a network.
 
-This subpath names neither `zod` nor the Workflow DevKit, which is what lets
-an `agent.ts` import [isSlackWebhookUrl](#isslackwebhookurl) for a schema refinement
-without pulling either into its graph.
+This subpath names neither `zod` nor `@alexkroman1/aai/step-errors`, which is
+what lets an `agent.ts` import [isSlackWebhookUrl](#isslackwebhookurl) for a schema
+refinement without pulling either into its graph.
 
 ## Functions
 
@@ -317,7 +317,7 @@ the platform having a bad minute, which is precisely what retries are for,
 and any `Retry-After` it named is carried on the error.
 
 The `ChannelDeliveryError` it throws is what `toStepError` reads, so a step
-body hands it straight on and the DevKit gives up or waits the right amount
+body hands it straight on and the engine gives up or waits the right amount
 — see [ChannelDeliveryError](#channeldeliveryerror), or reach for `sendToChannelClassified`
 (`@alexkroman1/aai/step-errors`) to skip the `.catch`.
 

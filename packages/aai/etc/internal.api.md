@@ -21,12 +21,6 @@ export const APP_DB_POOL_MAX = 3;
 // @public
 export const APP_DB_PRESENCE_LOCK = 1;
 
-// @public
-export const APP_DB_WORLD_POOL_MAX = 4;
-
-// @public
-export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
-
 // @internal
 export function capToolResult(result: string): string;
 
@@ -176,9 +170,6 @@ export function isInvariantViolation(value: unknown): value is InvariantViolatio
 export function isTextAssetPath(assetPath: string): boolean;
 
 // @public
-export function isWorkflowSuspend(value: unknown): boolean;
-
-// @public
 export function linkConfirmationCode(code: string): string;
 
 // @public
@@ -282,17 +273,17 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
-
-// @internal
-export type SleepOptions = {
-    signal?: AbortSignal;
-    unref?: boolean;
-};
+export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
 
 // @public
-type SleepOptions_2 = {
+type SleepOptions = {
     correlationId?: string;
+};
+
+// @internal
+export type SleepTimerOptions = {
+    signal?: AbortSignal;
+    unref?: boolean;
 };
 
 // @public
@@ -407,7 +398,7 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
-    sleep(until: number | Date, options?: SleepOptions_2): Promise<void>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };

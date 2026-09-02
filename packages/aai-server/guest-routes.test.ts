@@ -34,7 +34,6 @@ import {
   GUEST_ROUTE_EXPOSURE,
   GUEST_ROUTES,
   type GuestRouteExposure,
-  PROXIED_HTTP_METHODS,
   proxiedGuestRoutes,
 } from "./guest-routes.ts";
 import { createOrchestrator } from "./orchestrator.ts";
@@ -101,6 +100,30 @@ describe("guest route exposure", () => {
     }
   });
 
+  test("the platform registers NO verb a proxied route does not answer", () => {
+    // The other direction of the same parity, and the one the webhook route
+    // needed. `GUEST_ROUTE_EXPOSURE`'s methods are "the ones the GUEST answers",
+    // and the platform derives its registrations from them — so an over-broad
+    // declaration is a platform that forwards a verb the guest refuses. For the
+    // webhook that is a `GET` from a crawler crossing the network to a guest
+    // that answers 405, on a route with no credential, and — because the
+    // handler BROKERS — one that boots a Modal sandbox to get there.
+    const registered = registeredRoutes();
+    for (const { key, path, methods } of proxiedGuestRoutes()) {
+      const platformPath = `/:slug${path}`;
+      const extra = registered
+        .filter((r) => r.path === platformPath && r.method !== "ALL")
+        .map((r) => r.method)
+        .filter((method) => !methods.includes(method));
+      expect(
+        extra,
+        `the platform registers ${extra.join(", ")} ${platformPath} but ${key} declares only ` +
+          `[${methods.join(", ")}] — the guest does not answer the rest, so the platform is ` +
+          "forwarding a request across the network for a refusal it could give itself.",
+      ).toEqual([]);
+    }
+  });
+
   test("the platform's delivery door is HOST-ONLY, not proxied", () => {
     // It replaced the DevKit's two `guest-internal` callbacks, which were
     // unauthenticated BECAUSE only the guest's own worker dialled them on
@@ -151,9 +174,10 @@ describe("guest route exposure", () => {
  *   hook took the 404 for a failed upload and CANCELLED the run half a second
  *   after starting it, logging `Workflow run cancelled`.
  *
- * So each proxied route names the SDK export that owns its verbs. Two of the
- * three are derived from the guest's own dispatch, which is what makes adding a
- * route to `workflow-api.ts`'s table enough on its own.
+ * So each proxied route names the SDK export that owns its verbs. All three are
+ * derived from the guest's own dispatch now, which is what makes adding a route
+ * to `workflow-api.ts`'s table — or narrowing a verb in `server-routes.ts` —
+ * enough on its own.
  */
 /**
  * Code-unit order, spelled out — the default `.sort()` already applies to
@@ -174,12 +198,18 @@ const METHOD_SOURCES: Record<string, { source: string; methods: readonly string[
   clientConfig: { source: "CLIENT_CONFIG_METHODS", methods: CLIENT_CONFIG_METHODS },
   // Derived from the `ROUTES` table that dispatches them.
   workflows: { source: "WORKFLOW_API_METHODS", methods: WORKFLOW_API_METHODS },
-  // Not derived, because there is nothing to derive from: `pickWorkflowHandler`
-  // gates flow and step on POST and applies NO method check to a webhook, since
-  // the URL goes to a third party that picks its own verb. "The guest gates
-  // nothing" is therefore asserted as "the declaration lists the whole
-  // vocabulary" — which is why that vocabulary is one exported constant.
-  workflowWebhook: { source: "PROXIED_HTTP_METHODS", methods: PROXIED_HTTP_METHODS },
+  // Derived too, now that there is something to derive from. This used to be
+  // "the whole HTTP vocabulary", asserted against an exported
+  // `PROXIED_HTTP_METHODS`, because the guest applied NO method check to a
+  // webhook — the URL goes to a third party that picks its own verb. It gates
+  // POST now: a delivery is PERMANENT, so a bare `GET` from a link-preview
+  // fetcher or a crawler was resolving a run's waitpoint with `{}`. The verb
+  // lives in the runtime's route table and `createServer` answers 405 with
+  // `Allow: POST` to anything else, so this reads it from there.
+  workflowWebhook: {
+    source: "WORKFLOW_CALLBACK_ROUTES.webhook.methods",
+    methods: WORKFLOW_CALLBACK_ROUTES.webhook.methods,
+  },
 };
 
 describe("proxied methods match what the guest answers", () => {

@@ -155,6 +155,15 @@ async function consumeFrames<T>(
  * poll cheap: a quiet run answers with a bare `done` rather than the whole log
  * again.
  *
+ * `next` is a COUNT of chunks consumed, and `startIndex` is an INCLUSIVE floor,
+ * so the two are the same number and no adjustment sits between them. That
+ * identity is the whole correctness argument here, and it is why the store's
+ * floor is inclusive rather than exclusive — read exclusively, this loop lost the
+ * chunk sitting AT its cursor on every re-open, so a run writing one line per
+ * poll delivered every other line.
+ * `packages/aai-runtime/workflow-stream-cursor.test.ts` states it as a property
+ * over generated polling schedules; this module's own spec pins the URLs.
+ *
  * ## A negative `startIndex` is resolved on the FIRST read, not carried
  *
  * "The last N lines" names no position a later read can resume from — the tail
@@ -194,7 +203,9 @@ function readProgressUntilComplete<T>(
     // `omitUndefined` rather than a spread: under `exactOptionalPropertyTypes` a
     // present-and-undefined `namespace` is not the same as an absent one, and the
     // client would put an empty parameter on the query string. Index 0 is left
-    // off for the same reason — it is what the route does with no parameter.
+    // off because an omitted cursor and a `0` are the SAME request under an
+    // inclusive floor — cosmetic, not load-bearing, and it stays only so a
+    // caught-up-from-the-start reader sends the shorter URL.
     const res = await getClient().streamOutput(runId, {
       ...omitUndefined({
         namespace: options.namespace,
@@ -203,8 +214,10 @@ function readProgressUntilComplete<T>(
       signal,
     });
     // A non-2xx, or a body-less response, is an agent that does not serve this —
-    // the ordinary case for one deployed before the route existed, and also what
-    // a 404 for an unknown run looks like.
+    // the ordinary case for one deployed before the route existed. An unknown RUN
+    // is no longer in this bucket: the route frames it as `missing` on a 200
+    // (`consumeFrames` below), which is what stops a wrong id from reading as a
+    // missing feature and hiding the progress UI.
     if (!(res.ok && res.body)) return "unsupported";
     const { ending, chunks } = await consumeFrames<T>(res.body, signal);
     next += chunks.length;

@@ -209,6 +209,13 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("File UPLOADS are durable with no setup");
     expect(prompt).not.toContain("A file UPLOAD is the exception");
     expect(prompt).not.toContain("set a DATABASE_URL secret if you want");
+    // And the SCAFFOLD GUIDE has to agree, which is the half a preamble
+    // assertion cannot reach: `studioSystemPrompt` is the preamble PLUS that
+    // guide, so retiring the exception from one of them left the prompt saying
+    // both things at once — under different wording, so every assertion above
+    // still passed. These are the guide's own sentences.
+    expect(prompt).not.toContain("One thing does need a database whatever the run does");
+    expect(prompt).not.toContain("refuse by name without a `DATABASE_URL`");
   });
 
   test("the two prompts share everything that is not mode-specific", () => {

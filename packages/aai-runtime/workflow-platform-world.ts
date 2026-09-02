@@ -1,50 +1,31 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The composition: the DevKit's Postgres world with its QUEUE replaced, and
- * graphile-worker never started.
+ * Whether this process is a DEPLOYED guest, and the pair it dials the platform
+ * with.
  *
- * ## Composing, not reimplementing
+ * There is no "world" left to compose — the file is named for one it used to
+ * build. It wrapped the DevKit's Postgres world to override `queue` and `start`
+ * so graphile-worker never subscribed; the replay engine replaced all of it, and
+ * what survived is the ENVIRONMENT read that decided whether to build one at all.
+ * That read now answers a broader question, and four clients ask it: the journal
+ * (`workflow-journal-platform.ts`), the queue (`workflow-platform-queue.ts`),
+ * session state, and upload records.
  *
- * The first estimate for this was "reimplement a World" — sixteen event types, a
- * storage layer, a streamer, and the replay semantics that make a durable run
- * durable. That was wrong, and the reason it was wrong is worth stating because it
- * shaped every increment since: `World = Queue & Storage & Streamer`, and only the
- * QUEUE was the problem. Storage and the streamer are reads and writes against the
- * tenant's own database, which is where they belong.
+ * ## Both keys or neither, and a HALF-configured environment is reported
  *
- * So this takes `createWorld()`'s world whole and overrides one method. What that
- * leaves untouched is the entire durable-execution engine — replay, step
- * memoization, hook parking, event ordering — none of which this platform has any
- * business owning.
+ * `aai dev`, host mode and a self-hosted `createServer` have neither; a deployed
+ * guest has both. One without the other is a platform that changed how it spawns,
+ * and resolving it here — falling silently back to the in-process engine and the
+ * memory journal — is precisely the durability failure
+ * `workflow-journal-platform.ts` exists to end. So {@link resolvePlatformQueue}
+ * answers `undefined` and {@link describePlatformQueueGap} NAMES the gap for the
+ * caller to log.
  *
- * ## `start()` is the whole point of the override
+ * ## The pair is read from THIS PROCESS's environment
  *
- * `world.start()` is what subscribes graphile-worker: it takes a connection out of
- * the world's pool and holds it for the life of the process to `LISTEN` for
- * `jobs:insert`, then runs a worker pool beside it. Not calling it is what gives
- * those connections back, and it is why this is an override of `start` as well as
- * of `queue` — a spread alone would inherit the base world's `start` and undo the
- * entire change silently, with the only symptom being connection pressure nobody
- * connects to this file.
- *
- * `reenqueueActiveRuns`, the other half of the base `start()`, is deliberately NOT
- * reproduced. It exists because graphile-worker's jobs live in the same database as
- * the run state and can be lost independently of it, so a boot has to look for runs
- * that are active with nothing queued. The platform's queue is at-least-once by
- * construction: a delivery is acked only when the guest answers 200, and a claim
- * left stale by a crashed guest is reclaimed after `QUEUE_CLAIM_STALE_MS`. So the
- * message is still there, and re-enqueueing would DUPLICATE it.
- *
- * ## What this does NOT save, stated plainly
- *
- * It does not take a workflow guest's app-database cost to zero, and earlier
- * framing of this work implied it would. Storage and the streamer still live in the
- * tenant's database and still need connections: the streamer holds a dedicated
- * `pg.Client` of its own and the world pool still serves storage reads.
- * What goes is graphile-worker's held `LISTEN` connection, its worker concurrency,
- * and the queue-lock sweep's presence connection — which exists only to clear
- * graphile's own orphaned job locks. Taking the rest would mean moving the DevKit's
- * storage off the tenant's database, which is a different and much larger change.
+ * {@link platformGuestOptions} is the spelling to reach for; its own doc carries
+ * what reading the tenant's environment instead cost, and why the process env is
+ * the safer read besides.
  */
 
 import type { PlatformQueueOptions } from "./workflow-platform-queue.ts";

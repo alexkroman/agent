@@ -15,20 +15,22 @@
  *
  * Every one of those is reachable with workflows that call NO provider, which
  * is what these are. They are written INTO the scaffolded project after
- * `aai init`, so they take the same path as the template's own — the workflow
- * builder's swc transform, the flow and step bundles, the agent bundle's client
- * transform — against a project whose `workflow` dependency was installed from
- * the published manifest. That path is the reason this tier exists.
+ * `aai init`, so they take the same path as the template's own — the CLI's
+ * worker bundle, the SDK installed from the published manifest, and the engine
+ * that bundle's own runtime builds. That path is the reason this tier exists.
+ * (It used to run through the DevKit's swc transform and its separate flow and
+ * step bundles as well; those are gone, and what is left is the path a user's
+ * project actually takes.)
  *
  * ## What is deliberately NOT here
  *
- * A DATABASE. `aai dev` with no `DATABASE_URL` takes the LOCAL world, and every
- * assertion below was measured against it before being written, because the two
- * worlds do diverge — a missing run answered `cancel` differently on each, which
- * is a bug this file's `cancel` case now pins. Anything that needs Postgres
- * (`aai_session_events`, the bigint-column input bugs) belongs to the scenario
- * tier's `describeWithPg`, not here, and {@link HOSTILE_TARGETS} says so where
- * it matters.
+ * A DATABASE. `aai dev` with no `DATABASE_URL` journals runs IN MEMORY, and
+ * every assertion below was measured against that before being written, because
+ * the two journals do diverge — a missing run answered `cancel` differently on
+ * each, which is a bug this file's `cancel` case now pins. Anything that needs
+ * Postgres (`aai_session_events`, the bigint-column input bugs) belongs to the
+ * scenario tier's `describeWithPg`, not here, and {@link HOSTILE_TARGETS} says
+ * so where it matters.
  */
 
 import fs from "node:fs";
@@ -44,10 +46,11 @@ import { ofetch } from "ofetch";
  * engine any more, which reads a body off `agent({ workflows })`.
  *
  * **There is no webhook flow.** It parked on `createWebhook()` and was resumed
- * by an HTTP delivery; the engine's `ctx.waitFor` is ended by
- * `ctx.workflows.signal`, and the webhook route still points at the DevKit's own
- * hook table. See `dev-workflow.scenario.test.ts` for the same gap stated at
- * length.
+ * by an HTTP delivery. It was dropped while the engine's equivalent —
+ * `ctx.waitFor(token)`, ended by `ctx.workflows.signal` — had no route in front
+ * of it; `createServer` mounts one now (`workflow-webhook.ts`), so the case is
+ * writable again. See `dev-workflow.scenario.test.ts` for the same hole stated
+ * at length.
  */
 const LAB_FLOWS_TS = `// Written by the e2e suite — a provider-free workflow lab.
 import type { WorkflowCtx } from "@alexkroman1/aai";

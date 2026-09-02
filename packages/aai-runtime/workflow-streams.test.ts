@@ -25,13 +25,31 @@ describe("reading", () => {
     expect(await streams.tail("wrun_1", "default")).toBe(1);
   });
 
-  test("treats the cursor as EXCLUSIVE, so a poller sees each chunk once", async () => {
+  test("treats the cursor as INCLUSIVE, so a poller sees each chunk once", async () => {
     const streams = createMemoryStreams();
     await streams.write("wrun_1", "default", "a");
     await streams.write("wrun_1", "default", "b");
-    // A poller holding index 0 asks for what came after it.
-    expect(await streams.read("wrun_1", { startIndex: 0 })).toEqual([{ index: 1, value: "b" }]);
-    expect(await streams.read("wrun_1", { startIndex: 1 })).toEqual([]);
+    // A poller sends the first index it has NOT seen, so a reader that has read
+    // nothing sends 0 and receives the whole log — the case this used to lose.
+    expect(await streams.read("wrun_1", { startIndex: 0 })).toEqual([
+      { index: 0, value: "a" },
+      { index: 1, value: "b" },
+    ]);
+    expect(await streams.read("wrun_1", { startIndex: 1 })).toEqual([{ index: 1, value: "b" }]);
+    // Caught up: the cursor names a chunk the run has not written.
+    expect(await streams.read("wrun_1", { startIndex: 2 })).toEqual([]);
+  });
+
+  test("an absent cursor and a zero are the SAME request", async () => {
+    // The property that lets every consumer send its count unconditionally. Read
+    // exclusively these two disagreed, and the only spelling for "I have seen
+    // nothing" was the absent one — see this module's doc for why that boundary
+    // is where the off-by-one lived.
+    const streams = createMemoryStreams();
+    for (const line of ["a", "b", "c"]) await streams.write("wrun_1", "default", line);
+    expect(await streams.read("wrun_1", { startIndex: 0 })).toEqual(
+      await streams.read("wrun_1", {}),
+    );
   });
 
   test("keeps namespaces as independent sequences", async () => {

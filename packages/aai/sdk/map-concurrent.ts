@@ -5,18 +5,22 @@
  *
  * A workflow body that fans out over a list wants two things at once: a bound,
  * because the far side of a step is usually a rate limit, and a call order that
- * is a pure function of the list, because the Workflow Development Kit
- * correlates a journal entry to a step call **by the order the call was issued
- * in** and nothing else.
+ * is a pure function of the list, because the engine correlates a journal entry
+ * to a step call **by the order the call was issued in** and nothing else.
  *
  * ## What replay really requires
  *
- * A step is called through `ctx.step(name, fn)`, which dispatches it — so
- * stamps each invocation with `step_${ulid()}` from a monotonic factory seeded
- * off the run's `startedAt`. So the Nth step call ISSUED in a run gets the Nth
- * id, on the first execution and on every replay, and the step's name is only
- * cross-checked against that id — a mismatch is `ReplayDivergenceError`, not a
- * silent re-run.
+ * A step is called through `ctx.step(name, fn)`, and its journal key is the name
+ * plus the number of times THAT name has already been reached in this walk —
+ * `segment#0`, `segment#1`, … (see `WorkflowCtx` in `sdk/workflow-ctx.ts`). So
+ * the Nth call issued under a given name reads the Nth entry under it, on the
+ * first execution and on every replay.
+ *
+ * **Nothing cross-checks that the Nth call is the same WORK it was last time.**
+ * A body whose call order changes between walks does not fail — it silently
+ * reads another item's journaled result. That is what makes the rule below
+ * load-bearing rather than advisory, and it is why this module exists instead of
+ * a hand-rolled pool at each call site.
  *
  * The requirement that falls out of this is narrower than it looks: **the
  * SEQUENCE OF ITEMS whose calls are issued must be a pure function of the
@@ -26,8 +30,8 @@
  *
  * A window over a shared cursor satisfies it. The cursor only ever hands out the
  * next index, so the Nth call issued is item N-1 whatever order the calls settle
- * in; what completion order decides is which SLOT runs which item, and no id
- * depends on that. So there is no barrier here: a slot that finishes early takes
+ * in; what completion order decides is which SLOT runs which item, and no
+ * journal key depends on that. So there is no barrier here: a slot that finishes early takes
  * the next item immediately instead of idling until its slowest sibling lands.
  *
  * **This was `mapInBatches`, and it ran sequential batches of `Promise.all` on
@@ -77,7 +81,7 @@
  *
  * ## It is not workflow-specific, and needs no workflow to run
  *
- * Nothing here imports the DevKit: this is a plain bounded map, so a tool body
+ * Nothing here imports the engine: this is a plain bounded map, so a tool body
  * can use it for a rate-limited API and a spec can call it directly. The rules
  * above are why it exists and why it is shaped the way it is.
  */
@@ -105,29 +109,12 @@
  *   `Math.min(NaN, n)` is `NaN`, so `Array.from({ length: NaN })` is empty and
  *   the map silently does NOTHING, which reads as an empty input.
  * @param run - Called once per item, with the item and its index in `items`.
- *   Inside a workflow body this is where a `ctx.step` call goes, and it must
- *   be the only one — see the remarks below.
- *
- * @remarks
- * **`run` must issue the same sequence of step calls for every item**, which in
- * practice means one, issued synchronously. The Workflow Development Kit
- * correlates a journal entry to a step call by the ORDER the call was issued in
- * and by nothing else, so a callback that awaits something before its step call,
- * or issues two steps in a row, interleaves with its siblings by completion
- * order — and a resume then hands the Nth journal entry to a different call. A
- * body that needs two steps per item runs them as two fan-outs.
- *
- * What that requires of the window itself is narrower than it looks, and is why
- * there is no barrier in it: the SEQUENCE OF ITEMS whose calls are issued has to
- * be a pure function of the list, not of the settle order. The cursor only ever
- * hands out the next index, so the Nth call issued is item N-1 however the calls
- * settle; what completion order decides is which slot runs which item, and no
- * step id depends on that. A slot that finishes early therefore takes the next
- * item immediately rather than idling until its slowest sibling lands.
- *
- * Nothing here imports the Workflow Development Kit, so this is a plain bounded
- * map: a tool body can use it for a rate-limited API and a spec can call it
- * directly.
+ *   Inside a workflow body this is where a `ctx.step` call goes, and **it must
+ *   be the only one, issued synchronously** — a callback that awaits before its
+ *   step call, or issues two in a row, interleaves with its siblings by
+ *   completion order and a resume hands the Nth journal entry to a different
+ *   call. A body needing two steps per item runs them as two fan-outs. The
+ *   module doc above carries why, and why the window itself needs no barrier.
  *
  * @example
  * ```ts no-check
@@ -189,9 +176,8 @@ export async function mapConcurrent<T, R>(
   // `stopped` only stops a slot taking a NEW item — so a slot already inside
   // `await run(...)` is abandoned mid-call, with its result discarded whether or
   // not the call went on to succeed. In a durable fan-out those are the calls
-  // that have already been paid for: the DevKit reports them as
-  // "run failed with N uncommitted operation(s)", their journal entries never
-  // land, and the resume re-issues and re-bills work that had SUCCEEDED. Draining
+  // that have already been paid for: their journal entries never
+  // land, so the resume re-issues and re-bills work that had SUCCEEDED. Draining
   // first costs the tail of whatever is in flight — bounded by those calls' own
   // deadlines, and they are running either way — and buys every one of their
   // results.

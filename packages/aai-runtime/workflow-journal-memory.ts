@@ -27,6 +27,7 @@
 import type {
   HookRecord,
   JournalStore,
+  ResumableRun,
   RunRecord,
   RunStatus,
   SleepRecord,
@@ -37,7 +38,10 @@ import { isTerminalStatus } from "./workflow-journal-types.ts";
 /** One run's mutable state, kept together so a run is one map lookup. */
 type Slot = {
   record: RunRecord;
-  /** Settled steps in settle order — `readSteps`'s contract. */
+  /**
+   * Settled steps in APPEND order, which is not what `readSteps` answers with:
+   * that sorts a copy by `finishedAt` then `key`, matching both databases.
+   */
   steps: StepEntry[];
   /** By `key`, so `appendStep`'s idempotency is a lookup rather than a scan. */
   byKey: Map<string, StepEntry>;
@@ -49,16 +53,6 @@ type Slot = {
   hooks: Map<string, HookRecord>;
 };
 
-/**
- * Newest first, with the id breaking a tie.
- *
- * `createdAt` alone is not a total order — two runs started in the same
- * millisecond are ordinary under a fan-out — so the id is what makes the
- * listing STABLE across calls rather than merely sorted. Code-unit comparison
- * and never `localeCompare`: with no explicit locale that answers to the
- * runtime's ICU default, so the same two runs would order differently on two
- * machines.
- */
 /**
  * Does this wake reach that wait?
  *
@@ -73,15 +67,109 @@ function wakeReaches(
   now: number,
 ): boolean {
   // An elapsed or already-woken wait is not one THIS call stopped.
+  //
+  // **The `wakeAt <= now` half is deliberately NOT a way to rescue an overdue
+  // run, and marking one `woken` here would be actively harmful.** For a while
+  // the only path back to a run whose deadline had passed was a `wake`, and this
+  // refused it — so an overdue sleep was unreachable through the public API and
+  // the run was stranded. That is fixed where it belongs, in the DISPATCHER
+  // (`JournalStore.resumableRuns` and the boot sweep in
+  // `workflow-in-process.ts`): an elapsed deadline does not need waking, it needs
+  // DELIVERING, and a wake that "succeeded" would still not have scheduled one.
+  //
+  // Two things the refusal is protecting, both broken by the tempting fix:
+  //
+  // - **The count.** `wakeSleeps` answers what this call CHANGED, which is what
+  //   makes `{ woken: 0 }` actionable rather than a tie between "nothing was
+  //   waiting" and "I woke something twice" — and `wakeUp` only re-delivers when
+  //   something was stopped.
+  // - **`aai-server/workflow-queue-reconcile.ts` reads `woken = false and
+  //   wake_at < cutoff`** as its evidence that a run holding an open approval
+  //   window has a LOST deadline. Marking an elapsed sleep woken blinds that arm,
+  //   after which the reconcile's park rule hides such a run forever — i.e. the
+  //   fix for one stranding bug would create a second one, on the platform, where
+  //   it is least observable. Reachable today: a targeted
+  //   `wakeUp(runId, [correlationId])` on a `hookTimeout` whose deadline elapsed.
   if (record.woken || record.wakeAt <= now) return false;
   if (!correlationIds) return record.kind === "sleep";
-  return correlationIds.includes(record.correlationId ?? "");
+  // A wait declared with NO id is not a wait declared with `""`, and this used to
+  // fold the two together (`correlationId ?? ""`, matching Postgres's
+  // `coalesce(correlation_id, '')`). Both directions were wrong: an author whose
+  // id list happened to contain an empty string woke every uncorrelated sleep on
+  // the run, and a wait genuinely declared `""` was indistinguishable from one
+  // declared nothing. The platform backend never folded them, so the contract had
+  // two answers depending on where the run was deployed — found by
+  // `journal-conformance-waits.ts`, which is why it is a strict compare now.
+  return record.correlationId !== undefined && correlationIds.includes(record.correlationId);
 }
 
+/**
+ * The earliest OUTSTANDING deadline this run is waiting on, or `undefined`.
+ *
+ * A woken wait is not outstanding, and an ELAPSED one is: it is the whole reason
+ * this walk exists, since an elapsed deadline with no timer behind it is the
+ * stranded run `resumableRuns` recovers.
+ */
+function earliestWake(slot: Slot): number | undefined {
+  let at: number | undefined;
+  for (const record of slot.sleeps.values()) {
+    if (record.woken) continue;
+    if (at === undefined || record.wakeAt < at) at = record.wakeAt;
+  }
+  return at;
+}
+
+/** Is this run parked on somebody else's answer — an OPEN window? */
+function hasOpenHook(slot: Slot): boolean {
+  for (const hook of slot.hooks.values()) {
+    if (!(hook.delivered || hook.closed)) return true;
+  }
+  return false;
+}
+
+/**
+ * Earliest deadline first, the id breaking a tie.
+ *
+ * A run with NO deadline is due NOW, so it sorts as `0` rather than last: what
+ * the ordering decides is which runs survive `limit`, and the most overdue are
+ * the ones that have been stranded longest.
+ */
+function soonestFirst(a: ResumableRun, b: ResumableRun): number {
+  const at = (run: ResumableRun) => run.wakeAt ?? 0;
+  return at(a) - at(b) || codeUnit(a.runId, b.runId);
+}
+
+/**
+ * `finishedAt`, ties broken by `key` — which is what both databases do
+ * (`order by finished_at, key`).
+ *
+ * A named comparator rather than an inline one because the tie-break is a nested
+ * ternary inline, which Biome's `noNestedTernary` rejects.
+ */
+function settledFirst(a: StepEntry, b: StepEntry): number {
+  return a.finishedAt - b.finishedAt || codeUnit(a.key, b.key);
+}
+
+/**
+ * Code-unit order, and never `localeCompare`: with no explicit locale that
+ * answers to the runtime's ICU default, so the same two values would order
+ * differently on two machines.
+ */
+function codeUnit(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/**
+ * Newest first, with the id breaking a tie.
+ *
+ * `createdAt` alone is not a total order — two runs started in the same
+ * millisecond are ordinary under a fan-out — so the id is what makes the
+ * listing STABLE across calls rather than merely sorted. Both terms are
+ * REVERSED, which is what makes it newest first.
+ */
 function newestFirst(a: RunRecord, b: RunRecord): number {
-  if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
-  if (a.runId === b.runId) return 0;
-  return a.runId < b.runId ? 1 : -1;
+  return b.createdAt - a.createdAt || codeUnit(b.runId, a.runId);
 }
 
 /**
@@ -139,27 +227,38 @@ export function createMemoryJournal(): JournalStore {
    * suspend, so the saga compensated and deleted that transcript too.
    */
   function onRunSettled(slot: Slot): void {
-    for (const hook of slot.hooks.values()) byToken.delete(hook.token);
+    releaseTokens(slot);
     forgetOldTerminalRuns();
+  }
+
+  /** Give one slot's hook tokens back to the index. */
+  function releaseTokens(slot: Slot): void {
+    for (const hook of slot.hooks.values()) byToken.delete(hook.token);
   }
 
   /**
    * Drop the oldest terminal runs past {@link MAX_TERMINAL_RUNS}.
    *
    * `Map` preserves insertion order, which is start order, so the oldest
-   * terminal runs are simply the first ones the walk meets. Their hook tokens go
-   * with them — `byToken` is the index INTO these slots, so leaving an entry
-   * behind would hold a token against a caller's next run forever, which is the
-   * lifetime half of what the DevKit's `using`-scoped hook used to release.
+   * terminal runs are simply the first ones the walk meets.
+   *
+   * The `releaseTokens` here is a BACKSTOP rather than the release point:
+   * `byToken` is the index INTO these slots, so a dropped slot whose entry
+   * stayed would hold a token against a caller's next run forever — but the one
+   * way a run becomes terminal is `setStatus`, which released a line earlier.
+   * Kept because the cost is a walk of an empty map and the failure it guards is
+   * silent, and shared with `onRunSettled` so the two cannot come apart.
    */
   function forgetOldTerminalRuns(): void {
     const terminal: string[] = [];
     for (const [runId, slot] of runs) {
       if (isTerminalStatus(slot.record.status)) terminal.push(runId);
     }
+    // `slice(0, negative)` counts from the END and clamps at zero, so a store
+    // under the cap drops nothing — the arithmetic is the whole guard.
     for (const runId of terminal.slice(0, terminal.length - MAX_TERMINAL_RUNS)) {
       const slot = runs.get(runId);
-      if (slot) for (const hook of slot.hooks.values()) byToken.delete(hook.token);
+      if (slot) releaseTokens(slot);
       runs.delete(runId);
     }
   }
@@ -220,7 +319,13 @@ export function createMemoryJournal(): JournalStore {
     },
 
     async readSteps(runId: string): Promise<StepEntry[]> {
-      return (slotOf(runId)?.steps ?? []).map((entry) => ({ ...entry }));
+      // Sorted rather than answered in insertion order, because BOTH databases
+      // read the journal back with `order by finished_at, key` and this is the
+      // reference the other two are checked against. Insertion order agrees with
+      // them right up to a same-millisecond tie, which a fan-out produces
+      // routinely. A COPY, so the sort cannot reorder the stored array — that
+      // one is append-only and `appendStep`'s own idempotency reads it.
+      return [...(slotOf(runId)?.steps ?? [])].sort(settledFirst).map((entry) => ({ ...entry }));
     },
 
     async claimAttempt(runId: string, key: string): Promise<number> {
@@ -279,15 +384,29 @@ export function createMemoryJournal(): JournalStore {
           `workflow hook token ${JSON.stringify(token)} is already held by run ${owner.runId}`,
         );
       }
-      const record: HookRecord = { token, delivered: false };
+      // `closed: false` SPELLED OUT, not left absent. The other two backends read
+      // it off a `boolean not null default false` column, so they answer `false`
+      // where this answered `undefined` — invisible to every truthiness test in
+      // the engine and to a `toEqual`, right up until somebody compares against
+      // `false`. It is the field that decides which of two branches a replay
+      // takes, so the reference implementation states it.
+      const record: HookRecord = { token, delivered: false, closed: false };
       slot.hooks.set(key, record);
       byToken.set(token, { runId, key });
       return { ...record };
     },
 
-    async closeHook(runId: string, key: string): Promise<void> {
+    async closeHook(runId: string, key: string): Promise<boolean> {
       const record = slotOf(runId)?.hooks.get(key);
-      if (record) record.closed = true;
+      // Nothing to refuse: a terminal run has already given its tokens back, so
+      // no signal can be taken and the caller's timeout stands.
+      if (!record) return true;
+      // ANSWERED, so the window did not time out — however this walk read the
+      // clock. Refusing the close is what stops it disagreeing with every later
+      // replay, which will read the payload.
+      if (record.delivered) return false;
+      record.closed = true;
+      return true;
     },
 
     async deliverHook(token: string, payload: unknown): Promise<string | undefined> {
@@ -301,6 +420,22 @@ export function createMemoryJournal(): JournalStore {
       record.delivered = true;
       record.payload = payload;
       return owner.runId;
+    },
+
+    async resumableRuns(limit: number): Promise<ResumableRun[]> {
+      const owed: ResumableRun[] = [];
+      for (const [runId, slot] of runs) {
+        if (isTerminalStatus(slot.record.status)) continue;
+        const wakeAt = earliestWake(slot);
+        // A park is not a stall — see the interface. Qualified by the sleep,
+        // so a `waitFor(token, { timeoutMs })` whose deadline was lost is still in.
+        if (wakeAt === undefined && hasOpenHook(slot)) continue;
+        // Two literals rather than a conditional spread: `wakeAt` is ABSENT and
+        // never explicitly `undefined`, which is what makes the three backends
+        // comparable under `toEqual`.
+        owed.push(wakeAt === undefined ? { runId } : { runId, wakeAt });
+      }
+      return owed.sort(soonestFirst).slice(0, limit);
     },
 
     async appendStep(runId: string, entry: StepEntry): Promise<StepEntry> {

@@ -94,14 +94,49 @@ function platformSources(): [path: string, source: string][] {
   );
 }
 
+/**
+ * `aai_platform` FUNCTIONS, which are `aai_platform.<name>` in a source file and
+ * are not tables.
+ *
+ * DECLARED rather than inferred, and the inference is worth ruling out in
+ * writing because it looks like a two-character fix. A trailing `(` does mark a
+ * call — and it equally marks an INSERT column list, `insert into
+ * aai_platform.agents (slug, …)`, so a `(?!\s*\()` lookahead skips real table
+ * references. Measured over this corpus: the extracted set went 15 → 20, because
+ * `[a-z_]+` BACKTRACKS when the lookahead fails and matches a shorter name — it
+ * dropped `sweep_terminal_workflow_runs` as intended and invented `agent`,
+ * `workflow_queu`, `session_slot`, `session_event`, `workflow_upload` and
+ * `sweep_terminal_workflow_run`, every one of which then reports as an
+ * undeclared table. Declaration fails loudly on a new function; inference failed
+ * quietly in the direction that makes this assertion easier to pass.
+ *
+ * Add a new function here, and note the entry is CHECKED below — a name that no
+ * migration declares as a function fails, so this cannot become a place to park
+ * a table somebody did not want to declare.
+ */
+const PLATFORM_FUNCTIONS = new Set(["sweep_terminal_workflow_runs"]);
+
+/**
+ * Every `aai_platform.<table>` one source file queries.
+ *
+ * Split from {@link referencedTables} so the rule can be exercised on a literal:
+ * the corpus version answers a question about the tree and cannot pin what the
+ * scanner CONSIDERS a table.
+ */
+function referencedTablesIn(source: string): Set<string> {
+  const tables = new Set<string>();
+  for (const match of source.matchAll(/aai_platform\.([a-z_]+)/g)) {
+    const table = match[1];
+    if (table && !PLATFORM_FUNCTIONS.has(table)) tables.add(table);
+  }
+  return tables;
+}
+
 /** Every `aai_platform.<table>` the platform's own source queries. */
 function referencedTables(): Set<string> {
   const tables = new Set<string>();
   for (const [, source] of platformSources()) {
-    for (const match of source.matchAll(/aai_platform\.([a-z_]+)/g)) {
-      const table = match[1];
-      if (table) tables.add(table);
-    }
+    for (const table of referencedTablesIn(source)) tables.add(table);
   }
   return tables;
 }
@@ -115,6 +150,36 @@ describe("platform schema migrations", () => {
       (table) => !sql.includes(`create table if not exists aai_platform.${table}`),
     );
     expect(missing).toEqual([]);
+  });
+
+  test("reads a FUNCTION call as a function and an INSERT column list as a table", () => {
+    // The two shapes a `(`-based heuristic cannot tell apart, pinned together
+    // because the fix for one is the bug for the other — see PLATFORM_FUNCTIONS.
+    expect([...referencedTablesIn("select aai_platform.sweep_terminal_workflow_runs()")]).toEqual(
+      [],
+    );
+    expect([
+      ...referencedTablesIn("insert into aai_platform.workflow_runs (slug, run_id) values ($1,$2)"),
+    ]).toEqual(["workflow_runs"]);
+    // No space before the paren either, which is how `agents(slug)` is written
+    // in a few places and is where the backtracking produced `agent`.
+    expect([...referencedTablesIn("insert into aai_platform.agents(slug) values ($1)")]).toEqual([
+      "agents",
+    ]);
+  });
+
+  test("every exempted name is really a FUNCTION some migration declares", () => {
+    // The other half of the exemption: without this, PLATFORM_FUNCTIONS is a way
+    // to silence the gate for a table nobody wanted to declare.
+    const sql = stripSqlComments(migrationSql());
+    for (const name of PLATFORM_FUNCTIONS) {
+      expect
+        .soft(sql, `no migration declares aai_platform.${name} as a function`)
+        .toContain(`create or replace function aai_platform.${name}`);
+      expect
+        .soft(sql, `aai_platform.${name} is also declared as a TABLE`)
+        .not.toContain(`create table if not exists aai_platform.${name}`);
+    }
   });
 
   test("create the schema and the extensions the platform schedules work with", () => {
@@ -335,19 +400,91 @@ describe("platform schema migrations", () => {
     });
   });
 
+  /**
+   * The same ledger, one granularity up: whole SQL OBJECTS that are retired —
+   * present, read and written by nothing — and owed a `drop` in a later
+   * release. The argument is `RETIRED_COLUMNS`' above, unchanged; only the
+   * granularity differs, so this is a sibling rather than a second convention.
+   *
+   * A `drop schema … cascade` beside its own expand is the column case with the
+   * consequence turned up: it destroys the rows at the START of the
+   * push→deploy window, before one new container is up, and a rollback of the
+   * release has nothing left to roll back TO.
+   * `20260901010000_drop_workflow_devkit_schema.sql` therefore RENAMES the
+   * Workflow DevKit's two schemas and leaves its ownership table alone; these
+   * three are what that migration deferred.
+   *
+   * Each entry is checked the same two ways, and `droppedBy` is what makes the
+   * ledger self-clearing: it must NOT appear in the migrations, so the contract
+   * release fails this test until its entry is deleted.
+   */
+  const RETIRED_OBJECTS: {
+    name: string;
+    /** A literal from the migration that put the object in its retired state. */
+    declaredBy: string;
+    /** The contract statement that retires it. Present ⇒ delete this entry. */
+    droppedBy: string;
+    why: string;
+  }[] = [
+    {
+      name: "workflow_retired",
+      declaredBy: "alter schema workflow rename to workflow_retired",
+      droppedBy: "drop schema if exists workflow_retired cascade",
+      why: "the DevKit's six cross-tenant run tables, kept so the rename is reversible",
+    },
+    {
+      name: "workflow_drizzle_retired",
+      declaredBy: "alter schema workflow_drizzle rename to workflow_drizzle_retired",
+      droppedBy: "drop schema if exists workflow_drizzle_retired cascade",
+      why: "the DevKit's own migration bookkeeping, which nothing applies now",
+    },
+    {
+      name: "workflow_run_owner",
+      declaredBy: "create table if not exists aai_platform.workflow_run_owner",
+      droppedBy: "drop table if exists aai_platform.workflow_run_owner",
+      why: "the run→slug mapping; a rollback of the schema rename needs it to say whose runs those are",
+    },
+  ];
+
+  describe.each(RETIRED_OBJECTS)("retired $name", ({ name, declaredBy, droppedBy, why }) => {
+    test(`is still present — drop it and delete this entry (${why})`, () => {
+      const sql = stripSqlComments(migrationSql());
+      // Both halves matter: the first refuses an entry naming an object no
+      // migration ever put here, the second is what the contract release trips.
+      expect(sql, `no migration declares ${name}`).toContain(declaredBy);
+      expect(sql, `${name} is dropped — delete this ledger entry`).not.toContain(droppedBy);
+    });
+
+    test("is named by no platform source file", () => {
+      // Same reasoning as the retired COLUMNS above: a read reintroduced here
+      // is invisible until the drop lands, at which point it fails in
+      // production rather than in CI. Comments are stripped by
+      // `platformSources`, so the modules that explain why this object is gone
+      // do not count as users of it.
+      const offenders = platformSources()
+        .filter(([, source]) => source.includes(name))
+        .map(([file]) => file);
+      expect(offenders).toEqual([]);
+    });
+  });
+
   test("are idempotent, so re-applying is safe", () => {
     // The VENDORED DevKit schema is excluded, and it is the one file whose
     // idempotency is not per-statement. Its DDL is `@workflow/world-postgres`'s
-    // own, copied verbatim by `scripts/sync-workflow-schema.mjs` — rewriting the
-    // statements is exactly what vendoring exists not to do — and it is wrapped
-    // in drizzle's own guard: a `do` block that compares each journal entry's
-    // `when` against the greatest `created_at` in `workflow_drizzle
-    // .workflow_migrations` and executes nothing that is already recorded. That
-    // is the "inside a DO block that checks for itself" exception this test's
-    // comment already names, and it is verified both ways against a real stack —
-    // re-applying over a bootstrapped database wrote no second row, and the
-    // DevKit's own `bootstrap` after this migration applied nothing.
-    // `workflow-schema-gate.test.ts` is what holds that file honest.
+    // own, copied verbatim — rewriting the statements is exactly what vendoring
+    // exists not to do — and it is wrapped in drizzle's own guard: a `do` block
+    // that compares each journal entry's `when` against the greatest
+    // `created_at` in `workflow_drizzle.workflow_migrations` and executes
+    // nothing that is already recorded. That is the "inside a DO block that
+    // checks for itself" exception this test's comment already names, and it is
+    // verified both ways against a real stack — re-applying over a bootstrapped
+    // database wrote no second row, and the DevKit's own `bootstrap` after this
+    // migration applied nothing.
+    //
+    // The copier (`scripts/sync-workflow-schema.mjs`) and the gate that held it
+    // honest (`pnpm check:workflow-schema`, `workflow-schema-gate.test.ts`) are
+    // DELETED with the package they tracked, and the exclusion outlives them:
+    // the file is applied, so its statements are frozen either way.
     const sql = migrationFiles()
       .filter((name) => !name.includes("workflow_devkit_schema"))
       .map((name) => readFileSync(path.join(migrationsDir, name), "utf-8"))

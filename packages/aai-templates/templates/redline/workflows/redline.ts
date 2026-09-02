@@ -16,9 +16,10 @@
  * different thing: `critique` returns a verdict, the body breaks on it, and a
  * replay reads that verdict back out of the journal and takes the same branch.
  * Deciding it any other way — a clock, a random draw, a re-read of something
- * outside the run — would let a replay diverge, and the DevKit correlates
- * journal entries to step calls by issue order, so a divergent branch is a
- * `ReplayDivergenceError` rather than a slightly different essay.
+ * outside the run — would let a replay diverge. A step is identified by its
+ * NAME plus the number of times that name has been reached in this run, so a
+ * branch that takes a different path on replay reads a journal entry that was
+ * written for a different call, rather than producing a slightly different essay.
  *
  * ## Why durability earns its keep here, specifically
  *
@@ -99,7 +100,7 @@ export interface Round {
  */
 export async function redlineFlow(input: RedlineInput, ctx: WorkflowCtx) {
   // The three `maxAttempts` below were `maxRetries` properties on the functions
-  // (5, 3, 3 — retries AFTER the first attempt, so 6, 4, 4 in all). The policy
+  // (3, 5, 3 — retries AFTER the first attempt, so 4, 6, 4 in all). The policy
   // is an argument to the CALL now, which is where it belongs: the same function
   // called from two places may deserve different patience.
   let draft = await ctx.step("writeDraft", () => writeDraft(input), { maxAttempts: 4 });

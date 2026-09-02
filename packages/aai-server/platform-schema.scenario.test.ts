@@ -234,7 +234,7 @@ describeWithStack("the platform migration applies and the stores work against it
       //
       // Tenancy is the leading column of every primary key, so a guessed run id
       // reaches nothing — same design as `session_slots` above, and the reason
-      // the `workflow_run_owner` mapping table, now dropped, had to exist.
+      // the `workflow_run_owner` mapping table below had to exist at all.
       "workflow_attempts",
       "workflow_hooks",
       // The platform-owned durable-workflow QUEUE
@@ -242,6 +242,16 @@ describeWithStack("the platform migration applies and the stores work against it
       // SCHEDULE: that guest's own timers die with a sandbox that self-exits, so
       // a due message here is what boots it and re-walks the journal above.
       "workflow_queue",
+      // RETIRED, and still here on purpose: which agent owns a durable run
+      // (`20260827010000_workflow_run_owner.sql`), scoping every storage read
+      // back when the DevKit's tenant-column-less world ran on this database.
+      // Nothing reads or writes it now, and dropping it is owed to a LATER
+      // release — `20260901010000_drop_workflow_devkit_schema.sql` renames that
+      // world's schemas rather than dropping them, and a rollback of the rename
+      // needs this table to say whose runs those rows are. The entry in
+      // `platform-schema.test.ts`'s retired-object ledger is what fails if the
+      // drop is forgotten; delete this line in the same commit as that drop.
+      "workflow_run_owner",
       // The journal's own three remaining tables, alphabetically after the owner
       // row — see the block above `workflow_attempts` for the whole account.
       "workflow_runs",

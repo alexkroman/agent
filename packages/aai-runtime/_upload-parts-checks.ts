@@ -2,12 +2,12 @@
 /**
  * What a parts upload's own DECLARATION permits, checked against one window.
  *
- * Two pure functions, both answering the same question from different ends: a
- * `beginParts` wrote a total, and a window either fits inside it or does not. They
- * are here rather than in `_upload-store-blobs.ts` because that file crossed the
- * 500-line cap, and this is the seam it had: everything else in it closes over the
- * store's `records`, `blobs` and lock, while these two take a record and a number
- * and return a value.
+ * Three pure functions, all answering the same question from different ends: what
+ * does this upload's own record permit — a total a window has to fit inside, and a
+ * `complete` that closes it to further windows altogether. They are here rather
+ * than in `_upload-store-blobs.ts` because that file crossed the 500-line cap, and
+ * this is the seam it had: everything else in it closes over the store's `records`,
+ * `blobs` and lock, while these take a record and a number and return a value.
  *
  * **The reason they are separable at all is that a declared total is IMMUTABLE.**
  * `beginParts` writes `expected` and nothing ever rewrites it — the platform's
@@ -22,7 +22,7 @@
 
 import type { UploadPart } from "./_upload-blobs.ts";
 import type { UploadRecord } from "./_upload-records.ts";
-import { UploadPartError } from "./_upload-store.ts";
+import { UploadCompleteError, UploadPartError } from "./_upload-store.ts";
 
 /**
  * One probed window, or the reason it may not be recorded.
@@ -63,6 +63,25 @@ export function measuredPart(
     );
   }
   return { at: offset, bytes };
+}
+
+/**
+ * Refuse a write to an upload that is already FINISHED.
+ *
+ * Here beside the other two because it answers the same question from the same
+ * input — what does this upload's own record permit — and because both writes need
+ * it: `writePart` before it puts a window, and `recordParts` before it merges one.
+ *
+ * A completed upload's `complete` is as immutable as its `expected`: `stream` sets
+ * it when a body ends and a parts upload's prefix reaching its declared total sets
+ * it, and nothing ever unsets it. So a caller holding the record may check this from
+ * the copy it has — the same reason {@link declaredTotal} takes a record rather than
+ * fetching one.
+ *
+ * @throws {UploadCompleteError} which the route answers as 409.
+ */
+export function assertUploadOpen(id: string, held: UploadRecord): void {
+  if (held.complete) throw new UploadCompleteError(id);
 }
 
 export function declaredTotal(id: string, held: UploadRecord, offset: number): number {

@@ -43,7 +43,14 @@ export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): T
       type: "function",
       name,
       description: def.description,
-      parameters: toToolJsonSchema(def.inputSchema ?? EMPTY_PARAMS),
+      // `"input"`, not the conversion default: this document is part of the
+      // prompt a model is given, describing what it SENDS. A `.default()` field
+      // is one the executor fills in when the call omits it (see
+      // `executeToolCall`, which validates through this same schema), so
+      // advertising it as `required` tells the model to ask the user for a
+      // value the tool already has. See `toToolJsonSchema`'s doc for the other
+      // properties the direction moves.
+      parameters: toToolJsonSchema(def.inputSchema ?? EMPTY_PARAMS, "input"),
     };
   });
 }

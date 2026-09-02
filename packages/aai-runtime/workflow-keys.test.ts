@@ -91,8 +91,8 @@ describe("the Postgres key store", () => {
       store.record("digest", "b", "wrun_2"),
       store.lookup("digest", "a", 10),
     ]);
-    expect(db.sql.filter((s: string) => s.includes("create table"))).toHaveLength(1);
-    expect(db.sql.filter((s: string) => s.includes("create index"))).toHaveLength(1);
+    expect(db.sql.filter((s) => s.includes("create table"))).toHaveLength(1);
+    expect(db.sql.filter((s) => s.includes("create index"))).toHaveLength(1);
   });
 
   test("re-recording one run is a no-op rather than an error", async () => {

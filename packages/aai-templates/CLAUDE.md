@@ -212,12 +212,12 @@ once, and the templates are now their reference use:
 | `stepGenerateJson` + `stripJsonFence` | `research-workflow` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one), `redline` (the critic's findings) and `recap-workflow` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
 | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-workflow`, `link-digest`, `redline` and `recap-workflow` specs — the bare `stubGateway` under it is exercised by no template and is an allowlist entry now that `/testing` is in the gate's scope — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
 | `toolOf` / `runTool` / `toolRunner` (`@alexkroman1/aai/testing`) | the TEN specs driving tools through the agent's own table, each opening `const run = toolRunner(agentDef);`. `args` and `ctx` are both optional (66 `{}` placeholders are gone). **The advice that sat here — write the NARROWEST wrapper your specs need — is RETIRED: it is what produced the drift**, measured on `toolRunner` |
-| `withDiscoveredTools` (`@alexkroman1/aai/testing`) | the same four plus `retail` — the five whose tools are FILES, so `def.tools` is empty until something resolves `tools/`. See "A `tools/` file IS the tool" below for why the glob is written per template |
+| `deployedAgent` (`@alexkroman1/aai/testing`) | `retail`'s `registry.test.ts` ALONE. Every other spec imports `virtual:aai/agent`, which the `aaiAgentPlugin()` in this package's `vitest.config.ts` serves — the same lowering, resolved against the importing file, so a spec needs no glob of its own. A tool is a FILE, so `def.tools` is empty until one of the two runs. `retail` keeps the explicit call because the tool REGISTRY is that file's subject and because it is the worked example for a runner that is not vitest. See "A `tools/` file IS the tool" below |
 | `stubGenerate` (`@alexkroman1/aai/testing`) | `support-line` (five nodes over one binary-score schema) and `plan-and-execute` (planner, executor, replanner) — the two whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
 | `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-workflow` and `recap-workflow` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
 | `mockWorkflows` (`@alexkroman1/aai/testing/vitest`) | the same two, and it IS their `stubWorkflows` — fifteen lines apiece, byte-identical apart from the name in `listing`, now one line each. On `/vitest` because `vi.fn` is its CONTENT |
-| `mapConcurrent`, `emit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/step`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That subpath used to be outside the coverage gate, so an unexercised step export was caught by nothing; the gate derives its scope now |
-| `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-workflow`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-and-execute`, from an ordinary tool body, which is the case the module was published for |
+| `mapConcurrent`, `emit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/step`, NOT the root: that barrel is the step vocabulary and is zero-zod by rule, where the root barrel drags the whole authoring graph in behind it. That subpath used to be outside the coverage gate, so an unexercised step export was caught by nothing; the gate derives its scope now |
+| `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-workflow`, from inside a step body — the demonstration that a step is not a lesser environment than a tool body; `plan-and-execute`, from an ordinary tool body, which is the case the module was published for |
 | `stepSpeak` + `writeUpload` + `WorkflowApi.download` | `spoken-summary` ONLY, and it is the whole reason that template exists — the audio round trip a workflow could not make before. See "A step that SPEAKS returns an id" below |
 | `stepTranscribeUpload` / `Submit` / `Poll`, and `stepTranscribeSync` | all three templates that transcribe, and the clearest case yet of the extract-on-the-third-copy rule above — `spoken-summary` and `transcription-workflow` had the async API's ~200 lines EACH, reworded and identical in behaviour, and `recap-workflow` a third variant. `transcription-workflow` is the reference for both halves (`batch.ts` for the job API, `sync-api.ts` for the one-request endpoint it fans out over); `recap-workflow` converts its SUBMIT only, and says in place why its poll must not follow — see "A transcription step is the SDK's; the boundaries are the template's" below |
 | `runFfmpeg` / `probeMedia` / `wavEncodeArgs` (`@alexkroman1/aai/ffmpeg`) | `call-audit` — five invocations, every argv built by a pure function in `workflows/media.ts`; `transcription-workflow`'s `normalize.ts` for the smallest possible use (probe, convert, store). See "ffmpeg is what lets a desk cut a recording where a HUMAN would" below |
@@ -225,7 +225,7 @@ once, and the templates are now their reference use:
 | `throwFfmpegStepError` (`@alexkroman1/aai/step-errors`) | `call-audit` and `transcription-workflow`. **Nothing in a template names `isFfmpegError` or `FfmpegError` any more**, so both sit in `template-api-allowlist.json` deliberately: the SDK recognises the error STRUCTURALLY and makes the `exit`/`missing-binary` → fatal, `timeout`/`aborted` → retry call itself. Its inverted default is pinned in `sdk/step-errors.test.ts`, including `call-audit`'s case: a cause that is not an ffmpeg failure at all is fatal |
 | `withTempDir` / `readUploadToFile` / `writeUploadFromFile` (`@alexkroman1/aai/step-files`) | `call-audit` and `transcription-workflow`, which between them had written the temp dir, the windowed read and the `.slice()`-ing generator FOUR times, with an identical warning that the `.slice()` was load-bearing. `temp-media.ts` (138 lines) is gone |
 | `formatBytes` / `formatDuration` / `countWords` / `plural` (`@alexkroman1/aai/utils`) | seven templates, on BOTH sides of the bundle boundary — a step's `report()` and the page rendering the same run. They existed 4, 5, 4 and 17 times, and the duplication was a live bug: `call-audit` printed one recording as `1:04:09` from `workflows/media.ts` and `64:09` from `client.tsx`, and `transcription-workflow` had three copies of the same disagreement — one inside `workflows/stitch.ts`, the module that exists so the run and the page cannot drift |
-| `slack` / `sendToChannel` (`@alexkroman1/aai/channels`) | `podcast-digest`, which is where the concept came from. It carried the whole third-party contract — Slack's two webhook URLs and the branch between them, Block Kit assembly, mrkdwn escaping, the 4xx/5xx split and the advice each refusal deserves — and every one of those rules is about SLACK rather than about podcasts. What is left in `workflows/slack.ts` is the digest as a `ChannelMessage` and the `"use step"` wrapper, which stays because the DevKit's builder only rewrites bodies it finds in a project's `workflows/` directory. `isSlackWebhookUrl` is imported by `agent.ts` for the same schema refinement as before |
+| `slack` / `sendToChannel` (`@alexkroman1/aai/channels`) | `podcast-digest`, which is where the concept came from. It carried the whole third-party contract — Slack's two webhook URLs and the branch between them, Block Kit assembly, mrkdwn escaping, the 4xx/5xx split and the advice each refusal deserves — and every one of those rules is about SLACK rather than about podcasts. What is left in `workflows/slack.ts` is the digest as a `ChannelMessage` and the one function `digest.ts` reaches through `ctx.step("postDigest", …)`. `isSlackWebhookUrl` is imported by `agent.ts` for the same schema refinement as before |
 | `decodeHtmlEntities` (`@alexkroman1/aai/utils`) | `link-digest` (as `decodeEntities`) and `podcast-digest` (as `decodeXml`) — one byte-identical body under two names, each arguing for the ORDERING in its own comment, which is the tell that the ordering was the whole function. Tag stripping did NOT move |
 | `WorkflowInputOf` / `WorkflowRunOf` / `lastLine` | `podcast-digest`, `call-audit` and `spoken-summary` for the input type (see below — it obliges an annotation on the def); `research-workflow` and `recap-workflow` for the other two, each dropping an eight-line `streamTail`-then-`stream` dance and the comment warning that reading a stream with nothing in it waits forever |
 | `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails. `stubUploads` answers `{ restore, writes, read }`, so a write is assertable without round-tripping through the seam that wrote it |
@@ -434,9 +434,9 @@ It is also the template that shows what a scaffolded project may DEPEND on. The
 studio app it came from imported `spotify-uri` and `@extractus/feed-extractor`;
 neither is in `scaffold/package.json`, so neither could ship. The first became
 six lines of `URL` parsing and the second was already dead code. A template may
-import the SDK, `workflow`, `zod` and React — anything else has to earn a place
-in the scaffold manifest first, or the starter fails to build the moment
-somebody runs it.
+import what `scaffold/package.json` declares — the three SDK packages, `zod`,
+`xstate` and React — and anything else has to earn a place in that manifest
+first, or the starter fails to build the moment somebody runs it.
 
 ## A step that SPEAKS returns an id
 
@@ -572,45 +572,34 @@ included. `transcribeStream` still refuses, and has to: it cuts while the bytes
 are still arriving, and a partial file is not something a decoder can be pointed
 at.
 
-### A `workflows/` module keeps every MODULE-SCOPE import in the workflow bundle
+### A `workflows/` module may hold a Node-only import at module scope
 
-Only a `"use step"` BODY is removed by the WDK builder — the transform's whole
-point is to leave a stub that enqueues. An import nothing outside a step body
-names goes with the body; one a SURVIVING top-level binding still names does
-not, and rides into a bundle compiled as a `node:vm` Script with no `require`.
-The symptom is a `ReferenceError: require is not defined` at REPLAY, thrown from
-generated code inside the SDK with nothing pointing back at the import that
-caused it, so it reads as a broken framework rather than a misplaced import —
-and it is invisible until the workflow runs: the bundle builds, the types check,
-and `aai dev` may serve the route.
+That rule is RETIRED, and this is the account of what it cost.
 
-**This is a rule about REFERENCES, not about import statements.**
+`packages/aai/CLAUDE.md` points here for the two templates that paid for getting
+the old rule wrong, so the account stays even though the rule does not.
+
+The Workflow DevKit compiled a `workflows/` directory into a second artifact run
+as a `node:vm` `Script` with no `require`, so a Node-reaching import that any
+SURVIVING top-level binding still named rode into that VM and died at REPLAY
+with `ReferenceError: require is not defined` — from generated code inside the
+SDK, with nothing pointing back at the import. Both ffmpeg templates shipped
+broken this way, each carrying a one-function `workflows/ffmpeg-verdict.ts`
+whose only job was to keep a module-scope `isFfmpegError` out of the bundle.
+Both built, type-checked, passed their specs, deployed, and failed EVERY run.
+There is no second artifact now, so both boundary files dissolved and
 `call-audit/workflows/ingest.ts` holds `node:fs/promises`,
-`@alexkroman1/aai/ffmpeg` and `@alexkroman1/aai/step-files` at module scope and
-is correct, because every name they bind is used only inside `ingestRecording`'s
-body — the shape `host/step-files.ts`'s own module doc demonstrates. Verify it
-mechanically: the test is not "does this file spawn", it is "does anything the
-transform KEEPS name it" — an exported helper, a module constant, a default
-argument, and the usual reason a helper is exported is a spec importing it.
+`@alexkroman1/aai/ffmpeg` and `@alexkroman1/aai/step-files` at module scope.
 
-Both ffmpeg templates shipped broken this way and paid the full price: each
-carried a one-function `workflows/ffmpeg-verdict.ts` whose only job was to keep
-a module-scope `isFfmpegError` — and therefore `@alexkroman1/aai/ffmpeg`, which
-spawns a child process — out of the bundle. Both built, type-checked, passed
-their specs, deployed, and failed EVERY run at replay.
-`throwFfmpegStepError` reaches no `node:` builtin at all, so both boundary files
-dissolved. Reach for a boundary module only when a name you must hold at module
-scope is itself node-reaching.
-
-**In-tree this failed LOUDLY and in production it did not**, because the WDK's
-detector needs a first-party import line and pnpm links the workspace SDK. The
-gate that catches both is `aai-cli`'s `template-workflows.test.ts`, over the
-BUILT artifact — see "And the FLOW bundle may `require` NOTHING" in
-`packages/aai-cli/CLAUDE.md`.
+**What generalizes is the failure SHAPE.** It did not reproduce in-tree — pnpm
+links the workspace SDK and `@dev/source` resolves it to TypeScript — so every
+gate short of a real build was green while every deployed run failed. When a
+rule depends on how a project's dependencies were INSTALLED, the in-tree run is
+not evidence.
 
 ### A body that names `WorkflowInputOf` obliges the DEF to carry a type
 
-A `"use workflow"` body should take `WorkflowInputOf<typeof theDef>` —
+A workflow body should take `WorkflowInputOf<typeof theDef>` —
 `WorkflowBody` is contravariant, so a body restating a WIDER shape is assignable
 and nothing warns, which is how `podcast-digest` came to re-implement six schema
 `.default()`s with `??`. But **the obvious spelling does not compile**:
@@ -652,19 +641,18 @@ classification. `spoken-summary` and `transcription-workflow` had the SAME ~200
 lines, reworded, drifting at the edges.
 
 **What did NOT move is the step boundaries, and that is structural rather than
-tidy.** The WDK builder transforms exactly the files under a project's
-`workflows/` directory, so a `"use step"` shipped inside the SDK would be
-scanned by nothing, transformed into nothing, and would run inline as an
-ordinary function with no journal and no retry — with no symptom saying so. So
-the SDK owns what happens INSIDE a step and the template owns which steps exist,
-which is the same thing as owning what gets journaled and what a retry repeats.
-Each template's step is now three lines: a `report` and one
-`stepTranscribe*Classified` call.
+tidy.** A step is whatever a BODY wraps in `ctx.step(name, fn)`, so a step
+shipped inside the SDK is a contradiction: nothing there holds a `ctx`, and an
+SDK function called directly from a body would run inline with no journal entry
+and no retry, with no symptom saying so. The SDK owns what happens INSIDE a step
+and the template owns which steps exist, which is the same thing as owning what
+gets journaled and what a retry repeats. Each template's step body is now three
+lines: a `report` and one `stepTranscribe*Classified` call.
 
 Three things the conversion settled, each worth knowing before the next one:
 
 - **The upload/submit split survives, because it was paid for.** Folding them
-  into one step made the DevKit re-upload 24 MB on all five retries of a
+  into one step made the engine re-upload 24 MB on all five retries of a
   deprecated JSON field. That measurement is a property of the BOUNDARY, so it
   stays in the templates and in the SDK's module doc rather than in one of them.
 - **Polling READS.** Both templates polled `GET /v2/transcript/:id` for a status
@@ -674,29 +662,30 @@ Three things the conversion settled, each worth knowing before the next one:
   IS the result. Four steps became three.
 - **`recap-workflow` converts its SUBMIT and deliberately not its POLL.** Its
   `checkTranscript` returns the provider's status as a VALUE — read by the Query
-  port (`recap_status`) while the run is still going, and branched on by the saga
-  to unwind the compensation stack — where `stepTranscribePoll` answers `done`
-  and THROWS on a job the provider gave up on. That state machine is the
-  template's whole subject, so converting it would trade the thing being
-  demonstrated for a throw. The module says so in place, because the next reader
-  will otherwise finish the job.
+  port (`recap_status`) mid-run and branched on by the saga — where
+  `stepTranscribePoll` answers `done` and THROWS on a job the provider gave up
+  on. That state machine is the template's whole subject, so converting it would
+  trade the thing being demonstrated for a throw. The module says so in place,
+  because the next reader will otherwise finish the job.
 
 **A provider refusal is where `TranscribeError` earns its keep.** It carries
 `retryable`/`retryAfter` the way `StepGenerateError` does and `toStepError` reads
 both — which is the only way a failed job or a recording with no speech can be
 TERMINAL, since either arrives with a 200 and no status to judge.
-`stepTranscribe*Classified` is what turns that into the DevKit's verdict, and it
+`stepTranscribe*Classified` is what turns that into the engine's verdict, and it
 is what `podcast-digest`'s two hand-written
 `err instanceof TranscribeError && err.retryable` checks were missing —
 both dropped `retryAfter`.
 
-**`research-workflow` is the workflow template, and its shape is dictated by the
-Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies
-live in `workflows/research.ts` because the WDK builder scans that directory at
-build time and rewrites what it finds; a body written in `agent.ts` is never
-transformed, so it runs inline once with no durability and nothing saying so.
-`agent.ts` holds only the declaration (`workflow({ description, input, run })`)
-and the two tools that start and read runs.
+**`research-workflow` is the workflow template, and the split between its two
+files is a CONVENTION now rather than a build requirement.** The body and the
+functions it steps through live in `workflows/research.ts`; `agent.ts` holds the
+declaration (`workflow({ description, input, run })`) and nothing else about the
+run. That directory used to be load-bearing — a body written in `agent.ts` was
+never transformed and ran inline once, undurably, with nothing saying so. The
+engine takes the body from the declaration wherever it was written, so what the
+split buys now is that `agent.ts` reads as a declaration and a spec can import
+the steps alone.
 
 **Its research is real, and it really searches the web.** Five stages, adapted
 from LangChain's `open_deep_research` (MIT — `workflows/prompts.ts` carries the
@@ -714,10 +703,10 @@ determinism rule.
 `investigate` imports `webSearch` and `visitWebpage` from
 `@alexkroman1/aai/tools` — the same implementations behind the model-facing
 builtins, with the same URL screening, redirect re-validation and size caps —
-and runs a bounded search/read/stop loop on them. A step artifact bundles
-everything it imports, so anything a tool body can reach a step can reach; what
-it does NOT get is the `ToolContext`, which is why the model call is
-`stepGenerate` and the key comes from `requireStepEnv`. Before this the
+and runs a bounded search/read/stop loop on them. A step is ordinary code in the
+agent's own bundle, so anything a tool body can reach a step can reach; what it
+does NOT get is the `ToolContext`, which is why the model call is `stepGenerate`
+and the key comes from `requireStepEnv`. Before this the
 template's "research" was three model calls asking a model what it already
 believed, which is the thing deep research exists not to be.
 
@@ -744,19 +733,12 @@ of a summary is how a long research pass ends in a confident, sourceless
 paragraph.
 
 Its spec stubs `ctx.workflows` for the TOOLS rather than driving a real client,
-which is the only honest option there: the real client needs a WDK world, and the
-bodies are only durable after the build has transformed them. The STEPS are
-driven directly against a stubbed `fetch`, because imported through vitest with
-no bundler in the path a `"use step"` function is an ordinary async function.
-
-That is also why **`workflow()` does not check for the compiler's
-`workflowId`** — `templates.test.ts` imports every
-`agent.ts` through vitest with no bundler in the path, so a declaration-time
-throw made this template unimportable by its own spec. The check lives at
-`ctx.workflows.start`, where the id is actually needed.
-
-Note the template needs `workflow` as a devDependency of THIS package to
-resolve at test time; a scaffolded project gets it as a real dependency.
+and drives the STEPS directly against a stubbed `fetch` — they are ordinary
+exported async functions. The BODY is driven with `createWorkflowCtx`
+(`@alexkroman1/aai/testing`), which records the steps it was asked for and
+answers the waits; what that cannot show is durability, since nothing is
+journaled. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that runs a
+real engine.
 
 **A search that was REFUSED is not a web with nothing in it, and both templates
 that search got that wrong.** `webSearch`/`visitWebpage`/`fetchJson`
@@ -806,15 +788,13 @@ journal earns its keep on: a run that dies on segment 27 of 60 resumes having
 replayed 1-26 — not re-downloaded, not re-transcribed, not re-billed — and issues
 only what is missing.
 
-It used to demonstrate the batch shape instead: a run that parked on
-`createWebhook()` and was resumed by the delivery. That is a real and important
-mechanism, and it was demonstrated against a STUB provider that called its own
-webhook back inside the submit step — i.e. the template's whole subject was
-simulated. No template covers `createWebhook()` today — `aai-cli`'s
-`dev-workflow.scenario.test.ts` does, against a real world and a real HTTP
-delivery, which is the only tier that ever could — and a template that simulates
-its own subject is worse than one that leaves the mechanism to the tier that can
-actually exercise it.
+It used to demonstrate the batch shape instead — a run that parked on a webhook
+and was resumed by the delivery — against a STUB provider that called its own
+webhook back inside the submit step, i.e. the template's whole subject was
+simulated. No template covers the webhook waitpoint today; `aai-cli`'s
+`dev-workflow.scenario.test.ts` does, against a real engine and a real HTTP
+delivery, which is the only tier that ever could. A template that simulates its
+own subject is worse than one that leaves the mechanism to that tier.
 
 Three things in it are load-bearing:
 
@@ -845,10 +825,9 @@ Three things in it are load-bearing:
   timestamp and any frame boundary is a clean cut. An MP3 or M4A frame boundary
   cannot be found that way, and finding it means shipping a decoder into a step,
   so an unsupported file fails the run with the `ffmpeg` line that fixes it.
-  `workflows/wav.ts` holds all of that, with no directive in it: the builder
-  scans `workflows/` and transforms only what carries one, so an ordinary module
-  can sit beside the bodies — and everything in it is a pure function of a
-  journaled value, which is what its spec drives.
+  `workflows/wav.ts` holds all of that, and everything in it is a pure function
+  of a journaled value — which is what its spec drives, and why none of it needs
+  to be a step.
 - **Segments OVERLAP, and the merge step is what makes that free.** A cut lands
   mid-word, and the decoder on either side then hears half a word and reports
   something plausible and wrong; two seconds of overlap means both sides hear the
@@ -858,58 +837,34 @@ Three things in it are load-bearing:
   seam repeats a few words, which a reader forgives, while a false one deletes
   speech.
 
-**The DevKit correlates a journal entry to a step call by the ORDER the call was
-ISSUED in**, which is why the fan-out is bounded the way it is. `createUseStep`
-(`@workflow/core/dist/step.js`) stamps each invocation with
-`step_${ctx.generateUlid()}` from a monotonic ULID factory seeded off the run's
-`startedAt` and the VM's replay-stable `Math.random`, so the Nth step call in a
-run gets the Nth id on the first execution and on every replay. The step's NAME
-is only cross-checked against that id, and a mismatch is `ReplayDivergenceError`
-rather than a silent re-run.
+**The fan-out is bounded the way it is because of how a step call finds its
+journal entry**, and the engine's rule is a NAME plus an occurrence count:
+`ctx.step("transcribeSegment", …)` reached for the fourth time in a walk reads
+`transcribeSegment#3`. Nothing cross-checks that the fourth call is the same
+WORK it was last time, so a body whose call order changes between walks does not
+fail — it silently reads another item's result. **`sdk/map-concurrent.ts`'s
+module doc is the statement of that rule and of what it does and does not
+require**; do not re-derive it here. `mapConcurrent` (`@alexkroman1/aai/step`,
+once `mapInBatches` — that alias is gone) is the window every fan-out in these
+templates goes through, and `transcription-workflow` measured the barrier it
+replaced at 6.7x max/p50.
 
-What follows is narrower than it looks, and this guide had it too wide for a
-long time. The requirement is that **the SEQUENCE OF ITEMS whose calls are
-issued is a pure function of the list** — not that no call may be issued after
-another settles, which is what an ordinary `await`-then-call body does. So
-`Promise.all(batch.map(step))` is safe, and so is a WINDOW over a shared cursor:
-the cursor only ever hands out the next index, so the Nth call issued is item
-N-1 however the calls settle, and what completion order decides is which slot
-runs which item. This guide (and the primitive's own doc) used to say a pool
-was unsafe because "the issue order tracks completion order"; it does not,
-because the item choice is the cursor's and the cursor is monotonic. What is
-genuinely unavailable is a caller-supplied step key — `ctx.step("chunk-3", …)`,
-the one piece of the pre-DevKit engine's API that did not survive the port.
+What belongs to the TEMPLATES is the two shapes that satisfy the rule and are
+easy to get wrong:
 
-**That rule is a primitive rather than a loop in a template.** `mapConcurrent`
-(`@alexkroman1/aai/step`, once `mapInBatches` — that alias is gone) is the
-window; its module doc carries the argument, and
-`sdk/map-concurrent.test.ts` asserts the issue order directly at every width and
-under reversed and shuffled settle orders. Dropping the barrier is worth real
-time on a wide fan-out: a batch was only as fast as its slowest member and a run
-was the sum of those, and a `503` carrying `retry-after: 1` is exactly such a
-straggler (`transcription-workflow` measured max/p50 at 6.7x).
+- **The callback issues one step call per item, synchronously.** A callback that
+  awaits something before its step call, or issues two in a row, interleaves with
+  its siblings by completion order. A body needing two steps per item runs them
+  as two fan-outs.
+- **The fan-out's WIDTH is derived from a STEP'S RESULT** — the parsed header —
+  and never re-probed by the body. A replay has to produce the same list in the
+  same order, and a URL whose content changed underneath the run would otherwise
+  hand the Nth journal entry to a different call.
 
-The rule that IS load-bearing whatever the shape: **the callback must issue the
-same sequence of step calls for every item**, in practice one, synchronously. A
-callback that awaits something first, or issues two steps in a row, interleaves
-with its siblings by completion order — under a window and under batches alike,
-since within one batch the second round of calls goes out as the first round
-settles. A body needing two steps per item runs them as two fan-outs.
-
-Note what makes passing a step to a helper legal at all — the WDK transform
-rewrites a step's DECLARATION into a dispatcher rather than rewriting call
-sites, so a `"use step"` function handed to another module as a callback still
-dispatches a real step. That is a claim about the transform, so it is tested
-against a real one: `aai-cli`'s `dev-workflow.scenario.test.ts` fans a fixture
-flow out through `mapConcurrent`, nine items through a window of three with
-shuffled durations. That tier proves the steps are REAL; it does not prove the
-issue-order property, because a healthy run is not a resume — which is why the
-unit spec asserts it directly.
-
-The fan-out's WIDTH is derived from a STEP'S RESULT (the parsed header), not
-re-probed by the body — the ordinary determinism rule: a replay has to produce
-the same list in the same order, and a URL whose content changed underneath the
-run would otherwise hand the Nth journal entry to a different call.
+`aai-cli`'s `dev-workflow.scenario.test.ts` fans a fixture flow out through
+`mapConcurrent`, nine items through a window of three with shuffled durations.
+That tier proves the steps are REAL; the issue-order property is asserted
+directly in `sdk/map-concurrent.test.ts`, because a healthy run is not a resume.
 
 **Its `client.tsx` is the form layer's worked example**, and the split with
 `link-digest` is deliberate: that one shows the primitives raw (a hand-written
@@ -922,12 +877,11 @@ them and the `z.enum` is what makes the second a `<SelectField>`. See "Forms" in
 `packages/aai-ui/CLAUDE.md` for the mixed case.
 
 Its spec exercises the exported STEPS and the pure helpers directly rather than
-the body, which is where the honest line is: imported through vitest with no
-bundler in the path, a `"use step"` function is an ordinary async function and
-its retries, its `FatalError` guards and its HTTP handling are all testable,
-while durability, suspension and replay are not. The spec says so in place,
-because a body test that looked like a durability test would be the worse
-failure. The WAV half carries its own weight there: a cut that lands mid-frame,
+the body, which is where the honest line is: a step function is ordinary async
+code, so its `FatalError` guards and its HTTP handling are all testable, while
+durability, suspension and replay are not. The spec says so in place, because a
+body test that looked like a durability test would be the worse failure. The
+WAV half carries its own weight there: a cut that lands mid-frame,
 or an off-by-one in the RIFF chunk walk, produces audio the decoder happily
 transcribes into confident nonsense rather than anything that fails.
 
@@ -1061,8 +1015,10 @@ are worth reading for, and neither exists elsewhere in `templates/`:
   derives its fan-out's WIDTH from a step's result; this derives a LOOP EXIT from
   one. `critiqueDraft` returns `ship` or `revise`, the body breaks on it, and a
   replay reads that verdict back out of the journal and takes the same branch —
-  where a clock, a random draw or a re-read of anything outside the run would let
-  a replay diverge into a `ReplayDivergenceError`. Their `should_continue` stops
+  where a clock, a random draw or a re-read of anything outside the run lets a
+  replay take a DIFFERENT branch, which nothing detects: a step call that lands
+  in a different position simply reads the entry that position holds. Their
+  `should_continue` stops
   on a message COUNT, which spends the same money on a draft that was already
   good; letting the critic stop the loop is the one real addition, and it is
   possible only because the decision is a step result.
@@ -1132,14 +1088,13 @@ recording store; the tool still accepts a URL when one is somehow available.
 **This template is why the SDK grew `ctx.workflows.signal()`**, and that is the
 argument for porting from another engine at all: `expense` is the most
 voice-native sample Temporal ships — a run that waits for a person to say yes —
-and writing it here found a hole rather than a workaround. The DevKit's only
-reachable waitpoint was `createWebhook()`, whose URL is minted for a THIRD PARTY
-with a callback to make; the caller is not that. `wakeUp` is not it either — it
-ends a `sleep`, where a signal carries a payload, and a body that races a hook
-against a `sleep` needs both and means different things by them. The method's
-own doc carries the token rules; `workflows/tokens.ts` is this template's one
-derivation of one, and the reason it is a shared function rather than a template
-literal typed twice.
+and writing it here found a hole rather than a workaround. The only reachable
+waitpoint then was a webhook, whose URL is minted for a THIRD PARTY with a
+callback to make; the caller is not that. `wakeUp` is not it either — it ends a
+`sleep`, where a signal carries a payload, and a body waiting for a person needs
+both and means different things by them. The method's own doc carries the token
+rules; `workflows/tokens.ts` is this template's one derivation of one, and the
+reason it is a shared function rather than a template literal typed twice.
 
 **One thing still does NOT port, and saying so is the point of having ported the
 rest.** Cancellation is not cooperative: Temporal delivers cancellation INTO the
@@ -1153,83 +1108,67 @@ template deliberately stops at ONE hook, because racing a stop into every wait i
 a second lesson and would cost this one its shape.
 
 Its spec runs three tiers and is explicit about which one proves what: the tools
-against a stubbed `ctx.workflows`, the steps directly, and — new here — the
-body's HELPERS (`awaitTranscript`, `compensate`, `askWhetherToKeep`) with `sleep`
-and `createHook` stubbed via `importActual` plus two overrides. That third tier
-asserts ORDERING and BRANCHING, which is ordinary logic worth pinning (the poll's
-exit conditions, the unwind's direction, that a failing undo does not strand the
-ones behind it, and the gate's three outcomes with its safe default), and asserts
-nothing about durability. `recapFlow` itself is still not driven, for the reason
-every other workflow template gives.
+against a stubbed `ctx.workflows`, the steps directly, and the body's HELPERS
+(`awaitTranscript`, `compensate`, `askWhetherToKeep`) against `createWorkflowCtx`
+(`@alexkroman1/aai/testing`). That third tier asserts ORDERING and BRANCHING,
+which is ordinary logic worth pinning (the poll's exit conditions, the unwind's
+direction, that a failing undo does not strand the ones behind it, and the
+gate's three outcomes with its safe default), and asserts nothing about
+durability. `recapFlow` itself is still not driven, for the reason every other
+workflow template gives.
 
-Two mechanical notes on stubbing a hook, both learned by getting them wrong. The
-fake is built by hanging the hook's members on a REAL promise
-(`Object.assign(settled, { token, getConflict, … })`) rather than by writing a
-`then` property — a `Hook` IS a thenable, and a hand-written `then` is both a
-biome finding (`noThenProperty`) and a worse model of the thing. And the
-window's `sleep` must NOT resolve in the tests that exercise an answer: with both
-settled, which one `Promise.race` picks comes down to microtask order rather than
-to the branch under test, so the mocked `sleep` returns a never-resolving promise
-except in the timeout case.
+**That tier is forty lines shorter than it was.** The gate used to be a hook
+raced against a `sleep`, so a spec had to mock both, hand-build a thenable, and
+make the `sleep` never resolve — otherwise which side of the `Promise.race` won
+came down to microtask order rather than to the branch under test.
+`ctx.waitFor(token, { timeoutMs })` is one call, so an answer is a `hooks` entry
+on `createWorkflowCtx` and the no-answer branch is its absence. The template's
+comments record the other half, which is a real API improvement rather than a
+tidier test: the old hook registered nothing until the workflow suspended, so an
+answer sent early was told "nobody is listening" and the body had to force
+registration first. `ctx.waitFor` registers the token as part of waiting.
 
 ## A step can authenticate now, so no template's I/O is a fixture
 
 This guide used to say the opposite, and it was the reason all three workflow
-templates returned hard-coded strings: a `"use step"` function is bundled and
-dispatched separately from the agent bundle and is handed no `ToolContext`, so
-nothing in one could reach a credential. Two SDK exports close it, both on
-`@alexkroman1/aai/step`:
+templates returned hard-coded strings: a step body is handed no `ToolContext`,
+so nothing in one could reach a credential. Three exports on
+`@alexkroman1/aai/step` close it, and each module's own doc carries its
+mechanism — what belongs here is which duplication it replaced:
 
-- **`stepEnv` / `requireStepEnv`** (`packages/aai/sdk/step-env.ts`) — the agent
-  env, published into the process by whatever is serving the workflow (the guest
-  at bundle load, `aai dev` on every rebuild). The slot is a `Symbol.for` global
-  rather than a module-level `let` precisely because the step bundle carries its
-  own copy of the SDK, so the publisher and the reader are two module instances.
-  Two rules come with it: once an env is published there is no per-key fallback,
-  so what a step can read is exactly what `.env` and `aai secret put` declare;
-  and an UNPUBLISHED slot falls back to `process.env`, which is what keeps an
-  exported step callable from a spec with `vi.stubEnv` — which is how every one
-  of these templates tests its steps.
-- **`stepGenerate`** (`packages/aai/sdk/step-generate.ts`) — `ctx.generate`'s
-  counterpart for a step: one `fetch` to the AssemblyAI LLM Gateway, on the same
-  key and the same default model an agent's own pipeline resolves. It exists
-  because `research-workflow` and `link-digest` had each hand-rolled the same forty
-  lines and had already diverged on two of them (the empty-completion case, and
-  which statuses are worth a retry). It is deliberately not the AI SDK: a step
-  artifact bundles everything but the DevKit, so `ai` plus a provider would be
-  megabytes on every deploy for one chat completion.
-
-- **`stepGenerateJson`** (`packages/aai/sdk/step-generate-json.ts`) — the same
-  call for a stage whose reply is a SHAPE, which is what both LLM templates
-  actually wanted. It unwraps the ```` ```json ```` fence, parses, rejects a
-  non-object and validates against a Standard Schema, and each of those four was
-  re-derived per template — with the fence stripper already DIVERGED (one
+- **`stepEnv` / `requireStepEnv`** — the agent env, published into the process
+  by whatever is serving the workflow. An UNPUBLISHED slot falls back to
+  `process.env`, which is what keeps an exported step callable from a spec with
+  `vi.stubEnv`; that is how every one of these templates tests its steps.
+- **`stepGenerate`** — `research-workflow` and `link-digest` had each hand-rolled
+  the same forty lines and had already diverged on two of them (the
+  empty-completion case, and which statuses are worth a retry).
+- **`stepGenerateJson`** — the same call for a stage whose reply is a SHAPE, with
+  the fence stripper, the parse, the non-object rejection and the Standard Schema
+  validation each re-derived per template, the stripper already DIVERGED (one
   trimmed, one did not). Taking a schema is the point rather than a convenience:
   the predecessor was `askJson<Action>()`, a value the compiler believed and
   nothing checked, so a model answering with a plausible neighbouring shape
-  flowed into the step's logic as if it had obeyed. It stays on the zod-free
-  `/utils` because VALIDATION is a `~standard.validate` call and only JSON Schema
-  CONVERSION needs zod — hence `sdk/standard-schema.ts`, the dependency-free half
-  of `sdk/schema.ts`.
+  flowed into the step's logic as if it had obeyed.
 
-**The retry decision is `@alexkroman1/aai/step-errors`, and it is the one
-subpath that reaches the DevKit.** `StepGenerateError.retryable` and
+**The retry decision is `@alexkroman1/aai/step-errors`, and it is the subpath
+that owns the retry VOCABULARY.** `StepGenerateError.retryable` and
 `isTransientStatus`/`retryAfter` are the SDK deciding; `FatalError` and
-`RetryableError` are what the DevKit READS, and they belong to `workflow`, which
-`/utils` may not import (the CLI's zero-dependency startup path). So the mapping
-between them was left as a snippet in two module docs — and both templates that
-needed it copied the snippet out of the doc, verbatim and character-identical.
-`toStepError` / `throwStepError` / `throwFatalStepError` are that snippet, on a
-subpath of their own so `workflow` is only in the graph of a caller that asked
-for it (and a step artifact externalizes it anyway).
+`RetryableError` are what the engine READS. Both classes used to be the Workflow
+DevKit's, imported from `workflow` — which `/utils` may not, being the CLI's
+zero-dependency startup path — so the mapping between them lived as a snippet in
+two module docs that both templates copied out verbatim.
+`toStepError` / `throwStepError` / `throwFatalStepError` are that snippet, and
+the classes are ours now (`sdk/step-error-classes.ts`).
 
 Three things the templates now demonstrate rather than restate:
 
 - **`toStepError(response, message)`** — the three-way call `transcription-workflow`
   and `link-digest` had hand-written identically. Note the third outcome is not
-  "the DevKit's backoff": a bare `RetryableError` retries in ONE SECOND, which is
-  that class's own default, so a fan-out that all 429s together all asks again a
-  second later. Passing the far side's `Retry-After` is what drains it.
+  "the engine's backoff": a bare `RetryableError` retries in ONE SECOND, which is
+  that class's own default (`DEFAULT_RETRY_DELAY_MS`), so a fan-out that all 429s
+  together all asks again a second later. Passing the far side's `Retry-After`
+  is what drains it.
 - **`toStepError` reads `StepGenerateError.retryAfter`, which THREE of the four
   templates did not.** `research-workflow`, `link-digest` and `transcription-workflow`
   re-threw the error unchanged, so a rate-limited model call fell back to the
@@ -1251,9 +1190,10 @@ rather than naming a call it cannot make.
 
 **`report()` was the one helper copied three times, and it is the SDK's now** —
 `@alexkroman1/aai/step`, used by every workflow template. The objection recorded
-here (it imports `getWritable` from `workflow`, which that subpath may not) was
-answered by the same `Symbol.for` slot `stepEnv` uses: `createServer` publishes
-a reporter and the helper stays dependency-free. What forced the question was
+here (it needed a writable stream out of the workflow engine, which that subpath
+may not import) was answered by the same `Symbol.for` slot `stepEnv` uses:
+`createServer` publishes a reporter and the helper stays dependency-free. What
+forced the question was
 not the duplication but the second reader — a step's narration now also reaches
 the SERVER LOG, with the attempt number appended past the first, so a retrying
 fan-out is legible without a page open. `packages/aai-ui/CLAUDE.md` carries the
@@ -1262,7 +1202,7 @@ argument.
 The same sweep took two more copies with it: `isTransientStatus` (the
 408/429/5xx split each template had spelled out) and `retryAfter`, which is what
 lets a rate-limited step throw `RetryableError` with the delay the provider
-asked for instead of the DevKit's default backoff. `transcription-workflow` and
+asked for instead of that class's one-second default. `transcription-workflow` and
 `link-digest` are the worked examples. Both are now reached THROUGH
 `toStepError` above — the extraction that stopped one function short.
 
@@ -1272,15 +1212,13 @@ written: record the call, answer `{choices:[{message:{content}}]}`, switch on a
 status. It records the `prompt` and `system` separately, which is what the
 hand-rolled `promptOf(calls, n)` reach into `body.messages[n].content` was for.
 
-**The INSTALLATION came out too, and it is what the leftover half taught.** This
-guide used to say the three-line `vi.stubGlobal` wrapper was "the right half to
-leave behind", on the rule that `sdk/testing.ts` carries no test-runner
-dependency. That rule is right and the conclusion was not: four templates then
-wrote the same wrapper, each with the same paragraph explaining why the SDK had
-not. `installStubGateway` lives on **`@alexkroman1/aai/testing/vitest`**, a
-subpath with `vitest` as an OPTIONAL peer, so importing it is what pulls the
-runner. The rule that replaced the precedent — anything that INSTALLS and
-anything that RESTORES belongs on that subpath — is in the root `AGENTS.md`.
+**The INSTALLATION came out too.** This guide used to call the three-line
+`vi.stubGlobal` wrapper "the right half to leave behind", on the rule that
+`sdk/testing.ts` carries no test-runner dependency — and four templates then
+wrote that wrapper, each with the same paragraph explaining why the SDK had not.
+`installStubGateway` is on **`@alexkroman1/aai/testing/vitest`**, where `vitest`
+is an OPTIONAL peer. The rule that replaced the precedent — anything that
+INSTALLS or RESTORES belongs on that subpath — is in the root `AGENTS.md`.
 
 **`link-digest` is the same mechanism at its smallest, and it is the FRONT DOOR
 that separates both of these from `research-workflow`.** That one is a voice agent
@@ -1364,8 +1302,8 @@ Three things the conversion taught, each worth copying into the next one:
 - **A workflow DECLARATION needs a home that is neither half.** `research-workflow`
   and `recap-workflow` reach a run by passing the definition rather than its name
   (which is what types the input), and four or five tool files each name it, so
-  `workflow({ … })` moved from `agent.ts` into `shared.ts`. The `"use workflow"`
-  BODY stays in `workflows/` — the WDK builder scans that directory.
+  `workflow({ … })` moved from `agent.ts` into `shared.ts`. The BODY stays in
+  `workflows/` by convention, so a spec can import the steps without the agent.
 
 It replaced 62 map entries whose whole content was
 `snake_case_name: camelCaseImport`, and the reason was the silent failure rather
@@ -1373,17 +1311,31 @@ than the line count: add `tools/incident_close.ts`, forget the map line, and the
 file compiled, lint passed, every gate was green, and the tool never reached the
 model.
 
-**A spec has no bundler in its path, so it does the same lowering with
-`import.meta.glob`** and hands it to the same `toolRegistry`. The SDK ships that
-call as **`withDiscoveredTools`** (`@alexkroman1/aai/testing`), and each affected
-template's spec writes its own glob:
+**A spec has no bundler in its path, so the same lowering has to happen
+somewhere else** — over the same `toolRegistry`, from the same
+`import.meta.glob`. Under vitest it happens in the PLUGIN: `aaiAgentPlugin()`
+(`@alexkroman1/aai/testing/vite`, registered in this package's
+`vitest.config.ts` and in every scaffolded project's) expands the glob against
+the importing spec's own directory and serves the result, so each affected
+template's spec is one import:
 
 ```ts no-check
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+// `no-check`: `virtual:aai/agent` is an ambient module the scaffold's
+// global.d.ts declares — it resolves in a template, not in a doc example.
+import agentDef from "virtual:aai/agent";
 ```
 
-**The glob is written in the template and not reached for from a shared helper,
-and that is the whole lesson of the bug it replaced.** Five specs imported
+`retail`'s `registry.test.ts` is the one template that still writes the lowering
+out, with **`deployedAgent`** (`@alexkroman1/aai/testing`) over its own glob and
+a `?raw` read of `system-prompt.md`. That is deliberate: the tool registry is
+that file's subject, and it is the worked example for a project whose runner
+cannot register a Vite plugin. **`withDiscoveredTools`, the tools-only half this
+section used to name, is not exported** — a spec that lowered the tools and
+forgot the prompt measured the framework default and reported green, so the two
+halves are one call now.
+
+**The glob belongs to the importing file rather than to a shared helper, and
+that is the whole lesson of the bug it replaced.** Five specs imported
 `../../_discovery.ts` — this package's own helper — which resolves in-tree
 and **does not exist in a scaffolded project**, so `aai test`, `aai build` (it
 type-checks) and `npm start` were all broken for anyone who scaffolded

@@ -15,25 +15,52 @@
  * there is no point at which a step knows it is the last. A reader waiting for
  * the end therefore waits forever, even on a completed run. So a read is bounded
  * by {@link StreamStore.tail}: the index of the last chunk written so far. That
- * is the shape the DevKit's streams had and for the same reason, and its own
- * adapter doc called the tail "not optional", which it is not.
+ * is the shape the DevKit's streams had and for the same reason — the tail is
+ * not optional.
  *
- * ## `startIndex` is SIGNED, and that is the DevKit's semantics on purpose
+ * ## `startIndex` is SIGNED, and both readings have a caller
  *
- * A non-negative value is an exclusive FLOOR — a cursor a reader has already
- * read past — and a negative one counts back from the END, so `-1` is the last
- * chunk alone. Both readings are load-bearing and belong to callers this module
- * does not own: `workflow-api-stream.ts` polls with the last index it saw, and
- * `WorkflowClient.lastLine` asks for `-1`.
+ * A non-negative value is an INCLUSIVE floor — the first index the reader wants
+ * — and a negative one counts back from the END, so `-1` is the last chunk
+ * alone. Both readings are load-bearing and belong to callers this module does
+ * not own: `workflow-api-stream.ts` polls with the first index it has NOT seen,
+ * and `WorkflowClient.lastLine` asks for `-1`.
  *
- * The first draft implemented the floor only, so `-1` meant "everything after
+ * The first draft implemented the floor only, so `-1` meant "everything from
  * index -1" — everything. `lastLine` then took the FIRST chunk of the log and
  * returned it as the newest line, which is the exact thing that method exists to
  * avoid; the client's own comment ("the alternative replays the whole log to
  * throw all but its final entry away") described what it had started doing.
  * Nothing caught it, because `workflow-client.test.ts`'s fake implements
- * `written.slice(startIndex ?? 0)` — laxer than the interface, which is the
- * hazard `workflow-journal-types.ts` warns about in its own doc.
+ * `written.slice(startIndex ?? 0)`.
+ *
+ * ## The floor is INCLUSIVE, and it was EXCLUSIVE here alone
+ *
+ * The second draft made the non-negative reading exclusive — "a cursor a reader
+ * has already read past" — on the argument that an inclusive bound re-delivers
+ * the cursor's own chunk on every poll. That argument is about a cursor holding
+ * the LAST INDEX SEEN, and no caller in this repository holds one. Every consumer
+ * counts what it consumed and re-sends that count, which IS the first unread
+ * index: `followRunOutput` does `next += 1` per chunk, `useWorkflowProgress` does
+ * `next += chunks.length`, `budgetFor` computes `tail + 1 - startIndex`, and
+ * `lastLine` refuses when `tail < startIndex`. So this store answered
+ * `read({ startIndex: 0 })` with everything EXCEPT chunk 0 while five callers
+ * asked it for everything — a default `followRunOutput` never yielded a run's
+ * first progress line, permanently, and `useWorkflowProgress` lost the chunk at
+ * its cursor on every re-open.
+ *
+ * The deciding argument is not the count of callers, it is that an exclusive
+ * floor has NO SPELLING for "I have seen nothing" on a signed parameter: the
+ * cursor before chunk 0 is -1, and -1 already means "the last chunk alone". So
+ * exclusive forces every caller to special-case its own origin into an absent
+ * parameter — two spellings for one cursor, and an off-by-one at the boundary
+ * between them, which is exactly the defect that shipped. Inclusive needs one
+ * spelling, and `undefined` then means the same thing as `0` rather than
+ * something a caller has to know is different.
+ *
+ * `workflow-stream-cursor.test.ts` is the oracle over the whole chain; it is
+ * where a third draft has to argue with a property rather than with this
+ * paragraph.
  *
  * ## Namespaces
  *
@@ -49,12 +76,19 @@ export const STREAM_CAP = 1000;
 /**
  * Slack above {@link STREAM_CAP} before the oldest chunks are dropped.
  *
+ * Exported for `workflow-stream-cursor.test.ts`'s model of the retained window,
+ * which computes the same window in closed form rather than by simulating the
+ * loop below. Sharing the two CONSTANTS is what keeps that model honest when a
+ * cap moves; sharing the arithmetic would make it agree with a bug.
+ *
+ * @internal
+ *
  * The drop is a `splice` of a block rather than a `shift` per write, because
  * `shift` is an O(n) memmove of the whole ring and `write` is on the narration
  * path of every step of every run — a 60-segment fan-out narrating per segment
  * pays it per line. Amortized this way it is one memmove per 100 writes.
  */
-const STREAM_SLACK = 100;
+export const STREAM_SLACK = 100;
 
 /** The namespace a writer that names none is writing to. */
 export const DEFAULT_STREAM_NAMESPACE = "default";
@@ -79,13 +113,14 @@ export function streamNamespace(namespace: string | undefined): string {
 export type StreamRead = {
   namespace?: string | undefined;
   /**
-   * A SIGNED cursor — see this module's doc, which carries the bug the unsigned
-   * reading caused.
+   * A SIGNED cursor — see this module's doc, which carries both bugs the two
+   * wrong readings caused.
    *
-   * - **`undefined`** — every chunk still held.
-   * - **`>= 0`** — an exclusive floor: what came AFTER this index. Exclusive
-   *   because that is what a poller needs, holding the last index it saw; an
-   *   inclusive bound would re-deliver that chunk on every poll.
+   * - **`undefined`** — every chunk still held. The same answer as `0`, which is
+   *   what makes an absent parameter safe for a reader that has seen nothing.
+   * - **`>= 0`** — an INCLUSIVE floor: this index and everything after it. A
+   *   poller holds the first index it has NOT seen and sends exactly that, so
+   *   nothing is re-delivered and nothing is skipped.
    * - **`< 0`** — the last `|startIndex|` chunks, so `-1` is the newest alone.
    */
   startIndex?: number | undefined;
@@ -158,14 +193,14 @@ export function createMemoryStreams(): StreamStore {
       if (from === undefined) return [...chunks];
       // From the end, so `-1` is the newest chunk alone.
       if (from < 0) return chunks.slice(from);
-      // A floor. `slice` rather than `filter`, which is what makes `lastLine`
-      // cheap: indices within a channel are contiguous (`write` assigns
-      // `last + 1`, and the cap only ever drops from the front), so the position
-      // of a cursor is arithmetic rather than a scan. Clamped at zero for a
-      // cursor from before a drop, whose chunks are simply gone.
+      // An INCLUSIVE floor. `slice` rather than `filter`, which is what makes
+      // `lastLine` cheap: indices within a channel are contiguous (`write`
+      // assigns `last + 1`, and the cap only ever drops from the front), so the
+      // position of a cursor is arithmetic rather than a scan. Clamped at zero
+      // for a cursor from before a drop, whose chunks are simply gone.
       const first = chunks[0];
       if (!first) return [];
-      return chunks.slice(Math.max(0, from - first.index + 1));
+      return chunks.slice(Math.max(0, from - first.index));
     },
 
     async tail(runId: string, namespace: string): Promise<number> {

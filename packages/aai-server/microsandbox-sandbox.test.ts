@@ -26,6 +26,7 @@ import {
   spawnMicrosandboxWarm,
 } from "./microsandbox-sandbox.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
+import { GUEST_SCRATCH_DIR } from "./warm-harness.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -270,6 +271,32 @@ describe("spawnMicrosandboxWarm", () => {
     expect(env.AAI_GUEST_HOST).toBeUndefined();
     // A real VM surrounds this guest, so the SDK drops its SSRF screen.
     expect(env.AAI_SANDBOX_CONTAINED).toBe("1");
+    await warm.cleanup();
+  });
+
+  it("names the guest's scratch directory rather than inheriting one", async () => {
+    // Measured in a live microVM booted from this very image with the studio
+    // guest's own exec env: `/tmp` is `tmpfs … size=524288k` — a 512 MiB RAM
+    // disk — beside the 3.9 GB overlay `/var/tmp` sits on, and `os.tmpdir()`
+    // answers `/tmp`. So the studio guest's build path (the aai CLI's worker
+    // bundler writes into `mkdtemp(join(tmpdir(), …))`) and any workspace tool
+    // `test_agent` invokes (`@alexkroman1/aai/step-files` is `join(tmpdir(),
+    // …)`) were spending the VM's MEMORY: MemAvailable fell 508,632 kB for a
+    // 512 MiB write to `/tmp` and not at all for the same write to `/var/tmp`.
+    // Agent mode got this from `agentBootEnv`; the studio guest builds no such
+    // env, so the key is declared here for the same reason containment is —
+    // which runtime mounts what over `/tmp` is not a fact a spawner should
+    // know.
+    const fake = makeCtx();
+    const socket = createFakeGuestSocket();
+
+    const warm = await spawnMicrosandboxWarm(
+      { harnessPath: await makeHarnessFile(), name: "warm-scratch" },
+      fake.ctx,
+      async () => socket.ws,
+    );
+
+    expect(fake.created[0]?.env.TMPDIR).toBe(GUEST_SCRATCH_DIR);
     await warm.cleanup();
   });
 

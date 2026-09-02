@@ -31,14 +31,14 @@
  * exactly the same reason — a deadline recomputed from the clock on every replay
  * moves further out each time, and the run never wakes.
  *
- * **Nothing checks this yet, and that is worth knowing rather than implying.**
- * `aai-cli`'s workflow scan still reads the BUILT flow bundle and still assumes
- * the builder stripped step bodies out of it, which the engine no longer does —
- * so it now warns about a `Date.now()` INSIDE a step callback, which is legal,
- * and cannot see the boundary it was written to police. Replacing it with a
- * lexical AST pass is the remaining half of this change: code inside a
- * `ctx.step(...)` callback runs once and code outside it replays, and that
- * boundary is decidable without running anything.
+ * **Nothing checks this, and that is worth knowing rather than implying.** The
+ * build scan that used to try went with the DevKit: it read the BUILT flow
+ * bundle and assumed the builder had stripped step bodies out of it, so against
+ * an ordinary Vite build it warned about a `Date.now()` INSIDE a step callback —
+ * legal — while blind to the boundary it existed to police. A lexical AST pass
+ * would be the honest replacement, and there is no such pass today: code inside
+ * a `ctx.step(...)` callback runs once and code outside it replays, a boundary
+ * decidable without running anything, and nothing decides it.
  *
  * ## Step identity is `(name, occurrence)`, and neither half is optional
  *
@@ -60,8 +60,8 @@
  *
  * **Today that is a convention to remember, and nothing enforces it.** An earlier
  * draft of this doc said it was "not a convention to remember, it is a build
- * failure" — describing the duplicate-literal check the scan above is meant to
- * grow and does not have. Until it does, give two call sites two names; a single
+ * failure" — describing a duplicate-literal check that has never existed and has
+ * no scan left to live in. Until one does, give two call sites two names; a single
  * site in a loop or a fan-out is exactly what the scheme is for and needs none.
  * The shipped templates follow that (`research-workflow` names its two
  * `investigate` waves separately, `call-audit` its two clock reads), which is the
@@ -137,10 +137,12 @@ export type WorkflowCtx = {
    * Run `fn` once and journal what it returns; on every later replay, return
    * the journaled value without running it again.
    *
-   * `name` identifies the step in the journal and in `aai workflow` output. It
-   * must be a string LITERAL — the build scan reads it statically, and a
-   * computed name is both unreadable in a run's history and invisible to the
-   * duplicate check.
+   * `name` identifies the step in the journal and in `aai workflow` output, so
+   * make it a string LITERAL. A computed one has to produce the same string on
+   * every replay or the walk reads a key that was never written — and a name
+   * built from the run's own data is unreadable in that run's history besides.
+   * A loop needs no name of its own per round: the occurrence count is what
+   * separates the iterations.
    */
   step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
   /**
@@ -151,12 +153,12 @@ export type WorkflowCtx = {
    * run when the time comes — which is what makes "check back tomorrow" a thing a
    * workflow can express at all.
    *
-   * **How long it really survives is a property of the JOURNAL, and today that is
-   * memory.** A wait outlives the body and the worker; it does NOT yet outlive
-   * the process, on any deployment. The platform and Postgres journals are the
-   * remaining half of the DevKit removal, and the runtime's boot line reports
-   * which store is in play. A multi-day schedule is expressible now and durable
-   * when they land.
+   * **How long it really survives is a property of the JOURNAL**, which the
+   * DEPLOYMENT picks and the runtime's boot line names. On the platform and
+   * against a Postgres it is durable — a wait outlives the body, the worker and
+   * the process, so a multi-day schedule is a thing to write. With neither the
+   * journal is in memory, which is `aai dev`'s default and where a restart loses
+   * every outstanding wait.
    *
    * A sleep is journaled the first time it is reached, so its wake time is
    * decided ONCE. That matters because the body is replayed: computing the

@@ -2,9 +2,10 @@
 /**
  * The agent's env, reachable from inside a step.
  *
- * This is the one thing a durable workflow could not do. A step is bundled and
- * dispatched separately from the agent bundle and is handed no `ToolContext`, so
- * it had no way to read the agent's own secrets — which meant no step anywhere
+ * This is the one thing a durable workflow could not do. A step is handed no
+ * `ToolContext` — a body is replayed and may hold nothing live, so there is
+ * nothing to hang one on — and so had no way to read the agent's own secrets,
+ * which meant no step anywhere
  * could authenticate an outbound call, and every workflow template's I/O was a
  * fixture with a comment explaining why. `AgentDef.requiredEnv`'s own doc said a
  * step "reads keys like any other Node code", which was a claim about
@@ -14,15 +15,18 @@
  *
  * ## Why a global slot rather than a module-level one
  *
- * The step artifact is built by the Workflow DevKit's own builder
- * (`aai-cli/workflow-bundler.ts`), which externalizes only `workflow` and
- * `@workflow/*` and BUNDLES everything else — this module included. So the copy
- * of it a step imports is a different module instance from the one the guest's
- * runtime imports, and a module-level `let` would be published into one and read
- * from the other. `Symbol.for` is registry-wide, so both instances name the same
- * slot; the two run in the same process and the same realm (the step bundle is
- * imported by `createWorkflowSurface`, see `host/workflow-serve.ts`), which is
- * what makes a global work at all here.
+ * The PUBLISHER and the READER are two different module instances. The agent
+ * bundle is self-contained — `aai build` bundles this module into it along with
+ * the `workflows/*.ts` that read it — while the host that publishes (the guest
+ * harness, `aai dev`) imports the SDK from its own graph. So a module-level `let`
+ * would be published into one instance and read from the other, and the reader
+ * would see nothing. `Symbol.for` is registry-wide, so both instances name the
+ * same slot; the two run in the same process and the same realm, which is what
+ * makes a global work at all here.
+ *
+ * This used to be argued from the Workflow DevKit's separate step artifact. That
+ * artifact is gone — a step is ordinary code in the agent bundle now — and the
+ * property it rested on is not: there are still two graphs and still one realm.
  *
  * ## Publishing REPLACES; an unpublished slot falls back to `process.env`
  *
@@ -134,10 +138,10 @@ export function stepEnv(name: string): string | undefined {
  *
  * The failure a step wants for a credential: an absent key is not transient, so
  * it should say which key and how to set it rather than surface three layers
- * down as an HTTP 401 the DevKit then retries.
+ * down as an HTTP 401 the engine then retries.
  *
- * It throws a plain `Error` rather than the DevKit's `FatalError` on purpose —
- * this module is dependency-free and must stay importable from a tool body and a
+ * It throws a plain `Error` rather than a `FatalError` on purpose — that class
+ * is `/step-errors`' and this module must stay importable from a tool body and a
  * spec, neither of which has a workflow around it. A step that wants the retries
  * skipped wraps the call:
  *

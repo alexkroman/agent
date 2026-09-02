@@ -256,7 +256,11 @@ export async function transcribeFlow(input: { recording: string }, ctx: Workflow
   // The clock starts before the conversion rather than after it, because a
   // reader comparing the three flows over one file is comparing what the desk
   // COST them, and re-encoding an m4a is part of that.
-  // `maxAttempts: 6` was `normalizeRecording.maxRetries = 5`.
+  // `maxAttempts: 6` was `normalizeRecording.maxRetries = 5`. More than the
+  // default 3, and not because a conversion is flaky — a corrupt file fails
+  // identically forever, and `throwFfmpegStepError` is what stops the engine
+  // retrying that. It is the two I/O halves that are worth another attempt: this
+  // step reads a whole recording out of the store and writes a whole one back.
   const [startedAt, ready] = await Promise.all([
     ctx.step("startClock", () => startClock()),
     ctx.step("normalizeRecording", () => normalizeRecording(input.recording), { maxAttempts: 6 }),
@@ -273,7 +277,9 @@ export async function transcribeFlow(input: { recording: string }, ctx: Workflow
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
   const parts = await mapConcurrent(plan.segments, segmentConcurrency(plan.format), (segment) =>
-    // `maxAttempts: 6` was `transcribeSegment.maxRetries = 5`.
+    // `maxAttempts: 6` was `transcribeSegment.maxRetries = 5` — more than the
+    // default 3 because a rate limit is the expected failure here, and a segment
+    // that 429s is not a segment that is wrong.
     ctx.step("transcribeSegment", () => transcribeSegment(ready.recording, plan.format, segment), {
       maxAttempts: 6,
     }),
@@ -359,7 +365,18 @@ export async function transcribeSegment(
   // `504 request exceeded 30.0s` and then into a failed run. Inert on the classic
   // flow, where `normalizeRecording` already converted the whole file; see
   // `downsample.ts` for why the streaming flow cannot do the same.
-  const light = downsampleSegment(audio.bytes, format);
+  //
+  // Through `fatalOnUnsupported` for the same reason `planStreamed` reads its
+  // header through it: `parseWav` admits any bit depth whose block align is
+  // positive, and `downsampleSegment` can serve only four of them — so a
+  // recording the desk could cut but cannot send raises
+  // `UnsupportedRecordingError` here, and a plain throw would spend all six
+  // attempts re-reading this window out of the upload store to arrive at the
+  // identical answer. BOTH flows can reach it, which is newer than it looks:
+  // the check used to hang off the resampler, so a 12-bit recording already at
+  // 16 kHz mono — light for both flows, and therefore converted by neither —
+  // sailed past it into an unclassified `RangeError` from `encodeWav`.
+  const light = fatalOnUnsupported(() => downsampleSegment(audio.bytes, format));
 
   const { value: text, ms } = await timed(() =>
     transcribeWav(
@@ -386,11 +403,6 @@ export async function transcribeSegment(
   } satisfies TranscriptChunk);
   return { index: segment.index, text };
 }
-
-/**
- * Retries beyond the default 3, because a rate limit is the expected failure and
- * a segment that 429s is not a segment that is wrong.
- */
 
 /**
  * Stitch the segments into one transcript.

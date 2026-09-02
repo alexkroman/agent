@@ -123,7 +123,9 @@ Four things follow, if you need more on the same hardware:
 caller. `listen()` binds loopback for that reason. Add your own before
 exposing it:
 
-```ts no-check
+```ts
+import { createHostServer } from "@alexkroman1/aai-runtime";
+
 const server = createHostServer({
   upgrade(req, socket) {
     if (req.headers.authorization === `Bearer ${process.env.TOKEN}`) return false; // fall through
@@ -149,7 +151,8 @@ pipeline, which is why one caller-supplied `ASSEMBLYAI_API_KEY` covers STT, the
 LLM gateway and TTS. To choose your own, declare it in `defaults` — descriptors
 are plain data, so this still costs no credential:
 
-```ts no-check
+```ts
+import { createHostServer } from "@alexkroman1/aai-runtime";
 import { anthropicLlm } from "@alexkroman1/aai/llm";
 import { deepgramStt } from "@alexkroman1/aai/stt";
 import { cartesiaTts } from "@alexkroman1/aai/tts";

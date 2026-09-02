@@ -230,13 +230,14 @@ describe("self-hosted server: durable workflows", () => {
    * "Can a user `aai init` a workflow template and run something DURABLE under
    * `npm start`" — and until this test existed, no.
    *
-   * The gap it closes was structural rather than a bug in one line. Running a
-   * durable workflow takes two things the self-hosted door never did: a WORLD
-   * (`configureWorkflowWorld` + `startWorkflowWorldIfDeclared`, which nothing but
-   * `aai dev` and the guest harness called) and the DevKit's `flow`/`step`
-   * callback routes, which the world dispatches every hop to. `createAgentServer`
-   * now does both, off the compiled `workflowCode`/`stepCode` the scaffold reads
-   * off its own built worker.
+   * The gap it closes was structural rather than a bug in one line. Under the
+   * DevKit, running a durable workflow took two things the self-hosted door
+   * never did: a WORLD (`configureWorkflowWorld` + `startWorkflowWorldIfDeclared`,
+   * which nothing but `aai dev` and the guest harness called) and the `flow`/
+   * `step` callback routes the world dispatched every hop to. The replay engine
+   * needs neither — `createRuntime` builds it off the agent's own `workflows`
+   * declaration and walks a run in this process — so what this leg now proves is
+   * that the door a self-hoster goes through gets one at all.
    *
    * Nothing else can ask this. The `aai dev` leg below drives the same lab
    * through a different front door, and the "boots and serves it" leg above uses

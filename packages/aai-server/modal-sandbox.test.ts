@@ -23,6 +23,7 @@ import {
   DEFAULT_SANDBOX_TIMEOUT_MS,
 } from "./modal-sandbox-env.ts";
 import type { RpcConnection } from "./rpc-transport.ts";
+import { GUEST_SCRATCH_DIR } from "./warm-harness.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -490,6 +491,25 @@ describe("spawnModalWarm", () => {
     await writeFile(harnessPath, "// v2", "utf-8");
     // Cached: the harness is stable per process, so v1 is still shipped.
     expect(await spawnOnce()).toBe("// v1");
+  });
+
+  it("names the guest's scratch directory rather than inheriting one", async () => {
+    // Modal has no tmpfs over `/tmp` (probed: one `none / overlay rw` in
+    // `/proc/mounts`, 5.1 GB of `dd` into `/var/tmp` without ENOSPC), so this
+    // changes nothing in production — and is set anyway, for the reason
+    // `GUEST_SCRATCH_DIR` gives: which runtime mounts what over `/tmp` is not a
+    // fact a spawner should know. The local microVM DOES mount a 512 MiB RAM
+    // disk there, and a studio guest that only got the key on one backend is a
+    // dev/prod split in the one place this repo has already paid for it.
+    const fake = makeFakeProc();
+    const sb = makeFakeSandbox(fake);
+    const socket = createFakeGuestSocket();
+    const { dial } = makeFakeDial(socket);
+
+    const warm = await spawnModalWarm({ harnessPath: await makeHarnessFile() }, makeCtx(sb), dial);
+
+    expect(sb.execCalls[0]?.params.env?.TMPDIR).toBe(GUEST_SCRATCH_DIR);
+    await warm.cleanup();
   });
 
   it("propagates a missing harness file as a spawn failure", async () => {

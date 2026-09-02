@@ -821,13 +821,15 @@ describe("the ffmpeg steps, up to the spawn", () => {
 });
 
 describe("the body's step policy", () => {
-  test("raises the attempt budget on both steps whose failure is transient I/O", async () => {
-    // The retry policy is an argument to `ctx.step` now rather than a
-    // `maxRetries` property, so the CALL is the only place it is observable —
-    // which is also the honest place for it, since the same function called from
-    // two sites may deserve different patience. `runSteps: false` with a
-    // skeleton of results: no ffmpeg, no provider, no model.
-    const ctx = createWorkflowCtx({
+  /**
+   * A `ctx` that walks the whole body without running a single step.
+   *
+   * `runSteps: false` plus one journaled result per step name: no ffmpeg, no
+   * provider, no model. Both specs below need the identical skeleton and each
+   * only reads `ctx.steps` afterwards, so it is built once.
+   */
+  const walkedCtx = () =>
+    createWorkflowCtx({
       runSteps: false,
       results: {
         clockStart: 1000,
@@ -847,39 +849,34 @@ describe("the body's step policy", () => {
       },
     });
 
+  test("raises the attempt budget on both steps whose failure is transient I/O", async () => {
+    // The retry policy is an argument to `ctx.step` now rather than a
+    // `maxRetries` property, so the CALL is the only place it is observable —
+    // which is also the honest place for it, since the same function called from
+    // two sites may deserve different patience.
+    const ctx = walkedCtx();
+
     await auditFlow({ recording: UPLOAD_ID }, ctx);
 
     const budgets = new Map(ctx.steps.map((step) => [step.name, step.maxAttempts]));
-    expect(budgets.get("ingestRecording")).toBeGreaterThan(3);
-    expect(budgets.get("transcribeSegment")).toBeGreaterThan(3);
+    // The EXACT number, not `toBeGreaterThan(3)`: the value is a literal in the
+    // body and a typo'd `maxAttempts: 4` is exactly what this should catch.
+    expect(budgets.get("ingestRecording")).toBe(6);
+    expect(budgets.get("transcribeSegment")).toBe(6);
     // The clock and the two model-shaped steps take the default, which is the
     // other half of the claim: a raised budget is a decision about ONE step.
-    expect(budgets.get("clockStart")).toBeUndefined();
-    expect(budgets.get("summarize")).toBeUndefined();
+    // Asserted as PRESENT-with-no-budget rather than as `get(…) === undefined`,
+    // which a step the body never reached at all would also satisfy.
+    for (const name of ["clockStart", "summarize"]) {
+      expect(budgets.has(name)).toBe(true);
+      expect(budgets.get(name)).toBeUndefined();
+    }
   });
 
   test("reads the clock at each end under its own name, so a run's history is legible", async () => {
     // `(name, occurrence)` would tell two `now` calls apart on its own
     // (`now#0`, `now#1`); distinct names are for the person reading the history.
-    const ctx = createWorkflowCtx({
-      runSteps: false,
-      results: {
-        clockStart: 1000,
-        clockEnd: 4000,
-        ingestRecording: {
-          audio: "upl_pcm",
-          source: "call.wav",
-          codec: "pcm_s16le",
-          durationMs: 20_000,
-          bytes: 60 * BYTES_PER_SECOND,
-          silences: pauses(10, 20, 30),
-          loudness: MEASURED,
-        },
-        transcribeSegment: { index: 0, text: "hello" },
-        summarize: { headline: "H", risks: [], actions: [], spoken: "S." },
-        narrate: { audio: "upl_wav", durationMs: 500, bytes: 32 },
-      },
-    });
+    const ctx = walkedCtx();
 
     const output = await auditFlow({ recording: UPLOAD_ID }, ctx);
 

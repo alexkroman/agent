@@ -13,12 +13,56 @@
  * | Temporal sample | Ported here as |
  * | --- | --- |
  * | `saga` — `openAccount`'s compensation stack | {@link recapFlow}'s `compensations`, unwound by {@link compensate} |
- * | `polling` — infrequent polling | {@link awaitTranscript}: a bounded loop of one step plus one durable `sleep` |
- * | `timer-examples` — `processOrderWorkflow` | {@link PATIENCE_POLLS} turns of the poll loop, then the "still going" note |
+ * | `polling` — infrequent polling | {@link awaitTranscript}'s loop: one step plus one durable `sleep`, and the BACKSTOP under the callback below |
+ * | `timer-examples` — `processOrderWorkflow` | the "still going" note, at {@link PATIENCE_POLLS} turns of the loop or one closed {@link CALLBACK_WINDOW_MS} |
  * | `expense` — `timeoutOrUserAction` | the RETENTION GATE: one `ctx.waitFor` with {@link RETENTION_WINDOW_MS}, three outcomes and a safe default |
  *
  * The voice half — start, query, cancel, and the answer to the gate — is ported
  * in `agent.ts`.
+ *
+ * ## The provider CALLS BACK, and the poll is what makes that safe
+ *
+ * AssemblyAI's async API takes a `webhook_url` on submission, so the ordinary
+ * case does not need a poll at all: {@link callbackUrl} mints one with
+ * `stepWebhookUrl`, {@link submitRecording} hands it over, and the body parks on
+ * `ctx.waitFor` until the delivery lands. The run is SUSPENDED throughout — the
+ * same as a `sleep`, so this is not a saving on resident process time; what it
+ * buys is one status read instead of nine, and a recap that starts being written
+ * the second the transcript exists rather than up to fifteen seconds later.
+ *
+ * **`stepWebhookUrl` is the step-side half of
+ * `ctx.workflows.publicWebhookUrl`,** and until it existed this conversion was
+ * not available to a workflow at all: the tool-side accessor needs a
+ * `ToolContext`, and a body and its steps are handed none. This template could
+ * have reached it through its own tools — it has five — but the URL would then
+ * have had to travel as run input, which is a shape the three `workflowApp()`
+ * templates (no tools at all) could not copy. The step helper is the one both
+ * can use.
+ *
+ * **The poll did not go away, and it must not.** A webhook is one HTTP POST from
+ * a third party with no delivery guarantee anyone here controls: AssemblyAI
+ * retries ten times at ten-second intervals and then gives up permanently, a
+ * deployment may not know its own public URL at all, and a delivery that arrives
+ * in the milliseconds before the body reaches its wait is answered `404` and
+ * dropped. So the callback is an OPTIMIZATION OVER A RECONCILING READ, never a
+ * replacement for one: {@link awaitTranscript} reads the status before it parks
+ * and again after, and if nothing ever arrives it degrades to exactly the loop
+ * it always was. A template that hung forever on a dropped delivery would be
+ * strictly worse than one that polls. That rule generalizes to every event
+ * source in this product — the event tells you WHEN to look, and the read is
+ * what tells you what happened.
+ *
+ * **The delivery cannot be the answer even in principle, and that is what makes
+ * an unauthenticated callback safe here.** AssemblyAI's payload is
+ * `{transcript_id, status}` and nothing else — no text, no error detail — so the
+ * run has to `GET` the transcript regardless of who knocked. This body therefore
+ * does not read the payload at all: a forged delivery on a guessed token costs
+ * exactly one extra status read and changes no decision, because every decision
+ * is made from what the provider's own endpoint says under this desk's own
+ * credential. That is a better guarantee than a shared secret would be — it
+ * holds by construction rather than by a credential somebody has to rotate. See
+ * {@link awaitTranscript} for the auth header the provider offers and why this
+ * template does not set one.
  *
  * ## The gate is the one that needed a new SDK primitive
  *
@@ -68,7 +112,7 @@
  */
 
 import { isWorkflowSuspend, type WorkflowCtx } from "@alexkroman1/aai";
-import { report, requireStepEnv, stepFetch } from "@alexkroman1/aai/step";
+import { report, requireStepEnv, stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
 import {
   FatalError,
   stepFetchOk,
@@ -78,7 +122,7 @@ import {
 } from "@alexkroman1/aai/step-errors";
 import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { retentionToken } from "./tokens.ts";
+import { retentionToken, transcriptToken } from "./tokens.ts";
 
 /** AssemblyAI's pre-recorded (batch) transcription collection. */
 const TRANSCRIPT_ENDPOINT = "https://api.assemblyai.com/v2/transcript";
@@ -117,10 +161,49 @@ const MAX_POLLS = 80;
  * SUSPEND, and a suspend unwinds the stack — so racing them stops the body on
  * whichever suspends first, before the other has been reached. Counting polls
  * says the same thing with journaled values only: attempt N is attempt N on
- * every replay, which is the property {@link MAX_POLLS} already rests on. At
- * {@link POLL_INTERVAL_MS} this is two minutes, the same wait the timer named.
+ * every replay, which is the property {@link MAX_POLLS} already rests on.
+ *
+ * NINE rather than eight, and the off-by-one is the whole subtlety of counting
+ * polls instead of watching a clock: the note goes out at the TOP of a poll, so
+ * what has elapsed by then is the sleeps BEHIND it — N-1 of them. At
+ * {@link POLL_INTERVAL_MS} that makes this two minutes, the wait the timer named;
+ * eight said the same sentence at 1:45, which is a desk calling a recording a
+ * long one a quarter of a minute before it is entitled to.
  */
-const PATIENCE_POLLS = 8;
+const PATIENCE_POLLS = 9;
+
+/**
+ * How long one park on the provider's callback lasts.
+ *
+ * The same two minutes {@link PATIENCE_POLLS} counts out, and deliberately the
+ * same number: whichever arm the run is on, the caller hears "still transcribing"
+ * after two minutes of waiting and not before. What differs is only how many
+ * times the desk asked the provider to get there — nine reads, or one.
+ *
+ * **This is the first thing in the template that is a REAL timed race**, which
+ * is worth stopping on because {@link PATIENCE_POLLS}'s doc apologises at length
+ * for not being one. Temporal's `processOrderWorkflow` races the work against a
+ * timer; a poll count can only approximate that, and this file could not do
+ * better while both sides of the race were suspending calls. `waitFor(token,
+ * { timeoutMs })` IS the race — the delivery or the deadline, journaled as ONE
+ * decision — so the ported pattern finally has the shape it has upstream.
+ *
+ * Two minutes rather than the twenty the loop budgets, because the window is
+ * what a DROPPED delivery costs: nothing is lost when it closes, the run simply
+ * goes back to reading, so a short window buys most of the saving and bounds the
+ * worst case.
+ */
+const CALLBACK_WINDOW_MS = 120_000;
+
+/**
+ * Polls before the desk admits a recording is a long one, on the callback arm.
+ *
+ * The same off-by-one {@link PATIENCE_POLLS} explains, one window instead of
+ * eight sleeps: the note goes out at the TOP of a poll, so what has elapsed by
+ * then is the waiting BEHIND it. Attempt 2 is the first turn with a whole closed
+ * {@link CALLBACK_WINDOW_MS} behind it, which is the two minutes.
+ */
+const PATIENCE_POLLS_WITH_CALLBACK = 2;
 
 /**
  * How long the desk holds the transcript waiting for an answer.
@@ -221,17 +304,27 @@ export async function recapFlow(input: { url: string; requestedBy: string }, ctx
   const compensations: Compensation[] = [];
 
   try {
-    const job = await ctx.step("submitRecording", () => submitRecording(input.url));
+    // The token this run's callback URL is minted for, and the one
+    // `awaitTranscript` parks on — derived from the run's own input in ONE place
+    // so the URL the provider is given and the string the body waits on cannot
+    // drift. They are separated by a third party on the public internet, which
+    // is as far apart as two halves of a contract get.
+    const nudge = transcriptToken(input.requestedBy);
+    // `callbackUrl` is evaluated INSIDE the step's function, so it runs once —
+    // on first execution — and never on a replay, which returns the journaled
+    // result without calling this at all. That is what makes the mint a
+    // journaled decision rather than one re-taken on every walk.
+    const job = await ctx.step("submitRecording", () =>
+      submitRecording(input.url, callbackUrl(nudge)),
+    );
     compensations.unshift({
       label: `transcript ${job.id}`,
       undo: () => ctx.step("discardTranscript", () => discardTranscript(job.id)),
     });
 
-    // Temporal's `processOrderWorkflow`, in the shape a replay engine allows:
-    // the poll loop itself says "still going" once it has waited
-    // `PATIENCE_POLLS` turns, rather than a `Promise.race` against a timer. See
-    // `PATIENCE_POLLS` for why the race cannot work here.
-    const transcript = await awaitTranscript(job.id, ctx);
+    // `job.callback` rather than a fresh mint: the branch has to come out of the
+    // JOURNAL, or a redeploy mid-run could flip it — see {@link submitRecording}.
+    const transcript = await awaitTranscript(job.id, ctx, job.callback ? nudge : undefined);
 
     const recap = await ctx.step("summarize", () => summarize(input.url, transcript), {
       // Was `summarize.maxRetries = 5` — five retries after the first attempt.
@@ -241,8 +334,9 @@ export async function recapFlow(input: { url: string; requestedBy: string }, ctx
     return { ...recap, ...retention, requestedBy: input.requestedBy };
   } catch (err) {
     // **A suspend is not a failure, and this catch is why that matters.** The
-    // body above WAITS — `awaitTranscript` sleeps between polls, and the gate
-    // waits for an answer — and a wait suspends by throwing, so it lands here.
+    // body above WAITS three ways now — `awaitTranscript` parks on the
+    // provider's callback, then sleeps between polls, and the gate waits for an
+    // answer — and every one of them suspends by throwing, so it lands here.
     // Without this line the first poll that had to wait unwound the compensation
     // stack, DELETED the transcript the run was waiting for, journaled the
     // deletion as successful and re-threw; the engine saw its own signal come
@@ -265,16 +359,61 @@ export async function recapFlow(input: { url: string; requestedBy: string }, ctx
  *
  * A body-side helper, not a step: it `sleep`s, and a step cannot — a step runs
  * to completion in a worker, where the body is what may suspend. Splitting it
- * out keeps `recapFlow` readable and costs nothing, since the WDK transform
- * rewrites a step's DECLARATION rather than its call sites, so a step called
- * from a helper is still a real step (`mapConcurrent` rests on the same
- * property).
+ * out keeps `recapFlow` readable and costs nothing: `ctx` is an ordinary value,
+ * so a helper handed one issues real steps. Note the occurrence counter is per
+ * RUN and not per function, so a name used here may not also be used in the body
+ * — the two call sites would alias onto one journal entry.
  *
  * The loop is deterministic despite looking like it is not: every branch turns
- * on a journaled step result, so a replay takes the same number of turns it took
- * live.
+ * on a journaled step result or on a journaled input field, so a replay takes
+ * the same number of turns it took live.
+ *
+ * ## Read first, then park ONCE, then read on a timer
+ *
+ * `nudge` is the callback token when `request_recap` managed to mint a URL, and
+ * `undefined` otherwise — in which case every line below behaves exactly as it
+ * did before there was a callback at all.
+ *
+ * The order matters and each part of it is paid for:
+ *
+ * - **The first read happens BEFORE the park**, so a job that finished while the
+ *   submit response was in flight, or a delivery that arrived in the milliseconds
+ *   before this body reached its wait and was dropped, costs nothing.
+ * - **The park happens ONCE, on the first turn only, and it HAS to.** A hook
+ *   token may be claimed at most once per run: `claimHook` (both journal
+ *   backends) throws `token … is already held by run …` for a second claim under
+ *   a different occurrence key, and the token is given back only when the run
+ *   goes TERMINAL — so a `ctx.waitFor` written inside this loop would fail the
+ *   second time round. That is not a hypothetical. The comment block at
+ *   `aai-runtime/workflow-journal-memory.ts:140-148` records this template
+ *   getting it wrong once already: a `claimHook` conflict is a throw and a throw
+ *   is not a suspend, so `recapFlow`'s `catch` treated it as a failed run, ran
+ *   the compensation stack and DELETED the transcript. A template that teaches
+ *   the wrong nesting here costs somebody their data.
+ * - **Every later turn is the plain cadence**, because a delivery that has not
+ *   arrived within {@link CALLBACK_WINDOW_MS} is one to stop counting on. The
+ *   loop from there is the `polling` port, unchanged, and it is what finishes the
+ *   run whether the delivery was late, dropped, never sent, or forged.
+ *
+ * **The payload is not read, and that is the security argument.** `waitFor` is
+ * called for its EDGE — "something happened, go look" — and the answer comes
+ * from {@link checkTranscript} under this desk's own credential, so nothing a
+ * caller could POST to the public callback route changes an outcome. AssemblyAI
+ * does offer `webhook_auth_header_name`/`webhook_auth_header_value`, and this
+ * template sets neither: the receiving route
+ * (`/.well-known/workflow/v1/webhook/:token`) authorizes on the TOKEN and reads
+ * no other header, so a header set here would be sent and ignored — security
+ * theatre, and worse than none because it reads as a control.
  */
-export async function awaitTranscript(id: string, ctx: WorkflowCtx): Promise<TranscriptState> {
+export async function awaitTranscript(
+  id: string,
+  ctx: WorkflowCtx,
+  nudge?: string,
+): Promise<TranscriptState> {
+  // Which turn says "still going". A pure function of `nudge`, which the body
+  // derived from a journaled step result, so a replay picks the same turn.
+  const patienceAt = nudge === undefined ? PATIENCE_POLLS : PATIENCE_POLLS_WITH_CALLBACK;
+
   for (let attempt = 1; attempt <= MAX_POLLS; attempt++) {
     const state = await ctx.step("checkTranscript", () => checkTranscript(id));
     if (state.status === "completed") return state;
@@ -285,15 +424,25 @@ export async function awaitTranscript(id: string, ctx: WorkflowCtx): Promise<Tra
       // STEP, and using it here would claim a distinction that does not exist.
       throw new Error(`The provider could not transcribe that recording: ${state.error}`);
     }
-    // Once, at the point the timer used to fire. `attempt` is a journaled-value
-    // function, so a replay says it at the same turn or not at all.
-    if (attempt === PATIENCE_POLLS) {
+    // Once, at the point the timer used to fire — which is the top of the poll
+    // that follows two minutes of waiting, see {@link PATIENCE_POLLS} for the
+    // off-by-one. `attempt` is a journaled-value function, so a replay says it
+    // at the same turn or not at all.
+    if (attempt === patienceAt) {
       await ctx.step("noteSlow", () =>
         note("Still transcribing — this is a long one. I'll keep going."),
       );
     }
-    // Suspended, not blocked: nothing is resident while this waits.
-    await ctx.sleep(POLL_INTERVAL_MS);
+    // Both arms SUSPEND — nothing is resident while either waits — and the only
+    // difference is what can end the wait early. The callback park is first-turn
+    // only; see this function's doc for why it cannot be every turn.
+    if (attempt === 1 && nudge !== undefined) {
+      // The payload is DISCARDED on purpose: this waits for the edge, and the
+      // read at the top of the next turn is what establishes the fact.
+      await ctx.waitFor(nudge, { timeoutMs: CALLBACK_WINDOW_MS });
+    } else {
+      await ctx.sleep(POLL_INTERVAL_MS);
+    }
   }
   throw new Error(`Gave up on that recording after ${MAX_POLLS} checks.`);
 }
@@ -383,9 +532,26 @@ export async function compensate(
  * Hand the recording to the provider.
  *
  * Returns in milliseconds with a job id — the batch API's whole shape, and what
- * makes the poll below a real wait rather than a simulated one.
+ * makes the wait below a real wait rather than a simulated one.
+ *
+ * `webhookUrl` is where the provider should POST when the job settles, and
+ * {@link callbackUrl} is what produces it. The body passes the result IN rather
+ * than this minting it, which keeps every HTTP decision in a function a spec can
+ * call with a plain string — and keeps the mint in one place.
+ *
+ * **It answers `callback` as well as `id`, and that is a determinism
+ * requirement rather than a convenience.** Whether a callback was registered
+ * decides whether {@link awaitTranscript} parks on a hook, and a body may only
+ * branch on values that come out of the JOURNAL — so the fact is returned by the
+ * step that established it. Reading it in the body instead would re-evaluate it
+ * on every replay, and a redeploy that changed the deployment's public URL
+ * mid-run would flip the branch: the walk would then look for a `waitFor` the
+ * journal never recorded, or skip one it did.
  */
-export async function submitRecording(url: string): Promise<{ id: string }> {
+export async function submitRecording(
+  url: string,
+  webhookUrl?: string,
+): Promise<{ id: string; callback: boolean }> {
   await report(`Submitting ${new URL(url).hostname} for transcription…`);
 
   // `stepTranscribeSubmitClassified` owns the endpoint, the raw-key auth, the
@@ -394,8 +560,56 @@ export async function submitRecording(url: string): Promise<{ id: string }> {
   // `throwStepError` already applied, so a provider refusal stays terminal and a
   // rate limit waits out the delay the provider itself named. `speaker_labels`
   // is this desk's own request, which is what `params` is for — the async API's
-  // surface is large and the SDK deliberately does not mirror it.
-  return await stepTranscribeSubmitClassified(url, { params: { speaker_labels: true } });
+  // surface is large and the SDK deliberately does not mirror it, and
+  // `webhook_url` is a second field on the same passthrough.
+  //
+  // No `omitUndefined` here, unlike `checkTranscript` below, and the difference
+  // is which boundary the value crosses: `params` is serialized, and
+  // `JSON.stringify` drops a property whose value is `undefined` — so an absent
+  // callback is an absent KEY on the wire, which is what the provider needs.
+  // What must not creep in is a `?? null` or a `?? ""` to "be explicit": either
+  // one puts the key back, and a provider handed a null for a URL is entitled to
+  // refuse the whole submission.
+  const job = await stepTranscribeSubmitClassified(url, {
+    params: { speaker_labels: true, webhook_url: webhookUrl },
+  });
+  return { id: job.id, callback: webhookUrl !== undefined };
+}
+
+/**
+ * The URL the provider should POST to when this run's transcript is ready, or
+ * `undefined` when this deployment cannot offer one.
+ *
+ * `stepWebhookUrl` (`@alexkroman1/aai/step`) is the step-side half of
+ * `ctx.workflows.publicWebhookUrl` — one concept, two surfaces — and it exists
+ * because a workflow body and the steps it calls are handed no `ToolContext`.
+ * Note it cannot be replaced by `requireStepEnv("AAI_PUBLIC_BASE_URL")`: the
+ * public base URL is a boot parameter of the DEPLOYMENT, living in the guest's
+ * exec env, while the step env is the tenant's own `.env` and
+ * `aai secret put` keys — so that read is `undefined` in production precisely
+ * where the value exists.
+ *
+ * **It THROWS rather than answering `undefined`, and catching it is the whole
+ * job of this function.** A callback URL has no legitimate default — it is
+ * either the one a third party can reach or it is a lie — so the SDK refuses to
+ * invent one. What a template must not do is let that throw reach the step: the
+ * recap would fail over a missing optimization. So the throw is converted to
+ * "no callback", which puts the run on the poll arm it used to be on always.
+ *
+ * The cases with no usable URL are a self-hosted server started without
+ * `publicUrl`, any spec (which publishes no minter), and **local development
+ * either way**: `aai dev`'s origin is a `localhost` one, so it either throws or
+ * mints a URL no third party can dial. So a local run always exercises the poll
+ * arm. Point a tunnel at the dev server's BACKEND port — the Vite port a
+ * developer opens does not proxy `/.well-known/` — and set `PUBLIC_URL` to it to
+ * exercise the callback at all.
+ */
+export function callbackUrl(token: string): string | undefined {
+  try {
+    return stepWebhookUrl(token);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -514,8 +728,6 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
     minutes: Math.round((transcript.audioDuration ?? 0) / 60),
   };
 }
-
-/** A rate limit — and a model that ignored the format — are both expected here. */
 
 /**
  * Say one line into the run's progress channel.

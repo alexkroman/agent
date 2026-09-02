@@ -121,10 +121,19 @@ export async function* followRun(
   }
 }
 
-/** What one bounded output read consumed, and whether the RUN is finished. */
+/**
+ * What one bounded output read consumed, and whether the RUN is finished.
+ *
+ * `next` is the first index this read did NOT deliver, which is what
+ * `StreamOptions.startIndex` takes: that parameter is an INCLUSIVE floor, so a
+ * count of consumed chunks is directly a cursor and there is no `± 1` anywhere on
+ * this path. Reading it as exclusive is what made a default `followRunOutput`
+ * skip chunk 0 — `packages/aai-runtime/workflow-stream-cursor.test.ts` is the
+ * oracle over the whole chain.
+ */
 type OutputEnding = { next: number; complete: boolean };
 
-/** One bounded read of the output stream, from an absolute index. */
+/** One bounded read of the output stream, from an absolute INCLUSIVE index. */
 async function* outputOnce(
   api: RunStreamOpener,
   runId: string,
@@ -149,8 +158,11 @@ async function* outputOnce(
       const complete = (frame.data as { complete?: boolean } | undefined)?.complete === true;
       return { next, complete };
     }
-    // The route 404s an unknown id rather than framing it, so `missing` here is
-    // the events route's vocabulary arriving on this one. Same answer: stop.
+    // An id no run answers to. Both SSE routes frame it — an endpoint that
+    // streams cannot report a run vanishing mid-stream with a status code — and
+    // it is STABLE, the world's record being durable, so there is nothing to
+    // come back for. A 404 on either route means something else entirely now:
+    // an agent serving no workflow API, which `streamBody` throws on above.
     if (frame.event === "missing") return { next, complete: true };
   }
   // No `done` frame: the connection dropped. Progress is a durable log, so the
@@ -167,7 +179,8 @@ async function* outputOnce(
  * whole log of a live run. Chunks are retained with the run, so this is a replay
  * as much as a tail: by default it starts at the beginning.
  *
- * `fromIndex` is ABSOLUTE, and the raw route's "last N chunks" (a negative
+ * `fromIndex` is ABSOLUTE and INCLUSIVE — `fromIndex: 0`, the default, yields the
+ * run's first chunk — and the raw route's "last N chunks" (a negative
  * `startIndex`) is deliberately not offered here: it names no position a re-open
  * can resume from — the tail it counts back from moves with every chunk the run
  * writes — so a reader resuming from it would ask for a different set entirely.

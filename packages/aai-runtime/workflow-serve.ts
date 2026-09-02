@@ -33,18 +33,25 @@
  * internet.
  *
  * Both routes are gone, so that hole is closed by CONSTRUCTION rather than by a
- * predicate. The predicate stays exported because the reasoning behind it
- * outlived them: a caller's network POSITION is a fact this process can
- * establish where a header is not, and tunnel traffic arrives from outside the
- * sandbox's network namespace so it is never a loopback peer. The guest's manage
- * surface reads it to tell a loopback dial from a tunnel one.
+ * predicate. {@link isLoopbackAddress} survives them, and has NO reader today —
+ * its own spec is the only caller. It is kept because the reasoning outlived the
+ * routes: a caller's network POSITION is a fact this process can establish where
+ * a header is not, and tunnel traffic arrives from outside the sandbox's network
+ * namespace so it is never a loopback peer. The next door that has to tell a
+ * loopback dial from a tunnel one should take this rather than write a fourth
+ * spelling of the IPv4-mapped case. If none arrives, delete it and its spec.
  *
  * @internal
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  PUBLIC_URL_UNCONFIGURED_MESSAGE,
+  publishStepWebhookUrl,
+} from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
+import { sendJson } from "./workflow-api-http.ts";
 import { serveFetch } from "./workflow-http-adapter.ts";
 import { deliverQueueMessage, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
 
@@ -57,15 +64,113 @@ import { deliverQueueMessage, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispa
  * form as its own literal. See `server-routes.ts`.
  *
  * They stay in this module rather than moving to `workflow-webhook.ts` with the
- * handler because `aai-server` imports them to register its proxy, and that
- * module reaches the runtime's `Logger` and a `WorkflowClient` — a dependency the
- * platform's route table has no business acquiring in order to learn a path.
+ * handler because that module reaches the runtime's `Logger` and a
+ * `WorkflowClient` — a dependency `server-routes.ts` has no business acquiring in
+ * order to learn a path, and it is what `aai-server` reads the route table from.
+ * The three readers are all in this package: `server-routes.ts`,
+ * `workflow-webhook.ts` and `workflow-client.ts`.
  *
  * @internal
  */
 export const WORKFLOW_WEBHOOK_PATH = "/.well-known/workflow/v1/webhook";
 /** @internal */
 export const WORKFLOW_WEBHOOK_PREFIX = `${WORKFLOW_WEBHOOK_PATH}/` as const;
+
+/**
+ * The URL a third party POSTs to in order to resolve one waitpoint — an origin
+ * plus {@link WORKFLOW_WEBHOOK_PREFIX} plus the token, as ONE segment.
+ *
+ * Here rather than at its callers because the composition has three parts that
+ * are each wrong in a way nothing can see. The PREFIX has to be the constant
+ * this router parses, or the URL handed out and the path answering it drift —
+ * and a run waiting on a hook that never arrives reports as healthily
+ * suspended, so the 404 lands weeks later on somebody else's server. The token
+ * has to be ENCODED, because the parser refuses a path carrying a second slash.
+ * And the base has to be de-slashed: it arrives from a boot env var, a
+ * container's `PUBLIC_URL` or an author's own string, and a copied-in origin
+ * ending in `/` is the ordinary shape of all three.
+ *
+ * A blank base THROWS the same message `ctx.workflows.publicWebhookUrl` throws,
+ * rather than composing a relative `/.well-known/…` that nothing can call back
+ * on. `workflow-client.ts` still spells this composition inline and should be
+ * folded onto this function — one behaviour, one copy.
+ *
+ * @internal
+ */
+export function workflowWebhookUrl(publicUrl: string, token: string): string {
+  const base = publicUrl.trim().replace(/\/+$/, "");
+  if (!base) throw new Error(PUBLIC_URL_UNCONFIGURED_MESSAGE);
+  return `${base}${WORKFLOW_WEBHOOK_PREFIX}${encodeURIComponent(token)}`;
+}
+
+/**
+ * Publish how this process mints a run's public webhook URL, for the STEP slot
+ * (`stepWebhookUrl` on `@alexkroman1/aai/step`).
+ *
+ * The gap it closes: `ctx.workflows.publicWebhookUrl` needs a `ToolContext`, and
+ * a workflow BODY and the steps it calls are handed none — so a `workflowApp()`
+ * with no tools could not mint a callback at all and had to poll. A step's
+ * env cannot supply the value either: the public URL is a boot parameter of the
+ * DEPLOYMENT rather than one of the agent's own secrets. See
+ * `sdk/step-webhook.ts` in `@alexkroman1/aai` for the slot and the rest of the
+ * argument.
+ *
+ * What is published is a MINTER rather than the origin, so the route stays in
+ * the package that answers it and the SDK never spells this path.
+ *
+ * A blank or absent `publicUrl` UNPUBLISHES: the deployment cannot mint one, and
+ * the step helper's own throw then names the configuration — where a published
+ * minter over an empty base would hand out a relative URL and fail at the far
+ * end. Publishing again REPLACES, which is what a redeploy or a repeat bundle
+ * load means.
+ *
+ * @internal
+ */
+export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void {
+  const base = publicUrl?.trim();
+  publishStepWebhookUrl(base ? (token) => workflowWebhookUrl(base, token) : undefined);
+}
+
+/**
+ * The delivery door's body cap.
+ *
+ * This door had NO cap, which is not the same severity as the unauthenticated
+ * webhook beside it — `allowRemote` has to vouch for the caller first — but
+ * "authenticated" is not "trusted with unbounded memory". The credential is a
+ * per-sandbox manage bearer, and the process it spends is a guest also serving
+ * live voice sessions, so an unbounded read makes one leaked or misbehaving
+ * caller the author of this container's heap usage.
+ *
+ * ## Why this number
+ *
+ * The delivery body is the queue envelope's payload, and the platform's own
+ * enqueue route is what decides how large one can ever be:
+ * `MAX_ENQUEUE_BODY_BYTES` in `aai-server/workflow-enqueue-handler.ts` refuses a
+ * larger message before it is stored, so nothing above this can be enqueued and
+ * therefore nothing above it can be delivered. The cap is the same number,
+ * RESTATED rather than imported — `aai-runtime` may not depend on `aai-server`,
+ * and this package is also what a self-hoster runs, where there is no platform
+ * enqueue route at all. A delivery that starts being refused here is the signal
+ * that the two have drifted.
+ *
+ * `deliverQueueMessage` in fact reads nothing but the `x-vqs-queue-name` header
+ * — the run id comes from the name and from nothing else — so today a cap of
+ * almost zero would serve. That is deliberately not the number: it would bind
+ * this constant to one implementation detail of the handler rather than to the
+ * contract, and the first reader of the payload would silently start refusing
+ * every real message.
+ *
+ * ## Not `MAX_WEBHOOK_BODY_BYTES`, though it is the same size today
+ *
+ * That one bounds a THIRD PARTY's notification on the public, credential-free
+ * webhook route, and its number is a product statement ("a payload is a
+ * notification, never a file"). Borrowing it would couple the two: a decision to
+ * tighten the public surface would silently start refusing legitimate queue
+ * deliveries, on an unrelated door, with the failure appearing as stalled runs.
+ *
+ * @internal
+ */
+export const MAX_QUEUE_DELIVERY_BODY_BYTES = 1_048_576;
 
 /**
  * Is `address` a loopback peer — i.e. did this request originate INSIDE this
@@ -95,9 +200,8 @@ export function isLoopbackAddress(address: string | undefined): boolean {
  * hook wants: `true` when this handler claimed the request.
  *
  * A node↔fetch adapter sits behind it (`workflow-http-adapter.ts`) because the
- * handler is fetch-style while `createServer` is `node:http`. It is small and it
- * is temporary — once the session server is on Hono (`c.req.raw` is already a
- * `Request`) this mounts directly and the function goes away.
+ * handler is fetch-style while `createServer` is `node:http`; that module's own
+ * doc says why it is temporary.
  *
  * @internal
  */
@@ -156,8 +260,7 @@ export function handleWorkflowRequest(
   // to trigger. Fails closed when no predicate was supplied, which is every
   // composition that has no platform.
   if (!opts.allowRemote?.(req)) {
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "unauthorized" }));
+    sendJson(res, 401, { error: "unauthorized" });
     return true;
   }
 
@@ -172,8 +275,7 @@ export function handleWorkflowRequest(
   } catch (err: unknown) {
     const logger = opts.logger ?? consoleLogger;
     logger.error("Workflow delivery unavailable", { error: errorMessage(err) });
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: `Workflow delivery unavailable: ${errorMessage(err)}` }));
+    sendJson(res, 500, { error: `Workflow delivery unavailable: ${errorMessage(err)}` });
     return true;
   }
   // Nothing to deliver to. DECLINED rather than answered: this is
@@ -189,6 +291,23 @@ export function handleWorkflowRequest(
     // finish gets another attempt. An unroutable message is a 400 decided inside
     // the handler and never reaches here — see `deliverQueueMessage`.
     failureStatus: 500,
+    // Bounded AS IT IS READ. `readBody` counts per chunk and drops the overflow,
+    // so `serveFetch` answers 413 before `deliverQueueMessage` sees a `Request`
+    // at all — which is the property that makes this a cap rather than a
+    // measurement taken after the damage. Applied here and not in the adapter
+    // because the limit is this door's contract, not the shim's.
+    //
+    // **A 413 is TERMINAL, and the platform does not yet know that.** The
+    // sender is `workflow-queue-deliver.ts`, whose caller
+    // (`workflow-queue-sweep.ts`) throws on any non-2xx and lets the sweep back
+    // off — so an oversized message is re-sent until the attempt budget runs
+    // out, exactly as `deliverQueueMessage`'s 400 already is, despite its doc
+    // saying a 400 means "do not retry this, it can never route". Classifying a
+    // 4xx as abandon-now belongs on that side and is owed there. What this
+    // change does buy in the meantime is that the retries are cheap: the body is
+    // discarded as it arrives instead of being buffered whole, so a resend costs
+    // bandwidth rather than another copy of the payload in a guest's heap.
+    maxBodyBytes: MAX_QUEUE_DELIVERY_BODY_BYTES,
   });
   return true;
 }

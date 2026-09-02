@@ -44,8 +44,8 @@
  * | --- | --- | --- |
  * | `cancel` | marks the run cancelled; the body keeps going | there is no queue to stop delivering to |
  * | `wakeUp` | `0` | a sleep is skipped, not suspended — nothing is asleep to wake |
- * | `ctx.waitFor` | rejects | a hook's payload comes from outside the run |
- * | `signal` | `false` | `createHook()` THROWS untransformed, so no run can be listening |
+ * | `ctx.waitFor` | a TIMED wait resolves `undefined`; an unbounded one rejects | a deadline that nobody answered is an honest outcome; an open wait has none |
+ * | `signal` | `false` | nothing here registers a waitpoint, so no run is ever listening for one |
  * | `readOutput` | the value the body returned | no serialization round trip, so a value a real journal would refuse passes here |
  *
  * **And a step's `maxRetries` is INERT**, which is the one consequence worth
@@ -166,6 +166,11 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       workflowName: record.workflowName,
       status: record.status,
       createdAt: record.createdAt,
+      // Both payload fields ride the record, mirroring the production engine's
+      // `toWdkRecord`: a snapshot reads `output` from here rather than paying a
+      // second `readOutput`, so an engine that dropped it would report every
+      // completed run as having returned nothing.
+      ...(record.status === "completed" ? { output: record.output } : {}),
       ...(record.status === "failed" && record.error ? { error: record.error } : {}),
     };
   }
@@ -263,7 +268,28 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
     return record.emitted.filter((one) => one.namespace === namespace).map((one) => one.chunk);
   }
 
-  /** WDK's `startIndex`: absent is the whole stream, negative counts back. */
+  /**
+   * `startIndex`, with the SAME two readings the real store gives it.
+   *
+   * Absent is the whole stream, negative counts back from the end (`-1` is the
+   * newest alone), and a non-negative value is an INCLUSIVE floor — the first
+   * index the reader wants. `workflow-streams.ts`'s `read` is the definition and
+   * its own doc carries the argument, which is short: every consumer of this
+   * cursor counts what it consumed and re-sends that count, and a count IS the
+   * first unread index.
+   *
+   * This briefly read it EXCLUSIVELY, to match a production store that was
+   * exclusive at the time. That made the two implementations of one `WdkAdapter`
+   * agree — on the wrong semantic — which is worth recording, because agreement
+   * between two implementations is exactly what a differential spec looks for and
+   * it is not the same claim as either of them being right. The oracle that
+   * settled it is `workflow-stream-cursor.test.ts`: it holds this adapter against
+   * the memory store AND both against a poll loop that has to reconstruct its
+   * own log, and only the third property could tell the two candidates apart.
+   *
+   * Indices here are array positions because nothing drops from the front; the
+   * real store subtracts its first index for the same arithmetic.
+   */
   function fromIndex(chunks: readonly unknown[], startIndex: number | undefined): unknown[] {
     if (startIndex === undefined) return [...chunks];
     if (startIndex < 0) return chunks.slice(Math.max(0, chunks.length + startIndex));

@@ -131,6 +131,8 @@ jobs:
       - name: Check for changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main
+      # The tasks that are NOT rows of the gate table: the turbo tasks, plus
+      # the five root-level scripts turbo cannot own.
       - run: |
           pnpm exec turbo run check:publint check:attw docs
           pnpm run check:knip
@@ -141,67 +143,36 @@ jobs:
           pnpm run check:syncpack
           pnpm run check:sherif
           pnpm run check:markdown
-          pnpm run check:publish-names
-          # PACKS the three publishable packages and reads the manifest back
-          # out of each tarball. `catalog:` and `workspace:` are pnpm-only
-          # protocols; pnpm rewrites them when it packs, and that rewrite is
-          # the only thing between the catalog in pnpm-workspace.yaml and a
-          # release that installs for nobody. publint reads the SOURCE
-          # manifest, so it cannot see this — and the symptom would be a 100%
-          # broken published version, found by consumers.
-          pnpm run check:publish-protocols
-          # Committed API reports for the 20 published entry points. Reads the
-          # emitted dist/*.d.ts, so it belongs after the build with publint.
-          pnpm run check:api-report
-          # Versioned contracts over the authoring surface. Runs straight after
-          # the reports because it reads the authoring surface out of them, and
-          # it is the gate that forces a signature change to be classified —
-          # retained with a frozen compiling example, or dropped with a reason.
-          pnpm run check:api-contracts
-          # And straight after that: does the guide that SHIPS to users name
-          # every capability the contracts version? check:agent-guide (below)
-          # asserts that guide is CURRENT; this asserts it is COMPLETE. Reads
-          # the committed API-EXPORTS.json to decide scope, which is why it is
-          # here rather than with the pure-fs ratchets.
-          pnpm run check:authoring-guide
-          # The committed markdown API reference (`docs/api/`). Same emitted
-          # dist/*.d.ts as the reports above, read for the opposite half: the
-          # reports are signatures with every doc comment stripped, this is
-          # TypeDoc's own prose output, one file per published entry point, so
-          # an agent working in the repo can read the API without fetching the
-          # rendered site.
-          pnpm run check:docs-md
-          pnpm run check:doc-examples
-          # In the local check script since it was written, but missing here —
-          # the same CI-never-invokes-it gap the ratchets below document.
-          # It type-checks the templates under the SCAFFOLD's tsconfig, which
-          # is looser than the repo's, so `turbo run typecheck` passing above
-          # says nothing about it.
-          pnpm run check:template-types
-      # The quality ratchets. They lived only in scripts/check.mjs, which CI
-      # never invokes, so they were enforced solely by the pre-push hook — and
-      # `git push --no-verify` skipped them entirely. All are pure git/fs
-      # checks needing no build, and check-escape-hatches degrades to a skip
-      # when there is no origin/main to diff against. check:guest-toolchain
-      # catches a lockfile that no longer matches the installed toolchain,
-      # which would otherwise bake a different tree into every guest image
-      # than the one this repo tested with.
-      # check:konsistent enforces konsistent.json — the structural conventions
-      # no per-file linter can see (a provider module missing one of its five
-      # exports, a *-barrel.ts with a local declaration, a cross-boundary
-      # import). It auto-emits ::error annotations here because GITHUB_ACTIONS
-      # is set, so violations land inline on the PR diff with no extra flags.
-      - run: |
-          pnpm run check:hatches
-          pnpm run check:invariants
-          pnpm run check:file-length
-          pnpm run check:test-assertions
-          pnpm run check:claude-md
-          pnpm run check:guest-toolchain
-          pnpm run check:agent-guide
-          pnpm run check:scaffold
-          pnpm run check:workflow-schema
-          pnpm run check:konsistent
+      # EVERY quality gate, DERIVED — the ratchets and the after-build gates,
+      # in the table's own order, read out of scripts/check.mjs rather than
+      # restated here.
+      #
+      # This block used to be ~20 hand-copied `pnpm run check:*` lines, and the
+      # copy drifted the only way it could: a PR deleted a gate's script, its
+      # row and its spec, and left the line here. `pnpm run <missing>` exits
+      # non-zero under `bash -e`, and this job is in the required `ci` job's
+      # `needs` — so every push on that branch, and every push to main after
+      # it merged, would have failed CI while `pnpm check` stayed green
+      # locally. There is one list now, in one file, and a gate added or
+      # removed there needs no edit to this one.
+      #
+      # `--gates ci` names the PHASES this job owns (`GATE_SELECTIONS` there):
+      # the pure git/fs ratchets, and the after-build gates that read the
+      # `dist` restored above. The third phase, `after-tests`, belongs to the
+      # coverage matrix below. The runner keeps each row's `fatal` field rather
+      # than flattening it into `bash -e`: a fatal gate stops the run, and the
+      # ratchets are all reported together, so a branch tripping three learns
+      # about three. A failing gate also emits a `::error` annotation naming
+      # itself, and `check:konsistent` still emits its own inline ones because
+      # GITHUB_ACTIONS reaches it unchanged.
+      #
+      # `packages/aai-templates/gate-wiring.test.ts` is the guard: it parses
+      # the table and this file independently and fails if either goes empty,
+      # if a gate is enforced by neither this step nor a named command, or if
+      # any `pnpm run …` here names a script the root manifest does not
+      # declare — which is the exact break above.
+      - name: Quality gates (derived from scripts/check.mjs)
+        run: node scripts/check.mjs --gates ci
 
   # Unit tests sharded by package — run in parallel
   test:

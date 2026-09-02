@@ -363,8 +363,8 @@ test("text mode accepts only the fields a text agent has", () => {
 test("a workflow app accepts only the fields a workflow app has", () => {
   type Workflows = NonNullable<AgentDef["workflows"]>;
 
-  // The whole legal surface: what a page renders, what it starts, what a
-  // a step reads.
+  // The whole legal surface: what a page renders, what it starts, what a step
+  // reads.
   expectTypeOf<{ name: string; page: "static"; workflows: Workflows }>().toExtend<AgentParams>();
   expectTypeOf<{
     name: string;

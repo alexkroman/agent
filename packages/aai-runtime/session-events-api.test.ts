@@ -198,6 +198,41 @@ describe("session events API — the gate", () => {
     expect(res.statusCode).toBe(401);
   });
 
+  /**
+   * The set-but-EMPTY token, which served the conversation to anyone.
+   *
+   * The FAILING observation, measured on this harness before the guard: status
+   * **200**, with both seeded transcript events in the body, to a request
+   * carrying no `Authorization` header at all. `""` is not `undefined` so the
+   * route turned ON, and `bearerMatches(header, "")` compared two empty buffers,
+   * which `timingSafeEqual` matches. This is the higher-severity half of the
+   * bypass because this route is CLOSED by default and its content is the
+   * conversation — transcripts, tool arguments, the caller's own words — and the
+   * value is reachable from the studio's Secrets pane, whose
+   * `SecretUpdatesSchema` accepts an empty string.
+   */
+  test.each(["", "   ", "\t"])("a blank configured token (%j) authenticates nobody", async (t) => {
+    const { res, json } = await call(
+      { stream: seeded(), token: t },
+      `${SESSION_EVENTS_PATH}/${SID}`,
+    );
+
+    expect(res.statusCode).toBe(401);
+    // Asserted on the BODY as well as the status: the failure this replaces was
+    // a 200 carrying the transcript, so "not 200" is only half the claim.
+    expect(JSON.stringify(json())).not.toContain("one");
+  });
+
+  test("a blank token refuses a caller who presents that same blank", async () => {
+    // The other direction: a caller cannot opt into the hole by sending the empty
+    // credential itself, which `parseBearer` cannot distinguish from no header.
+    const { res } = await call(
+      { stream: seeded(), token: "", bearer: "" },
+      `${SESSION_EVENTS_PATH}/${SID}`,
+    );
+    expect(res.statusCode).toBe(401);
+  });
+
   test("a wrong bearer is 401", async () => {
     const { res } = await call(
       { stream: seeded(), bearer: "nope" },

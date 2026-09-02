@@ -16,7 +16,7 @@
  * store from the other side — the way a step hands a file it PRODUCED to a
  * caller that can only read JSON.
  *
- * Re-exported from `@alexkroman1/aai/utils`. This file is not shipped and
+ * Re-exported from `@alexkroman1/aai/step`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
  * report for this capability alone, hash it, and hold it to a committed epoch.
  * See `scripts/api-contracts.mjs`.

@@ -10,8 +10,9 @@
 
 import type { WorkflowCtx } from "@alexkroman1/aai";
 import { isWorkflowSuspend } from "@alexkroman1/aai";
+import { publishStepReporter } from "@alexkroman1/aai/host-internal";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import type { JournalStore, RunRecord } from "./workflow-journal-types.ts";
 import { replayRun } from "./workflow-replay.ts";
@@ -39,6 +40,23 @@ function replay(
   input: Record<string, unknown> = {},
 ) {
   return replayRun({ runId: "wrun_1", workflow: "digest", input, run, journal });
+}
+
+/**
+ * Capture what the engine NARRATES for the duration of one test.
+ *
+ * The reporter slot is process-global (`sdk/step-report.ts`), so it is installed
+ * and taken back down per test — and taking it down matters twice over: an
+ * unpublished slot makes `report()` fall back to the console, which would put
+ * the engine's retry lines in every other suite's output.
+ */
+function reportedLines(): () => string[] {
+  const lines: string[] = [];
+  publishStepReporter(async (chunk) => {
+    lines.push(String(chunk));
+  });
+  onTestFinished(() => publishStepReporter(undefined));
+  return () => lines;
 }
 
 describe("a first execution", () => {
@@ -143,6 +161,9 @@ describe("a replay", () => {
 
 describe("attempts", () => {
   test("retries a retryable failure and keeps the successful result", async () => {
+    // Captured and discarded: this test is about the RESULT, and an
+    // unpublished reporter slot sends the engine's retry lines to the console.
+    reportedLines();
     const { journal } = await seed();
     let calls = 0;
     const outcome = await replay(journal, async (_input, ctx) =>
@@ -154,6 +175,80 @@ describe("attempts", () => {
     );
     expect(calls).toBe(3);
     expect(outcome).toEqual({ kind: "completed", output: "eventually" });
+  });
+
+  // The gap that cost hours: only the LAST attempt was recorded, and only as
+  // `error.message` on the journal entry — so a step that failed three times
+  // and then succeeded left NOTHING anywhere saying why. The whole visible
+  // output was the body's own progress line with `(attempt N)` after it, which
+  // reads as a slow step rather than as a step hitting a wall in 5 seconds and
+  // walking into it again. Two failures, two records.
+  test("a non-final failure is recorded, not discarded", async () => {
+    const lines = reportedLines();
+    const { journal } = await seed();
+    let calls = 0;
+    const outcome = await replay(journal, async (_input, ctx) =>
+      ctx.step("convert", () => {
+        calls++;
+        if (calls < 3) throw new RetryableError("no space left on device", { retryAfter: 0 });
+        return "converted";
+      }),
+    );
+    expect(outcome).toEqual({ kind: "completed", output: "converted" });
+    // The successful attempt is NOT one of these: a step that worked has
+    // nothing to explain, and the journal entry records it.
+    expect(lines()).toEqual([
+      "Step convert failed on attempt 1 of 3, retrying in 0ms: no space left on device",
+      "Step convert failed on attempt 2 of 3, retrying in 0ms: no space left on device",
+    ]);
+  });
+
+  // The `cause` exists in exactly one place — the live value in the attempt
+  // loop's `catch`. `stepFailure` rebuilds a failed step from the message
+  // alone, by design, so a line that dropped the chain would drop the only
+  // sentence that says which filesystem filled and how big it was.
+  test("a reported failure carries what caused it", async () => {
+    const lines = reportedLines();
+    const { journal } = await seed();
+    await replay(journal, async (_input, ctx) =>
+      ctx.step(
+        "convert",
+        () => {
+          throw new RetryableError("Ran out of space writing 660.8 MB to /var/tmp/aai-step-x/out", {
+            retryAfter: 0,
+            cause: new Error("ENOSPC: no space left on device, write"),
+          });
+        },
+        { maxAttempts: 2 },
+      ),
+    );
+    expect(lines()).toEqual([
+      "Step convert failed on attempt 1 of 2, retrying in 0ms: " +
+        "Ran out of space writing 660.8 MB to /var/tmp/aai-step-x/out — " +
+        "caused by ENOSPC: no space left on device, write",
+    ]);
+  });
+
+  // A cause whose message the wrapper already quotes adds nothing, and a line
+  // that says it twice is what makes an operator stop reading these.
+  test("does not repeat a cause the failure already names", async () => {
+    const lines = reportedLines();
+    const { journal } = await seed();
+    await replay(journal, async (_input, ctx) =>
+      ctx.step(
+        "convert",
+        () => {
+          throw new RetryableError("convert failed: ffmpeg exited 1", {
+            retryAfter: 0,
+            cause: new Error("ffmpeg exited 1"),
+          });
+        },
+        { maxAttempts: 2 },
+      ),
+    );
+    expect(lines()).toEqual([
+      "Step convert failed on attempt 1 of 2, retrying in 0ms: convert failed: ffmpeg exited 1",
+    ]);
   });
 
   test("does not retry a FatalError, however many attempts remain", async () => {
@@ -174,6 +269,7 @@ describe("attempts", () => {
   });
 
   test("stops at maxAttempts and fails the run", async () => {
+    reportedLines();
     const { journal } = await seed();
     let calls = 0;
     const outcome = await replay(journal, async (_input, ctx) =>
@@ -479,5 +575,100 @@ describe("a body that swallows its own suspend", () => {
     });
 
     expect(outcome).toEqual({ kind: "completed", output: "yes" });
+  });
+});
+
+describe("a suspend thrown from INSIDE a step", () => {
+  // Out of contract — a step cannot wait, which is what makes it the unit this
+  // engine can neither interrupt nor un-journal — and trivially reachable
+  // anyway, because the closure a step is handed captures `ctx`. Before this the
+  // attempt loop read a `SuspendSignal` as an ordinary retryable error: the body
+  // ran once per attempt, each run minted a DISTINCT sleep record (the wait's
+  // identity diverging with the counter), and the loop journaled
+  // `{status: "failed", error: "workflow suspended"}` — an entry that is
+  // authoritative forever, so every later replay answers the wait as a failure.
+
+  test("propagates untouched, journaling nothing and running the body ONCE", async () => {
+    const { journal } = await seed();
+    const claimSleep = vi.spyOn(journal, "claimSleep");
+    const waiting = vi.fn(async (ctx: WorkflowCtx) => {
+      await ctx.sleep(60_000);
+    });
+
+    const outcome = await replay(journal, async (_input, ctx) =>
+      ctx.step("waiting", () => waiting(ctx)),
+    );
+
+    expect(outcome.kind).toBe("suspended");
+    // Once, not once per attempt — and so ONE wait rather than `sleep!0/1/2`.
+    expect(waiting).toHaveBeenCalledTimes(1);
+    expect(claimSleep.mock.calls.map((call) => call[1])).toEqual(["sleep!0"]);
+    // Nothing journaled. A `failed` entry here would answer the wait as a
+    // failure on every replay from now on.
+    expect(await journal.readSteps("wrun_1")).toEqual([]);
+    // One attempt consumed by this delivery, not the whole budget: the next
+    // claim is 2.
+    expect(await journal.claimAttempt("wrun_1", "waiting#0")).toBe(2);
+  });
+
+  test("resumes on the next delivery instead of failing the run", async () => {
+    const { journal } = await seed();
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) =>
+      ctx.step("waiting", async () => {
+        await ctx.sleep(60_000);
+        return "waited";
+      });
+
+    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(1);
+    // The SAME wait key, so the wake reaches it and the step settles.
+    expect(await replay(journal, body)).toEqual({ kind: "completed", output: "waited" });
+  });
+});
+
+describe("a hook answered while its own timeout is being read", () => {
+  // `closeHook` used to be unconditional, so this walk took the TIMED-OUT branch
+  // while every later replay read `delivered: true` and took the ANSWERED one —
+  // the exact divergence `HookRecord.closed` is documented to prevent.
+
+  test("both walks take the ANSWERED branch", async () => {
+    const { journal } = await seed();
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => ({
+      answer: await ctx.waitFor("tok", { timeoutMs: 1000 }),
+    });
+
+    const claimSleep = journal.claimSleep.bind(journal);
+    const racing = vi
+      .spyOn(journal, "claimSleep")
+      .mockImplementation(async (runId, key, _wakeAt, correlationId, kind) => {
+        // The deadline is ALREADY elapsed, and the signal lands between reading
+        // it and closing the window — which is the whole race, and the only
+        // instant in which the two branches disagree.
+        const record = await claimSleep(runId, key, Date.now() - 1, correlationId, kind);
+        if (key === "hookTimeout!0") await journal.deliverHook("tok", { ok: true });
+        return record;
+      });
+
+    const first = await replay(journal, body);
+    racing.mockRestore();
+    const second = await replay(journal, body);
+
+    expect(first).toEqual({ kind: "completed", output: { answer: { ok: true } } });
+    // The property, stated as the comparison: two walks of one body cannot
+    // disagree about what happened.
+    expect(second).toEqual(first);
+  });
+
+  test("still times out when nothing was delivered", async () => {
+    const { journal } = await seed();
+    const body = async (_input: Record<string, unknown>, ctx: WorkflowCtx) => ({
+      answer: await ctx.waitFor("tok", { timeoutMs: -1 }),
+    });
+    expect(await replay(journal, body)).toEqual({
+      kind: "completed",
+      output: { answer: undefined },
+    });
+    // And the window is shut, so a late signal cannot reopen it.
+    expect(await journal.deliverHook("tok", { late: true })).toBeUndefined();
   });
 });

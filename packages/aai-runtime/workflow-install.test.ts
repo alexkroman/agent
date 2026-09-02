@@ -106,6 +106,39 @@ describe("installWorkflowSupport", () => {
     await local.close();
   });
 
+  test("the boot line reports a DECLARED directory as surviving a restart", async () => {
+    // The arm nothing reached until `aai dev` gained a writer for
+    // `AAI_WORKFLOW_DATA_DIR`. Its wording is the whole tradeoff an operator has
+    // to know, and while every deployment took the per-process default this
+    // branch was unreachable in production — so the sentence a developer under
+    // `aai dev` actually gets was asserted by nothing.
+    const logger = quietLogger();
+    const local = installWorkflowSupport({ logger });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining(`workflow uploads are LOCAL (${dataDir})`),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("they survive a restart of this process"),
+    );
+    await local.close();
+  });
+
+  test("and an UNDECLARED one as belonging to this process", async () => {
+    // The other arm, which is what a scaffold `server.mjs` and a deployed guest
+    // with neither a platform nor a database get: `tmpdir()/aai-workflow-data-<pid>`,
+    // gone with the process. Nothing is written here, so no directory is created.
+    vi.stubEnv("AAI_WORKFLOW_DATA_DIR", undefined);
+    const logger = quietLogger();
+    const perProcess = installWorkflowSupport({ logger });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining(`aai-workflow-data-${process.pid}`),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("an upload does not outlive it"),
+    );
+    await perProcess.close();
+  });
+
   test("a database with no bucket REFUSES, naming the durable half", async () => {
     // The one combination with no answer: a database's runs outlive this container,
     // and the local directory cannot serve one that resumes elsewhere.

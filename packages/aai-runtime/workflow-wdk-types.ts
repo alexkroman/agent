@@ -102,5 +102,15 @@ export type WdkRunRecord = {
   workflowName: string;
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   createdAt: Date | number;
+  /**
+   * The run's return value, set on a `completed` record and on no other.
+   *
+   * On the record rather than behind {@link WdkAdapter.readOutput} because the
+   * store that answers `getRun` already read it: `completed` is TERMINAL, so a
+   * second read cannot see a newer value, and a snapshot of a finished run was
+   * costing two platform round trips for one fact. `readOutput` stays for a
+   * caller holding only a run id.
+   */
+  output?: unknown;
   error?: { message: string } | undefined;
 };

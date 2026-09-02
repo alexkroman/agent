@@ -47,7 +47,7 @@ export type WriteUploadOptions = {
  * end of the run. So the bytes go to the store and the output carries the id,
  * which a page turns back into a file with `api.download(id)`.
  *
- * ```ts no-check
+ * ```ts
  * import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string) {

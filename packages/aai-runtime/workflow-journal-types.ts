@@ -67,6 +67,32 @@ export function isTerminalStatus(status: RunStatus): boolean {
 }
 
 /**
+ * A journal that can be SWEPT — one that declares
+ * {@link JournalStore.resumableRuns}.
+ *
+ * The one member is re-declared as REQUIRED rather than derived with
+ * `Required<Pick<…>>`, which does not do the job under
+ * `exactOptionalPropertyTypes`: that utility drops the `?` and keeps the
+ * `| undefined` in the property's own type, so every call site still needed a
+ * `?.` and the narrowing bought nothing.
+ */
+export type ResumableJournal = JournalStore & {
+  resumableRuns: (limit: number) => Promise<ResumableRun[]>;
+};
+
+/**
+ * Can this journal enumerate the runs it owes a delivery?
+ *
+ * A PREDICATE and not a cast: `resumableRuns` is optional on the interface, so the
+ * narrowing is something the checker can see rather than something a
+ * `as unknown as` asserts. The one caller is the boot sweep, which needs the
+ * answer to decide between sweeping and warning.
+ */
+export function isResumableJournal(store: JournalStore): store is ResumableJournal {
+  return store.resumableRuns !== undefined;
+}
+
+/**
  * One run, as stored.
  *
  * `workflow` is the DECLARED KEY — the name the agent registered it under in
@@ -168,6 +194,21 @@ export type HookRecord = {
 };
 
 /**
+ * One run a local dispatcher still owes a delivery, as {@link
+ * JournalStore.resumableRuns} answers it.
+ */
+export type ResumableRun = {
+  runId: string;
+  /**
+   * The earliest OUTSTANDING deadline the run is waiting on, or absent when it is
+   * waiting on nothing — a `pending` run whose start was never delivered, or one
+   * killed mid-step. Absent means "deliver now"; a value in the past means the
+   * same and says how overdue it is.
+   */
+  wakeAt?: number | undefined;
+};
+
+/**
  * The durable store, as the engine needs it.
  *
  * Deliberately has no `updateStep` and no `deleteRun`: the journal is
@@ -175,6 +216,17 @@ export type HookRecord = {
  * primitive would be a way to make a replay disagree with what an operator was
  * shown. Sweeping old runs is the platform's own job and happens below this
  * interface.
+ *
+ * ## Four of these need a run, and what happens without one is UNDER-SPECIFIED
+ *
+ * {@link JournalStore.claimAttempt}, {@link JournalStore.claimSleep},
+ * {@link JournalStore.claimHook} and {@link JournalStore.appendStep} are defined
+ * only for a run that EXISTS. A backend MAY throw — memory does; both databases
+ * insert a row with no run to belong to and answer normally. Deliberately left
+ * under-specified: the engine calls these only after `createRun`, mandating the
+ * throw costs the databases a read or a foreign key per step to detect a state
+ * it cannot reach, and mandating the answer would have memory invent a slot,
+ * i.e. resurrect a run.
  */
 export type JournalStore = {
   /**
@@ -196,6 +248,15 @@ export type JournalStore = {
    * that had not noticed.
    *
    * Resolves `false` when the run was not in `expect`.
+   *
+   * **The patch is ADDITIVE.** A field it does not carry is not written, and an
+   * explicit `undefined` is the same as absent — so a stored `output` can never
+   * be CLEARED. That is what `error` has always done in all three backends, so
+   * the alternative leaves two fields of one patch with two rules; the platform
+   * cannot express the distinction at all without a new wire field
+   * (`JSON.stringify` drops an `undefined` key, so "no patch" and "clear it" are
+   * already the same bytes); and unwriting a terminal payload is the mutation
+   * primitive this interface says outright it does not have.
    */
   setStatus(
     runId: string,
@@ -203,7 +264,23 @@ export type JournalStore = {
     patch?: { output?: unknown; error?: { message: string } },
     expect?: readonly RunStatus[],
   ): Promise<boolean>;
-  /** Every settled step for a run, in the order they settled. */
+  /**
+   * Every settled step for a run, ordered by `finishedAt`, ties broken by `key`.
+   *
+   * The tie is what the wording pins down, and it used to say "in the order they
+   * settled" — which memory implemented as insertion order while both databases
+   * ran `order by finished_at, key`, so two steps of one fan-out settling inside
+   * one millisecond came back in opposite orders depending on where the run was
+   * deployed. The databases are right and memory sorts now.
+   *
+   * One limit stated rather than pretended away: a database breaks the tie in
+   * the column's COLLATION, which for `text` under a non-C collation is not
+   * code-unit order — and step keys are punctuation-heavy (`fetch#0`,
+   * `sleep!0`). So a BYTE-EXACT tie order is not promised without
+   * `collate "C"` on the column. It is unobservable in practice: a tie needs two
+   * steps settling within one millisecond, and the engine indexes what this
+   * returns by `key`.
+   */
   readSteps(runId: string): Promise<StepEntry[]>;
   /**
    * Consume one attempt for `key` and resolve the attempt's 1-based number.
@@ -268,8 +345,20 @@ export type JournalStore = {
    *
    * Called by the engine on the timeout path, BEFORE the body continues — see
    * {@link HookRecord.closed} for the divergence it prevents.
+   *
+   * A COMPARE-AND-SET on `delivered`, and the boolean is what decides the
+   * branch. Unconditional, it prevented only half the divergence it is
+   * documented to prevent: the engine reads the deadline, then closes, and a
+   * signal landing between the two left this walk taking the TIMED-OUT branch
+   * while every later replay read `delivered: true` and took the ANSWERED one.
+   *
+   * Resolves `true` when no signal may be taken through this window — it is
+   * closed now, was already closed, or is gone entirely (a terminal run releases
+   * its tokens) — so the caller may return the timeout. Resolves `false` ONLY
+   * when the window was already ANSWERED, in which case the caller owes the
+   * answered branch instead.
    */
-  closeHook(runId: string, key: string): Promise<void>;
+  closeHook(runId: string, key: string): Promise<boolean>;
   /**
    * Deliver `payload` to whatever holds `token`.
    *
@@ -282,6 +371,43 @@ export type JournalStore = {
    * knows: it is answering a question, not driving a particular run.
    */
   deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+  /**
+   * Every non-terminal run this journal still owes a delivery, newest deadline
+   * LAST, at most `limit`.
+   *
+   * **The one query that is not about a single run, and the reason it exists is a
+   * data-loss bug.** A `ctx.sleep` suspends with its deadline in the journal and
+   * its TIMER in the dispatcher's process, and nothing enumerated the journal at
+   * boot — so a run suspended when the process restarted (or when `aai dev`
+   * rebuilt its runtime) sat `running` forever with its whole journal intact, on
+   * every backend, Postgres included. `wake` could not rescue it either: an
+   * elapsed deadline is not a wait {@link JournalStore.wakeSleeps} may stop, so
+   * the run was unreachable through the public API. `createInProcessWorkflowEngine`
+   * sweeps this at construction, which is the in-process half of what
+   * `aai-server/workflow-queue-reconcile.ts` does for a deployed guest.
+   *
+   * Two membership rules, both mirroring that reconcile's predicate because it is
+   * the proven version of this question:
+   *
+   * - **A PARK is not a stall.** `await ctx.waitFor(token)` with no deadline is
+   *   the steady state of the human-approval workflow the SDK documents, and
+   *   `signal` is what ends it — so a run holding an OPEN window (undelivered,
+   *   unclosed) and no outstanding sleep is EXCLUDED. Including it would cost a
+   *   replay per parked run per boot, which under `aai dev` is per file save.
+   * - **A run with an outstanding sleep is included whatever its kind**, so a
+   *   `waitFor(token, { timeoutMs })` whose deadline was lost still fires. That is
+   *   the qualification that keeps the park rule from hiding a run forever.
+   *
+   * **OPTIONAL, and an absent implementation is a DECLARATION.** A backend that
+   * cannot answer omits it, and `createInProcessWorkflowEngine` then WARNS at boot
+   * rather than silently forgetting the runs — a durability tradeoff absent from
+   * the log reads as a bug. `workflow-journal-platform.ts` is the one backend that
+   * omits it on purpose: a deployed guest's schedule lives in the platform's
+   * queue, whose reconcile already recovers a lost one server-side, so a sweep
+   * here would be a second recovery mechanism booting a sandbox per copy. See
+   * that module's own note.
+   */
+  resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
   /**
    * Append one settled step.
    *

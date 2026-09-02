@@ -33,10 +33,9 @@
  *
  * What stays here is what a dependency cannot decide: how many steps to cut the job
  * into, and therefore what is journaled and what a retry repeats. That is also
- * structural rather than stylistic — the Workflow DevKit's builder transforms
- * only a body holds a `ctx`, so a step boundary shipped
- * inside the SDK would be transformed by nothing and would run inline with no
- * journal and no retry, silently.
+ * structural rather than stylistic — only the caller with a `ctx` can open a
+ * step, so a step boundary shipped inside the SDK would be no boundary at all:
+ * it would run inline, with no journal and no retry, silently.
  *
  * ## The one thing that makes this a WORKFLOW rather than a request
  *
@@ -70,7 +69,7 @@ const POLL_INTERVAL_MS = 10_000;
 /**
  * Polls before the run gives up on a job.
  *
- * At {@link POLL_INTERVAL} this is an hour, well past what the async API takes for
+ * At {@link POLL_INTERVAL_MS} this is an hour, well past what the async API takes for
  * any recording it accepts. Bounded rather than endless because a job that never
  * leaves `queued` is a run that would otherwise be replayed forever.
  */
@@ -84,7 +83,10 @@ export async function transcribeBatchFlow(
   // Both at once: the clock does not depend on the upload, and issuing them
   // together costs one round trip instead of two before a byte moves. Their issue
   // order is still decided by this line rather than by which lands first.
-  // `maxAttempts: 6` was `uploadToProvider.maxRetries = 5`.
+  // `maxAttempts: 6` was `uploadToProvider.maxRetries = 5` — five retries after
+  // the first, so six in all. More than the default 3 because an upload is the
+  // one call here worth another attempt: it moves the whole recording, and a lost
+  // connection on a file this size is the expected failure.
   const [startedAt, { audioUrl }] = await Promise.all([
     ctx.step("startClock", () => startClock()),
     ctx.step("uploadToProvider", () => uploadToProvider(input.recording), { maxAttempts: 6 }),
@@ -133,8 +135,6 @@ export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: st
   );
   return await stepTranscribeUploadClassified(uploadId);
 }
-
-/** Retries beyond the default 3: an upload is the one call here worth another attempt. */
 
 /** Create the transcription job, and answer with the id that outlives this run. */
 export async function createJob(audioUrl: string): Promise<{ id: string }> {

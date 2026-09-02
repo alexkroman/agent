@@ -44,7 +44,9 @@ export type StreamReader = RunReader & {
  * Frames are `chunk` (one per written value, JSON-encoded) then `done`, whose
  * payload carries `complete` — whether the RUN was already terminal when the read
  * started. A reader handed `complete: false` re-opens from where it left off; one
- * handed `complete: true` is finished.
+ * handed `complete: true` is finished. An id no run answers to is a `missing`
+ * frame, the same terminal answer `/events` gives and for the same reason — see
+ * the comment on that branch below.
  *
  * ## It is BOUNDED BY THE TAIL, and that is what makes it terminate
  *
@@ -70,13 +72,43 @@ export async function streamRunOutput(
 ): Promise<void> {
   const run = runId ? await engine.get(runId) : undefined;
   if (!run) {
-    sendJson(res, 404, { error: `No workflow run with id ${runId}` });
+    // A `missing` FRAME on a 200, not a 404 — the same answer `/events` gives,
+    // and the one `workflow-api.ts`'s route table has always advertised for this
+    // route (`SSE: chunk | done | missing`) while nothing emitted it. Four
+    // reasons it is the right half of the pair to move:
+    //
+    // - An SSE endpoint cannot 404 a run that vanishes MID-stream, so a
+    //   status-coded answer makes "the run is gone" depend on when you asked.
+    // - 404 already means something ELSE on this path —
+    //   `WORKFLOWS_UNAVAILABLE_MESSAGE`, an agent serving no workflow API at all
+    //   — which is the ambiguity `WorkflowApi.get`'s doc records as having "no
+    //   second signal here to read". Now there is one.
+    // - Both SDK readers already handle the frame: `outputOnce`
+    //   (`sdk/workflow-api-follow.ts`) and `consumeFrames`
+    //   (`aai-ui/use-workflow-progress.ts`), the latter having classified the 404
+    //   as "this agent does not serve this route" and hidden the progress UI for
+    //   what is really an unknown id.
+    // - `/events` and this are two questions about ONE run, and answering the
+    //   same "no such run" two ways is a difference a client has to encode twice.
+    //
+    // The read-FIRST is unchanged and was never about the status: the client's
+    // stream is lazy, so an unknown id reaching it opens a 200 and then fails on
+    // the first pull, which a page cannot tell from a dropped connection.
+    res.writeHead(200, SSE_HEADERS);
+    res.write(sseFrame("missing", { runId }));
+    res.end();
     return;
   }
   const params = requestQuery(req.url);
   const namespace = params.get("namespace");
   const startIndexParam = params.get("startIndex");
-  const startIndex = startIndexParam === null ? undefined : Number(startIndexParam);
+  // A BLANK parameter is a malformed request, not a default, and it had to be
+  // spelled out because `Number("")` is `0` rather than `NaN` — so `?startIndex=`
+  // passed the integer check below as a legitimate `0`, and `startIndex` is an
+  // INCLUSIVE floor, so `0` is the whole stream. A caller that meant to send a
+  // cursor and sent nothing was answered with a full replay of everything it had
+  // already read, once per poll. Same call `?limit=` gets one route over.
+  const startIndex = startIndexParam === null ? undefined : indexOf(startIndexParam);
   // An integer check rather than `isFinite`: a chunk index is a position, and
   // `startIndex=1.5` is a caller mistake worth naming rather than truncating.
   if (startIndex !== undefined && !Number.isInteger(startIndex)) {
@@ -96,9 +128,10 @@ export async function streamRunOutput(
   const budget = budgetFor(tail, startIndex);
   const complete = isTerminal(run);
   // A budget of zero opens NOTHING. This is the poll a caught-up page makes
-  // every second — `useWorkflowProgress` advances `startIndex` by what it has
-  // consumed, so a run that is mid-step and writing nothing answers 0 for as
-  // long as the step lasts — and opening a stream to read no chunks from it is
+  // every second — `useWorkflowProgress` sends the first index it has NOT seen,
+  // which on a caught-up reader is `tail + 1`, so a run that is mid-step and
+  // writing nothing answers 0 for as long as the step lasts — and opening a
+  // stream to read no chunks from it is
   // both a world read for nothing and the exact shape that leaks: a reader
   // cancelled before its own background connect has finished used to strand a
   // `chunk:`/`close:` listener pair per request (see the `@workflow/core`
@@ -115,17 +148,43 @@ export async function streamRunOutput(
 }
 
 /**
+ * A `startIndex` parameter as a number, with a BLANK one reading as `NaN`.
+ *
+ * `Number("")` is `0`, not `NaN`, which is the whole defect this exists for —
+ * see the call site. Its own function rather than a nested ternary, which the
+ * linter refuses and which would be the harder half of this to read anyway.
+ */
+function indexOf(value: string): number {
+  return value.trim() === "" ? Number.NaN : Number(value);
+}
+
+/**
  * How many chunks a read starting at `startIndex` may emit to reach `tail`.
  *
  * `tail` is `-1` for a stream nothing has written, which yields 0 — the response
  * is then a bare `done`, which is the honest answer for a run that has not said
  * anything yet.
+ *
+ * Exported for `workflow-stream-cursor.test.ts`, which drives it against the
+ * real store: this number and the store's own slice are the two halves of one
+ * cursor, and they were off by one FROM EACH OTHER. A property that reads the
+ * store without this cannot see that class of defect at all.
+ *
+ * @internal
  */
-function budgetFor(tail: number, startIndex: number | undefined): number {
+export function budgetFor(tail: number, startIndex: number | undefined): number {
   const available = tail + 1;
-  if (startIndex === undefined || startIndex === 0) return available;
+  if (startIndex === undefined) return available;
   // Negative counts back from the end, so it asks for at most that many.
   if (startIndex < 0) return Math.min(available, -startIndex);
+  // An INCLUSIVE floor, so `startIndex` names a chunk this read may emit: the
+  // count is `tail - startIndex + 1`. There used to be a `startIndex === 0`
+  // arm returning `available` beside this, which is the same number this line
+  // computes — and the fact that it was needed at all was the tell. It said
+  // "a 0 is everything", i.e. inclusive, while `workflow-streams.ts` sliced
+  // exclusively: the budget then let the pipe loop ask for one chunk more than
+  // the read could supply, so the two halves of one cursor disagreed by one in
+  // OPPOSITE directions and neither half's own spec could see it.
   return Math.max(0, available - startIndex);
 }
 

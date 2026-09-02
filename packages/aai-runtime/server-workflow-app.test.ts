@@ -21,6 +21,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { silentLogger, withDeadline } from "./_test-utils.ts";
 import { createServer, type SessionRuntime } from "./server.ts";
+import { MAX_WEBHOOK_BODY_BYTES } from "./workflow-webhook.ts";
 
 /**
  * A `ctx.workflows` that declares one workflow and nothing else.
@@ -243,11 +244,38 @@ describe("the workflow API mount", () => {
       expect(workflows.signal).toHaveBeenCalledWith("live", { approved: true });
     });
 
-    test("takes whatever verb the far side chose", async () => {
-      // The URL went to a third party, which picks its own method.
+    test("a verb that carries no payload is refused, and delivers nothing", async () => {
+      // The finding this replaces a test for. The route used to declare
+      // `methods: "any"` — "the far side picks its own verb" — and a delivery
+      // is PERMANENT: `signal` resolves the waitpoint and the hook closes. So a
+      // bare `GET` from a link-preview fetcher, a URL scanner or a crawler
+      // resolved the run with `{}`, and an approval workflow fired with no
+      // human anywhere near it. A webhook delivery carries a payload; a verb
+      // that does not carry one cannot be a delivery.
       const { workflows, port } = await serveWorkflows();
-      expect((await fetch(hookUrl(port, "live"))).status).toBe(200);
-      expect(workflows.signal).toHaveBeenCalledWith("live", undefined);
+      for (const method of ["GET", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"]) {
+        const res = await fetch(hookUrl(port, "live"), { method });
+        expect(res.status, method).toBe(405);
+        // Named, so a sender that guessed wrong can correct itself rather than
+        // reading the refusal as "this hook is gone".
+        expect(res.headers.get("allow"), method).toBe("POST");
+      }
+      expect(workflows.signal).not.toHaveBeenCalled();
+    });
+
+    test("an oversized body is refused with a 413 rather than delivered", async () => {
+      // The wiring half — the bound itself is `workflow-http-adapter.test.ts`,
+      // which is where "refused as it arrives" is asserted. What this pins is
+      // that the SERVER declares a cap at all: the route is the one public,
+      // unauthenticated door in the product, so an absent cap is an attacker
+      // choosing how much of this process's memory to spend.
+      const { workflows, port } = await serveWorkflows();
+      const res = await fetch(hookUrl(port, "live"), {
+        method: "POST",
+        body: "a".repeat(MAX_WEBHOOK_BODY_BYTES + 1),
+      });
+      expect(res.status).toBe(413);
+      expect(workflows.signal).not.toHaveBeenCalled();
     });
 
     test("a token nothing is listening on answers 404, never a 5xx", async () => {

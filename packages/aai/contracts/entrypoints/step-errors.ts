@@ -19,19 +19,20 @@
  * that TIMED OUT or was aborted is worth another attempt, and a file ffmpeg
  * refused is not, however many times it is replayed. It recognises the failure
  * STRUCTURALLY rather than with `instanceof`, and that is forced rather than
- * stylistic — naming `FfmpegError` here would put a `node:child_process` import
- * at MODULE scope of a `workflows/*.ts` bundle, which is a `node:vm` Script with
- * no `require`, so every run would die at replay. Two templates each carried a
+ * stylistic — naming `FfmpegError` here would reach `host/ffmpeg.ts` and its
+ * `node:child_process` from `sdk/`, and `sdk/tsconfig.json` compiles with
+ * `types: []` precisely so that cannot happen. Two templates each carried a
  * whole one-function file to keep that reference on the far side of a boundary
  * only a step body crosses; the capability owning the decision is what retires
  * them.
  *
- * The six `*Classified` callers are the SDK's own step calls with exactly that
- * `.catch` already attached — `stepGenerate`, `stepGenerateJson` and the four
- * transcription calls. They are on the contract rather than left as a recipe for
+ * The seven `*Classified` callers are the SDK's own step calls with exactly that
+ * `.catch` already attached — `stepGenerate`, `stepGenerateJson`, the four
+ * transcription calls, and `sendToChannel`. They are on the contract rather
+ * than left as a recipe for
  * the same reason: every project that called one wrote the identical
  * `.catch(throwStepError)` beside it, and the one that forgot got the
- * one-second default instead of the gateway's own `Retry-After`. None of the six
+ * one-second default instead of the gateway's own `Retry-After`. None of the seven
  * takes a `message`, which is the boundary — a caller with a label worth
  * attaching writes the explicit `.catch((err) => throwStepError(err, …))` and is
  * back on the three primitives above.

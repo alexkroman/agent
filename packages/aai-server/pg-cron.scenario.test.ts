@@ -126,7 +126,13 @@ describeWithStack("the pg_cron sweep bodies", () => {
     // the whole fleet while the app-role runaway sweep left with the roles it
     // terminated; and 6 → 7 when the orphan reap came back for the same reason —
     // with no database to drop, a reap is a Vault row and an agents row.
-    expect(JOBS.length).toBeGreaterThanOrEqual(7);
+    //
+    // 7 → 9 with the durable-workflow retention sweep, and the JUMP is the finding:
+    // the real count was already 8 because `aai-sweep-upload-records` landed
+    // without moving this line. A floor that lags is a floor that would not have
+    // noticed the sweep it lagged by going away, so it is set to the actual here
+    // rather than nudged by one.
+    expect(JOBS.length).toBeGreaterThanOrEqual(9);
     expect(JOBS.map((j) => j.name)).toContain("aai-sweep-blob-gc");
     // Back here, and this is the assertion that says which side of the move we are
     // on: it read `not.toContain` for as long as those rows lived in a catalog this
@@ -135,6 +141,10 @@ describeWithStack("the pg_cron sweep bodies", () => {
     // Back here too, and for the same reason the session-state sweep is: the step
     // that could not be SQL does not exist any more.
     expect(JOBS.map((j) => j.name)).toContain("aai-sweep-orphan-previews");
+    // Named because it is the one whose body a MIGRATION owns — the schedule here
+    // and `aai_platform.sweep_terminal_workflow_runs()` there — so a migration that
+    // stopped shipping the function would leave this list looking complete.
+    expect(JOBS.map((j) => j.name)).toContain("aai-sweep-workflow-runs");
     // This one is really gone rather than renamed: a platform job sweeping a
     // catalog that no longer holds what it looks for runs on its schedule forever
     // and reclaims nothing.
@@ -292,6 +302,55 @@ describeWithStack("the pg_cron sweep bodies", () => {
     expect(events.map((r) => r.session_id)).toEqual(["new"]);
 
     await sql("delete from aai_platform.agents where slug = 'pgc-sess'");
+  });
+
+  test("the workflow retention sweep drops an old terminal run and its whole journal", async () => {
+    // The one sweep whose body lives in a migration rather than in `pg-cron.ts`,
+    // and the one with children to take with it: `workflow_steps` and the other
+    // three reference `agents`, not `workflow_runs`, so nothing cascades and the
+    // CTE is the only thing keeping them together.
+    const day = 86_400_000;
+    const now = Date.now();
+    await sql(
+      `insert into aai_platform.agents (slug, credential_hashes, worker_hash, client_files, version)
+       values ('pgc-wkf', '{}'::jsonb, '', '{}'::jsonb, 1) on conflict do nothing`,
+    );
+    await sql(
+      `insert into aai_platform.workflow_runs (slug, run_id, workflow, status, created_at)
+       values ('pgc-wkf', 'old_done', 'd', 'completed', $1),
+              ('pgc-wkf', 'old_live', 'd', 'running',   $1),
+              ('pgc-wkf', 'new_done', 'd', 'completed', $2)`,
+      [now - 40 * day, now - 1000],
+    );
+    await sql(
+      `insert into aai_platform.workflow_steps
+         (slug, run_id, key, name, status, attempts, finished_at)
+       values ('pgc-wkf', 'old_done', 'k', 'n', 'ok', 1, $1)`,
+      [now - 40 * day],
+    );
+    await sql(
+      `insert into aai_platform.workflow_hooks (slug, run_id, key, token)
+       values ('pgc-wkf', 'old_done', 'h', 'pgc-wkf-token')`,
+    );
+
+    const sweep = JOBS.find((j) => j.name === "aai-sweep-workflow-runs");
+    expect(sweep).toBeDefined();
+    await sql(sweep?.command ?? "");
+
+    const runs = await sql("select run_id from aai_platform.workflow_runs where slug = 'pgc-wkf'");
+    // The old TERMINAL one, and only it: a run still `running` at 40 days is a
+    // long park, not garbage, and a run that finished a second ago is history
+    // somebody is still reading.
+    expect(runs.map((r) => String(r.run_id)).sort()).toEqual(["new_done", "old_live"]);
+    const steps = await sql("select 1 from aai_platform.workflow_steps where slug = 'pgc-wkf'");
+    const hooks = await sql("select 1 from aai_platform.workflow_hooks where slug = 'pgc-wkf'");
+    expect(steps).toEqual([]);
+    // The hook row in particular: it holds a TOKEN, and a token held by a run
+    // nobody can reach is one an author's derived `retention:<id>` collides with
+    // forever.
+    expect(hooks).toEqual([]);
+
+    await sql("delete from aai_platform.agents where slug = 'pgc-wkf'");
   });
 
   test("the studio-session sweep deletes an expired lease", async () => {

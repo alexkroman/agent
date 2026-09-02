@@ -15,9 +15,9 @@
  *
  * `TranscribeError` is here rather than with `step-errors` on the same rule the
  * `StepGenerateError` split follows: the error is a value this surface
- * PRODUCES, and the DevKit mapping that reads it is a different promise.
+ * PRODUCES, and the fatal/retryable mapping that reads it is a different promise.
  *
- * Re-exported from `@alexkroman1/aai/utils`. This file is not shipped and
+ * Re-exported from `@alexkroman1/aai/step`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
  * report for this capability alone, hash it, and hold it to a committed epoch.
  * See `scripts/api-contracts.mjs`.

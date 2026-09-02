@@ -27,7 +27,8 @@ import escapeHtml from "escape-html";
 import { WebSocketServer } from "ws";
 import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import { consoleLogger } from "./runtime-config.ts";
-import { routeMatches, SERVER_ROUTES } from "./server-routes.ts";
+import { agentGateToken } from "./server-env.ts";
+import { routeMatches, SERVER_ROUTES, WORKFLOW_CALLBACK_ROUTES } from "./server-routes.ts";
 import { serveStatic } from "./server-static.ts";
 import { declineSocket } from "./session-decline.ts";
 import { createSessionEventsApi, SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
@@ -36,7 +37,7 @@ import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
 import { answerHandlerFailure, sendJson } from "./workflow-api-http.ts";
 import { serveFetch } from "./workflow-http-adapter.ts";
 import { installWorkflowSupport } from "./workflow-install.ts";
-import { createWebhookHandler, webhookToken } from "./workflow-webhook.ts";
+import { createWebhookHandler, MAX_WEBHOOK_BODY_BYTES, webhookToken } from "./workflow-webhook.ts";
 import { asSessionWebSocket } from "./ws-handler.ts";
 
 export type {
@@ -54,6 +55,14 @@ export type {
  * an explicit choice by the caller.
  */
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
+
+/**
+ * What the webhook route answers, as an `Allow` header.
+ *
+ * Derived from the route table rather than written beside it, so the verb the
+ * dispatch gates on and the verb the refusal advertises cannot drift.
+ */
+const WEBHOOK_ALLOWED_METHODS = WORKFLOW_CALLBACK_ROUTES.webhook.methods.join(", ");
 
 // A socket this server will not serve is turned away with a REASON — see
 // `session-decline.ts`, which owns the three refusal paths.
@@ -149,7 +158,9 @@ export function createServer(options: ServerOptions): AgentServer {
     // claim and the store cannot disagree — which they did, for every databaseless
     // agent. See `uploadBytesAreRemote`.
     directParts: workflowSupport.directParts,
-    ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
+    // `agentGateToken`, not a bare read: a set-but-EMPTY gate variable used to
+    // authenticate every caller, including one presenting no header at all.
+    ...omitUndefined({ token: agentGateToken(env, WORKFLOW_API_TOKEN_ENV, logger) }),
     logger,
   });
 
@@ -177,7 +188,9 @@ export function createServer(options: ServerOptions): AgentServer {
    */
   const sessionEventsApi = createSessionEventsApi({
     stream: () => runtime.sessionEvents,
-    ...omitUndefined({ token: env?.[SESSION_EVENTS_TOKEN_ENV] }),
+    // Same read as the workflow API's, and the more expensive one to get wrong:
+    // this route is OFF when unset, so a blank value turned it ON unauthenticated.
+    ...omitUndefined({ token: agentGateToken(env, SESSION_EVENTS_TOKEN_ENV, logger) }),
     logger,
   });
 
@@ -239,6 +252,23 @@ export function createServer(options: ServerOptions): AgentServer {
     if (workflowApi(req, res, url, method)) return;
     const hookToken = webhookToken(url);
     if (hookToken !== undefined) {
+      // The verb gate is a SECURITY control here, not a nicety. A delivery is
+      // permanent — it resolves the run's waitpoint and closes the hook — so
+      // while this route took any verb, a bare `GET` from a link-preview
+      // fetcher, a URL scanner or a crawler resolved an approval workflow with
+      // an empty payload and nobody's consent. A delivery carries a payload, so
+      // it is a verb that has one; the rest are refused BEFORE the handler,
+      // which is the only place that cannot be undone.
+      if (!routeMatches(WORKFLOW_CALLBACK_ROUTES.webhook, url, method)) {
+        // `Allow` named, so a sender that guessed wrong can correct itself
+        // rather than reading the refusal as "this hook is gone" and stopping.
+        res.writeHead(405, {
+          "Content-Type": "application/json",
+          Allow: WEBHOOK_ALLOWED_METHODS,
+        });
+        res.end(JSON.stringify({ error: `Webhook delivery must be ${WEBHOOK_ALLOWED_METHODS}` }));
+        return;
+      }
       void serveFetch((request) => workflowWebhook(hookToken, request), req, res, {
         logger,
         label: "Workflow webhook",
@@ -246,6 +276,10 @@ export function createServer(options: ServerOptions): AgentServer {
         // as "come back". An ordinary MISS never reaches here — the handler
         // answers that 404 itself, which is what stops the loop.
         failureStatus: 502,
+        // The cap the route publishes, applied to the STREAM: without it the
+        // body was fully buffered and only then measured, which on a door with
+        // no credential is an attacker choosing this process's memory use.
+        maxBodyBytes: MAX_WEBHOOK_BODY_BYTES,
       });
       return;
     }

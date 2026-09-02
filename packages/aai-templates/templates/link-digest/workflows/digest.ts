@@ -198,8 +198,8 @@ export async function summarize(article: Article): Promise<Digest> {
  * replays the expensive half for free and re-issues only the cheap one.
  * Returning the timestamp rather than reading a clock in the BODY is the same
  * rule — a step's result is journaled and therefore stable across replays,
- * where `Date.now()` in the body would change on every one, and the build scan
- * refuses it there.
+ * where `Date.now()` in the body would change on every one. Nothing CHECKS
+ * that — there is no build scan for it — so the boundary is the author's.
  */
 export async function file(_digest: Digest): Promise<string> {
   await report("Filing the digest.");

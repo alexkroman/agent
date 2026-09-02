@@ -106,7 +106,7 @@ export type StepFetchInit = {
    *
    * Note a streaming body cannot be RETRIED by the transport, because an iterable is
    * consumed once. That is a property of streaming rather than of this option, and it
-   * is why a step sending one should be the step the DevKit retries — a fresh attempt
+   * is why a step sending one should be the step the engine retries — a fresh attempt
    * re-reads the upload from the start.
    */
   body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
@@ -188,7 +188,7 @@ function isStreamingBody(body: StepFetchInit["body"]): boolean {
  * @public
  *
  * **From a step, prefer `stepFetchOk`
- * (`@alexkroman1/aai/step-errors`).** The DevKit's retry policy is decided by WHICH
+ * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
  */

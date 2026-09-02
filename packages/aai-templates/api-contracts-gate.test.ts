@@ -68,11 +68,10 @@ const exportsSource: string =
       eager: true,
     }),
   ) ?? "{}";
-// The two RUNNERS come from the shared wiring block — the same three sources
-// every gate spec here reads. `?? ""` keeps a source that stopped resolving
-// visible as an empty search, which the assertions below then fail on.
+// The RUNNER comes from the shared wiring block — the same sources every gate
+// spec here reads. `?? ""` keeps a source that stopped resolving visible as an
+// empty search, which the assertions below then fail on.
 const checkScript: string = GATE_WIRING["scripts/check.mjs"] ?? "";
-const ciWorkflow: string = GATE_WIRING[".github/workflows/check.yml"] ?? "";
 
 const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
 
@@ -329,16 +328,16 @@ describe("capability contracts", () => {
       );
     }
     // Ordering matters: the contracts read the authoring surface out of the
-    // committed API reports, so a stale report would be believed.
-    for (const [label, source] of [
-      ["scripts/check.mjs", checkScript],
-      [".github/workflows/check.yml", ciWorkflow],
-    ] as const) {
-      expect(
-        source.indexOf("check:api-report"),
-        `${label} must run check:api-report before check:api-contracts`,
-      ).toBeLessThan(source.indexOf("check:api-contracts"));
-    }
+    // committed API reports, so a stale report would be believed. Asserted
+    // against the GATES table alone now — CI used to carry its own copy of the
+    // list, and the two had to be checked separately; it runs THIS one (`node
+    // scripts/check.mjs --gates ci`), in source order, so the table is the only
+    // place the order can be stated. `gate-wiring.test.ts` is what holds the
+    // derivation together.
+    expect(
+      checkScript.indexOf("check:api-report"),
+      "scripts/check.mjs must run check:api-report before check:api-contracts",
+    ).toBeLessThan(checkScript.indexOf("check:api-contracts"));
   });
 });
 

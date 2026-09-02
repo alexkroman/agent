@@ -90,8 +90,10 @@ const CALLS: readonly {
   run: (sql: SqlExec) => Promise<unknown>;
 }[] = [
   {
+    // The row the insert reports — see `createRun`'s own describe block: an empty
+    // result is the store's DUPLICATE refusal, not a successful write.
     name: "createRun",
-    rows: [],
+    rows: [[{ run_id: "wrun_1" }]],
     run: (sql) =>
       journal.createRun(sql, SLUG, {
         runId: "wrun_1",
@@ -127,10 +129,14 @@ const CALLS: readonly {
   },
   {
     name: "claimHook",
-    rows: [[], [], [HOOK_ROW]],
+    rows: [[{ ...HOOK_ROW, run_id: "wrun_1", key: "hook!0" }]],
     run: (sql) => journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok"),
   },
-  { name: "closeHook", rows: [[]], run: (sql) => journal.closeHook(sql, SLUG, "wrun_1", "hook!0") },
+  {
+    name: "closeHook",
+    rows: [[{ closed: "1", existing: "1" }]],
+    run: (sql) => journal.closeHook(sql, SLUG, "wrun_1", "hook!0"),
+  },
   {
     name: "deliverHook",
     rows: [[]],
@@ -215,6 +221,61 @@ describe("claimAttempt", () => {
   });
 });
 
+describe("createRun", () => {
+  test("REFUSES a duplicate run id rather than reporting success", async () => {
+    // `on conflict … do nothing` with no `returning` made this store the ONE
+    // backend that answered a duplicate with success: memory throws and the
+    // self-hosted store trips its primary key, so `JournalStore.createRun`'s
+    // "rejects if `runId` already exists" held everywhere except on the arm every
+    // DEPLOYED agent uses. Two racing starts on one id both believed they had
+    // won, and the loser's `input` was discarded with nothing anywhere naming it.
+    //
+    // The empty result IS the conflict: a bare insert of one row either reports
+    // that row or was blocked by a row already there, and `do nothing` does not
+    // wait on a concurrent inserter — it declines, which is what makes this
+    // reachable by the race rather than only by a committed duplicate.
+    const { sql, issued } = recorder([[]]);
+    await expect(
+      journal.createRun(sql, SLUG, {
+        runId: "wrun_1",
+        workflow: "digest",
+        status: "pending",
+        createdAt: 1,
+      }),
+    ).rejects.toBeInstanceOf(journal.PlatformWorkflowRunTakenError);
+    // Without the `returning`, zero rows and one row are the same answer.
+    expect(issued[0]?.sql).toContain("returning run_id");
+  });
+
+  test("refuses it as a TYPED error, which is what buys the caller a 409", async () => {
+    // Same argument as `claimHook`'s below: every plain `Error` reaching
+    // `withReserved` becomes a 503, so the guest retries a refusal that cannot
+    // change and spends the message's whole attempt budget on it.
+    const { sql } = recorder([[]]);
+    await expect(
+      journal.createRun(sql, SLUG, {
+        runId: "wrun_1",
+        workflow: "digest",
+        status: "pending",
+        createdAt: 1,
+      }),
+    ).rejects.toThrow(/workflow run wrun_1 already exists/);
+  });
+
+  test("resolves when the insert reports the row it wrote", async () => {
+    const { sql } = recorder([[{ run_id: "wrun_1" }]]);
+    await expect(
+      journal.createRun(sql, SLUG, {
+        runId: "wrun_1",
+        workflow: "digest",
+        status: "pending",
+        createdAt: 1,
+        input: `{"topic":"otters"}`,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("setStatus", () => {
   test("passes its `expect` list, and answers from the ROW COUNT", async () => {
     const { sql, issued } = recorder([[{ run_id: "wrun_1" }]]);
@@ -256,21 +317,66 @@ describe("wakeSleeps", () => {
 });
 
 describe("claimHook", () => {
+  test("is ONE statement, so the ownership check IS the claim", async () => {
+    // The ownership `select` and the `insert` used to be two round trips on an
+    // untransacted connection, so two runs of one agent claiming the same DERIVED
+    // token concurrently both read no owner and the loser tripped
+    // `workflow_hooks_token_idx` (23505) instead of the authored refusal. An
+    // untargeted `on conflict do nothing` cannot raise that at all, and one
+    // statement is what makes the read and the write one decision.
+    const { sql, issued } = recorder([[{ ...HOOK_ROW, run_id: "wrun_1", key: "hook!0" }]]);
+    await journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok");
+    expect(issued).toHaveLength(1);
+    expect(issued[0]?.sql).toContain("on conflict do nothing");
+  });
+
   test("refuses a token another run holds, naming the holder", async () => {
     // Two waits sharing a token means one signal resolves whichever row the
     // planner reached first and the other waits forever.
-    const { sql } = recorder([[{ run_id: "wrun_other", key: "hook!0" }]]);
+    const { sql } = recorder([[{ ...HOOK_ROW, run_id: "wrun_other", key: "hook!0" }]]);
     await expect(journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok")).rejects.toThrow(
       /already held by run wrun_other/,
     );
   });
 
+  test("refuses it as a TYPED error, which is what buys the caller a 409", async () => {
+    // A plain `Error` reaches `withReserved`'s catch-all and becomes a 503 —
+    // "come back later" for a condition that cannot change while the holder is
+    // alive, so the guest retries and burns the message's attempt budget on it.
+    const { sql } = recorder([[{ ...HOOK_ROW, run_id: "wrun_other", key: "hook!0" }]]);
+    await expect(journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok")).rejects.toBeInstanceOf(
+      journal.PlatformWorkflowHookTokenError,
+    );
+  });
+
   test("accepts a re-claim by the SAME run and key, which is what a replay does", async () => {
-    const { sql } = recorder([[{ run_id: "wrun_1", key: "hook!0" }], [], [HOOK_ROW]]);
+    const { sql } = recorder([[{ ...HOOK_ROW, run_id: "wrun_1", key: "hook!0" }]]);
     await expect(journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok")).resolves.toMatchObject({
       token: "tok",
       delivered: false,
     });
+  });
+});
+
+describe("closeHook is a compare-and-set", () => {
+  test("the update refuses an already-DELIVERED window", async () => {
+    // Unconditional, this walk of the body timed out while every later replay
+    // read `delivered: true` and answered — the divergence `closed` exists to
+    // prevent, arriving by the other door.
+    const { sql, issued } = recorder([[{ closed: "1", existing: "1" }]]);
+    expect(await journal.closeHook(sql, SLUG, "wrun_1", "hook!0")).toBe(true);
+    expect(issued[0]?.sql).toContain("delivered = false");
+  });
+
+  test("answers false when the row exists and the update matched nothing", async () => {
+    const { sql } = recorder([[{ closed: "0", existing: "1" }]]);
+    expect(await journal.closeHook(sql, SLUG, "wrun_1", "hook!0")).toBe(false);
+  });
+
+  test("answers true when the window is GONE, a terminal run having released it", async () => {
+    // Nothing to refuse, so the caller's timeout stands.
+    const { sql } = recorder([[{ closed: "0", existing: "0" }]]);
+    expect(await journal.closeHook(sql, SLUG, "wrun_1", "hook!0")).toBe(true);
   });
 });
 

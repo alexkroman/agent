@@ -80,10 +80,12 @@ export type ServerRouteMatch = "exact" | "prefix";
 /**
  * One route.
  *
- * `methods` is `"any"` rather than an empty array for the route that gates no
+ * `methods` is `"any"` rather than an empty array for a route that gates no
  * verb, because an empty list satisfies every "does the platform answer these?"
  * assertion by having nothing to check — the vacuous pass
- * `guest-routes.test.ts` already guards against in the other direction.
+ * `guest-routes.test.ts` already guards against in the other direction. No
+ * route declares it today: the webhook was the one that did, and gating it on
+ * POST is what stopped a crawler's `GET` from resolving a run's waitpoint.
  *
  * @internal
  */
@@ -151,15 +153,22 @@ export const WORKFLOW_CALLBACK_ROUTES = {
   // The platform's delivery door: POST, and refused unless the composition
   // supplies an `allowRemote` predicate that vouches for the caller.
   queue: { transport: "http", path: WORKFLOW_QUEUE_PATH, match: "exact", methods: ["POST"] },
-  // Whatever verb the far side sends: the URL is handed to a third party that
-  // chooses its own. The SLASH-LESS form — `webhookToken` slices the token off
-  // after the prefix, so what the platform registers is this plus a token
-  // segment, and `WORKFLOW_WEBHOOK_PREFIX` derives from it rather than beside it.
+  // POST, and only POST. This route is the one unauthenticated public door in
+  // the product and a delivery is PERMANENT — it resolves a waitpoint and
+  // closes the hook — so "whatever verb the far side sends", which is what this
+  // declared, meant a bare `GET` from a link-preview fetcher, a URL scanner or
+  // a crawler resolved an approval workflow with an empty payload and no human
+  // involved. A delivery carries a payload, so it is a verb that HAS a body;
+  // anything else is answered `405` with `Allow: POST` rather than delivered.
+  //
+  // The SLASH-LESS form — `webhookToken` slices the token off after the prefix,
+  // so what the platform registers is this plus a token segment, and
+  // `WORKFLOW_WEBHOOK_PREFIX` derives from it rather than beside it.
   webhook: {
     transport: "http",
     path: WORKFLOW_WEBHOOK_PATH,
     match: "prefix",
-    methods: "any",
+    methods: ["POST"],
   },
 } as const satisfies Record<string, ServerRoute>;
 

@@ -113,6 +113,54 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
     expect(typeof JSON.parse(String(run?.input))).toBe("object");
   });
 
+  test("createRun REFUSES a second start on the same run id", async () => {
+    // The one contract point this store used to break, and the only tier that can
+    // show it: `on conflict … do nothing` needs a real unique constraint before
+    // "no row came back" means "the id is taken". Memory throws and the
+    // self-hosted store trips its primary key; this arm answered SUCCESS, so two
+    // racing starts both believed they had won — on the platform arm, i.e. for
+    // every deployed agent.
+    const runId = nextRun();
+    await seed(runId);
+    await expect(
+      journal.createRun(sql, SLUG, {
+        runId,
+        workflow: "other",
+        status: "pending",
+        createdAt: Date.now(),
+        input: JSON.stringify({ topic: "badgers" }),
+      }),
+    ).rejects.toBeInstanceOf(journal.PlatformWorkflowRunTakenError);
+    // The loser wrote NOTHING: the winner's workflow and input both stand. That
+    // is the damage the silent success did — the run somebody is holding the id
+    // for kept running while its `input` was quietly the other caller's.
+    const run = await journal.getRun(sql, SLUG, runId);
+    expect(run?.workflow).toBe("digest");
+    expect(JSON.parse(String(run?.input))).toEqual({ topic: "otters" });
+  });
+
+  test("two racing starts on one id: exactly ONE wins", async () => {
+    // `do nothing` does not WAIT on a concurrent inserter, so the loser is
+    // refused without either transaction having committed — which is the shape
+    // this really arrives in. A refusal that only fired against an already
+    // COMMITTED row would leave the race itself silent.
+    const runId = nextRun();
+    const start = (input: unknown) =>
+      journal.createRun(sql, SLUG, {
+        runId,
+        workflow: "digest",
+        status: "pending",
+        createdAt: Date.now(),
+        input: JSON.stringify(input),
+      });
+    const settled = await Promise.allSettled([start({ n: 1 }), start({ n: 2 })]);
+    expect(settled.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const [loser] = settled.filter((r) => r.status === "rejected");
+    expect(loser?.status === "rejected" && loser.reason).toBeInstanceOf(
+      journal.PlatformWorkflowRunTakenError,
+    );
+  });
+
   test("createdAt survives as a NUMBER, not a bigint string", async () => {
     // `bigint` arrives as a string from the driver. Left alone, every comparison
     // against a deadline is lexicographic and `listRuns`' ordering is right only

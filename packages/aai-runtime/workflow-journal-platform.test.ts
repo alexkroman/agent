@@ -9,8 +9,10 @@
  *
  * - the CODEC runs here, so a `Uint8Array` in a step's output survives a round
  *   trip and the platform never sees a decoded value;
- * - three answers are REFUSED rather than invented, each protecting a property
- *   the engine cannot re-derive;
+ * - an answer is REFUSED rather than invented, each refusal protecting a
+ *   property the engine cannot re-derive — and the refusal has to be REACHABLE,
+ *   which is a separate claim: `appendStep`'s guard could only ever fire on
+ *   `null` while the parse below it accepted any record;
  * - `wakeSleeps` sends the ENGINE's clock, because a second clock in that
  *   comparison is a second source of truth for replay determinism.
  */
@@ -19,6 +21,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { createPlatformJournal } from "./workflow-journal-platform.ts";
 import type { StepEntry } from "./workflow-journal-types.ts";
+import { isResumableJournal } from "./workflow-journal-types.ts";
 
 /** One call the journal made. */
 type Sent = { method: string; body: Record<string, unknown> };
@@ -135,6 +138,35 @@ describe("an answer is refused rather than invented", () => {
     ).rejects.toThrow(/appendStep answered nothing/);
   });
 
+  test("appendStep on a step-shaped answer that is not a step", async () => {
+    // The guard above could only ever fire on `null`: `toStep` accepted ANY
+    // record, so `{ ok: true }` became `key: "undefined", attempts: NaN` and the
+    // engine adopted it as the authoritative entry — `output: undefined`, so a
+    // replay returned nothing where the step had returned a value. That is
+    // exactly the divergence the refusal exists to prevent, reached by a route
+    // the refusal could not see.
+    const { journal } = journalOver([{ ok: true }]);
+    await expect(
+      journal.appendStep("wrun_1", {
+        key: "a#0",
+        name: "a",
+        status: "ok",
+        attempts: 1,
+        finishedAt: 1,
+      }),
+    ).rejects.toThrow(/appendStep answered nothing/);
+  });
+
+  test("a malformed step in readSteps is dropped, like a malformed run in a listing", async () => {
+    const { journal } = journalOver([
+      [
+        { key: "a#0", name: "a", status: "ok", attempts: 1, finishedAt: 1 },
+        { key: "b#0", name: "b", status: "maybe", attempts: 1, finishedAt: 2 },
+      ],
+    ]);
+    expect((await journal.readSteps("wrun_1")).map((step) => step.key)).toEqual(["a#0"]);
+  });
+
   test("claimSleep on an unreadable answer, so a deadline is never guessed", async () => {
     const { journal } = journalOver([null]);
     await expect(journal.claimSleep("wrun_1", "sleep!0", 1, undefined)).rejects.toThrow(
@@ -193,5 +225,24 @@ describe("the wire", () => {
     expect(urls[0]).toContain("/workflow-journal");
     const headers = calls[0]?.headers;
     expect(JSON.stringify(headers)).toContain("sandbox-token");
+  });
+});
+
+describe("resumableRuns is deliberately NOT declared here", () => {
+  test("the platform backend cannot be swept, because the queue reconcile owns that", async () => {
+    // The ABSENCE pin, and it is a claim rather than a gap: a deployed guest's
+    // schedule is a delayed message in the platform's queue, and a message that
+    // goes missing is re-enqueued by `aai-server/workflow-queue-reconcile.ts`.
+    // A boot sweep here would be a second recovery mechanism racing it — one
+    // sandbox boot per copy of this package per boot — so
+    // `createInProcessWorkflowEngine` skips the sweep whenever a dispatcher was
+    // injected, which is exactly when this backend is in play.
+    //
+    // Stated as a test because the alternative is a comment: the method is
+    // OPTIONAL, so adding it here would compile, pass every existing suite, and
+    // change what a deployed guest does at boot.
+    const { journal } = journalOver([null]);
+    expect(journal.resumableRuns).toBeUndefined();
+    expect(isResumableJournal(journal)).toBe(false);
   });
 });

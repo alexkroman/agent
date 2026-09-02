@@ -31,7 +31,9 @@
  * - `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
  *   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
  *   slots a step reaches through, each answered in memory.
- * - `testing-workflows.ts` — run snapshots and progress streams, for a page.
+ * - `testing-workflows.ts` — run snapshots and progress streams, for a page;
+ *   `testing-workflow-ctx.ts` — `createWorkflowCtx`, the `ctx` a workflow BODY
+ *   takes, which nothing else can hand it.
  *
  * @module testing
  */

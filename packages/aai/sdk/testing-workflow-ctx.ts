@@ -138,7 +138,10 @@ export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtx
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       steps.push({ name, maxAttempts: stepOptions?.maxAttempts });
       // A supplied result wins over running, in either mode — see `results`.
-      if (name in results) return results[name] as T;
+      // `Object.hasOwn`, never `in`: `in` walks the prototype chain, so a step
+      // named `toString` or `constructor` would be answered with an inherited
+      // `Object.prototype` method instead of being run.
+      if (Object.hasOwn(results, name)) return results[name] as T;
       // The cast is the honest shape of `runSteps: false`: the caller has said it
       // does not want the work done and named no result, so there is no `T` to
       // answer with. A body that reads it sees `undefined`, which is what that
@@ -153,7 +156,9 @@ export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtx
 
     async waitFor<T>(token: string, waitOptions?: WaitForOptions): Promise<T | undefined> {
       waited.push(token);
-      if (token in hooks) return hooks[token] as T;
+      // `Object.hasOwn` for the reason `step` gives: `in` would answer a token
+      // named after an `Object.prototype` member with an inherited function.
+      if (Object.hasOwn(hooks, token)) return hooks[token] as T;
       // A wait with a DEADLINE resolves `undefined` when nobody answered, which
       // is the branch a body written for a closing window takes — so a spec
       // reaches that branch by simply not supplying a payload.

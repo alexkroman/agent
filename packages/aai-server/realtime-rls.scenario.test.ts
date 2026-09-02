@@ -91,7 +91,12 @@ const migrationsDir = path.resolve(import.meta.dirname, "../../supabase/migratio
  * ever existed — and the first retired one turns this case into
  * `<table> is missing — run \`supabase db push --local\``, which reads as a
  * developer with a stale stack rather than as a table that is gone on purpose.
- * `workflow_run_owner` was the first, dropped with the Workflow DevKit's schema.
+ * No table has been dropped yet, so the subtraction is inert today — it stays
+ * because the first drop must not read as a stale stack. `workflow_run_owner`
+ * was expected to be the first and is not: the Workflow DevKit's schema is
+ * RETIRED by rename rather than dropped (see `RETIRED_OBJECTS` in
+ * `platform-schema.test.ts`), and that table is left in place entirely so a
+ * rollback can still say whose rows those are.
  */
 function rlsTables(): string[] {
   const files = readdirSync(migrationsDir)

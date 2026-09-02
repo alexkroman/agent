@@ -91,7 +91,7 @@
  *   `UPLOAD_CHUNK_BYTES`, which is the chunk a range READ is served in and not the
  *   unit a write publishes: `putWindows` cuts a body into `UPLOAD_PART_BYTES`
  *   windows so one byte layout serves every route an upload can arrive by;
- * - the body sleeps {@link POLL_INTERVAL} between polls when nothing is ready, cut
+ * - the body sleeps {@link POLL_INTERVAL_MS} between polls when nothing is ready, cut
  *   short by the client's wake.
  *
  * 9s + one poll is the 14s above. Nothing here can go below a segment without a
@@ -225,7 +225,7 @@ const MIN_POLL_INTERVAL_MS = 250;
  * Consecutive polls with NO new bytes before the run gives up.
  *
  * An upload that died stays incomplete forever, so without a bound the run polls for
- * as long as the world will replay it. At {@link POLL_INTERVAL} this is five minutes
+ * as long as the world will replay it. At {@link POLL_INTERVAL_MS} this is five minutes
  * of silence — far longer than any stall a live uplink produces, and short enough
  * that the failure reaches whoever is watching.
  *
@@ -457,12 +457,24 @@ export function nextPollDelay(
   // what ends that run; this only declines to guess about it.
   if (bytesPerMs <= 0) return POLL_INTERVAL_MS;
   // Before the header is read there is no plan, so what is being waited for is the
-  // probe window itself — small, and usually one part away.
-  const needed = plan ? nextSegmentEnd(plan, done) : HEADER_PROBE_BYTES;
+  // probe window itself — small, and usually one part away. It is measured against
+  // the PREFIX because that is what the probe reads: from byte zero. Never against
+  // `stored`, which counts every window that has landed wherever it landed — the
+  // module doc's third section is about exactly that divergence, and under the
+  // browser's default fan-out `HEADER_PROBE_BYTES - stored` goes NEGATIVE before
+  // the header this arm is waiting for has arrived at all, collapsing the sleep to
+  // its floor. The RATE above is still `stored`'s, which is right: that one is a
+  // throughput, and throughput is what every window contributes to.
+  //
+  // The plan arm asks {@link segmentStored}'s own question instead of subtracting
+  // an offset, because that test does not read the prefix either. Measuring a
+  // segment against `size` saturates for the whole upload — 45 seconds of `size: 0`
+  // on the measured 27 MB recording — so every segment's sleep came back as the
+  // flat POLL_INTERVAL_MS this function exists to replace.
+  const remaining = plan ? bytesUntilNextSegment(plan, done, at) : HEADER_PROBE_BYTES - at.size;
   // Every segment is already stored: the loop is waiting on `complete`, which is a
   // flag the uploader sets rather than bytes to extrapolate.
-  if (needed === undefined) return POLL_INTERVAL_MS;
-  const remaining = needed - at.stored;
+  if (remaining === undefined) return POLL_INTERVAL_MS;
   if (remaining <= 0) return MIN_POLL_INTERVAL_MS;
   return Math.min(
     POLL_INTERVAL_MS,
@@ -471,19 +483,49 @@ export function nextPollDelay(
 }
 
 /**
- * The byte offset the earliest un-transcribed segment needs in order to be readable.
+ * How many bytes away the NEAREST un-transcribed segment is from being readable.
  *
- * The EARLIEST rather than the furthest: segments are transcribed as they land, so
- * the next thing the loop can act on is the first one it has not done. `undefined`
- * when there is nothing left to wait for.
+ * The nearest rather than the earliest, and that is the `ranges` arm's doing: a
+ * fan-out lands its windows out of order, so the next segment the loop can act on
+ * is whichever one is closest to covered — not the first one in the file. They are
+ * the same segment for a whole-file upload, where coverage is a prefix and the
+ * least distance belongs to the lowest `end`.
+ *
+ * `undefined` when there is nothing left to wait for.
  */
-function nextSegmentEnd(plan: StreamPlan, done: ReadonlySet<number>): number | undefined {
-  let earliest: number | undefined;
+function bytesUntilNextSegment(
+  plan: StreamPlan,
+  done: ReadonlySet<number>,
+  at: UploadProgressView,
+): number | undefined {
+  let nearest: number | undefined;
   for (const segment of plan.segments) {
     if (done.has(segment.index)) continue;
-    if (earliest === undefined || segment.end < earliest) earliest = segment.end;
+    const missing = bytesUntilStored(segment, at);
+    if (nearest === undefined || missing < nearest) nearest = missing;
   }
-  return earliest;
+  return nearest;
+}
+
+/**
+ * The bytes {@link segmentStored} still wants before it answers `true`.
+ *
+ * Derived from the same two readings that test uses, which is the whole point: a
+ * remainder taken from anything else predicts an arrival the readiness test will
+ * not agree with. Two ways for the window to be covered, so two candidates and the
+ * smaller wins — the PREFIX growing to `segment.end`, or the run that already
+ * holds `segment.start` growing to the same place. A run starting AFTER the
+ * segment does can never cover it alone (`rangesOf` merges the adjacent ones), so
+ * it is not a candidate at all and such a segment is left waiting on the prefix.
+ */
+function bytesUntilStored(segment: Segment, at: UploadProgressView): number {
+  if (segmentStored(segment, at)) return 0;
+  let missing = segment.end - at.size;
+  for (const range of at.ranges ?? []) {
+    if (range.start > segment.start) continue;
+    missing = Math.min(missing, segment.end - range.end);
+  }
+  return missing;
 }
 
 /**

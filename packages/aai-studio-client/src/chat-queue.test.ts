@@ -114,7 +114,9 @@ describe("queueReducer", () => {
 
   test("clear empties the queue but keeps the latch armed", () => {
     // A Stop landing inside the dispatch window must not let the next render
-    // start a turn.
+    // start a turn — and must not hand the dispatched message back either,
+    // which would be a second copy of something already in the transcript.
+    // See the reducer's own comment, and the property that settled it.
     const dispatched = queueReducer(queued("a", "b"), { type: "dispatch" });
     const cleared = queueReducer(dispatched, { type: "clear" });
     expect(texts(cleared)).toEqual([]);

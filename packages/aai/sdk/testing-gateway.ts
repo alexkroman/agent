@@ -46,7 +46,7 @@ export interface StubGatewayCall {
 export interface StubGatewayOptions {
   /**
    * HTTP status to answer with. Defaults to 200. A non-2xx answers with an
-   * error body, which is what `stepGenerate` (`@alexkroman1/aai/utils`)
+   * error body, which is what `stepGenerate` (`@alexkroman1/aai/step`)
    * quotes back in its `StepGenerateError`.
    */
   status?: number;

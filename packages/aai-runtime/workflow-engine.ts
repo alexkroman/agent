@@ -3,13 +3,12 @@
  * The engine as the run API already expects it: a {@link WdkAdapter} over a
  * journal, a stream store and a dispatcher.
  *
- * This is the module that makes the Workflow DevKit removable. `workflow-wdk.ts`
- * implemented the same nine-method interface over `workflow/api`, and
- * everything above it — `workflow-client.ts`, the fifteen `workflow-api-*.ts`
- * route modules, the run notifier — was already written against the interface
- * rather than against the DevKit. So swapping the implementation is a one-line
- * change in `workflow-runtime.ts`, and the seam that made that true was the whole
- * reason the previous slice went in first.
+ * This is the module that made the Workflow DevKit removable. Everything above
+ * the nine-method adapter interface — `workflow-client.ts`, the fifteen
+ * `workflow-api-*.ts` route modules, the run notifier — was already written
+ * against that interface rather than against the DevKit, so replacing the
+ * implementation was a one-line change in `workflow-runtime.ts`. The seam is
+ * still named `Wdk*` for the thing it replaced; see `workflow-wdk-types.ts`.
  *
  * ## Starting a run and RUNNING one are deliberately separate
  *
@@ -40,7 +39,7 @@ import type { WorkflowDef } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./workflow-journal-types.ts";
-import { type ReplayOutcome, replayRun } from "./workflow-replay.ts";
+import { type ReplayOptions, type ReplayOutcome, replayRun } from "./workflow-replay.ts";
 import { createStepGate, resolveStepConcurrency, type StepGate } from "./workflow-step-gate.ts";
 import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
@@ -54,11 +53,18 @@ export type WorkflowEngineOptions = {
   /**
    * Hand a run to whatever will execute it, now or at `at`.
    *
-   * Synchronous and returning nothing, because a caller of `ctx.workflows.start`
-   * is told the run's ID and nothing about its progress — making this awaited
-   * would let a slow queue block a tool call, and making it fallible would give
-   * `start` a second failure mode with no better answer than the retry the queue
-   * already owns.
+   * May resolve a promise, and a REJECTION means the run was not scheduled. Only
+   * one caller awaits it and the split is the point: `execute` does, because its
+   * own resolution is what acks a delivery — a re-enqueue that failed silently
+   * left a run with a journal row, no queue message, and a platform wake sweep
+   * that reads the queue, so nothing would ever boot a guest for it again.
+   * `start`, `wakeUp` and `signal` do not: a caller of `ctx.workflows.start` is
+   * told the run's id and nothing about its progress, so awaiting there would let
+   * a slow queue block a tool call and failing there would give `start` a second
+   * failure mode with no better answer than the retry the queue already owns.
+   *
+   * A dispatcher that cannot fail (the in-process one) still returns nothing,
+   * which is why the type is a union rather than `Promise<void>`.
    *
    * `at` is a wall-clock millisecond deadline, set when a body SUSPENDED on
    * `ctx.sleep`. A dispatcher that cannot delay may deliver immediately: the
@@ -66,15 +72,16 @@ export type WorkflowEngineOptions = {
    * honoured — it just costs a wasted delivery, which is the right way for a
    * limited dispatcher to be wrong.
    */
-  dispatch: (runId: string, at?: number) => void;
+  dispatch: (runId: string, at?: number) => void | Promise<void>;
   /** Mints a run id. Injected so a spec can pin one. */
   newRunId: () => string;
   /**
    * How many step bodies may EXECUTE at once in this process.
    *
    * Defaults to `resolveStepConcurrency()`, which reads
-   * `AAI_WORKFLOW_STEP_CONCURRENCY` and falls back to the bound the DevKit's
-   * world used to provide. A spec passes its own; nothing should pass
+   * `AAI_WORKFLOW_STEP_CONCURRENCY` and falls back to
+   * `DEFAULT_STEP_CONCURRENCY` — measured against a guest rather than inherited
+   * from the world this replaced. A spec passes its own; nothing should pass
    * `Infinity`, which is the state that killed a guest — see
    * `workflow-step-gate.ts`.
    */
@@ -105,6 +112,10 @@ function toWdkRecord(record: RunRecord): WdkRunRecord {
     workflowName: record.workflow,
     status: record.status,
     createdAt: record.createdAt,
+    // Both payload fields ride the record, and both are gated on the status
+    // that gives them meaning: a snapshot reads them from here rather than
+    // paying a second journal read for a value this one already carries.
+    ...(record.status === "completed" ? { output: record.output } : {}),
     ...(record.status === "failed" && record.error ? { error: record.error } : {}),
   };
 }
@@ -119,6 +130,35 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
   // One gate for the ENGINE, not one per run: what it protects is process
   // memory, and a deployed guest serves every run of its slug.
   const gate: StepGate = createStepGate(options.stepConcurrency ?? resolveStepConcurrency());
+
+  /**
+   * The abort controller of every walk in flight, by run — what `cancel` stops.
+   *
+   * A SET per run rather than one controller each, because a delivery is
+   * at-least-once and two walks of one run may overlap (see this module's doc).
+   * A cancel has to reach both, and the loser of that race removing "the"
+   * controller on its way out would leave the winner unstoppable.
+   */
+  const inFlight = new Map<string, Set<AbortController>>();
+
+  /**
+   * Hand a run to the dispatcher without waiting for it to be accepted.
+   *
+   * The three callers whose own answer is not an ack — see
+   * {@link WorkflowEngineOptions.dispatch} for why each is deliberately not
+   * fallible. `execute` is the one that awaits. No deadline, because all three
+   * mean NOW: a `start` has a body to walk, and a wake or a signal has an answer
+   * the body is waiting to read.
+   *
+   * The rejection is dropped rather than logged HERE, and that is not a swallow:
+   * a dispatcher that can fail owns its own report — `createPlatformDispatch`
+   * logs the run id at `error` before rejecting, and the in-process one cannot
+   * fail at all. What the catch buys is that an unhandled rejection, which by
+   * default ends the process, cannot come out of a tool's `start`.
+   */
+  function dispatchDetached(runId: string): void {
+    void Promise.resolve(dispatch(runId)).catch(() => undefined);
+  }
 
   /**
    * Fail a run for a reason the ENGINE found before the body ran.
@@ -157,8 +197,15 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // the point of the undefined. Nothing but a signal ends a hook wait, so
       // dispatching anyway would poll a run that may be parked for a week — and
       // `signal` re-delivers it when the answer arrives.
+      //
+      // AWAITED, unlike every other dispatch in this module: `execute`'s
+      // resolution is what acks the delivery this suspend came in on, so a
+      // re-enqueue that failed has to fail the delivery too. Otherwise the
+      // platform is told to forget a message whose replacement was never
+      // accepted, and the run is scheduled by nothing — the platform's wake sweep
+      // reads the QUEUE. Failing it instead retries the ORIGINAL message.
       if (current === "running" && outcome.wakeAt !== undefined) {
-        dispatch(runId, outcome.wakeAt);
+        await dispatch(runId, outcome.wakeAt);
       }
       return current;
     }
@@ -173,6 +220,58 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
         : await journal.setStatus(runId, "failed", { error: outcome.error }, ["running"]);
     if (!moved) return (await journal.getRun(runId))?.status;
     return outcome.kind;
+  }
+
+  /**
+   * Walk one delivery's body, under a signal `cancel` can abort.
+   *
+   * Split from `execute` for the reason `recordOutcome` was: the two answer
+   * different questions — `execute` decides whether this delivery may run the
+   * body at all, and this owns the WALK, which now has a lifetime (a controller
+   * registered while it runs) as well as an outcome. Together Biome measured
+   * them at complexity 22.
+   */
+  async function runWalk(
+    runId: string,
+    walk: Pick<ReplayOptions, "workflow" | "input" | "run">,
+    callerSignal: AbortSignal | undefined,
+  ): Promise<RunRecord["status"] | undefined> {
+    // One controller per WALK, registered before the body can run, so `cancel`
+    // has something to abort. A caller's own signal is COMBINED rather than
+    // replaced, and the two stay distinguishable below: an abort this engine
+    // raised is the run's own answer, an abort the caller raised is theirs.
+    const controller = new AbortController();
+    const walking = inFlight.get(runId) ?? new Set<AbortController>();
+    walking.add(controller);
+    inFlight.set(runId, walking);
+    try {
+      return await recordOutcome(
+        runId,
+        await replayRun({
+          ...walk,
+          runId,
+          journal,
+          streams,
+          signal: callerSignal
+            ? AbortSignal.any([callerSignal, controller.signal])
+            : controller.signal,
+          gate,
+        }),
+      );
+    } catch (err: unknown) {
+      // Not ours: a caller-supplied signal, or a real failure of the journal.
+      if (!(controller.signal.aborted && err === controller.signal.reason)) throw err;
+      // `cancel` stopped this walk, and the status it wrote is the answer. A
+      // rejection here would have the delivery answer 500 for a run somebody
+      // deliberately stopped, and the queue would retry it until the abandonment
+      // budget ran out — reporting a cancel as an outage.
+      return (await journal.getRun(runId))?.status;
+    } finally {
+      walking.delete(controller);
+      // Only once the LAST walk of this run is out: an entry left behind is a
+      // leak, and one removed early leaves a concurrent walk unstoppable.
+      if (walking.size === 0) inFlight.delete(runId);
+    }
   }
 
   return {
@@ -198,7 +297,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // After the record exists, never before: a dispatcher that delivered first
       // would race a worker against `createRun` and report "no such run" for a
       // run that is about to exist.
-      dispatch(runId);
+      dispatchDetached(runId);
       return runId;
     },
 
@@ -231,22 +330,20 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       }
 
       // Compare-and-set, so exactly one delivery announces the run as started.
-      // The loser proceeds anyway — see this module's doc on why the journal and
-      // not a lock is what makes that safe.
-      await journal.setStatus(runId, "running", undefined, ["pending", "running"]);
+      // An overlapping delivery still wins it — `running` is in `expect` — so the
+      // only way to lose is a status this delivery may not run: the run went
+      // TERMINAL between the read above and here, which is the window a cancel
+      // arriving a moment before the walk lands in. The loser of the ordinary
+      // race proceeds anyway; see this module's doc on why the journal and not a
+      // lock is what makes that safe.
+      if (!(await journal.setStatus(runId, "running", undefined, ["pending", "running"]))) {
+        return (await journal.getRun(runId))?.status;
+      }
 
-      return recordOutcome(
+      return runWalk(
         runId,
-        await replayRun({
-          runId,
-          workflow: record.workflow,
-          input: record.input,
-          run: def.run,
-          journal,
-          streams,
-          signal,
-          gate,
-        }),
+        { workflow: record.workflow, input: record.input, run: def.run },
+        signal,
       );
     },
 
@@ -267,7 +364,18 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // error-class predicates plus a cause-chain walk to reach the same
       // boolean, because the DevKit signalled all three outcomes by throwing and
       // did so differently per world.
-      return journal.setStatus(runId, "cancelled", undefined, ["pending", "running"]);
+      const ended = await journal.setStatus(runId, "cancelled", undefined, ["pending", "running"]);
+      // And STOP the body, which is the half `WorkflowClient.cancel`'s "Stop a
+      // run" promises and a status write cannot keep on its own. `replayRun`
+      // checks an `AbortSignal` before each step and no production caller ever
+      // supplied one — `deliver()` calls `execute(runId)` bare, and so does
+      // `BuiltWorkflowClient.execute` — so a cancelled run ran every remaining
+      // step to completion and had only its final status write refused.
+      //
+      // Only when THIS call is what ended it: the call that did owns the abort,
+      // and a `false` is a run that was already terminal or never existed.
+      if (ended) for (const controller of inFlight.get(runId) ?? []) controller.abort();
+      return ended;
     },
 
     async wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number> {
@@ -276,7 +384,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // the deadline it was told to skip. Only when something was stopped: a
       // `wake` on a run that is not waiting is an ordinary answer (0) and must
       // not cost a delivery.
-      if (stopped > 0) dispatch(runId);
+      if (stopped > 0) dispatchDetached(runId);
       return stopped;
     },
 
@@ -288,7 +396,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // caller that had to catch this would catch it on the happy path.
       if (!runId) return false;
       // The answer is stored; the body has to be re-walked to read it.
-      dispatch(runId);
+      dispatchDetached(runId);
       return true;
     },
 

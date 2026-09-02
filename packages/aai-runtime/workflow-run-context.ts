@@ -3,9 +3,9 @@
  * Which run, and which step, is speaking — without threading either through
  * every signature.
  *
- * This is what the Workflow DevKit's `getWritable()` and `getStepMetadata()`
- * read, and the reason it has to exist rather than being replaced by a
- * parameter: `report()` is called from deep inside a step's own helpers, and
+ * This is what replaced the Workflow DevKit's `getWritable()` and
+ * `getStepMetadata()`, and the reason it has to exist rather than being replaced
+ * by a parameter: `report()` is called from deep inside a step's own helpers, and
  * `stepGenerate` reports progress from a module that has never heard of
  * workflows. Passing the run down to those call sites would mean every
  * intermediate function taking a context it does not use, which is the
@@ -26,7 +26,7 @@
  * tests call one directly, with no run anywhere. So {@link currentRun} answers
  * `undefined` rather than throwing, and `report()` degrades to a log line. The
  * DevKit's `getStepMetadata()` threw here, which is why `workflow-report.ts`
- * carries a try/catch around it that this makes unnecessary.
+ * used to carry a try/catch around it; it does not now.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";

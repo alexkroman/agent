@@ -37,6 +37,24 @@
  * text into a `jsonb` column without interpreting it. One codec, two sides, no
  * drift — and the platform cannot revive an envelope it did not write.
  *
+ * ## It deliberately does NOT declare `resumableRuns`
+ *
+ * That method is how a LOCAL dispatcher recovers a run whose timer died with its
+ * process — the boot sweep in `workflow-in-process.ts`. A deployed guest has no
+ * such timer: `selectJournal` pairs this backend with `createPlatformDispatch`,
+ * so a suspended run's schedule is a delayed message in the platform's queue, and
+ * a message that goes missing is re-enqueued by `aai-server/
+ * workflow-queue-reconcile.ts` — server-side, on an indexed query over the
+ * platform's own `workflow_runs`, with a grace window and a per-run throttle a
+ * guest could not implement. Declaring it here would put a SECOND recovery
+ * mechanism beside that one, racing it, and a deployed guest has two copies of
+ * this package (see that package's guide) — so "a sandbox boot per copy per boot"
+ * is the cost, for a run the queue already has scheduled.
+ *
+ * The absence is therefore a claim rather than a gap, which is what makes the
+ * boot sweep's warning safe to be loud: the one journal that skips it skips it on
+ * purpose, and `workflow-journal-platform.test.ts` pins that.
+ *
  * ## What a failure does
  *
  * Every method propagates. The engine above has its own policy per call site and
@@ -142,18 +160,33 @@ function toRun(value: unknown): RunRecord | undefined {
   };
 }
 
-/** A settled step off the wire. */
+/**
+ * A settled step off the wire, or undefined when the answer is not one.
+ *
+ * CHECKED, for the reason {@link toStatus} is, and here the check is what makes
+ * `appendStep`'s refusal reachable at all. Accepting any record turned
+ * `String(value.key)` into `"undefined"` and `Number(value.attempts)` into
+ * `NaN`, so the one answer that must never be invented — the STORED entry, which
+ * is what makes a double execution deterministic — was invented for anything
+ * record-shaped, and the guard below it could only ever fire on `null`. The
+ * three fields tested are the three that identify the entry; `output` is
+ * legitimately absent and `error` legitimately so on an `ok` step.
+ */
 function toStep(value: unknown): StepEntry | undefined {
   if (!isRecord(value)) return undefined;
-  const status = value.status === "failed" ? "failed" : "ok";
+  if (typeof value.key !== "string" || typeof value.name !== "string") return undefined;
+  if (value.status !== "ok" && value.status !== "failed") return undefined;
+  const attempts = Number(value.attempts);
+  const finishedAt = Number(value.finishedAt);
+  if (!(Number.isFinite(attempts) && Number.isFinite(finishedAt))) return undefined;
   return {
-    key: String(value.key),
-    name: String(value.name),
-    status,
+    key: value.key,
+    name: value.name,
+    status: value.status,
     output: decode(value.output),
     error: errorOf(value.error),
-    attempts: Number(value.attempts),
-    finishedAt: Number(value.finishedAt),
+    attempts,
+    finishedAt,
   };
 }
 
@@ -265,8 +298,13 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       };
     },
 
-    async closeHook(runId: string, key: string): Promise<void> {
-      await call(opts, "closeHook", { runId, key });
+    async closeHook(runId: string, key: string): Promise<boolean> {
+      // `=== true` and not a truthiness test, so an answer this backend cannot
+      // read falls to the CONSERVATIVE side: `false` sends the engine to the
+      // answered branch, which re-reads the hook and returns whatever is really
+      // stored. Guessing `true` would be the divergence this method exists to
+      // close, arriving by a different route.
+      return (await call(opts, "closeHook", { runId, key })) === true;
     },
 
     async deliverHook(token: string, payload: unknown): Promise<string | undefined> {

@@ -46,6 +46,37 @@ function call(n = 0): [string, RequestInit | undefined] {
   return fetchMock.mock.calls[n] as [string, RequestInit | undefined];
 }
 
+/**
+ * A route that really HONOURS the cursor, over a log that grows between polls.
+ *
+ * A mock that answers a fixed script regardless of `startIndex` cannot tell a
+ * correct cursor from an off-by-one, which is exactly how the re-open spec below
+ * asserted `startIndex=1` for months while the server it talks to would have
+ * answered that with chunk 1 skipped. So this serves out of a log the way
+ * `workflow-api-stream.ts` does: an absent or non-negative `startIndex` is an
+ * INCLUSIVE floor, and the read is bounded by the tail at the moment it arrived.
+ *
+ * `packages/aai-runtime/workflow-stream-cursor.test.ts` is the property over
+ * every schedule; this is the one shape a reader can check by eye.
+ */
+function servingRoute(schedule: readonly (readonly string[])[]): { written: string[] } {
+  const written: string[] = [];
+  let poll = 0;
+  fetchMock.mockImplementation(async (url: string) => {
+    written.push(...(schedule[poll] ?? []));
+    const complete = poll >= schedule.length - 1;
+    poll += 1;
+    const raw = new URL(url).searchParams.get("startIndex");
+    // One `slice` covers both readings with nothing dropped from the front: a
+    // non-negative INCLUSIVE floor and a negative count-back are the same
+    // expression. The real store subtracts its first retained index; there is no
+    // cap here, so that index is 0.
+    const from = raw === null ? 0 : Number(raw);
+    return sse(chunks(written.slice(from), complete));
+  });
+  return { written };
+}
+
 describe("useWorkflowProgress", () => {
   test("accumulates the run's chunks in order and stops on done", async () => {
     fetchMock.mockImplementation(async () => sse(chunks(["Reading…", "Filing."])));
@@ -74,14 +105,19 @@ describe("useWorkflowProgress", () => {
     // The re-open loop, which is what a bounded read makes necessary: the first
     // answer is `complete: false`, so the hook comes back for more — and asks
     // from the index it got to rather than re-reading the whole log.
-    fetchMock
-      .mockImplementationOnce(async () => sse(chunks(["one"], false)))
-      .mockImplementationOnce(async () => sse(chunks(["two"], true)));
+    //
+    // Served by a route that HONOURS the cursor, so the accumulated list is the
+    // assertion and `startIndex=1` is only the evidence. Against the fixed
+    // two-response script this used to use, "one","two" came back whatever the
+    // hook asked for: the URL assertion pinned an inclusive cursor while the real
+    // store treated it as exclusive and would have dropped "two" entirely.
+    servingRoute([["one"], ["two"]]);
     const { result } = renderHook(() => useWorkflowProgress("wrun_1", { intervalMs: 1 }));
 
     await waitFor(() => expect(result.current.streaming).toBe(false));
     expect(result.current.progress).toEqual(["one", "two"]);
-    // The second read resumed from index 1 — a re-read from 0 would duplicate.
+    // The second read resumed from index 1 — the first index it had NOT seen. A
+    // re-read from 0 would duplicate; reading it as exclusive would lose "two".
     expect(call(1)[0]).toContain("startIndex=1");
   });
 

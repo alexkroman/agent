@@ -37,6 +37,7 @@
  */
 
 import { isRecord } from "./is-record.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 
 /**
  * The brand both classes carry.
@@ -98,7 +99,9 @@ export class FatalError extends Error {
   readonly fatal = true;
 
   constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
+    // Through `omitUndefined` for the reason `RetryableError` gives below, and
+    // so the two classes handle an absent cause identically.
+    super(message, omitUndefined({ cause: options?.cause }));
     this.name = "FatalError";
     brand(this, "fatal");
   }
@@ -151,7 +154,11 @@ export class RetryableError extends Error {
   readonly retryAfter: Date;
 
   constructor(message: string, options?: RetryableErrorOptions) {
-    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
+    // `omitUndefined` rather than a hand-rolled presence ternary, which is this
+    // repo's one spelling of an optional field and what `_step-verdict.ts`
+    // already uses for this class's OTHER option one file over. `Error` reads
+    // `cause` by presence, so an empty bag and `undefined` mean the same thing.
+    super(message, omitUndefined({ cause: options?.cause }));
     this.name = "RetryableError";
     const at = options?.retryAfter;
     this.retryAfter =

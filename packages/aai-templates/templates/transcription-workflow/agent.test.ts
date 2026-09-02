@@ -4,9 +4,8 @@
  * steps.
  *
  * **The body itself is not driven here, and that is a property of what this
- * template demonstrates rather than a gap in the spec.** Imported through vitest
- * a step is an ordinary exported async function, so
- * function — so its retries, its `FatalError` guards, its HTTP handling and its
+ * template demonstrates rather than a gap in the spec.** A step is an ordinary
+ * exported async function — so its retries, its `FatalError` guards, its HTTP handling and its
  * merge are all testable, while durability, suspension and replay are not. A
  * body test that looked like a durability test would be the worse failure; the
  * real thing is exercised end to end by `aai-cli`'s
@@ -19,7 +18,7 @@
 
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { readUpload } from "@alexkroman1/aai/step";
+import { readUpload, type UploadRange } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { createWorkflowCtx } from "@alexkroman1/aai/testing";
 import {
@@ -55,6 +54,7 @@ import {
   stitchChunks,
   stitchTranscript,
   TRANSCRIPT_STREAM,
+  type Transcript,
   transcribeFlow,
   transcribeSegment,
 } from "./workflows/transcribe.ts";
@@ -676,6 +676,38 @@ describe("downsampleSegment — what actually goes on the wire", () => {
     ).toThrow(UnsupportedRecordingError);
   });
 
+  test("REFUSES a depth it cannot read on the LIGHT path too, where nothing resamples", () => {
+    // The classification used to hang off the resampler, so it only ever ran when
+    // there was resampling to do — and a recording already at 16 kHz mono takes
+    // the identity path, where `requestFormat` hands its own argument back. Both
+    // depths below reach that path from a real file, `parseWav` admitting any
+    // multiple of 8, and each fails a different way once past here: 12 bits is a
+    // `RangeError` out of `encodeWav`, which is UNCLASSIFIED and therefore
+    // retried six times against a file that can never work, and 64 bits passes
+    // the header check and goes on the wire MISLABELLED — the worse of the two,
+    // because it comes back as a transcript rather than as an error.
+    for (const bitsPerSample of [12, 64]) {
+      expect(() => downsampleSegment(new Uint8Array(16), { ...MONO_16K, bitsPerSample })).toThrow(
+        UnsupportedRecordingError,
+      );
+    }
+  });
+
+  test("REFUSES a window with no whole frame rather than sending silence", () => {
+    // Reachable from the streaming flow, whose reads are CLAMPED to what has
+    // arrived: a segment whose window comes back short of one frame used to
+    // divide by a zero-wide averaging window, and `setInt16` turns the resulting
+    // `NaN` into a 0 — so the desk sent a two-byte WAV of silence and reported a
+    // transcript of it. A retry re-reads the same clamped window, so this is
+    // terminal like every other answer this module gives twice.
+    expect(() => downsampleSegment(new Uint8Array(2), STEREO_48K)).toThrow(
+      UnsupportedRecordingError,
+    );
+    // And on the light path, where there is no averaging to divide by zero and an
+    // empty request is just as useless.
+    expect(() => downsampleSegment(new Uint8Array(0), MONO_16K)).toThrow(UnsupportedRecordingError);
+  });
+
   test("requestFormat is what the fan-out's WIDTH is priced from", () => {
     // The two must not drift: `segmentConcurrency` divides a byte budget by a
     // segment's cost, and that budget is bytes UPLOADING. Pricing the source
@@ -783,6 +815,64 @@ describe("transcribeSegment", () => {
     expect(header.getUint32(40, true)).toBe(32_000);
   });
 
+  test("a depth it can CUT but not RESAMPLE fails the step FATALLY, not six times", async () => {
+    // `downsampleSegment`'s own spec asserts it throws; this asserts the
+    // CLASSIFICATION, which is the half that decides what the run does with it.
+    // `parseWav` admits any bit depth whose block align is positive, so a 48 kHz
+    // stereo 64-bit recording plans fine and only fails here — and it answers the
+    // same way on every attempt, so a plain throw would re-read this window out of
+    // the upload store six times to arrive back at the identical error. Only the
+    // STREAMING flow can get here: the classic one converts a heavy recording
+    // whole before any segment is cut.
+    const wide: WavFormat = {
+      sampleRate: 48_000,
+      channels: 2,
+      bitsPerSample: 64,
+      dataStart: 44,
+      dataEnd: 44 + 96_000,
+    };
+    publishRecording(new Uint8Array(wide.dataEnd));
+    installStubTranscribe({ text: "never reached" });
+
+    await expect(
+      transcribeSegment(UPLOAD_ID, wide, {
+        index: 0,
+        start: 44,
+        end: 44 + 96_000,
+        startMs: 0,
+        endMs: 1000,
+      }),
+    ).rejects.toBeInstanceOf(FatalError);
+  });
+
+  test("and fails fatally on the LIGHT path, which resamples nothing", async () => {
+    // The same classification one arm over, and the arm the case above cannot
+    // reach: a recording already at 16 kHz mono is passed through untouched, so
+    // nothing here ever asked what its samples were until it was too late to say
+    // so. 12 bits reached `encodeWav`, which refuses a depth that is not a
+    // multiple of 8 with a plain `RangeError` — retryable, so six attempts
+    // against a file no attempt can fix.
+    const narrow: WavFormat = {
+      sampleRate: 16_000,
+      channels: 1,
+      bitsPerSample: 12,
+      dataStart: 44,
+      dataEnd: 44 + 24_000,
+    };
+    publishRecording(new Uint8Array(narrow.dataEnd));
+    installStubTranscribe({ text: "never reached" });
+
+    await expect(
+      transcribeSegment(UPLOAD_ID, narrow, {
+        index: 0,
+        start: 44,
+        end: 44 + 24_000,
+        startMs: 0,
+        endMs: 1000,
+      }),
+    ).rejects.toBeInstanceOf(FatalError);
+  });
+
   test("EMITS the segment's words as it lands, into the transcript stream", async () => {
     // What makes the run's answer streamable rather than only its narration: the
     // page stitches whatever has arrived, so the transcript renders growing
@@ -843,12 +933,16 @@ describe("transcribeSegment", () => {
     );
   });
 
-  test("is called with more attempts than the default by every flow that fans out", async () => {
+  test("is raised on both of the classic flow's I/O steps, and on nothing else", async () => {
     // The policy is an argument to `ctx.step` now, so it is observable only at
-    // the CALL — and there are three call sites across the three flows, which is
-    // exactly the kind of thing a property on the function could not have said
-    // differently. `runSteps: false` with a skeleton of results: no provider, no
+    // the CALL — which is exactly the kind of thing a property on the function
+    // could not have said differently, `transcribeSegment` being called from two
+    // flows. `runSteps: false` with a skeleton of results: no provider, no
     // ffmpeg, no bytes.
+    //
+    // `transcribeStreamFlow`'s own `transcribeSegment` call carries the same
+    // budget and is asserted with that flow, not here — this drives only
+    // `transcribeFlow`.
     const ctx = createWorkflowCtx({
       runSteps: false,
       results: {
@@ -856,14 +950,37 @@ describe("transcribeSegment", () => {
         normalizeRecording: { recording: UPLOAD_ID, converted: false },
         splitRecording: { format: FORMAT, segments: [SEGMENT], durationMs: 1000 },
         transcribeSegment: { index: 0, text: "hello" },
-        mergeTranscript: { text: "hello" },
+        // The real `Transcript` shape rather than `{ text }` — the body returns
+        // this straight out as the run's output, so a fixture the system cannot
+        // produce is the shape a reader copies.
+        mergeTranscript: {
+          source: "call.wav",
+          segments: 1,
+          durationMs: 1000,
+          elapsedMs: 10,
+          words: 1,
+          transcript: "hello",
+        } satisfies Transcript,
       },
     });
     await transcribeFlow({ recording: UPLOAD_ID }, ctx);
 
     const segments = ctx.steps.filter((step) => step.name === "transcribeSegment");
     expect(segments.length).toBeGreaterThan(0);
-    for (const step of segments) expect(step.maxAttempts).toBeGreaterThan(3);
+    // The EXACT budget, not `toBeGreaterThan(3)`: the value is a literal at the
+    // call site, so a typo'd `maxAttempts: 4` is what this should catch.
+    for (const step of segments) expect(step.maxAttempts).toBe(6);
+    // The OTHER raised step, whose assertion the migration dropped along with
+    // the `normalizeRecording.maxRetries` property it used to read.
+    const budgets = new Map(ctx.steps.map((step) => [step.name, step.maxAttempts]));
+    expect(budgets.get("normalizeRecording")).toBe(6);
+    // And the two that take the default, which is the other half of the claim.
+    // Asserted as PRESENT-with-no-budget rather than as `get(…) === undefined`,
+    // which a step the body never reached at all would also satisfy.
+    for (const name of ["startClock", "splitRecording"]) {
+      expect(budgets.has(name)).toBe(true);
+      expect(budgets.get(name)).toBeUndefined();
+    }
   });
 });
 
@@ -903,8 +1020,8 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
  * The STREAMING flow's own steps.
  *
  * Same honest line as the classic half above: the steps are driven directly and the
- * body is not, because a step is an ordinary exported async function and this is
- * async function. Almost nothing here is new — the transcribing and the merging are
+ * body is not, because a step is an ordinary exported async function. Almost
+ * nothing here is new — the transcribing and the merging are
  * `transcribe.ts`'s own steps, called unchanged — so what is worth asserting is the
  * two things this flow adds: reading how far the upload has got, and planning from a
  * header while most of the file is still missing.
@@ -1417,9 +1534,22 @@ describe("the conversion, up to the spawn", () => {
  * replay-safe and testable without a clock.
  */
 describe("nextPollDelay", () => {
-  /** A poll: `stored` bytes at `observedAt` ms. */
+  /**
+   * A poll: `stored` bytes at `observedAt` ms, prefix and total agreeing.
+   *
+   * Which is the WHOLE-FILE upload — the two numbers only agree there. The parts
+   * fan-out is `detached` below, and it is a separate helper rather than an
+   * optional argument so a case that means them to diverge has to say so.
+   */
   const view = (stored: number, observedAt: number): UploadProgressView => ({
     size: stored,
+    complete: false,
+    stored,
+    observedAt,
+  });
+  /** A poll under the parts fan-out: `stored` bytes landed, `size` readable. */
+  const detached = (stored: number, size: number, observedAt: number): UploadProgressView => ({
+    size,
     complete: false,
     stored,
     observedAt,
@@ -1505,6 +1635,126 @@ describe("nextPollDelay", () => {
       view(40_000, 1000),
       planAt(30_000),
       new Set([0]),
+    );
+    expect(delay).toBe(5000);
+  });
+
+  test("measures the wait against the PREFIX, not against every window that landed", () => {
+    // The parts fan-out is the DEFAULT, and there `stored` and `size` diverge
+    // completely (the module doc measured `size` at 0 for 45 seconds while the
+    // whole file arrived). Both targets here are byte OFFSETS, so subtracting a
+    // total that counts detached windows reads segment 1 as already reached and
+    // collapses the sleep to its 250ms floor — 20x the polling on the path this
+    // flow is normally on. 60_000 bytes have landed somewhere; only 4_000 of them
+    // are readable from the start, so the segment ending at 30_000 needs 26_000
+    // more at the observed 10 bytes/ms.
+    const delay = nextPollDelay(
+      detached(60_000, 4000, 2000),
+      detached(50_000, 0, 1000),
+      planAt(30_000),
+      new Set(),
+    );
+    expect(delay).toBe(2600);
+  });
+
+  test("waits for the HEADER window against the prefix too", () => {
+    // Same trap one step earlier, and this is the arm that really runs first: the
+    // body plans when `at.size >= HEADER_PROBE_BYTES`, so a delay derived from
+    // `stored` is answering a different question than the one the loop asks. A
+    // megabyte has landed in later windows and the header has not arrived.
+    // 100 bytes/ms against the whole 64 KiB probe window is 656ms; measured
+    // against `stored` the remainder is negative and the answer is the floor.
+    const delay = nextPollDelay(
+      detached(100_000, 0, 2000),
+      detached(0, 0, 1000),
+      undefined,
+      new Set(),
+    );
+    expect(delay).toBe(656);
+  });
+
+  /**
+   * One 8 MiB upload window, the unit the store publishes a write in.
+   *
+   * The fan-out's real shape, and the one `size` cannot see: the prefix does not
+   * move until the FIRST window lands, so a poll under it reads `size: 0` with
+   * megabytes stored.
+   */
+  const PART_BYTES = 8 * 1024 * 1024;
+
+  /**
+   * A poll of a parts upload whose PREFIX has not moved at all.
+   *
+   * The measured shape from the module doc — a 27 MB recording at 0.9 MB/s
+   * reported `size: 0` for 45 of its 45 seconds while the windows landed. `size`
+   * is fixed at 0 here for exactly that reason: a helper that let it drift would
+   * let a case pass on the prefix arm, which is the hole these two cases exist
+   * to close.
+   */
+  const landed = (ranges: readonly UploadRange[], observedAt: number): UploadProgressView => ({
+    size: 0,
+    complete: false,
+    stored: storedBytes(0, ranges),
+    ranges,
+    observedAt,
+  });
+
+  /** A plan whose segments are the given `[start, end)` windows. */
+  const planOver = (...windows: readonly (readonly [number, number])[]): StreamPlan => ({
+    format: {
+      sampleRate: 48_000,
+      channels: 2,
+      bitsPerSample: 16,
+      dataStart: 44,
+      dataEnd: 44 + Math.max(0, ...windows.map(([, end]) => end)),
+    },
+    segments: windows.map(([start, end], index) => ({ index, start, end, startMs: 0, endMs: 0 })),
+  });
+
+  test("measures a segment against the RANGES its readiness is decided on", () => {
+    // The other half of the prefix rule above, and the one that decides this
+    // flow's whole cadence: `segmentStored` reads `ranges`, so the work still
+    // outstanding is what that test needs and not what the prefix is short by.
+    // Under the fan-out the prefix stays at 0 for the length of the upload, so a
+    // remainder measured against it is the WHOLE segment at every poll — which
+    // saturates the ceiling and gives back the flat 5000ms interval this
+    // function replaced, once per segment, for the entire recording.
+    //
+    // Two 8 MiB windows have landed contiguously from byte zero, at ~932
+    // bytes/ms; the segment ends 866,384 bytes past them.
+    const delay = nextPollDelay(
+      landed([{ start: 0, end: 2 * PART_BYTES }], 10_000),
+      landed([{ start: 0, end: PART_BYTES }], 1000),
+      planOver([0, 17_643_600]),
+      new Set(),
+    );
+    expect(delay).toBe(930);
+  });
+
+  test("wakes for the segment CLOSEST to ready, which need not be the earliest", () => {
+    // Windows land out of order — that is the premise the `ranges` arm rests on
+    // — so the next segment the loop can act on is not always the first one it
+    // has not done. Segment 0 has nothing covering its start and needs the whole
+    // 20 MB prefix; segment 1 sits inside a window that is 500,000 bytes short.
+    const delay = nextPollDelay(
+      landed([{ start: 16_000_000, end: 35_500_000 }], 10_000),
+      landed([{ start: 16_000_000, end: 27_111_608 }], 1000),
+      planOver([0, 20_000_000], [16_000_000, 36_000_000]),
+      new Set(),
+    );
+    // 932 bytes/ms against the 500,000 still missing from segment 1's window.
+    expect(delay).toBe(537);
+  });
+
+  test("falls back to the prefix for a window that does not cover the segment's START", () => {
+    // A run has to cover a segment WHOLE to make it readable, so a window landing
+    // in the middle of one moves nothing: what remains is the prefix's own
+    // distance, which here is a ceiling's worth of waiting.
+    const delay = nextPollDelay(
+      landed([{ start: 8_000_000, end: 16_000_000 }], 10_000),
+      landed([{ start: 8_000_000, end: 12_000_000 }], 1000),
+      planOver([0, 17_643_600]),
+      new Set(),
     );
     expect(delay).toBe(5000);
   });

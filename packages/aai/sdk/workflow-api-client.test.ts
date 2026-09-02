@@ -195,9 +195,20 @@ describe("createWorkflowApiClient", () => {
     expect(call()[0]).toContain("startIndex=-3");
   });
 
-  test("streamOutput encodes a startIndex of 0, which is not absent", async () => {
+  test("streamOutput encodes a startIndex of 0 rather than dropping it", async () => {
     // `omitUndefined` over a pre-stringified value rather than the number, so
     // the falsy-but-meaningful `0` survives.
+    //
+    // What this claims is about SERIALIZATION and nothing else, which is worth
+    // saying because the name it used to carry ("which is not absent") read as a
+    // claim about the protocol. It is not one: `startIndex` is an INCLUSIVE
+    // floor, so a `0` and an absent parameter are the same request and this test
+    // would pass either way. It was cited as proof that a `0` is deliberately
+    // sent — i.e. as proof the cursor semantic was settled — while the store read
+    // that `0` exclusively and answered it with the run's first chunk missing.
+    // The semantic is asserted in
+    // `packages/aai-runtime/workflow-stream-cursor.test.ts`; a URL cannot state
+    // it.
     fetchMock.mockImplementation(async () => new Response(null, { status: 200 }));
     await client().streamOutput("wrun_1", { startIndex: 0 });
     expect(call()[0]).toContain("startIndex=0");

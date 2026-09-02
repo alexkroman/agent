@@ -63,6 +63,26 @@ export const mockEnsureSessionStateSchema = vi.fn();
 /** The JOURNAL's DDL, public for the same reason and applied on the same boot. */
 export const mockEnsureWorkflowJournalSchema = vi.fn();
 export const mockValidateAgentExport = vi.fn();
+/**
+ * The process-scoped run journal `startDevServer` builds once and hands every
+ * rebuild's `createRuntime`.
+ *
+ * A FRESH object per call deliberately, which is what makes the identity
+ * assertion in `_dev-server-restart.test.ts` mean something: called per build,
+ * every rebuild would hand out a different store and a run started before a save
+ * would be unreadable after it — the bug the seam exists to close.
+ */
+export const mockCreateMemoryJournal = vi.fn(() => ({ journal: "memory" }));
+
+/**
+ * The env key the dev server writes the project's `.workflow-data` into.
+ *
+ * Spelled out rather than imported for the reason `WORKFLOW_API_PREFIX` below
+ * is: this module IS the factory for the `vi.mock("@alexkroman1/aai-runtime/
+ * internal")` call. That it still matches the SDK's own constant is asserted in
+ * `_dev-server-serve.test.ts`, which mocks nothing.
+ */
+export const WORKFLOW_DATA_DIR_ENV_LITERAL = "AAI_WORKFLOW_DATA_DIR";
 
 /**
  * The default implementations, in ONE place.
@@ -115,6 +135,7 @@ export function primeDevServerMocks(): void {
     mockEnsureSessionStateSchema,
     mockEnsureWorkflowJournalSchema,
     mockValidateAgentExport,
+    mockCreateMemoryJournal,
     mockChokidarWatch,
   ]) {
     mock.mockClear();
@@ -208,10 +229,15 @@ export function aaiRuntimeModule(): Record<string, unknown> {
  * spec kept passing while the mock covered nothing. Split rather than dropped:
  * what these specs assert is that `buildServer` publishes no real env.
  *
- * The logger and the workflow quartet joined it when the rest of the
+ * The logger and the delivery door joined it when the rest of the
  * `@internal` surface followed `publishStepEnv` off the root barrel — the
  * factory has to key each name where `_dev-server.ts` imports it from, or the
  * mock covers nothing for the same silent reason.
+ *
+ * It used to key a QUARTET: `configureWorkflowWorld`, `createWorkflowSurface`
+ * and `startWorkflowWorldIfDeclared` went with the Workflow DevKit and are not
+ * exports of that subpath any more. An extra key is not an error the way a
+ * missing one is, so they sat here describing nothing.
  */
 export function aaiRuntimeInternalModule(): Record<string, unknown> {
   return {
@@ -219,15 +245,16 @@ export function aaiRuntimeInternalModule(): Record<string, unknown> {
     // The console-backed logger the dev server hands the runtime in human
     // mode (see createDevLogger); these specs only need it to exist.
     consoleLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-    // The workflow quartet. Inert rather than absent: an agent with no
-    // `workflows/` directory is the case every spec in these files uses, and
-    // the real implementations would resolve a DevKit world just to answer
-    // "there is nothing to serve". `dev-workflow.scenario.test.ts` covers
-    // the wired-up path against real bundles.
-    configureWorkflowWorld: vi.fn(() => "local"),
-    createWorkflowSurface: vi.fn(async () => undefined),
+    // The platform's delivery door, mounted on `createServer`'s `request` hook.
+    // Declining is the case every spec in these files uses — they serve no
+    // workflows; `dev-workflow.scenario.test.ts` covers the wired-up path
+    // against real bundles.
     handleWorkflowRequest: vi.fn(() => false),
-    startWorkflowWorldIfDeclared: vi.fn(async () => undefined),
+    // The two halves of the workflow-storage seam: the process-scoped journal
+    // every rebuild's runtime is handed, and the env key the local data
+    // directory is declared under.
+    createMemoryJournal: mockCreateMemoryJournal,
+    WORKFLOW_DATA_DIR_ENV: WORKFLOW_DATA_DIR_ENV_LITERAL,
   };
 }
 

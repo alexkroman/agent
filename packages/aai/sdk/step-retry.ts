@@ -3,7 +3,7 @@
  * The two questions every step that calls an HTTP API has to answer: is another
  * attempt worth making, and how long should it wait?
  *
- * The Workflow DevKit retries a step that throws and gives up on a
+ * The engine retries a step that throws and gives up on a
  * `FatalError`, so a step body owns the split — and the split was hand-rolled
  * identically in every workflow template and in `step-generate.ts`, as a
  * four-status `isTransient`. That much is only worth extracting because it is
@@ -11,8 +11,8 @@
  *
  * ## A 429 usually says when to come back, and nothing was reading it
  *
- * The DevKit's own answer for a thrown `Error` is a short exponential backoff of
- * its own choosing. `RetryableError` (from `workflow`) takes a `retryAfter`
+ * The engine's own answer for a thrown `Error` is its default delay.
+ * `RetryableError` (`@alexkroman1/aai/step-errors`) takes a `retryAfter`
  * instead — and the far side of a rate limit has already told us the number:
  *
  * ```ts no-check
@@ -27,8 +27,8 @@
  * That matters most exactly where this SDK encourages a fan-out: four segments
  * in flight against a per-minute limit will re-collect their 429s four at a time
  * on a backoff the server did not choose, where honouring the header drains
- * them. Nothing here throws `RetryableError` itself — it is the DevKit's, and
- * this module is on the CLI's zero-dependency startup path.
+ * them. Nothing here throws `RetryableError` itself: constructing one is
+ * `/step-errors`' job, and importing that is the caller's opt-in.
  */
 
 /**
@@ -49,11 +49,12 @@ export function isTransientStatus(status: number): boolean {
  * Whether `from` is the headers themselves rather than something carrying them —
  * STRUCTURAL, never `instanceof Headers`.
  *
- * The same cross-realm trap `_step-verdict.ts`'s `isResponseLike` documents, one
- * function along: a step bundle runs in its own realm and is handed
- * headers built by the host's, so `instanceof` is false there. Here the cost
- * would have been worse than a missed classification — the fallback reads
- * `.headers` off a `Headers`, finds `undefined`, and throws on `.get`.
+ * The same trap `_step-verdict.ts`'s `isResponseLike` documents, one function
+ * along: a step body runs in the agent bundle, which carries its own copy of
+ * this module and is handed headers the HOST built, so a value can fail
+ * `instanceof` while being exactly what it claims. Here the cost would have been
+ * worse than a missed classification — the fallback reads `.headers` off a
+ * `Headers`, finds `undefined`, and throws on `.get`.
  *
  * A type PREDICATE rather than an inline test, because the inline version does
  * not narrow the union and `from.headers` then fails to compile.
@@ -69,7 +70,7 @@ function isHeadersLike(from: { headers: Headers } | Headers): from is Headers {
  * (`Retry-After: 30`) and an HTTP date (`Retry-After: Wed, 21 Oct 2026 07:28:00
  * GMT`) — and answers `undefined` for a header that is absent, unparsable, or in
  * the past. `undefined` is what a caller wants there: it means "you decide",
- * which is the DevKit's own backoff, rather than a date that would retry
+ * which is the engine's own default delay, rather than a date that would retry
  * instantly or never.
  *
  * @param from - A `Response`, or its headers. Both spellings are accepted
@@ -89,7 +90,7 @@ export function retryAfter(from: { headers: Headers } | Headers): Date | undefin
   }
   const at = Date.parse(raw);
   if (Number.isNaN(at)) return undefined;
-  // A date already past means "retry now"; the DevKit's own backoff is the
+  // A date already past means "retry now"; the engine's own default delay is the
   // better answer than a deadline that has already expired.
   return at > Date.now() ? new Date(at) : undefined;
 }

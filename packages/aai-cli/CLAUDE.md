@@ -307,75 +307,33 @@ same-origin fetch under that prefix. Unproxied, both workflow-app templates
 were dead on arrival under `aai dev` (`404 POST /workflows/runs` the instant
 the form is submitted) while the backend served the whole API correctly one
 port over. A string key prefix-matches, so the one entry covers `/runs`,
-`/runs/:id` and the `/runs/:id/events` SSE stream. The DevKit's own
-`/.well-known/workflow/v1/{flow,step}` callbacks deliberately stay out: those
-are dialled by the guest's own worker on loopback, never by a browser, which
-is the same `guest-internal` distinction `aai-server/guest-routes.ts` draws.
+`/runs/:id` and the `/runs/:id/events` SSE stream. The
+`/.well-known/workflow/v1/*` routes deliberately stay out: the queue delivery
+door is dialled by the platform and the webhook by a third party, never by a
+browser, which is the same `guest-internal` distinction
+`aai-server/guest-routes.ts` draws. That is also why `aai dev` hands
+`createRuntime` the BACKEND origin as its `publicUrl` — a webhook URL naming
+the Vite port would 404 on delivery.
 
-**A step bundle carries a `createRequire` shim, and without it a CJS dependency
-kills the process at load.** `workflow-bundler.ts` prepends two lines to
-`stepCode`. esbuild cannot statically rewrite `require("node:assert")` inside a
-bundled CommonJS module, so it emits a `__require` whose fallback THROWS
-`Dynamic require of "node:assert" is not supported` — and a step bundles
-everything it imports, so any step reaching a package with CJS anywhere in its
-graph died before its first line ran. The shim's own mechanism is that esbuild
-writes `typeof require !== "undefined" ? require : <thrower>`, so a real
-`require` in scope is used; it is PREPENDED because it must precede the
-`var __require = …` initializer that reads it. The flow bundle deliberately
-gets none — it is compiled in a `node:vm` Script, where `import.meta` does not
-exist.
+**There is no second workflow bundle any more.** The Workflow DevKit's builder
+produced a `workflowCode`/`stepCode` pair off the `"use workflow"` / `"use step"`
+directives, and `workflow-bundler.ts` existed to build it, patch it and police
+it: a prepended `createRequire` shim so a step reaching a CJS dependency did not
+die on `Dynamic require of "node:assert" is not supported`, an
+`assertNoVmRequires` scan because the flow half was compiled in a `node:vm`
+`Script` with no `require` in its context, and a `findReplayUnsafeCalls` warning
+over the flow artifact. All three are gone with the pair. The replay engine runs
+a body as ordinary code in the worker bundle, so there is no `node:vm` context to
+lack a `require`, no separate artifact to attribute a line to, and no builder to
+mark a builtin external behind either.
 
-Two things about how it presented are the reusable part. `research-workflow`
-imports `webSearch` from `@alexkroman1/aai/tools`, which reaches `host/ssrf.ts`
-→ **undici** (118 dynamic requires, all `node:` builtins) — so the message named
-a Node builtin the author never mentions, nothing named the package or the
-import that pulled it in, and because the step bundle loads before the server
-binds there was no server to ask. And it does NOT reproduce in-tree, where
-`@dev/source` resolves the SDK to TypeScript and esbuild initializes a different
-set of CJS modules eagerly: the same bundle imports cleanly with no shim.
-Every gate short of `check:e2e` was green. `workflow-bundler.test.ts` therefore
-asserts the ORDERING rather than the throw, which is the half that is checkable
-here.
-
-**And the FLOW bundle may `require` NOTHING, which is a separate failure the
-WDK's own gate misses.** `assertNoVmRequires` (`workflow-bundler.ts`) scans the
-built flow artifact for a `require("node:…")` and fails the build naming the
-builtin AND the bundled module esbuild wrote it for. The bundle is compiled in a
-`node:vm` `Script` whose context has `module` and `exports` and no `require`, so
-one of these is not a slow path or a degraded mode: every run of every workflow
-in the project dies at replay with `ReferenceError: require is not defined`,
-from a line of generated code inside a dependency.
-
-The DevKit bundles everything for exactly this reason and carries
-`createNodeModuleErrorPlugin` to refuse a builtin import at build time. It has
-two blind spots, and both are the DEPLOYED shape rather than an exotic one —
-each reproduced before this was written:
-
-- it reports a violation only when it can point at the import LINE in a
-  first-party file, found with a **single-line** regex, so
-  `import {\n  x,\n} from "pkg"` matches nothing and the builtin is marked
-  external in silence;
-- it resolves that file against `process.cwd()`, which is not the project being
-  built when the STUDIO builds a workspace, so the read fails and the same
-  silent path is taken.
-
-In-tree the plugin is loud, because pnpm links the workspace SDK and esbuild
-resolves realpaths — `packages/aai/dist/host/ffmpeg.js` has no `node_modules` in
-it, so it looks first-party and gets reported. Against an installed
-`@alexkroman1/aai` it does not. Same green-in-tree/red-in-production asymmetry
-as the shim above, one artifact over.
-
-Two things about the scan. It is restricted to BUILTIN specifiers, because those
-are the only ones this builder leaves external — it marks nothing else so,
-precisely so nothing can need a `require` — and a narrow set is what keeps a
-prompt's own text from reading as a violation. And it excludes `__require` with
-a lookbehind: that is the step bundle's shim above, and flagging it would fail
-every build with a CJS dependency.
-
-`template-workflows.test.ts` is the gate above it: every shipped template with a
-`workflows/` directory is built in a temp copy, and two of the seven were broken
-this way — see "A `workflows/` module may not hold a Node-only import at module
-scope" in `packages/aai-templates/CLAUDE.md`.
+**What survives the removal is the asymmetry that hid both bugs**, which is worth
+carrying into whatever replaces them: a bundling failure of this shape does NOT
+reproduce in-tree. `@dev/source` resolves the SDK to TypeScript, pnpm links the
+workspace and esbuild resolves realpaths — so the module graph, and which CJS
+modules initialize eagerly, differ from an installed `@alexkroman1/aai`. Every
+gate short of `check:e2e` was green for both. Assert the checkable half (an
+ordering, a shape) rather than the throw.
 
 **Both Vite entry points dedupe React** (`DEDUPED_PEERS`, `_vite-env.ts`) and
 the two symptoms look nothing alike, which is why the dev half was missing for
@@ -555,20 +513,20 @@ Three things separate the two, and picking the wrong one measures nothing:
 
 ## Bundling rules
 
-- **A replay-unsafe call in a workflow body is WARNED about, per file.**
-  `findReplayUnsafeCalls` (`workflow-bundler.ts`) reads the built FLOW bundle
-  for `Date.now()`, `new Date()`, `Math.random()`, `crypto.randomUUID()` and
-  `fetch(`, and `aai build` / `aai dev` print what it finds. Two things make
-  that accurate enough to be worth printing: the workflow-mode transform has
-  already removed every `"use step"` body, so a step doing any of this is not a
-  finding (it is what a step is for), and esbuild's per-module `// <path>`
-  headers charge each line to the file it was written in — without which the
-  scan reports zod's own `Date.now()` and blocks a correct project. It is a
-  WARNING rather than a build failure for the case attribution cannot settle: a
-  plain helper in a `workflows/` module that only a step ever calls is legal and
-  looks identical from here. The scaffold guide used to say this rule "fails
-  silently if broken", which was the whole problem — a body that reads the clock
-  answers differently on every resume and nothing anywhere said so.
+- **Nothing scans a workflow body for a replay-unsafe call, and that is a real
+  gap rather than a decision.** `findReplayUnsafeCalls` warned per file about
+  `Date.now()`, `new Date()`, `Math.random()`, `crypto.randomUUID()` and
+  `fetch(` — and could only do so because the DevKit's builder emitted a
+  SEPARATE flow bundle with every `"use step"` body already removed, carrying
+  esbuild's per-module `// <path>` headers to charge each line to the file it
+  was written in. Without that split the same scan reports zod's own
+  `Date.now()` and blocks a correct project. The replay engine emits no such
+  artifact, so the warning went with it. The hazard did not: a body that reads
+  the clock still answers differently on every resume, and nothing anywhere says
+  so. A replacement has to work off the SOURCE of a `workflows/*.ts` module,
+  outside every `ctx.step(…)` callback, and stay a warning for the case
+  attribution cannot settle (a plain helper only a step ever calls is legal and
+  looks identical).
 - **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
   sets `NODE_ENV=production` when it is unset — a permanent, global side
   effect on the calling process. Both CLI bundlers therefore wrap the
@@ -907,8 +865,8 @@ unrelated causes:
   specifiers. On Linux the same file is a normal tsdown bundle importing a
   hashed chunk (`../_internal-types-DiEjant0.js`), so the Windows build produced
   unbundled output where Linux produces a bundle. **UNRESOLVED**, and left that
-  way deliberately: it is a toolchain-level difference (tsdown/rolldown, or the
-  DevKit's builder plugin) that cannot be diagnosed without a Windows machine to
+  way deliberately: it is a toolchain-level difference in tsdown/rolldown
+  itself that cannot be diagnosed without a Windows machine to
   iterate on, and blind pushes at ~4 minutes per CI round trip are not
   debugging.
 

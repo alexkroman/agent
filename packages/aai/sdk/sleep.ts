@@ -81,11 +81,21 @@
  *
  * Lives in `sdk/` (so it is free of `node:` imports and rides into the browser
  * client) and is published on `@alexkroman1/aai/internal` rather than `/utils`.
- * `/utils` is the subpath a `workflows/*.ts` module imports its step surface
- * from, and the Workflow DevKit's own DURABLE `sleep` — the one that survives a
- * replay — is imported from `"workflow"` in those same files. A real-timer
- * `sleep` in that autocomplete is a determinism bug one accepted completion
- * away.
+ * `/utils` and `/step` are the subpaths a `workflows/*.ts` module imports its
+ * step surface from, and the DURABLE wait those files want — the one that
+ * SUSPENDS a run and survives a replay — is `ctx.sleep`. A real-timer `sleep` in
+ * that autocomplete is a determinism bug one accepted completion away.
+ *
+ * ## The options type is `SleepTimerOptions`, not `SleepOptions`
+ *
+ * `ctx.sleep`'s own option bag (`sdk/workflow-ctx.ts`) is the `@public`
+ * `SleepOptions`, published on the root barrel AND `/workflow-api`. Two
+ * same-named option types one `sleep` apart is a collision an EDITOR resolves,
+ * not a reader: an auto-import picks whichever it likes, the import itself
+ * type-checks, and the failure arrives later as a bogus "`correlationId` does not
+ * exist". `aai-runtime/workflow-replay.ts` imports from both subpaths two lines
+ * apart, which is where that would land. This one is `@internal` and named
+ * against nothing else, so it is the half that renames.
  *
  * @module sleep
  */
@@ -97,7 +107,7 @@ import { isRecord } from "./utils.ts";
  *
  * @internal
  */
-export type SleepOptions = {
+export type SleepTimerOptions = {
   /**
    * Resolve early, WITHOUT throwing, when this aborts. The listener is removed
    * on every resolution path, so a loop against a session-lifetime signal
@@ -118,7 +128,7 @@ export type SleepOptions = {
  *
  * @internal
  */
-export function sleep(ms: number, opts: SleepOptions = {}): Promise<void> {
+export function sleep(ms: number, opts: SleepTimerOptions = {}): Promise<void> {
   const { signal, unref } = opts;
   if (signal?.aborted === true) return Promise.resolve();
   return new Promise<void>((resolve) => {

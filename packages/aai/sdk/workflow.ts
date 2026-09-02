@@ -53,13 +53,13 @@
  *
  * A body is REPLAYED from the top on every resume, so it may hold no live handle
  * and may do nothing non-deterministic outside a step. That was true of the
- * DevKit's a step and is true of `ctx.step`: the mechanism changed, the
+ * DevKit's `"use step"` and is true of `ctx.step`: the mechanism changed, the
  * constraint did not. `ctx.db` and `ctx.generate` are absent from a body for
  * exactly that reason — both belong inside a step, which runs at most once per
  * successful execution and has the whole Node runtime.
  *
  * {@link WorkflowCtx} carries the rest, including why step identity is a name
- * plus an occurrence count, and what the build scan rejects.
+ * plus an occurrence count — and that nothing checks the replay rule for you.
  */
 
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
@@ -334,14 +334,10 @@ export type WorkflowSummary = {
  * OF WORK inside a single tool call, never stored. A {@link workflow} runs
  * DURABLY, outliving the session.
  *
- * It deliberately does NOT check that `run` carries the compiler's `workflowId`.
- * That check belongs where the id is USED (`ctx.workflows.start`, which throws
- * naming the build), because a declaration-time throw makes merely IMPORTING an
- * agent module fail wherever the Workflow DevKit transform has not run — which
- * includes every unit test of a tool that starts a workflow, since vitest loads
- * `agent.ts` as source with no bundler in the path. The first template to declare
- * one is what surfaced this: the throw made the module unimportable by its own
- * spec.
+ * It validates nothing at declaration time, and there is nothing left to
+ * validate: a body is an ordinary function and a workflow's identity is the key
+ * it is declared under, so the `workflowId` a compiler used to attach — and the
+ * check that used to look for it — are both gone. See {@link WorkflowBody}.
  *
  * @example
  * `agent.ts` — declare the workflow beside the agent. A tool is a FILE, so

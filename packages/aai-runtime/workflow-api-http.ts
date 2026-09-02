@@ -17,6 +17,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
+import { isBlankSecret, parseBearer } from "./bearer.ts";
 
 /**
  * The response members a JSON reply touches, named rather than taken whole.
@@ -134,9 +135,35 @@ export function answerHandlerFailure(
  * Length is compared first because `timingSafeEqual` THROWS on a length mismatch
  * rather than returning false — and comparing lengths leaks only the length,
  * which the caller supplied anyway.
+ *
+ * The PARSE is `parseBearer` (`bearer.ts`) rather than a `startsWith("Bearer ")`
+ * of its own, which is what this was: RFC 7235 makes `auth-scheme`
+ * case-insensitive, so a client sending `authorization: bearer <token>` was
+ * refused by every route on this surface, and the reply named an authorization
+ * failure rather than a capitalisation. Two other copies of the same line existed
+ * — see that module's doc.
+ *
+ * **A BLANK `token` matches nothing, and that guard is the whole gate for one
+ * class of misconfiguration.** `timingSafeEqual` on two empty buffers returns
+ * true, so `bearerMatches(undefined, "")` used to answer `true` — a request with
+ * no `Authorization` header authenticating against a set-but-empty secret. Both
+ * callers guarded `token === undefined` and neither guarded `token === ""`, so
+ * `AAI_SESSION_EVENTS_TOKEN=` served the conversation unauthenticated and
+ * `AAI_WORKFLOW_API_TOKEN=` left `/workflows/*` open while reading as closed.
+ * `isBlankSecret` carries why an empty expected secret is not a credential anyone
+ * can present rather than merely a short one.
+ *
+ * The refusal is HERE, at the comparison, as well as at the env read that feeds
+ * it (`agentGateToken`, `server-env.ts`) because this function is reachable
+ * without that read: a self-hoster calling `createWorkflowApi({ token })` or
+ * `createSessionEventsApi({ token })` directly, and whatever the third caller
+ * turns out to be. This layer makes the primitive safe for all of them, and it
+ * fails CLOSED — a blank secret 401s everything rather than opening the surface,
+ * which is the right way round for a caller nobody can send a log line to.
  */
 export function bearerMatches(header: string | undefined, token: string): boolean {
-  const presented = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
+  if (isBlankSecret(token)) return false;
+  const presented = parseBearer(header);
   const a = Buffer.from(presented);
   const b = Buffer.from(token);
   return a.length === b.length && timingSafeEqual(a, b);

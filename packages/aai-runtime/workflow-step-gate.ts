@@ -38,6 +38,8 @@
  * @internal
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
+
 /**
  * The default, and it is now MEASURED against a guest rather than inherited.
  *
@@ -118,7 +120,10 @@ export function resolveStepConcurrency(env: NodeJS.ProcessEnv = process.env): nu
   return Number.isInteger(raw) && raw > 0 ? raw : DEFAULT_STEP_CONCURRENCY;
 }
 
-/** Runs `fn` when a slot is free. */
+/**
+ * Runs `fn` when a slot is free — or straight away, when the caller already
+ * holds one. See {@link createStepGate} for the re-entrancy rule.
+ */
 export type StepGate = <T>(fn: () => Promise<T>) => Promise<T>;
 
 /**
@@ -128,11 +133,45 @@ export type StepGate = <T>(fn: () => Promise<T>) => Promise<T>;
  * should see segments start roughly in order rather than in whatever order the
  * event loop happened to resume them.
  *
+ * ## RE-ENTRANT, because otherwise a nested step deadlocks the process
+ *
+ * `ctx.step` may be reached from inside a step body — directly, or through any
+ * helper that step calls. A plain counting semaphore cannot serve that: the
+ * outer step holds its slot for the whole of its attempt loop (deliberately —
+ * see the call site in `workflow-replay.ts`), so the inner one queues behind a
+ * slot that is only released when the inner one returns. Reproduced at
+ * `createStepGate(1)` with a single nested step: it never resolves, with no
+ * error and no timeout, and the gate is per ENGINE rather than per run — so at
+ * the default width sixteen concurrent nested-outer steps wedge every workflow
+ * in the agent.
+ *
+ * So a caller that ALREADY holds a slot runs on it: nested work is charged to
+ * the step that reached it, never queued against it. Membership is decided by
+ * async context ({@link AsyncLocalStorage}), which is what "reached from inside
+ * this step" means — it follows the awaits, so a helper five frames down is
+ * still the same step, and a fresh caller arriving from anywhere else is not.
+ *
+ * The store belongs to THIS gate, rather than being read off the step context
+ * `runStepAttempts` already enters. Two engines in one process (a deployed guest
+ * has two copies of this package — see the guide) each have their own gate, and
+ * holding one's slot says nothing about the other's; the question this asks is
+ * "does this context hold a slot in me", which only a per-gate store answers.
+ *
+ * **What that costs, stated rather than hidden**: a body's fan-out reached from
+ * inside a step is UNBOUNDED by this gate — the bound applies to the outermost
+ * steps. That is the honest reading of the trade, since the alternative is a
+ * deadlock, and it leaves the measured case intact: a workflow body fans out at
+ * the TOP level ({@link DEFAULT_STEP_CONCURRENCY}'s own measurement is
+ * `mapConcurrent(32)` in a body), where every step is a fresh caller and every
+ * one of them queues.
+ *
  * @internal
  */
 export function createStepGate(limit: number): StepGate {
   const waiting: (() => void)[] = [];
   let active = 0;
+  /** Set for the duration of a slot-holder's body — see the re-entrancy rule. */
+  const holding = new AsyncLocalStorage<true>();
 
   /**
    * The slot is TRANSFERRED to the next waiter, never freed and re-acquired.
@@ -150,12 +189,15 @@ export function createStepGate(limit: number): StepGate {
   }
 
   return async <T>(fn: () => Promise<T>): Promise<T> => {
+    // Already inside a slot of this gate: run on it. Before the counter is
+    // touched at all, so a nested call neither takes a slot nor releases one.
+    if (holding.getStore()) return fn();
     // A woken waiter already HOLDS the slot (see `release`), so it must not
     // increment; only a caller that never queued does.
     if (active >= limit) await new Promise<void>((resolve) => waiting.push(resolve));
     else active++;
     try {
-      return await fn();
+      return await holding.run(true, fn);
     } finally {
       release();
     }

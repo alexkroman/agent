@@ -208,7 +208,7 @@ export type Findings = {
  * lands rather than waiting to be asked.
  *
  * The `ctx.sleep` on top is the review wait — the one suspension in the template,
- * and what `file_it_now` skips with `wake`.
+ * and what `file_it_now` skips with `ctx.workflows.wakeUp`.
  */
 export async function researchFlow(
   input: { topic: string; requestedBy: string },
@@ -245,7 +245,7 @@ export async function researchFlow(
 
   // Suspended, not blocked. On resume the body re-runs from the top and every
   // step above returns its journaled result rather than researching again —
-  // which is also what `file_it_now` ends early, through `wake`.
+  // which is also what `file_it_now` ends early, through `ctx.workflows.wakeUp`.
   await ctx.sleep(REVIEW_DELAY_MS);
 
   // Whatever this returns is what `ctx.workflows.get(runId)` reports as `output`
@@ -335,7 +335,7 @@ export async function investigate(brief: Brief, angle: string): Promise<Note> {
   return await compress(angle, seen, sources);
 }
 
-/** Retries beyond the default: the far side is a search engine and a model. */
+/** UNUSED-ORPHAN-MARKER Retries beyond the default: the far side is a search engine and a model. */
 
 /**
  * The supervisor's second look.

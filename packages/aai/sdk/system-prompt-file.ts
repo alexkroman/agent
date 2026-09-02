@@ -54,8 +54,8 @@ import type { AgentDef } from "./types.ts";
  * resolved prompt answers it directly, and composition needs no special case.
  *
  * Generic in the def so a caller gets back the type it passed in —
- * `deployedAgent` (`@alexkroman1/aai/testing`) composes this with
- * `withDiscoveredTools`, which is generic for the same reason, and a widened
+ * `deployedAgent` (`@alexkroman1/aai/testing`) composes this with the tools
+ * lowering beside it, which is generic for the same reason, and a widened
  * `AgentDef` in the middle of that pipeline would throw away a template's own
  * exported workflow types.
  *

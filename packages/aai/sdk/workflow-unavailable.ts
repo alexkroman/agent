@@ -101,5 +101,4 @@ export function rejectingWorkflows(message: string): WorkflowClient {
 export const PUBLIC_URL_UNCONFIGURED_MESSAGE =
   "This agent does not know its own public URL, so a webhook URL cannot be minted. " +
   "Set `publicUrl` on createAgentServer/createRuntime (server.mjs reads PUBLIC_URL), " +
-  "or set AAI_PUBLIC_ORIGIN on the platform. `hook.url` from the Workflow DevKit is " +
-  "the GUEST's own origin and is not reachable from outside the sandbox.";
+  "or set AAI_PUBLIC_ORIGIN on the platform.";

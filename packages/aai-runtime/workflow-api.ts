@@ -19,7 +19,7 @@
  * GET    /workflows/runs/:id/events → SSE: run | done | missing | idle
  * GET    /workflows/runs/:id/stream → SSE: chunk | done | missing
  *                                     ?namespace=&startIndex=
- * POST   /workflows/runs/:id/wake   → { runId, woken }
+ * POST   /workflows/runs/:id/wake   → { runId, woken }   ?correlationId=
  * POST   /workflows/uploads         → { id, …, complete }   body: the file
  * PUT    /workflows/uploads/:id     → the same, under an id the CALLER chose
  * POST   /workflows/uploads/:id/parts  → declare an upload its parts fill in
@@ -368,9 +368,11 @@ const ROUTES: readonly Route[] = [
   {
     method: "POST",
     matches: (url) => url.startsWith(RUNS_PREFIX) && url.endsWith("/wake"),
-    run: (_req, res, ctx, url) => {
+    run: (req, res, ctx, url) => {
       const id = runIdOr400(res, url, RUNS_PREFIX, "/wake");
-      if (id !== undefined) return wakeRun(res, ctx, id);
+      // `req`, because the correlation ids that make a wake TARGETED come off
+      // the query string — see `wakeRun`.
+      if (id !== undefined) return wakeRun(req, res, ctx, id);
     },
   },
   {

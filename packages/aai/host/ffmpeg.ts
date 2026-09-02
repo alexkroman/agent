@@ -18,7 +18,7 @@
  * - {@link transcodeToWav} — make it the one format the arithmetic works on.
  * - {@link runFfmpeg} — everything else, as an argv you build yourself.
  *
- * ```ts no-check
+ * ```ts
  * import { readUpload } from "@alexkroman1/aai/step";
  * import { probeMedia, transcodeToWav } from "@alexkroman1/aai/ffmpeg";
  *
@@ -112,7 +112,7 @@ export type FfmpegSource = string | Uint8Array;
  * naming its {@link FfmpegFailureKind}.
  *
  * @example
- * ```ts no-check
+ * ```ts
  * import { runFfmpeg } from "@alexkroman1/aai/ffmpeg";
  *
  * // File to file: nothing is buffered, so this is the shape for long media.
@@ -143,7 +143,7 @@ export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
 /**
  * What ffprobe makes of a file: duration, container, and every stream.
  *
- * ```ts no-check
+ * ```ts
  * import { probeMedia } from "@alexkroman1/aai/ffmpeg";
  *
  * const info = await probeMedia("/tmp/recording.m4a");

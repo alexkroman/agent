@@ -20,7 +20,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { forwardToGuest } from "./guest-forward.ts";
+import {
+  forwardToGuest,
+  GUEST_WEBHOOK_RESPONSE_HEADERS,
+  NEVER_FORWARDED,
+  passThroughHeaders,
+  pickHeaders,
+} from "./guest-forward.ts";
 
 const TIMEOUT_MS = 1000;
 
@@ -350,5 +356,185 @@ describe("the other two bounds are unchanged", () => {
     const settled = capture(forward);
     await vi.advanceTimersByTimeAsync(TIMEOUT_MS + 1);
     expect(await settled).toMatchObject({ err: expect.objectContaining({ name: "AbortError" }) });
+  });
+});
+
+/**
+ * The REQUEST strip set, which stays a DENY-LIST and is the only one left.
+ *
+ * It has no choice: the module doc records that a workflow verifying
+ * `Stripe-Signature` needs headers this file cannot enumerate. So the property
+ * that makes a deny-list auditable has to hold here — the whole set is the
+ * reviewable unit, asserted as an equality rather than sampled per known name.
+ * Its coverage used to be incidental, riding on the response set that was built
+ * out of it; converting that direction to an allow-list left this one with none.
+ */
+describe("NEVER_FORWARDED", () => {
+  test("is exactly the hop-by-hop set plus the three credential-bearing headers", () => {
+    expect([...NEVER_FORWARDED].sort()).toEqual(
+      [
+        "authorization",
+        "connection",
+        "content-length",
+        "cookie",
+        "expect",
+        "host",
+        "keep-alive",
+        "proxy-authorization",
+        "proxy-connection",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+      ].sort(),
+    );
+  });
+
+  test("every entry is lower-cased, because that is what the filter compares", () => {
+    // `passThroughHeaders` lower-cases the incoming name and then tests
+    // `NEVER_FORWARDED.has(lower)`, so a capitalised entry is an entry that
+    // matches nothing — and prints no error anywhere.
+    expect([...NEVER_FORWARDED].filter((h) => h !== h.toLowerCase())).toEqual([]);
+  });
+
+  test("passes a header nobody enumerated, which is the point of this direction", () => {
+    const fromSender = new Headers({
+      "content-type": "application/json",
+      "stripe-signature": "t=1,v1=deadbeef",
+      "x-hub-signature-256": "sha256=abc",
+    });
+    expect([...passThroughHeaders(fromSender).keys()].sort()).toEqual([
+      "content-type",
+      "stripe-signature",
+      "x-hub-signature-256",
+    ]);
+  });
+
+  test("strips the credential set and every x-forwarded-*", () => {
+    // One `Headers` carrying all of them at once: a per-name loop would pass on
+    // a filter that stops after its first hit. `x-forwarded-*` is matched by
+    // PREFIX rather than by membership, which is why it is exercised here and
+    // cannot appear in the equality above.
+    const fromSender = new Headers({ "content-type": "application/json" });
+    for (const name of [...NEVER_FORWARDED]) fromSender.set(name, "caller-supplied");
+    for (const name of ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"]) {
+      fromSender.set(name, "platform-hop");
+    }
+    expect([...passThroughHeaders(fromSender).keys()]).toEqual(["content-type"]);
+  });
+});
+
+/**
+ * The RESPONSE allow-list, asserted EXHAUSTIVELY rather than sampled.
+ *
+ * An allow-list is only auditable if the whole set is the reviewable unit, so
+ * these pin the set itself and not a few members of it — an entry silently
+ * disappearing is a broken caller (`content-type`) and an entry silently
+ * appearing is a tenant statement in the platform's voice, and a membership test
+ * per known name cannot see either. The counterpart for the REQUEST direction,
+ * and the header filters driven through a real orchestrator, live in
+ * `workflow-handler.test.ts` and `workflow-webhook-handler.test.ts`.
+ *
+ * The pre-fix FAILING observation is `does not return a header nobody
+ * enumerated`: against the 19-name deny-list this replaced, `Refresh`,
+ * `Speculation-Rules` and `Integrity-Policy` all crossed this hop — three
+ * browser-honoured, tenant-controlled headers, one of them a redirect under
+ * another name. That is what a deny-list costs, and it is the reason `location`
+ * is now omitted rather than excused.
+ */
+describe("GUEST_WEBHOOK_RESPONSE_HEADERS", () => {
+  test("is exactly the two headers a webhook sender reads", () => {
+    // Spelled as an equality over the WHOLE list. An addition here is a decision
+    // about what a tenant may say on the platform's origin; a removal breaks
+    // every caller. Both have to fail.
+    expect([...GUEST_WEBHOOK_RESPONSE_HEADERS]).toEqual(["content-type", "retry-after"]);
+  });
+
+  test("every entry is lower-cased, because that is what the filter compares", () => {
+    // `pickHeaders` calls `from.get(name)`, which IS case-insensitive — so a
+    // capitalised entry would work and then read as licence to capitalise one
+    // that has to match a `Set`. Same assertion as the request lists carry.
+    expect([...GUEST_WEBHOOK_RESPONSE_HEADERS].filter((h) => h !== h.toLowerCase())).toEqual([]);
+  });
+
+  test("still returns what a webhook sender actually reads", () => {
+    // The allow-list must not have quietly forgotten `content-type`: a sender
+    // that cannot interpret the body sees an opaque reply, and a tenant
+    // answering 429 cannot steer the retry loop without `Retry-After`.
+    const fromGuest = new Headers({
+      "content-type": "application/json",
+      "retry-after": "30",
+    });
+    const returned = pickHeaders(fromGuest, GUEST_WEBHOOK_RESPONSE_HEADERS);
+    expect(returned.get("content-type")).toBe("application/json");
+    expect(returned.get("retry-after")).toBe("30");
+  });
+
+  test("strips every origin-scoped header a guest could send", () => {
+    // The 19 names the deny-list enumerated, all at once: a per-name loop would
+    // pass on a filter that stops after its first hit. Under an allow-list they
+    // are dropped by default rather than by enumeration, which is the point —
+    // this list is the old criterion kept as a REGRESSION pin, not as policy.
+    const originScoped = [
+      "set-cookie",
+      "set-cookie2",
+      "set-login",
+      "strict-transport-security",
+      "clear-site-data",
+      "alt-svc",
+      "accept-ch",
+      "critical-ch",
+      "origin-agent-cluster",
+      "public-key-pins",
+      "public-key-pins-report-only",
+      "expect-ct",
+      "report-to",
+      "reporting-endpoints",
+      "nel",
+      "content-security-policy",
+      "content-security-policy-report-only",
+      "www-authenticate",
+      "proxy-authenticate",
+    ];
+    const fromGuest = new Headers({ "content-type": "application/json" });
+    for (const name of originScoped) fromGuest.set(name, "tenant-supplied");
+    const returned = pickHeaders(fromGuest, GUEST_WEBHOOK_RESPONSE_HEADERS);
+    expect([...returned.keys()]).toEqual(["content-type"]);
+  });
+
+  test("does not return a tenant guest's Set-Cookie", () => {
+    // Kept on its own because it is the entry with a shipped defect behind it:
+    // `NEVER_FORWARDED` strips the REQUEST-side `cookie` and the response half
+    // had no entry anywhere, so a tenant guest set a cookie on the platform's
+    // shared origin.
+    const fromGuest = new Headers({ "content-type": "application/json" });
+    fromGuest.append("set-cookie", "sid=tenant-owned; Path=/; HttpOnly");
+    const returned = pickHeaders(fromGuest, GUEST_WEBHOOK_RESPONSE_HEADERS);
+    expect(returned.get("set-cookie")).toBeNull();
+    expect(returned.getSetCookie()).toEqual([]);
+  });
+
+  test("does not return a header nobody enumerated", () => {
+    // The failing-first observation, kept as the argument for the SHAPE rather
+    // than for any entry. All three cross the deny-list this replaced; all three
+    // are dropped here without anyone having had to hear of them.
+    const fromGuest = new Headers({ "content-type": "application/json" });
+    fromGuest.set("refresh", "0; url=https://tenant.example/take-over");
+    fromGuest.set("speculation-rules", '"/tenant-rules.json"');
+    fromGuest.set("integrity-policy", "blocked-destinations=(script)");
+    const returned = pickHeaders(fromGuest, GUEST_WEBHOOK_RESPONSE_HEADERS);
+    expect([...returned.keys()]).toEqual(["content-type"]);
+  });
+
+  test("omits `location`, which is the decision this list makes", () => {
+    // Recorded as an assertion rather than only in prose, because the cost is
+    // real: a tenant answering a callback with a 302 loses it. Adding it back is
+    // one entry, and the thing to refuse is adding it back while a BROWSER can
+    // reach this hop — a relayed tenant redirect on the platform's own origin is
+    // an open redirect. `Refresh` above is the same header under another name,
+    // which is why excusing this one was untenable.
+    expect([...GUEST_WEBHOOK_RESPONSE_HEADERS]).not.toContain("location");
+    const fromGuest = new Headers({ location: "https://tenant.example/elsewhere" });
+    expect(pickHeaders(fromGuest, GUEST_WEBHOOK_RESPONSE_HEADERS).get("location")).toBeNull();
   });
 });

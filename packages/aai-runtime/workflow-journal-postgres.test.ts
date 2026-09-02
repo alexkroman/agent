@@ -9,8 +9,8 @@
  * exists. None of that is representable here, because a recording `Db` returns
  * whatever it is told to.
  *
- * What IS worth pinning in the fast tier is the SHAPE of two decisions that were
- * wrong when written and whose failure is silent:
+ * What IS worth pinning in the fast tier is the SHAPE of three decisions that
+ * were wrong when written and whose failure is silent:
  *
  * - **Every jsonb binding is `::text::jsonb`.** postgres.js JSON-serializes a
  *   parameter bound to a `jsonb` position, so handing it the codec's
@@ -21,12 +21,18 @@
  * - **The compare-and-set really passes its `expect` list.** `setStatus`'s whole
  *   contract is that a worker which had not noticed a cancel cannot mark the run
  *   completed, and that is a `where` clause a recorder CAN read.
+ * - **No statement binds `undefined`.** postgres.js refuses one outright, so a
+ *   workflow body that returns nothing used to fail `setStatus` inside the
+ *   driver and leave the run `running` forever. The recorder cannot run the
+ *   driver — but the PARAMETER is exactly what the driver rejects, so it can
+ *   see the bug.
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { type IssuedStatement, recordingDb } from "./_test-utils.ts";
 import { createPostgresJournal } from "./workflow-journal-postgres.ts";
+import { isResumableJournal } from "./workflow-journal-types.ts";
 
 /** `recordingDb` under this file's older name, returning the two halves apart. */
 function recorder(rows: readonly Record<string, unknown>[][] = []) {
@@ -99,6 +105,72 @@ describe("every jsonb binding casts through text", () => {
       input: { topic: "otters" },
     });
     expect(issued[0]?.params.at(-1)).toBe('{"topic":"otters"}');
+  });
+});
+
+describe("no statement ever binds `undefined`", () => {
+  // postgres.js REFUSES an undefined parameter — `UNDEFINED_VALUE: Undefined
+  // values are not allowed`, thrown from `handleValue` before a byte is sent,
+  // and `sql.unsafe` is untagged so every parameter goes through it. Four
+  // bindings here are `encodeStorageJson(...)`, which is `JSON.stringify`
+  // underneath and answers `undefined` for `undefined` whatever its return type
+  // says. The reachable one was `setStatus`: a body that returns nothing makes
+  // the engine call `setStatus(runId, "completed", { output: undefined })`, the
+  // run never left `running`, and the delivery retried into the same fault.
+  //
+  // A recorder cannot run the driver, so what it CAN see is the parameter — and
+  // that is exactly the value the driver rejects.
+  test.each([
+    [
+      "createRun with no input",
+      (journal: ReturnType<typeof createPostgresJournal>) =>
+        journal.createRun({
+          runId: "wrun_1",
+          workflow: "digest",
+          status: "pending",
+          createdAt: 1,
+          input: undefined,
+        }),
+    ],
+    [
+      "setStatus completing with no output",
+      (journal: ReturnType<typeof createPostgresJournal>) =>
+        journal.setStatus("wrun_1", "completed", { output: undefined }, ["running"]),
+    ],
+    [
+      "deliverHook with no payload",
+      (journal: ReturnType<typeof createPostgresJournal>) => journal.deliverHook("tok", undefined),
+    ],
+    [
+      "appendStep with no output",
+      (journal: ReturnType<typeof createPostgresJournal>) =>
+        journal.appendStep("wrun_1", {
+          key: "a#0",
+          name: "a",
+          status: "ok",
+          attempts: 1,
+          finishedAt: 2,
+        }),
+    ],
+  ])("%s binds null", async (_label, act) => {
+    const { db, issued } = recorder([
+      [{ run_id: "wrun_1" }],
+      [
+        {
+          key: "a#0",
+          name: "a",
+          status: "ok",
+          output: null,
+          error: null,
+          attempts: 1,
+          finished_at: 2,
+        },
+      ],
+    ]);
+    await act(createPostgresJournal({ db }));
+    for (const statement of issued) {
+      expect(statement.params, statement.sql).not.toContain(undefined);
+    }
   });
 });
 
@@ -272,5 +344,37 @@ describe("a bigint column arrives as a STRING", () => {
     const runs = await journalOf(db).listRuns("digest", 25);
     expect(runs.map((r) => r.runId)).toEqual(["wrun_1", "wrun_2"]);
     expect(issued[0]?.params).toContain(25);
+  });
+});
+
+describe("resumableRuns is DECLARED here, and reads only its own tables", () => {
+  test("the sweep query bounds itself and never binds undefined", async () => {
+    // The presence pin — see `workflow-journal-memory.test.ts` for why each
+    // backend needs one. What a recorder can additionally see is the two things
+    // that were wrong when this was written elsewhere: an unbounded pass, and a
+    // status filter spelled as a negation (which stops matching an index).
+    const { db, issued } = recorder([[]]);
+    const journal = createPostgresJournal({ db });
+    expect(isResumableJournal(journal)).toBe(true);
+    expect(await journal.resumableRuns?.(200)).toEqual([]);
+    const statement = issued[0];
+    expect(statement?.params).toEqual([200]);
+    expect(statement?.sql).toContain("limit $1");
+    expect(statement?.sql).toContain("status in ('pending', 'running')");
+  });
+
+  test("a null wake_at maps to an ABSENT deadline, not to null", async () => {
+    // One of the five absence drifts the conformance table exists to hammer: the
+    // memory backend answers `undefined` for a run waiting on nothing, and a
+    // `null` here would read as a deadline at the epoch — i.e. always overdue.
+    const { db } = recorder([[{ run_id: "wrun_1", wake_at: null }]]);
+    expect(await createPostgresJournal({ db }).resumableRuns?.(10)).toEqual([{ runId: "wrun_1" }]);
+  });
+
+  test("a bigint wake_at arrives as a STRING and is read as a number", async () => {
+    const { db } = recorder([[{ run_id: "wrun_1", wake_at: "1700000000123" }]]);
+    expect(await createPostgresJournal({ db }).resumableRuns?.(10)).toEqual([
+      { runId: "wrun_1", wakeAt: 1_700_000_000_123 },
+    ]);
   });
 });

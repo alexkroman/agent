@@ -8,9 +8,9 @@
  * What a RUN is — the option bags, the status union, the snapshot a caller polls
  * and its guard, `WorkflowOutputOf` — is the `workflow-api` capability now.
  * The line is who READS it: an `agent.ts` declares a workflow, and a page, a
- * script or a tool annotating a result reads a run. Those seventeen names were
- * on the root barrel, whose membership test is "would an `agent.ts`, a tool
- * module, or a `workflow()` NAME it", and none of them passes it.
+ * script or a tool annotating a result reads a run. Those names were on the
+ * root barrel, whose membership test is "would an `agent.ts`, a tool module, or
+ * a `workflow()` NAME it", and none of them passes it.
  *
  * `WorkflowClient` stays because `ToolContext.workflows` is typed as one, so a
  * tool body annotating its context names it without reaching for a subpath.
@@ -41,8 +41,8 @@ export {
   // this capability rather than `workflow-api` by that same test: `ctx.step` is
   // what an author WRITES inside a `workflows/*.ts` module, where a run snapshot
   // is what a page READS. They arrived with the engine that replaced the
-  // Workflow DevKit's a step directive — the durability an author reaches
-  // is a method call now, so it is part of the declaring surface.
+  // Workflow DevKit's `"use step"` directive — the durability an author reaches
+  // for is a method call now, so it is part of the declaring surface.
   type WorkflowCtx,
   type WorkflowDef,
   workflow,

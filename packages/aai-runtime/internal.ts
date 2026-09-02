@@ -42,10 +42,11 @@
  * name reachable from no subpath cannot be autocompleted, reported, or come to
  * be depended on. They were removed, and the rule stands for the next one — a
  * clause added here in anticipation of a consumer is a surface with no reader.
- * One exception is structural, not aspirational: `WorldKind` is unimported but
- * named by the signature of something on this page, so a consumer satisfying it has
- * to be able to spell it. (There were three; the two the wake hint contributed went
- * with it.)
+ * There used to be three structural exceptions — names nothing imported but a
+ * signature on this page could not be spelled without: `WakeHintOptions`,
+ * `WakeHintPublisher` and `WorldKind`. All three went with the code that named
+ * them (the wake hint, then the DevKit's world), so there are none, and a name
+ * arriving here now owes an importer.
  *
  * **A name here that wants to be public does not get re-exported from
  * `runtime-barrel.ts`.** Its `@internal` tag comes OFF at the declaration site
@@ -62,6 +63,13 @@
  * @module internal
  */
 
+// One backend under test, as the shared `JournalStore` conformance suite names
+// it — imported for the signature of `JournalConformanceSuite` at the foot of
+// this file and deliberately NOT re-exported: nothing imports the NAME (an arm
+// is written as a literal at its one call site), and this subpath's rule is that
+// a name here owes an importer. A consumer that wants it can have the line.
+import type { JournalArm } from "./journal-conformance-cases.ts";
+
 export {
   CONTAINED_ENV,
   publishStepEnv,
@@ -71,6 +79,16 @@ export {
   UPLOAD_PART_BYTES,
   UPLOAD_TOKEN_RE,
 } from "@alexkroman1/aai/host-internal";
+// Parsing an `Authorization: Bearer <token>` header. Here because FOUR
+// byte-identical copies existed — the guest's gate (`aai-guest/harness-auth.ts`),
+// `bearerMatches` in this package, `aai-server/_bearer.ts`, and the platform's
+// guest gate through it — and all of them matched the scheme case-sensitively.
+// `aai-server` cannot be imported by the other two, so this is the narrowest home
+// that reaches all three; it is now the ONLY copy, that module having deleted its
+// own once it turned out it could import this subpath (it already does in five
+// others). `isBlankSecret` beside it is deliberately NOT exported: the one caller
+// outside this package, `guest-bearer.ts`, is safe by its own ordering.
+export { parseBearer } from "./bearer.ts";
 // The two sizes an upload is measured in, plus the id grammar. Exported for the
 // PLATFORM, which owns the byte route a deployed guest brokers through: its window
 // cap and its key derivation have to be stated in the same units the SDK cuts in,
@@ -145,6 +163,35 @@ export { executeToolCall } from "./tool-executor.ts";
 // has to agree with. The HANDLER is not here: `createServer` mounts the route
 // itself, so nothing outside this package wires one by hand.
 export { WORKFLOW_API_METHODS } from "./workflow-api.ts";
+// Where a LOCAL deployment keeps a workflow's on-disk state. The READER
+// (`localWorkflowDataDir`) is not here — every reader is inside this package —
+// but the one WRITER is `aai dev`, which had spelled the key out by hand
+// because it reached no barrel. A disagreement between the two is silent:
+// uploads under one directory, runs under another, and no error anywhere.
+export { WORKFLOW_DATA_DIR_ENV } from "./workflow-data-dir.ts";
+/**
+ * A run journal in this process's memory, for a host that must hold one across
+ * a rebuild.
+ *
+ * `aai dev` is the importer and the reason: it rebuilds the runtime on every
+ * file save, and the engine's own default is a FRESH journal per build — so
+ * every save discarded the runs. STORAGE per process, CODE per build. What a
+ * host does with this is pass it as `RuntimeOptions.journal`; nothing else here
+ * builds a store by hand.
+ */
+export { createMemoryJournal } from "./workflow-journal-memory.ts";
+/**
+ * The journal's PLATFORM backend — the HTTP client `aai-server` serves.
+ *
+ * Here for the same reason `createPostgresJournal` above is: `workflow-runtime.ts`
+ * picks it, and the conformance arm in `aai-server` builds one to drive the real
+ * route with. That arm is the only thing anywhere that exercises this client and
+ * the platform's own SQL together — its unit arm's transport is a fake over the
+ * memory reference — so the export is what makes the last mile of that wire
+ * testable at all. Nothing an embedder calls: `createAgentServer` chooses a
+ * journal from the boot env.
+ */
+export { createPlatformJournal } from "./workflow-journal-platform.ts";
 /**
  * The durable JOURNAL and its schema.
  *
@@ -159,12 +206,9 @@ export {
   applyWorkflowJournalDdl,
   workflowJournalDdl,
 } from "./workflow-journal-schema.ts";
-// The startup sweep that clears queue locks no live pool owns, and the advisory
-// lock it contends for. Exported for a SPEC: what a fake cannot check is that
-// `graphile_worker.force_unlock_workers` exists and does what its name says, and
-// the constants' own doc says they exist "so a test or a verification script can
-// contend for the SAME lock without restating the number" — which nothing outside
-// this package could do while they stopped here. See
+// Asking the PLATFORM to queue a message for one of this guest's own runs.
+// `aai-server`'s enqueue handler is the other end, and `payloadRunId` is what it
+// reads a run id out of a body with.
 export {
   createPlatformQueueSend,
   enqueueToPlatform,
@@ -193,7 +237,13 @@ export {
 } from "./workflow-queue-dispatch.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
-export { handleWorkflowRequest } from "./workflow-serve.ts";
+//
+// `publishWorkflowWebhookUrl` is beside it for the same reason: the GUEST is the
+// one composition that knows its public origin (`AAI_PUBLIC_BASE_URL` in its exec
+// env, which the agent env never carries), and it must not learn the webhook path
+// in order to publish a minter over it. What it fills is the step slot a workflow
+// BODY reads through `stepWebhookUrl`.
+export { handleWorkflowRequest, publishWorkflowWebhookUrl } from "./workflow-serve.ts";
 export { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 // Standing an upload store up. The store TYPE, the two blob implementations and
 // the part addressing are contracted, on the root barrel; this is what JOINS
@@ -202,3 +252,64 @@ export { createUploadStore } from "./workflow-uploads.ts";
 // Wiring a socket up under a session. `SessionWebSocket` — the minimal socket
 // shape a host supplies — is contracted, on the root barrel.
 export { wireSessionSocket } from "./ws-handler.ts";
+
+/**
+ * The {@link JournalStore} CONFORMANCE suite, loaded on demand.
+ *
+ * One case list, run over every arm a run really journals into
+ * (`journal-conformance.ts` carries the argument). Two of the three arms live in
+ * this package; the third is `createPlatformJournal` wired to the platform's REAL
+ * handler and a real Postgres, which can only be stood up in `aai-server` — so
+ * the case list has to cross the package boundary, and this is the subpath that
+ * direction is allowed on (`aai-server` imports this package; never the reverse).
+ *
+ * That arm is the whole point: the platform arm in this package's unit tier
+ * delegates every SEMANTIC to a memory-backed fake transport, so a divergence in
+ * the platform's own SQL is invisible to it — and one was shipped. `createRun`'s
+ * `on conflict … do nothing` answered a duplicate run id with SUCCESS while the
+ * contract, the memory reference and the self-hosted store all refuse it, so two
+ * racing starts on one run id both believed they had won.
+ *
+ * ## Why this is a LOADER and not a re-export clause
+ *
+ * The case modules `import { describe, expect, test } from "vitest"`, and vitest
+ * is an OPTIONAL peer dependency of this package. A static
+ * `export { journalConformance } from …` here is bundled INTO `dist/internal.js`
+ * — measured: `import { describe, expect, test } from "vitest"` lands on line 4 —
+ * and `@alexkroman1/aai-cli`'s published `dist` imports a VALUE from this exact
+ * module (`consoleLogger`, in `_dev-env.ts`) with every bare specifier left
+ * external. So the plain clause makes `aai dev` unrunnable in any install that
+ * does not happen to have the test runner: `ERR_MODULE_NOT_FOUND` from inside a
+ * published package, which neither `publint` nor `attw` can see. Behind a dynamic
+ * import the same code splits into its own chunk (verified: zero `vitest`
+ * references in `dist/internal.js`) and is fetched only by the caller that asks
+ * for it. Same rule as `@alexkroman1/aai-runtime/eval/vitest` and
+ * `@alexkroman1/aai/testing/vitest` — anything that pulls the runner is reached
+ * deliberately — expressed as a function because this subpath cannot afford to
+ * be split in two.
+ *
+ * A consumer awaits it at the TOP of its test file and registers the cases
+ * synchronously afterwards, which is what a `describe` body needs:
+ *
+ * `no-check`: `describeWithPg` is an `aai-server` test helper, which a doc
+ * example cannot import (the harness compiles fences under the SCAFFOLD
+ * tsconfig, where a private workspace package does not resolve), and `store`
+ * is the arm the reader is registering. Not the `await` and not the loader —
+ * both of those type-check.
+ * ```ts no-check
+ * const { journalConformance, journalIds } = await loadJournalConformance();
+ * describeWithPg("…", () => {
+ *   journalConformance({ label: "platform", journal: () => store, uid: journalIds("pf") });
+ * });
+ * ```
+ */
+export type JournalConformanceSuite = {
+  /** Declares the whole case list over one arm. Call inside a `describe` body. */
+  journalConformance: (arm: JournalArm) => void;
+  /** The arm-independent id factory every case mints its keys from. */
+  journalIds: (label: string) => () => string;
+};
+export async function loadJournalConformance(): Promise<JournalConformanceSuite> {
+  const { journalConformance, journalIds } = await import("./journal-conformance.ts");
+  return { journalConformance, journalIds };
+}

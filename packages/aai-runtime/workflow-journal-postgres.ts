@@ -72,6 +72,7 @@ import {
 import type {
   HookRecord,
   JournalStore,
+  ResumableRun,
   RunRecord,
   RunStatus,
   SleepRecord,
@@ -86,7 +87,8 @@ type RunRow = {
   workflow: string;
   status: RunStatus;
   created_at: string | number;
-  input: string;
+  /** `null` when the run was started with no input — the column is nullable. */
+  input: string | null;
   output: string | null;
   error: string | null;
 };
@@ -112,13 +114,37 @@ type StepRow = {
  */
 const millis = (value: string | number): number => Number(value);
 
+/**
+ * An author value on its way into a `jsonb` position, or SQL `NULL`.
+ *
+ * `encodeStorageJson` is `JSON.stringify` underneath, which answers `undefined`
+ * for `undefined` however its return type is spelled — and postgres.js REFUSES
+ * an undefined parameter outright (`UNDEFINED_VALUE: Undefined values are not
+ * allowed`, `handleValue` in its `types.js`; `sql.unsafe` is untagged, so every
+ * parameter goes through it). So a workflow body that returns nothing —
+ * ordinary, for one that exists to do side effects — made `setStatus`'s
+ * `{ output: outcome.output }` throw from inside the driver, the run never left
+ * `running`, and the delivery failed and was retried against the same fault.
+ *
+ * `null` here rather than a guard per call site, because there are four of them
+ * and the next one added would be the one that forgets. It is also what makes
+ * the three backends agree: the platform journal already omits the field and the
+ * memory one stores `undefined`, so a stored SQL `NULL` reads back as absent
+ * from all three.
+ */
+const encodedOrNull = (value: unknown): string | null =>
+  value === undefined ? null : encodeStorageJson(value);
+
 function toRunRecord(row: RunRow): RunRecord {
   return {
     runId: row.run_id,
     workflow: row.workflow,
     status: row.status,
     createdAt: millis(row.created_at),
-    input: decodeStorageJson(row.input),
+    // `undefined` and not `null` for an absent input, which is what the memory
+    // and platform journals answer — `isRecord` refuses both, but only one of
+    // them makes the three backends comparable.
+    input: row.input === null ? undefined : decodeStorageJson(row.input),
     ...(row.output === null ? {} : { output: decodeStorageJson(row.output) }),
     ...(row.error === null ? {} : { error: { message: row.error } }),
   };
@@ -156,7 +182,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
           record.workflow,
           record.status,
           record.createdAt,
-          encodeStorageJson(record.input),
+          encodedOrNull(record.input),
         ],
       );
     },
@@ -226,7 +252,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
           next,
           expect === undefined ? null : [...expect],
           patch !== undefined && "output" in patch,
-          patch !== undefined && "output" in patch ? encodeStorageJson(patch.output) : null,
+          patch !== undefined && "output" in patch ? encodedOrNull(patch.output) : null,
           patch?.error?.message ?? null,
           // Only a TERMINAL move releases. A run going `running` still owns its
           // tokens — that is the whole point of a hook.
@@ -301,6 +327,20 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       // `where`: an elapsed or already-woken wait is not one this call stopped,
       // and a BARE wake reaches ordinary sleeps only — so cutting a SCHEDULE
       // short cannot also close an approval window.
+      //
+      // `correlation_id = any(...)` and NOT `coalesce(correlation_id, '')`: a
+      // wait declared with no id is not a wait declared with `""`. The coalesce
+      // folded the two together in both directions — an id list containing an
+      // empty string woke every uncorrelated sleep on the run, and a wait really
+      // declared `""` was indistinguishable from one declared nothing — while the
+      // platform backend, which never folded them, gave the opposite answer.
+      // SQL's `NULL = any(...)` is NULL, i.e. not true, which is the refusal
+      // wanted. See `journal-conformance-waits.ts`.
+      //
+      // `wake_at > $2` is the ELAPSED refusal and it STAYS: an overdue run is
+      // recovered by `resumableRuns` and the boot sweep, not by pretending a wake
+      // stopped a wait that was already over. `wakeReaches` in
+      // `workflow-journal-memory.ts` carries the two things it protects.
       const rows = await db.query<{ key: string }>(
         `update ${WORKFLOW_SLEEP_TABLE}
          set woken = true
@@ -309,7 +349,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
            and wake_at > $2
            and case
                  when $3::text[] is null then kind = 'sleep'
-                 else coalesce(correlation_id, '') = any($3::text[])
+                 else correlation_id = any($3::text[])
                end
          returning key`,
         [runId, Date.now(), correlationIds === undefined ? null : [...correlationIds]],
@@ -357,11 +397,26 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       };
     },
 
-    async closeHook(runId: string, key: string): Promise<void> {
-      await db.query(
-        `update ${WORKFLOW_HOOK_TABLE} set closed = true where run_id = $1 and key = $2`,
+    async closeHook(runId: string, key: string): Promise<boolean> {
+      // A COMPARE-AND-SET, and the `delivered = false` in the `where` is the
+      // whole of it: a signal that landed while the engine was reading the
+      // deadline must win, or this walk times out while every later replay reads
+      // the payload. `existing` separates "already answered" from "gone" — a
+      // terminal run releases its tokens, and there is nothing to refuse then.
+      const rows = await db.query<{ closed: string | number; existing: string | number }>(
+        `with shut as (
+           update ${WORKFLOW_HOOK_TABLE} set closed = true
+            where run_id = $1 and key = $2 and delivered = false
+            returning key
+         )
+         select (select count(*) from shut) as closed,
+                (select count(*) from ${WORKFLOW_HOOK_TABLE}
+                  where run_id = $1 and key = $2) as existing`,
         [runId, key],
       );
+      const row = rows[0];
+      if (!row) return true;
+      return Number(row.closed) > 0 || Number(row.existing) === 0;
     },
 
     async deliverHook(token: string, payload: unknown): Promise<string | undefined> {
@@ -373,9 +428,40 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
          set delivered = true, payload = $2::text::jsonb
          where token = $1 and delivered = false and closed = false
          returning run_id`,
-        [token, encodeStorageJson(payload)],
+        [token, encodedOrNull(payload)],
       );
       return rows[0]?.run_id;
+    },
+
+    async resumableRuns(limit: number): Promise<ResumableRun[]> {
+      // The status list is written OUT rather than negated and the `parked` arm is
+      // the platform reconcile's park rule (see the interface). `coalesce(wake_at,
+      // 0)` orders so that a run waiting on nothing, and the most overdue sleeps,
+      // are what survive `limit`. Unindexed deliberately: this runs ONCE, at boot,
+      // and an index on `status` would be maintained by every `setStatus` for it.
+      const rows = await db.query<{ run_id: string; wake_at: string | number | null }>(
+        `with candidate as (
+           select r.run_id,
+                  (select min(s.wake_at) from ${WORKFLOW_SLEEP_TABLE} s
+                    where s.run_id = r.run_id and s.woken = false) as wake_at,
+                  exists (select 1 from ${WORKFLOW_HOOK_TABLE} h
+                           where h.run_id = r.run_id
+                             and h.delivered = false and h.closed = false) as parked
+             from ${WORKFLOW_RUN_TABLE} r
+            where r.status in ('pending', 'running')
+         )
+         select run_id, wake_at from candidate
+          where wake_at is not null or not parked
+          order by coalesce(wake_at, 0), run_id
+          limit $1`,
+        [limit],
+      );
+      return rows.map((row) => ({
+        runId: row.run_id,
+        // `undefined` and not `null`, which is what the memory backend answers —
+        // one of the five absence drifts the conformance table exists to hammer.
+        ...(row.wake_at === null ? {} : { wakeAt: millis(row.wake_at) }),
+      }));
     },
 
     async appendStep(runId: string, entry: StepEntry): Promise<StepEntry> {
@@ -392,7 +478,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
           entry.key,
           entry.name,
           entry.status,
-          entry.output === undefined ? null : encodeStorageJson(entry.output),
+          encodedOrNull(entry.output),
           entry.error?.message ?? null,
           entry.attempts,
           entry.finishedAt,

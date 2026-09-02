@@ -22,9 +22,9 @@
  * the runs survive, and the reverse means a key pointing at a run that is gone.
  * One decision, one boot line, both reported.
  *
- * What is still missing is the PLATFORM journal: a deployed guest holds no
- * database of its own, so unless the author set a `DATABASE_URL` its runs are in
- * sandbox memory. That is the remaining half of the DevKit removal.
+ * The RUNS have a third home a `DATABASE_URL` cannot describe — the platform's
+ * journal, for a deployed guest, which holds no database of its own. That
+ * preference is `selectJournal`'s, below.
  *
  * A missing database is therefore NOT a reason to withhold the client. It was
  * tempting to make storage a hard requirement and have `ctx.workflows` reject
@@ -89,14 +89,31 @@ export type BuiltWorkflowClient = {
  * Memory is last and the boot line SAYS so. A durability tradeoff absent from the
  * log reads as a bug, and this is the one an author is most likely to hit by
  * accident.
+ *
+ * **A host-supplied journal fills the MEMORY arm and no other.** `aai dev`
+ * rebuilds this whole client on every file save, so the memory arm's per-build
+ * default silently discarded every in-flight run; a host that owns a
+ * process-scoped store hands it in. Letting it outrank the two durable arms
+ * would turn that convenience into a demotion nobody asked for — see
+ * `RuntimeOptions.journal`.
  */
 function selectJournal(
   db: Db | undefined,
   logger: Logger,
+  supplied: JournalStore | undefined,
 ): {
   journal: JournalStore | undefined;
   journalKind: string;
-  dispatch: ((runId: string, at?: number) => void) | undefined;
+  /**
+   * Does the chosen journal outlive this process?
+   *
+   * Carried rather than re-derived from `journalKind`, which is a sentence for a
+   * human. The one reader is the progress-store warning in
+   * {@link buildWorkflowClient}: a durable journal beside an in-memory `report()`
+   * channel is the asymmetry worth saying out loud.
+   */
+  journalDurable: boolean;
+  dispatch: ((runId: string, at?: number) => void | Promise<void>) | undefined;
   dispatchKind: string;
 } {
   const platform = platformGuestOptions();
@@ -108,20 +125,76 @@ function selectJournal(
     return {
       journal: createPlatformJournal(platform),
       journalKind: "platform",
+      journalDurable: true,
       dispatch: createPlatformDispatch({ platform, logger }),
       dispatchKind: "platform queue",
     };
   }
-  const localTimers = { dispatch: undefined, dispatchKind: "in-process timers" };
+  /**
+   * The two local arms, and what their `deliveries` line may honestly claim.
+   *
+   * It used to say `"in-process timers"` flat, and beside a durable `runStore`
+   * that read as a promise the pair could not keep: the timers died with the
+   * process and nothing re-read the journal, so a run suspended on `ctx.sleep`
+   * was stranded at `running` forever. `createInProcessWorkflowEngine` sweeps
+   * `JournalStore.resumableRuns` at construction now — so the claim is true, and
+   * it is spelled out because the boot sweep is the difference between a durable
+   * run store that resumes and one that merely REMEMBERS. The engine WARNS when
+   * the journal it was handed cannot be enumerated, which is the only way this
+   * line can be wrong.
+   */
+  const localTimers = {
+    dispatch: undefined,
+    dispatchKind: "in-process timers (suspended runs re-enqueued at boot)",
+  };
   if (db) {
-    return { journal: createPostgresJournal({ db }), journalKind: "postgres", ...localTimers };
+    return {
+      journal: createPostgresJournal({ db }),
+      journalKind: "postgres",
+      journalDurable: true,
+      ...localTimers,
+    };
   }
   return {
-    journal: undefined,
-    journalKind: "memory (in-process — runs do not survive a restart)",
+    journal: supplied,
+    // Two different answers to the one question an operator asks of this line,
+    // and the difference is not cosmetic: a host-supplied store survives the
+    // rebuild that replaces this client, which is the whole of what `aai dev`
+    // needed. Neither survives a restart, so neither counts as durable.
+    // "Survive a rebuild" was an OVERSTATEMENT until the boot sweep landed: the
+    // store survived and the timers did not, so a run suspended on `ctx.sleep`
+    // was still lost on the next `aai dev` file save — the one case where
+    // surviving a rebuild is worth anything. The rebuilt engine re-enqueues it
+    // now, which is what makes this line true rather than nearly true.
+    journalKind: supplied
+      ? "memory (host-supplied — runs survive a rebuild, not a restart)"
+      : "memory (in-process — runs do not survive a restart)",
+    journalDurable: false,
     ...localTimers,
   };
 }
+
+/**
+ * What a run's PROGRESS channel is backed by — and today the answer is always
+ * memory, which is a limitation stated rather than a choice made.
+ *
+ * `createMemoryStreams` is the only {@link StreamStore} in the repo: the durable
+ * journal has three backends and the stream store has one, so a deployed guest
+ * gets a run that outlives its sandbox and a `report()` channel that does not.
+ * What that costs is not cosmetic — the same store answers `WorkflowClient.
+ * lastLine` and backs the progress channel a page polls, so a run resumed in a
+ * fresh sandbox narrates into an empty log and `lastLine` answers `undefined` for
+ * a run that was reporting fine an hour earlier. From outside it reads as a
+ * broken page rather than as a store that was never durable.
+ *
+ * The real fix is a platform-backed stream store — routes beside
+ * `platform-workflow-journal.ts`, a client beside `workflow-journal-platform.ts`,
+ * and a postgres twin for the self-hosted case. Until then the honest move is the
+ * one the run store already makes: name it in the boot line, and WARN when the
+ * journal beside it is durable, because that is the deployment where the two
+ * disagree.
+ */
+const PROGRESS_STORE_KIND = "memory (in-process — a resumed run narrates into an empty log)";
 
 /**
  * Build `ctx.workflows` for one runtime, or `undefined` when the agent declares
@@ -144,10 +217,19 @@ export function buildWorkflowClient(
    */
   publicUrl: string | undefined,
   logger: Logger,
+  /**
+   * The host's own run store, used only where the alternative is a per-build
+   * one — see `RuntimeOptions.journal` and {@link selectJournal}.
+   */
+  journalOption?: JournalStore | undefined,
 ): BuiltWorkflowClient | undefined {
   const workflows = agent.workflows;
   if (!workflows || Object.keys(workflows).length === 0) return;
-  const { journal, journalKind, dispatch, dispatchKind } = selectJournal(db, logger);
+  const { journal, journalKind, journalDurable, dispatch, dispatchKind } = selectJournal(
+    db,
+    logger,
+    journalOption,
+  );
   logger.info?.("Workflows resolved", {
     workflows: Object.keys(workflows),
     // Which store is in play decides whether a correlation key survives a
@@ -159,6 +241,11 @@ export function buildWorkflowClient(
     // assumed, because a durability tradeoff absent from the log reads as a bug —
     // and because there is now a case where the answer is good.
     runStore: journalKind,
+    // What `report()` writes into, which is a THIRD question from the two above
+    // and the only one whose answer is always the same — see
+    // `PROGRESS_STORE_KIND`. In the line rather than inferred from the run store,
+    // because the two now legitimately disagree on every deployed guest.
+    progress: PROGRESS_STORE_KIND,
     // WHERE a delivery goes, which is a different question from where a run is
     // stored and the one that decides whether a `ctx.sleep` ever comes back. A
     // durable journal behind in-process timers looks healthy and forgets every
@@ -177,6 +264,21 @@ export function buildWorkflowClient(
     // half of the failure and a boolean cannot show it.
     publicUrl: publicUrl ?? "(unset — publicWebhookUrl will throw)",
   });
+  // LOUD, and only where the two stores disagree. With a memory journal the runs
+  // and their narration are forgotten together, which the run-store line already
+  // says; a second warning there would train an author to ignore this one. With a
+  // durable journal the run survives a boot its progress log does not, and
+  // nothing else in the system can report that: from inside, a resumed run with
+  // an empty channel is indistinguishable from one that never narrated.
+  if (journalDurable) {
+    logger.warn?.("Workflow progress is not durable", {
+      runStore: journalKind,
+      progress: PROGRESS_STORE_KIND,
+      detail:
+        "report() and lastLine are in-process only — a run resumed in another " +
+        "process reports an empty progress log for work it already narrated",
+    });
+  }
   // Held so `stop` can reach it: the CLIENT is what the runtime hands to tools,
   // and the engine's timers are what a rebuild has to cancel.
   const engine = createInProcessWorkflowEngine({ workflows, logger, journal, dispatch });
@@ -184,10 +286,9 @@ export function buildWorkflowClient(
     workflows,
     keys: resolveKeyStore(db),
     // The engine this repo owns, executing its own deliveries in this process.
-    // It replaced `wdkAdapter()`, and the swap had to happen HERE rather than
-    // later: `createWorkflowClient` hands `start` the DECLARED KEY, which the
-    // DevKit cannot resolve to a body at all — so the two halves had stopped
-    // agreeing about what identifies a workflow.
+    // `createWorkflowClient` hands `start` the DECLARED KEY, and the engine
+    // records a run under that same string — which is the whole of what the
+    // removed adapter needed a two-way translation for.
     wdk: engine,
     // Declared `string | undefined` rather than optional on the options type, so
     // the absent case passes straight through — no `omitUndefined`, and no

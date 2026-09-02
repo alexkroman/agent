@@ -96,6 +96,46 @@ describe("createStepGate", () => {
     await expect(gate(async () => "after")).resolves.toBe("after");
   });
 
+  test("a step NESTED inside a step does not queue behind its own parent", async () => {
+    // The deadlock, at its smallest. The outer step holds the only slot while it
+    // awaits the inner one, and the inner one waits for a slot the outer will not
+    // release until the inner returns. Nothing errors and nothing times out: the
+    // gate is per ENGINE, so at the default width sixteen such steps wedge every
+    // workflow in the process. A step already holding a slot runs its nested work
+    // on that slot — see `createStepGate`.
+    const gate = createStepGate(1);
+    await expect(gate(async () => `outer(${await gate(async () => "inner")})`)).resolves.toBe(
+      "outer(inner)",
+    );
+  });
+
+  test("re-entrancy does NOT widen the bound for a caller that is not nested", async () => {
+    // The other half of the fix: only work reached from INSIDE a slot-holder's
+    // async context is exempt. A fresh caller still queues, so the measured bound
+    // (`DEFAULT_STEP_CONCURRENCY`, and the memory it stands for) still holds.
+    const started: string[] = [];
+    const gate = createStepGate(1);
+    const { promise: holdOuter, resolve: releaseOuter } = Promise.withResolvers<void>();
+    const outer = gate(async () => {
+      started.push("outer");
+      await gate(async () => {
+        started.push("nested");
+      });
+      await holdOuter;
+    });
+    // Enqueued from OUTSIDE the outer step's context — the fan-out case, not
+    // nested work — so it must wait for the slot the outer one holds.
+    const sibling = gate(async () => {
+      started.push("sibling");
+    });
+    await tick();
+    expect(started).toEqual(["outer", "nested"]);
+
+    releaseOuter();
+    await Promise.all([outer, sibling]);
+    expect(started).toEqual(["outer", "nested", "sibling"]);
+  });
+
   test("runs everything eventually, rather than dropping what it queued", async () => {
     const gate = createStepGate(2);
     const results = await Promise.all(

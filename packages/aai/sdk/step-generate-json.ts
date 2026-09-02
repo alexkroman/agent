@@ -20,14 +20,14 @@
  * answered with a plausible neighbouring shape flows into the step's own logic
  * as if it had obeyed. Taking a schema makes the check the thing that produces
  * the type — and makes a reply that ignored the format a PLAIN throw, which is
- * exactly what the DevKit's retry is for: a model may well obey on the next
+ * exactly what a step's retry is for: a model may well obey on the next
  * attempt, where a 401 will not.
  *
  * ## And it stays zod-free
  *
- * This module is re-exported from `@alexkroman1/aai/utils`, which the CLI loads
- * on every invocation, so it may not pull zod's module graph. It does not need
- * to: VALIDATION is the Standard Schema contract itself (a `~standard.validate`
+ * This module is re-exported from `@alexkroman1/aai/step`, whose zero-zod budget
+ * covers every export: a `workflows/*.ts` module is bundled with the agent, so
+ * zod's module graph would ride in with it. It does not need to: VALIDATION is the Standard Schema contract itself (a `~standard.validate`
  * call), and only JSON Schema CONVERSION needs a vendor-specific path. So the
  * types come from `sdk/standard-schema.ts` — see that module's doc — and any
  * Standard Schema works here, zod being merely the documented default.
@@ -62,7 +62,7 @@ export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOp
  * value is what comes back, typed as the schema's output.
  *
  * **From a step, prefer `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`).**
- * It is this call plus `throwStepError`, and the DevKit decides its retry policy
+ * It is this call plus `throwStepError`, and the engine decides its retry policy
  * from WHICH error a step throws: raw, a terminal failure burns every remaining
  * attempt and a rate limit backs off for one second while the delay the far side
  * named sits unread. Reach for the raw call where the failure is not simply a
@@ -72,7 +72,7 @@ export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOp
  *   nothing about JSON on the caller's behalf, because the wording that gets a
  *   model to comply is part of the prompt a template is demonstrating.
  * @returns The validated reply.
- * @throws {Error} A plain error — retryable by the DevKit's default, which is
+ * @throws {Error} A plain error — retryable by the engine's default, which is
  *   the point — when the reply is not JSON, is not an object, or does not
  *   satisfy `schema`. All three are things a model may get right next time.
  * @throws {import("./step-generate.ts").StepGenerateError} On any gateway

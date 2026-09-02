@@ -13,6 +13,7 @@ import type { Db } from "@alexkroman1/aai/internal";
 import type { WorkflowBody } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
+import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { buildWorkflowClient } from "./workflow-runtime.ts";
 
 function body(): WorkflowBody {
@@ -56,12 +57,21 @@ describe("buildWorkflowClient", () => {
       // `DATABASE_URL` as the key index deliberately — an asymmetry is a trap
       // either way, a key pointing at a run that is gone or the reverse.
       runStore: "postgres",
+      // And what `report()` writes into, which is a THIRD question and the only
+      // one whose answer never changes: there is no durable stream store, so a
+      // postgres journal here sits beside an in-process progress log.
+      progress: expect.stringContaining("memory"),
       // WHERE a delivery goes, which decides whether a `ctx.sleep` ever comes
       // back. Reported beside the store rather than inferred from it: a durable
-      // journal behind in-process timers looks healthy and forgets every wait.
-      deliveries: "in-process timers",
-      // How many step bodies may EXECUTE at once — the bound the DevKit's world
-      // used to provide and the engine now owes, since a step runs inline.
+      // journal behind in-process timers looks healthy and forgets every wait —
+      // which it really did, until the engine started re-reading the journal at
+      // construction. The parenthetical is asserted rather than matched loosely
+      // because it is the CLAIM: drop the boot sweep and this line becomes the
+      // overstatement it used to be.
+      deliveries: "in-process timers (suspended runs re-enqueued at boot)",
+      // How many step bodies may EXECUTE at once — a bound the engine owes now
+      // that a step runs inline, and MEASURED against a guest rather than
+      // inherited from the world this replaced (which ran three).
       stepConcurrency: 16,
       publicUrl: PUBLIC_URL,
     });
@@ -78,7 +88,8 @@ describe("buildWorkflowClient", () => {
       workflows: ["digest"],
       keyStore: "memory",
       runStore: expect.stringContaining("memory"),
-      deliveries: "in-process timers",
+      progress: expect.stringContaining("memory"),
+      deliveries: "in-process timers (suspended runs re-enqueued at boot)",
       stepConcurrency: 16,
       publicUrl: PUBLIC_URL,
     });
@@ -167,11 +178,140 @@ describe("buildWorkflowClient", () => {
       expect(runStoreOf(undefined)).toBe("memory (in-process — runs do not survive a restart)");
     });
 
+    test("SAYS the progress channel is memory when the journal is durable", () => {
+      // The asymmetry nothing reported: a deployed guest gets a platform journal
+      // and, because no platform-backed stream store exists, an in-memory
+      // `report()` channel. A run that outlives its sandbox therefore resumes
+      // with an empty progress log and `lastLine` answers `undefined` for a run
+      // that narrated fine before the boot — which reads as a broken page rather
+      // than as a store that was never durable. It cannot be FIXED here, so it is
+      // said out loud: in the boot line, and once at `warn`.
+      withPlatform();
+      const logger = makeLogger();
+      buildWorkflowClient({ workflows: { digest } }, unusedDb, PUBLIC_URL, logger);
+      expect(logger.info).toHaveBeenCalledWith(
+        "Workflows resolved",
+        expect.objectContaining({
+          runStore: "platform",
+          progress: expect.stringMatching(/memory/),
+        }),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Workflow progress is not durable",
+        expect.objectContaining({ runStore: "platform" }),
+      );
+    });
+
+    test("does not WARN when the runs are in memory too, there being no asymmetry", () => {
+      // `aai dev` with nothing provisioned. The runs and their narration are
+      // equally forgotten on a restart, which the run-store line already says —
+      // a second warning there would train an author to ignore this one.
+      const logger = makeLogger();
+      buildWorkflowClient({ workflows: { digest } }, undefined, PUBLIC_URL, logger);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
     test("ignores a half-configured platform rather than dialling nowhere", () => {
       // One of the two keys means the platform spawned this guest differently
       // than this code expects. A base with no bearer would 401 every call.
       vi.stubEnv("AAI_PLATFORM_BASE_URL", "https://platform.test/digest-desk");
       expect(runStoreOf(unusedDb)).toBe("postgres");
+    });
+
+    /**
+     * STORAGE per PROCESS, CODE per BUILD — the split the deleted DevKit world
+     * used to make for us, and the half `aai dev` lost with it.
+     *
+     * Every file save rebuilds the runtime, so every save called
+     * `createInProcessWorkflowEngine` with no journal and got a FRESH
+     * `createMemoryJournal()`. A run started before a save was gone after it and
+     * `GET /workflows/runs/:id` answered 404 for a run the caller was still
+     * holding the id of — which reads as the run having failed rather than as
+     * the store having been replaced.
+     *
+     * The seam is one journal handed in from process scope. The engine still
+     * comes per build, which is what keeps hot reload: a rebuild must run the
+     * NEW body.
+     */
+    describe("a caller-supplied journal", () => {
+      test("keeps a run readable across a rebuild that replaces the client", async () => {
+        const journal = createMemoryJournal();
+        const first = buildWorkflowClient(
+          { workflows: { digest } },
+          undefined,
+          PUBLIC_URL,
+          makeLogger(),
+          journal,
+        );
+        const runId = await first?.client.start(digest, {});
+        expect(runId).toBeDefined();
+        // The save: the old engine's timers are cancelled and a new client is
+        // built over the same storage.
+        first?.stop();
+
+        const second = buildWorkflowClient(
+          { workflows: { digest } },
+          undefined,
+          PUBLIC_URL,
+          makeLogger(),
+          journal,
+        );
+        expect(await second?.client.get(runId as string)).toBeDefined();
+        second?.stop();
+      });
+
+      test("NAMES itself in the boot line, rather than reporting the per-build default", () => {
+        // The run store line is what an operator reads to answer "will this
+        // survive". A supplied journal survives a rebuild and not a restart,
+        // which is neither of the two answers the line could give before.
+        const logger = makeLogger();
+        buildWorkflowClient(
+          { workflows: { digest } },
+          undefined,
+          PUBLIC_URL,
+          logger,
+          createMemoryJournal(),
+        );
+        expect(logger.info).toHaveBeenCalledWith(
+          "Workflows resolved",
+          expect.objectContaining({
+            runStore: "memory (host-supplied — runs survive a rebuild, not a restart)",
+          }),
+        );
+      });
+
+      test("does not outrank postgres, which is durable where it is not", () => {
+        // The memory arm ONLY. A host that supplies a journal for its rebuild
+        // case must not thereby demote the agent's own database.
+        const logger = makeLogger();
+        buildWorkflowClient(
+          { workflows: { digest } },
+          unusedDb,
+          PUBLIC_URL,
+          logger,
+          createMemoryJournal(),
+        );
+        expect(logger.info).toHaveBeenCalledWith(
+          "Workflows resolved",
+          expect.objectContaining({ runStore: "postgres" }),
+        );
+      });
+
+      test("does not outrank the PLATFORM either, which is the deployed shape", () => {
+        withPlatform();
+        const logger = makeLogger();
+        buildWorkflowClient(
+          { workflows: { digest } },
+          undefined,
+          PUBLIC_URL,
+          logger,
+          createMemoryJournal(),
+        );
+        expect(logger.info).toHaveBeenCalledWith(
+          "Workflows resolved",
+          expect.objectContaining({ runStore: "platform", deliveries: "platform queue" }),
+        );
+      });
     });
   });
 });

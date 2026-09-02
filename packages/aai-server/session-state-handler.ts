@@ -2,18 +2,21 @@
 /**
  * `POST /:slug/session-state` — the guest's session slots and event log.
  *
- * Turn-level durability with no tenant database. The shape is the run-storage
- * route's, deliberately: `{ method, args }` behind one bearer check, because the
- * alternative is six routes and six places to restate the same scoping.
+ * Turn-level durability with no tenant database. The shape it shares with its
+ * three sibling platform routes is deliberate: `{ method, args }` behind one
+ * bearer check, because the alternative is six routes and six places to restate
+ * the same scoping.
  *
- * ## The scoping is simpler than run storage's, and the schema is why
+ * ## The scoping is a SCHEMA property, not a per-method table
  *
- * `workflow-storage-handler.ts` needs a per-method table because the DevKit's
- * schema has no tenant column, so five of its eleven methods are keyed by
- * something that is not a run. Here the slug is part of the primary key and part of
- * every statement (`platform-session-state.ts`), so the boundary is the SLUG
- * ARGUMENT — taken from the bearer, never from the request. There is nothing per
- * method to decide, and nothing to forget.
+ * The slug is part of the primary key and part of every statement
+ * (`platform-session-state.ts`), so the boundary is the SLUG ARGUMENT — taken
+ * from the bearer, never from the request. There is nothing per method to
+ * decide, and nothing to forget. The DevKit's run-storage route was the
+ * counter-example and is the reason this is worth stating: its schema had no
+ * tenant column, so five of its eleven methods were keyed by something that was
+ * not a run and each needed its own scoping rule. That route is gone;
+ * `workflow-journal-handler.ts` replaced it, with the slug in every key.
  *
  * A guessed session id therefore reaches nothing: no statement in the store can be
  * pointed at another agent's rows.

@@ -16,6 +16,25 @@
  * Decode is table-driven (256 entries, built once); encode runs the segment
  * search per sample, which at 8 kHz is 8000 iterations of a 4-step loop per
  * second of speech — far below anything worth a 64 KB table.
+ *
+ * ## What the round trip guarantees, and why it is not a relative bound
+ *
+ * Measured over the full Int16 domain, `mulawToPcm16(pcm16ToMulaw(x))` is
+ * within `max(7, (11 / 121) * |x|)` of `x` — an absolute FLOOR of 7 plus a
+ * relative slope of ~9.09%, both tight (`mulaw.test.ts` asserts that neither
+ * can be lowered). A purely relative bound does not exist: the worst relative
+ * error is **7.0**, at x = -1, which encodes to the lowest nonzero code and
+ * decodes to -8. That is companding working, not a defect — the step size
+ * grows with amplitude, so a sample quieter than one step is quantized to the
+ * step — but it means an assertion of the form "relative error < 6.25%" is
+ * false for every quiet sample. The one that used to live here read
+ * `worst < 0.07` over a single amplitude-30000 sine, whose smallest nonzero
+ * sample is 942; the same sine at amplitude 30 measures 7.0.
+ *
+ * The property that protects this implementation is MONOTONICITY, which holds
+ * across all 65,536 values: a louder sample never decodes quieter. Shifting
+ * `SEGMENT_ENDS` by one leaves the exhaustive 256-code fixed-point test
+ * passing and breaks monotonicity in 16 places.
  */
 
 /** μ-law's DC bias, added before the segment search and removed after. */

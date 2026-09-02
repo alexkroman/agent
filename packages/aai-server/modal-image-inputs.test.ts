@@ -62,12 +62,20 @@ describe("modal image install inputs", () => {
 
   test("copies the files that define the dependency graph", () => {
     const rootFiles = pyTuple("INSTALL_ROOT_FILES");
-    // `.npmrc` is easy to forget and its absence is invisible: the install
-    // still succeeds, and only the LATER `pnpm run` calls trip over the
-    // verify-deps check it disables.
+    // The verify-deps-before-run opt-out is easy to forget and its absence is
+    // invisible: the install still succeeds, and only the LATER `pnpm run`
+    // calls trip over the check it disables. It lived in `.npmrc` until pnpm 11
+    // stopped reading pnpm settings from there at all (measured: the key
+    // resolves to `undefined` from `.npmrc` on 11.24.0, `false` from the
+    // workspace yaml), so it moved. Assert the CARRIER is copied, DERIVED from
+    // wherever the setting actually is — a hardcoded filename is what made this
+    // assertion pass right up until the file it named stopped carrying it.
     expect(rootFiles).toContain("pnpm-lock.yaml");
     expect(rootFiles).toContain("pnpm-workspace.yaml");
-    expect(rootFiles).toContain(".npmrc");
+    const optOutCarriers = rootFiles.filter((file) =>
+      readFileSync(path.join(REPO_ROOT, file), "utf8").includes("verifyDepsBeforeRun"),
+    );
+    expect(optOutCarriers).not.toHaveLength(0);
     // Same reasoning as the `expected.length` guard in the test above: a
     // parse that returned nothing would make the sweep below vacuous.
     expect(rootFiles.length).toBeGreaterThan(0);

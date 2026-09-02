@@ -213,16 +213,6 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
 }
 
 /**
- * Retries beyond the default 3.
- *
- * Not because a conversion is flaky — a corrupt file fails identically forever,
- * and `throwFfmpegStepError` is what stops the DevKit retrying that. It is the
- * two I/O halves that are worth another attempt: this step reads a whole
- * recording out of the store and writes a whole one back, and either can lose a
- * connection on a file this size.
- */
-
-/**
  * Whether `splitRecording` will be able to read this header.
  *
  * The question, not a guess at it — see the module doc. Only

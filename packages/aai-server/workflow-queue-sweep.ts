@@ -185,38 +185,44 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   // shortage. The claim is one statement, so the reservation is brief.
   const reserved = await adminDb.reserve();
   let claimed: QueuedMessage[];
-  let repaired = { stalled: 0, enqueued: 0 };
+  let repaired = { stalled: 0 };
   try {
     claimed = await claimDue(
       (q, p) => reserved.query(q, p),
       opts.maxPerTick ?? WORKFLOW_QUEUE_MAX_PER_TICK,
     );
-    // NOTHING DUE is exactly when a stalled run should be looked for, and it
-    // rides the connection the claim already holds rather than taking a second:
-    // an idle tick must stay free of the pool, which is 4 for the whole replica.
-    // Both statements are brief, so the reservation stays as short as the claim's
-    // own doc promises.
+    // NOTHING DUE is exactly when a stalled run should be looked for: the queue
+    // is idle, the admin pool is free, and a run that is unfinished with no
+    // message is invisible to every other pass. It rides the connection the
+    // claim already holds rather than taking a second — an idle tick must stay
+    // free of the pool, which is 4 for the whole replica — and both statements
+    // are brief, so the reservation stays as short as the claim's own doc
+    // promises.
     //
-    // Under the same leader election, deliberately: two replicas reconciling one
-    // run would each write a message, and only the derived id stops that being
-    // two deliveries.
+    // There is NO leader election here; see this module's doc. Every replica
+    // whose tick finds nothing reconciles, so two of them can pick the same run
+    // in one pass — the DERIVED message id (`reconcile_<runId>`) is the only
+    // thing that collapses that into one delivery.
+    //
+    // Which is also why its COST is this module's problem and not only the
+    // reconcile module's: no leader means this runs at >= 1 Hz PER REPLICA, on
+    // this reserved connection, on the branch measured at 0.201 ms and
+    // advertised above as close to free. `20260901020000_workflow_reconcile_cost.sql`
+    // is what keeps it so — the two indexes the predicate needs (nothing served
+    // either the status scan or the `(slug, queue_name)` anti-join), plus the
+    // retention sweep that stops terminal runs, which the predicate can never
+    // select, growing that scan forever.
     if (claimed.length === 0) {
       repaired = await reconcileStalledRuns((q, p) => reserved.query(q, p));
     }
   } finally {
     reserved.release();
   }
-  // NOTHING DUE is exactly when a stalled run should be looked for: the queue is
-  // idle, the admin pool is free, and a run that is unfinished with no message is
-  // invisible to every other pass. Doing it here rather than on its own timer
-  // keeps it under the same leader election — two replicas reconciling the same
-  // run would each write a message, and only the id derivation stops that being
-  // two deliveries.
   if (claimed.length === 0) {
-    if (repaired.enqueued > 0) {
+    if (repaired.stalled > 0) {
       log.warn(
-        `re-enqueued ${repaired.enqueued} stalled run(s) — unfinished with nothing scheduled, ` +
-          "which is what an abandoned message or a failed enqueue leaves behind",
+        `scheduled a re-walk for ${repaired.stalled} stalled run(s) — unfinished with nothing ` +
+          "scheduled, which is what an abandoned message or a failed enqueue leaves behind",
         repaired,
       );
     }
@@ -278,8 +284,11 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   // run and worth a line an operator sees.
   if (pass.dropped > 0) {
     log.warn(
-      `abandoned ${pass.dropped} message(s) after the retry budget — the reconcile pass will ` +
-        `re-enqueue them once they have been idle for ${STALL_GRACE_MS / 60_000} minutes`,
+      `abandoned ${pass.dropped} message(s) after the retry budget — the reconcile pass ` +
+        `re-enqueues a run once it has been idle for ${STALL_GRACE_MS / 60_000} minutes, and ` +
+        `at most once per ${STALL_GRACE_MS / 60_000} minutes after that, so a guest that stays ` +
+        "unreachable costs one boot per window rather than one per tick. A run PARKED on an " +
+        "open hook is left alone entirely — it is waiting, not lost.",
       pass,
     );
   } else {

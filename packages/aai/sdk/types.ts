@@ -219,8 +219,10 @@ export interface AgentDef extends PipelineVoiceTuning {
    * `tools` argument outright (`InlineToolsMisuse`); the table is filled by
    * `withTools`, over a registry built from a `tools/` directory. The build is
    * what enumerates that directory — a deployed agent is handed one ESM string
-   * and has no filesystem to scan — and a spec does the same lowering with
-   * `withDiscoveredTools(def, import.meta.glob("./tools/*.ts", { eager: true }))`.
+   * and has no filesystem to scan — and a spec imports the same lowering
+   * ready-made: `import agentDef from "virtual:aai/agent"` under vitest, or
+   * `deployedAgent(def, { tools, systemPrompt })` from
+   * `@alexkroman1/aai/testing` under any other runner.
    * So a tool's name is its FILE name and nothing else records it.
    *
    * @remarks
@@ -447,7 +449,7 @@ export interface AgentDef extends PipelineVoiceTuning {
    *
    * A tool reads them from {@link ToolContext.env}; a step has no
    * tool context and reads them with `stepEnv` / `requireStepEnv` from
-   * `@alexkroman1/aai/utils`, which resolve the same record.
+   * `@alexkroman1/aai/step`, which resolve the same record.
    */
   requiredEnv?: readonly string[];
 }

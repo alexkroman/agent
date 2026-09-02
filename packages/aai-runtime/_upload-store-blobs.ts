@@ -56,8 +56,8 @@ import {
   type UploadBlobs,
   type UploadPart,
 } from "./_upload-blobs.ts";
-import { chunked, concat } from "./_upload-byte-util.ts";
-import { declaredTotal, measuredPart } from "./_upload-parts-checks.ts";
+import { concat, once, windows } from "./_upload-byte-util.ts";
+import { assertUploadOpen, declaredTotal, measuredPart } from "./_upload-parts-checks.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
 import {
   assertPartOffset,
@@ -67,13 +67,11 @@ import {
   UnknownUploadError,
   UPLOAD_PROBE_CONCURRENCY,
   UPLOAD_WINDOW_CONCURRENCY,
+  UploadCompleteError,
   UploadPartError,
   type UploadStore,
   UploadTooLargeError,
 } from "./_upload-store.ts";
-
-/** One cut window and the byte it starts at — see {@link windows}. */
-type PlacedWindow = { at: number; bytes: Uint8Array };
 
 /**
  * What a merge produces: the row to write, and the answer to give the caller.
@@ -189,6 +187,14 @@ export function createBlobUploadStore(opts: {
    * uses — so one byte layout serves every route an upload can arrive by, and
    * `read` maps a window onto objects without asking how the bytes got here.
    *
+   * **A PUBLISHED cut ramps up to that size; a `create` cut does not.** `publish`
+   * decides both, and it is one flag rather than two because the two conditions are
+   * the same one from either side. Only a published window's arrival is OBSERVABLE
+   * — `create`'s record does not exist until the last byte is stored — and only a
+   * published cut may be non-uniform, because `create` derives its boundary list
+   * from {@link windowList}, which assumes the grid. See {@link windows} for what
+   * the ramp buys and what it costs.
+   *
    * ## The windows go up CONCURRENTLY, and the socket keeps filling while they do
    *
    * This was a loop — read a window, write it, repeat — and a loop of that shape
@@ -209,12 +215,11 @@ export function createBlobUploadStore(opts: {
    * whoever owns the failure. Overlapping the writes only decides WHEN each one
    * runs, never what it holds.
    *
-   * A published (streamed) upload's `size` advances in the same jumps it already
-   * did for a parts upload: `addPart` merges boundaries under the id's lock and
-   * `contiguousBytes` counts only from byte zero, so a window that lands ahead of
-   * its predecessor is stored and simply not yet readable. That is the same
-   * guarantee as before — a reader never sees a size covering a hole — reached by
-   * the same code.
+   * A published (streamed) upload's `size` advances in JUMPS either way: `addParts`
+   * merges boundaries under the id's lock and `contiguousBytes` counts only from
+   * byte zero, so a window that lands ahead of its predecessor is stored and simply
+   * not yet readable. A reader never sees a size covering a hole; what the ramp
+   * changes is how big the first jumps are.
    */
   async function putWindows(
     id: string,
@@ -224,7 +229,7 @@ export function createBlobUploadStore(opts: {
   ): Promise<number> {
     let size = 0;
     const written = mapStream(
-      windows(body, limit),
+      windows(body, limit, publish),
       UPLOAD_WINDOW_CONCURRENCY,
       async ({ at, bytes }) => {
         const stored = await blobs.put(key(id, at), once(bytes), { limit });
@@ -385,6 +390,17 @@ export function createBlobUploadStore(opts: {
         // rejecting early; the checks moved out of it so they can see a total the
         // probes did not have to wait for.
         const measured = offsets.map((offset, n) => measuredPart(id, offset, sizes[n], total));
+        // A FINISHED upload is closed to further windows — but a claim that names
+        // only what is already recorded is a re-send whose answer was lost, and
+        // failing that would end an upload whose every byte is stored. See the
+        // interface's "a claim on a FINISHED upload is a no-op unless it would
+        // CHANGE something": this is the one write that can tell the two apart,
+        // because the probes above measured every named window before anything is
+        // merged.
+        if (held.complete) {
+          if (measured.every((one) => recorded(held.parts, one))) return info(id, held);
+          throw new UploadCompleteError(id);
+        }
         const merged = mergeParts(id, held, measured);
         await records.update(id, merged.state);
         return merged.info;
@@ -415,11 +431,26 @@ export function createBlobUploadStore(opts: {
     },
   };
 
-  /** The declared shape a part has to fit, or the reason it cannot. */
+  /**
+   * The declared shape a part has to fit, or the reason it cannot.
+   *
+   * "Already finished" is one of those reasons, and it is checked HERE rather than
+   * beside the `put` because this is the read: a window whose upload is closed must
+   * not reach the bucket at all, or the refusal arrives after the bytes it was
+   * supposed to keep out. See {@link assertUploadOpen}.
+   *
+   * **KIND before STATE**, so the two refusals do not shadow each other. A finished
+   * STREAMED or whole-file upload is both "not a parts upload" (400) and "complete"
+   * (409), and the first is the more specific answer — a client cannot add parts to
+   * one at any point in its life, complete or not. Reversing the order would move
+   * that case's status the moment the body ended.
+   */
   async function declared(id: string, offset: number): Promise<{ type: string; total: number }> {
     const held = await records.read(id);
     if (!held) throw new UnknownUploadError(id);
-    return { type: held.type, total: declaredTotal(id, held, offset) };
+    const total = declaredTotal(id, held, offset);
+    assertUploadOpen(id, held);
+    return { type: held.type, total };
   }
 }
 
@@ -433,36 +464,15 @@ export function createBlobUploadStore(opts: {
  * nothing else ever does, so a copy of it cannot go stale the way `parts` can.
  */
 /**
- * A body as `UPLOAD_PART_BYTES` windows, refusing anything past `limit`.
+ * Whether this window is ALREADY in the record, byte for byte.
  *
- * Each window carries the offset it starts at, which it knows and its consumer
- * would otherwise have to derive from the previous write's return value — i.e.
- * from a value that only exists once that write has finished. Yielding it here is
- * what lets the writes overlap: a window is addressable the moment it is cut.
+ * What makes a re-sent claim on a finished upload a no-op rather than a refusal.
+ * Both fields have to match: an offset alone would let a replacement of a DIFFERENT
+ * length pass as a repeat, which is the rewrite `UploadCompleteError` exists to
+ * refuse.
  */
-async function* windows(
-  body: AsyncIterable<Uint8Array>,
-  limit: number,
-): AsyncGenerator<PlacedWindow> {
-  let held: Uint8Array[] = [];
-  let bytes = 0;
-  let at = 0;
-  for await (const piece of chunked(body, limit)) {
-    held.push(piece);
-    bytes += piece.length;
-    if (bytes >= UPLOAD_PART_BYTES) {
-      yield { at, bytes: concat(held, bytes) };
-      at += bytes;
-      held = [];
-      bytes = 0;
-    }
-  }
-  if (bytes > 0) yield { at, bytes: concat(held, bytes) };
-}
-
-/** One value as an iterable, so a window can be handed to `put` unchanged. */
-async function* once(value: Uint8Array): AsyncGenerator<Uint8Array> {
-  yield value;
+function recorded(parts: readonly UploadPart[], one: UploadPart): boolean {
+  return parts.some((part) => part.at === one.at && part.bytes === one.bytes);
 }
 
 /** The windows a whole-file write of `size` bytes produced, in order. */

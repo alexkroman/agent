@@ -126,6 +126,122 @@ describe("a suspended run", () => {
   });
 });
 
+describe("a run suspended when the engine went away", () => {
+  /** A body that sleeps once and then does one step. */
+  const napper = (ms: number, after: () => unknown) => async (_i: unknown, ctx: WorkflowCtx) => {
+    await ctx.sleep(ms);
+    return ctx.step("after", after);
+  };
+
+  test("is re-delivered by a rebuilt engine over the same journal, deadline ALREADY elapsed", async () => {
+    // The unrecoverable case. `stop()` clears the timer, the deadline then
+    // elapses with nothing scheduled, and no caller can reach the run: a bare
+    // `wake` refuses an elapsed wait by contract, so without a boot sweep the
+    // run sits `running` forever with its whole journal intact.
+    const journal = createMemoryJournal();
+    const after = vi.fn(() => "resumed");
+    const first = harness(napper(120, after), journal);
+    const runId = await first.engine.start("digest", [{}]);
+    await vi.waitFor(async () => {
+      expect(await first.engine.getRun(runId)).toMatchObject({ status: "running" });
+    });
+    first.engine.stop();
+    // Past the deadline, so the rebuilt engine meets an OVERDUE wait rather than
+    // one it can simply re-arm a timer for. A bare `wake` cannot reach it — which
+    // is the contract, and the reason nothing else could rescue this run.
+    await sleep(150);
+    expect(await journal.wakeSleeps(runId, undefined)).toBe(0);
+
+    const second = harness(napper(120, after), journal);
+    await vi.waitFor(async () => {
+      expect(await second.engine.getRun(runId)).toMatchObject({ status: "completed" });
+    });
+    expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  test("keeps a deadline that has NOT elapsed rather than firing it early", async () => {
+    const journal = createMemoryJournal();
+    const after = vi.fn(() => "resumed");
+    const first = harness(napper(400, after), journal);
+    const runId = await first.engine.start("digest", [{}]);
+    await vi.waitFor(async () => {
+      expect(await first.engine.getRun(runId)).toMatchObject({ status: "running" });
+    });
+    first.engine.stop();
+
+    const second = harness(napper(400, after), journal);
+    // The re-enqueue is a SCHEDULE, not a delivery: the step has not run yet.
+    await sleep(30);
+    expect(after).not.toHaveBeenCalled();
+    await vi.waitFor(async () => {
+      expect(await second.engine.getRun(runId)).toMatchObject({ status: "completed" });
+    });
+  });
+
+  test("leaves a run parked on somebody else's answer alone", async () => {
+    // `await ctx.waitFor(token)` with no deadline is the steady state of the
+    // approval workflow the SDK documents, and `signal` is what ends it. Walking
+    // it at every boot buys nothing and costs a replay per parked run per
+    // `aai dev` file save.
+    const journal = createMemoryJournal();
+    const body = vi.fn(async (_i: Record<string, unknown>, ctx: WorkflowCtx) => {
+      const answer = await ctx.waitFor<{ ok: boolean }>("tok_park");
+      return answer.ok;
+    });
+    const first = harness(body, journal);
+    await first.engine.start("digest", [{}]);
+    await vi.waitFor(() => {
+      expect(body).toHaveBeenCalled();
+    });
+    first.engine.stop();
+    const walks = body.mock.calls.length;
+
+    harness(body, journal);
+    await sleep(40);
+    expect(body.mock.calls.length).toBe(walks);
+  });
+
+  test("is left to the platform's queue when a dispatcher was injected", async () => {
+    // A deployed guest's schedule lives in the platform's queue, which has its
+    // own reconcile (`aai-server/workflow-queue-reconcile.ts`). A boot sweep here
+    // would be a second recovery mechanism racing it, one sandbox boot per copy.
+    const journal = createMemoryJournal();
+    const after = vi.fn(() => "resumed");
+    const first = harness(napper(120, after), journal);
+    const runId = await first.engine.start("digest", [{}]);
+    await vi.waitFor(async () => {
+      expect(await first.engine.getRun(runId)).toMatchObject({ status: "running" });
+    });
+    first.engine.stop();
+    await sleep(150);
+
+    const dispatch = vi.fn();
+    createInProcessWorkflowEngine({
+      workflows: { digest: workflow({ description: "digest", run: napper(120, after) }) },
+      journal,
+      logger: makeLogger(),
+      dispatch,
+    });
+    await sleep(30);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(await journal.getRun(runId)).toMatchObject({ status: "running" });
+  });
+
+  test("says so when the journal it was handed cannot enumerate one", async () => {
+    // A durability tradeoff absent from the log reads as a bug, and this is the
+    // one an author is most likely to hit by accident — `RuntimeOptions.journal`
+    // takes any `JournalStore`.
+    const { resumableRuns: _drop, ...opaque } = createMemoryJournal();
+    const { logger } = harness(() => "done", opaque);
+    await vi.waitFor(() => {
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Workflow runs cannot be recovered at boot",
+        expect.objectContaining({ detail: expect.stringContaining("ctx.sleep") }),
+      );
+    });
+  });
+});
+
 describe("stop", () => {
   test("cancels a pending delivery, so a rebuilt runtime leaves nothing behind", async () => {
     // `aai dev` rebuilds its runtime on every file save. Without this each save

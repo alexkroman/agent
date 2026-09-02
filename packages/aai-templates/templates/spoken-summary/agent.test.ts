@@ -3,9 +3,8 @@
  * Specs for the spoken-summary app's declaration and its four legs.
  *
  * **The body itself is not driven here**, and that is a property of what a
- * workflow template demonstrates rather than a gap: imported through vitest
- * a step is an ordinary exported async function, so
- * function — so its HTTP handling, its fatal/retryable classification and what
+ * workflow template demonstrates rather than a gap: a step is an ordinary
+ * exported async function — so its HTTP handling, its fatal/retryable classification and what
  * it returns are all testable, while durability, suspension and replay are not.
  * A body test that looked like a durability test would be the worse failure;
  * the real thing is exercised end to end by `aai-cli`'s

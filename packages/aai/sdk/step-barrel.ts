@@ -12,13 +12,12 @@
  * nothing about which layer you were in and the reference page for the step
  * vocabulary was a list you had to filter by hand.
  *
- * **That reader is a `workflows/*.ts` module in an agent project.** The
- * Workflow Development Kit's builder scans exactly that directory and rewrites
- * the bodies it finds there — a body written
- * anywhere else is transformed by nothing and runs inline, with no journal and
- * no retry. So the loop is: `workflow` on the root DECLARES the run and
- * types its input, a `workflows/*.ts` module holds the body, this subpath is
- * what that body is written against, and
+ * **That reader is a `workflows/*.ts` module in an agent project.** Nothing here
+ * is durable on its own: a call becomes a journaled step only when the body puts
+ * it inside `ctx.step(name, fn)`, and outside one it runs inline on every replay
+ * with no journal and no retry. So the loop is: `workflow` on the root DECLARES
+ * the run and types its input, a `workflows/*.ts` module holds the body, this
+ * subpath is what that body is written against, and
  * `useWorkflowRun` in `@alexkroman1/aai-ui` renders it.
  *
  * What is here is one reader's whole vocabulary, in the order a pipeline needs
@@ -34,6 +33,10 @@
  *   reset) and {@link multipartBody}.
  * - **Narration** — {@link report} / {@link emit}, what a page's progress
  *   stream renders.
+ * - **Being woken** — {@link stepWebhookUrl}, the public callback URL a step
+ *   hands a third party so a delivery resolves the body's `ctx.waitFor` instead
+ *   of the run polling for an answer. The tool-side spelling of the same URL is
+ *   `ctx.workflows.publicWebhookUrl`, which a body and its steps cannot reach.
  * - **The model** — {@link stepGenerate} (one `fetch` to the LLM gateway on the
  *   agent's own key, because the AI SDK would be megabytes in a ~7 KB artifact)
  *   and {@link stepGenerateJson} / {@link stripJsonFence}.
@@ -53,11 +56,12 @@
  * undici dispatcher.
  *
  * Two neighbours that are deliberately elsewhere. The failure a body THROWS
- * (`toStepError` / `throwStepError` / `throwFatalStepError`)
- * is on `@alexkroman1/aai/step-errors`, which is the one authoring module
- * allowed to import the DevKit's `workflow` package. And the DevKit's own
- * directives and its durable `sleep` are imported from `workflow` directly —
- * this SDK owns what is INSIDE a step and never the steps.
+ * (`toStepError` / `throwStepError` / `throwFatalStepError`, and the
+ * `FatalError` / `RetryableError` they resolve to) is on
+ * `@alexkroman1/aai/step-errors`, so that importing a classifier is an opt-in
+ * rather than something every `/step` reader pays for. And the durable wait is
+ * `ctx.sleep` on the `WorkflowCtx` the engine hands the body — this SDK
+ * owns what is INSIDE a step and never the steps.
  *
  * @module step
  */
@@ -128,4 +132,5 @@ export {
   uploadInfo,
 } from "./step-uploads.ts";
 export { type WriteUploadOptions, writeUpload } from "./step-uploads-write.ts";
+export { stepWebhookUrl } from "./step-webhook.ts";
 export { encodeWav, type PcmFormat, pcmDurationMs, WAV_HEADER_BYTES } from "./wav.ts";

@@ -389,12 +389,6 @@ export const APP_DB_POOL_MAX = 3;
 // @public
 export const APP_DB_PRESENCE_LOCK = 1;
 
-// @public
-export const APP_DB_WORLD_POOL_MAX = 4;
-
-// @public
-export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
-
 // @internal
 export function asDispatcher(agent: Agent): FetchDispatcher;
 
@@ -1178,6 +1172,9 @@ export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 export function publishStepReporter(reporter: StepReporter | undefined): void;
 
 // @internal
+export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void;
+
+// @internal
 export function publishUploadReader(reader: UploadAccess | undefined): void;
 
 // @internal
@@ -1318,7 +1315,7 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 type SessionMode = "s2s" | "pipeline" | "text";
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions_2): Promise<void>;
+export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
 
 // @public
 type SleepOptions = {
@@ -1326,7 +1323,7 @@ type SleepOptions = {
 };
 
 // @internal
-type SleepOptions_2 = {
+type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
@@ -1413,6 +1410,9 @@ export const STEP_FETCH_KEEP_ALIVE_MS = 30000;
 export const STEP_FETCH_PIPELINING = 1;
 
 // @internal
+export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE: string;
+
+// @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
 
 // @public
@@ -1433,6 +1433,9 @@ export type StepReporter = (chunk: unknown, options?: {
     namespace?: string | undefined;
     log?: boolean | undefined;
 }) => void | Promise<void>;
+
+// @internal
+export type StepWebhookMinter = (token: string) => string;
 
 // @public
 type StreamOptions = {
@@ -2783,12 +2786,6 @@ export const APP_DB_POOL_MAX = 3;
 // @public
 export const APP_DB_PRESENCE_LOCK = 1;
 
-// @public
-export const APP_DB_WORLD_POOL_MAX = 4;
-
-// @public
-export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
-
 // @internal
 export function capToolResult(result: string): string;
 
@@ -2938,9 +2935,6 @@ export function isInvariantViolation(value: unknown): value is InvariantViolatio
 export function isTextAssetPath(assetPath: string): boolean;
 
 // @public
-export function isWorkflowSuspend(value: unknown): boolean;
-
-// @public
 export function linkConfirmationCode(code: string): string;
 
 // @public
@@ -3044,17 +3038,17 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
-
-// @internal
-export type SleepOptions = {
-    signal?: AbortSignal;
-    unref?: boolean;
-};
+export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
 
 // @public
-type SleepOptions_2 = {
+type SleepOptions = {
     correlationId?: string;
+};
+
+// @internal
+export type SleepTimerOptions = {
+    signal?: AbortSignal;
+    unref?: boolean;
 };
 
 // @public
@@ -3169,7 +3163,7 @@ type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
-    sleep(until: number | Date, options?: SleepOptions_2): Promise<void>;
+    sleep(until: number | Date, options?: SleepOptions): Promise<void>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
@@ -4624,6 +4618,9 @@ export class StepTransportError extends Error {
     });
     readonly codes: readonly string[];
 }
+
+// @public
+export function stepWebhookUrl(token: string): string;
 
 // @public
 export function stripJsonFence(reply: string): string;
@@ -7502,6 +7499,7 @@ import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 export { AgentEnv }
 
@@ -7625,6 +7623,7 @@ export type CreatePostgresDbOptions = {
     onNotice?: (notice: unknown) => void;
     connectTimeoutSeconds?: number;
     queryTimeoutMs?: number;
+    reservedQueryTimeoutMs?: number;
 };
 
 // @public
@@ -7706,6 +7705,14 @@ type HeaderWebSocket = {
     }) => void): void;
 };
 
+// @public
+type HookRecord = {
+    token: string;
+    delivered: boolean;
+    payload?: unknown;
+    closed?: boolean;
+};
+
 export { HostCredentialEnv }
 
 // @internal
@@ -7729,6 +7736,27 @@ export type HttpUploadBlobsOptions = {
     serviceKey: string;
     bucket: string;
     fetch?: typeof globalThis.fetch | undefined;
+};
+
+// @public
+type JournalStore = {
+    createRun(record: RunRecord): Promise<void>;
+    getRun(runId: string): Promise<RunRecord | undefined>;
+    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
+    setStatus(runId: string, next: RunStatus, patch?: {
+        output?: unknown;
+        error?: {
+            message: string;
+        };
+    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    readSteps(runId: string): Promise<StepEntry[]>;
+    claimAttempt(runId: string, key: string): Promise<number>;
+    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
+    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+    closeHook(runId: string, key: string): Promise<boolean>;
+    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
 };
 
 // @public
@@ -7855,6 +7883,22 @@ export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>)
 export { RunCodeExecutor }
 
 // @public
+type RunRecord = {
+    runId: string;
+    workflow: string;
+    status: RunStatus;
+    createdAt: number;
+    input: unknown;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+type RunStatus = WorkflowRunStatus;
+
+// @public
 export type Runtime = AgentRuntime & {
     executeTool: ExecuteTool;
     toolSchemas: ToolSchema[];
@@ -7873,6 +7917,7 @@ export type RuntimeOptions = {
     providerEnv?: ProviderEnv | undefined;
     db?: Db | undefined;
     workflows?: WorkflowClient | undefined;
+    journal?: JournalStore | undefined;
     createWebSocket?: CreateS2sWebSocket | undefined;
     createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
     publicUrl?: string | undefined;
@@ -8025,6 +8070,14 @@ export type SessionWebSocket = {
 export type SkipGreeting = boolean | (() => boolean);
 
 // @public
+type SleepRecord = {
+    wakeAt: number;
+    woken: boolean;
+    correlationId?: string | undefined;
+    kind: "sleep" | "hookTimeout";
+};
+
+// @public
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, opts: {
     carrier: CarrierCodec;
     logger?: Logger;
@@ -8035,6 +8088,19 @@ export type StateSyncSession = {
     read(key: string): unknown;
     lastPush(): string | undefined;
     recordPush(json: string): void;
+};
+
+// @public
+type StepEntry = {
+    key: string;
+    name: string;
+    status: "ok" | "failed";
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    attempts: number;
+    finishedAt: number;
 };
 
 // @public
@@ -8215,6 +8281,7 @@ export type WdkRunRecord = {
     workflowName: string;
     status: "pending" | "running" | "completed" | "failed" | "cancelled";
     createdAt: Date | number;
+    output?: unknown;
     error?: {
         message: string;
     } | undefined;
@@ -8301,6 +8368,12 @@ export function applyWorkflowJournalDdl(opts: {
 export const consoleLogger: Logger;
 
 export { CONTAINED_ENV }
+
+// @internal
+export function createMemoryJournal(): JournalStore;
+
+// @internal
+export function createPlatformJournal(opts: PlatformEndpoint): JournalStore;
 
 // @internal
 export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName: string, message: unknown, queueOpts?: {
@@ -8413,6 +8486,19 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 export function isPathInside(dir: string, target: string): boolean;
 
 // @public
+type JournalArm = {
+    label: string;
+    journal: () => JournalStore;
+    uid: () => string;
+};
+
+// @public
+export type JournalConformanceSuite = {
+    journalConformance: (arm: JournalArm) => void;
+    journalIds: (label: string) => () => string;
+};
+
+// @public
 type JournalStore = {
     createRun(record: RunRecord): Promise<void>;
     getRun(runId: string): Promise<RunRecord | undefined>;
@@ -8428,10 +8514,13 @@ type JournalStore = {
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
-    closeHook(runId: string, key: string): Promise<void>;
+    closeHook(runId: string, key: string): Promise<boolean>;
     deliverHook(token: string, payload: unknown): Promise<string | undefined>;
     appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
 };
+
+// @public (undocumented)
+export function loadJournalConformance(): Promise<JournalConformanceSuite>;
 
 // @public
 type LogContext = Record<string, unknown>;
@@ -8452,9 +8541,7 @@ export function payloadRunId(message: unknown): string | undefined;
 export const PLATFORM_ROUTES: {
     readonly sessionState: "/session-state";
     readonly uploadRecords: "/upload-records";
-    readonly workflowStorage: "/workflow-storage";
     readonly workflowJournal: "/workflow-journal";
-    readonly workflowStream: "/workflow-stream";
     readonly workflowEnqueue: "/workflow-enqueue";
 };
 
@@ -8478,6 +8565,9 @@ type PlatformUploadRecordsOptions = PlatformEndpoint;
 export function platformUrl(base: string, route: PlatformRoute): string;
 
 export { publishStepEnv }
+
+// @internal
+export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void;
 
 // @internal
 export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined;
@@ -8755,9 +8845,12 @@ export const WORKFLOW_CALLBACK_ROUTES: {
         readonly transport: "http";
         readonly path: "/.well-known/workflow/v1/webhook";
         readonly match: "prefix";
-        readonly methods: "any";
+        readonly methods: readonly ["POST"];
     };
 };
+
+// @internal
+export const WORKFLOW_DATA_DIR_ENV = "AAI_WORKFLOW_DATA_DIR";
 
 // @internal
 export const WORKFLOW_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_workflow_.+$";

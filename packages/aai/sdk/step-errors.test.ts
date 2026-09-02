@@ -37,7 +37,9 @@ function stepVerdict(err: unknown): { fatal: boolean; retryable: boolean; retryA
   return {
     fatal: FatalError.is(err),
     retryable: RetryableError.is(err),
-    ...(RetryableError.is(err) && err.retryAfter ? { retryAfter: err.retryAfter } : {}),
+    // `retryAfter` is a non-optional `Date` the constructor always assigns, so
+    // membership is the only question — no truthiness guard.
+    ...(RetryableError.is(err) ? { retryAfter: err.retryAfter } : {}),
   };
 }
 
@@ -82,11 +84,23 @@ function responseFromAnotherRealm(
 }
 
 describe("toStepError, given a Response", () => {
-  test("makes a 4xx the DevKit will not retry FATAL", () => {
+  test("makes a 4xx the engine will not retry FATAL", () => {
     const err = toStepError(responseWith(404), "GET /x failed: HTTP 404");
 
     expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
     expect(err.message).toBe("GET /x failed: HTTP 404");
+  });
+
+  test("keeps the response itself as the cause, headers and status included", () => {
+    // A sentence is what the journal keeps, and it is not what the process that
+    // threw this has to debug with: the status and the headers the verdict was
+    // DERIVED from are on the response, and `stepFetchOk` has already read the
+    // body by the time it hands one over.
+    const refused = new Response("nope", { status: 403 });
+    expect(toStepError(refused, "GET /orders: HTTP 403").cause).toBe(refused);
+
+    const busy = new Response("later", { status: 503 });
+    expect(toStepError(busy).cause).toBe(busy);
   });
 
   test("classifies a response from ANOTHER REALM, which is every step's case", () => {
@@ -120,7 +134,7 @@ describe("toStepError, given a Response", () => {
     });
   });
 
-  test("carries the delay the far side asked for, rather than the DevKit's guess", () => {
+  test("carries the delay the far side asked for, rather than the class's own default", () => {
     // The point of the whole classification: N segments hit one rate limit
     // together, and on our own backoff they re-collect their 429s N at a time.
     const err = toStepError(responseWith(429, "30"), "rate limited");
@@ -131,7 +145,7 @@ describe("toStepError, given a Response", () => {
   });
 
   test("falls back to RetryableError's own one-second default when none was named", () => {
-    // Not "the DevKit decides": the class always sets a date, and unset means
+    // Not "the engine decides": the class always sets a date, and unset means
     // ONE SECOND. Worth pinning, because a fan-out that all retries a second
     // later is how a rate limit is turned into a tighter rate limit.
     const at = stepVerdict(toStepError(responseWith(429), "rate limited")).retryAfter;
@@ -150,6 +164,19 @@ describe("toStepError, given a StepGenerateError", () => {
 
     expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
     expect(err.message).toBe("bad key");
+  });
+
+  test("keeps the gateway's error as the cause, message replaced and all", () => {
+    // The same drop as `throwFatalStepError`'s below, one arm over: a cause that
+    // already carried its own verdict was read for `retryable`/`retryAfter` and
+    // then discarded, so a step that re-worded the failure — which is what the
+    // `message` parameter is for — left nothing behind saying what the far side
+    // had actually said.
+    const cause = new StepGenerateError("bad key", { status: 401, retryable: false });
+    expect(toStepError(cause, "the recap could not be written").cause).toBe(cause);
+
+    const slow = new StepGenerateError("slow down", { status: 429, retryable: true });
+    expect(toStepError(slow).cause).toBe(slow);
   });
 
   test("reads the retryAfter the error was already carrying", () => {
@@ -269,7 +296,7 @@ function thrownBy(run: () => unknown): unknown {
 }
 
 describe("throwFatalStepError", () => {
-  test("stops the DevKit retrying whatever the cause was", () => {
+  test("stops the engine retrying whatever the cause was", () => {
     // The failure a step has DECIDED is terminal on grounds no status carries.
     const err = thrownBy(() => throwFatalStepError(new Error("ASSEMBLYAI_API_KEY is not set")));
 
@@ -281,6 +308,25 @@ describe("throwFatalStepError", () => {
     const err = thrownBy(() => throwFatalStepError(new Error("inner"), "cannot cut this"));
 
     expect((err as Error).message).toBe("cannot cut this");
+  });
+
+  test("carries the ORIGINAL failure, not a sentence taken off it", () => {
+    // The documented shape is `catch (err) { return throwFatalStepError(err) }`,
+    // so what a step is holding when it calls this is the real failure —
+    // stack, chain and all — and it used to reach the engine as one bare
+    // sentence with the rest dropped on the floor. Asserted as IDENTITY, and
+    // with the message REPLACED, which is the case where the drop lost
+    // everything: the original's own words are gone from the message too, so
+    // the chain is all that is left of what happened.
+    const root = new Error("EAI_AGAIN api.assemblyai.com");
+    const inner = new Error("the provider could not be reached", { cause: root });
+    const err = thrownBy(() => throwFatalStepError(inner, "cannot cut this")) as Error;
+
+    expect(err.cause).toBe(inner);
+    expect((err.cause as Error).cause).toBe(root);
+    // The stack the sentence cannot carry — the whole point of keeping the
+    // instance rather than copying a string off it.
+    expect((err.cause as Error).stack).toBe(inner.stack);
   });
 });
 
@@ -307,7 +353,7 @@ describe("stepFetchOk", () => {
     await expect(response.text()).resolves.toBe("the body");
   });
 
-  test("makes a 4xx FATAL, so the DevKit stops rather than asking three more times", async () => {
+  test("makes a 4xx FATAL, so the engine stops rather than asking three more times", async () => {
     stubFetch(new Response("nope", { status: 404 }));
 
     const err = await stepFetchOk("https://api.test/gone").catch((e: unknown) => e);
@@ -325,7 +371,7 @@ describe("stepFetchOk", () => {
     const err = await stepFetchOk("https://api.test/busy").catch((e: unknown) => e);
 
     expect(stepVerdict(err)).toMatchObject({ fatal: false, retryable: true });
-    expect((err as RetryableError).retryAfter?.getTime()).toBe(at.getTime());
+    expect((err as RetryableError).retryAfter.getTime()).toBe(at.getTime());
   });
 
   /** The half a hand-written `if (!res.ok)` throws away — see the doc. */
@@ -478,13 +524,13 @@ describe("the pre-classified callers", () => {
     expect(gateway.calls[0]?.system).toBe("Be terse.");
   });
 
-  test("a terminal gateway refusal stops the DevKit rather than burning attempts", async () => {
+  test("a terminal gateway refusal stops the engine rather than burning attempts", async () => {
     vi.stubGlobal("fetch", stubGateway("", { status: 401 }).fetch);
 
     await expect(stepGenerateClassified("Summarize.")).rejects.toSatisfy(FatalError.is);
   });
 
-  test("a rate limit waits the delay the gateway named, not the DevKit's one second", async () => {
+  test("a rate limit waits the delay the gateway named, not the default one second", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("{}", { status: 429, headers: { "Retry-After": "30" } })),
@@ -492,7 +538,7 @@ describe("the pre-classified callers", () => {
 
     const err = await stepGenerateClassified("Summarize.").catch((e: unknown) => e);
     expect(RetryableError.is(err)).toBe(true);
-    expect((err as RetryableError).retryAfter?.getTime()).toBeGreaterThan(Date.now() + 20_000);
+    expect((err as RetryableError).retryAfter.getTime()).toBeGreaterThan(Date.now() + 20_000);
   });
 
   test("stepGenerateJsonClassified returns the validated reply, typed by the schema", async () => {
@@ -586,7 +632,7 @@ describe("the pre-classified callers", () => {
     test("a failure BEFORE the request is classified too, and stays retryable", async () => {
       // Nothing published: `uploadInfo` throws a plain `Error`, which
       // `toStepError` refuses to invent a verdict for — so it passes through and
-      // the DevKit's own default retries it.
+      // the engine's own default retries it.
       const err = await stepTranscribeUploadClassified("u1").catch((e: unknown) => e);
 
       expect(FatalError.is(err)).toBe(false);

@@ -9,9 +9,11 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
+import { WORKFLOW_DATA_DIR_ENV } from "@alexkroman1/aai-runtime/internal";
 import getPort from "get-port";
 import { describe, expect, test, vi } from "vitest";
 import { agentEnvWarnings, startDevServer } from "./_dev-server.ts";
+import { WORKFLOW_DATA_DIR_ENV_LITERAL } from "./_dev-server-test-utils.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
@@ -105,6 +107,16 @@ describe("viteDevConfig", () => {
     // nothing answers, which is the same silent failure by a new route.
     const proxy = viteDevConfig("/proj", 3000, 3001).server?.proxy as Record<string, unknown>;
     expect(Object.keys(proxy)).toContain(WORKFLOW_API_PREFIX);
+  });
+
+  test("the dev-server mocks spell the workflow data-dir key the way the SDK does", () => {
+    // The sibling suites mock `@alexkroman1/aai-runtime/internal` wholesale, so
+    // the key `startDevServer` writes the project's `.workflow-data` under comes
+    // from a literal in their harness. This file mocks nothing, which makes it
+    // the one place the two can be compared — and a disagreement is otherwise
+    // silent in BOTH directions: the specs keep passing against their own
+    // literal, and uploads land under a directory the reader never looks in.
+    expect(WORKFLOW_DATA_DIR_ENV_LITERAL).toBe(WORKFLOW_DATA_DIR_ENV);
   });
 
   test("every proxy target is an IP LITERAL, never a hostname", () => {

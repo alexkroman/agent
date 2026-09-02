@@ -203,17 +203,20 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // instead is how a fourth one added to that bag reaches the other front
     // door and silently not this one.
     ...hooks,
-    // The DevKit's `flow` and `step` callback routes, mounted exactly as
-    // `aai dev` mounts them. This is what EXECUTES a durable run: the world
-    // dispatches each hop by dialling back into this server, so without the hook
-    // a run is accepted and then sits `pending` forever.
+    // `POST /workflow-queue`, the platform's delivery door — mounted exactly as
+    // `aai dev` and the guest harness mount it. It used to be the DevKit's
+    // `flow`/`step` callbacks and the sentence "without the hook a run sits
+    // `pending` forever" went with them: the replay engine executes a run in
+    // this process, so what EXECUTES a self-hosted run is the dispatcher's own
+    // timers and this door answers 401 to everything (see below).
     //
     // Composed with the caller's own hook rather than replacing it — a
     // self-hoster adding an HTTP surface of their own must not silently turn
-    // workflows off. The workflow handler goes FIRST because its paths are the
-    // DevKit's reserved `/.well-known/workflow/v1/*` prefix, which no embedder
-    // has a claim on; it returns false for everything else, so an unclaimed
-    // request still reaches the caller's hook.
+    // workflows off. The workflow handler goes FIRST, and it claims exactly one
+    // unnamespaced path: an embedder that wants `POST /workflow-queue` for
+    // something else cannot have it, since with no `allowRemote` the handler
+    // answers 401 rather than declining. Every other request returns false and
+    // reaches the caller's hook.
     request: (req, res, url, method) =>
       handleWorkflowRequest(
         req,

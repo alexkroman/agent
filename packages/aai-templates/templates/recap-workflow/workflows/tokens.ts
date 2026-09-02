@@ -24,3 +24,24 @@
 export function retentionToken(sessionId: string): string {
   return `retention:${sessionId}`;
 }
+
+/**
+ * The nudge that says a transcript is ready.
+ *
+ * The other end of this one is not a tool but ASSEMBLYAI: `request_recap` mints
+ * `ctx.workflows.publicWebhookUrl(transcriptToken(ctx.sessionId))` and hands it
+ * to the provider as `webhook_url`, and the provider's `POST` to that URL is
+ * what resolves the body's wait. So the two sides that have to agree are a file
+ * in this template and a third party on the public internet — which is the
+ * strongest case there is for deriving the string in one place.
+ *
+ * **A token is held for the life of its run and given back only when the run
+ * goes TERMINAL**, so deriving it from the session is what makes a second recap
+ * in the same call legal: `claimHook` refuses a token another run still holds,
+ * and a refusal is not a suspend, so it would unwind the saga and delete the
+ * transcript the run was waiting for. `request_recap` allows one LIVE run per
+ * caller, which is the invariant that keeps this safe.
+ */
+export function transcriptToken(sessionId: string): string {
+  return `transcript:${sessionId}`;
+}

@@ -36,7 +36,7 @@
  *
  * For exactly the reason that module gives: the synthesizer needs a WebSocket
  * client, this module is on the CLI's zero-dependency startup path and rides
- * the browser bundle, and a step artifact carries its own copy of this file —
+ * the browser bundle, and the agent bundle carries its own copy of this file —
  * so the publisher and the reader are two module instances in one realm.
  * `createServer` publishes; `host/step-speak.ts` is the published half.
  *

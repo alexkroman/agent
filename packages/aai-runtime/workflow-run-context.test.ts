@@ -22,7 +22,7 @@
  * instance is a second copy — which is what makes this testable in one process.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { RunContext } from "./workflow-run-context.ts";
 
 /** A run context with the two fields these cases care about. */
@@ -33,19 +33,20 @@ const runOf = (runId: string): RunContext => ({
   write: () => Promise.resolve(0),
 });
 
-/** A fresh copy of the module, the way a second bundle gets one. */
+/**
+ * A fresh copy of the module, the way a second bundle gets one.
+ *
+ * The reset is here rather than in a `beforeEach` because every case's first
+ * statement is a `loadCopy()` — and the slot OUTLIVES the reset (it is on
+ * `globalThis`), so a copy loaded by an earlier test is exactly what a later one
+ * must adopt.
+ */
 async function loadCopy() {
   vi.resetModules();
   return await import("./workflow-run-context.ts");
 }
 
 describe("the run context crosses copies of this package", () => {
-  beforeEach(() => {
-    // The slot outlives `resetModules` — it is on `globalThis` — so a copy
-    // loaded by an earlier test is exactly what a later one must adopt.
-    vi.resetModules();
-  });
-
   test("a context set by ONE copy is visible to ANOTHER", async () => {
     // The deployed shape: the bundle's copy runs the engine and enters the
     // context, the harness's copy holds the reporter that reads it.

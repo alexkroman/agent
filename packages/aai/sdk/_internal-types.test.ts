@@ -44,6 +44,13 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   // this function is named for, so it is the field worth pinning — including
   // `$schema` being stripped, which some Realtime/S2S providers answer with
   // `args: {}` rather than an error (see `toToolJsonSchema`).
+  //
+  // No `additionalProperties`, and this fixture used to encode the opposite.
+  // The `false` it expected came from converting in zod's `"output"` direction,
+  // where it is a true statement about the PARSED value and a false one about
+  // what a caller may send: `z.object` accepts an unknown key and drops it. An
+  // author who wants it refused writes `z.strictObject`, which keeps the flag —
+  // see `toToolJsonSchema`.
   expect(schemas[0]).toEqual({
     type: "function",
     name: "get_weather",
@@ -52,7 +59,6 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
       type: "object",
       properties: { city: { type: "string", description: "City" } },
       required: ["city"],
-      additionalProperties: false,
     },
   });
   expect(schemas[0]?.parameters).not.toHaveProperty("$schema");
@@ -61,17 +67,42 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   expect(schemas[1]?.parameters).toMatchObject({ required: ["time"] });
 });
 
+// The surface that decides what an LLM asks the user for. A `.default()` field
+// is one the tool would have filled in on its own, so advertising it as
+// `required` changes what the model emits — and it is the only one of the three
+// conversion surfaces where the mis-description is a prompt.
+test("agentToolsToSchemas - a defaulted field is NOT advertised as required", () => {
+  const schemas = agentToolsToSchemas({
+    search: {
+      description: "Search",
+      inputSchema: z.object({
+        query: z.string(),
+        limit: z.number().default(10),
+        page: z.number().optional(),
+      }),
+      execute: async () => undefined,
+    },
+  });
+  expect(schemas[0]?.parameters).toMatchObject({ required: ["query"] });
+  // The default is still published: the model is told what it gets for free.
+  expect(schemas[0]?.parameters).toMatchObject({
+    properties: { limit: { default: 10 } },
+  });
+});
+
 test("agentToolsToSchemas - a tool with no inputSchema gets the empty object schema", () => {
   // `EMPTY_PARAMS`, converted like any other schema. A provider handed a bare
   // `{}` here rejects the tool spec, so the fallback has to be a real JSON
-  // Schema rather than an empty record.
+  // Schema rather than an empty record — `type` plus `properties` still is one.
+  // `EMPTY_PARAMS` stays a plain `z.object({})` rather than a strict one: a
+  // model that decorates a no-arg call with a stray field has that field
+  // dropped, where refusing it would fail the turn.
   const schemas = agentToolsToSchemas({
     ping: { description: "Ping", execute: async () => undefined },
   });
   expect(schemas[0]?.parameters).toEqual({
     type: "object",
     properties: {},
-    additionalProperties: false,
   });
 });
 

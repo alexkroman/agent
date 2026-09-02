@@ -7,13 +7,11 @@
  * upload store to a path, and a streamed write back the other way.
  *
  * Its own capability rather than part of `step`, for the same reason it is its
- * own subpath: it imports `node:fs/promises`, `node:os` and `node:path`, and a
- * `workflows/*.ts` module keeps every MODULE-scope import in a workflow bundle
- * that is a `node:vm` Script with no `require`. So this is **body-use only** —
- * name it inside a step, or from a module only a step body
- * reaches — and `@alexkroman1/aai/step` stays free of `node:` imports so that
- * rule has somewhere to point. `/ffmpeg` is its partner and the only other
- * capability under the same rule; a reader arriving at one needs the other.
+ * own subpath: it imports `node:fs/promises`, `node:os` and `node:path`, and
+ * `@alexkroman1/aai/step` is an `sdk/` barrel that must stay runnable in a
+ * browser and in Deno — so these three live in `host/` and are reached by a
+ * subpath of their own. `/ffmpeg` is its partner and the only other capability
+ * under the same rule; a reader arriving at one needs the other.
  *
  * It is CONTRACTED rather than deny-listed as non-authoring, and the test is who
  * reads it: a step is precisely this surface's audience, exactly as

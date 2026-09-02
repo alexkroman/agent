@@ -120,6 +120,11 @@ beforeEach(() => {
   // suites exercise the watcher, so they turn it on. `unstubEnvs` in
   // vitest.shared.ts undoes this before each test; no manual cleanup.
   vi.stubEnv("AAI_DEV_WATCH", "1");
+  // The workflow data dir is set by `startDevServer` with a plain assignment —
+  // it has to be, since `localWorkflowDataDir()` reads `process.env` — so
+  // `unstubEnvs` cannot undo it on its own. Stubbing it to unset here RECORDS
+  // the original, which the runner then restores before the next test.
+  vi.stubEnv("AAI_WORKFLOW_DATA_DIR", undefined);
   // Clears the shared mocks' CALL HISTORY as well as re-priming them — see the
   // note on `primeDevServerMocks`. Without it every `toHaveBeenCalledWith` in
   // this file could be satisfied by an earlier test's call.
@@ -152,6 +157,11 @@ describe("startDevServer", () => {
         // The runtime logs through a logger this command chooses, so its
         // diagnostics can be kept off stdout in JSON mode (createDevLogger).
         logger: expect.objectContaining({ info: expect.any(Function) }),
+        // The run store, built once for the process and handed to every build:
+        // a rebuild replaces the workflow ENGINE (that is what reloads a body)
+        // and must not replace the runs underneath it. Identity across rebuilds
+        // is asserted in `_dev-server-restart.test.ts`, which drives one.
+        journal: expect.anything(),
         // What `ctx.workflows.publicWebhookUrl` mints from. The BACKEND port —
         // which with no `client.tsx` is the port passed in — because the DevKit's
         // `/.well-known/workflow/v1/*` routes are deliberately absent from Vite's
@@ -357,6 +367,36 @@ describe("startDevServer", () => {
         const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
         expect(order).toEqual(["ddl", "runtime"]);
+        await cleanup();
+      });
+    });
+  });
+
+  describe("workflow data directory", () => {
+    test("points at the PROJECT's .workflow-data, so a save is not a new deployment", async () => {
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        // What `localWorkflowDataDir()` reads (`AAI_WORKFLOW_DATA_DIR` in
+        // `aai-runtime/workflow-data-dir.ts`). Unset, every upload under
+        // `aai dev` lands in a fresh `tmpdir()/aai-workflow-data-<pid>` and is
+        // gone on the next `aai dev` — the exact case that module's doc records
+        // as MEASURED to survive here, and which had no writer at all.
+        expect(process.env.AAI_WORKFLOW_DATA_DIR).toBe(path.join(dir, ".workflow-data"));
+        await cleanup();
+      });
+    });
+
+    test("honours one the developer already exported", async () => {
+      await withTempDir(async (dir) => {
+        await writeAgentTs(dir);
+        vi.stubEnv("AAI_WORKFLOW_DATA_DIR", "/somewhere/else");
+
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+        expect(process.env.AAI_WORKFLOW_DATA_DIR).toBe("/somewhere/else");
         await cleanup();
       });
     });

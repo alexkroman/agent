@@ -37,6 +37,15 @@
  *   write wins and every later one is a read, which is what stops a replay
  *   pushing a deadline further out on each walk, and what makes two executions
  *   that both ran a step agree on what it returned.
+ * - **`createRun` is `do nothing` then `returning`, which is a REFUSAL.** The one
+ *   place the mechanism deliberately differs from the twin: there, a duplicate run
+ *   id trips the primary key and the driver's error is the refusal, which is not
+ *   available here — a raw SQLSTATE crossing `withReserved` is a retryable 503,
+ *   and the guest would spend a message's whole attempt budget on a condition that
+ *   cannot change. The CONTRACT is the same on all three backends (`createRun`
+ *   rejects a taken id); only this one authors its own error. Do not "restore" the
+ *   parity by deleting the `returning` — that is the bug, and
+ *   `journal-conformance-platform.scenario.test.ts` is what catches it now.
  *
  * ## `jsonb` NORMALIZES, so a value survives by MEANING and not by bytes
  *
@@ -54,7 +63,19 @@
  * @internal
  */
 
+import { HOOKS } from "./platform-workflow-journal-hooks.ts";
 import type { SqlExec } from "./secret-store.ts";
+
+// One hook WINDOW is its own module — five hundred lines is the cap and the hook
+// half is a self-contained subject. Re-exported so the route above still reaches
+// one journal, and so a caller cannot come to depend on which file a method is in.
+export {
+  claimHook,
+  closeHook,
+  deliverHook,
+  type JournalHookRow,
+  PlatformWorkflowHookTokenError,
+} from "./platform-workflow-journal-hooks.ts";
 
 /**
  * Statuses nothing will change again.
@@ -66,12 +87,17 @@ import type { SqlExec } from "./secret-store.ts";
  */
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
-/** Where the journal lives. One schema-qualified name per table, spelled once. */
+/**
+ * Where the journal lives. One schema-qualified name per table, spelled once.
+ *
+ * `HOOKS` is the exception and lives with the operations that own it
+ * (`platform-workflow-journal-hooks.ts`); it is imported back for `setStatus`'s
+ * release CTE, which is the one statement here that reaches that table.
+ */
 const RUNS = "aai_platform.workflow_runs";
 const STEPS = "aai_platform.workflow_steps";
 const ATTEMPTS = "aai_platform.workflow_attempts";
 const SLEEPS = "aai_platform.workflow_sleeps";
-const HOOKS = "aai_platform.workflow_hooks";
 
 /**
  * `bigint` arrives as a STRING from the driver, and `Number` is the read.
@@ -116,14 +142,6 @@ export type JournalSleepRow = {
   kind: string;
 };
 
-/** One hook window. */
-export type JournalHookRow = {
-  token: string;
-  delivered: boolean;
-  payload: string | undefined;
-  closed: boolean;
-};
-
 function toRun(row: Record<string, unknown>): JournalRunRow {
   return {
     runId: String(row.run_id),
@@ -148,7 +166,49 @@ function toStep(row: Record<string, unknown>): JournalStepRow {
   };
 }
 
-/** Record a run at `pending`. */
+/**
+ * Raised when a run id is already taken.
+ *
+ * `JournalStore.createRun` promises to REJECT a duplicate — the memory backend
+ * throws and the self-hosted store trips its primary key — and this store's
+ * `on conflict … do nothing` was the one arm that answered success. Two racing
+ * starts on one id therefore both believed they had won and the loser's `input`
+ * was discarded, on the platform arm only, i.e. for every deployed agent. The
+ * conformance suite could not see it: its platform arm is a fake transport over
+ * the memory reference, which its own header says.
+ *
+ * Its own class rather than a plain `Error`, for exactly the reason
+ * {@link PlatformWorkflowHookTokenError} is one: every plain `Error` reaching
+ * `withReserved` becomes a **503**, which tells the guest to retry a refusal that
+ * cannot change — a run id that exists will go on existing — so the engine spends
+ * the message's whole attempt budget on it instead of failing the run and saying
+ * why. `workflow-journal-handler.ts` maps both to a **409**, the status the upload
+ * record route's `claim` refusal already uses for the same shape of answer: a
+ * caller-supplied identifier that is taken.
+ *
+ * The MESSAGE is the memory backend's, word for word, so the three backends
+ * refuse a duplicate in one voice and a guest reading a log cannot tell which
+ * one answered.
+ */
+export class PlatformWorkflowRunTakenError extends Error {
+  constructor(runId: string) {
+    super(`workflow run ${runId} already exists`);
+    this.name = "PlatformWorkflowRunTakenError";
+  }
+}
+
+/**
+ * Record a run at `pending`, refusing an id that is already taken.
+ *
+ * **The `returning` is the refusal.** Without it, zero rows and one row are the
+ * same answer, and a duplicate is silently a no-op — see
+ * {@link PlatformWorkflowRunTakenError}. `do nothing` is kept in front of it
+ * rather than letting a bare insert raise `23505`, for the reason `claimHook`
+ * keeps it: a raw SQLSTATE is a plain `Error`, i.e. a retryable 503, and the
+ * refusal has to be the authored one. It also does not WAIT on a concurrent
+ * inserter — Postgres declines instead — so the loser of a real race is refused
+ * now rather than after the winner commits.
+ */
 export async function createRun(
   sql: SqlExec,
   slug: string,
@@ -163,12 +223,14 @@ export async function createRun(
     input?: string | undefined;
   },
 ): Promise<void> {
-  await sql(
+  const rows = await sql(
     `insert into ${RUNS} (slug, run_id, workflow, status, created_at, input)
      values ($1, $2, $3, $4, $5, $6::text::jsonb)
-     on conflict (slug, run_id) do nothing`,
+     on conflict (slug, run_id) do nothing
+     returning run_id`,
     [slug, run.runId, run.workflow, run.status, run.createdAt, run.input ?? null],
   );
+  if (rows.length === 0) throw new PlatformWorkflowRunTakenError(run.runId);
 }
 
 /** One run, or undefined when this agent has none by that id. */
@@ -187,7 +249,15 @@ export async function getRun(
   return row ? toRun(row) : undefined;
 }
 
-/** This agent's runs of one workflow, newest first. */
+/**
+ * This agent's runs of one workflow, newest first.
+ *
+ * `limit` reaches `LIMIT $3` unchanged, so it must already be in range when it
+ * gets here: the route bounds it (`MAX_WORKFLOW_JOURNAL_LIST_LIMIT` in
+ * `workflow-journal-handler.ts`, which carries the argument for the number). Not
+ * re-checked here — one policy, at the boundary the untrusted value crosses,
+ * rather than a second copy that can disagree with it.
+ */
 export async function listRuns(
   sql: SqlExec,
   slug: string,
@@ -366,87 +436,6 @@ export async function wakeSleeps(
     [slug, runId, now, correlationIds ?? null],
   );
   return rows.length;
-}
-
-/**
- * Open a hook window, or read the one already open.
- *
- * A token another RUN holds is refused rather than overwritten: a token is what a
- * third party dials, so two runs sharing one means a payload delivered to the
- * wrong body. A re-claim by the same run and key is what a replay does and is the
- * ordinary path.
- */
-export async function claimHook(
-  sql: SqlExec,
-  slug: string,
-  runId: string,
-  key: string,
-  token: string,
-): Promise<JournalHookRow> {
-  const held = await sql(`select run_id, key from ${HOOKS} where slug = $1 and token = $2`, [
-    slug,
-    token,
-  ]);
-  const owner = held[0];
-  if (owner && (String(owner.run_id) !== runId || String(owner.key) !== key)) {
-    throw new Error(`workflow hook token already held by run ${String(owner.run_id)}`);
-  }
-  await sql(
-    `insert into ${HOOKS} (slug, run_id, key, token)
-     values ($1, $2, $3, $4) on conflict (slug, run_id, key) do nothing`,
-    [slug, runId, key, token],
-  );
-  const rows = await sql(
-    `select token, delivered, payload::text as payload, closed from ${HOOKS}
-      where slug = $1 and run_id = $2 and key = $3`,
-    [slug, runId, key],
-  );
-  const row = rows[0];
-  if (!row) throw new Error(`workflow hook ${key} vanished for run ${runId}`);
-  return {
-    token: String(row.token),
-    delivered: Boolean(row.delivered),
-    payload: text(row.payload),
-    closed: Boolean(row.closed),
-  };
-}
-
-/** Close a window the run has moved past, so a late delivery is refused. */
-export async function closeHook(
-  sql: SqlExec,
-  slug: string,
-  runId: string,
-  key: string,
-): Promise<void> {
-  await sql(`update ${HOOKS} set closed = true where slug = $1 and run_id = $2 and key = $3`, [
-    slug,
-    runId,
-    key,
-  ]);
-}
-
-/**
- * Deliver a payload, and answer which run to re-walk.
- *
- * Already answered, or the window closed: both are the same refusal for the same
- * reason — a body is replayed and must read the same answer every time, or two
- * walks of it diverge. The `where` is what makes that atomic.
- */
-export async function deliverHook(
-  sql: SqlExec,
-  slug: string,
-  token: string,
-  payload: string | undefined,
-): Promise<string | undefined> {
-  const rows = await sql(
-    `update ${HOOKS}
-        set delivered = true, payload = $3::text::jsonb
-      where slug = $1 and token = $2 and delivered = false and closed = false
-      returning run_id`,
-    [slug, token, payload ?? null],
-  );
-  const row = rows[0];
-  return row ? String(row.run_id) : undefined;
 }
 
 /** Record a settled step, or read the one already recorded. */

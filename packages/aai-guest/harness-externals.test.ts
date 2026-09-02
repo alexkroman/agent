@@ -29,9 +29,7 @@
  *
  * These run in the UNIT tier deliberately: they are filesystem READS (legal
  * here) over the real built artifact and the committed manifests, so they cost
- * milliseconds and fail in the ordinary `pnpm test`. What they do NOT prove is
- * that a world actually migrates against a real database — that needs the
- * scenario tier and a Postgres, and is noted at the bottom.
+ * milliseconds and fail in the ordinary `pnpm test`.
  */
 
 import { readFileSync } from "node:fs";
@@ -98,24 +96,17 @@ describe("the built harness", () => {
   // Read UNCONDITIONALLY. `aai-guest#test` declares its own `build`
   // (turbo.json), so the artifact is there by construction — and a suite that
   // skipped itself without one would be the silent skip this whole file exists
-  // to prevent: the check between a shipped guest and a dead workflow world,
-  // quietly not running. A missing file fails loudly here instead.
+  // to prevent: the check between a shipped guest and a package it can no
+  // longer resolve, quietly not running. A missing file fails loudly here.
   const bundle = readFileSync(HARNESS, "utf-8");
 
-  test("keeps the build toolchain external too", () => {
-    // The older half of the list, asserted the same way — it is the precedent
-    // `@workflow/world-postgres` now follows, and bundling rolldown's native
-    // binaries would break the harness in a way no unit test would see.
+  test("keeps the build toolchain external", () => {
+    // Asserted on the ARTIFACT rather than on `tsdown.config.ts` alone, which is
+    // the distinction that matters: a config assertion passes on a build that
+    // never ran. Bundling rolldown's native binaries would break the harness in
+    // a way no unit test would see.
     for (const specifier of ["@vitejs/plugin-react", "@tailwindcss/vite"]) {
       expect(bundle, `${specifier} looks inlined`).toContain(specifier);
     }
   });
 });
-
-/**
- * NOT covered here: that a Postgres world actually MIGRATES. That needs a real
- * database and the scenario tier — `workflow-world.scenario.test.ts` is where it
- * belongs, and its absence is why the two structural checks above assert on the
- * ARTIFACT rather than on `tsdown.config.ts` alone. The distinction matters: a
- * config assertion passes on a build that never ran.
- */

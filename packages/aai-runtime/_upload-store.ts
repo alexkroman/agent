@@ -218,6 +218,37 @@ export class UploadIdTakenError extends Error {
 }
 
 /**
+ * Raised when a write would change an upload that is already FINISHED.
+ *
+ * A finished upload is IMMUTABLE, and this says so. Its own class for the reason
+ * {@link UploadIdTakenError} is — the route answers **409**, which a client has to
+ * tell apart from a malformed request (400) and from a 5xx it should retry.
+ *
+ * **Why an upload freezes.** A part write is keyed by its OFFSET and the merge
+ * replaces whatever window was there, so `PUT …/parts?offset=` against a completed
+ * upload used to answer 200 and rewrite the bytes under it. Measured, all three
+ * ways: `size` and `complete` were unchanged, so a step reading that window got the
+ * new bytes with nothing to notice; a SHORTER replacement collapsed `size` and
+ * flipped `complete` back to `false` on a file a run had been told was whole; and a
+ * LONGER one recorded two overlapping windows, after which a `read` of two
+ * megabytes returned three. Upload ids are the caller's to choose and the workflow
+ * API is unauthenticated unless `AAI_WORKFLOW_API_TOKEN` is set, so none of it
+ * needs a credential.
+ *
+ * {@link UploadStore.stream} has always refused a taken id; this is the same rule
+ * one method over — an upload's bytes are written once.
+ */
+export class UploadCompleteError extends Error {
+  constructor(id: string) {
+    super(
+      `Upload ${id} is complete; its bytes may not be rewritten. Store a new upload under ` +
+        "a new id instead.",
+    );
+    this.name = UploadCompleteError.name;
+  }
+}
+
+/**
  * Raised when a part does not fit the upload it names.
  *
  * Its own error because the ROUTE has to answer 400: a misaligned offset, or one
@@ -347,6 +378,8 @@ export type UploadStore = UploadReader & {
    * is nothing left to pay.
    *
    * @throws {UnknownUploadError} when nothing has begun under `id`.
+   * @throws {UploadCompleteError} when the upload is already finished — its bytes
+   *   are immutable from then on, whoever asks.
    * @throws {UploadPartError} when `offset` is not a multiple of
    *   `UPLOAD_CHUNK_BYTES`, or the part would run past the declared total.
    */
@@ -380,7 +413,18 @@ export type UploadStore = UploadReader & {
    * whole batch unable to tell which half it is repeating, against a store whose
    * one job here is that a hole never becomes a readable byte.
    *
+   * **A claim on a FINISHED upload is a no-op unless it would CHANGE something**,
+   * and the retry vocabulary is why. A claim is re-sent on a 5xx or a dropped
+   * response (`_upload-retry.ts`), so the request that COMPLETED an upload is
+   * exactly the one whose answer can be lost, and a bare 409 would fail an upload
+   * whose every byte is stored. This path measures every named window before it
+   * writes anything, so it tells the two apart for free: a claim naming windows the
+   * record already holds at the same lengths answers with the record unchanged, and
+   * one that would rewrite a window raises {@link UploadCompleteError}.
+   *
    * @throws {UnknownUploadError} when nothing has begun under `id`.
+   * @throws {UploadCompleteError} when the upload is finished and this claim would
+   *   change a window of it.
    * @throws {UploadPartError} when `offsets` is empty or names the same byte twice,
    *   when an offset is misaligned, when no bytes are stored for one, or when what
    *   is stored runs past the declared total.

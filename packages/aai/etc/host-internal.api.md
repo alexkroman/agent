@@ -105,12 +105,6 @@ export const APP_DB_POOL_MAX = 3;
 // @public
 export const APP_DB_PRESENCE_LOCK = 1;
 
-// @public
-export const APP_DB_WORLD_POOL_MAX = 4;
-
-// @public
-export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
-
 // @internal
 export function asDispatcher(agent: Agent): FetchDispatcher;
 
@@ -894,6 +888,9 @@ export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 export function publishStepReporter(reporter: StepReporter | undefined): void;
 
 // @internal
+export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void;
+
+// @internal
 export function publishUploadReader(reader: UploadAccess | undefined): void;
 
 // @internal
@@ -1034,7 +1031,7 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 type SessionMode = "s2s" | "pipeline" | "text";
 
 // @internal
-export function sleep(ms: number, opts?: SleepOptions_2): Promise<void>;
+export function sleep(ms: number, opts?: SleepTimerOptions): Promise<void>;
 
 // @public
 type SleepOptions = {
@@ -1042,7 +1039,7 @@ type SleepOptions = {
 };
 
 // @internal
-type SleepOptions_2 = {
+type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
@@ -1129,6 +1126,9 @@ export const STEP_FETCH_KEEP_ALIVE_MS = 30000;
 export const STEP_FETCH_PIPELINING = 1;
 
 // @internal
+export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE: string;
+
+// @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
 
 // @public
@@ -1149,6 +1149,9 @@ export type StepReporter = (chunk: unknown, options?: {
     namespace?: string | undefined;
     log?: boolean | undefined;
 }) => void | Promise<void>;
+
+// @internal
+export type StepWebhookMinter = (token: string) => string;
 
 // @public
 type StreamOptions = {

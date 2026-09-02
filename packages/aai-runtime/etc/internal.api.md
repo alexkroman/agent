@@ -49,6 +49,12 @@ export const consoleLogger: Logger;
 export { CONTAINED_ENV }
 
 // @internal
+export function createMemoryJournal(): JournalStore;
+
+// @internal
+export function createPlatformJournal(opts: PlatformEndpoint): JournalStore;
+
+// @internal
 export function createPlatformQueueSend(opts: PlatformQueueOptions): (queueName: string, message: unknown, queueOpts?: {
     deploymentId?: string | undefined;
     idempotencyKey?: string | undefined;
@@ -159,6 +165,19 @@ type HostGenerateFn = (options: GenerateOptions, callOpts?: {
 export function isPathInside(dir: string, target: string): boolean;
 
 // @public
+type JournalArm = {
+    label: string;
+    journal: () => JournalStore;
+    uid: () => string;
+};
+
+// @public
+export type JournalConformanceSuite = {
+    journalConformance: (arm: JournalArm) => void;
+    journalIds: (label: string) => () => string;
+};
+
+// @public
 type JournalStore = {
     createRun(record: RunRecord): Promise<void>;
     getRun(runId: string): Promise<RunRecord | undefined>;
@@ -174,10 +193,13 @@ type JournalStore = {
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
-    closeHook(runId: string, key: string): Promise<void>;
+    closeHook(runId: string, key: string): Promise<boolean>;
     deliverHook(token: string, payload: unknown): Promise<string | undefined>;
     appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
 };
+
+// @public (undocumented)
+export function loadJournalConformance(): Promise<JournalConformanceSuite>;
 
 // @public
 type LogContext = Record<string, unknown>;
@@ -198,9 +220,7 @@ export function payloadRunId(message: unknown): string | undefined;
 export const PLATFORM_ROUTES: {
     readonly sessionState: "/session-state";
     readonly uploadRecords: "/upload-records";
-    readonly workflowStorage: "/workflow-storage";
     readonly workflowJournal: "/workflow-journal";
-    readonly workflowStream: "/workflow-stream";
     readonly workflowEnqueue: "/workflow-enqueue";
 };
 
@@ -224,6 +244,9 @@ type PlatformUploadRecordsOptions = PlatformEndpoint;
 export function platformUrl(base: string, route: PlatformRoute): string;
 
 export { publishStepEnv }
+
+// @internal
+export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void;
 
 // @internal
 export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined;
@@ -501,9 +524,12 @@ export const WORKFLOW_CALLBACK_ROUTES: {
         readonly transport: "http";
         readonly path: "/.well-known/workflow/v1/webhook";
         readonly match: "prefix";
-        readonly methods: "any";
+        readonly methods: readonly ["POST"];
     };
 };
+
+// @internal
+export const WORKFLOW_DATA_DIR_ENV = "AAI_WORKFLOW_DATA_DIR";
 
 // @internal
 export const WORKFLOW_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_workflow_.+$";

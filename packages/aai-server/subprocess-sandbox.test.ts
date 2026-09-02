@@ -18,6 +18,7 @@ import {
   type HarnessProcLike,
   type HarnessSpawnParams,
   type SubprocessSpawnContext,
+  spawnSubprocessAgentServer,
   spawnSubprocessWarm,
 } from "./subprocess-sandbox.ts";
 
@@ -260,6 +261,40 @@ describe("spawnSubprocessWarm", () => {
     expect(socket.sentMessages().some((m) => m.method === "shutdown")).toBe(true);
     expect(fake.kill).toHaveBeenCalled();
     expect(warm.alive()).toBe(false);
+  });
+});
+
+describe("spawnSubprocessAgentServer", () => {
+  // Through the DOOR a caller takes, not through `agentBootEnv` — the
+  // forwarding is the claim, and a spec on the builder passes whatever this
+  // spawner asks it for. `TMPDIR` is `/var/tmp` on the two CONTAINED backends,
+  // where `/tmp` can be a 512 MiB tmpfs; here the guest is a child process on
+  // the developer's own machine, whose temp directory is a real disk already,
+  // and on Windows a `/var/tmp` literal is drive-relative — so every step write
+  // would fail with ENOENT on the one backend that has no image.
+  it("names no TMPDIR: this guest is a host process, not a container", async () => {
+    const fake = makeFakeProc();
+    const ctx = makeCtx(fake);
+    const handle = await spawnSubprocessAgentServer(
+      {
+        harnessPath: await makeHarnessFile(),
+        slug: "digest-desk",
+        name: "agent-abc-v1",
+        worker: { kind: "inline", code: "// bundle", sha256: "abc" },
+        agentEnv: {},
+      },
+      ctx,
+      async () => new Response("ok"),
+    );
+    try {
+      expect(ctx.runs).toHaveLength(1);
+      expect(ctx.runs[0]?.extraEnv).not.toHaveProperty("TMPDIR");
+      // The rest of the boot convention still arrives, so this is an omission
+      // rather than a spawner that stopped building an env at all.
+      expect(ctx.runs[0]?.extraEnv).toMatchObject({ AAI_GUEST_MODE: "agent" });
+    } finally {
+      await handle.shutdown();
+    }
   });
 });
 

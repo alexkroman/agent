@@ -12,9 +12,11 @@
  * Three surfaces, and they compose in `createAgentRequestHandler` in the order
  * their gates demand:
  *
- * - The DevKit's workflow routes, which carry their OWN gates (loopback for the
- *   two queue callbacks, the injected predicate for the platform's door) and so
- *   must be claimed before anything here.
+ * - `POST /workflow-queue`, the platform's delivery door. It carries its OWN
+ *   gate — the injected `allowRemote` predicate — and so must be claimed before
+ *   anything here. It was three routes under the DevKit, two of them the world's
+ *   own loopback-gated queue callbacks; the replay engine executes a step inline
+ *   during the walk, so only the delivery is left.
  * - `/workflows/*`, the run API, refused on a direct tunnel dial so the
  *   platform's rate limiters cannot be skipped.
  * - `/manage/*`: session count, drain, and this guest's own captured output.
@@ -163,15 +165,13 @@ export function createWorkflowActivity(): WorkflowActivity {
 }
 
 /**
- * Agent mode's whole `request` hook: the DevKit's queue callbacks, then the
- * manage surface.
+ * Agent mode's whole `request` hook: the platform's delivery door, the direct-
+ * dial gate on `/workflows/*`, then the manage surface.
  *
- * Workflows go FIRST because the paths are disjoint and this is the hotter one
- * on an agent that has any; unclaimed they would fall through to the server's
- * 404 and every run would stall with nothing saying why. The workflow surface is
- * read through a getter rather than passed by value because the bundle is loaded
- * before this is built but the two are independently replaceable, and a captured
- * `null` would leave a reloaded bundle's routes unmounted.
+ * The delivery door goes FIRST because the paths are disjoint and this is the
+ * hotter one on an agent that has workflows; unclaimed it would fall through to
+ * the server's 404 and every scheduled run would stall with nothing saying why.
+ * Why `deliverWorkflow` is a getter rather than a value is on the parameter.
  */
 export function createAgentRequestHandler(deps: {
   manage: ManageDeps;

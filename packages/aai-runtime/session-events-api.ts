@@ -89,7 +89,19 @@ export type SessionEventsApiOptions = {
    * capture `undefined` for the life of the server.
    */
   stream: () => SessionEventStream | undefined;
-  /** The bearer every request must present. Undefined turns the route off. */
+  /**
+   * The bearer every request must present. Undefined turns the route off.
+   *
+   * A BLANK value (empty, or whitespace only) is not a third state. It used to
+   * be the worst one available: `""` is not `undefined`, so the route turned ON,
+   * and `bearerMatches(header, "")` compared two empty buffers — which
+   * `timingSafeEqual` MATCHES — so `AAI_SESSION_EVENTS_TOKEN=` served the
+   * conversation to a caller with no `Authorization` header. `bearerMatches`
+   * refuses a blank secret now, so a caller passing one directly gets a 401 on
+   * every request; `createServer` reads the variable through `agentGateToken`,
+   * which reports a blank one as absent and logs why, so an OPERATOR gets the
+   * 404 above naming the variable rather than a silent 401 forever.
+   */
   token?: string | undefined;
   logger: Logger;
 };

@@ -253,6 +253,16 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       max: ADMIN_POOL_MAX,
       connectTimeoutSeconds: PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
       queryTimeoutMs: PLATFORM_DB_QUERY_TIMEOUT_MS,
+      // The RESERVED path takes the same deadline, and this pool is the reason
+      // that option exists. Every guest platform route — the workflow journal,
+      // the queue, session state, upload records — runs its work on a
+      // reservation from HERE (`_platform-route.ts`'s `withReserved`) and takes
+      // no advisory lock, so the exemption `reserve()` grants by default left
+      // them unbounded: on a silent partition, ADMIN_POOL_MAX hung reads is
+      // every other platform read on this replica — Vault, the agents row the
+      // broker needs, the rate limits — queued behind them, and each 503s on
+      // its own client-side deadline. Reachable with FOUR concurrent watchers.
+      reservedQueryTimeoutMs: PLATFORM_DB_QUERY_TIMEOUT_MS,
     }),
   );
   const exec: SqlExec = (query, params) => admin.query(query, params);
@@ -298,10 +308,13 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // Vault reads, workspace writes, and the agents-row lookups the broker
     // makes, on a replica that was otherwise healthy. Separated, lock
     // acquires queue only against each other.
-    // The slug-lock pool takes the connect bound but NOT the query bound: its
+    // The slug-lock pool takes the connect bound and NEITHER query bound: its
     // whole job is holding an advisory lock on a RESERVED connection for a
-    // deploy's duration, and the pooled query timeout is scoped to the pool
-    // path anyway — a lock wait carries its own `lock_timeout` deadline.
+    // deploy's duration, so `reservedQueryTimeoutMs` — which the admin pool
+    // above does set — would abort deploys here. The wait that does need a
+    // bound, the ACQUIRE, carries its own `lock_timeout` on the connection
+    // (`platform-lock.ts`). This is the whole reason that option is per-pool
+    // rather than a blanket on `reserve()`.
     slugLock: createPgSlugLock(
       platformDb(
         createPostgresDb({

@@ -18,10 +18,20 @@ import { beforeEach, describe, expect, test } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
 import { createStepReporter } from "./workflow-report.ts";
 import { type RunContext, withRunContext } from "./workflow-run-context.ts";
+import { DEFAULT_STREAM_NAMESPACE, streamNamespace } from "./workflow-streams.ts";
 
 /** The step this run is inside, which the reporter reads for the suffix. */
 let step: RunContext["step"];
-/** Every chunk written, keyed by namespace — `""` is the default stream. */
+/**
+ * Every chunk written, keyed by the RESOLVED namespace.
+ *
+ * Through `streamNamespace`, not `?? ""`: production resolves an absent
+ * namespace to `DEFAULT_STREAM_NAMESPACE` (`workflow-replay.ts` hands the raw
+ * value to the store, which resolves it), and a fake that keyed the default
+ * channel under `""` would be the laxer-than-the-interface double
+ * `workflow-streams.ts`'s own doc warns about — this spec could not then see a
+ * namespace-resolution regression.
+ */
 let streams: Map<string, unknown[]>;
 /** What the run's `write` does. Overridden by the failure case. */
 let onWrite: ((namespace: string | undefined, value: unknown) => Promise<number>) | undefined;
@@ -35,7 +45,7 @@ function inRun<T>(fn: () => Promise<T> | T): Promise<T> {
       step,
       write: async (namespace, value) => {
         if (onWrite) return onWrite(namespace, value);
-        const key = namespace ?? "";
+        const key = streamNamespace(namespace);
         const written = streams.get(key) ?? [];
         streams.set(key, written);
         written.push(value);
@@ -47,7 +57,7 @@ function inRun<T>(fn: () => Promise<T> | T): Promise<T> {
 }
 
 /** The default stream's chunks — `report()`'s own. */
-const defaultStream = () => streams.get("") ?? [];
+const defaultStream = () => streams.get(DEFAULT_STREAM_NAMESPACE) ?? [];
 
 beforeEach(() => {
   step = { name: "transcribeSegment", key: "step_1", attempt: 1 };
@@ -115,7 +125,7 @@ describe("a chunk emitted into a named stream", () => {
     expect(streams.get("transcript")).toEqual([{ index: 3, text: "and then we shipped it" }]);
     // The default stream is `report()`'s, and an object in it renders as
     // `[object Object]` in the middle of a page's progress log.
-    expect(streams.get("")).toBeUndefined();
+    expect(streams.get(DEFAULT_STREAM_NAMESPACE)).toBeUndefined();
   });
 
   test("is not logged, so a chunk per segment cannot bury the narration", async () => {
@@ -156,7 +166,7 @@ describe("a chunk emitted into a named stream", () => {
     step = { name: "transcribeSegment", key: "s", attempt: 2 };
     const log = makeLogger();
     await inRun(() => createStepReporter(log)("Transcribing 0:00–0:58.", { log: true }));
-    expect(streams.get("")).toEqual(["Transcribing 0:00–0:58. (attempt 2)"]);
+    expect(defaultStream()).toEqual(["Transcribing 0:00–0:58. (attempt 2)"]);
     expect(log.info).toHaveBeenCalled();
   });
 });

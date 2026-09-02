@@ -405,10 +405,14 @@ everything in flight is lost when that process goes away. That is the honest
 tradeoff, and it is what
 lets you build a workflow app before provisioning anything.
 
-One thing does need a database whatever the run does: a workflow **upload**. An
-upload's record is a row, so `api.upload` and the file-taking form hooks refuse
-by name without a `DATABASE_URL`. (`ctx.db` was the other; there is no `ctx.db`
-— see "Persisting data" below.)
+**A workflow UPLOAD is durable with no setup either**, and this paragraph used
+to say the opposite. An upload's record is a platform row and its bytes are
+platform storage, so `api.upload`, `<FileField>` and the file-taking form
+hooks outlive the sandbox exactly as the runs reading them do — a deployed app
+needs no database of its own for either half. Under `aai dev` they are as
+temporary as the runs above: the bytes go to a per-process temporary directory
+that a restart abandons. There is no `ctx.db` at all — see "Persisting data"
+below.
 
 ### Workflow bodies live in `workflows/`
 
@@ -446,8 +450,8 @@ later replay returns the journaled value without running it again. The step
 functions themselves are ordinary functions — which is also what lets a spec call
 one directly, with no engine in the path.
 
-Three rules. The second and third fail silently if broken; the first is
-warned about by `aai build` and `aai dev`, naming the file and the call:
+Three rules, and all three fail silently if broken — nothing scans a body for
+them:
 
 - **The body replays from the top on every resume**, so it holds no live handle
   and makes no undurable decision — no `Date.now()`, no `Math.random()`, no
@@ -464,7 +468,9 @@ warned about by `aai build` and `aai dev`, naming the file and the call:
 keep it stable: renaming one makes an in-flight run re-run that step. A single
 call site inside a loop or a `mapConcurrent` fan-out is exactly what the scheme
 is for — each reach gets its own entry — but two DIFFERENT call sites should not
-share a name, because a run's history is read by a person.
+share a name: the journal keys an entry by `(name, occurrence)`, so two sites
+alias onto one counter and read each other's journaled results. Nothing detects
+it.
 
 **Per-step retries are an argument, not a property.** Pass
 `{ maxAttempts }` where a step deserves more patience than the default three:
@@ -480,18 +486,19 @@ const digest = await ctx.step("summarize", () => summarize(input.url), {
 Both SUSPEND the run — the body stops, the container is free, and the engine
 brings the run back — so a long wait costs nothing while it runs.
 
-**How long a wait really survives is a property of the run STORE, and today that
-is memory.** A wait outlives the body and the worker; it does not yet outlive the
-process, on any deployment. The durable stores are the remaining half of this
-change, and the server's boot line reports which one is in play.
+**How long a wait really survives is a property of the run STORE.** On the
+platform it is durable with no setup, and a self-hosted deployment with a
+`DATABASE_URL` is durable too — the wait outlives the body, the worker and the
+process. Under `aai dev` without a `DATABASE_URL` the store is memory, so a wait
+lives only as long as the dev server. The boot line reports which one is in play.
 
 ```ts no-check
 // A duration in milliseconds, or an absolute Date.
 await ctx.sleep(6 * 60 * 60 * 1000, { correlationId: "review-window" });
 
 // Until somebody outside the run answers, via `ctx.workflows.signal(token, …)`
-// from a tool. (`publicWebhookUrl` does NOT reach this yet — that route is still
-// the DevKit's and answers a delivery with `HookNotFound`.)
+// from a tool, or by a delivery to `publicWebhookUrl` — both hops reach the
+// same waitpoint.
 const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id), {
   timeoutMs: 120_000,
 });
@@ -517,6 +524,55 @@ Four things worth knowing:
   which is how a "send it now" tool cuts a scheduled wait short. Naming no ids
   wakes every outstanding SLEEP and deliberately not a `waitFor` deadline, so
   cutting a schedule short cannot also close an approval window.
+
+#### A third-party callback is an OPTIMIZATION over a reconciling read
+
+The webhook route is how a payment provider, a transcription service or an
+approval mailer resumes a run, and `recap-workflow` is the worked example — it
+hands AssemblyAI a `webhook_url` and parks on the delivery instead of polling
+for twenty minutes. Five things about that shape, and every one of them is a
+trap somebody has already paid for:
+
+- **Mint it with `stepWebhookUrl(token)`, from inside the step that hands it
+  over.** That is the step-side half of `ctx.workflows.publicWebhookUrl` — the
+  tool-side one needs a `ToolContext`, and a workflow body and its steps are
+  handed none, so a workflow app with no tools has only this one. It THROWS when
+  the deployment cannot mint one, which a step should catch and treat as "no
+  callback": a run must not fail over a missing optimization. And note
+  `requireStepEnv("AAI_PUBLIC_BASE_URL")` is NOT a substitute — the public base
+  URL is a boot parameter of the deployment, not one of the agent's own secrets,
+  so that read is `undefined` in production precisely where the value exists.
+- **Return the callback FACT from the step, and branch on that.** Whether a
+  callback was registered decides whether the body parks, and a body may only
+  branch on values that came out of the journal. Mint inside the step's function
+  — it runs once, on first execution, never on a replay — and answer
+  `{ id, callback }`. A body that re-minted on every walk could flip the branch
+  under a redeploy and then look for a `waitFor` the journal never recorded.
+- **Keep the poll as the TIMEOUT arm.** A webhook is one HTTP POST from a third
+  party with no delivery guarantee you control: the sender gives up after its own
+  retry budget, a deployment may not know its public URL, and a delivery that
+  lands before your body reaches its wait is answered `404` and dropped. So read
+  the state before you park and again after, give the wait a `timeoutMs`, and let
+  an unanswered window fall through to the read. A run that hangs forever on a
+  dropped delivery is strictly worse than one that polls.
+- **Wait for the EDGE, not the answer.** Treat the payload as "something
+  happened, go look" and get the fact from the far side's own API under your own
+  credential. That is what makes an unauthenticated callback route safe: a forged
+  delivery on a guessed token costs one extra read and changes no outcome. It
+  holds by construction, where a shared secret holds only until somebody has to
+  rotate it — and the route authorizes on the TOKEN and reads no other header, so
+  a sender's own auth-header option would be sent and ignored.
+- **One token, ONE `waitFor` per run.** A token is claimed for the life of its
+  run and given back when the run goes terminal, so a second `ctx.waitFor` on the
+  same token — a wait written inside a loop — THROWS. A throw is not a suspend,
+  so a body with a `catch` will treat it as a failed run and start compensating.
+  Park once, outside the loop.
+- **You cannot test it under `aai dev` without a tunnel.** `publicUrl` there is
+  `http://localhost:<backend port>`, which no third party can reach — so the
+  delivery never arrives, the run silently takes the fallback, and the webhook
+  half of your code is exercised by nothing. `PUBLIC_URL=https://<your tunnel>
+  pnpm dev` is what makes it reachable. Until you set it, treat local runs as
+  coverage of the backstop only.
 
 ### A step's env, and calling a model from one
 
@@ -570,9 +626,9 @@ while this also turns a NON-2XX RESPONSE into a throw — `stepFetch` resolves
 with a `404` rather than raising it. Two changes, so two names.
 
 The whole of what a wrapper adds is `throwStepError`, and that is worth having
-because the DevKit's retry policy is decided by WHICH error a step throws. Raw,
+because the engine's retry policy is decided by WHICH error a step throws. Raw,
 every failure looks the same to it: a bad API key is retried until the attempts
-run out, and a rate limit backs off for the DevKit's default one second while
+run out, and a rate limit backs off for the engine's default one second while
 the delay the gateway itself named sits unread on the error. Classified, a
 terminal failure raises `FatalError` and stops, and a transient one raises
 `RetryableError` carrying the far side's own `Retry-After`. That matters most
@@ -587,11 +643,11 @@ or `throwFfmpegStepError(err)` for a media failure, whose default runs the other
 way (only a `timeout` or an `aborted` is worth another attempt).
 
 **Why the split exists, since the wrapper is what you usually want:** this is
-the one authoring module allowed to import the DevKit's `workflow` package, and
-`/step` is not written only for a step — `mapConcurrent` bounds a rate-limited
-call anywhere, `stepFetch` is an ordinary HTTP client, and your specs drive
-exported steps directly. Putting `workflow` in `/step`'s graph would put it in
-every one of those bundles. A step pays nothing for the extra import line.
+importing from here is the OPT-IN, and `/step` is not written only for a step —
+`mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an ordinary
+HTTP client, and your specs drive exported steps directly. None of those callers
+has a retry budget to burn, so none should meet a vocabulary whose whole subject
+is one. A step pays nothing for the extra import line.
 
 ### Media, big files, and transcription from a step
 
@@ -1705,8 +1761,10 @@ HTTP API, a provider SDK or a hosted KV works the same way.
   nothing else.
 - **Durable workflow runs** — a run survives the sandbox recycling, every
   redeploy, and a multi-day `sleep()`.
+- **Workflow uploads** — a file a form submitted, record and bytes both, so a
+  resumed run reads the same recording the browser sent.
 
-Those two cover almost everything an agent wants. A database is for data that
+Those three cover almost everything an agent wants. A database is for data that
 must outlive a session AND be queryable: a ledger, filed records, cross-session
 saves.
 

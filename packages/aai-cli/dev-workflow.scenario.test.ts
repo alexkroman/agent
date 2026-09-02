@@ -119,21 +119,22 @@ async function file(topic: string) {
 `;
 
 /**
- * **The webhook fixture is GONE, and its absence is a stated gap.**
+ * **The webhook fixture is GONE, and its absence is now a HOLE rather than a
+ * gap.**
  *
  * It parked on `createWebhook()` and was resumed by a real HTTP delivery — the
- * one thing no unit test can reach. The engine's equivalent is
- * `ctx.waitFor(token)`, ended by `ctx.workflows.signal(token, payload)`, and
- * `/.well-known/workflow/v1/webhook/:token` still routes to the DevKit's own hook
- * table, which knows nothing about the journal and answers `HookNotFound`. There
- * is no `/signal` route either, so a scenario test has no way in.
+ * one thing no unit test can reach. It was dropped while the engine's
+ * equivalent, `ctx.waitFor(token)` ended by `ctx.workflows.signal(token,
+ * payload)`, had no route in front of it: the note here used to say
+ * `/.well-known/workflow/v1/webhook/:token` still reached the DevKit's own hook
+ * table and answered `HookNotFound`, which was true when it was written.
  *
- * So this tier covers webhooks with nothing, deliberately rather than by
- * oversight: a fixture rewritten onto a route that is not wired would be a test
- * of the DevKit's hook table, which no longer executes any run. Wiring the
- * webhook route to `signal` — and adding the route a caller needs — is the piece
- * that brings this back, and `sdk/workflow-ctx.ts` warns an author off the
- * documented payment-callback shape until it lands.
+ * It is not true any more. `createWebhookHandler` (aai-runtime's
+ * `workflow-webhook.ts`) answers that path from `WorkflowClient.signal`, and
+ * `createServer` mounts it — so `aai dev` serves it and this tier can reach it
+ * with a plain POST. Restoring a `waitFor` fixture and delivering to that URL is
+ * the missing case, and it is the ONE thing in the durable path that no cheaper
+ * tier can cover.
  */
 
 /**
@@ -263,9 +264,9 @@ async function writeFixture(): Promise<void> {
 }
 
 /**
- * ONE dev server for the whole file, at module scope rather than inside a
- * `describe` — the HTTP suite below needs the same running server, and a
- * `beforeAll` nested in the first block tears it down before the second starts.
+ * ONE dev server for the whole file, at module scope rather than inside the
+ * `describe` — building the fixture and booting it is the expensive part, and a
+ * `beforeAll` nested in a block would have to be repeated by the next one added.
  */
 let stop: (() => Promise<void>) | undefined;
 let origin = "";
@@ -306,10 +307,13 @@ afterAll(async () => {
  *
  * This is the only tier that can exercise it end to end. `host/workflow-api.
  * test.ts` drives the routes against a STUB `ctx.workflows`; here every link is
- * real — the CLI's two bundlers, the DevKit transform, the world, the queue, the
- * routes — and the run genuinely parks on a webhook and is brought back by an
- * HTTP delivery. A break anywhere in that chain shows up as a run that never
- * completes, which is invisible to every layer's own suite.
+ * real — the CLI's bundlers, the replay engine, its journal, the in-process
+ * dispatcher and the routes — and a run genuinely suspends on a `sleep` and is
+ * walked again when its timer fires. A break anywhere in that chain shows up as
+ * a run that never completes, which is invisible to every layer's own suite.
+ *
+ * What it does NOT reach is a run parked on a WEBHOOK — see the stated gap in
+ * this file's module doc.
  */
 describe("aai dev serves the workflow HTTP API", () => {
   /** `fetch` + parse, always — an unread body holds its socket open. */

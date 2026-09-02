@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import { forgetObservedPublicOrigin, rememberPublicOrigin } from "./public-origin.ts";
 import { captureLogs } from "./test-utils.ts";
-import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
+import { agentBootEnv, dialGuest, drainProcStream, GUEST_SCRATCH_DIR } from "./warm-harness.ts";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -125,7 +125,31 @@ describe("agentBootEnv", () => {
       AAI_BUNDLE_PATH: "/b/bundle.mjs",
       AAI_BUNDLE_SHA256: "abc",
       AAI_AGENT_ENV_PATH: "/b/env.json",
+      TMPDIR: "/var/tmp",
     });
+  });
+
+  // The guest's `/tmp` is a 512 MiB tmpfs under the local microVM — RAM, not
+  // disk — while `/` is a 3.9 GB overlay, so a step that needs a real seekable
+  // file (`withTempDir` is `join(tmpdir(), …)`) had a 512 MiB ceiling and a
+  // 660.8 MB recording died against it with ENOSPC. Named by the SPAWNER rather
+  // than inherited: which runtime mounts what over `/tmp` is not a fact a step
+  // can see, and `/var/tmp` is a directory of the shared base image.
+  it("points a contained guest's scratch space at the overlay, not the tmpfs", () => {
+    expect(agentBootEnv(boot, {}).TMPDIR).toBe(GUEST_SCRATCH_DIR);
+    expect(GUEST_SCRATCH_DIR).toBe("/var/tmp");
+  });
+
+  it("takes an explicit scratch directory over the default", () => {
+    expect(agentBootEnv({ ...boot, scratchDir: "/mnt/scratch" }, {}).TMPDIR).toBe("/mnt/scratch");
+  });
+
+  // `null` is the subprocess backend, whose guest is a child process on the
+  // developer's machine: `/var/tmp` is a claim about the guest IMAGE, and on
+  // Windows that literal is drive-relative, so naming it would ENOENT every
+  // step write on the one backend that has no image at all.
+  it("names no scratch directory when the guest is not contained", () => {
+    expect(agentBootEnv({ ...boot, scratchDir: null }, {})).not.toHaveProperty("TMPDIR");
   });
 
   // The two bundle shapes are mutually exclusive on the wire, not merely

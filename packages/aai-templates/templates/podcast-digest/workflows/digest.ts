@@ -99,9 +99,12 @@ const MAX_TRANSCRIPT_CHARS = 18_000;
  */
 const SUBMIT_CONCURRENCY = 2;
 
-/** Status checks in flight at once. Cheaper calls, so a wider gate — and three is
- *  also where the world's default worker concurrency caps it, so this is the
- *  widest a stock deployment executes. */
+/**
+ * Status checks in flight at once. Cheaper calls, so a wider gate.
+ *
+ * Well inside `DEFAULT_STEP_CONCURRENCY` (`aai-runtime`, 16), like
+ * {@link SUBMIT_CONCURRENCY} above, so this width is what really runs.
+ */
 const POLL_CONCURRENCY = 3;
 
 /**

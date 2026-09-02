@@ -31,7 +31,13 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
-import { isOneOf, optionalString, requiredInt, requiredString } from "./_body-fields.ts";
+import {
+  isOneOf,
+  optionalString,
+  requiredInt,
+  requiredSize,
+  requiredString,
+} from "./_body-fields.ts";
 import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
@@ -60,6 +66,42 @@ export const WORKFLOW_JOURNAL_ROUTE = PLATFORM_ROUTES.workflowJournal;
  * the platform's database.
  */
 export const MAX_WORKFLOW_JOURNAL_BODY_BYTES = 8_388_608;
+
+/**
+ * Cap on how many runs one `listRuns` may answer with.
+ *
+ * The body cap above bounds what a caller SENDS on this route; nothing bounded
+ * what it gets back, and `limit` went straight into `LIMIT $3`. That asymmetry is
+ * the defect: one token-holder could seed runs, ask for all of them at once, and
+ * make a SHARED replica buffer the whole result set on one of `ADMIN_POOL_MAX`
+ * reserved connections and serialize it into a single JSON body — one tenant
+ * deciding another tenant's replica memory. A negative limit was worse than
+ * useless: it reached Postgres as `LIMIT -1` and came back as a 503, telling the
+ * guest to retry a request that can never succeed.
+ *
+ * ## Why 100, and why it is not a round number picked by feel
+ *
+ * It is the largest value a conforming caller can produce. Every SDK path into
+ * this route goes through `WorkflowClient.find`/`recent`, which clamp with
+ * `resolveFindLimit` to `MAX_WORKFLOW_FIND_LIMIT` — so 100 really does arrive
+ * here, and anything above it is a client that has been bypassed. That fixes the
+ * number from both directions: lower would 400 a request the shipped client
+ * makes, and higher is headroom nothing real reaches, which is a bound that
+ * cannot be observed to work. `workflow-journal-handler.test.ts` pins the two
+ * equal, so raising either side is a decision the other is owed.
+ *
+ * What it costs at the ceiling: a listing row is the run's identity plus its
+ * `input` and `output`, so a hundred of them is ordinarily on the order of a
+ * megabyte, and four concurrent listings — `ADMIN_POOL_MAX` — a few megabytes,
+ * the same order as the single-request body cap above. A UI is nowhere near it:
+ * `DEFAULT_WORKFLOW_FIND_LIMIT` is 20, so this is five pages.
+ *
+ * What it does NOT bound is BYTES. A run's `input` and `output` are capped only
+ * by the body cap above, so a hundred rows of 8 MiB inputs is still a large
+ * answer. Bounding that means the store returning a truncated page, which is a
+ * change to the `JournalStore` contract rather than to this route.
+ */
+export const MAX_WORKFLOW_JOURNAL_LIST_LIMIT = 100;
 
 /** Every method this route serves — the `JournalStore` seam. */
 const METHODS = [
@@ -94,6 +136,33 @@ function optionalStrings(
     throw new HTTPException(400, { message: `${key} must be an array of strings` });
   }
   return value.map(String);
+}
+
+/**
+ * A `listRuns` page size, refused rather than clamped when it is out of range.
+ *
+ * REFUSED, because this is not the boundary a human types a URL into: the only
+ * caller is another of our own processes, whose client already clamps to the same
+ * ceiling, so an out-of-range value here is a bug or a bypass and there is nobody
+ * to be friendly to. Clamping would answer it with a page that looks complete and
+ * is not — see {@link MAX_WORKFLOW_JOURNAL_LIST_LIMIT}. The edge that DOES face a
+ * human, `GET /workflows/runs` in `aai-runtime/workflow-api-runs.ts`, clamps and
+ * says in the reply that it did.
+ *
+ * {@link requiredSize} carries the non-integer and negative halves — a negative
+ * limit is exactly the one that used to reach Postgres as `LIMIT -1` and surface
+ * as a retryable 503 — and the range is what is left. Zero is refused with them:
+ * no conforming client sends one, and an empty page is not an answer anybody
+ * asked for.
+ */
+function listLimit(body: Record<string, unknown>): number {
+  const limit = requiredSize(body, "limit");
+  if (limit < 1 || limit > MAX_WORKFLOW_JOURNAL_LIST_LIMIT) {
+    throw new HTTPException(400, {
+      message: `limit must be between 1 and ${MAX_WORKFLOW_JOURNAL_LIST_LIMIT}`,
+    });
+  }
+  return limit;
 }
 
 /** One step entry, as the engine writes it. */
@@ -146,7 +215,28 @@ export function createWorkflowJournalHandler(
 
     return await withReserved(
       adminDb,
-      { log, failure: "workflow-journal call failed", detail: { slug, method } },
+      {
+        log,
+        failure: "workflow-journal call failed",
+        detail: { slug, method },
+        // 409 and NOT logged as a failure: a refused hook-token claim, and a
+        // refused duplicate run id, are this route WORKING. The generic arm below
+        // is a 503, which tells the guest to retry a condition that cannot change
+        // — the holder is alive, the run id exists — so the engine burned the
+        // message's attempt budget on it instead of failing the run. The message
+        // names the cause, where `workflow-journal call failed` could not.
+        //
+        // Both are the same shape of answer and take the same status: a
+        // caller-supplied identifier is taken. That is what the upload record
+        // route's `claim` 409 already means, and 409 rather than 400 because the
+        // request is well formed — nothing about it can be corrected by sending
+        // it differently.
+        statusFor: (err) =>
+          err instanceof journal.PlatformWorkflowHookTokenError ||
+          err instanceof journal.PlatformWorkflowRunTakenError
+            ? new HTTPException(409, { message: err.message, cause: err })
+            : undefined,
+      },
       async (sql) => c.json({ result: await serve(method, { sql, slug }, fields) }, 200),
     );
   };
@@ -170,12 +260,7 @@ async function serve(method: Method, ctx: Ctx, body: Record<string, unknown>): P
     case "getRun":
       return (await journal.getRun(sql, slug, requiredString(body, "runId"))) ?? null;
     case "listRuns":
-      return journal.listRuns(
-        sql,
-        slug,
-        requiredString(body, "workflow"),
-        requiredInt(body, "limit"),
-      );
+      return journal.listRuns(sql, slug, requiredString(body, "workflow"), listLimit(body));
     case "setStatus":
       return journal.setStatus(
         sql,
@@ -221,13 +306,15 @@ async function serve(method: Method, ctx: Ctx, body: Record<string, unknown>): P
         requiredString(body, "token"),
       );
     case "closeHook":
-      await journal.closeHook(
+      // The BOOLEAN, not `null`: it is a compare-and-set now, and its answer is
+      // what decides whether the guest's body takes the timed-out branch or the
+      // answered one.
+      return journal.closeHook(
         sql,
         slug,
         requiredString(body, "runId"),
         requiredString(body, "key"),
       );
-      return null;
     case "deliverHook":
       return (
         (await journal.deliverHook(

@@ -132,8 +132,15 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
     const res = await post(harness.fetch, WEBHOOK_PATH);
 
     expect(res.status).toBe(201);
-    expect(res.headers.get("X-Run-Id")).toBe("run_1");
+    expect(res.headers.get("Content-Type")).toBe("application/json");
     expect(await res.json()).toEqual({ ok: true });
+    // The COST of `GUEST_WEBHOOK_RESPONSE_HEADERS` being an allow-list, asserted
+    // rather than discovered: a tenant-chosen response header no longer crosses
+    // this hop. This one used to, and nothing reads it — the sender is a
+    // third-party webhook sender that reads a status code — but the direction of
+    // the change belongs in a test, because the same line is what drops
+    // `Refresh` and `Speculation-Rules`. See that constant's doc.
+    expect(res.headers.get("X-Run-Id")).toBeNull();
   });
 
   test("keeps the query string, which is part of the URL the sender was given", async () => {
@@ -198,18 +205,34 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   });
 
   test.each([...GUEST_ROUTE_EXPOSURE.workflowWebhook.methods])(
-    "answers %s, because the sender chooses the verb",
+    "answers %s, the one verb a delivery can arrive on",
     async (method) => {
       const guest = recordingGuest();
       const harness = await residentHarness(guest.fetchFn);
 
-      const res = await harness.fetch(WEBHOOK_PATH, {
-        method,
-        ...(method === "GET" ? {} : { body: "{}" }),
-      });
+      const res = await harness.fetch(WEBHOOK_PATH, { method, body: "{}" });
 
       expect(res.status).toBe(202);
       expect(guest.calls[0]?.method).toBe(method);
+    },
+  );
+
+  // The companion to the narrowing above, and the reason it was made: this
+  // route is unauthenticated and its URL is handed out on purpose, so a
+  // link-preview fetcher, crawler or mail scanner following it used to resolve
+  // a run's waitpoint with `{}` — an approval firing with no human. Rejecting
+  // at the EDGE matters more here than the verb alone suggests: this handler
+  // brokers, so a forwarded scan is a Modal sandbox boot, not a wasted hop.
+  test.each(["GET", "HEAD", "PUT", "PATCH", "DELETE"])(
+    "refuses %s at the platform edge, never reaching the guest",
+    async (method) => {
+      const guest = recordingGuest();
+      const harness = await residentHarness(guest.fetchFn);
+
+      const res = await harness.fetch(WEBHOOK_PATH, { method });
+
+      expect(res.status).not.toBe(202);
+      expect(guest.calls).toHaveLength(0);
     },
   );
 

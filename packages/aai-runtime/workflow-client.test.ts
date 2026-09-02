@@ -190,7 +190,7 @@ describe("starting a run", () => {
 describe("reading a run", () => {
   test("a completed run narrows to a typed output", async () => {
     const { client } = makeClient({
-      wdk: { getRun: async () => record({ status: "completed" }) },
+      wdk: { getRun: async () => record({ status: "completed", output: { ok: true } }) },
     });
     const run = await client.get("wrun_1", digest);
     expect(run?.status).toBe("completed");
@@ -213,13 +213,42 @@ describe("reading a run", () => {
     expect(run).toMatchObject({ status: "failed", error: "Workflow run failed" });
   });
 
-  test("a non-terminal run does not read its output", async () => {
-    const readOutput = vi.fn(async () => ({ ok: true }));
-    const { client } = makeClient({ wdk: { readOutput } });
-    await client.get("wrun_1");
-    // `readOutput` polls a live run at 1s intervals with no ceiling, so a
-    // speculative read turns a snapshot into a wait for the whole run.
+  test("a completed run is ONE journal read, not two", async () => {
+    // `readOutput` is `getRun(runId).output` in every implementation of this
+    // seam — the engine's and the eval engine's both — so calling it after
+    // `getRun` is a SECOND platform POST for a value the record already
+    // carried, on a status that is terminal and cannot have changed between
+    // them. Every browser reload of a finished form paid it.
+    let reads = 0;
+    const stored = record({ status: "completed", output: { ok: true } });
+    const readOutput = vi.fn(async () => {
+      reads += 1;
+      return stored.output;
+    });
+    const { client } = makeClient({
+      wdk: {
+        getRun: async () => {
+          reads += 1;
+          return stored;
+        },
+        readOutput,
+      },
+    });
+    expect(await client.get("wrun_1")).toMatchObject({ status: "completed", output: { ok: true } });
+    expect(reads).toBe(1);
     expect(readOutput).not.toHaveBeenCalled();
+  });
+
+  test("a non-terminal run reports no output, even when the record carries one", async () => {
+    // The snapshot union carries `output` on `completed` alone, and the record
+    // is now where that value comes from — so a stale one on a running run must
+    // not leak onto a snapshot whose status says there is no answer yet.
+    const { client } = makeClient({
+      wdk: { getRun: async () => record({ status: "running", output: { half: true } }) },
+    });
+    const run = await client.get("wrun_1");
+    expect(run).toMatchObject({ status: "running" });
+    expect(run && "output" in run).toBe(false);
   });
 
   test("resolves undefined for a run that does not exist", async () => {

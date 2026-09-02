@@ -24,6 +24,20 @@
     "**/*.test-d.ts",
     "**/_test-utils.ts",
     "**/*-test-utils.ts",
+    // Test SCAFFOLDING that is neither a `*.test.ts` nor named `*-test-utils`:
+    // the store-contract case lists and the per-subject harnesses. They shipped
+    // as `.d.ts` in the tarball for as long as the glob named only the two
+    // patterns above — `_runtime-conformance`, `_session-core-harness`,
+    // `_workflow-engine-harness`, `_workflow-resume-harness` and, behind that
+    // last one, `_test-utils` itself, which the exclude above could not remove
+    // because an EXCLUDED file is still pulled into the program by any INCLUDED
+    // importer. Verified by building and listing `dist`, not by reading the
+    // glob. Two files deliberately survive it: `journal-conformance*.ts` is
+    // reached from `internal.ts`'s `loadJournalConformance`, i.e. it is shipped
+    // code now, and `_fake-llm.ts` is imported by `eval/stub-llm.ts`, which is
+    // the `/eval` subpath's own.
+    "**/*-conformance.ts",
+    "**/*-harness.ts",
     "**/fixtures",
     "**/integration",
     "vitest*.config.ts"

@@ -38,27 +38,20 @@
  * Nothing here holds a whole recording in memory at any point, which is the
  * property that makes a step written on it work on the input it was written for.
  *
- * ## Import this INSIDE a step body, never at module scope
+ * ## Why this is a subpath of its own, and not three more names on `/step`
  *
- * Same rule as `@alexkroman1/aai/ffmpeg`, and it is the reason this is a subpath
- * of its own rather than three more names on `@alexkroman1/aai/step`.
+ * Same rule as `@alexkroman1/aai/ffmpeg`: this module imports
+ * `node:fs/promises`, `node:os` and `node:path`, and `@alexkroman1/aai/step` is
+ * an `sdk/` barrel, which is the half of this package that must stay runnable in
+ * a browser and in Deno. `sdk/tsconfig.json` compiles with `types: []` so the
+ * boundary is a compile error rather than a convention, and
+ * `step-files.import-graph.test.ts` holds the `/step` barrel's whole transitive
+ * graph free of `node:` — a `node:` import three modules below a name somebody
+ * added to that barrel is how this regresses.
  *
- * The Workflow Development Kit's builder rewrites the step bodies in a
- * `workflows/*.ts` module and leaves everything else at MODULE scope — the whole
- * point of the transform is to leave a stub that enqueues. An import a surviving
- * function still names therefore rides into the workflow bundle, which is
- * compiled as a `node:vm` Script with no `require` in its context. This module
- * imports `node:fs/promises`, `node:os` and `node:path`.
- *
- * **The symptom is a `ReferenceError: require is not defined` at REPLAY**,
- * thrown from a line of generated code inside the SDK, with nothing pointing back
- * at the import that caused it — so it reads as a broken framework rather than a
- * misplaced import. It is also invisible until the workflow runs: the bundle
- * builds, the types check, and `aai dev` may well serve the route.
- *
- * So: name these three inside a step, or from a module only a
- * step body reaches. `@alexkroman1/aai/step` stays free of `node:` imports for
- * exactly this reason, and `step-files.import-graph.test.ts` holds it there.
+ * These three names live in `host/` for the same reason and are reached by their
+ * own subpath, so a `client.tsx` cannot pull them in by importing the step
+ * vocabulary.
  *
  * ## A temp file may not outlive its step
  *
@@ -72,9 +65,11 @@
  * @module step-files
  */
 
-import { mkdtemp, open, rm } from "node:fs/promises";
+import { mkdtemp, open, rm, statfs } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { formatBytes } from "../sdk/format.ts";
+import { isRecord } from "../sdk/is-record.ts";
 import { readUpload, type UploadInfo, uploadInfo } from "../sdk/step-uploads.ts";
 import { type WriteUploadOptions, writeUpload } from "../sdk/step-uploads-write.ts";
 
@@ -195,13 +190,64 @@ export async function readUploadToFile(
       // route and is here so a store that answers a window with no progress ends
       // the walk instead of spinning on it forever.
       if (slice.bytes.length === 0 || slice.end <= at) break;
-      await handle.write(slice.bytes);
+      // `at` and `size` are only knowable here, and the capacity only from the
+      // path — see `outOfSpace`.
+      await handle.write(slice.bytes).catch(outOfSpace(path, at, size));
       at = slice.end;
     }
     return at;
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * Turn an `ENOSPC` into the sentence a run's failure should have carried.
+ *
+ * What a run recorded was `ENOSPC: no space left on device, write` and nothing
+ * else — no directory, no capacity, no byte count — for a step that had just
+ * reported the file's size two lines earlier. That took a live filesystem and a
+ * shell inside the container to explain, and every fact needed to explain it was
+ * in this frame: the PATH names the filesystem that filled, `at` is how far the
+ * walk got, `size` is what it was asked for, and `statfs` is what the mount
+ * actually holds.
+ *
+ * The capacity is worth the extra syscall because the number is the whole
+ * finding. `os.tmpdir()` is a real disk on a laptop and a **512 MiB tmpfs** — RAM,
+ * not disk — at `/tmp` in a guest microVM whose `/` had 3.9 GB free, so the
+ * module's own promise one paragraph up ("nothing here holds a whole recording
+ * in memory") is false there by way of the filesystem, and silently. Naming
+ * both the free space and the total is what makes that legible in one line.
+ *
+ * `statfs` failing is not allowed to replace the real error: the whole point is
+ * to say more about the ENOSPC, so a capacity nobody could read degrades to the
+ * counts and the path.
+ *
+ * Anything that is not an `ENOSPC` is re-thrown UNCHANGED. This is enrichment,
+ * not classification — the verdict stays the caller's (see
+ * `throwFatalStepError` on `@alexkroman1/aai/step-errors`, which is what a step
+ * should reach for once it has decided a full disk is terminal, as it is).
+ */
+function outOfSpace(path: string, written: number, size: number): (err: unknown) => Promise<never> {
+  return async (err: unknown): Promise<never> => {
+    if (!(isRecord(err) && err.code === "ENOSPC")) throw err;
+    throw new Error(
+      `Ran out of space writing ${formatBytes(size)} to ${path} — ` +
+        `${formatBytes(written)} landed before the filesystem was full` +
+        `${await capacityOf(dirname(path))}.`,
+      { cause: err },
+    );
+  };
+}
+
+/** ` (the mount holding it is 512 MB, 0 B free)`, or nothing if it cannot be read. */
+async function capacityOf(dir: string): Promise<string> {
+  const stats = await statfs(dir).catch(() => undefined);
+  if (!stats) return "";
+  const total = Number(stats.blocks) * Number(stats.bsize);
+  const free = Number(stats.bavail) * Number(stats.bsize);
+  if (!(Number.isFinite(total) && Number.isFinite(free))) return "";
+  return ` (the mount holding it is ${formatBytes(total)}, ${formatBytes(free)} free)`;
 }
 
 /** Options for {@link writeUploadFromFile} — {@link WriteUploadOptions}, plus the window. */

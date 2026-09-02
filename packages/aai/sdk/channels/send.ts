@@ -24,12 +24,12 @@
  *
  * ## Why this is not a step
  *
- * The Workflow DevKit's builder rewrites step bodies it finds in an
- * a body, and only a body holds a `ctx`. A "step" declared in a dependency would
- * be reached by no `ctx.step`, so it would run inline with no journal and no
- * retry while LOOKING durable at every call site. So this is a function a step
- * CALLS, exactly like `stepFetch` and `stepGenerate`, and the step boundary
- * stays in the agent project where the author can see it.
+ * A step is `ctx.step(name, fn)`, and only a workflow BODY holds a `ctx`. A
+ * "step" declared in a dependency is reached by no `ctx.step`, so it would run
+ * inline with no journal and no retry while LOOKING durable at every call site.
+ * So this is a function a step CALLS, exactly like `stepFetch` and
+ * `stepGenerate`, and the step boundary stays in the agent project where the
+ * author can see it.
  */
 
 import { stepFetch } from "../step-fetch.ts";
@@ -127,7 +127,7 @@ export function channelAdvice(channel: Channel, detail: string): string {
  * and any `Retry-After` it named is carried on the error.
  *
  * The `ChannelDeliveryError` it throws is what `toStepError` reads, so a step
- * body hands it straight on and the DevKit gives up or waits the right amount
+ * body hands it straight on and the engine gives up or waits the right amount
  * — see {@link ChannelDeliveryError}, or reach for `sendToChannelClassified`
  * (`@alexkroman1/aai/step-errors`) to skip the `.catch`.
  *

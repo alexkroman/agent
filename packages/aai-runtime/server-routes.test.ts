@@ -91,9 +91,30 @@ describe("routeMatches", () => {
   });
 
   test('a route declared "any" answers every verb', () => {
-    const url = `${WORKFLOW_WEBHOOK_PATH}/tok`;
+    // Kept as a property of `routeMatches` itself. The webhook used to be the
+    // one route declaring it — see below for why it no longer may — and with no
+    // declared instance left this branch would go unexercised.
+    const anyVerb: ServerRoute = {
+      transport: "http",
+      path: "/anything",
+      match: "exact",
+      methods: "any",
+    };
     for (const method of ["GET", "POST", "PUT", "DELETE", "PATCH"]) {
-      expect(routeMatches(WORKFLOW_CALLBACK_ROUTES.webhook, url, method), method).toBe(true);
+      expect(routeMatches(anyVerb, "/anything", method), method).toBe(true);
+    }
+  });
+
+  test("the webhook answers POST and nothing else", () => {
+    // A delivery is PERMANENT — it resolves a waitpoint and closes the hook —
+    // so the verb gate is a security control, not a nicety: while this route
+    // declared `"any"`, a bare `GET` from a link-preview fetcher or a URL
+    // scanner resolved an approval workflow with no human involved. A delivery
+    // carries a payload, so it is a verb that has a body.
+    const url = `${WORKFLOW_WEBHOOK_PATH}/tok`;
+    expect(routeMatches(WORKFLOW_CALLBACK_ROUTES.webhook, url, "POST")).toBe(true);
+    for (const method of ["GET", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"]) {
+      expect(routeMatches(WORKFLOW_CALLBACK_ROUTES.webhook, url, method), method).toBe(false);
     }
   });
 

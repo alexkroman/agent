@@ -14,7 +14,7 @@
  * through has specs of its own in `_upload-blobs.test.ts`.
  */
 
-import { UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
+import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { fakeFetch } from "./_test-utils.ts";
 import type { UploadBlobs } from "./_upload-blobs.ts";
@@ -236,47 +236,59 @@ describe("a streamed upload", () => {
     await done;
   });
 
-  test("publishes its size a WINDOW at a time, which is what a poll reads", async () => {
+  test("publishes its size a WINDOW at a time, and the FIRST window is one chunk", async () => {
     const { store } = memoryStore();
-    // Whole `UPLOAD_PART_BYTES` pieces, because that is the granularity the size
-    // advances at: a window is one object, so it is not readable — and therefore not
-    // published — until it is whole. That bounds how fresh a polling run's view can
-    // be, which is what an abandonment bound is judged on, so it is worth pinning.
-    const streaming = pausableBody([ramp(UPLOAD_PART_BYTES), ramp(UPLOAD_PART_BYTES)]);
+    // `UPLOAD_CHUNK_BYTES` pieces, because that is the granularity the size advances
+    // at while a stream is young: a window is one object, so it is not readable —
+    // and therefore not published — until it is whole, and the cut RAMPS from one
+    // chunk up to `UPLOAD_PART_BYTES` (see `windows`). That bounds how fresh a
+    // polling run's view can be, which is what an abandonment bound is judged on.
+    //
+    // A flat 8 MiB cut is what this pins against: under it these three releases all
+    // published 0, so an upload under one window reported `size: 0` for its whole
+    // life and a slow uplink read as a stall.
+    const streaming = pausableBody([
+      ramp(UPLOAD_CHUNK_BYTES),
+      ramp(UPLOAD_CHUNK_BYTES),
+      ramp(UPLOAD_CHUNK_BYTES),
+    ]);
     const done = store.stream("abc", {}, streaming);
     await vi.waitFor(async () => expect(await store.info("abc")).toBeDefined());
 
     // ONE gate at a time: the intermediate state is the whole assertion, and
-    // releasing both races it away.
+    // releasing them together races it away.
     streaming.release(0);
-    await vi.waitFor(async () => expect((await store.info("abc"))?.size).toBe(UPLOAD_PART_BYTES));
+    await vi.waitFor(async () => expect((await store.info("abc"))?.size).toBe(UPLOAD_CHUNK_BYTES));
     // Still incomplete with a window stored: a size that has stopped growing is not
     // the same claim as a finished file, which is why `complete` is a separate field
     // and the only one a body may exit on.
     expect(await store.info("abc")).toMatchObject({ complete: false });
 
+    // The second window is TWO chunks, so one more piece publishes nothing and the
+    // third closes it — which is the ramp, stated as the thing a poller sees.
     streaming.release(1);
+    streaming.release(2);
     await done;
     expect(await store.info("abc")).toMatchObject({
-      size: UPLOAD_PART_BYTES * 2,
+      size: UPLOAD_CHUNK_BYTES * 3,
       complete: true,
     });
   });
 
   test("reads back the bytes that have arrived, and only those", async () => {
     const { store } = memoryStore();
-    const streaming = pausableBody([ramp(UPLOAD_PART_BYTES), ramp(8, 3)]);
+    const streaming = pausableBody([ramp(UPLOAD_CHUNK_BYTES), ramp(8, 3)]);
     const done = store.stream("abc", {}, streaming);
     await vi.waitFor(async () => expect(await store.info("abc")).toBeDefined());
     streaming.release(0);
-    await vi.waitFor(async () => expect((await store.info("abc"))?.size).toBe(UPLOAD_PART_BYTES));
+    await vi.waitFor(async () => expect((await store.info("abc"))?.size).toBe(UPLOAD_CHUNK_BYTES));
 
     // The first window is readable while the rest is still on the wire, which is the
     // whole mechanism a polling run is built on.
     expect([...(await store.read("abc", 0, 4))]).toEqual([...ramp(4)]);
     streaming.release(1);
     await done;
-    expect([...(await store.read("abc", UPLOAD_PART_BYTES, UPLOAD_PART_BYTES + 8))]).toEqual([
+    expect([...(await store.read("abc", UPLOAD_CHUNK_BYTES, UPLOAD_CHUNK_BYTES + 8))]).toEqual([
       ...ramp(8, 3),
     ]);
   });
@@ -324,15 +336,16 @@ describe("a streamed upload", () => {
   test("leaves a failed stream INCOMPLETE and readable, not deleted", async () => {
     const { store } = memoryStore();
     async function* dies() {
-      // A whole window, so something is actually published before the failure.
-      yield ramp(UPLOAD_PART_BYTES);
+      // A whole window, so something is actually published before the failure — one
+      // CHUNK, which is what the ramp makes the first window of a stream.
+      yield ramp(UPLOAD_CHUNK_BYTES);
       throw new Error("client hung up");
     }
     await expect(store.stream("abc", {}, dies())).rejects.toThrow("client hung up");
     // The opposite of `create`, deliberately: a reader may already have used the
     // part that arrived, and `complete` is what stops anything mistaking it for the
     // whole file.
-    expect(await store.info("abc")).toMatchObject({ size: UPLOAD_PART_BYTES, complete: false });
+    expect(await store.info("abc")).toMatchObject({ size: UPLOAD_CHUNK_BYTES, complete: false });
     expect([...(await store.read("abc", 0, 4))]).toEqual([...ramp(4)]);
   });
 

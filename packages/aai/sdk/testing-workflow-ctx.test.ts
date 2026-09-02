@@ -62,6 +62,16 @@ describe("steps", () => {
     await expect(ctx.step("plan", () => [])).resolves.toEqual(["a", "b"]);
   });
 
+  test("does not answer a step named after an Object.prototype member", async () => {
+    // `name in results` would find `Object.prototype.toString` and hand the body
+    // a function instead of running the step — silently, in a helper whose whole
+    // job is not to lie about what a body did.
+    const work = vi.fn(() => "ran");
+    const ctx = createWorkflowCtx();
+    await expect(ctx.step("toString", work)).resolves.toBe("ran");
+    expect(work).toHaveBeenCalledTimes(1);
+  });
+
   test("records a step reached twice as two entries", async () => {
     // A loop is one call site and N journal entries under the real engine, so a
     // recorder that de-duplicated by name would hide the iterations.
@@ -108,6 +118,13 @@ describe("hooks", () => {
     // is — reached by simply not supplying an answer.
     const ctx = createWorkflowCtx();
     await expect(ctx.waitFor("tok_gate", { timeoutMs: 1000 })).resolves.toBeUndefined();
+  });
+
+  test("a token named after an Object.prototype member is still unanswered", async () => {
+    // Same trap as the step above, one method along: `token in hooks` would
+    // resolve `valueOf` to an inherited function rather than raising.
+    const ctx = createWorkflowCtx();
+    await expect(ctx.waitFor("valueOf")).rejects.toThrow(/no payload for hook "valueOf"/);
   });
 
   test("a wait with NO deadline and no payload throws, naming what to pass", async () => {

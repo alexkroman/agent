@@ -1,9 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { omitUndefined } from "@alexkroman1/aai";
+import { parseBearer } from "@alexkroman1/aai-runtime/internal";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { parseBearer } from "./_bearer.ts";
+import { bearerFailureMessage } from "./_bearer.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import type { HonoEnv } from "./context.ts";
@@ -20,11 +21,13 @@ import {
 } from "./supabase-auth.ts";
 
 function requireBearerToken(req: Request): string {
-  const token = parseBearer(req.headers.get("Authorization"));
+  const header = req.headers.get("Authorization");
+  const token = parseBearer(header);
   if (!token) {
-    throw new HTTPException(401, {
-      message: "Missing Authorization header (Bearer <API_KEY>)",
-    });
+    // MISSING and MALFORMED are different failures and used to share one
+    // sentence, so a present, well-formed header was answered "Missing
+    // Authorization header" — see `bearerFailureMessage`.
+    throw new HTTPException(401, { message: bearerFailureMessage(header) });
   }
   return token;
 }

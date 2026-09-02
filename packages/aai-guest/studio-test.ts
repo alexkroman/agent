@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
 import { scrubDir } from "./studio-build.ts";
-import { envWithoutGuestToken, outputWithKillNote, runCapped } from "./studio-spawn.ts";
+import { outputWithKillNote, runCapped, workspaceChildEnv } from "./studio-spawn.ts";
 
 /** Wall clock for the run. The per-tool deadline (STUDIO_TOOL_TIMEOUT_MS,
  *  studio-tools.ts) is 120s and the build has already spent part of it, so
@@ -87,7 +87,7 @@ export async function runWorkspaceTests(dir: string): Promise<TestRunResult> {
       // coding agent's own `*.test.ts`. `bash` can read `/proc/<pid>/environ`
       // regardless, so this is defence in depth rather than a boundary — but it
       // was the one spawn site in the package outside the policy.
-      env: { ...envWithoutGuestToken(), CI: "true" },
+      env: { ...workspaceChildEnv(), CI: "true" },
       timeoutMs: TEST_TIMEOUT_MS,
       cap: OUTPUT_CAP,
       combineStreams: true,

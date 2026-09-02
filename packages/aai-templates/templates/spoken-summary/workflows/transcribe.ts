@@ -99,8 +99,6 @@ export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: st
   return await stepTranscribeUploadClassified(uploadId);
 }
 
-/** Retries beyond the default 3: an upload is the one call here worth another attempt. */
-
 /** Create the transcription job, and answer with the id that outlives this run. */
 export async function createJob(audioUrl: string): Promise<{ id: string }> {
   const job = await stepTranscribeSubmitClassified(audioUrl);

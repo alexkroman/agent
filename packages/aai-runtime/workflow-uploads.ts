@@ -89,6 +89,7 @@ export {
   UnknownUploadError,
   UPLOAD_WINDOW_CONCURRENCY,
   UPLOADS_TABLE,
+  UploadCompleteError,
   UploadIdTakenError,
   type UploadMeta,
   UploadPartError,

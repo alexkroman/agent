@@ -20,6 +20,15 @@
  * `aai dev` sets it to the project's own `.workflow-data`, and anything that does
  * not set it gets the per-process default and is told so at boot.
  *
+ * **The one writer is `startDevServer` (`aai-cli/_dev-server.ts`)**, and for a
+ * while there was none at all — the rename shipped with the reader and without
+ * the writer, so every `aai dev` upload silently took the per-process default
+ * and the non-default arm of `installWorkflowSupport`'s boot line was
+ * unreachable. That writer currently duplicates the string below rather than
+ * importing {@link WORKFLOW_DATA_DIR_ENV}, because this module reaches no
+ * barrel; publishing it on `@alexkroman1/aai-runtime/internal` is what retires
+ * the copy.
+ *
  * @internal
  */
 

@@ -16,7 +16,9 @@ import postgres from "postgres";
 import { consoleLogger } from "./runtime-config.ts";
 
 /**
- * A pooled query did not complete within {@link CreatePostgresDbOptions.queryTimeoutMs}.
+ * A query did not complete within its pool's deadline —
+ * {@link CreatePostgresDbOptions.queryTimeoutMs} on the pooled path,
+ * {@link CreatePostgresDbOptions.reservedQueryTimeoutMs} on a reservation.
  *
  * NOT exported: a platform caller maps this to a 503 by its stable `code`
  * (`"QUERY_TIMEOUT"`, added to `aai-server`'s `UNREACHABLE_CODES`), not by
@@ -26,8 +28,9 @@ import { consoleLogger } from "./runtime-config.ts";
  * This is the CLIENT-side bound a server `statement_timeout` cannot provide:
  * under a network partition the server's own cancellation notice is blackholed
  * with every other byte, so only the caller can decide the query has stalled.
- * Reserved connections are deliberately NOT wrapped — advisory-lock waits carry
- * their own `lock_timeout` deadline (see `aai-server/platform-lock.ts`).
+ * A pool whose reservations hold advisory locks declares no reserved deadline
+ * and is unwrapped there — those waits carry their own `lock_timeout` instead
+ * (see `aai-server/platform-lock.ts`).
  */
 class DbQueryTimeoutError extends Error {
   readonly code = "QUERY_TIMEOUT";
@@ -130,10 +133,30 @@ export type CreatePostgresDbOptions = {
    * tenant `ctx.db`). On a stall the query rejects with a `QUERY_TIMEOUT`-coded
    * error — the only bound that survives a network partition, where a server
    * `statement_timeout`'s cancellation notice is blackholed with everything
-   * else. RESERVED connections are exempt: their advisory-lock waits manage
-   * their own `lock_timeout` deadline.
+   * else. RESERVED connections are bounded separately, by
+   * {@link CreatePostgresDbOptions.reservedQueryTimeoutMs}.
    */
   queryTimeoutMs?: number;
+  /**
+   * The same deadline for a query on a RESERVED connection. Unset leaves a
+   * reservation unbounded, which is the historic behaviour and stays the
+   * DEFAULT.
+   *
+   * A separate option rather than {@link CreatePostgresDbOptions.queryTimeoutMs}
+   * reaching both paths, because the two kinds of reservation want opposite
+   * answers and only the POOL knows which kind it is:
+   *
+   * - A pool whose reservations hold an ADVISORY LOCK — `aai-server`'s slug-lock
+   *   pool — must stay unbounded. That reservation is held for a whole deploy
+   *   (blob uploads, a sandbox spawn), so a client-side deadline would abort
+   *   deploys; the wait that does need a bound, the ACQUIRE, carries its own
+   *   `lock_timeout` on the connection.
+   * - A pool whose reservations are ordinary short statements — `aai-server`'s
+   *   admin pool, which every guest platform route reserves from — must not be.
+   *   Unbounded, four hung reads on a silently partitioned database exhaust that
+   *   pool and every other platform read on the replica queues behind them.
+   */
+  reservedQueryTimeoutMs?: number;
 };
 
 /**
@@ -204,8 +227,8 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
 
   /**
    * The one query implementation, over the pool or a reserved connection.
-   * `timeoutMs` bounds the POOLED path only — reserved callers pass none, so an
-   * advisory-lock wait is never cut short by it.
+   * Each path carries its OWN deadline, and a pool holding advisory locks
+   * declares none for the reserved one — see `reservedQueryTimeoutMs`.
    */
   const queryOn =
     (on: Pick<postgres.Sql, "unsafe">, timeoutMs?: number) =>
@@ -238,7 +261,10 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
     query: queryOn(sql, opts.queryTimeoutMs),
     async reserve(): Promise<ReservedDb> {
       const reserved = await sql.reserve();
-      return { query: queryOn(reserved), release: () => reserved.release() };
+      return {
+        query: queryOn(reserved, opts.reservedQueryTimeoutMs),
+        release: () => reserved.release(),
+      };
     },
     async listen(channel: string, onNotify: () => void): Promise<() => void> {
       // The payload is DISCARDED rather than forwarded — see the type's doc. A

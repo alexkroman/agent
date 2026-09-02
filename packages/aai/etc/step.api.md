@@ -203,6 +203,9 @@ export class StepTransportError extends Error {
 }
 
 // @public
+export function stepWebhookUrl(token: string): string;
+
+// @public
 export function stripJsonFence(reply: string): string;
 
 // @public

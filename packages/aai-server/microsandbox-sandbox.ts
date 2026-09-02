@@ -73,6 +73,7 @@ import type { WarmHarness } from "./sandbox-vm.ts";
 import {
   type DialGuest,
   dialGuest,
+  GUEST_SCRATCH_DIR,
   type GuestProcLike,
   getFreePort,
   startGuestLogging,
@@ -301,6 +302,11 @@ export async function spawnMicrosandboxWarm(
       env: {
         ...guestExecBaseEnv(),
         ...GUEST_BUILD_ENV,
+        // Enumerated rather than inherited, exactly like the containment flag
+        // above: `/tmp` in this VM is a 512 MiB RAM DISK, and a studio guest is
+        // where the in-guest build runs. See GUEST_SCRATCH_DIR, and
+        // `agentBootEnv`, which carries the same key for the agent guests.
+        TMPDIR: GUEST_SCRATCH_DIR,
         AAI_GUEST_TOKEN: token,
         AAI_GUEST_PORT: String(GUEST_PORT),
       },

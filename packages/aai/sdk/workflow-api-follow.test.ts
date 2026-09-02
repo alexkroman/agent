@@ -130,11 +130,36 @@ describe("followRunOutput", () => {
     // A read is bounded by the tail it saw, so `complete: false` means "ask
     // again" — and asking from the wrong index is how a reader silently loses or
     // repeats chunks.
-    const responses = [
-      sse(frame("chunk", "a") + frame("chunk", "b") + frame("done", { complete: false })),
-      sse(frame("chunk", "c") + frame("done", { complete: true })),
-    ];
-    const api = opener({ streamOutput: vi.fn(async () => responses.shift() ?? sse("")) });
+    //
+    // Served by an opener that HONOURS the cursor. A fixed two-response script
+    // hands back "a","b","c" whatever index is asked for, so the two
+    // `startIndex` assertions below were the whole of the test — and they pinned
+    // an INCLUSIVE reading against a store that had gone exclusive, where this
+    // same loop loses the chunk at every cursor. The list is the assertion now;
+    // the indices are the evidence.
+    const log = ["a", "b", "c", "d", "e", "f", "g", "h"];
+    // The run's tail at each poll: `f` lands between the two reads, so the first
+    // is bounded short of the log and the second has to resume exactly where it
+    // stopped.
+    const tails = [6, log.length];
+    let poll = 0;
+    const api = opener({
+      streamOutput: vi.fn(async (_runId: string, options?: { startIndex?: number }) => {
+        const visible = log.slice(0, tails[poll] ?? log.length);
+        const complete = poll >= tails.length - 1;
+        poll += 1;
+        // A non-negative `startIndex` is an INCLUSIVE floor — see
+        // `StreamOptions.startIndex`. Nothing drops from the front of a fresh
+        // channel, so the floor is the slice offset.
+        const from = options?.startIndex ?? 0;
+        return sse(
+          visible
+            .slice(from)
+            .map((value) => frame("chunk", value))
+            .join("") + frame("done", { complete }),
+        );
+      }),
+    });
     const collected: unknown[] = [];
     const finished = (async () => {
       for await (const chunk of followRunOutput(api, "wrun_1", { fromIndex: 5 })) {
@@ -143,10 +168,32 @@ describe("followRunOutput", () => {
     })();
     await vi.advanceTimersByTimeAsync(2000);
     await finished;
-    expect(collected).toEqual(["a", "b", "c"]);
+    // From index 5 INCLUSIVE, so `f` is the first chunk and nothing repeats.
+    expect(collected).toEqual(["f", "g", "h"]);
     const calls = (api.streamOutput as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls[0]?.[1]).toMatchObject({ startIndex: 5 });
-    expect(calls[1]?.[1]).toMatchObject({ startIndex: 7 });
+    expect(calls[1]?.[1]).toMatchObject({ startIndex: 6 });
+  });
+
+  test("a DEFAULT follow yields the run's first chunk", async () => {
+    // The user-facing half of the off-by-one this file could not see: with no
+    // `fromIndex`, `followRunOutput` sends `startIndex: 0`, and a store that read
+    // that as an exclusive floor answered with everything except chunk 0 — a
+    // run's first progress line, lost permanently, on the default call.
+    const log = ["first", "second"];
+    const api = opener({
+      streamOutput: vi.fn(async (_runId: string, options?: { startIndex?: number }) =>
+        sse(
+          log
+            .slice(options?.startIndex ?? 0)
+            .map((value) => frame("chunk", value))
+            .join("") + frame("done", { complete: true }),
+        ),
+      ),
+    });
+    await expect(drain(followRunOutput(api, "wrun_1"))).resolves.toEqual(log);
+    const calls = (api.streamOutput as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]?.[1]).toMatchObject({ startIndex: 0 });
   });
 
   test("a namespace is forwarded, and an absent one is not sent at all", async () => {

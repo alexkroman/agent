@@ -1,15 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The guest's end of the PLATFORM wire: one credential pair, one URL builder, and
- * the five paths declared once.
+ * the four paths declared once.
  *
  * Four modules reach the platform over HTTP — `session-state-platform.ts`,
- * `uploads-platform.ts`, `workflow-platform-storage.ts` and
+ * `uploads-platform.ts`, `workflow-journal-platform.ts` and
  * `workflow-platform-queue.ts` — and each had grown its own `{base, token, fetch?}`
  * options type, its own `` `${base.replace(/\/+$/, "")}/…` ``, and its own copy of
  * the path the platform serves it on. That last one is the expensive copy: the
- * platform declares the same five strings independently (`session-state-handler.ts`
- * and its four siblings), so renaming or versioning one was a two-package edit whose
+ * platform declares the same four strings independently (`session-state-handler.ts`
+ * and its three siblings), so renaming or versioning one was a two-package edit whose
  * failure mode is a 404 the runtime reports as `answered HTTP 404` — a rejected
  * `hydrate`, i.e. a failed session start, with nothing naming the path.
  *
@@ -17,7 +17,7 @@
  *
  * The dependency runs one way: `aai-server` already imports this package's
  * `/internal` (the typed-json codec, the route tables), and `aai-runtime` may not
- * import the server. So the shared declaration has to sit on this side, and the five
+ * import the server. So the shared declaration has to sit on this side, and the four
  * handlers take their `*_ROUTE` from {@link PLATFORM_ROUTES} rather than spelling a
  * literal. That is the same move `server-routes.ts` makes for the OPPOSITE
  * direction, for the same reason its doc gives.
@@ -46,12 +46,8 @@ export const PLATFORM_ROUTES = {
   sessionState: "/session-state",
   /** Upload records — the metadata half; the bytes are brokered separately. */
   uploadRecords: "/upload-records",
-  /** The DevKit storage RPC, scoped and checked both ways. */
-  workflowStorage: "/workflow-storage",
   /** The replay engine's journal — the third backend, and the only durable one a deployed guest can reach. */
   workflowJournal: "/workflow-journal",
-  /** A live stream read. GET, and deliberately not on the RPC route: it stays open. */
-  workflowStream: "/workflow-stream",
   /** The guest asking the platform to queue a message for one of its own runs. */
   workflowEnqueue: "/workflow-enqueue",
 } as const;

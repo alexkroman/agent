@@ -40,14 +40,21 @@ export const GUEST_PROXY_TOKEN_HEADER = "x-aai-guest-token";
 /**
  * Is `url` the workflow RUN API (`/workflows`, `/workflows/runs`, …)?
  *
- * The `/.well-known/workflow/v1/*` queue callbacks are a different prefix and
- * carry their own gate — `handleWorkflowRequest` claims those before this runs,
- * and refuses `flow`/`step` from any peer that is not loopback — so they are
- * deliberately NOT matched here.
+ * The `/.well-known/workflow/v1/*` routes are a different prefix and carry
+ * their own gates, so they are deliberately NOT matched here. Two remain: the
+ * platform's delivery door (`POST /workflow-queue`, which `handleWorkflowRequest`
+ * claims before this runs and which fails CLOSED without the platform's bearer),
+ * and the public webhook, mounted by `createServer` and authenticated by the
+ * unguessable token IN its path.
  *
- * This comment used to assert they were "loopback-gated" while nothing checked,
- * and they were reachable unauthenticated on the public tunnel. See the block
- * comment on `handleWorkflowRequest` in `aai-runtime/workflow-serve.ts`.
+ * The DevKit's `flow` and `step` were the other two, and they are why this
+ * comment is worth reading rather than deleting: they were unauthenticated
+ * BECAUSE loopback was meant to be the whole gate, an earlier version of this
+ * very comment asserted that gate, and nothing checked — so
+ * `POST <tunnel>/.well-known/workflow/v1/step` executed a tenant's registered
+ * step function for anyone on the internet. Both routes are gone, so the hole is
+ * closed by construction. See the module doc of
+ * `aai-runtime/workflow-serve.ts`.
  */
 function isWorkflowApiPath(url: string): boolean {
   return url === WORKFLOW_API_PREFIX || url.startsWith(`${WORKFLOW_API_PREFIX}/`);

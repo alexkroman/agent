@@ -26,22 +26,32 @@
  * loop, which is latency a durable workflow already pays and a caller never sees:
  * `start` resolves a run id, never a result.
  *
- * ## A failed enqueue STRANDS the run, and says so
+ * ## A failed enqueue REJECTS, and the delivery is not acked
  *
- * `dispatch` returns nothing by contract, so there is nothing to await and
- * nowhere to report a rejection but the log. If the enqueue fails the run has a
- * journal row and no pending message, and the platform's wake sweep reads the
- * QUEUE — so nothing will boot the guest for it until something else does.
+ * If the enqueue fails the run has a journal row and no pending message, and the
+ * platform's wake sweep reads the QUEUE — so nothing will boot the guest for it
+ * until something else does. This used to be `void send(...).catch(log)`, which
+ * meant `execute` resolved and `/workflow-queue` answered `200 {ok:true}`
+ * possibly before the enqueue had even been attempted: the platform was told to
+ * forget a message whose replacement was never accepted, and the log line was
+ * the only trace of a run nothing would come back for.
  *
- * That is a real gap rather than an accepted one, and it is logged at `error`
- * with the run id so it is recoverable by hand. Closing it properly means the
- * sweep reading the JOURNAL for a due run rather than the queue, which is a
- * change to what the platform considers authoritative and belongs on its own.
+ * So this rejects. The one caller whose own answer is an ack — `execute`, via
+ * `recordOutcome` — awaits it, answers 500, and the platform retries the
+ * ORIGINAL message, which closes the gap for free. The callers that cannot act
+ * on it (`start` from inside a tool, `wakeUp`, `signal`) drop the rejection
+ * deliberately, and for those the `error` line below is still the only trace and
+ * still recoverable by hand.
+ *
+ * What is left is the run that was never enqueued at all — a failed `start`.
+ * Closing that means the sweep reading the JOURNAL for a due run rather than the
+ * queue, which is a change to what the platform considers authoritative and
+ * belongs on its own.
  *
  * @internal
  */
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { PlatformEndpoint } from "./platform-endpoint.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createPlatformQueueSend } from "./workflow-platform-queue.ts";
@@ -77,9 +87,9 @@ export type PlatformDispatchOptions = {
  */
 export function createPlatformDispatch(
   opts: PlatformDispatchOptions,
-): (runId: string, at?: number) => void {
+): (runId: string, at?: number) => Promise<void> {
   const send = createPlatformQueueSend(opts.platform);
-  return (runId, at) => {
+  return async (runId, at) => {
     // Seconds, because that is what the queue takes. Rounded UP so a delivery is
     // never earlier than the deadline the body computed: a sleep that wakes early
     // re-reads its own stored `wakeAt`, finds it still in the future, and suspends
@@ -87,17 +97,21 @@ export function createPlatformDispatch(
     // expensive thing.
     const delaySeconds =
       at === undefined ? undefined : Math.max(0, Math.ceil((at - Date.now()) / 1000));
-    void send(queueNameFor(runId), { runId }, { delaySeconds }).catch((err: unknown) => {
-      // See the module doc: this strands the run. Logged at `error` with the id,
-      // because it is the only trace and it is recoverable by hand.
+    try {
+      await send(queueNameFor(runId), { runId }, { delaySeconds });
+    } catch (err: unknown) {
+      // Logged at `error` with the id whatever the caller does with the
+      // rejection: the caller that CANNOT act on it — a `start`, which is a tool
+      // call away — leaves this line as the only trace, and see the module doc
+      // for why that case is recoverable by hand and nothing else.
       opts.logger.error?.(
         "Workflow delivery could not be queued; run is not scheduled",
-        omitUndefined({
-          runId,
-          wakeAt: at,
-          error: err instanceof Error ? err.message : String(err),
-        }),
+        omitUndefined({ runId, wakeAt: at, error: errorMessage(err) }),
       );
-    });
+      // And RETHROWN, which is the half the log cannot cover. A delivery's own
+      // `execute` awaits this, so a failure here fails that delivery instead of
+      // acking it — see the module doc.
+      throw err;
+    }
   };
 }

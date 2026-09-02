@@ -182,9 +182,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // makes the executor's rejecting stub name the right reason.
   // A caller-supplied client wins, and exactly one has one: an eval, whose
   // bodies were never through the WDK compiler. See `RuntimeOptions.workflows`.
+  // `opts.journal` reaches the MEMORY arm of the choice below and no other: a
+  // runtime rebuilt per save must not rebuild the runs under it.
   const builtWorkflows = opts.workflows
     ? undefined
-    : buildWorkflowClient(agent, resolvedDb, opts.publicUrl, logger);
+    : buildWorkflowClient(agent, resolvedDb, opts.publicUrl, logger, opts.journal);
   const workflows = opts.workflows ?? builtWorkflows?.client;
 
   // Watches runs a tool asked to be told about (`start(…, { notify })`) and

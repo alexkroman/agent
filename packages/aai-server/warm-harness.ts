@@ -35,8 +35,6 @@ export { type DialGuest, dialGuest } from "./guest-dial.ts";
 
 const log = createLogger("guest");
 
-/** Per-request cap on the manage-surface probes (status/drain). */
-
 /**
  * Ask the OS for a free loopback port, which the subprocess backend's harness
  * binds directly. Racy by nature — the port is released before the guest
@@ -208,9 +206,33 @@ export function startGuestLogging(proc: GuestProcLike, label: string): void {
 }
 
 /**
+ * Where a CONTAINED guest's scratch files go — `TMPDIR`, what `os.tmpdir()`
+ * answers inside the sandbox. Under the local microVM `/tmp` is
+ * `tmpfs … size=524288k`: a **512 MiB RAM disk**, measured in a live guest,
+ * beside the 3.9 GB overlay at `/` that `/var/tmp` sits on. That ceiling
+ * falsified the promise `@alexkroman1/aai/step-files` opens with, "nothing here
+ * holds a whole recording in memory at any point" — `withTempDir` is
+ * `join(tmpdir(), …)` and a step needs a real seekable file (that module says
+ * why), so a recording was in RAM under another name and a 660.8 MB source died
+ * at 512 MiB with `ENOSPC` after ~5.5 s, four attempts running. Peak scratch is
+ * source plus output: ~2.2 GB at the `MAX_WORKFLOW_UPLOAD_BYTES` ceiling.
+ * `/var/tmp` belongs to the shared base IMAGE rather than to either sandbox
+ * runtime, which makes one value right for both backends — and Modal never had
+ * the tmpfs at all (one `none / overlay rw` in `/proc/mounts`; 5.1 GB of `dd`
+ * into `/var/tmp` neither `ENOSPC`'d nor OOM-killed a 1 GiB sandbox), so this
+ * changes nothing in production and is set there anyway: which runtime mounts
+ * what over `/tmp` is not a fact a spawner should know.
+ */
+export const GUEST_SCRATCH_DIR = "/var/tmp";
+
+/**
  * The exec env selecting agent mode and naming the boot artifacts — one
  * builder so the two backends cannot drift on the key names the guest reads
  * (see aai-guest/harness-agent-mode.ts).
+ *
+ * `TMPDIR` is the one key that is not an `AAI_*` boot parameter, and it is here
+ * for the reason the others are: inherited, its value is whatever the sandbox
+ * runtime mounted. See {@link GUEST_SCRATCH_DIR}.
  *
  * `AAI_GUEST_IDLE_EXIT_MS` is forwarded from the SERVER's env when set. The
  * guest documents it as the override for its idle self-exit, but the guest
@@ -253,11 +275,20 @@ export function agentBootEnv(
     bundle: { path: string } | { url: string };
     bundleSha256: string;
     envPath: string;
+    /**
+     * The guest's `TMPDIR`. Defaults to {@link GUEST_SCRATCH_DIR}; `null` names
+     * none, and is right for exactly one caller — `subprocess`, whose guest is a
+     * child process on the developer's machine, where that temp directory is a
+     * real disk already and `/var/tmp` is on Windows DRIVE-RELATIVE, i.e. the
+     * trap `guard-invariants` rule 11 exists for.
+     */
+    scratchDir?: string | null | undefined;
   },
   /** The server's own environment; injectable for tests. */
   serverEnv: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
   const idleExitMs = serverEnv.AAI_GUEST_IDLE_EXIT_MS?.trim();
+  const scratchDir = opts.scratchDir === null ? undefined : (opts.scratchDir ?? GUEST_SCRATCH_DIR);
   const publicBaseUrl = agentPublicBaseUrl(opts.slug, serverEnv);
   const platformBaseUrl = agentPlatformBaseUrl(opts.slug, serverEnv);
   return {
@@ -270,6 +301,9 @@ export function agentBootEnv(
     AAI_BUNDLE_SHA256: opts.bundleSha256,
     AAI_AGENT_ENV_PATH: opts.envPath,
     ...(idleExitMs ? { AAI_GUEST_IDLE_EXIT_MS: idleExitMs } : {}),
+    // Omitted rather than empty: an empty `TMPDIR` is a RELATIVE path, so the
+    // scratch directory would land in the guest's cwd.
+    ...omitUndefined({ TMPDIR: scratchDir }),
     // OMITTED rather than set empty when there is no origin to name: the guest
     // trims and drops a blank anyway, but a key that is present and useless is
     // the shape a `publicUrl: ""` bug takes, and a URL a third party cannot

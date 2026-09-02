@@ -1044,14 +1044,10 @@ across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE 
 OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
 DURABLY, outliving the session.
 
-It deliberately does NOT check that `run` carries the compiler's `workflowId`.
-That check belongs where the id is USED (`ctx.workflows.start`, which throws
-naming the build), because a declaration-time throw makes merely IMPORTING an
-agent module fail wherever the Workflow DevKit transform has not run — which
-includes every unit test of a tool that starts a workflow, since vitest loads
-`agent.ts` as source with no bundler in the path. The first template to declare
-one is what surfaced this: the throw made the module unimportable by its own
-spec.
+It validates nothing at declaration time, and there is nothing left to
+validate: a body is an ordinary function and a workflow's identity is the key
+it is declared under, so the `workflowId` a compiler used to attach — and the
+check that used to look for it — are both gone. See [WorkflowBody](workflow-api.md#workflowbody).
 
 #### Examples
 
@@ -1587,7 +1583,7 @@ the first tool call.
 
 A tool reads them from [ToolContext.env](#env-1); a step has no
 tool context and reads them with `stepEnv` / `requireStepEnv` from
-`@alexkroman1/aai/utils`, which resolve the same record.
+`@alexkroman1/aai/step`, which resolve the same record.
 
 ##### resumeFalseInterruption?
 
@@ -1857,8 +1853,10 @@ The tools the agent may invoke, keyed by the name the model calls.
 `tools` argument outright (`InlineToolsMisuse`); the table is filled by
 `withTools`, over a registry built from a `tools/` directory. The build is
 what enumerates that directory — a deployed agent is handed one ESM string
-and has no filesystem to scan — and a spec does the same lowering with
-`withDiscoveredTools(def, import.meta.glob("./tools/*.ts", { eager: true }))`.
+and has no filesystem to scan — and a spec imports the same lowering
+ready-made: `import agentDef from "virtual:aai/agent"` under vitest, or
+`deployedAgent(def, { tools, systemPrompt })` from
+`@alexkroman1/aai/testing` under any other runner.
 So a tool's name is its FILE name and nothing else records it.
 
 ###### Remarks
@@ -4306,11 +4304,14 @@ type KeyedLock = (key: string, opts?: KeyedLockOptions) => Promise<() => void> &
 };
 ```
 
-The utilities written INSIDE a tool body — all fifteen of them, which is the
-whole of `@alexkroman1/aai/utils`.
+The utilities written INSIDE a tool body — all fifteen of them, which is
+`@alexkroman1/aai/utils` minus the five whose reader is not a tool body:
+`decodeHtmlEntities` and the four narration formatters (`formatBytes`,
+`formatDuration`, `countWords`, `plural`), which a step and a `client.tsx`
+both reach for and which are therefore reachable ONLY on that subpath.
 
-**The rule is that the two lists agree**, because the split they used to
-describe was not one anybody could apply: `safeJsonParse` was here and
+**The rule is that the two lists agree for everything else**, because the
+split they used to describe was not one anybody could apply: `safeJsonParse` was here and
 `isRecord` — the guard you call on what it returns — was not, so a tool body
 needing both wrote two import lines for one line of helpers, and templates
 routed around it by taking the root's own names off `/utils` instead. That
@@ -4343,11 +4344,14 @@ type KeyedLockOptions = {
 };
 ```
 
-The utilities written INSIDE a tool body — all fifteen of them, which is the
-whole of `@alexkroman1/aai/utils`.
+The utilities written INSIDE a tool body — all fifteen of them, which is
+`@alexkroman1/aai/utils` minus the five whose reader is not a tool body:
+`decodeHtmlEntities` and the four narration formatters (`formatBytes`,
+`formatDuration`, `countWords`, `plural`), which a step and a `client.tsx`
+both reach for and which are therefore reachable ONLY on that subpath.
 
-**The rule is that the two lists agree**, because the split they used to
-describe was not one anybody could apply: `safeJsonParse` was here and
+**The rule is that the two lists agree for everything else**, because the
+split they used to describe was not one anybody could apply: `safeJsonParse` was here and
 `isRecord` — the guard you call on what it returns — was not, so a tool body
 needing both wrote two import lines for one line of helpers, and templates
 routed around it by taking the root's own names off `/utils` instead. That
@@ -4977,7 +4981,7 @@ What it keeps is the surface a page and a deploy actually read: `name` and
 shell from the agent — `page()` does not fetch it the way `client()` does, so
 a page that wants them calls `fetchClientConfig()` itself), `workflows`, and
 `requiredEnv` (a step reads keys with `stepEnv` from
-`@alexkroman1/aai/utils`, and a deploy still checks they are present).
+`@alexkroman1/aai/step`, and a deploy still checks they are present).
 
 `workflows` is REQUIRED here, unlike on [AgentDef](#agentdef): a workflow app whose
 whole API is `/workflows/*` and which declares none serves a form with nothing
@@ -6199,12 +6203,12 @@ SUSPENDS: the body stops, the process is free, and the engine re-delivers the
 run when the time comes — which is what makes "check back tomorrow" a thing a
 workflow can express at all.
 
-**How long it really survives is a property of the JOURNAL, and today that is
-memory.** A wait outlives the body and the worker; it does NOT yet outlive
-the process, on any deployment. The platform and Postgres journals are the
-remaining half of the DevKit removal, and the runtime's boot line reports
-which store is in play. A multi-day schedule is expressible now and durable
-when they land.
+**How long it really survives is a property of the JOURNAL**, which the
+DEPLOYMENT picks and the runtime's boot line names. On the platform and
+against a Postgres it is durable — a wait outlives the body, the worker and
+the process, so a multi-day schedule is a thing to write. With neither the
+journal is in memory, which is `aai dev`'s default and where a restart loses
+every outstanding wait.
 
 A sleep is journaled the first time it is reached, so its wake time is
 decided ONCE. That matters because the body is replayed: computing the
@@ -6255,10 +6259,12 @@ options?: StepOptions): Promise<T>;
 Run `fn` once and journal what it returns; on every later replay, return
 the journaled value without running it again.
 
-`name` identifies the step in the journal and in `aai workflow` output. It
-must be a string LITERAL — the build scan reads it statically, and a
-computed name is both unreadable in a run's history and invisible to the
-duplicate check.
+`name` identifies the step in the journal and in `aai workflow` output, so
+make it a string LITERAL. A computed one has to produce the same string on
+every replay or the walk reads a key that was never written — and a name
+built from the run's own data is unreadable in that run's history besides.
+A loop needs no name of its own per round: the occurrence count is what
+separates the iterations.
 
 ###### Type Parameters
 

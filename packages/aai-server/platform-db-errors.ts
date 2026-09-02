@@ -55,16 +55,44 @@ import type { CloseableDb, ReservedDb } from "@alexkroman1/aai-runtime";
 export const PLATFORM_DB_CONNECT_TIMEOUT_SECONDS = 10;
 
 /**
- * Client-side deadline for a query on the ADMIN pool's POOLED path (the stores,
- * the rate limiters — every short read a request makes). A silent partition (an
- * established connection that stops answering — a failover, a lock storm, a
- * frozen host) otherwise hangs the request forever: a server `statement_timeout`
- * cannot help, because its own cancellation notice is blackholed with every
- * other byte. Generous enough for the largest legitimate write (a ~30 MB deploy
- * blob upsert) and far under an unbounded hang; on the timeout the query rejects
- * with a `QUERY_TIMEOUT`-coded error (in {@link isPlatformDbUnreachable}) → 503.
- * RESERVED connections (the workflow-wake sweep's advisory lock, which carries
- * its own `statement_timeout`) are exempt — only the pooled path is wrapped.
+ * Client-side deadline for a query on the ADMIN pool — BOTH of its paths. The
+ * POOLED one carries the stores and the rate limiters; the RESERVED one carries
+ * every guest platform route (the workflow journal, the queue, session state,
+ * upload records), each of which holds a reservation for the life of its request
+ * (`_platform-route.ts`'s `withReserved`) and takes no advisory lock. So
+ * `service-config.ts` passes this number as `queryTimeoutMs` AND as
+ * `reservedQueryTimeoutMs` there — unbounded, four hung reads exhaust
+ * `ADMIN_POOL_MAX` and every other platform read on the replica queues behind
+ * them, reachable with four concurrent watchers.
+ *
+ * It bounds a STATEMENT, never a HOLD, which is what keeps the queue sweep legal:
+ * it reserves a connection across a delivery that can take minutes while every
+ * individual statement on it is brief.
+ *
+ * The bound exists because a silent partition — an established connection that
+ * stops answering: a failover, a lock storm, a frozen host — otherwise hangs the
+ * request forever. Generous enough for the largest legitimate write (a ~30 MB
+ * deploy blob upsert) and far under an unbounded hang; on the timeout the query
+ * rejects with a `QUERY_TIMEOUT`-coded error (in
+ * {@link isPlatformDbUnreachable}) → 503.
+ *
+ * **The one exempt path is the SLUG-LOCK pool's reservation**, which takes
+ * neither bound. Its whole job is holding `pg_advisory_lock` across a deploy —
+ * blob uploads, config extraction, a sandbox spawn — so a per-statement deadline
+ * would abort deploys; the wait there that does need bounding, the ACQUIRE,
+ * carries its own `lock_timeout` on the connection (`platform-lock.ts`). That
+ * asymmetry is why the reserved deadline is per POOL rather than a blanket on
+ * `reserve()`, and `service-config.test.ts` asserts both halves — a future "set
+ * it everywhere" tidy-up would break deploys in production only.
+ *
+ * **A server `set statement_timeout` is NOT the mechanism, and cannot be.** It
+ * is the obvious thing to reach for and it fails on the very case this exists
+ * for, twice: the failure mode is a SILENT partition, so Postgres's own
+ * cancellation notice is blackholed along with every other byte on that
+ * connection — and `set statement_timeout` is itself a query on that connection,
+ * so on a partition the guard cannot even be installed. A CLIENT-side deadline
+ * is the only bound that survives, because it needs to hear nothing back.
+ * Nothing in this repository sets a `statement_timeout` anywhere.
  */
 export const PLATFORM_DB_QUERY_TIMEOUT_MS = 30_000;
 

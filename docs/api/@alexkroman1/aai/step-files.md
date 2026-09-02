@@ -38,27 +38,20 @@ export async function toWav(uploadId: string): Promise<string> {
 Nothing here holds a whole recording in memory at any point, which is the
 property that makes a step written on it work on the input it was written for.
 
-## Import this INSIDE a step body, never at module scope
+## Why this is a subpath of its own, and not three more names on `/step`
 
-Same rule as `@alexkroman1/aai/ffmpeg`, and it is the reason this is a subpath
-of its own rather than three more names on `@alexkroman1/aai/step`.
+Same rule as `@alexkroman1/aai/ffmpeg`: this module imports
+`node:fs/promises`, `node:os` and `node:path`, and `@alexkroman1/aai/step` is
+an `sdk/` barrel, which is the half of this package that must stay runnable in
+a browser and in Deno. `sdk/tsconfig.json` compiles with `types: []` so the
+boundary is a compile error rather than a convention, and
+`step-files.import-graph.test.ts` holds the `/step` barrel's whole transitive
+graph free of `node:` — a `node:` import three modules below a name somebody
+added to that barrel is how this regresses.
 
-The Workflow Development Kit's builder rewrites the step bodies in a
-`workflows/*.ts` module and leaves everything else at MODULE scope — the whole
-point of the transform is to leave a stub that enqueues. An import a surviving
-function still names therefore rides into the workflow bundle, which is
-compiled as a `node:vm` Script with no `require` in its context. This module
-imports `node:fs/promises`, `node:os` and `node:path`.
-
-**The symptom is a `ReferenceError: require is not defined` at REPLAY**,
-thrown from a line of generated code inside the SDK, with nothing pointing back
-at the import that caused it — so it reads as a broken framework rather than a
-misplaced import. It is also invisible until the workflow runs: the bundle
-builds, the types check, and `aai dev` may well serve the route.
-
-So: name these three inside a step, or from a module only a
-step body reaches. `@alexkroman1/aai/step` stays free of `node:` imports for
-exactly this reason, and `step-files.import-graph.test.ts` holds it there.
+These three names live in `host/` for the same reason and are reached by their
+own subpath, so a `client.tsx` cannot pull them in by importing the step
+vocabulary.
 
 ## A temp file may not outlive its step
 

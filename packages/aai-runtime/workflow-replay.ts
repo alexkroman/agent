@@ -32,6 +32,16 @@
  * would take the success path on the second and diverge. {@link stepFailure}
  * reconstructs it.
  *
+ * ## An unreached key while the journal still holds work is DIVERGENCE
+ *
+ * A body-level non-determinism that reaches a step NAME mints a journal key the
+ * run has never seen, and an unseen key used to mean "run it" — measured at
+ * **7 of 10 runs executing the side effect twice, all 10 reporting `completed`**.
+ * `workflow-replay-divergence.ts` owns the check, the reproduction and the two
+ * facts that decide it; `onFirstReach` in `workflow-replay-step.ts` is the half
+ * that reads `claimAttempt`. What is here is only the wiring and the OUTCOME: a
+ * refusal fails the run, and it does so even when the body swallows the throw.
+ *
  * ## Suspension is a THROW
  *
  * A body that must wait — `ctx.sleep`, `ctx.waitFor` — cannot return, because the
@@ -45,24 +55,20 @@
 
 import {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  isWorkflowSuspend,
   type SleepOptions,
   type StepOptions,
   type WaitForOptions,
   type WorkflowCtx,
 } from "@alexkroman1/aai";
-import { isWorkflowSuspend, WORKFLOW_SUSPEND_BRAND } from "@alexkroman1/aai/internal";
+import { WORKFLOW_SUSPEND_BRAND } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { watchDivergence } from "./workflow-replay-divergence.ts";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
 import { withRunContext } from "./workflow-run-context.ts";
 import type { StepGate } from "./workflow-step-gate.ts";
 import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
-
-/**
- * Re-exported: it was published from here before the split, and the CAP is a
- * property of the engine rather than of one of its two halves.
- */
-export { MAX_IN_PROCESS_RETRY_MS } from "./workflow-replay-step.ts";
 
 /** What a run's execution resolved to. */
 export type ReplayOutcome =
@@ -199,7 +205,12 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // One read for the whole replay — see `JournalStore`'s doc for why this is not
   // a lookup per step. Indexed by `key`, which is what `ctx.step` computes.
   const settled = new Map<string, StepEntry>();
-  for (const entry of await journal.readSteps(runId)) settled.set(entry.key, entry);
+  const entries = await journal.readSteps(runId);
+  for (const entry of entries) settled.set(entry.key, entry);
+  // What this walk has read out of the journal, and whether reaching a key the
+  // run never reached is evidence the body has lost its place. Seeded from the
+  // read above and from nothing this walk appends — see the module.
+  const divergence = watchDivergence(entries);
 
   // How many times each NAME has been reached in this execution. Reset per call
   // because it is a property of the walk, not of the run — a replay walks the
@@ -221,6 +232,15 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
    * suspend went out, and something other than a suspend came back.
    */
   let suspendThrown = false;
+  /**
+   * The divergence message, once one has been raised.
+   *
+   * Held rather than merely thrown, for the reason `suspendThrown` is: JavaScript
+   * `catch` catches everything, and one shipped template wraps its whole body in
+   * a `try`/`catch` — so a refusal a body swallows would come back out as
+   * `completed`, which is the exact silence this check exists to end.
+   */
+  let diverged: string | undefined;
 
   const gate = options.gate;
 
@@ -233,6 +253,14 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       const occurrence = occurrences.get(name) ?? 0;
       occurrences.set(name, occurrence + 1);
       const key = `${name}#${occurrence}`;
+      // Read BEFORE the answer, so "the journal still holds work" is snapshotted
+      // in ISSUE order. A fan-out issues its keys synchronously and settles them
+      // in any order, so a sibling reached a microtask later would otherwise
+      // drain the set out from under this check and hide a real divergence.
+      // Recorded at IDENTITY time, synchronously, before any await — a fan-out
+      // issues its keys in one go and a sibling recorded later would drain the
+      // journal's unread set out from under this check.
+      const refusal = divergence.reach(key, name, settled.get(key));
 
       // The journal is authoritative, and this arm runs BEFORE the abort check:
       // answering a settled step from the journal is free and deterministic, and
@@ -258,6 +286,17 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
           // anything, and making it queue behind live work would make a replay
           // of a long finished run as slow as the run.
           gate,
+          // Only ever supplied when the journal has unread work: with none, an
+          // unseen key is ordinary new work and there is nothing to refuse.
+          // `onFirstReach` fires only when `claimAttempt` answers 1 — see its
+          // doc for why a claimed attempt is what exonerates a crashed fan-out.
+          onFirstReach:
+            refusal === undefined
+              ? undefined
+              : () => {
+                  diverged = refusal.message;
+                  throw refusal;
+                },
           fn,
         }));
       settled.set(key, entry);
@@ -324,8 +363,17 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       // `undefined` rather than a throw: a window closing is an outcome a body
       // branches on, not a failure.
       if (deadline.woken || Date.now() >= deadline.wakeAt) {
-        await journal.closeHook(runId, `hook!${occurrence}`);
-        return undefined;
+        // The close is a COMPARE-AND-SET, and its answer is what decides the
+        // branch. A signal really can land between the deadline read above and
+        // this line, and closing over it was the divergence `HookRecord.closed`
+        // exists to prevent arriving by the other door: this walk would time out
+        // while every later replay read `delivered: true` and answered.
+        if (await journal.closeHook(runId, `hook!${occurrence}`)) return undefined;
+        // Refused, so the window was ANSWERED. Re-read it — `claimHook` is
+        // idempotent on the key, so this is the same read the next replay makes,
+        // which is exactly the point.
+        const answered = await journal.claimHook(runId, `hook!${occurrence}`, token);
+        return answered.payload as T;
       }
       suspendThrown = true;
       throw new SuspendSignal(deadline.wakeAt);
@@ -353,6 +401,11 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     if (isWorkflowSuspend(err)) {
       return { kind: "suspended", wakeAt: err instanceof SuspendSignal ? err.wakeAt : undefined };
     }
+    // DIVERGENCE wins over everything below, and over whatever the body threw
+    // after swallowing it: once the walk has read a key the run never reached,
+    // every later line ran against a body that had lost its place, so its own
+    // failure describes a consequence rather than the cause.
+    if (diverged !== undefined) return { kind: "failed", error: { message: diverged } };
     // A suspend went out and something ELSE came back: the body caught it. Fail
     // rather than recording the failure it happens to have thrown, because the
     // interesting fact is the swallow — everything the body did on its failure
@@ -360,6 +413,11 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     if (suspendThrown) return { kind: "failed", error: { message: swallowedSuspend(err) } };
     return { kind: "failed", error: { message: errorMessage(err) } };
   }
+  // Resolved NORMALLY after diverging is the quieter half of the same bug, and
+  // the one the measured reproduction actually took: the body caught the refusal
+  // and carried on to an answer, so a run whose walk had already lost its place
+  // reported `completed`.
+  if (diverged !== undefined) return { kind: "failed", error: { message: diverged } };
   // Resolved NORMALLY after suspending, which is the quieter half of the same
   // bug: the body caught the suspend and carried on to an answer, so the output
   // describes a run that skipped its own wait.

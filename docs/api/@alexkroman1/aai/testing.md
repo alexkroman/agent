@@ -31,7 +31,9 @@ order, roughly by what a spec reaches for first:
 - `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
   slots a step reaches through, each answered in memory.
-- `testing-workflows.ts` — run snapshots and progress streams, for a page.
+- `testing-workflows.ts` — run snapshots and progress streams, for a page;
+  `testing-workflow-ctx.ts` — `createWorkflowCtx`, the `ctx` a workflow BODY
+  takes, which nothing else can hand it.
 
 ## Functions
 
@@ -269,10 +271,14 @@ export measures an agent with NO TOOLS and the FRAMEWORK-DEFAULT system
 prompt. Nothing fails: the model answers plausibly out of its own knowledge,
 every case that asserts a sentence still passes, and the suite reports green
 on a different agent than the one anybody deploys. It produced four bogus
-green eval results in one day, and the two nested wrappers it replaces —
-`withSystemPrompt(withDiscoveredTools(authored, glob), prompt)`, written out
-in seventeen template evals — are exactly the shape where one of the two goes
-missing under an edit.
+green eval results in one day, and the two nested wrappers it replaces — a
+tools lowering inside a prompt lowering, written out in seventeen template
+evals — are exactly the shape where one of the two goes missing under an edit.
+
+**Under vitest, prefer `import agentDef from "virtual:aai/agent"`**, which is
+this call made for you against the importing spec's own directory (see the
+module doc). Reach for this one when the runner is not vitest, or when the
+lowering itself is the subject of the spec.
 
 **An EMPTY `tools` glob throws.** That is the same bug wearing its other
 face: `import.meta.glob("./tool/*.ts")` (or a `tools/` directory that moved)
@@ -281,8 +287,11 @@ not lowering at all. A project with no tools omits the field instead, which
 is a statement rather than an accident.
 
 ```ts no-check
-// `no-check`: import.meta.glob is a Vite transform, so it only type-checks in
-// a project whose tsconfig has vite/client types — i.e. yours, not here.
+// `no-check`: two of these imports are files YOU own — `./agent.ts` and
+// `./system-prompt.md?raw` — which exist in your project and in no tree of
+// ours, so nothing here can resolve them. (`import.meta.glob` is not the
+// blocker: the doc-example gate compiles against the scaffold's own
+// `global.d.ts`, which carries `/// <reference types="vite/client" />`.)
 import { deployedAgent } from "@alexkroman1/aai/testing";
 import authored from "./agent.ts";
 import systemPrompt from "./system-prompt.md?raw";
@@ -537,8 +546,10 @@ When the agent declares no tool called `name` (see `toolOf`), when
 
 #### Example
 
-```ts no-check
-import { parseToolInput, withDiscoveredTools } from "@alexkroman1/aai/testing";
+```ts
+import agentDef from "virtual:aai/agent";
+import { parseToolInput } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
 
 const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza", {
   size: "small",
@@ -569,9 +580,10 @@ would be testing a path the tool never runs on. Pass the arguments the tool
 body expects to receive. (To test the SCHEMA itself, which is a different
 question, use `parseToolInput` / `toolInputIssues`.)
 
-The def to pass is the one a DEPLOYED agent runs — `agent.ts`'s default export
-put through `withDiscoveredTools`, since a tool is a file and the authored def
-carries none. See [toolOf](#toolof), which this is built on.
+The def to pass is the one a DEPLOYED agent runs — `virtual:aai/agent` under
+vitest, or `deployedAgent` under any other runner, since a tool is a file and
+`agent.ts`'s default export carries none. See [toolOf](#toolof), which this is
+built on.
 
 **A tool that takes no arguments may say so by leaving them out**, passing the
 context in their place: `runTool(agentDef, "view_order", ctx)`. A no-argument
@@ -617,12 +629,10 @@ The context. Defaults to a fresh [createToolContext](#createtoolcontext) — so
 
 #### Example
 
-```ts no-check
-// `no-check`: import.meta.glob needs your project's vite/client types.
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
-import authored from "./agent.ts";
-
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+```ts
+import agentDef from "virtual:aai/agent";
+import { createToolContext, runTool } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
 
 expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
   added: "apple",
@@ -1192,9 +1202,11 @@ function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>
 The tool `name` is declared under, or a throw naming the ones that are.
 
 A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
-pass it through `withDiscoveredTools` first, exactly as this example does and
-as every shipped template's spec does. Handing this the authored def directly
-is the common mistake, and it fails with "(none)".
+import the agent as DEPLOYED, exactly as this example does and as every
+shipped template's spec does: `virtual:aai/agent` under vitest, or
+`deployedAgent` (`@alexkroman1/aai/testing`) under any other runner. Handing
+this the authored def directly is the common mistake, and it fails with
+"(none)".
 
 #### Parameters
 
@@ -1212,12 +1224,10 @@ is the common mistake, and it fails with "(none)".
 
 #### Example
 
-```ts no-check
-// `no-check`: import.meta.glob needs your project's vite/client types.
-import { toolOf, withDiscoveredTools } from "@alexkroman1/aai/testing";
-import authored from "./agent.ts";
-
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+```ts
+import agentDef from "virtual:aai/agent";
+import { toolOf } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
 
 expect(toolOf(agentDef, "add_item").description).toContain("cart");
 ```
@@ -1272,12 +1282,11 @@ second call is meant to see the first call's work — see [runTool](#runtool).
 
 #### Example
 
-```ts no-check
-// `no-check`: import.meta.glob needs your project's vite/client types.
-import { createToolContext, toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
-import authored from "./agent.ts";
+```ts
+import agentDef from "virtual:aai/agent";
+import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
 
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
 const run = toolRunner(agentDef);
 
 expect(await run("add_item", { item: "apple" })).toEqual({ added: "apple" });
@@ -1478,7 +1487,7 @@ optional status?: number;
 ```
 
 HTTP status to answer with. Defaults to 200. A non-2xx answers with an
-error body, which is what `stepGenerate` (`@alexkroman1/aai/utils`)
+error body, which is what `stepGenerate` (`@alexkroman1/aai/step`)
 quotes back in its `StepGenerateError`.
 
 ***

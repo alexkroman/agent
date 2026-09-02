@@ -222,6 +222,61 @@ describe("createPostgresDb query timeout", () => {
     expect(settled).toBe(false);
   });
 
+  test("a RESERVED query IS bounded once reservedQueryTimeoutMs is set", async () => {
+    // The hole this closes: every guest journal / session-state / uploads /
+    // enqueue call runs on a RESERVED connection (`_platform-route.ts`'s
+    // `withReserved`) and takes no advisory lock, so the exemption above left
+    // them with no deadline at all — four hung reads exhaust `ADMIN_POOL_MAX`
+    // and every other platform read on the replica queues behind them.
+    unsafeMock.mockReturnValueOnce(pending());
+    const db = createPostgresDb({
+      url: "postgres://db.example/app",
+      queryTimeoutMs: 5000,
+      reservedQueryTimeoutMs: 5000,
+    });
+    const reserved = await db.reserve();
+    // The same `QUERY_TIMEOUT` code the pooled path raises, which is what puts
+    // it in `aai-server`'s `UNREACHABLE_CODES` and answers 503.
+    const assertion = expect(reserved.query("select 1")).rejects.toMatchObject({
+      code: "QUERY_TIMEOUT",
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+  });
+
+  test("a fast RESERVED query resolves normally under reservedQueryTimeoutMs", async () => {
+    unsafeMock.mockResolvedValueOnce([{ ok: 1 }]);
+    const db = createPostgresDb({
+      url: "postgres://db.example/app",
+      reservedQueryTimeoutMs: 5000,
+    });
+    const reserved = await db.reserve();
+    await expect(reserved.query("select 1")).resolves.toEqual([{ ok: 1 }]);
+  });
+
+  test("the SLUG-LOCK pool's own options leave a reservation unbounded", async () => {
+    // Exactly what `service-config.ts` builds that pool with, and the reason the
+    // bound above is per-pool rather than a blanket: this reservation holds
+    // `pg_advisory_lock` for a whole deploy — blob uploads and a sandbox spawn,
+    // i.e. seconds to minutes — and a client-side deadline on it would abort
+    // deploys. Its acquire wait is bounded by `lock_timeout` instead
+    // (`platform-lock.ts`), which is the deadline that belongs there.
+    unsafeMock.mockReturnValueOnce(pending());
+    const db = createPostgresDb({ url: "postgres://db.example/app", connectTimeoutSeconds: 10 });
+    const reserved = await db.reserve();
+    let settled = false;
+    void reserved.query("select pg_advisory_lock(1, 2)").then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(settled).toBe(false);
+  });
+
   test("a query is unbounded when queryTimeoutMs is unset", async () => {
     unsafeMock.mockReturnValueOnce(pending());
     const db = createPostgresDb({ url: "postgres://db.example/app" });

@@ -14,11 +14,14 @@ import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { useTempDir } from "./_test-utils.ts";
 import {
-  envWithoutGuestToken,
   NPM_OUTPUT_CAP,
   NPM_TIMEOUT_MS,
   PACKAGE_NAME_RE,
+  pathOnlyEnv,
+  runCapped,
   runNpm,
+  WORKSPACE_CHILD_ENV_ALLOWLIST,
+  workspaceChildEnv,
 } from "./studio-spawn.ts";
 
 const dir = useTempDir("aai-spawn-");
@@ -59,15 +62,159 @@ describe("runNpm", () => {
   });
 });
 
-describe("envWithoutGuestToken", () => {
+/**
+ * The env handed to a child that runs WORKSPACE-AUTHORED code.
+ *
+ * This suite used to pin the opposite contract — `leaves the rest of the
+ * environment alone` asserted that an arbitrary variable was inherited, which
+ * is the deny-list this replaced, stated as a requirement. There is no pre-fix
+ * FAILING observation for the leak itself, because the deny-list was COMPLETE
+ * when it was written: `AAI_GUEST_TOKEN` really was the only secret in the
+ * studio guest's exec env. What is asserted instead is the new contract, and
+ * `refuses a boot key that did not exist when the policy was written` is the
+ * one that would have caught the next `AAI_BUNDLE_URL` — it fails against the
+ * old implementation.
+ */
+describe("workspaceChildEnv", () => {
   test("strips the control-channel bearer so workspace code cannot impersonate the host", () => {
     vi.stubEnv("AAI_GUEST_TOKEN", "secret");
-    expect(envWithoutGuestToken().AAI_GUEST_TOKEN).toBeUndefined();
+    expect(workspaceChildEnv().AAI_GUEST_TOKEN).toBeUndefined();
   });
 
-  test("leaves the rest of the environment alone", () => {
+  test("refuses a boot key that did not exist when the policy was written", () => {
+    // The whole point of the polarity flip. Agent mode's boot env already
+    // carries a signed Storage URL and two platform addresses; under the
+    // deny-list, adding any of them to the studio side would have reached
+    // `bash` and `npm` with no diff for a reviewer to catch.
+    vi.stubEnv("AAI_BUNDLE_URL", "https://storage.test/signed?token=secret");
+    vi.stubEnv("AAI_PLATFORM_BASE_URL", "https://platform.test");
+    vi.stubEnv("AAI_AGENT_ENV_PATH", "/boot/env.json");
+    vi.stubEnv("AAI_WORKFLOW_API_TOKEN", "wf-secret");
+    const env = workspaceChildEnv();
+    expect(
+      Object.keys(env).filter((k) => k.startsWith("AAI_") && k !== "AAI_SANDBOX_CONTAINED"),
+    ).toEqual([]);
+  });
+
+  test("refuses a host credential, which the subprocess backend really supplies", () => {
+    // `SANDBOX_BACKEND=subprocess` makes the harness a child of the server, so
+    // `process.env` there is the developer's whole environment.
+    for (const name of [
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_DB_URL",
+      "MODAL_TOKEN_SECRET",
+      "ANTHROPIC_API_KEY",
+      "ASSEMBLYAI_API_KEY",
+      "DATABASE_URL",
+    ]) {
+      vi.stubEnv(name, "secret");
+    }
+    const env = workspaceChildEnv();
+    expect(Object.values(env)).not.toContain("secret");
+  });
+
+  test("copies nothing outside the allow-list", () => {
     vi.stubEnv("AAI_SPAWN_TEST_MARKER", "kept");
-    expect(envWithoutGuestToken().AAI_SPAWN_TEST_MARKER).toBe("kept");
+    const env = workspaceChildEnv();
+    expect(Object.keys(env).filter((k) => !WORKSPACE_CHILD_ENV_ALLOWLIST.includes(k))).toEqual([]);
+  });
+
+  test("carries what npm and bash cannot run without", () => {
+    // Breaking `npm install` in a studio workspace would be worse than the risk
+    // this closes, so the two load-bearing names are asserted rather than
+    // assumed. `runNpm` above drives REAL npm through this env.
+    const env = workspaceChildEnv();
+    expect(env.PATH).toBe(process.env.PATH);
+    expect(env.HOME).toBe(process.env.HOME);
+  });
+
+  test("passes the ambient machine config a proxied or private-CA host needs", () => {
+    // The set turbo.json's `globalPassThroughEnv` already treats as machine
+    // config. Stripped, `npm install` fails with a misleading resolution error.
+    for (const name of ["HTTPS_PROXY", "no_proxy", "npm_config_proxy", "NODE_EXTRA_CA_CERTS"]) {
+      vi.stubEnv(name, `value-of-${name}`);
+    }
+    const env = workspaceChildEnv();
+    expect({
+      HTTPS_PROXY: env.HTTPS_PROXY,
+      no_proxy: env.no_proxy,
+      npm_config_proxy: env.npm_config_proxy,
+      NODE_EXTRA_CA_CERTS: env.NODE_EXTRA_CA_CERTS,
+    }).toEqual({
+      HTTPS_PROXY: "value-of-HTTPS_PROXY",
+      no_proxy: "value-of-no_proxy",
+      npm_config_proxy: "value-of-npm_config_proxy",
+      NODE_EXTRA_CA_CERTS: "value-of-NODE_EXTRA_CA_CERTS",
+    });
+  });
+
+  test("does not prefix-match npm_config_, where npm keeps its credentials", () => {
+    // The obvious shortcut, and exactly wrong: a prefix rule would re-open the
+    // hole through the mechanism meant to close it.
+    vi.stubEnv("npm_config__authToken", "npm-secret");
+    vi.stubEnv("npm_config_registry", "https://registry.internal");
+    const env = workspaceChildEnv();
+    expect(env.npm_config__authToken).toBeUndefined();
+    // Named to record the trade: a private registry is not reachable through
+    // this env today, and the fix is a NAME here, never a prefix.
+    expect(env.npm_config_registry).toBeUndefined();
+  });
+
+  test("omits an unset variable rather than passing the string undefined", () => {
+    // `spawn` coerces an own property whose value is `undefined` to the STRING
+    // "undefined", which is how a child ends up with `TMPDIR=undefined`.
+    vi.stubEnv("TMPDIR", undefined);
+    const env = workspaceChildEnv();
+    expect(Object.hasOwn(env, "TMPDIR")).toBe(false);
+    expect(Object.values(env)).not.toContain(undefined);
+  });
+
+  test("hands a child the scratch directory the SPAWNER named, not /tmp", async () => {
+    // The other half of the `TMPDIR` story, and the half a test was missing:
+    // the sibling below pins that an ABSENT variable stays absent, which is
+    // what happens on a host that sets none. In a guest the spawner names one
+    // — `microsandbox-sandbox.ts` / `modal-sandbox.ts` set `TMPDIR` in the
+    // studio exec env, because `/tmp` under the local microVM is a 512 MiB RAM
+    // disk (measured) — and the allow-list forwarding it is what makes that
+    // reach an `npm install` and a workspace `bash`. A real child, because
+    // `os.tmpdir()` reading the variable is the claim, not `spawn` copying it:
+    // npm 11 no longer exposes a `tmp` config to ask.
+    vi.stubEnv("TMPDIR", dir());
+    const result = await runCapped(
+      process.execPath,
+      ["-e", "process.stdout.write(require('node:os').tmpdir())"],
+      { cwd: dir(), env: workspaceChildEnv(), timeoutMs: 10_000, cap: 200 },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe(dir());
+  });
+
+  test("is a superset of pathOnlyEnv, which is the same shape for a stricter child", () => {
+    // The build and deploy children take `pathOnlyEnv`; this is that policy
+    // widened by exactly what a shell and an install need.
+    for (const [name, value] of Object.entries(pathOnlyEnv())) {
+      expect(workspaceChildEnv()[name]).toBe(value);
+    }
+  });
+});
+
+describe("WORKSPACE_CHILD_ENV_ALLOWLIST", () => {
+  test("has no duplicates and holds nothing that names a platform capability", () => {
+    expect([...new Set(WORKSPACE_CHILD_ENV_ALLOWLIST)]).toEqual([...WORKSPACE_CHILD_ENV_ALLOWLIST]);
+    // `AAI_SANDBOX_CONTAINED` is the one allowed `AAI_` name and is a flag, not
+    // a capability; every other one is out.
+    expect(WORKSPACE_CHILD_ENV_ALLOWLIST.filter((n) => n.startsWith("AAI_"))).toEqual([
+      "AAI_SANDBOX_CONTAINED",
+    ]);
+  });
+
+  test("NODE_ENV is deliberately absent", () => {
+    // `production` makes `npm install` skip devDependencies, so inheriting it
+    // decided whether a workspace could run its own tests from how the server
+    // happened to be started.
+    vi.stubEnv("NODE_ENV", "production");
+    expect(WORKSPACE_CHILD_ENV_ALLOWLIST).not.toContain("NODE_ENV");
+    expect(workspaceChildEnv().NODE_ENV).toBeUndefined();
   });
 });
 

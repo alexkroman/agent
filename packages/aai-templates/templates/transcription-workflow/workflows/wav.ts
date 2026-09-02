@@ -3,9 +3,9 @@
  * The pure half of the transcription desk: reading a WAV header, deciding where
  * to cut, and writing a header back over each cut.
  *
- * No directive in this file, and that is legal — the Workflow DevKit's builder
- * a body is what holds a `ctx`, so an ordinary module can sit beside one. It is
- * a separate
+ * Nothing in this file is a step or a body, and that is legal — a body is
+ * whatever is handed a `ctx`, so an ordinary module can sit beside one. It is a
+ * separate
  * file because everything here is a pure function of a journaled value, which is
  * what makes it testable without a run at all: `transcribe.ts`'s spec drives
  * these directly.

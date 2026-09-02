@@ -240,7 +240,11 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
     "utf-8",
   );
 
-  const plugins: PluginOption[] = [...(opts.plugins ?? [])];
+  // Whatever the caller supplied and nothing else — this used to merge in the
+  // DevKit's client transform, which is gone. The key stays ABSENT when the
+  // caller supplied none, so a project's own `vite.config.ts` plugins are
+  // untouched rather than overwritten with an empty list.
+  const plugins = opts.plugins ?? [];
 
   let result: Awaited<ReturnType<typeof build>>;
   try {
@@ -249,10 +253,6 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
         root: cwd,
         logLevel: "silent",
         ...(opts.configFile === false && { configFile: false }),
-        // The client transform runs alongside whatever the caller supplied (the
-        // studio's import allowlist), not instead of it. The key stays absent
-        // when there is nothing to add, so a project's own `vite.config.ts`
-        // plugins are unaffected either way.
         ...(plugins.length > 0 && { plugins }),
         // Bundle everything (the guest sandbox has no node_modules) EXCEPT
         // `node:` builtins, which the SSR build keeps external. Without the

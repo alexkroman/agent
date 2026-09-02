@@ -22,7 +22,7 @@ still React, still the same theme tokens.
 `client()` mounts the default chat shell with your sidebar, or replaces the
 whole UI with a custom component:
 
-```tsx no-check
+```tsx
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
 

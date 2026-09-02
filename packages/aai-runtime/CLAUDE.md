@@ -122,10 +122,12 @@ reason this exists.
 
 **A RETAINED epoch owes a frozen, compiling TEMPLATE** under
 `contracts/compatibility/<capability>/v<N>.ts`, and `pnpm typecheck` is what
-enforces it. There are none today: this package has no external consumers, so
-every superseded epoch is classified `--drop` rather than `--retain`. When one is
-retained, editing its template to make an error go away defeats the mechanism —
-the error IS the finding.
+enforces it. There are **seven** — `db@2`, `runtime@3`, `server@4`,
+`session-state@1`, `session-state@2`, `telephony@1` and `workflow@1` — and this
+paragraph said "there are none today" until the DevKit removal retained the
+first of them. Editing one to make an error go away defeats the mechanism: the
+error IS the finding, and the way to change an API is a new epoch carrying a new
+template.
 
 **A template rather than an example, and the distinction is the point.** `aai`
 and `aai-ui` freeze snippets an author READS: an `agent.ts` is a short file and
@@ -137,20 +139,19 @@ which is where a reader can find it without opening twelve files). Each is the
 starter as it was written AT THAT EPOCH; the way to change an API is a new epoch
 carrying a new template, never an edit to a frozen one.
 
-**A template exercises 98 of the 125 names, and that is not a hole in the
-gate.** The epoch hash covers the capability's REPORT, which carries every name
-the entrypoint selects — so a signature change on `SweepSkip` moves `db`'s hash
-and demands a classification whether or not any template mentions it.
-Classification coverage is 125 of 125; what the other 27 lack is a compile-time
-exercise. The gap is deliberate and per name: `createServer`/`createHostServer`
-are a different artifact from the bootstrap (embedding into an existing runtime,
-and a multi-tenant host-mode server); `SweepSkip` has no public producer, so a
-host can never be handed one; `partKey`/`partsOf` would need a `delete` that
-`UploadBlobs` does not have; `telnyxCodec`/`twilioCodec` are the shipped
-carriers a third-carrier template exists to be an alternative to. Contorting a
-starter to touch all 125 is how these files became catalogues the first time.
-Where a name's absence is a finding rather than a choice, it is in the list
-below.
+**A template does not exercise every contracted name, and that is not a hole in
+the gate.** The epoch hash covers the capability's REPORT, which carries every
+name the entrypoint selects — so a signature change on `partKey` moves
+`uploads`'s hash and demands a classification whether or not any template
+mentions it. Classification coverage is every name; what the rest lack is a
+compile-time exercise. The gap is deliberate and per name:
+`createServer`/`createHostServer` are a different artifact from the bootstrap
+(embedding into an existing runtime, and a multi-tenant host-mode server);
+`partKey`/`partsOf` would need a `delete` that `UploadBlobs` does not have;
+`telnyxCodec`/`twilioCodec` are the shipped carriers a third-carrier template
+exists to be an alternative to. Contorting a starter to touch all of them is how
+these files became catalogues the first time. Where a name's absence is a
+finding rather than a choice, it is in the list below.
 
 ### The root barrel had 50 names it does not own
 
@@ -229,10 +230,11 @@ to 0.
   `@internal` — that is what the zero means, and the ratchet is what holds it.
 - **`@alexkroman1/aai-runtime/internal` (`internal.ts`)** is the cross-package
   infrastructure `aai-server`, `aai-cli` and `aai-guest` need: the session-state
-  backends and their tables, the workflow serving half (surface, world, flow
-  path), the wake hint, the queue-lock sweep, the step-env publisher, the upload
-  store, and the shipped `consoleLogger`. No capability, no epoch, no semver
-  promise.
+  backends and their tables, the durable JOURNAL and its DDL, the platform route
+  table, the queue-name grammar and its classifier, the delivery door
+  (`handleWorkflowRequest`, `WORKFLOW_QUEUE_PATH`), the typed-JSON storage codec,
+  the step-env publisher, the upload store, and the shipped `consoleLogger`. No
+  capability, no epoch, no semver promise.
 
   **A name is on it because something IMPORTS it.** Both tranches were assembled
   by moving whole `@internal` blocks off the root barrel, which is why the
@@ -242,17 +244,20 @@ to 0.
   cheaper than publishing it somewhere quieter — intra-package use is relative
   imports, so nothing breaks, and a name reachable from no subpath cannot be
   autocompleted, reported on, or depended upon. They are gone, and adding a
-  clause here in anticipation of a consumer is a surface with no reader. The
-  three exceptions are structural: `WakeHintOptions`, `WakeHintPublisher` and
-  `WorldKind` are unimported and named by the signature of something that is.
+  clause here in anticipation of a consumer is a surface with no reader. There
+  used to be three structural exceptions — `WakeHintOptions`,
+  `WakeHintPublisher` and `WorldKind`, unimported but named by the signature of
+  something that was. All three went with the code that named them, so a name
+  arriving here now owes an importer.
 
 Where a capability's TYPE is contracted and its CONSTRUCTOR is not, the two are
 deliberately on different pages and each clause says so: `SessionCore` on the
 barrel and `createSessionCore` on `/internal`, `SessionStateBackend` against
 `createPostgresStateBackend`, `UploadStore` against `createUploadStore`,
-`WorkflowClientOptions` against `createWorkflowClient`, `SweepSkip` against
-`claimPoolPresenceAndSweep`. That asymmetry is a finding, not a shape to copy —
-see "What writing the templates found" below.
+`WorkflowClientOptions` against `createWorkflowClient`. (There was a fourth,
+`SweepSkip` against `claimPoolPresenceAndSweep`; the queue-lock sweep went with
+the DevKit's world.) That asymmetry is a finding, not a shape to copy — see
+"What writing the templates found" below.
 
 **Making one of them public is not a re-export.** The `@internal` tag comes OFF
 at the declaration site and the name joins a capability under
@@ -302,51 +307,54 @@ TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
 `upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
 bag. Do not narrow them back.
 
-### Self-hosted durable workflows: the door has to START a world
+### Self-hosted durable workflows: there is no world to start any more
 
-`createAgentServer` configures the workflow world and mounts the DevKit's
-`flow`/`step` callback routes, off `workflowCode`/`stepCode` — the two strings
-`aai build` leaves on the worker bundle, which the scaffold's `server.mjs` reads
-and passes.
+**This section used to be four times as long, and deleting it is the clearest
+measure of what the DevKit removal bought.** `createAgentServer` had to
+`configureWorkflowWorld` (writing `WORKFLOW_TARGET_WORLD` and two more keys into
+`process.env`), then `publishStepEnv`, then build a compiled `WorkflowSurface`
+out of the `workflowCode`/`stepCode` pair `aai build` left on the worker bundle,
+then `startWorkflowWorldIfDeclared` — in that order, and BEFORE the bind
+whenever the port was known, so no request could reach a `getWorld()` that would
+resolve and memoize an unconfigured world. `listen(0)` could not honour that and
+had its own branch. Get any of it wrong and a self-hosted run sat `pending`
+forever with nothing logged.
 
-**It did neither, and the result was that self-hosting could not run a durable
-workflow at all.** `configureWorkflowWorld` and `startWorkflowWorldIfDeclared`
-had exactly two callers, `aai dev` and the guest harness; `createWorkflowSurface`
-the same. So a self-hosted server accepted a run through `/workflows/runs` and
-nothing ever executed it — no world was started, and the callback routes 404'd —
-which presents as a run sitting `pending` forever with nothing logged. Every
-signal said healthy: the build succeeded, the page rendered, the API answered.
+The replay engine executes a run in THIS process off the agent's own `workflows`
+declaration. There is no artifact to load, no world to resolve, no memoization
+window, and no port-0 special case. What is left of the sequence is one line:
 
-Two things made it survivable for so long, and both are worth knowing:
+- **`publishWorkflowStepEnv()` before the bind**, guarded on the agent declaring
+  workflows. The guard is not frugality — it writes a module-global, so
+  publishing for every `createAgentServer` would leak one test's env into the
+  next (`unstubEnvs` only undoes `vi.stubEnv`). It publishes the AGENT env
+  rather than `providerEnv`, so a step sees exactly what `.env` declares and
+  cannot come to depend on a shell-exported key that will not exist after a
+  deploy.
 
-- **No test booted a workflow through this door.** The e2e suite's `npm start`
-  leg used `pizza-ordering`, which declares no workflows, and the one durable
-  leg ran under `aai dev`. `aai-cli`'s `e2e.test.ts` now covers both — see
-  "self-hosted server: durable workflows" — and the `pack + build + boot`
-  subset boots every template it builds, a workflow app among them.
-- **The scaffold PROMISED it.** `server.mjs` documents `PUBLIC_URL` as what to
+Two things the old wiring's failure taught, which still hold:
+
+- **A test has to boot a workflow through this DOOR.** The e2e suite's
+  `npm start` leg used `pizza-ordering`, which declares no workflows, and the
+  one durable leg ran under `aai dev` — so the door nobody tested was the one
+  that did not work. `aai-cli`'s `e2e.test.ts` covers both now, and the
+  `pack + build + boot` subset boots every template it builds, a workflow app
+  among them.
+- **The scaffold PROMISES this.** `server.mjs` documents `PUBLIC_URL` as what to
   set "whenever a durable workflow has to hand a URL to somebody else", and
   `AgentServerOptions.env`'s own doc treats a dropped `DATABASE_URL` as a bug
   because a workflow upload's record would otherwise vanish before a resumed run
-  read it. Both described a feature the door did not wire.
+  read it. `ensureWorkflowJournalSchema` is on the PUBLIC barrel for the same
+  reason — see "The tables come WITH the database" in
+  `workflow-journal-postgres.ts`.
 
-Three mechanics, each a way to get this wrong:
-
-- **The ORDER is `configureWorkflowWorld` → `publishStepEnv` → surface →
-  start.** `createWorkflowSurface` imports `workflow/runtime`, which resolves a
-  world from the env as it loads; backwards, a project with a `DATABASE_URL`
-  silently takes the LOCAL world and writes its runs to a directory that dies
-  with the process.
-- **The world is configured BEFORE the bind whenever the port is known**, so no
-  request can reach a `getWorld()` that would resolve — and memoize — an
-  unconfigured world. `listen(0)` cannot do that (the loopback callback base is
-  unknowable until bound) and configures immediately after; `PORT=0` is a test
-  convenience.
-- **An agent with no `workflows/` directory is left alone entirely.** The setup
-  returns early when either string is absent, because `configureWorkflowWorld`
-  WRITES `WORKFLOW_TARGET_WORLD` and two more keys into `process.env` — doing
-  that for every `listen()` would pick a world nobody asked for and leak those
-  keys across a test file.
+**The other half is the delivery door.** `createAgentServer` composes
+`handleWorkflowRequest` into `createServer`'s `request` hook, so this door is
+wired identically to `aai dev`'s and the harness's — but it supplies no
+`allowRemote`, so `POST /workflow-queue` answers 401. That is correct: a
+self-hosted server has no platform-owned queue to be vouched for by, and the
+engine's own in-process timers are what deliver. What the composition buys is
+that a door cannot silently LACK the route.
 
 **What is still NOT wired is host mode** (`createHostServer`): its sessions run
 caller-supplied agents, which declare no workflows.
@@ -790,9 +798,9 @@ carries the rest.
 the log reads as a bug, and this is the one an author is most likely to hit by
 accident.
 
-### What the three tiers of test each cover, and why none substitutes
+### What the tiers of test each cover, and why none substitutes
 
-The claims are of three different kinds, which is why there are three files:
+The claims are of four different kinds, which is why there are four files:
 
 - **`workflow-journal-platform.test.ts`** — our side of the wire. The CODEC (a
   `Uint8Array` in a step's output crosses as an envelope, not as an index map,
@@ -808,6 +816,10 @@ The claims are of three different kinds, which is why there are three files:
 - **`aai-server/platform-workflow-journal.scenario.test.ts`** — the only place
   TENANCY is testable, that being a claim about column values in a shared table.
   Two tenants' rows, and every cross-tenant read comes back empty.
+- **`aai-server/journal-conformance-platform.scenario.test.ts`** — the shared
+  CONTRACT, answered by the real route over a real database. The three above each
+  assert a property somebody thought to write down; this one asserts the same
+  cases every other backend answers, which is a different job. See below.
 
 Two things the scenario tier taught. **`jsonb` NORMALIZES**, so a value survives
 by MEANING and not by bytes — the memory journal preserves bytes and these do
@@ -816,6 +828,90 @@ parsed values. And the **`::text::jsonb`** binding is deliberate on both stores:
 postgres.js JSON-serializes a parameter bound to a jsonb position, and the
 self-hosted twin shipped with a bare cast that stored a JSON string containing
 the JSON, found only by a real server.
+
+### The FOURTH arm is the platform's own SQL, and it lives in `aai-server`
+
+`journal-conformance.ts` declares ONE case list and `JOURNAL_BACKENDS` registers
+the backends. Three arms run it from this package; the fourth cannot, and it is
+the one that finds platform bugs:
+
+| Arm | Tier | What it can see |
+| --- | --- | --- |
+| memory | unit | the reference |
+| platform over a FAKE transport | unit | THIS side of the wire — the codec, `toRun`/`toStep` |
+| postgres, real database | scenario | `on conflict`, a row count, a unique index |
+| **platform over the REAL route and a real Postgres** | scenario, in `aai-server` | the platform's own statements |
+
+The unit platform arm delegates every SEMANTIC to the memory reference (its own
+header says so), so a divergence in the platform's SQL is invisible to it. One
+was shipped: `createRun` was `on conflict (slug, run_id) do nothing` with no
+`returning`, so a duplicate run id was answered with SUCCESS — against an
+interface that says "rejects if `runId` already exists", a memory backend that
+throws, and a self-hosted store that trips its primary key. Two racing starts on
+one id both believed they had won and the loser's `input` was discarded, on the
+platform arm only, i.e. for every deployed agent. A/B'd: with that SQL in place
+the unit suite reports **123 passed** and the fourth arm fails the shared case.
+
+`aai-server/journal-conformance-platform.scenario.test.ts` is that arm. The
+refusal it now gets is a typed `PlatformWorkflowRunTakenError` mapped to a
+**409** by `withReserved`'s `statusFor` hook — the same shape as `claimHook`'s
+token conflict, and for the same reason: every plain `Error` there becomes a
+retryable **503**, so the engine spends the message's whole attempt budget on a
+refusal that cannot change.
+
+**The case list crosses the boundary through a LOADER, not a re-export clause.**
+`loadJournalConformance()` on `/internal` dynamically imports the case modules.
+They `import { describe, expect, test } from "vitest"`, which is an OPTIONAL peer
+of this package, and a static clause is bundled INTO `dist/internal.js` —
+measured: `import … from "vitest"` on line 4. `@alexkroman1/aai-cli`'s published
+`dist` imports a VALUE from that exact module (`consoleLogger`, in `_dev-env.ts`)
+with every bare specifier external, so the plain clause makes `aai dev`
+unrunnable in any install without the test runner: `ERR_MODULE_NOT_FOUND` from
+inside a published package, invisible to `publint` and to `attw`. Behind the
+dynamic import the same code splits into its own chunk (verified: zero `vitest`
+references in `dist/internal.js`) and is loaded only by the caller that asks.
+Same rule as `/eval/vitest` and `@alexkroman1/aai/testing/vitest`, but as a
+function because `/internal` cannot afford to be split in two.
+
+### Three `JournalStore` contract points the suite refused to decide, decided
+
+A conformance table can only assert what the interface actually promises, and
+three points were underspecified — each with two backends doing one thing and the
+third doing another, and no case able to name a winner. The decisions:
+
+- **`setStatus`'s patch is ADDITIVE.** A field the patch does not carry is not
+  written, and an explicit `undefined` is the same as absent — so a stored
+  `output` can never be CLEARED. The platform already behaves this way (the
+  handler builds `{output, error}` and the SQL `coalesce`s), which makes memory's
+  and postgres's `"output" in patch` distinction dead code. Adopted rather than
+  fixed the other way for three reasons. It is what `error` has always done in
+  ALL THREE backends (`coalesce($6, error)`, `if (patch?.error)`), so the
+  alternative leaves two fields of one patch with two rules. Reaching the
+  distinction over HTTP needs a new wire field — the client sends
+  `output: encode(patch?.output)` and `JSON.stringify` drops an `undefined` key,
+  so "no patch" and "clear it" are already the same bytes — i.e. a protocol
+  change to serve a caller that does not exist: the engine passes either a
+  defined output or no patch at all. And clearing a terminal payload is a
+  mutation primitive in disguise, which this interface says outright it does not
+  have ("no `updateStep` and no `deleteRun`: the journal is APPEND-ONLY").
+- **`claimAttempt`, `claimSleep`, `claimHook` and `appendStep` are defined only
+  for a run that EXISTS, and a backend MAY throw.** Memory throws; both
+  databases insert a row with no run to belong to and answer normally. Left
+  under-specified ON PURPOSE, out loud, so nobody writes a caller that depends on
+  either: mandating the throw costs the databases a read (or a foreign key) per
+  step to detect a state the engine cannot reach — it calls these only after
+  `createRun` — and mandating the answer would have memory invent a slot, i.e.
+  resurrect a run, which is the worse of the two.
+- **`readSteps` is ordered by `finishedAt`, ties broken by `key`.** Both
+  databases already do exactly that (`order by finished_at, key`); memory returns
+  insertion order, which agrees except on a same-millisecond tie. The one-line
+  change memory owes: sort a COPY of `steps` by `finishedAt` then `key` before
+  mapping. One limit worth stating rather than pretending away — a database
+  breaks the tie in the column's COLLATION, which for `text` under a non-C
+  collation is not code-unit order, and step keys are punctuation-heavy
+  (`fetch#0`, `sleep!0`). It is unobservable in practice: a tie needs two steps
+  settling in one millisecond, and the engine indexes what `readSteps` returns by
+  `key`. Do not tighten it to a byte order without `collate "C"` on the column.
 
 ## An upload's bytes are OBJECTS, and its record has two homes
 
@@ -852,6 +948,41 @@ its bug — which was pairing a directory with runs in POSTGRES — and it is wh
 gives a databaseless studio agent uploads at all. `installWorkflowSupport`
 ANNOUNCES the local home once: a tradeoff absent from the log reads as a bug.
 
+**A FINISHED upload is immutable, at both layers.** A part write is keyed by its
+OFFSET and the merge replaces whatever window was there, so
+`PUT …/parts?offset=` against a completed upload used to answer 200 and rewrite
+the bytes under it — `size` and `complete` unchanged, so a step reading that
+window had nothing to notice; a SHORTER replacement collapsed `size` and flipped
+`complete` back to `false`; a LONGER one recorded two overlapping windows, after
+which a `read` of two megabytes returned three. Upload ids are the caller's to
+choose and the workflow API is unauthenticated unless `AAI_WORKFLOW_API_TOKEN`
+is set, so none of it needed a credential. `UploadCompleteError` (409) is the
+refusal, `assertUploadOpen` is the check, and two things about it are decisions:
+the KIND refusal is checked FIRST (a finished streamed upload keeps its 400 "not
+a parts upload" rather than changing status when its body ends), and a re-sent
+CLAIM naming only windows the record already holds at the same lengths is a
+NO-OP rather than a 409 — a claim is re-sent on a dropped response, so the
+request that COMPLETED an upload is exactly the one whose answer can be lost,
+and 409 is in neither `RETRYABLE_STATUS` nor the resume vocabulary. The BYTE
+route refuses in parallel and independently
+(`aai-server/upload-handler.ts`'s `assertUploadOpen`): a rewrite there changes
+no record at all, so the store's refusal cannot see it.
+
+**A STREAMED upload's first windows are CUT SMALL**, and that is a progress fix
+rather than tuning. Nothing in a window is readable — and therefore nothing is
+published as `size` — until the whole window is stored, so at a flat
+`UPLOAD_PART_BYTES` a stream under 8 MiB reported `size: 0` for its entire life
+and then the whole file at once. `size` was honest throughout (it is the
+contiguous READABLE prefix), which is why the fix is the CUT and not the number:
+a `size` counting bytes that merely arrived would send a reader to a window that
+is not there. `windows(body, limit, grow)` doubles from `UPLOAD_CHUNK_BYTES` to
+`UPLOAD_PART_BYTES` — 1, 2, 4, 8, 8, … MiB — so a maximal upload gains three
+windows and `platform-uploads.ts`'s O(N²) `parts` tripwire is untouched, where a
+flat 1 MiB cut would have been eight times the windows. `grow` is exactly
+`publish`: only a published window's arrival is observable, and only a published
+cut may be non-uniform, because `create` derives its boundary list from
+`windowList`, which assumes the grid.
+
 **Neither direction takes turns with the socket.** A whole-file write puts
 `UPLOAD_WINDOW_CONCURRENCY` windows while the next one is still arriving, and the
 byte route reads `UPLOAD_READ_AHEAD` chunks ahead of what it has written — both
@@ -876,8 +1007,11 @@ landed on the global against 16/16 on HTTP/1.1.
 five of them were still on the global: the upload broker's byte operations
 (`_upload-blobs-brokered.ts`), the operator-bucket ones beside them
 (`_upload-blobs-http.ts`), every platform RPC (`platform-rpc.ts`), and the
-run-event STREAM read (`workflow-platform-storage.ts`) — which is the worst case
-of all, a read meant to stay open on the same window as a burst of byte probes.
+run-event STREAM read in the DevKit-era `workflow-platform-storage.ts` — which
+was the worst case of all, a read meant to stay open on the same window as a
+burst of byte probes. That module is gone with the DevKit's storage RPC; the
+rule it motivated is not, and `platform-rpc.ts` is what every journal, queue,
+session-state and upload-record call goes through now.
 
 Observed on a deployed transcription workflow uploading ~64 MB in 8 MB windows:
 
@@ -1039,10 +1173,20 @@ Three properties of the URL itself are load-bearing:
   already states. `createWebhook()`'s own token is random and body-side only,
   so a URL that has to be minted from a TOOL wants `createHook({ token })`.
 
-Not yet closed: a workflow BODY, and a step it hands a hook token to, have no
-`ToolContext` and so no way to reach `publicUrl` — a run that must EMAIL its own
-callback URL still composes it from a value the author supplies. `stepEnv`'s
-`Symbol.for` slot is the shape that would close it.
+CLOSED for a BODY and its steps too, through the slot this note predicted:
+`stepWebhookUrl(token)` on `@alexkroman1/aai/step` reads a `Symbol.for` slot
+that a host fills with a MINTER — `publishWorkflowWebhookUrl(publicUrl)` in
+`workflow-serve.ts`, beside `workflowWebhookUrl`, which is the one place base +
+prefix + encoded token are composed. The minter, rather than the origin, is what
+is published: the route belongs to the package that ANSWERS it, so the SDK never
+spells this path and the two cannot drift. The guest publishes at bundle load
+(before the surface is built, so a boot-time queue delivery cannot race it) from
+the `AAI_PUBLIC_BASE_URL` in its exec env — which is why `requireStepEnv` could
+not have done this job: that variable is the SPAWNER's and never reaches the
+agent env. Unfilled, the reader THROWS naming the configuration; `aai dev` does
+not publish one yet, and a laptop origin would not be reachable anyway.
+`workflow-client.ts`'s own inline composition is the copy still owed a fold onto
+`workflowWebhookUrl`.
 
 ## `AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials, not what the guest dials
 

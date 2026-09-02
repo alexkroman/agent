@@ -2,9 +2,10 @@
 /**
  * Turning a body into BUFFERS, and nothing about an upload's contract.
  *
- * Three functions the whole upload surface shares and none of which knows what an
- * upload is: cut a body into pieces, join pieces into one buffer, drain a body into
- * one buffer with a cap. They sat at the bottom of `_upload-store.ts` — which is
+ * Five functions the whole upload surface shares and none of which knows what an
+ * upload is: cut a body into pieces, group those into placed WINDOWS, join pieces
+ * into one buffer, hand one buffer over as an iterable, drain a body into one buffer
+ * with a cap. They sat at the bottom of `_upload-store.ts` — which is
  * the store's INTERFACE, its error vocabulary and its invariants — and that file
  * crossed the 500-line cap when `UPLOAD_PROBE_CONCURRENCY` arrived.
  *
@@ -23,7 +24,7 @@
  * @internal
  */
 
-import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
+import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
 import { UploadTooLargeError } from "./_upload-store.ts";
 
 /**
@@ -56,6 +57,88 @@ export async function* chunked(
     }
   }
   if (heldBytes > 0) yield concat(held, heldBytes);
+}
+
+/** One cut window and the byte it starts at — see {@link windows}. */
+export type PlacedWindow = { at: number; bytes: Uint8Array };
+
+/**
+ * A body as window objects, refusing anything past `limit`.
+ *
+ * Here rather than in `_upload-store-blobs.ts` because it is what this module is
+ * for — cutting a body into buffers — and because that file is at the 500-line cap.
+ * Each window carries the offset it starts at, which it knows and its consumer would
+ * otherwise have to derive from the previous write's return value, i.e. from a value
+ * that only exists once that write has finished. Yielding it here is what lets the
+ * writes overlap: a window is addressable the moment it is cut.
+ *
+ * ## `grow` cuts the first windows SMALL, and that is a progress fix
+ *
+ * A window is one object, so nothing in it is READABLE — and therefore nothing is
+ * published as `size` — until the whole window is stored. At a flat
+ * `UPLOAD_PART_BYTES` that means a STREAMED upload publishes nothing for its first
+ * 8 MiB: measured, an upload under that size reported `size: 0` for its entire life
+ * and then the whole file at once. `size` was honest throughout (it is the
+ * contiguous READABLE prefix, and none of it was readable), which is exactly why
+ * the fix is the cut and not the number — a `size` counting bytes that have merely
+ * arrived would send a reader to a window that is not there.
+ *
+ * Two things that cost, both real: a body watching `uploadInfo` sees no progress at
+ * all, and a template judging a STALL on that number reads a healthy slow uplink as
+ * dead (`templates/transcription-workflow`'s idle-poll bound gives up after five
+ * minutes of an unchanging `size`).
+ *
+ * So a growing cut doubles from `UPLOAD_CHUNK_BYTES` to `UPLOAD_PART_BYTES` —
+ * 1, 2, 4, 8, 8, … MiB. The first megabyte is readable as soon as it lands, and the
+ * asymptotic shape is unchanged: a maximal 2 GiB upload gains THREE windows over
+ * the flat cut, so the `parts` array — which every window arrival rewrites whole,
+ * making bytes written O(N²) in window count (`aai-server/platform-uploads.ts` owns
+ * that tripwire) — is not measurably worse. A flat `UPLOAD_CHUNK_BYTES` cut would
+ * have been eight times the windows and sixty-four times those bytes, which is the
+ * alternative this ramp exists to avoid.
+ *
+ * Every offset stays on the megabyte GRID a part upload's offsets are checked
+ * against (`assertPartOffset`), so a streamed window and a part window remain the
+ * same kind of object addressed the same way.
+ */
+export async function* windows(
+  body: AsyncIterable<Uint8Array>,
+  limit: number,
+  grow = false,
+): AsyncGenerator<PlacedWindow> {
+  let held: Uint8Array[] = [];
+  let bytes = 0;
+  let at = 0;
+  let emitted = 0;
+  for await (const piece of chunked(body, limit)) {
+    held.push(piece);
+    bytes += piece.length;
+    if (bytes >= windowTarget(emitted, grow)) {
+      yield { at, bytes: concat(held, bytes) };
+      at += bytes;
+      held = [];
+      bytes = 0;
+      emitted += 1;
+    }
+  }
+  if (bytes > 0) yield { at, bytes: concat(held, bytes) };
+}
+
+/**
+ * How many bytes the `n`th window of a cut holds at most.
+ *
+ * `UPLOAD_PART_BYTES` flat, or a doubling ramp from one chunk up to it — see
+ * {@link windows}. `chunked` yields whole `UPLOAD_CHUNK_BYTES` pieces, so every
+ * target is reached exactly rather than overshot.
+ */
+function windowTarget(n: number, grow: boolean): number {
+  if (!grow) return UPLOAD_PART_BYTES;
+  return Math.min(UPLOAD_PART_BYTES, UPLOAD_CHUNK_BYTES * 2 ** n);
+}
+
+/** One value as an iterable, so a window can be handed to `put` unchanged. */
+export async function* once(value: Uint8Array): AsyncGenerator<Uint8Array> {
+  yield value;
 }
 
 /**

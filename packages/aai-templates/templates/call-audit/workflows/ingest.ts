@@ -216,16 +216,6 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
 }
 
 /**
- * Retries beyond the default 3.
- *
- * Not because a conversion is flaky — a corrupt file fails identically forever,
- * and `throwFfmpegStepError` is what stops the DevKit retrying that. It is the
- * two I/O halves that are worth another attempt: this step reads a whole
- * recording out of the store and writes a whole one back, and either can lose a
- * connection on a file this size.
- */
-
-/**
  * Run a `media.ts` reader, turning "I cannot read this analysis" into a terminal
  * failure.
  *

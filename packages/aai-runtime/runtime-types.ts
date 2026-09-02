@@ -22,6 +22,7 @@ import type { SessionCore } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
+import type { JournalStore } from "./workflow-journal-types.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
 
 /** Per-session options passed to {@link AgentRuntime.startSession}. */
@@ -157,6 +158,36 @@ export type RuntimeOptions = {
    * @internal
    */
   workflows?: WorkflowClient | undefined;
+  /**
+   * Where this runtime's durable runs live, when nothing more durable wins.
+   *
+   * **STORAGE per PROCESS, CODE per BUILD.** A runtime is built once per
+   * deployment everywhere except `aai dev`, which rebuilds one on every file
+   * save so a save reloads the agent's code — and a rebuilt runtime rebuilt the
+   * run store underneath it, because the engine defaults to a fresh
+   * `createMemoryJournal()` when nobody hands it one. A run started before a save
+   * was therefore gone after it, and `GET /workflows/runs/:id` answered 404 for a
+   * run whose id the caller was still holding. It reads as the run having failed
+   * rather than as the store having been replaced, which is the failure mode of
+   * every default made at the definition site on a caller's behalf.
+   *
+   * A host that wants the runs to outlive a rebuild builds ONE of these at
+   * process scope and passes it on every build — the engine still comes per
+   * build, which is what keeps hot reload honest.
+   *
+   * **It only reaches the MEMORY arm.** The journal is chosen platform, then
+   * postgres, then this — so supplying one cannot demote a deployed guest's
+   * platform journal or an agent's own database to something that dies with the
+   * process. The boot line names whichever actually won.
+   *
+   * **What it buys is the RECORD, not a pending delivery.** A run parked on
+   * `ctx.sleep` at the moment of a rebuild is readable afterwards and does not
+   * wake on its own: the in-process dispatcher only holds timers it created
+   * itself, and the new engine scans no journal for waits it inherited. That is
+   * the same handover hole a process RESTART has with a durable journal, one
+   * level down, and it is open in both places.
+   */
+  journal?: JournalStore | undefined;
   /**
    * Custom WebSocket factory for the S2S connection (testing seam).
    * @internal

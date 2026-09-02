@@ -94,8 +94,8 @@
     }
   },
   "step": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [3, 4],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."

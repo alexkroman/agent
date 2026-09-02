@@ -35,18 +35,18 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `guest-forward.ts` — the one platform→guest forward (`forwardToGuest`) and
   its header policy, shared by the three routes that proxy into a tenant's
   sandbox (`/client-config`, `/:slug/workflows/*`, the durable-run webhook),
-  which had re-derived broker→URL→filter→bounded-fetch three times with three
-  different filters. **A header crossing this hop reaches TENANT CODE**, so
-  `Cookie`, `Authorization` and `X-Forwarded-*` never do; the API routes take
-  an allow-list and the webhook route deliberately passes the rest through. Its
-  module doc has the argument.
+  which had re-derived it three times with three different filters. **A header
+  crossing this hop reaches TENANT CODE**, so `Cookie`, `Authorization` and
+  `X-Forwarded-*` never do. **Every direction is an allow-list except the
+  webhook's REQUEST**: a sender's `Stripe-Signature`-class headers cannot be
+  enumerated, where its RESPONSE (`content-type`, `retry-after`) is read by a
+  sender wanting a status and a type. Its doc argues that asymmetry.
 
   **A route forwarding a STREAMING request body needs `bound: "activity"`; the
-  other two bounds are a trap for it.** Both bound the response HEAD, so a
-  guest that answers only after consuming the whole body has the entire upload
-  inside its deadline — `POST /workflows/uploads` did, and a 500 MB file was a
-  503 at 30.3s while working under `aai dev`, which has no forward at all. The
-  `bound` doc in that module carries the arithmetic and why no TOTAL is right
+  other two bound the response HEAD, so a guest that answers only after
+  consuming the whole body has the entire upload inside its deadline** —
+  `POST /workflows/uploads` did, and a 500 MB upload 503'd at 30.3s while
+  working under `aai dev`, which has no forward. Its `bound` doc has the rest
 - `modal-context.ts` — the shared Modal context every spawn path needs
   first: the client, the App, the harness-baked snapshot image (built once
   per harness version, published under a content-addressed tag), and the
@@ -403,6 +403,12 @@ carried an allowance for per-app databases — 28 of 40, spoken for by TWO apps 
 the workflow entitlement — so the fleet claim scaled with tenant count, the one
 variable a constant cannot bound. It has one term now.
 
+**The shape a Postgres tenant boundary has to take, if one is ever needed
+again**, is the one that was here: a database per app with a per-app login role
+and `CONNECT` revoked from `PUBLIC` — verified at the time, a neighbour's
+database answering `42501 permission denied`. Cross-agent isolation rests on
+nothing like it now; see "Cross-agent isolation" below for what it rests on.
+
 **Four Postgres-tenancy arguments came out of those modules, and they are
 recorded in `20260827030000_drop_dblink_admin.sql`** rather than here — this
 guide is at its size cap and they are history about code the repo no longer has.
@@ -683,32 +689,22 @@ What deliberately stays in-process, and why it doesn't break statelessness:
 
 ## Two packages, ONE deployment (aai-server / aai-studio-server)
 
-Two packages, one surface each, composed into a single process.
+Two packages, one surface each, composed into a single process. `aai-server`
+is the agent surface plus the shared platform core (stores, locks, epochs,
+sandbox machinery), a LIBRARY with no entry point and no `build`;
+`platform-barrel.ts` is the sanctioned path to its `_`-internal utilities.
+`aai-studio-server` is the studio surface AND the composition root, and its
+entry is the only one any deployment runs — `pnpm dev:aai-server` included, so
+local dev and production are the same composition.
 
-`aai-server` is the agent surface plus the shared platform core (stores,
-locks, epochs, sandbox machinery); `platform-barrel.ts` is the sanctioned path
-to its `_`-internal utilities. **It ships no entry point** — it is a library,
-consumed through its `exports` map, and has no `build` (its subpaths resolve to
-`.ts` source, which its consumer bundles). `aai-studio-server` is the studio
-surface AND the composition root: its entry is the only one any deployment
-runs, and `pnpm dev:aai-server` runs it too, so local dev and production are
-the same composition. There is ONE Modal app, `aai-server-web`, from
-`packages/aai-server/modal_deploy.py` — note the asymmetry, the deploy script
-lives in the package that does NOT provide the entry.
-
-**The composition itself is documented where the composition ROOT lives: see
-"One deployment, two packages" in `packages/aai-studio-server/CLAUDE.md`.**
-That is where the retired split deployment and the two constraints any revival
-owes are recorded, along with the `alwaysBundle` specifier bug that cost every
-container cold start ~72 modules of type-stripping, the 31-subpath shared-core
-`exports` map (widen it in package.json, and delete an entry when a coupling
-goes away — this list only ratchets down), `resolvePublicOrigin` and the two
-outages that came of deriving a scheme from the request URL,
-`AAI_ALLOWED_ORIGINS`, the agents-row CHANGE STREAM that is the only
-cross-service invalidation (and why its REJOIN is itself a signal), retirement
-vs. termination, and the shutdown ordering — the boot guard, the grace, the
-two-level bound, and why a long-lived response must register with
-`live-streams.ts`.
+**The composition is documented where the composition ROOT lives, and this
+paragraph is deliberately not a second copy of it: see "One deployment, two
+packages" in `packages/aai-studio-server/CLAUDE.md`.** The retired split
+deployment and what a revival owes, the `alwaysBundle` specifier bug, the
+31-subpath shared-core `exports` map, `resolvePublicOrigin`,
+`AAI_ALLOWED_ORIGINS`, the agents-row CHANGE STREAM (and why its REJOIN is
+itself a signal), retirement vs. termination and the shutdown ordering are all
+there.
 
 Two rules from it that a reader of THIS package needs in front of them:
 
@@ -742,7 +738,7 @@ Two rules from it that a reader of THIS package needs in front of them:
   failed spawn is a failed spawn.
 
   That sentinel was `!SUPABASE_STORAGE_BUCKET`, which inverted the rule it
-  exists for — see "Two questions, two sentinels" below, which owns the account.
+  exists for — see "Two questions, two sentinels" above, which owns the account.
 - **Every spawn failure is a `SandboxUnavailableError`** (`sandbox-errors.ts`)
   — both Modal spawners, both subprocess spawners. It is a marker class, not a
   message: the message stays the backend's technical one (`Modal sandbox spawn
@@ -974,39 +970,25 @@ Two rules from it that a reader of THIS package needs in front of them:
   There is NO host-side idle eviction: the guest owns idleness (agent-mode
   self-exit; the studio broker keeps its own per-project idle sweep), and a
   guest exit detaches its slot via `onSandboxLost`.
-- The server itself deploys to Modal too (`modal_deploy.py`,
-  `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
-  Fly.io deployment anymore.
+- The server itself deploys to Modal too (`modal_deploy.py` in Key files) —
+  there is no Docker image or Fly.io deployment anymore.
 
 ## The local backend is a microVM
 
 `microsandbox-sandbox.ts` boots the guest in a libkrun microVM from the SAME OCI
-image production pulls: the studio agent's `bash`/`run_code` stop running as the
-server's uid, and in-guest builds resolve production's `/opt/aai` toolchain
-rather than aai-guest's darwin `node_modules`. Boot WARNS when the image is
-missing, rather than letting the first session eat a 30s dial timeout:
+image production pulls, so the studio agent's `bash`/`run_code` stop running as
+the server's uid and in-guest builds resolve production's `/opt/aai` toolchain.
+`pnpm build:guest-image --msb` builds and loads it — **a harness edit is not
+live until it has run** ("A harness edit needs the IMAGE rebuilt",
+`packages/aai-guest/CLAUDE.md`) — and `pnpm --filter aai-server test:scenario`
+runs the real-microVM tier, which SKIPS without hardware virtualization
+(`AAI_REQUIRE_MICROSANDBOX=1` makes that skip a failure).
 
-`pnpm build:guest-image --msb` builds the image and loads it into
-microsandbox's own store — **and a harness edit is not live until it has run**
-("A harness edit needs the IMAGE rebuilt", `packages/aai-guest/CLAUDE.md`).
-`pnpm --filter aai-server test:scenario` runs the real-microVM tier. Four traps,
-all measured:
-
-- **`.network()` REPLACES the network config**, so a `.port()` called before it
-  is discarded — silently. The harness logs `listening on 0.0.0.0:8080` inside
-  the guest while every host dial gets ECONNREFUSED, which reads as a guest that
-  failed to boot. The published port therefore goes INSIDE `.network()`.
-- **A guest's `127.0.0.1` is the VM.** `microsandbox-network.ts` rewrites the
-  agent env to a host alias and opens exactly the ports that rewrite needed — a
-  policy opening the `host` GROUP would pass every "can it reach the database"
-  test while handing tenant code the whole machine.
-- **`isInstalled()` lies** (false where microVMs boot fine), so the scenario gate
-  asks the runtime a real question. That tier SKIPS without hardware
-  virtualization — GitHub's standard runners do not reliably provide it — and
-  `AAI_REQUIRE_MICROSANDBOX=1` makes the skip a failure where they do.
-- **A name is NOT released when the sandbox dies** — Modal's property, which
-  `sandbox-directory.ts` rests on and microsandbox does not share. A SIGKILLed
-  VM left its slug permanently unreachable; `createReclaimingName`'s doc has it.
+**Its four measured traps are in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md)** —
+`.network()` silently discarding an earlier `.port()`, a guest's `127.0.0.1`
+being the VM, `isInstalled()` lying, and a name not being released when the
+sandbox dies (which is a Modal property `sandbox-directory.ts` rests on and
+microsandbox does not share).
 
 ## A teardown may not depend on the boot it is tearing down
 
@@ -1157,16 +1139,11 @@ Host↔guest control traffic is JSON-RPC over a WebSocket the host dials
 through the same tunnel (`/ws`), authenticated by a per-sandbox bearer
 token.
 
-**In production.** A run declaring `AAI_LOCAL_DEV=1` gets the `microsandbox`
-backend — a real boundary, though not this one — and `SANDBOX_BACKEND=subprocess`
-gets **none** of the properties described below, the harness being a child
-process of the server sharing its uid, filesystem and network. Selection
-(`sandbox-backend.ts`) makes the isolation-free one
-unreachable without that declaration: every other environment resolves `modal`
-unconditionally, so the boundary is what a deployment gets by DEFAULT rather
-than by remembering a variable. When reasoning about the security model, the
-backend is the first thing to establish, and the boot log names it (with a
-warning when there is no boundary at all).
+**Everything below describes the `modal` backend only, so establish the backend
+FIRST** — `microsandbox` is a real boundary but not this one, and `subprocess`
+has none at all. Which one a run gets, and why the isolation-free one is
+unreachable without an explicit declaration, is "Three backends" under "Modal
+sandbox notes" above; the boot log names it.
 
 Key properties:
 
@@ -1182,9 +1159,7 @@ Key properties:
   never enter the guest.
 - **Minimal filesystem**: the guest sees the baked harness image — never
   the host filesystem.
-- **Resource limits**: Modal per-sandbox memory/CPU caps
-  (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) and a bounded lifetime
-  (`SANDBOX_TIMEOUT_SECS`, default 4h).
+- **Resource limits**: the burst range and bounded lifetime above.
 - **Sessions live in the guest**: the embedded runtime owns per-session state
   (slot values, history, the resume grace window) exactly as the self-hosted
   runtime does. The host holds no session state; a DURABLE slot value lives in the
@@ -1216,11 +1191,6 @@ per-sandbox bearer, and each is scoped by the caller's slug SERVER-side
 (`workflow-run-owner.ts` for runs, the primary key for session state). Beyond
 that, each sandbox communicates over its own authenticated WebSocket, sessions
 are per-sandbox, and there is no shared mutable state between sandboxes.
-
-This used to rest on per-app DATABASES with per-app login roles and `CONNECT`
-revoked from `PUBLIC` (verified then: a neighbour's database answered `42501
-permission denied`) — worth knowing as the shape a Postgres tenant boundary has
-to take if one is needed again.
 
 **`run_code`**: executes only inside the guest sandbox — see "The
 `run_code` executor" in `packages/aai-guest/CLAUDE.md` for its authority
@@ -1357,98 +1327,21 @@ the two undici-version traps in the pinned dispatcher are in
 
 ### The image is layered dependencies-first (`scripts/modal_image.py`)
 
-The service image installs, then builds, and the two halves have deliberately
-different cache keys:
+The SERVICE image installs, then builds, with deliberately different cache keys
+per half — install inputs (lockfile, workspace manifests, patch files) first, so
+a doc change cannot refetch the dependency tree, and the win is COLD START
+rather than deploy latency. Four things it costs to get wrong, each having cost
+it once: a recipe that reads the filesystem at import crash-loops every
+container while `modal deploy` exits 0; the manifests must be NORMALIZED
+(`version` moves on every release, i.e. exactly when a deploy happens); a
+`patchedDependencies` entry names a file that must be STAGED; and the image
+bakes the server's V8 compile cache (~600ms → ~395ms cold start).
+`modal-image-inputs.test.ts` pins all four.
 
-1. **Install inputs only** — the lockfile, `pnpm-workspace.yaml`, `.npmrc`,
-   every workspace manifest, and every patch file `patchedDependencies` names,
-   staged into a temp dir by `_stage_install_inputs`.
-2. `pnpm install --frozen-lockfile`.
-3. **The source tree** (`add_local_dir(REPO_ROOT, …)`), which merges into the
-   installed `/app` rather than replacing it — `BUILD_IGNORE` keeps
-   `node_modules` out of the copy. `ASSERT_INSTALL_SURVIVED` runs before the
-   build so that assumption fails as one sentence at image build, not as a
-   missing module twelve steps later.
-4. `BUILD_COMMAND`.
-
-It used to be one `add_local_dir` for the whole repo followed by install and
-build in a single step, so **any** file change — a test, a doc — invalidated
-the install and refetched the entire dependency tree. The win is not deploy
-latency (`modal deploy` builds before any traffic moves, and under Modal's
-rolling strategy the old containers serve throughout); it is the **cold
-start**, where a container on a worker that already holds the install layer
-pulls only what changed.
-
-**Everything in the recipe must be IMPORTABLE without the repo present, and
-that is not a style rule — it is the difference between a deploy and a
-crash-loop.** Modal re-imports the deploy script inside every container to
-hydrate the function, so `build_image` runs a second time where the repo does
-not exist and `REPO_ROOT` (derived from `__file__`, mounted at `/root/`)
-resolves to `/`. Modal's own `Image` builder calls are LAZY, so naming
-`REPO_ROOT` in one is fine; computing an argument to one by reading the
-filesystem is not. `_stage_install_inputs` did, and the container died at
-import with `FileNotFoundError: '/pnpm-lock.yaml'` — it is guarded on
-`modal.is_local()` now, returning an empty staging dir off-host.
-
-**Every signal a deploy has is blind to that failure**, which is why it ran for
-hours: `modal deploy` exits 0, the image builds, CI goes green, the app reads
-`deployed`, and — because the rolling strategy keeps the PREVIOUS deploy's
-containers serving — the health endpoint answers 200 and the request log stays
-clean. What actually shipped was a service that could not scale out or replace
-a container, one container-death away from an outage with no recovery path.
-Observed 2026-08-09: 13 failed container starts over four minutes, production
-served for the next two hours by a container that predated the deploy, and the
-only trace was a `Function modal_deploy.server is crash-looping` line in an app
-log nobody was reading. Hence two guards, at different distances:
-`modal-image-inputs.test.ts` pins the `is_local` short-circuit statically (a
-gate that fails in the ordinary test run), and **`ship.yml`'s verify step**
-(`scripts/verify_modal_deploy.py`) asserts after every deploy that a container
-started AFTER the deploy began and that the service answers — the general net,
-since it catches any startup failure rather than this one. Checking health
-alone would not have caught it; the stale container was answering fine.
-
-**The manifests are NORMALIZED, and without that the split would be pure
-ceremony.** A layer's cache key is the bytes that go into it, and a
-package.json's `version` moves on every changeset release — which is exactly
-and only when a deploy happens (`ship.yml` fires on a version bump). Copied
-verbatim, the install layer would therefore miss on every production deploy.
-`INSTALL_MANIFEST_FIELDS` is a whitelist of the fields install actually reads;
-`version` and `scripts` are dropped, so the layer survives a release and
-misses only on a real dependency change. The full manifests still land in the
-source layer, so the built image carries each package's true version.
-
-**A `patchedDependencies` entry names a FILE, and that file is an install
-input** — the yaml is copied byte-for-byte, so a declared patch not staged
-beside it fails the layer with `ENOENT: … open '/app/patches/<name>.patch'`
-while pnpm hashes it against the lockfile. Every other signal is green, the
-patch being in the tree. `_patch_paths` carries why it derives the paths and
-raises on a declaration it cannot read; `modal-image-inputs.test.ts` pins it.
-
-**The image also bakes the SERVER's V8 compile cache**, the same trick the
-guest snapshot bakes for the harness. After `BUILD_COMMAND`, a build step runs
-the built entry once in warm-up mode (`AAI_SERVER_WARMUP=1`, honored at the top
-of `aai-studio-server/index.ts` — it evaluates the module graph and exits 0,
-opening no port, socket, or database connection) under `NODE_COMPILE_CACHE`,
-and the resulting `/app/.compile-cache` ships in the layer; `.env()` points the
-container's node at the same directory, which is the half that is silent when
-it drifts — a warmed cache nothing consults costs exactly what no cache costs.
-Measured on the built bundle: **~600ms → ~395ms**, i.e. ~200ms off every cold
-start, for ~3.6 MB in the image. Unlike the harness's warm-up this one is
-deliberately FATAL to the build: it runs the real entry, so a non-zero exit
-means the artifact production is about to run cannot be evaluated at all.
-`modal-image-inputs.test.ts` pins the three things that must agree (entry path,
-flag name, cache directory) across the recipe and the entry.
-
-Dropping `version` is safe **because every workspace dependency here is
-`workspace:*`**, which matches any version. A `workspace:^` anywhere would
-silently break that, so `modal-image-inputs.test.ts` asserts it — along with
-the two other ways this drifts: a workspace glob added to
-`pnpm-workspace.yaml` but not to `WORKSPACE_MANIFEST_GLOBS`, and a manifest
-that grows a dependency-declaring field (`overrides`, `resolutions`,
-`optionalDependencies`) the whitelist does not carry. The first fails loudly
-at image build as a lockfile mismatch; the second does **not** — the install
-succeeds and merely resolves a different tree than the source layer expects,
-which is why it needs a test rather than a comment.
+**The full account is in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md) beside this
+file** — the four-step recipe, the 2026-08-09 outage where production served
+for two hours from a container that predated the deploy, `ship.yml`'s verify
+step, and why `INSTALL_MANIFEST_FIELDS` is a whitelist.
 
 ### The guest fetches its own bundle (signed Storage URL)
 
@@ -1712,16 +1605,12 @@ streaming the body, with `brokerSessionUrl`'s taxonomy. Three decisions:
 
 ### No warm pool — every spawn boots from the snapshot image
 
-There is NO warm sandbox pool (`sandbox-pool.ts` and its `SANDBOX_POOL_SIZE`,
-`pool` role and `setTags` plumbing are deleted — production always ran with it
-disabled, so it was pure complexity). Every spawn — agent, studio — boots
-directly from the published content-addressed harness snapshot image, one code
-path per backend, and every sandbox knows its identity (role/slug tags) at
-creation. When Modal's
-JS SDK exposes sandbox MEMORY snapshots (today it exposes only
-`snapshotFilesystem`; memory snapshots are Python-SDK experimental),
-restore-from-snapshot slots into this single spawn path — do NOT
-reintroduce a host-managed pool to approximate it.
+There is NO warm sandbox pool (`sandbox-pool.ts`, `SANDBOX_POOL_SIZE`, the
+`pool` role and the `setTags` plumbing are deleted — production always ran with
+it disabled). Every spawn boots directly from the published content-addressed
+harness snapshot image, one code path per backend. Do NOT reintroduce a
+host-managed pool to approximate Modal memory snapshots; see
+[`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 
 ### No horizontal sandbox scaling — one sandbox per slug, FLEET-WIDE
 
@@ -1836,16 +1725,17 @@ can hold while every sandbox fails.
 ### Building a platform request in a test
 
 **Build a request with `authFetch`/`deploy`, not a header literal.** The
-`Bearer`+`Content-Type` pair was spelled out at ~47 sites across 8 files;
-they are converted, and the 28 remaining `Bearer` strings in the package are
-all ones where the literal IS the subject — the bearer parser's own spec
-(`_bearer.test.ts`), the `resolveBearer` cases in `middleware.test.ts`, and
-header ASSERTIONS in the blob-storage / supabase-auth / warm-harness suites.
+`Bearer`+`Content-Type` pair was spelled out at ~47 sites across 8 files; they
+are converted, and the `Bearer` strings left are all ones where the literal IS
+the subject — the bearer gate's own specs
+(`_bearer.test.ts`, `guest-bearer.test.ts`), `middleware.test.ts`'s
+`resolveBearer` cases, and header ASSERTIONS in the blob-storage /
+supabase-auth / warm-harness suites.
 `deploy(fetch, { key, body })` is the same idea one level up, for the
-`POST /deploy` shape ~40 specs restate; `deployPayload()` is `deployBody()`
-as an object, for callers that re-encode it (the gzip specs). Drop to a bare
-`fetch` only when the REQUEST is what a spec exercises — a missing header, a
-gzipped body, a raw string — and those cases are why `deployBody` stays.
+`POST /deploy` shape ~40 specs restate; `deployPayload()` is `deployBody()` as
+an object, for callers that re-encode it (gzip specs). Drop to a bare
+`fetch` only when the REQUEST is the subject — a missing header, a gzipped
+body, a raw string — which is why `deployBody` stays.
 
 ### Gating a suite on a real Postgres
 

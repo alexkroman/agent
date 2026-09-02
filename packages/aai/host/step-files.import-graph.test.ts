@@ -3,14 +3,11 @@
  * The invariant that makes `step-files.ts` a subpath of its own: `node:` is on
  * one side of the line and `@alexkroman1/aai/step` is on the other.
  *
- * A `workflows/*.ts` module keeps every MODULE-scope import in the workflow
- * bundle — only a step is removed, the whole point of the transform
- * being to leave a stub that enqueues — and that bundle is compiled as a
- * `node:vm` Script with no `require` in its context. Every `workflows/*.ts`
- * module in every media template holds `@alexkroman1/aai/step` at module scope,
- * so a single `node:fs` reachable from that barrel kills every workflow in the
- * repo at REPLAY with `ReferenceError: require is not defined`, pointing at a
- * line of generated code inside the SDK rather than at the import that caused it.
+ * `@alexkroman1/aai/step` is an `sdk/` barrel, and `sdk/` is the half of this
+ * package that must stay runnable in a browser and in Deno — `sdk/tsconfig.json`
+ * compiles with `types: []` so a `node:` import there is a compile error rather
+ * than a convention. What that catches is the direct import; what it does not
+ * catch is the boundary being crossed at one remove, through `host/`.
  *
  * The same trap already forced `classifyFfmpeg` out of two templates' `ingest.ts`
  * into a `ffmpeg-verdict.ts` of its own; that file's module doc is the clearest
@@ -76,7 +73,7 @@ function builtinsReachableFrom(entry: string): { builtins: Set<string>; visited:
 }
 
 describe("the /step barrel's graph", () => {
-  test("reaches no node: builtin, so a workflow bundle can hold it at module scope", () => {
+  test("reaches no node: builtin, so a browser or Deno bundle can hold it", () => {
     const { builtins, visited } = builtinsReachableFrom("sdk/step-barrel.ts");
     // A floor on the corpus, for the reason every counting gate in this repo has
     // one: a resolver that stopped following relative imports would visit one
@@ -101,16 +98,20 @@ describe("step-files.ts itself", () => {
   test("is a node module, which is exactly why it is not on /step", () => {
     const { builtins } = builtinsReachableFrom("host/step-files.ts");
     // Named rather than merely counted: the assertion is about WHICH builtins,
-    // since these three are the reason the subpath is body-use only.
+    // since these three are the reason this lives in `host/` behind its own subpath.
     expect([...builtins].sort(byCodeUnit)).toEqual(["node:fs/promises", "node:os", "node:path"]);
   });
 
-  test("imports the two upload modules directly rather than through the barrel", () => {
+  test("imports the modules it needs directly rather than through the barrel", () => {
     // Narrower on purpose: importing `step-barrel.ts` would drag the transcribe,
     // speech and gateway graphs into every bundle that names one of these three
-    // functions, for two named imports.
+    // functions, for a handful of named imports. `format.ts` and `is-record.ts`
+    // are both leaves with no imports of their own — the whole reason the
+    // out-of-space message can name a byte count from here.
     const direct = specifiers(join(PKG, "host/step-files.ts")).filter((s) => s.startsWith("."));
     expect(direct.sort(byCodeUnit)).toEqual([
+      "../sdk/format.ts",
+      "../sdk/is-record.ts",
       "../sdk/step-uploads-write.ts",
       "../sdk/step-uploads.ts",
     ]);

@@ -29,13 +29,14 @@
  *   for the model stage.
  *
  * Everything on this page is CONTRACTED: each name belongs to exactly one of
- * the thirteen capabilities under `contracts/`, so a signature change here is
+ * the fourteen capabilities under `contracts/`, so a signature change here is
  * classified against an epoch rather than discovered by whoever's build breaks.
  *
  * The cross-package infrastructure that `aai-server`, `aai-cli` and `aai-guest`
  * need from this package — the host-mode server, the two transports, the
- * session core and its state tables, the workflow serving half, the wake hint,
- * the lock sweep — is deliberately NOT here. It lives on
+ * session core and its state tables, the durable journal and its DDL, the
+ * platform route table, and the workflow delivery door — is deliberately NOT
+ * here. It lives on
  * `@alexkroman1/aai-runtime/internal`, which carries no capability, no epoch
  * and no semver promise. A name there that wants to become public gets its
  * `@internal` tag REMOVED at the declaration site and joins a capability under
@@ -280,9 +281,11 @@ export {
   MAX_WORKFLOW_FIND_LIMIT,
   type WorkflowKeyStore,
 } from "./workflow-keys.ts";
-// What the startup sweep reports when it declines to run. The sweep itself and
-// the advisory-lock constants it contends for are on
-// `@alexkroman1/aai-runtime/internal`.
+// The upload store's two blob backends and the key grammar a window is written
+// under. `createUploadStore` and `resolveUploadBlobs`, which JOIN them to a
+// record, are `@internal` and on `@alexkroman1/aai-runtime/internal` — the
+// asymmetry this package's guide records under "What writing the templates
+// found".
 export {
   createHttpUploadBlobs,
   createMemoryUploadBlobs,

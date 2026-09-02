@@ -137,31 +137,45 @@ export const STORE_CONTRACTS = [
   },
   {
     // The durable JOURNAL — what makes a run outlive its process. Same
-    // structural exemption as the two above and the same remedy: the memory
-    // arm's unit specs live in `aai-runtime` beside the engine that reads them,
-    // and the real arm is driven from here.
+    // structural exemption as the two above: both factories live in
+    // `aai-runtime`, beside the engine that reads them, so THIS registry cannot
+    // pair them.
     //
-    // The exemption costs less than it looks. Almost everything interesting
-    // about the Postgres arm is a claim about the DATABASE rather than about the
-    // code — `claimAttempt` incrementing atomically under concurrency,
-    // `setStatus`'s `where` really constraining, `appendStep`'s `on conflict`
-    // resting on a primary key that exists, a hook token unique across RUNS —
-    // and a shared case list run against a Map could assert none of them.
-    // `workflow-journal.scenario.test.ts` runs the DDL and every one of those.
+    // What is no longer true is the rest of the old reason, which said a shared
+    // case list could not span the boundary. There is one:
+    // `aai-runtime/journal-conformance.ts` declares it once and
+    // `JOURNAL_BACKENDS` there is its registry — the same pattern as this file,
+    // a package over. FOUR arms run it, and the two in this package's tiers are
+    // the ones that matter here:
     //
-    // There is a THIRD arm this pair cannot name: `createPlatformJournal`, the
-    // same interface over HTTP to `/:slug/workflow-journal`, which is what a
-    // DEPLOYED run uses. It is not a store twin — it holds no rows and speaks to
-    // the platform — so it is outside this registry by construction, and it has
-    // its own two tiers: `aai-runtime/workflow-journal-platform.test.ts` for the
-    // codec and the three refusals on this side of the wire, and
-    // `platform-workflow-journal.scenario.test.ts` for the SQL, which is the only
-    // place TENANCY is testable at all.
+    // - memory, the reference, in `aai-runtime`'s unit tier;
+    // - `createPlatformJournal` over a FAKE transport, also unit, also in
+    //   `aai-runtime` — the guest side of the wire, delegating every semantic to
+    //   the memory reference;
+    // - `createPostgresJournal` against a real database
+    //   (`aai-runtime/journal-conformance-postgres.scenario.test.ts`);
+    // - `createPlatformJournal` against the REAL route and a real Postgres
+    //   (`journal-conformance-platform.scenario.test.ts`, here — the case list
+    //   crosses the boundary through `loadJournalConformance` on
+    //   `@alexkroman1/aai-runtime/internal`).
+    //
+    // That fourth arm is why the case list was worth carrying across a package
+    // boundary at all: the platform's own SQL is invisible to every other arm,
+    // and `createRun`'s `on conflict … do nothing` answered a duplicate run id
+    // with SUCCESS — against an interface, a memory reference and a self-hosted
+    // store that all refuse it — while the shared case sat green over the fake
+    // transport.
+    //
+    // Two suites here still assert what a shared case list cannot, and stay:
+    // `workflow-journal.scenario.test.ts` (the DDL, and the self-hosted
+    // statements one at a time) and `platform-workflow-journal.scenario.test.ts`
+    // (the platform's statements, and TENANCY — a claim about column values in a
+    // shared table, so only a real database with two tenants' rows can test it).
     contract: "workflow-journal",
     memory: "createMemoryJournal",
     pg: "createPostgresJournal",
     conformance: false,
-    why: "SDK tier: one case list cannot span the boundary; real arms are workflow-journal.scenario.test.ts and platform-workflow-journal.scenario.test.ts",
+    why: "SDK tier: both factories live in aai-runtime, so this registry cannot pair them — the shared case list is journal-conformance.ts there, with its own registry (JOURNAL_BACKENDS) and four arms, one of which is journal-conformance-platform.scenario.test.ts here",
   },
   {
     contract: "upload-bytes",
@@ -209,7 +223,6 @@ export const STORE_CONTRACTS = [
   why?: string;
 }[];
 
-/** A fresh, collision-proof key per case — see the arm-independence rule above. */
 /**
  * The prefix every conformance key carries, and the ONLY pattern a cleanup may
  * match on.
@@ -238,6 +251,7 @@ export const CONFORMANCE_PREFIX = `conf-${process.pid}-`;
 /** The `like` pattern for everything THIS process wrote. */
 export const conformanceLike = (): string => `${CONFORMANCE_PREFIX}%`;
 
+/** A fresh, collision-proof key per case — see the arm-independence rule above. */
 export function uniqueKeys(label: string): () => string {
   let n = 0;
   return () => `${CONFORMANCE_PREFIX}${label}-${Date.now().toString(36)}-${n++}`;

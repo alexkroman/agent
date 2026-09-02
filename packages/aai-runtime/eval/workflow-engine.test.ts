@@ -145,6 +145,16 @@ describe("createEvalWorkflowEngine", () => {
     // `-1` is what `lastLine` asks for, and it must be the last chunk ALONE
     // rather than the whole log.
     expect(await drain(active.adapter.readStream(runId, { startIndex: -1 }))).toEqual(["done"]);
+    // A NON-NEGATIVE `startIndex` is an INCLUSIVE floor — the first index the
+    // reader wants — which is `workflow-streams.ts`'s reading and so the contract
+    // this adapter is a second implementation of. Read exclusively, a default
+    // poll never delivered chunk 0.
+    expect(await drain(active.adapter.readStream(runId, { startIndex: 0 }))).toEqual([
+      "reading otters",
+      "done",
+    ]);
+    expect(await drain(active.adapter.readStream(runId, { startIndex: 1 }))).toEqual(["done"]);
+    expect(await drain(active.adapter.readStream(runId, { startIndex: 2 }))).toEqual([]);
     // A named stream is `emit`'s, kept apart from the sentences.
     expect(await active.adapter.streamTail(runId, { namespace: "results" })).toBe(0);
     expect(await drain(active.adapter.readStream(runId, { namespace: "results" }))).toEqual([

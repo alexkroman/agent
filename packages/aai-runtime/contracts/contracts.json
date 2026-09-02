@@ -1,7 +1,7 @@
 {
   "db": {
-    "current": 5,
-    "supported": [2, 5],
+    "current": 6,
+    "supported": [2, 5, 6],
     "dropped": {
       "1": "additive: CreatePostgresDbOptions gains optional connectTimeoutSeconds and queryTimeoutMs (network-partition query bound); backward-compatible, and aai-runtime has no external consumer to keep an epoch-1 template for",
       "3": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
@@ -33,16 +33,16 @@
     "dropped": {}
   },
   "runtime": {
-    "current": 4,
-    "supported": [3, 4],
+    "current": 5,
+    "supported": [3, 4, 5],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier."
     }
   },
   "server": {
-    "current": 6,
-    "supported": [4, 6],
+    "current": 7,
+    "supported": [4, 6, 7],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "The Db type moved from the aai root to @alexkroman1/aai/internal when ctx.db was removed — it is no longer an authoring type, only the shape this runtime's own Postgres consumers take. Nothing about the names or signatures changed, so a host using createPostgresDb is unaffected; a host that hand-wrote a Db and imported the type from the root must change the specifier.",
@@ -85,8 +85,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   }
 }

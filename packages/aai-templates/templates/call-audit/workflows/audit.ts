@@ -34,12 +34,12 @@
  *
  * ## The plan is made in the BODY, and that is legal
  *
- * `planSegments` runs in the directive body rather than in a step, which looks
- * like a rule violation and is not: it is a pure function of `ingested.silences`
- * and `ingested.durationMs`, both of which came out of a journaled step result.
- * So a replay re-derives the identical list in the identical order, which is
- * exactly what `mapConcurrent` needs — the DevKit correlates a journal entry to a
- * step call by the ORDER the call was issued in.
+ * `planSegments` runs in the BODY rather than in a step, which looks like a rule
+ * violation and is not: it is a pure function of `ingested.silences` and
+ * `ingested.durationMs`, both of which came out of a journaled step result. So a
+ * replay re-derives the identical list in the identical order, which is exactly
+ * what `mapConcurrent` needs — every call shares the name `transcribeSegment`, so
+ * a journal entry is matched by the ORDER its call was issued in.
  *
  * Putting it in a step would journal the same list twice (once as part of the
  * ingest result, once as the plan) and buy nothing.
@@ -167,7 +167,13 @@ export async function auditFlow(
   // `(name, occurrence)` step identity would tell two `now` calls apart on its
   // own (`now#0`, `now#1`), but a run's history is read by a person: `clockEnd`
   // says which end it is where `now#1` makes the reader count call sites.
-  // `maxAttempts: 6` was `ingestRecording.maxRetries = 5`.
+  // `maxAttempts: 6` was `ingestRecording.maxRetries = 5` — five retries AFTER
+  // the first, so six in all. More than the default 3, and not because a
+  // conversion is flaky: a corrupt file fails identically forever, and
+  // `throwFfmpegStepError` is what stops the engine retrying that. It is the two
+  // I/O halves that are worth another attempt — the step reads a whole recording
+  // out of the store and writes a whole one back, and either can lose a
+  // connection on a file this size.
   const [startedAt, ingested] = await Promise.all([
     ctx.step("clockStart", () => now()),
     ctx.step("ingestRecording", () => ingestRecording(input.recording), { maxAttempts: 6 }),
@@ -186,7 +192,9 @@ export async function auditFlow(
   // `mapConcurrent` hands out items from a monotonic cursor, so the Nth call
   // ISSUED is segment N whatever order they settle in — which is what makes
   // `transcribeSegment#N` stable across a replay. `maxAttempts: 6` was
-  // `transcribeSegment.maxRetries = 5`.
+  // `transcribeSegment.maxRetries = 5` — more than the default 3 because a rate
+  // limit is the expected failure here, and a segment that 429s is not a segment
+  // that is wrong.
   const parts = await mapConcurrent(segments, SEGMENT_CONCURRENCY, (segment) =>
     ctx.step("transcribeSegment", () => transcribeSegment(ingested.audio, segment), {
       maxAttempts: 6,
@@ -264,11 +272,6 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
 
   return { index: segment.index, text };
 }
-
-/**
- * Retries beyond the default 3, because a rate limit is the expected failure and a
- * segment that 429s is not a segment that is wrong.
- */
 
 /**
  * When it is now, as epoch ms.

@@ -145,7 +145,7 @@ describe("the runtime's own callers default to it", () => {
     const global = forbidGlobalFetch();
     await platformPost(
       { base: "https://platform.test/slug", token: "t" },
-      { route: "/workflow-storage", body: "{}", label: "storage", timeoutMs: 1000 },
+      { route: "/workflow-journal", body: "{}", label: "journal", timeoutMs: 1000 },
     );
     expect(global).not.toHaveBeenCalled();
     expect(agentOptions[0]).toMatchObject({ allowH2: false });

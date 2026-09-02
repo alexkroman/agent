@@ -28,15 +28,33 @@
  * The alternative — a caller extracting the header and passing a string — puts the
  * "did you remember to strip `Bearer `" step at five call sites. The whole point is
  * that a route asks one question and gets the whole policy. The strip itself is
- * `parseBearer`, shared with `middleware.ts`: it answers `""` for a header that is
- * not a Bearer credential, where a `.replace(/^Bearer /, "")` would hand the raw
- * header on as if it were the token.
+ * `parseBearer` (`@alexkroman1/aai-runtime/internal`, shared with `middleware.ts`
+ * and with both gates in the runtime and the guest): it answers `""` for a header
+ * that is not a Bearer credential, where a `.replace(/^Bearer /, "")` would hand
+ * the raw header on as if it were the token.
+ *
+ * ## Its expected value cannot be blank, and that is a property rather than luck
+ *
+ * `bearerMatches` in the runtime had to be taught to refuse a blank expected
+ * secret — `timingSafeEqual` on two empty buffers MATCHES, so a set-but-empty
+ * `AAI_SESSION_EVENTS_TOKEN` authenticated a request with no header at all. This
+ * gate is safe from that by two independent facts: the `supplied === ""` refusal
+ * happens FIRST, so no caller reaches the compare without a token, and
+ * `guestTokenFor` returns a 64-hex HMAC digest which is never empty. The
+ * `supplied` check is therefore not merely a fast path for the ordinary
+ * unauthenticated case — it is what makes an empty comparison unreachable.
+ *
+ * What its POSITION buys is a different property, and only one case shows it:
+ * moving it below the 503 answers a caller with no credential and no such agent
+ * "agent unavailable", i.e. tells an unauthenticated caller whether a slug
+ * exists. Moving it below the version READ alone changes nothing observable
+ * (A/B'd), so the rule is about which refusal WINS, not about the query.
  *
  * @internal
  */
 
+import { parseBearer } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
-import { parseBearer } from "./_bearer.ts";
 import { constantTimeEquals } from "./_timing-safe.ts";
 import type { AppContext } from "./context.ts";
 import { guestTokenFor } from "./guest-token.ts";

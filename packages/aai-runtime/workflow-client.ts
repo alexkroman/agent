@@ -80,7 +80,7 @@ export type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-
  * `find` and `recent` are bounded by `resolveFindLimit`, whose ceiling is
  * `MAX_WORKFLOW_FIND_LIMIT` (100) — so an unbounded `Promise.all` over the
  * result let ONE request put 100 concurrent reads on the app's Postgres, a pool
- * this shares with `ctx.db` and the world's own queue. The route is fail-open
+ * this shares with `ctx.db`. The route is fail-open
  * unless the operator set `AAI_WORKFLOW_API_TOKEN`, so the caller does not have
  * to be trusted for that to matter.
  *
@@ -100,8 +100,9 @@ export type WorkflowClientOptions = {
    */
   keys: WorkflowKeyStore;
   /**
-   * The WDK entry points, injected rather than imported so this module can be
-   * specified without a world. Production passes `wdkAdapter` (`workflow-wdk.ts`).
+   * The engine's entry points, injected rather than imported so this module can
+   * be specified without one. Production passes `createInProcessWorkflowEngine`
+   * (`workflow-in-process.ts`); an eval passes `eval/workflow-engine.ts`.
    */
   wdk: WdkAdapter;
   /**
@@ -198,13 +199,15 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   }
 
   /**
-   * WDK's run record as our discriminated snapshot.
+   * The engine's run record as our discriminated snapshot.
    *
-   * The `output` read is deliberately conditional on `status === "completed"`,
-   * which is also what makes it cheap: `readOutput` polls until the run settles,
-   * so calling it on a `running` run would block a snapshot read for the length
-   * of the run. Having already observed a terminal status, the poll's first
-   * iteration returns.
+   * `output` comes off the RECORD, never from a second `readOutput` call. It
+   * used to be the latter, and that cost a journal round trip per snapshot of a
+   * finished run — two POSTs to the platform where one would do, paid again on
+   * every browser reload of a completed form, and `recent()` paid one per
+   * completed run in the page. The re-read bought nothing: `completed` is
+   * terminal and the status and the output are written by one statement, so the
+   * record already in hand carries the final value.
    */
   async function toSnapshot(
     record: WdkRunRecord,
@@ -223,11 +226,11 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     };
     switch (record.status) {
       case "completed":
-        return { ...base, status: "completed", output: await wdk.readOutput(record.runId) };
+        return { ...base, status: "completed", output: record.output };
       case "failed":
-        // WDK records a failure with no message when the run died without one
-        // (a killed container, a max-deliveries stop). An empty `error` on a
-        // `failed` snapshot would read as "no error", so name the status instead.
+        // A run can be recorded `failed` with no message — a killed container,
+        // a delivery that never got to write one. An empty `error` on a `failed`
+        // snapshot would read as "no error", so name the status instead.
         return { ...base, status: "failed", error: record.error?.message ?? "Workflow run failed" };
       case "cancelled":
         return { ...base, status: "cancelled" };
@@ -295,9 +298,6 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       workflow: AnyWorkflowDef | string,
       options?: FindOptions,
     ): Promise<WorkflowRunSnapshot[]> {
-      // The workflowId, not the name — see the module doc's second half. `find`
-      // reads OUR key index and so takes the declared name; this one reads
-      // WDK's own store and so takes WDK's own identifier.
       const { name } = resolve(workflow);
       const records = await wdk.listRuns(name, resolveFindLimit(options?.limit));
       return await mapConcurrent(records, RUN_READ_CONCURRENCY, (r) => toSnapshot(r, undefined));

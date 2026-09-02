@@ -1,7 +1,14 @@
 # CLAUDE.md — `docs/`
 
-The `aai-docs` workspace: the TypeDoc setup that turns the published type
-surface into documentation, in two renderings.
+The `aai-docs` workspace — the TypeDoc setup that turns the published type
+surface into documentation, in two renderings — **and the guide for the other
+two committed descriptions of that same surface**: the API reports
+(`packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`) and the capability
+epochs (`packages/*/contracts/`). Three artifacts, three gates, one question
+each — did a signature MOVE, is the move BREAKING, and what does it MEAN — and
+they are documented together because a change to any published package
+usually owes all three. The root `AGENTS.md` keeps the table and the four
+obligations; the arguments are here.
 
 This is not a package under `packages/`, so none of the per-package
 conventions apply to it (`konsistent.json`'s `workspace-package-layout` is
@@ -9,6 +16,13 @@ scoped to `packages/{packageName}`, and the root guide's "Package guides"
 table lists only those). It carries a guide anyway because Claude Code loads
 the guide of the directory being worked in, and everything below is a rule you
 need exactly when you are editing something in here.
+
+Two of the three artifacts live under `packages/`, so a reader working THERE
+gets the owning package's guide instead — `packages/aai/CLAUDE.md` and
+`packages/aai-ui/CLAUDE.md` each carry their own "versioned in epochs"
+section, and `packages/aai-runtime/CLAUDE.md` its "The published surface is
+versioned in epochs". Those say what a bump means for that package; this says
+how the mechanism works.
 
 ## Two renderings, one set of entry points
 
@@ -80,14 +94,272 @@ adding `@module ffmpeg` immediately failed the build on a
 module-internal. That is the tag finding a latent broken link, not causing
 one — fix the link.
 
+## Published type signatures are a committed report
+
+`pnpm api-report` writes `packages/*/etc/<subpath>.api.md` — the rolled-up
+public `.d.ts` for ONE REPORT PER PUBLISHED ENTRY POINT (across the four
+publishable packages; `ls packages/*/etc/*.api.md` is the count, which this
+paragraph has now carried stale twice, at `26` and at `29`) — plus
+**`API.md` at the repo root, those same reports concatenated**, and
+**`API-EXPORTS.json`, the same entry points' export NAMES**;
+`pnpm check:api-report` fails when any of them is stale.
+
+**`API-EXPORTS.json` is a second artifact over the same reports, and the split
+between them is the point.** A report answers "what is the shape of this API"
+and churns whenever a parameter widens, a doc comment moves or an overload is
+added — what a reviewer wants, and also why a name quietly appearing or
+disappearing is one line inside a hundred-line diff. The export list answers
+only "what is IN the surface", so adding an export is a one-line addition
+against an otherwise stable file. `sdk/exports.test.ts` pins some of
+the same names and stays: a test fails at the moment the surface moves and names
+the symbol, which is a different job from being a reviewable fact in the diff —
+and it covers the entries somebody remembered to add, where this covers every
+entry point. Sorting is **code-unit, never `localeCompare`**: with no explicit locale
+that answers to the runtime's, so the same tree would produce a different file
+under a different ICU default and the gate would report a surface change that is
+really a locale change.
+
+**`includeForgottenExports` is ON**, so a type a public signature mentions but
+does not export appears as a bare `declare` with no `export` keyword. Those are
+part of the surface a consumer has to satisfy — they just have no name to import
+it by — and changing one can break a build while being invisible in review.
+TypeDoc's `treatWarningsAsErrors` catches a subset, only for the documented
+packages, and fails the run rather than showing what moved. Turning it on added
+~1,300 lines; `/testing`'s report grew from 28 lines to 185, the finding being
+that that entry point drags `Db`, `GenerateFn` and `WorkflowClient` in behind
+it. The export lists deliberately do NOT include them: they are collected from
+the `export` modifier, so a forgotten type is reviewable in the report and
+absent from the list of what a consumer can import by name.
+
+The gap it closes: **nothing else looked at a type SIGNATURE.**
+`sdk/exports.test.ts` pins runtime export NAMES and says nothing about shape;
+`publint` and `attw` ask packaging questions; the `.test-d.ts` files cover
+`aai`'s root entry and `aai-ui`'s four hooks, and "Known limitations" in the
+root `AGENTS.md` states outright that the subpath exports are not covered. So widening a
+parameter, making a field optional, or changing a return type on any OTHER
+entry point was invisible in review — which matters most for the
+decision it feeds, since the changeset bump type is currently a judgement made
+from memory and a `patch` that was really a `major` is discovered by the
+consumer whose build breaks.
+
+**Entry points are DERIVED from `package.json#exports`, never listed.** API
+Extractor's own convention is one config file per entry point, which here would
+be one file per subpath whose only real content is a path — and a hand-kept
+list of the public surface is precisely what goes stale in this repo (turbo
+`inputs` globs that stopped matching, five vitest projects duplicated and drifted,
+a `typedoc.json` list a new subpath must remember to join). A new subpath export
+therefore gets a report on its first run, and `--check` fails until it is
+committed, which is correct: a new subpath IS a public API change.
+
+**`API.md` is for READERS; the per-entry-point reports are for reviewers.** One
+file per entry point is the right shape for a diff — a signature change lands in
+the one report that owns it — and the wrong shape for "what does this SDK
+expose?", which is 29 reads plus knowing which 29. API Extractor cannot produce
+the combined file: `mainEntryPointFilePath` is a single string and multi-entry
+support is a long-standing unimplemented upstream request. A synthetic barrel
+(`export * as stt from "./dist/…"`) does yield one DEDUPLICATED rollup, but only
+per package — the repo would still have four — and every symbol trades its
+`export` keyword for a `declare namespace` block, while deduplication saves ~6%
+of lines. So `API.md` is a plain concatenation, generated in the same pass and
+gated by the same `--check`: derived, not a second source of truth.
+
+`packages/aai-templates/api-surface-file.test.ts` is the guard under that gate:
+`--check` would print its checkmark for an empty file agreeing with an empty
+file, which is what an assembly loop that stopped finding entry points, or a
+fence parser that stopped matching, would produce. The test parses the reports
+and `API.md` independently of the script and asserts the second contains the
+first.
+
+Two mechanical notes. API Extractor brings **its own TypeScript** (the JS
+compiler API, which TS 7 does not expose), so no second pin is needed the way
+`docs/` needs one for TypeDoc. And `reportTempFolder` is not optional: left
+unset, `--check` wrote one byte-identical `<slug>.api.md` per entry point into
+the package roots, caught only because markdownlint then failed on them.
+
+`packages/aai/.npmignore` keeps `etc/` out of the tarball — the reports are for
+reviewing signature changes, not for consumers. (`aai-ui`, `aai-cli` and
+`aai-runtime` declare `files`, so they need no equivalent line.) Both they and
+`API.md` are ignored by markdownlint, on the standing rule for generated
+markdown: a prose finding in one can only be fixed by editing a file the next
+run overwrites.
+
+## The authoring surface is versioned in epochs
+
+The reports turn a signature change into a diff, which is most of the battle —
+but they answer "did anything move", and the question a reviewer has to answer is
+**"is this breaking, and for whom"**. That decision is the changeset bump type,
+and the section above admits how it gets made: a judgement from memory, where a
+`patch` that was really a `major` is found by the consumer whose build breaks.
+
+`pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
+`check:api-report` in `scripts/check.mjs` and in the CI check job) closes that.
+The **capabilities** — named slices of the authoring API, each
+declared by a file under `<package>/contracts/entrypoints/` that may contain
+nothing but
+`export { … } from "<a published subpath>"` — get a report of their own, and what
+is committed is that report's hash plus its export list, at
+`contracts/epochs/<capability>/v<N>.json`. When a capability's shape moves the
+hash stops matching and the change cannot land without being CLASSIFIED:
+
+```sh
+node scripts/api-contracts.mjs --bump aai:tool --retain          # epoch N works
+node scripts/api-contracts.mjs --bump aai:tool --drop "<reason>"  # and why not
+```
+
+**Three packages carry contracts — `aai`, `aai-ui` and `aai-runtime` — and a
+capability is therefore QUALIFIED.** `@alexkroman1/aai-ui` is authored code in
+exactly the same sense as the SDK — a `client.tsx` names `client()`,
+`useAgentState`, `<Form>` and `useWorkflowRun` the way an `agent.ts` names
+`agent()` and `tool()`, and a signature change there breaks a user's page — so
+its nine capabilities are versioned the same way (its own guide's section of
+this name). Capability names are unique only WITHIN a package: `workflow` is a
+capability of both and they are different contracts, so anything a human types
+is `aai-ui:workflow` (a bare name still resolves when unambiguous, and ambiguity
+is REFUSED rather than resolved by precedence — a classification recorded
+against the wrong surface is the one failure this gate exists to prevent). Epoch
+files stay unqualified; their path already names the package. **Opting a further
+package in is creating `contracts/entrypoints/` inside it** — the package set is
+discovered from the tree, for the reason the entry points and the capabilities
+are, and its authoring subpaths are then everything it publishes with types
+MINUS a deny-list of the non-authoring ones (`NON_AUTHORING_SUBPATHS` in
+`scripts/_api-contracts-tree.mjs`, which exempts `aai`'s `/protocol`,
+`/manifest`, `/slugify`, `/workspace-files`, `/internal` and `/host-internal`
+with a reason each). Deny rather than allow for the reason the config schema
+does it (see "One canonical config schema, deny-list boundaries"): a new subpath
+defaults INTO the contracted surface and fails until its exports join a
+capability, where an allow-list would silently leave it uncovered.
+
+Six properties are load-bearing:
+
+- **A retained epoch obliges a frozen, compiling artifact.**
+  `contracts/compatibility/<capability>/v<N>.ts` is written the way that epoch
+  was authored, under the package's own `tsconfig.json` — so **`pnpm typecheck`
+  is the backward-compatibility gate**, a TEST of compatibility
+  rather than a claim about it, which is what the `.test-d.ts` files cannot be:
+  they pin the CURRENT shape and move with the API. On `aai` and `aai-ui` it is
+  a SNIPPET an author reads; on `aai-runtime` a starter a host COPIES, because
+  that is what its consumers do with it (see "The published surface is versioned
+  in epochs" in `packages/aai-runtime/CLAUDE.md`). The extension is `.tsx`
+  wherever the owning package's tsconfig sets `jsx` (DERIVED, not declared) — a
+  component library's authoring example is JSX, and one spelled in
+  `createElement` calls would compile while demonstrating an API nobody writes.
+  Editing one to make a compile error go away defeats the mechanism — the error
+  IS the finding. A **dropped** epoch's example is DELETED by `--bump --drop`:
+  "dropped" means it no longer compiles, and a leftover file would turn a
+  recorded decision into a red typecheck.
+
+  **`contracts/compatibility/` holds one frozen example per RETAINED epoch**,
+  written the way that epoch was authored — so `pnpm typecheck` is a real
+  compatibility test rather than a claim about one.
+- **The hash covers the rollup BODY, not the report file.** API Extractor's
+  preamble is identical in every report and is the tool's, not ours; hashing it
+  would make an api-extractor upgrade that reworded one line bump every epoch at
+  once, each demanding a classification for a change to nothing.
+- **Old epoch metadata is immutable and retained** (`v1..current`, enforced), so
+  "when did this break and what did we say" is answerable from the tree.
+- **The export-list delta suggests the bump.** A removed name prints `major`, an
+  added one `minor`, and an unchanged list says so explicitly — this is a
+  SIGNATURE change, read the report diff. That is the cheap 80% of the question,
+  and it beats nothing.
+- **A `--bump --drop` classifies the CURRENT epoch and nothing else.** A change
+  can break OLDER supported epochs while the current one compiles, so run
+  `pnpm typecheck` FIRST: the frozen examples it reddens are the epochs to drop,
+  and older ones are a hand edit to `contracts.json`.
+- **A capability whose promise is a VALUE or a RECIPE is not covered by the
+  hash.** `aai:defaults` is the standing instance: the hash reads
+  `const DEFAULT_SYSTEM_PROMPT: string` with doc comments stripped, so the
+  string's content can change under a checkmark — and did. `--bump` refuses
+  ("still matches epoch N"). A changeset-and-review matter, not a gated one;
+  `packages/aai/CLAUDE.md` has the worked case.
+
+**A `--bump` is the moment to ask what should come OUT.** The mechanism works in
+that direction — an epoch transition can drop names wholesale — but a bump only
+ever asks about the names that MOVED. What accretes is everything else:
+`template-api-allowlist.json` records the exports no shipped example exercises,
+and its own gate says such an export "is either missing its example or shouldn't
+be public". Read that file at a bump, not only the diff — the counts are in it,
+and are deliberately not restated here.
+
+**Capabilities, not entry points, and the reason WAS the `@internal` problem.**
+`@alexkroman1/aai` used to export 174 symbols from its root, **71 of them tagged
+`@internal`** — `PLAYBACK_CONCEAL_FLOOR`, `MIC_SILENCE_PROBE_MS`, `WS_OPEN` — on
+the same barrel as `agent()` and `tool()`, and therefore in an agent author's
+autocomplete. Versioning the subpath as one unit would bump the authoring
+contract every time a playback constant moved. So the capabilities name the
+surface instead — `agent`, `tool`, `state`, `workflow`, `workflow-api`,
+`defaults`, `utils`, `testing`, `builtins`, and one per provider stage — and the
+gate asserts the naming is **exhaustive**: every `@public` export of the
+authoring subpaths this leaves `aai` with belongs to exactly one capability, so
+a new public export fails until somebody decides which contract it joins — the
+same decision as "who is promised this". Ownership is per PACKAGE,
+deliberately: three names (`isTerminal`, `WorkflowSummary`, `WorkflowOutputOf`)
+are on both packages' surfaces, the same concept from the two sides of the
+wire. A name published on
+both `.` and a narrower subpath belongs to the narrower one.
+
+**That set is deliberately NOT enumerated here.** This paragraph used to list
+"the fourteen authoring subpaths" and was missing `/channels`, a contracted
+capability with four template importers — a hand-kept list of the surface,
+inside the section describing the mechanism that prevents one. It is
+`authoringSubpaths()` (`scripts/_api-contracts-tree.mjs`), and
+`exampleFacingSubpaths()` beside it, minus a second deny-list, is what the
+template coverage ratchet reads.
+
+**Counting them is what got them fixed, which is the argument for the whole
+gate.** The internal-tagged names are the explicit exemption, committed to
+`contracts/internal-surface.json` as a **ratchet that may shrink and may never
+grow** (`--update-internal` lowers it, and unclaimed headroom WARNS). It opened
+at 74 and stands at **0**, as do `aai-ui`'s and `aai-runtime`'s — the 71 root
+ones went to `@alexkroman1/aai/internal` in the change that cut the root barrel
+to the authoring API. The gate also refuses a NEW `@internal` name on a public
+subpath outright, which is why `serializeToolFailure` lives in an `_`-internal
+module rather than beside `toolFailure` in `sdk/utils.ts` — that file IS the
+`/utils` subpath, and a tag documents a problem where a private module prevents
+it.
+
+Two mechanical notes. The epoch directory is `epochs/`, not `reports/`, because
+`.gitignore` carries a bare `reports/` rule that would have swallowed it whole.
+And the authoring surface is read out of the **committed** `etc/*.api.md`
+reports rather than re-derived, so this and the thing a reviewer looks at cannot
+disagree — which is why the ordering in `check.mjs` and CI is fixed and asserted:
+a stale report would be believed.
+
+`packages/aai-templates/api-contracts-gate.test.ts` is the guard under the gate,
+and it has the same shape as `api-surface-file.test.ts` for the same reason: the
+gate compares two things the script derives, so an extraction that stopped
+finding anything would hash nothing, agree with a committed nothing, and print
+"30 capability contract(s) up to date ✓". The suite reads the contract tree
+independently — every package's, by the same discovery rule, so a second package
+is not unguarded by the guard — and asserts every name a capability root selects
+appears in that capability's current epoch, which an empty extraction cannot
+satisfy. Its own parser reads the export CLAUSE rather than one name per line,
+because Biome collapses a short clause onto a single line: per-line, it found
+zero names in the two smallest `aai-ui` roots and would have reported the
+healthiest possible contract as empty.
+
+`contracts/` is kept out of the tarballs twice over, and the second one is not
+optional: `.npmignore` excludes the source directory in `aai` (same reason as
+`etc/`, plus the examples import by relative source path and would ship
+unresolvable specifiers), **and each package's `tsconfig.build.json` excludes it
+from the declaration emit** — `rootDir: "."` otherwise writes a `.d.ts` per
+capability root and per frozen example into `dist/contracts/`, which `aai-ui`'s
+`files: ["dist"]` would have shipped. `tsc --noEmit` still checks them, which is
+the gate that matters. They are also out of coverage by each package's
+`vitest.config.ts` (re-export lists and never-executed fixtures otherwise count
+at 0% and drag the package under floors that have nothing to do with what they
+measure), and its files are declared as knip `entry` points, since nothing
+imports either directory and nothing is meant to. A new contract package
+owes those three, plus `packages/*/contracts/**` staying in the `aai-templates`
+turbo `inputs` — that is what stops the gate-under-the-gate being served from
+cache exactly when a contract tree changes.
+
 ## "Published", "promised" and "documented" are three different sets
 
 Three files decide them, each with a written deny-list so a new subpath
 defaults IN: `package.json#exports` (published), `contracts/entrypoints/`
-(promised — see "The authoring surface is versioned in epochs" in the root
-`AGENTS.md`) and a `typedoc.json` (documented). They currently disagree both
-ways, and each disagreement is a decision owed out loud rather than a bug to
-patch quietly.
+(promised — see "The authoring surface is versioned in epochs" above) and a
+`typedoc.json` (documented). They currently disagree both ways, and each
+disagreement is a decision owed out loud rather than a bug to patch quietly.
 
 `@alexkroman1/aai/protocol` opens its reference page with "the published wire
 contract … for building custom clients or servers" while

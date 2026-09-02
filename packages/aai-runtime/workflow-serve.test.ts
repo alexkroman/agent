@@ -10,12 +10,20 @@
 
 import { createServer, type IncomingMessage } from "node:http";
 import { networkInterfaces } from "node:os";
-import { requestPath } from "@alexkroman1/aai/host-internal";
+import { requestPath, STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/host-internal";
+import { stepWebhookUrl } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Logger } from "./runtime-config.ts";
 import { WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
-import { handleWorkflowRequest, isLoopbackAddress } from "./workflow-serve.ts";
+import {
+  handleWorkflowRequest,
+  isLoopbackAddress,
+  MAX_QUEUE_DELIVERY_BODY_BYTES,
+  publishWorkflowWebhookUrl,
+  WORKFLOW_WEBHOOK_PREFIX,
+  workflowWebhookUrl,
+} from "./workflow-serve.ts";
 
 /**
  * Serve the door from a REAL http server and return its base URL.
@@ -303,6 +311,53 @@ describe("the platform's delivery door", () => {
     }
   });
 
+  test("refuses an oversized delivery WITHOUT buffering it or reaching the handler", async () => {
+    // `allowRemote` is not "trusted with unbounded memory". The door read its
+    // body with no cap at all, so the platform's bearer — or anything holding a
+    // sandbox's manage token — chose how many bytes of a guest's heap to spend,
+    // on a process that is also serving live voice sessions.
+    //
+    // The assertion that matters is `deliver`, not the status: `readBody` counts
+    // per chunk and DROPS the overflow, so the refusal happens as the bytes
+    // arrive and `toFetchRequest` throws before `deliverQueueMessage` is ever
+    // called. A 413 with the handler reached would mean the whole body was
+    // buffered and only then measured, which is not a cap.
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver, undefined, vouched);
+    try {
+      const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": QUEUE_NAME },
+        body: "x".repeat(MAX_QUEUE_DELIVERY_BODY_BYTES + 4096),
+      });
+      expect(res.status).toBe(413);
+      expect(deliver).not.toHaveBeenCalled();
+    } finally {
+      await s.close();
+    }
+  });
+
+  test("delivers a body at the cap, so the bound cannot refuse a real message", async () => {
+    // The other half: a cap nothing legitimate can reach is a cap nobody
+    // notices is wrong. The platform's enqueue route stores at most
+    // `MAX_ENQUEUE_BODY_BYTES`, so a real delivery's payload fits under this by
+    // construction — and a body exactly AT the limit must pass, since
+    // `readBody` refuses on `>` rather than `>=`.
+    const deliver = vi.fn(async () => undefined);
+    const s = await serving(deliver, undefined, vouched);
+    try {
+      const res = await fetch(`${s.url}${WORKFLOW_QUEUE_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${BEARER}`, "x-vqs-queue-name": QUEUE_NAME },
+        body: "x".repeat(MAX_QUEUE_DELIVERY_BODY_BYTES),
+      });
+      expect(res.status).toBe(200);
+      expect(deliver).toHaveBeenCalledWith("wrun_7");
+    } finally {
+      await s.close();
+    }
+  });
+
   /**
    * FAILS CLOSED with no predicate, and LOOPBACK IS NOT ENOUGH.
    *
@@ -331,5 +386,52 @@ describe("the platform's delivery door", () => {
     } finally {
       await s.close();
     }
+  });
+});
+
+describe("workflowWebhookUrl", () => {
+  test("composes the base with the route this package serves", () => {
+    // Composed here rather than by the caller, so the URL handed out and the
+    // path that answers it come from the same constant.
+    expect(workflowWebhookUrl("https://agent.example.com", "approval:9")).toBe(
+      `https://agent.example.com${WORKFLOW_WEBHOOK_PREFIX}approval%3A9`,
+    );
+  });
+
+  test("encodes the token, because the route is ONE segment", () => {
+    // `webhookToken` refuses a path with a second slash in it, so an unencoded
+    // token would 404 at the far end days later.
+    expect(workflowWebhookUrl("https://x", "a/b")).toBe(`https://x${WORKFLOW_WEBHOOK_PREFIX}a%2Fb`);
+  });
+
+  test("trims a trailing slash off the base", () => {
+    // A copied-in origin ending in `/` is the ordinary shape of every source
+    // this value arrives from — a boot env var, a container's PUBLIC_URL, an
+    // author's own string.
+    expect(workflowWebhookUrl("https://x//", "t")).toBe(`https://x${WORKFLOW_WEBHOOK_PREFIX}t`);
+  });
+});
+
+describe("publishWorkflowWebhookUrl", () => {
+  // Back to "nothing has published", so a spec here cannot leave a minter
+  // behind for one in another file.
+  afterEach(() => publishWorkflowWebhookUrl(undefined));
+
+  test("fills the step slot, so a step can mint its own callback", () => {
+    publishWorkflowWebhookUrl("https://agent.example.com/");
+    expect(stepWebhookUrl("approval:9")).toBe(
+      `https://agent.example.com${WORKFLOW_WEBHOOK_PREFIX}approval%3A9`,
+    );
+  });
+
+  test("a blank or absent public URL UNPUBLISHES rather than minting a relative URL", () => {
+    // `publicUrl: ""` would compose `/.well-known/…` — a URL nothing can call
+    // back on — and the step helper's own throw names the configuration.
+    publishWorkflowWebhookUrl("https://agent.example.com");
+    publishWorkflowWebhookUrl("   ");
+    expect(() => stepWebhookUrl("t")).toThrow(STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE);
+    publishWorkflowWebhookUrl("https://agent.example.com");
+    publishWorkflowWebhookUrl(undefined);
+    expect(() => stepWebhookUrl("t")).toThrow(STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE);
   });
 });

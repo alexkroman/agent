@@ -19,10 +19,11 @@
  *
  * ## What a step still owns
  *
- * The STEP BOUNDARY stays HERE, and it has to. Only a body holds a `ctx`, so
- * rewrites step bodies it finds in this directory; one written inside the SDK
- * would be transformed by nothing, so it would run inline with no journal and
- * no retry while looking durable at the call site.
+ * The step BOUNDARY is not here — only a body holds a `ctx`, and the call this
+ * file is reached through is `ctx.step("postDigest", …)` in `digest.ts`. What
+ * stays here is what a step DOES: the digest rendered as a `ChannelMessage` and
+ * one `sendToChannelClassified` call. Deciding which steps exist is the
+ * template's job; what happens inside one is the SDK's.
  */
 
 import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";

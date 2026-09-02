@@ -94,6 +94,15 @@ export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
  *
  * `token` undefined means OPEN, and is the default. See the module doc.
  *
+ * **A BLANK token means neither open nor closed by this line, and used to mean
+ * open by accident.** `""` is not `undefined`, so it reached `bearerMatches`,
+ * where `timingSafeEqual` on two empty buffers MATCHES — so `AAI_WORKFLOW_API_TOKEN=`
+ * left every route here serving anyone while reading as closed. `bearerMatches`
+ * refuses a blank secret now, so this gate answers 401 for one; `createServer`
+ * reads the variable through `agentGateToken`, which reports a blank one as
+ * absent and logs why, so the surface lands on the documented default rather
+ * than 401ing `aai workflow` and the studio's runs card with no explanation.
+ *
  * @internal
  */
 export function workflowApiUnauthorized(

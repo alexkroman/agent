@@ -31,8 +31,6 @@
  * a fan-out over a file produces — passes them unchanged, and the off-by-one
  * that an inclusive API invites cannot be written.
  *
- * ## Why a published slot rather than an HTTP call
- *
  * ## An upload can be read WHILE it is still arriving
  *
  * Everything above describes a finished file, and it forces a strict order —
@@ -53,19 +51,16 @@
  *
  * ```ts no-check
  * import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
- * import { sleep } from "workflow";
+ * import type { WorkflowCtx } from "@alexkroman1/aai/workflow-api";
  *
- * async function arrived(id: string) {
- *   const { size, complete } = await uploadInfo(id);
- *   return { size, complete };
- * }
- *
- * export async function transcribeStream(input: { recording: string }) {
+ * export async function transcribeStream(input: { recording: string }, ctx: WorkflowCtx) {
  *   for (;;) {
- *     const { size, complete } = await arrived(input.recording);
+ *     // In a step, so each poll's answer is journaled rather than re-read on
+ *     // every replay — `arrived#0`, `arrived#1`, … one per round of the loop.
+ *     const { size, complete } = await ctx.step("arrived", () => uploadInfo(input.recording));
  *     // … work on every segment whose `end` is inside `size` …
  *     if (complete) break;
- *     await sleep("5s");
+ *     await ctx.sleep(5000);
  *   }
  * }
  * ```
@@ -100,9 +95,9 @@
  * ## Why a published slot rather than an HTTP call
  *
  * A step runs in the SAME process as the server that stored the upload: the
- * DevKit's queue dispatches it to that server's own `/step` route. So the
+ * engine walks the body in the process serving the run. So the
  * reader is handed over in-process through a `Symbol.for` slot — the mechanism
- * {@link stepEnv} uses and for the same reason (the step artifact bundles its
+ * {@link stepEnv} uses and for the same reason (the agent bundle carries its
  * own copy of this module, so publisher and reader are two instances in one
  * realm). Going out over HTTP instead would mean a loopback port to discover, a
  * bearer to present, and on the platform a round trip through the broker for

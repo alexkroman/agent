@@ -133,21 +133,45 @@ export function heavierThanNormalizedFormat(
  *   narrower one saves nothing worth a second.
  *
  * @throws {UnsupportedRecordingError} for a bit depth `parseWav` admits and this
- *   cannot read. Terminal, which is right: it answers the same way forever.
+ *   cannot serve, and for a window holding no whole frame. Both are checked
+ *   BEFORE the fast path, so the LIGHT path answers them too — see the two
+ *   guards below. Terminal, which is right: each answers the same way forever.
  */
 export function downsampleSegment(
   bytes: Uint8Array,
   from: Pick<WavFormat, "sampleRate" | "channels" | "bitsPerSample">,
 ): { bytes: Uint8Array; format: PcmFormat } {
+  // Both guards run before the fast path, and that is the fix rather than an
+  // ordering preference: they ask what can be SENT, which the light path does
+  // as much as the heavy one. Hung off the resampler they only ever ran when
+  // there was resampling to do, so a recording already at 16 kHz mono took the
+  // identity path below with its samples never once looked at — and a 12-bit
+  // one then died in `encodeWav` on an UNCLASSIFIED `RangeError`, worth six
+  // attempts against a file no attempt can fix, while a 64-bit one passed that
+  // check and went on the wire mislabelled.
+  const bind = sampleReaderFor(from);
+  const frame = blockAlign(from);
+  const inFrames = Math.floor(bytes.length / frame);
+  // A CALLER ERROR, and stated as one. `readUpload` clamps a window to what is
+  // stored, so the streaming flow can hand a short read down here; with no whole
+  // frame the averaging window below is zero wide, `total / 0` is `NaN`, and
+  // `setInt16` writes that as a 0 — a two-byte WAV of silence, transcribed and
+  // reported as if it were audio. There is no honest empty result to return
+  // either: the endpoint is being asked to decode nothing.
+  if (inFrames === 0) {
+    throw new UnsupportedRecordingError(
+      `That segment holds ${bytes.length} byte(s), which is under one ${frame}-byte frame — ` +
+        "there is no audio in it to transcribe.",
+    );
+  }
+
   const format = requestFormat(from);
   if (format === from) return { bytes, format };
 
   const ratio = from.sampleRate / format.sampleRate;
-  const frame = blockAlign(from);
-  const inFrames = Math.floor(bytes.length / frame);
   const outFrames = Math.max(1, Math.floor(inFrames / ratio));
 
-  const read = sampleReader(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), from);
+  const read = bind(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength));
   const out = new Uint8Array(outFrames * 2);
   const wrote = new DataView(out.buffer);
   const sampleBytes = from.bitsPerSample / 8;
@@ -211,32 +235,39 @@ export function requestFormat(
  * 8.8 million frames, so the branch is the difference between a closure call and
  * a jump table 17.6 million times over.
  *
+ * TWO stages, and the split is what lets one switch serve both paths. The depth
+ * is settled here — including the REFUSAL — and the view is bound after, because
+ * a light-path call has no view to bind and still owes that refusal: the four
+ * depths this can read are also the four the request can carry, since `encodeWav`
+ * rejects anything that is not a whole number of bytes and the endpoint decodes
+ * what the header describes.
+ *
  * `parseWav` admits only `WAVE_FORMAT_PCM`, so every depth here is a signed
  * little-endian integer — except 8-bit, which RIFF specifies as UNSIGNED and
  * centred on 128. That asymmetry is the one thing in this function worth
  * knowing; reading an 8-bit file as signed is a transcript of loud static.
  */
-function sampleReader(
-  view: DataView,
+function sampleReaderFor(
   from: Pick<WavFormat, "bitsPerSample">,
-): (at: number) => number {
+): (view: DataView) => (at: number) => number {
   switch (from.bitsPerSample) {
     case 8:
-      return (at) => (view.getUint8(at) - 128) * 256;
+      return (view) => (at) => (view.getUint8(at) - 128) * 256;
     case 16:
-      return (at) => view.getInt16(at, true);
+      return (view) => (at) => view.getInt16(at, true);
     case 24:
       // `getInt8` on the top byte is what sign-extends: the low two are read
       // unsigned and OR'd under it, then the whole thing is shifted down to the
       // 16-bit scale by an ARITHMETIC shift, which preserves that sign.
-      return (at) =>
+      return (view) => (at) =>
         (view.getUint8(at) | (view.getUint8(at + 1) << 8) | (view.getInt8(at + 2) << 16)) >> 8;
     case 32:
-      return (at) => view.getInt32(at, true) >> 16;
+      return (view) => (at) => view.getInt32(at, true) >> 16;
     default:
       throw new UnsupportedRecordingError(
-        `That WAV holds ${from.bitsPerSample}-bit samples, which this desk can cut but not ` +
-          "resample. Re-encode it with `-c:a pcm_s16le`.",
+        `That WAV holds ${from.bitsPerSample}-bit samples, which this desk can cut but cannot ` +
+          "send: a request carries 8-, 16-, 24- or 32-bit linear PCM. Re-encode it with " +
+          "`-c:a pcm_s16le`.",
       );
   }
 }

@@ -55,6 +55,7 @@ import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 export { AgentEnv }
 
@@ -178,6 +179,7 @@ export type CreatePostgresDbOptions = {
     onNotice?: (notice: unknown) => void;
     connectTimeoutSeconds?: number;
     queryTimeoutMs?: number;
+    reservedQueryTimeoutMs?: number;
 };
 
 // @public
@@ -259,6 +261,14 @@ type HeaderWebSocket = {
     }) => void): void;
 };
 
+// @public
+type HookRecord = {
+    token: string;
+    delivered: boolean;
+    payload?: unknown;
+    closed?: boolean;
+};
+
 export { HostCredentialEnv }
 
 // @internal
@@ -282,6 +292,27 @@ export type HttpUploadBlobsOptions = {
     serviceKey: string;
     bucket: string;
     fetch?: typeof globalThis.fetch | undefined;
+};
+
+// @public
+type JournalStore = {
+    createRun(record: RunRecord): Promise<void>;
+    getRun(runId: string): Promise<RunRecord | undefined>;
+    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
+    setStatus(runId: string, next: RunStatus, patch?: {
+        output?: unknown;
+        error?: {
+            message: string;
+        };
+    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    readSteps(runId: string): Promise<StepEntry[]>;
+    claimAttempt(runId: string, key: string): Promise<number>;
+    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
+    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+    closeHook(runId: string, key: string): Promise<boolean>;
+    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
 };
 
 // @public
@@ -408,6 +439,22 @@ export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>)
 export { RunCodeExecutor }
 
 // @public
+type RunRecord = {
+    runId: string;
+    workflow: string;
+    status: RunStatus;
+    createdAt: number;
+    input: unknown;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+type RunStatus = WorkflowRunStatus;
+
+// @public
 export type Runtime = AgentRuntime & {
     executeTool: ExecuteTool;
     toolSchemas: ToolSchema[];
@@ -426,6 +473,7 @@ export type RuntimeOptions = {
     providerEnv?: ProviderEnv | undefined;
     db?: Db | undefined;
     workflows?: WorkflowClient | undefined;
+    journal?: JournalStore | undefined;
     createWebSocket?: CreateS2sWebSocket | undefined;
     createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
     publicUrl?: string | undefined;
@@ -578,6 +626,14 @@ export type SessionWebSocket = {
 export type SkipGreeting = boolean | (() => boolean);
 
 // @public
+type SleepRecord = {
+    wakeAt: number;
+    woken: boolean;
+    correlationId?: string | undefined;
+    kind: "sleep" | "hookTimeout";
+};
+
+// @public
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, opts: {
     carrier: CarrierCodec;
     logger?: Logger;
@@ -588,6 +644,19 @@ export type StateSyncSession = {
     read(key: string): unknown;
     lastPush(): string | undefined;
     recordPush(json: string): void;
+};
+
+// @public
+type StepEntry = {
+    key: string;
+    name: string;
+    status: "ok" | "failed";
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    attempts: number;
+    finishedAt: number;
 };
 
 // @public
@@ -768,6 +837,7 @@ export type WdkRunRecord = {
     workflowName: string;
     status: "pending" | "running" | "completed" | "failed" | "cancelled";
     createdAt: Date | number;
+    output?: unknown;
     error?: {
         message: string;
     } | undefined;

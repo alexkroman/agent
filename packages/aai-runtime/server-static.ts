@@ -28,13 +28,48 @@ import type { Logger } from "./runtime-config.ts";
  * Separator-safe containment: `target` is `dir` itself or strictly inside it.
  *
  * A bare `target.startsWith(dir)` also admits sibling directories sharing the
- * prefix (`<dir>-evil`) — the classic path-containment bug. Both paths must
- * already be resolved; this is a pure string check.
+ * prefix (`<dir>-evil`) — the classic path-containment bug, which is what the
+ * `+ path.sep` is for.
+ *
+ * ## It NORMALIZES both sides, and the precondition it used to state is why
+ *
+ * This was a pure string check whose doc said "both paths must already be
+ * resolved". Nothing enforced that and three call sites had open-coded copies of
+ * the line, so the precondition was a comment in one file governing code in
+ * three. It failed in BOTH directions:
+ *
+ * - **Fail-closed, on the root's SPELLING.** A trailing separator, a `.`
+ *   segment, or a relative root inverted every verdict: `isPathInside("/a/b/",
+ *   "/a/b/c.ts")` was `false`, so `resolveInside("/a/b/", "c.ts")` threw "Path
+ *   escapes the workspace" for a path plainly inside it. `serveStatic` below has
+ *   already paid for this once — a relative `clientDir` 404'd every asset with no
+ *   log line — and fixed it at its own call site, which is the shape of a
+ *   predicate that should have owned the normalization.
+ * - **Fail-OPEN, on a `..` in the target.** `isPathInside("/app",
+ *   "/app/../etc/passwd")` returned **true**: the string starts with `/app/`, and
+ *   a raw `startsWith` has no notion of a segment. Every caller happens to
+ *   `path.join` or `path.resolve` first, which collapses the `..` before it gets
+ *   here — so the hole is masked by caller discipline rather than closed, and it
+ *   is the next caller that pays.
+ *
+ * `path.resolve` is idempotent on an already-resolved path, so normalizing costs
+ * nothing where the precondition was already met and is the whole fix where it
+ * was not. A RELATIVE argument resolves against `process.cwd()`, which is the
+ * only defensible reading of a relative containment question.
+ *
+ * The verdict must not depend on how the root is SPELLED — that metamorphic
+ * property is what the spec asserts, against `path.relative` as an independent
+ * oracle.
  *
  * @internal
  */
 export function isPathInside(dir: string, target: string): boolean {
-  return target === dir || target.startsWith(dir + path.sep);
+  const root = path.resolve(dir);
+  const abs = path.resolve(target);
+  // A filesystem root already ends in the separator (`/`, `C:\`), and appending
+  // a second one makes nothing inside it — including every absolute path.
+  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+  return abs === root || abs.startsWith(prefix);
 }
 
 /**

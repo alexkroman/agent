@@ -10,7 +10,7 @@ import { validateAgentExport } from "./_utils.ts";
 import { buildClient } from "./client-bundler.ts";
 import { type BuildWorkerOptions, buildWorker } from "./worker-bundler.ts";
 
-/** Output from the bundler: worker ESM + client files + workflow artifacts. */
+/** Output from the bundler: worker ESM + client files. */
 export type DirectoryBundleOutput = {
   /** ESM bundle of agent.ts (tool execute functions + hook handlers). */
   worker: string;
@@ -30,13 +30,16 @@ export async function buildAgentBundle(
   cwd: string,
   opts: BuildWorkerOptions = {},
 ): Promise<DirectoryBundleOutput> {
-  // There used to be a THIRD build here, sequenced before these two: the DevKit
-  // compiled a project's `workflows/` per tenant and the result rode the worker
-  // as two string exports, because the guest's `bundle/load` takes one ESM
-  // string. The replay engine reads the agent's own `workflows` declaration, so
-  // there is nothing to compile and nothing to embed.
-  const clientFiles = await buildClient(cwd);
-  const worker = await buildWorker(cwd, opts);
+  // CONCURRENT, and that is what `withPreservedNodeEnv`'s refcount exists for —
+  // read its doc before serializing these. There used to be a THIRD build,
+  // sequenced BEFORE the other two: the DevKit compiled a project's `workflows/`
+  // per tenant and its output rode the worker as two string exports, because the
+  // guest's `bundle/load` takes one ESM string. The replay engine reads the
+  // agent's own `workflows` declaration, so there is nothing to compile, nothing
+  // to embed, and — the part easy to lose with it — no ordering left between the
+  // two that remain. They write to disjoint paths (`.aai/client` and a temp HTML
+  // against `.aai/worker-entry.ts`), so the client build is free again.
+  const [clientFiles, worker] = await Promise.all([buildClient(cwd), buildWorker(cwd, opts)]);
   return { worker, clientFiles };
 }
 
@@ -98,13 +101,12 @@ export async function evalWorkerConfig(code: string): Promise<unknown> {
 }
 
 /**
- * Memoizing wrapper around `evalWorkerWithWorkflows` for long-lived callers
+ * Memoizing wrapper around {@link evalWorkerBundle} for long-lived callers
  * (the dev server): byte-identical worker code returns the previously
  * evaluated result without touching the ESM registry. No-op saves and formatter
  * churn are the common watcher events, so this caps the registry leak (see
  * `evalWorkerBundle`) to genuinely-new bundles — the residual one-module-per-
  * distinct-build leak is accepted for the reasons documented there.
- *
  */
 export function createWorkerEvaluator(): (code: string) => Promise<AgentDef> {
   let lastHash: string | undefined;
