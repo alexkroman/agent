@@ -16,31 +16,20 @@
  * and both are asserted over the wire for the same reason `greeting` is: what
  * failed was a value not arriving, which an options-object assertion cannot
  * see.
+ *
+ * **Everything here speaks HTTP to a loopback port and nothing opens a
+ * SESSION**, which is what keeps the file unit-tier. The two specs that do open
+ * one are `agent-server.scenario.test.ts`: a live session dials a real provider,
+ * and that is the tier boundary rather than a slow test.
  */
 
 import { agent, workflow, workflowApp } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { WebSocket as NodeWebSocket } from "ws";
 import { z } from "zod";
+import { AGENT_SERVER_ENV as ENV, withServer } from "./_agent-server-test-utils.ts";
 import { silentLogger, withDeadline } from "./_test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
-
-const ENV = { ASSEMBLYAI_API_KEY: "sk-test" };
-
-async function withServer(
-  options: Omit<Parameters<typeof createAgentServer>[0], "env"> & {
-    env?: Record<string, string>;
-  },
-  run: (baseUrl: string) => Promise<void>,
-): Promise<void> {
-  const server = createAgentServer({ env: ENV, logger: silentLogger, ...options });
-  await server.listen(0);
-  try {
-    await run(`http://127.0.0.1:${server.port}`);
-  } finally {
-    await server.close();
-  }
-}
 
 describe("createAgentServer", () => {
   test("serves the agent's own name and greeting without being told them", async () => {
@@ -59,31 +48,6 @@ describe("createAgentServer", () => {
         status: "ok",
         name: "Support",
       });
-    });
-  });
-
-  test("a session websocket is accepted (the runtime is real, not a facade)", async () => {
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
-
-    await withServer({ agent: myAgent }, async (baseUrl) => {
-      const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/websocket`);
-      // Deadlined: a server that accepts the upgrade and then sends nothing
-      // satisfies none of these three listeners, and without one the whole
-      // file times out at 5 s naming no assertion.
-      const first = await withDeadline(
-        new Promise<Record<string, unknown>>((resolve) => {
-          ws.addEventListener("message", (e: MessageEvent) => {
-            if (typeof e.data === "string") resolve(JSON.parse(e.data) as Record<string, unknown>);
-          });
-          ws.addEventListener("close", () => resolve({ type: "closed" }));
-          ws.addEventListener("error", () => resolve({ type: "error" }));
-        }),
-        "the session websocket neither answered nor closed",
-      );
-      // The handshake frame — a declining facade would have sent a
-      // protocol error and closed instead.
-      expect(first).toMatchObject({ type: "session.configured" });
-      ws.close();
     });
   });
 
@@ -126,20 +90,6 @@ describe("createAgentServer", () => {
 
     await withServer({ agent: myAgent, telephony: false }, async (baseUrl) => {
       expect((await phoneRefusal(baseUrl)).message).toContain("404");
-    });
-  });
-
-  test("a voice agent still mounts /phone by default", async () => {
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
-
-    await withServer({ agent: myAgent }, async (baseUrl) => {
-      const socket = new NodeWebSocket(`${baseUrl.replace("http", "ws")}/phone`);
-      await withDeadline(
-        new Promise<void>((resolve) => socket.once("open", () => resolve())),
-        "the default /phone route did not accept a carrier socket",
-      );
-      expect(socket.readyState).toBe(NodeWebSocket.OPEN);
-      socket.close();
     });
   });
 
