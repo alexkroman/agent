@@ -819,15 +819,37 @@ embedded in a `RUN echo … | base64 -d | gunzip` line.
 
 **Pulling it is opt-in, and `GUEST_IMAGE_REGISTRY` is the switch.** Set it and
 every Modal spawn resolves `<registry>/aai-guest-harness:<sha16>` through
-`images.fromRegistry`; unset — the default, including production today — the
-server builds and publishes its own Modal snapshot exactly as before. The policy,
-both sources and the argument live in `aai-server/guest-image-source.ts`. Opt-in
+`images.fromRegistry`; unset — the CODE default — the server builds and publishes
+its own Modal snapshot exactly as before. The policy, both sources and the
+argument live in `aai-server/guest-image-source.ts`. Opt-in
 rather than default because nothing has published those images until
 `.github/workflows/ship.yml`'s guest-image job has run, and a default that pulls
 a tag which
-does not exist yet turns a deploy into a total sandbox outage. Flipping it — and
-deleting the snapshot half, which is most of `modal-harness-image.ts` — is the
-follow-up.
+does not exist yet turns a deploy into a total sandbox outage. Flipping the
+DEFAULT — and deleting the snapshot half, which is most of
+`modal-harness-image.ts` — is the follow-up.
+
+**PRODUCTION sets it, and this paragraph used to say the opposite** ("the
+default, including production today"), which inverts the answer to the one
+question a reader brings here: does a deployed platform pull these images? It
+does. The variable lives in the Modal secret, so nothing in the repo or in CI
+can read it back — the evidence is in
+`aai-server/guest-image-source.ts`, whose `resolvePinAcrossSources` exists
+BECAUSE the flip happened: on the day after it, five pinned tags resolved to a
+registry that had never held them.
+
+**A guest image is published on every push to main; PROD does not boot one until
+a DEPLOY.** Both halves matter. The publish is ungated (see below), so main's
+head always has an image — but the tag a spawn asks for is decided by the
+DEPLOYED server: `agents.harness_image_tag` for an agent deployed earlier, and
+otherwise `localHarnessImageTag` over the harness bytes that server carries. A
+tag CI pushed on an ordinary merge is referenced by nothing until a deploy ships
+a server that hashes to it, which is why `ship.yml` gating the deploy on a
+version bump is what decides when a new guest image goes live. It was briefly
+not: #1343 armed the deploy off a server SOURCE diff, so every server merge
+deployed and every server merge therefore put a new guest image under
+production. That is reverted — see "A VERSION BUMP is what arms a deploy" in
+`ship.yml`.
 
 **The TAG is unchanged across the switch, deliberately.** Both sources key on the
 same `localHarnessImageTag` string and the registry source only PREPENDS a
@@ -851,6 +873,18 @@ registry at all. It runs on every push to main with no `paths` filter, because
 the tag hashes the harness BUNDLE — which bundles the SDK, the runtime, the UI
 and the CLI, so almost any change to `packages/` mints a new tag and a filter
 would silently stop publishing once it went stale.
+
+**And it is deliberately NOT gated on a version bump the way the deploy is.**
+The reasoning that gates the deploy — ship on a release, not on a merge — does
+not transfer, because the same property that rules out a `paths` filter rules
+out a version gate: any `packages/` change mints a new tag, so between releases
+main's head would name an image nobody published. That breaks the one thing
+these images are for outside a deploy, `GUEST_IMAGE_REGISTRY=ghcr.io/<owner>
+pnpm dev:aai-server`, and breaks it in the worst available way — `fromRegistry`
+is lazy, so the developer gets Modal's empty-exception build failure at sandbox
+CREATE rather than anything naming a missing tag. The cost of publishing on
+every merge is CI minutes and GHCR storage for tags no server pins; the cost of
+gating it is a dev affordance that fails without saying why.
 
 **The Dockerfile lives in `aai-server`, beside the constants it mirrors, and the
 build CONTEXT is this package.** That split is deliberate: the recipe's inputs
