@@ -195,7 +195,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
 
     async readSteps(runId: string): Promise<StepEntry[]> {
       const rows = await db.query<StepRow>(
-        `select key, name, status, output::text as output, error, attempts, finished_at
+        `select key, name, status, output::text as output, error, attempts, started_at, finished_at
          from ${WORKFLOW_STEP_TABLE} where run_id = $1 order by finished_at, key`,
         [runId],
       );
@@ -415,8 +415,8 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       // what it returned.
       await db.query(
         `insert into ${WORKFLOW_STEP_TABLE}
-           (run_id, key, name, status, output, error, attempts, finished_at)
-         values ($1, $2, $3, $4, $5::text::jsonb, $6, $7, $8)
+           (run_id, key, name, status, output, error, attempts, started_at, finished_at)
+         values ($1, $2, $3, $4, $5::text::jsonb, $6, $7, $8, $9)
          on conflict (run_id, key) do nothing`,
         [
           runId,
@@ -426,11 +426,12 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
           encodedOrNull(entry.output),
           entry.error?.message ?? null,
           entry.attempts,
+          entry.startedAt ?? null,
           entry.finishedAt,
         ],
       );
       const rows = await db.query<StepRow>(
-        `select key, name, status, output::text as output, error, attempts, finished_at
+        `select key, name, status, output::text as output, error, attempts, started_at, finished_at
          from ${WORKFLOW_STEP_TABLE} where run_id = $1 and key = $2`,
         [runId, entry.key],
       );

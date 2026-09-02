@@ -121,6 +121,23 @@ function int(body: Body, key: string): number {
   return value;
 }
 
+/**
+ * `optionalInt`, as `_body-fields.ts` spells it: absent or `null` means ABSENT,
+ * and a present non-integer is a 400 rather than a coerced value.
+ *
+ * The fake has to make that distinction because `StepEntry.startedAt` is the
+ * first optional NUMBER on this wire — `int` above would turn an absent one into
+ * `NaN`, which is exactly the "invented answer" this arm exists to catch.
+ */
+function optInt(body: Body, key: string): number | undefined {
+  const value = body[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new Error(`${key} must be an integer when present`);
+  }
+  return value;
+}
+
 /** `optionalStrings`. */
 function optStrs(body: Body, key: string): readonly string[] | undefined {
   const value = body[key];
@@ -233,6 +250,7 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
           output: text(step.output),
           error: step.error?.message,
           attempts: step.attempts,
+          startedAt: step.startedAt,
           finishedAt: step.finishedAt,
         })),
       );
@@ -292,6 +310,7 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
           output: optStr(row, "output"),
           error: failure === undefined ? undefined : { message: failure },
           attempts: int(row, "attempts"),
+          startedAt: optInt(row, "startedAt"),
           finishedAt: int(row, "finishedAt"),
         })
         .then((step) => ({
@@ -301,6 +320,7 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
           output: text(step.output),
           error: step.error?.message,
           attempts: step.attempts,
+          startedAt: step.startedAt,
           finishedAt: step.finishedAt,
         }));
     }

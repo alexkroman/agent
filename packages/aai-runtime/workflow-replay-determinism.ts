@@ -242,6 +242,11 @@ export function createDeterminismReads(
     divergence.reach(key, kind, answered);
     if (answered !== undefined) return answered.output as T;
 
+    // Read BEFORE `produce()` so the entry's span covers the read itself, which
+    // is the same rule `attemptLoop` follows. It is microseconds here — these
+    // have no body — and the point is that a reader can treat every entry's
+    // `startedAt` the same way rather than having to know which kind it is.
+    const startedAt = Date.now();
     const stored = await hold(() =>
       journal.appendStep(runId, {
         key,
@@ -250,6 +255,7 @@ export function createDeterminismReads(
         output: produce(),
         // No attempt was charged. Decision 2 in the module doc.
         attempts: 0,
+        startedAt,
         finishedAt: Date.now(),
       }),
     );

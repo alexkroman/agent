@@ -319,6 +319,20 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
    */
   let tries = 0;
 
+  /**
+   * When this walk began working on the step, for the entry's `startedAt`.
+   *
+   * Taken here rather than in {@link runStepAttempts}, so it is AFTER the gate:
+   * `finishedAt - startedAt` is then what the step itself cost — its own
+   * attempts and their backoff — rather than that plus however long the process
+   * was too busy to start it. Gate contention is real and worth seeing, and this
+   * is not where it belongs: attributing it to the step would report a fast step
+   * on a loaded worker as a slow step. It shows instead in the GAP between one
+   * entry's `finishedAt` and the next's `startedAt`, which is the reading
+   * `StepEntry.startedAt` documents as delivery latency.
+   */
+  const startedAt = Date.now();
+
   // ONE charge for the whole reach, taken before the body and given back only
   // if the reach ends in a durable WAIT. A retry below re-runs the body without
   // re-taking it, which is what makes the charge unbroken: every window in which
@@ -375,6 +389,7 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
         status: "ok",
         output,
         attempts: tries,
+        startedAt,
         finishedAt: Date.now(),
       });
     } catch (err: unknown) {
@@ -416,6 +431,7 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
         status: "failed",
         error: { message: errorMessage(err) },
         attempts: tries,
+        startedAt,
         finishedAt: Date.now(),
       });
     }

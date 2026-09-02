@@ -369,7 +369,37 @@ covered, by a spec that called `createServer` directly, which is exactly why the
 wrapper's version survived it. A forwarding spec has to take the door a caller
 takes.
 
-`uploadBroker` came with them; the remaining gaps are deliberate.
+**`journal` was the fourth, and it is why this is a CHECK now rather than a
+rule.** `RuntimeOptions.journal` takes a host-supplied `JournalStore` — the whole
+point being that a deployment which already owns a database keeps its durable
+runs there — and this door did not forward it, so the only way to supply one was
+to drop back to `createRuntime` + `createServer` and restate by hand every field
+the wrapper derives. Found writing `contracts/compatibility/server/v8.ts`, which
+could not name `AgentServerOptions["journal"]` while the option was nonetheless
+IN this capability's report (the `agent: RuntimeOptions["agent"]` rollup).
+
+**`agent-server-forwarding.ts` is what stops a fifth.** Every `RuntimeOptions`
+member is either on `AgentServerOptions` or on an explicit
+`UnforwardedRuntimeOption` deny-list with its reason, and `ForwardingGap` is the
+subtraction — `never` today, and the NAME of the offending member the moment one
+is added. That fails `turbo run typecheck` AND the build, because the module is
+compiled by `tsconfig.build.json` and a build failure cannot be skipped by a test
+filter. It is the same shape as `AgentConfigSchema`'s
+`HOST_ONLY_AGENT_FIELDS` subtraction one package over, and for the same reason:
+every field here is optional, so an omission is valid TypeScript and presents as
+a working server quietly ignoring part of its own configuration.
+
+Two things about it worth knowing. It is checked in BOTH directions — a
+`StaleExcuse` (an entry naming a member `RuntimeOptions` no longer has) and a
+`RedundantExcuse` (one the door now forwards) each fail the same way, and the
+first direction caught THREE wrong entries on its first run: a draft excused
+`name`, `greeting` and `hostBaseAgent`, none of which is a `RuntimeOptions`
+member at all. And the enforcement really is `tsc` rather than the suite — the
+spec beside it is type-level, so a gap reports three passing tests; that file
+says so rather than implying otherwise.
+
+`uploadBroker` came with the three above; the remaining absences are now
+DECISIONS, each with a reason at its deny-list entry rather than in this guide.
 `name` and `greeting` are derived, which is the whole point.
 And of `RuntimeOptions`' twenty, the fourteen unreachable ones are the testing
 and sandbox seams (`executeTool`, `toolSchemas`, `createWebSocket`,
@@ -995,6 +1025,46 @@ exactly the try a body most wants to degrade on. And the EVAL engine fills the
 slot with a first-and-only attempt rather than leaving it empty — unfilled means
 `undefined`, which a body reads as "no run", so a step that degrades on its last
 attempt would be measured on that branch.
+
+### A step entry records when it STARTED
+
+`StepEntry.startedAt`, so `finishedAt - startedAt` is what the step cost. An
+entry carried `attempts` and `finishedAt` and no start, so the only elapsed time
+derivable from a run's history was the gap between one step's finish and the
+next's — which is the previous step's cost PLUS whatever the body did between
+them, and is nothing at all for the first step of a run or the first after a
+wait. The park-curve section below is the evidence: its production numbers
+(`walkingForSeconds: 285`, "~45 behind it at 12 a minute") came off a log line,
+because the journal could not be asked.
+
+An absolute instant rather than a duration — the difference is derivable and the
+instant is not, and a gap between one entry's `finishedAt` and the next's
+`startedAt` is DELIVERY latency, a different question from step cost and the one
+that tells a slow step from a slow queue. It spans the whole reach, retries and
+backoff included, and excludes time queued behind `StepGate`; the field's own doc
+argues both.
+
+**OPTIONAL, and absence means the row predates the column.** The journal is
+append-only over tables that already hold rows, so a reader owes an absent start
+"unknown" and never zero — which would report a long step as instant. The
+conformance table pins that in both directions, including that a start of `0` is
+KEPT: an arm reading `startedAt ?? undefined` would satisfy the absence case
+while silently dropping a real value.
+
+**No reader surfaces it yet**, and that is worth saying rather than implying: the
+public workflow API carries a run SNAPSHOT and no step history, so this is
+queryable from the database and from nowhere else. A route and a CLI verb over
+`readSteps` are the obvious next move and are not built.
+
+Two things the change found, both about the DDL-parity gate. It read the ONE
+migration that CREATES these tables, so a column added by a later one was
+uncompared — which made it blind to exactly the drift it exists to catch, and
+had already hidden `workflow_runs.reconciled_at` plus two reconcile indexes. It
+reads every migration in filename order now, applies `alter table … add column`
+on both sides, and scopes the parse to the five tables the pairing derives. And
+its column-ORDER assertion had to go: a column added by an `alter` lands last, so
+the two sides diverge in position the moment either adds one. Sets are compared
+instead; every claim that matters is asserted by name.
 
 ### A parked delivery asks to come back PROPORTIONATELY
 

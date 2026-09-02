@@ -485,6 +485,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
+    startedAt?: number | undefined;
     finishedAt: number;
 };
 

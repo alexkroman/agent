@@ -7686,6 +7686,7 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     clientDir?: string;
     db?: Db | undefined;
     env: AgentEnv;
+    journal?: RuntimeOptions["journal"];
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
@@ -8269,6 +8270,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
+    startedAt?: number | undefined;
     finishedAt: number;
 };
 
@@ -8975,6 +8977,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
+    startedAt?: number | undefined;
     finishedAt: number;
 };
 

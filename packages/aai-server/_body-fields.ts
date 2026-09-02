@@ -45,6 +45,27 @@ export function requiredInt(body: Record<string, unknown>, key: string): number 
 }
 
 /**
+ * An OPTIONAL finite integer field: absent, or a real integer, never a coerced one.
+ *
+ * `undefined` for an absent key and for one carrying `null`, which is what
+ * `JSON.stringify` leaves behind when the client had `undefined`. A value that
+ * is PRESENT and not an integer is refused rather than dropped: the client that
+ * sent it meant something by it, and silently storing nothing is how a field
+ * comes to be absent for a reason nobody can find.
+ *
+ * `StepEntry.startedAt` is the first reader — a column added to a table that
+ * already held rows, so absence is a legitimate answer rather than a fault.
+ */
+export function optionalInt(body: Record<string, unknown>, key: string): number | undefined {
+  const value = body[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new HTTPException(400, { message: `${key} must be an integer when present` });
+  }
+  return value;
+}
+
+/**
  * A required integer field that cannot be negative.
  *
  * Separate from {@link requiredInt} rather than a flag, because the two carry

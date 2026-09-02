@@ -211,6 +211,14 @@ function toStep(value: unknown): StepEntry | undefined {
   const attempts = Number(value.attempts);
   const finishedAt = Number(value.finishedAt);
   if (!(Number.isFinite(attempts) && Number.isFinite(finishedAt))) return undefined;
+  // NOT part of the refusal above, unlike `attempts` and `finishedAt`. An
+  // absent start is legitimate — a row written before the column existed — so a
+  // missing one must read as unknown rather than sink the whole entry, which is
+  // the answer that makes a double execution deterministic. A present-but-junk
+  // value is dropped the same way for the same reason: nothing downstream reads
+  // it to make a decision, so refusing the entry over it would trade a durable
+  // answer for a diagnostic.
+  const startedAt = value.startedAt === undefined ? undefined : Number(value.startedAt);
   return {
     key: value.key,
     name: value.name,
@@ -218,6 +226,7 @@ function toStep(value: unknown): StepEntry | undefined {
     output: decode(value.output),
     error: errorOf(value.error),
     attempts,
+    ...(startedAt !== undefined && Number.isFinite(startedAt) ? { startedAt } : {}),
     finishedAt,
   };
 }
@@ -373,6 +382,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
           output: encode(entry.output),
           error: entry.error?.message,
           attempts: entry.attempts,
+          startedAt: entry.startedAt,
           finishedAt: entry.finishedAt,
         },
       });

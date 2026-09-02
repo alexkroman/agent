@@ -33,6 +33,7 @@ import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import {
   isOneOf,
+  optionalInt,
   optionalString,
   requiredInt,
   requiredSize,
@@ -178,6 +179,10 @@ function stepEntry(body: Record<string, unknown>): journal.JournalStepRow {
     output: optionalString(record, "output"),
     error: optionalString(record, "error"),
     attempts: requiredInt(record, "attempts"),
+    // OPTIONAL, unlike every field above it: the column was added to a table
+    // that already held rows, so an engine older than it sends nothing and an
+    // absent start is the honest answer. See `StepEntry.startedAt`.
+    startedAt: optionalInt(record, "startedAt"),
     finishedAt: requiredInt(record, "finishedAt"),
   };
 }

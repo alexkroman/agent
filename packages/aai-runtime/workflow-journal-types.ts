@@ -39,6 +39,27 @@
 
 import { TERMINAL_WORKFLOW_STATUSES } from "@alexkroman1/aai/internal";
 import type { WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
+// The five records are DECLARED in their own module for the file-length reason
+// its doc gives. IMPORTED as well as re-exported, because a bare
+// `export … from` publishes the names without bringing them into this module's
+// scope and `JournalStore`'s own signatures name all five.
+import type {
+  HookRecord,
+  ResumableRun,
+  RunRecord,
+  SleepRecord,
+  StepEntry,
+} from "./workflow-journal-records.ts";
+
+// Re-exported so this stays the path the engine, all four backends and
+// `aai-server` already name.
+export type {
+  HookRecord,
+  ResumableRun,
+  RunRecord,
+  SleepRecord,
+  StepEntry,
+} from "./workflow-journal-records.ts";
 
 /**
  * Where a run is — the PUBLIC union, imported rather than restated.
@@ -97,122 +118,6 @@ export type ResumableJournal = JournalStore & {
 export function isResumableJournal(store: JournalStore): store is ResumableJournal {
   return store.resumableRuns !== undefined;
 }
-
-/**
- * One run, as stored.
- *
- * `workflow` is the DECLARED KEY — the name the agent registered it under in
- * `agent({ workflows })`. Under the DevKit this field held a compiler-minted
- * `workflowId` and every read had to translate; there is only one identity now,
- * which is most of what the removal bought.
- */
-export type RunRecord = {
-  runId: string;
-  workflow: string;
-  status: RunStatus;
-  createdAt: number;
-  /** The validated input the run was started with. */
-  input: unknown;
-  /** Set once `status` is `completed`. */
-  output?: unknown;
-  /** Set once `status` is `failed`. */
-  error?: { message: string } | undefined;
-};
-
-/**
- * One journal entry: a step that reached a verdict.
- *
- * Only SETTLED steps are journaled. A step that is mid-flight has no entry, so a
- * crash leaves the journal describing exactly the work that finished — which is
- * what makes replay safe to run against it without a reconciliation pass.
- *
- * `key` is `name#occurrence` — see `WorkflowCtx` in the SDK for why identity is
- * that pair and not an ordinal or a bare name.
- */
-export type StepEntry = {
-  key: string;
-  /** The step's own name, without the occurrence suffix — for `aai workflow` output. */
-  name: string;
-  /** `ok` carries `output`; `failed` carries `error` and ended the run. */
-  status: "ok" | "failed";
-  output?: unknown;
-  error?: { message: string } | undefined;
-  /** Attempts this step consumed, counting the one that settled it. */
-  attempts: number;
-  finishedAt: number;
-};
-
-/**
- * One durable WAIT, as stored.
- *
- * Unlike a {@link StepEntry} this is MUTABLE, and the difference is real rather
- * than an inconsistency: a step entry records something that happened, where a
- * sleep records something that has not happened yet. `wake` is what changes it,
- * which is the whole point of `ctx.workflows.wake(runId)` — a scheduled wait a
- * caller decides to cut short. An append-only log cannot express that without a
- * tombstone convention every backend would have to agree on.
- */
-export type SleepRecord = {
-  /** When the body may continue. Decided ONCE, on the first reach. */
-  wakeAt: number;
-  /** Set by {@link JournalStore.wakeSleeps}. A woken sleep returns immediately. */
-  woken: boolean;
-  /** What a targeted `wake` matches on, when the author named one. */
-  correlationId?: string | undefined;
-  /**
-   * What this wait IS, which decides whether a broad wake may end it.
-   *
-   * A `waitFor(token, { timeoutMs })` journals its deadline through the same
-   * primitive as a `ctx.sleep`, and without this they were indistinguishable — so
-   * `ctx.workflows.wakeUp(runId)` with no ids, which is the "send it now" call a
-   * tool makes to cut a SCHEDULE short, also closed any pending approval window
-   * on that run. A body cancelling a human approval it never asked to cancel.
-   *
-   * A bare wake therefore reaches `sleep` only. A hook's deadline is ended by
-   * naming its correlation id, or by the answer arriving.
-   */
-  kind: "sleep" | "hookTimeout";
-};
-
-/**
- * One outstanding HOOK: a body parked on somebody else's answer.
- *
- * Mutable for the reason {@link SleepRecord} is — it records something that has
- * not happened yet. It differs in being addressed from OUTSIDE the run: a
- * signaller knows the token, not the run id, which is why the store carries a
- * token index and why `token` is unique across runs rather than per run.
- */
-export type HookRecord = {
-  token: string;
-  /** True once somebody signalled. `payload` is only meaningful then. */
-  delivered: boolean;
-  payload?: unknown;
-  /**
-   * True once the wait's WINDOW closed unanswered, so no signal may be taken.
-   *
-   * Not cosmetic, and not the same as `delivered`. A body whose
-   * `waitFor(token, { timeoutMs })` timed out has already returned `undefined`
-   * and moved on; if a signal could still land, the next replay would read a
-   * payload, take the ANSWERED branch, and the two walks of the body would
-   * disagree about what happened. Closing it is what keeps the answer a fact.
-   */
-  closed?: boolean;
-};
-
-/**
- * One run a local dispatcher still owes a delivery, as {@link
- * JournalStore.resumableRuns} answers it.
- */
-export type ResumableRun = {
-  runId: string;
-  /**
-   * The earliest OUTSTANDING deadline the run is waiting on, or absent when it is
-   * waiting on nothing — a `pending` run whose start was never delivered, or one
-   * killed mid-step. Absent means "deliver now"; a value in the past means the
-   * same and says how overdue it is.
-   */
-  wakeAt?: number | undefined;
-};
 
 /**
  * The durable store, as the engine needs it.

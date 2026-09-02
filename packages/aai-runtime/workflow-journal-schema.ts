@@ -75,9 +75,31 @@ const CREATE_STEPS = (t: string) => `create table if not exists ${t} (
   output jsonb,
   error text,
   attempts integer not null,
+  started_at bigint,
   finished_at bigint not null,
   primary key (run_id, key)
 )`;
+
+/**
+ * `started_at` on a table that already exists.
+ *
+ * `create table if not exists` is a NO-OP once the table is there, so a column
+ * added to {@link CREATE_STEPS} reaches a fresh deployment and no existing one —
+ * which for a self-hoster is the deployment that matters. `add column if not
+ * exists` is idempotent, so it runs at every boot for the price of one
+ * catalogue lookup.
+ *
+ * Nullable, and it has to be: the rows already there have no start, and a
+ * default would invent one. `StepEntry.startedAt` is optional for the same
+ * reason and says what a reader owes an absent value.
+ *
+ * The residual is the one this module's applier already lives with — a role that
+ * may not ALTER gets a warned, swallowed failure and then a `42703` from the
+ * store's own insert. That is the operator's migration to run, which is what
+ * `ensureWorkflowJournalSchema` being PUBLIC is for.
+ */
+const ALTER_STEPS_STARTED_AT = (t: string) =>
+  `alter table ${t} add column if not exists started_at bigint`;
 
 const CREATE_ATTEMPTS = (t: string) => `create table if not exists ${t} (
   run_id text not null,
@@ -116,6 +138,11 @@ const CREATE_HOOKS = (t: string) => `create table if not exists ${t} (
 /**
  * The five tables, for whoever owns the database.
  *
+ * Not purely `create table` statements any more: one `alter table … add column
+ * if not exists` follows the steps table, because a column added to a `create
+ * … if not exists` reaches only a database that does not exist yet. See
+ * {@link ALTER_STEPS_STARTED_AT}.
+ *
  * @internal
  */
 export function workflowJournalDdl(schema?: string): string[] {
@@ -124,6 +151,7 @@ export function workflowJournalDdl(schema?: string): string[] {
     CREATE_RUNS(q(WORKFLOW_RUN_TABLE)),
     CREATE_RUNS_INDEX(q(WORKFLOW_RUN_TABLE)),
     CREATE_STEPS(q(WORKFLOW_STEP_TABLE)),
+    ALTER_STEPS_STARTED_AT(q(WORKFLOW_STEP_TABLE)),
     CREATE_ATTEMPTS(q(WORKFLOW_ATTEMPT_TABLE)),
     CREATE_SLEEPS(q(WORKFLOW_SLEEP_TABLE)),
     CREATE_HOOKS(q(WORKFLOW_HOOK_TABLE)),

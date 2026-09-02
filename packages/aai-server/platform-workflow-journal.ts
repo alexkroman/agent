@@ -76,6 +76,16 @@ export {
   type JournalHookRow,
   PlatformWorkflowHookTokenError,
 } from "./platform-workflow-journal-hooks.ts";
+// The SLEEP half likewise, and it moved for the same reason the hooks did — the
+// `started_at` column took this file past the cap. Nothing here reaches that
+// table (the release CTE only touches `HOOKS`), which is what made the sleeps
+// the cleanest family to move.
+export {
+  claimSleep,
+  type JournalSleepRow,
+  SLEEPS,
+  wakeSleeps,
+} from "./platform-workflow-journal-sleeps.ts";
 
 /**
  * Statuses nothing will change again.
@@ -90,14 +100,17 @@ const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 /**
  * Where the journal lives. One schema-qualified name per table, spelled once.
  *
- * `HOOKS` is the exception and lives with the operations that own it
- * (`platform-workflow-journal-hooks.ts`); it is imported back for `setStatus`'s
- * release CTE, which is the one statement here that reaches that table.
+ * Two are exceptions and live with the operations that own them: `HOOKS`
+ * (`platform-workflow-journal-hooks.ts`) and `SLEEPS`
+ * (`platform-workflow-journal-sleeps.ts`), both re-exported below so a caller
+ * still sees one journal. `HOOKS` is additionally imported BACK, for
+ * `setStatus`'s release CTE — the one statement here that reaches another
+ * family's table. `SLEEPS` is not, and the asymmetry is the tell that the sleeps
+ * were the cleanest family to move: nothing here reaches them.
  */
 const RUNS = "aai_platform.workflow_runs";
 const STEPS = "aai_platform.workflow_steps";
 const ATTEMPTS = "aai_platform.workflow_attempts";
-const SLEEPS = "aai_platform.workflow_sleeps";
 
 /**
  * `bigint` arrives as a STRING from the driver, and `Number` is the read.
@@ -131,15 +144,13 @@ export type JournalStepRow = {
   output: string | undefined;
   error: string | undefined;
   attempts: number;
+  /**
+   * Absent for a row written before the column existed — see
+   * `StepEntry.startedAt` in `@alexkroman1/aai-runtime/internal`, which is the
+   * shape this row crosses the wire as.
+   */
+  startedAt: number | undefined;
   finishedAt: number;
-};
-
-/** One wait. */
-export type JournalSleepRow = {
-  wakeAt: number;
-  woken: boolean;
-  correlationId: string | undefined;
-  kind: string;
 };
 
 function toRun(row: Record<string, unknown>): JournalRunRow {
@@ -162,6 +173,11 @@ function toStep(row: Record<string, unknown>): JournalStepRow {
     output: text(row.output),
     error: text(row.error),
     attempts: Number(row.attempts),
+    // `millis` coerces, so NULL would become 0 — which reads as the epoch and
+    // then as a step that took 55 years. The column is nullable by construction
+    // (the rows already there have no start), so the null test comes first.
+    startedAt:
+      row.started_at === null || row.started_at === undefined ? undefined : millis(row.started_at),
     finishedAt: millis(row.finished_at),
   };
 }
@@ -341,7 +357,7 @@ export async function readSteps(
   runId: string,
 ): Promise<JournalStepRow[]> {
   const rows = await sql(
-    `select key, name, status, output::text as output, error, attempts, finished_at
+    `select key, name, status, output::text as output, error, attempts, started_at, finished_at
        from ${STEPS} where slug = $1 and run_id = $2 order by finished_at, key`,
     [slug, runId],
   );
@@ -394,72 +410,6 @@ export async function releaseAttempt(
   return null;
 }
 
-/**
- * Record a wait, or read the one already recorded.
- *
- * First write wins and later calls are READS — which is what stops a replay
- * pushing the deadline further out on every walk of the body.
- */
-export async function claimSleep(
-  sql: SqlExec,
-  slug: string,
-  runId: string,
-  key: string,
-  wakeAt: number,
-  correlationId: string | undefined,
-  kind: string,
-): Promise<JournalSleepRow> {
-  await sql(
-    `insert into ${SLEEPS} (slug, run_id, key, wake_at, correlation_id, kind)
-     values ($1, $2, $3, $4, $5, $6) on conflict (slug, run_id, key) do nothing`,
-    [slug, runId, key, wakeAt, correlationId ?? null, kind],
-  );
-  const rows = await sql(
-    `select wake_at, woken, correlation_id, kind from ${SLEEPS}
-      where slug = $1 and run_id = $2 and key = $3`,
-    [slug, runId, key],
-  );
-  const row = rows[0];
-  if (!row) throw new Error(`workflow sleep ${key} vanished for run ${runId}`);
-  return {
-    wakeAt: millis(row.wake_at),
-    woken: Boolean(row.woken),
-    correlationId: text(row.correlation_id),
-    kind: String(row.kind),
-  };
-}
-
-/**
- * Cut short every wait this call reaches, and answer how many.
- *
- * Three refusals as one `where`, the same three the memory backend makes: an
- * ELAPSED wait is not one this call stopped, nor is an already-woken one, and a
- * BARE wake reaches ordinary sleeps only — so cutting a schedule short cannot
- * also close an approval window.
- */
-export async function wakeSleeps(
-  sql: SqlExec,
-  slug: string,
-  runId: string,
-  now: number,
-  correlationIds: readonly string[] | undefined,
-): Promise<number> {
-  const rows = await sql(
-    `update ${SLEEPS}
-        set woken = true
-      where slug = $1 and run_id = $2
-        and woken = false
-        and wake_at > $3
-        and case
-              when $4::text[] is null then kind = 'sleep'
-              else correlation_id = any($4::text[])
-            end
-      returning key`,
-    [slug, runId, now, correlationIds ?? null],
-  );
-  return rows.length;
-}
-
 /** Record a settled step, or read the one already recorded. */
 export async function appendStep(
   sql: SqlExec,
@@ -469,8 +419,8 @@ export async function appendStep(
 ): Promise<JournalStepRow> {
   await sql(
     `insert into ${STEPS}
-       (slug, run_id, key, name, status, output, error, attempts, finished_at)
-     values ($1, $2, $3, $4, $5, $6::text::jsonb, $7, $8, $9)
+       (slug, run_id, key, name, status, output, error, attempts, started_at, finished_at)
+     values ($1, $2, $3, $4, $5, $6::text::jsonb, $7, $8, $9, $10)
      on conflict (slug, run_id, key) do nothing`,
     [
       slug,
@@ -481,11 +431,12 @@ export async function appendStep(
       entry.output ?? null,
       entry.error ?? null,
       entry.attempts,
+      entry.startedAt ?? null,
       entry.finishedAt,
     ],
   );
   const rows = await sql(
-    `select key, name, status, output::text as output, error, attempts, finished_at
+    `select key, name, status, output::text as output, error, attempts, started_at, finished_at
        from ${STEPS} where slug = $1 and run_id = $2 and key = $3`,
     [slug, runId, entry.key],
   );

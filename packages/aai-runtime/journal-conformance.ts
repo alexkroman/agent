@@ -7,6 +7,7 @@
  * that file first — it carries the argument for the pattern, and nothing here
  * restates it. What this module adds is the registry and the two helpers; the
  * cases themselves are {@link journalRunConformance},
+ * {@link journalStepConformance},
  * {@link journalCodecConformance}, {@link journalWaitConformance} and
  * {@link journalResumeConformance}, split for the file-length cap at seams the
  * platform's own store already splits on
@@ -89,6 +90,7 @@
 import { type JournalArm, journalRunConformance } from "./journal-conformance-cases.ts";
 import { journalCodecConformance } from "./journal-conformance-codec.ts";
 import { journalResumeConformance } from "./journal-conformance-resume.ts";
+import { journalStepConformance } from "./journal-conformance-steps.ts";
 import { journalWaitConformance } from "./journal-conformance-waits.ts";
 
 // The arm vocabulary is declared in the leaf case module and re-exported BY NAME
@@ -221,6 +223,7 @@ export const JOURNAL_BACKENDS: readonly JournalBackend[] = [
  */
 export function journalConformance(arm: JournalArm): void {
   journalRunConformance(arm);
+  journalStepConformance(arm);
   journalCodecConformance(arm);
   journalWaitConformance(arm);
   journalResumeConformance(arm);

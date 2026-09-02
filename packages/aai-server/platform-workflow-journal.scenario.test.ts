@@ -225,6 +225,7 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
       output: `"first"`,
       error: undefined,
       attempts: 1,
+      startedAt: undefined,
       finishedAt: 10,
     });
     const second = await journal.appendStep(sql, SLUG, runId, {
@@ -234,6 +235,7 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
       output: `"second"`,
       error: undefined,
       attempts: 9,
+      startedAt: undefined,
       finishedAt: 99,
     });
     expect(first.output).toBe(`"first"`);
@@ -438,6 +440,7 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
       output: "1",
       error: undefined,
       attempts: 1,
+      startedAt: undefined,
       finishedAt: 1,
     });
     expect(await journal.readSteps(sql, SLUG, runId)).toHaveLength(1);
@@ -509,6 +512,7 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
       output: "1",
       error: undefined,
       attempts: 1,
+      startedAt: undefined,
       finishedAt: 1,
     });
     await sql("delete from aai_platform.agents where slug = $1", [gone]);

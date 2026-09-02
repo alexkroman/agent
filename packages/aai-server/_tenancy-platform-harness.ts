@@ -109,6 +109,7 @@ async function applyStep(sql: SqlExec, op: StepOp): Promise<Answer> {
           output: op.output,
           error: undefined,
           attempts: 1,
+          startedAt: undefined,
           finishedAt: op.finishedAt,
         }),
       };

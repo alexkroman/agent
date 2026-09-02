@@ -21,16 +21,56 @@
  * where the drift this catches is a column that only ONE store's statements
  * happen to bind, which is invisible until the statement that does not.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { workflowJournalDdl } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
-const migrationPath = path.join(
-  repoRoot,
-  "supabase/migrations/20260901000000_platform_workflow_journal.sql",
-);
+const migrationsDir = path.join(repoRoot, "supabase/migrations");
+
+/**
+ * EVERY migration, in filename order, concatenated.
+ *
+ * It read the ONE migration that creates these tables, and that made the gate
+ * blind to exactly the change it exists to catch: a later `alter table` on
+ * either side. `started_at` was the first, and against a single-file read the
+ * runtime column simply had no platform counterpart to compare — the failure
+ * looked like drift when the migration adding it existed and was unread.
+ *
+ * Filename order IS apply order here (the timestamps are the names), so
+ * concatenating is a faithful replay for the two statement shapes this parses.
+ * Reading them all rather than listing the relevant ones is deliberate: a list
+ * is the thing that goes stale, and the parse is SCOPED by table name instead —
+ * see {@link isJournalTable} — so an unrelated migration contributes nothing.
+ */
+const migrationSql = readdirSync(migrationsDir)
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .map((name) => readFileSync(path.join(migrationsDir, name), "utf8"))
+  .join("\n");
+
+/**
+ * The tables this gate compares, on either side, or `undefined` for "no scope".
+ *
+ * The scope that lets the parse read every migration, and it has to be a SET
+ * rather than a prefix: `aai_platform.workflow_queue`,
+ * `aai_platform.workflow_run_owner` and `aai_platform.workflow_uploads` are all
+ * `aai_platform.workflow_*` and none of them is a journal table, so a prefix
+ * reported eight tables against the runtime's five and failed the bijection.
+ *
+ * Filled below, once the runtime side is parsed: the runtime DDL is the
+ * authority on which five tables exist, and the platform names are DERIVED from
+ * it by {@link platformNameFor} — the same derivation the pairing uses, so a
+ * sixth table on either side alone still fails the bijection rather than being
+ * quietly uncompared.
+ */
+let scope: ReadonlySet<string> | undefined;
+
+/** Is this a table the gate compares? Everything, until {@link scope} is set. */
+function inScope(name: string): boolean {
+  return scope === undefined || scope.has(name.replace(/"/g, ""));
+}
 
 /** The one column the platform adds, and the whole of what tenancy costs. */
 const TENANCY_COLUMN = "slug";
@@ -78,6 +118,29 @@ const DECLARED_DIVERGENCES: Readonly<Record<string, { platform: string; runtime:
   // statement that omits the column — it makes a hook deadline silently become
   // an ordinary sleep, where no default makes it a `23502` naming the column.
   "workflow_sleeps.kind": { platform: "text not null default 'sleep'", runtime: "text not null" },
+};
+
+/**
+ * Columns the PLATFORM has and the runtime does not, one entry per
+ * `<table>.<column>`, each with why it belongs to one side only.
+ *
+ * Distinct from {@link DECLARED_DIVERGENCES}, which is about a column both sides
+ * have and declare differently. This is about a column that is genuinely not the
+ * other side's business — and it exists because widening this gate to read every
+ * migration surfaced one that had been invisible: the gate read only the
+ * migration that CREATES these tables, so a column added by a later one was
+ * uncompared, and `reconciled_at` had been there since
+ * `20260901020000_workflow_reconcile_cost.sql`.
+ */
+const PLATFORM_ONLY_COLUMNS: Readonly<Record<string, string>> = {
+  // The reconcile THROTTLE, and platform-only by construction: it stamps the
+  // runs a fleet-wide sweep has re-enqueued so the next pass leaves them alone
+  // (`workflow-queue-reconcile.ts`). A self-hosted engine has no such sweep —
+  // it delivers from its own in-process timers and recovers a lost schedule
+  // through `resumableRuns`, which reads no stamp — so a column here would be
+  // one nothing writes and nothing reads, which is the dead-config shape this
+  // repo keeps paying for.
+  "workflow_runs.reconciled_at": "the fleet-wide reconcile throttle; no runtime sweep exists",
 };
 
 /** One parsed column, or a table-level `primary key (…)` clause. */
@@ -142,9 +205,41 @@ function tableBodies(sql: string): Map<string, string> {
       else if (ch === ")") depth--;
       i++;
     }
-    out.set(match[1] ?? "", text.slice(bodyStart, i - 1));
+    const name = match[1] ?? "";
+    if (inScope(name)) out.set(name, text.slice(bodyStart, i - 1));
   }
   return out;
+}
+
+/**
+ * Apply every `alter table … add column if not exists` to what is parsed.
+ *
+ * The second statement shape either side may use, and the one a `create table if
+ * not exists` cannot express: that create is a NO-OP once the table is there, so
+ * a column added to it reaches a fresh database and no existing one. Both sides
+ * therefore carry an ALTER — the runtime in `workflowJournalDdl`, the platform in
+ * its own migration — and a gate that read only the creates compared two
+ * different schemas from the ones that exist.
+ *
+ * Appended in statement order, which is what a real apply does, and the column
+ * is skipped when the create already declared it: a fresh database gets it from
+ * the create and an existing one from the alter, and the parse must not end up
+ * with it twice.
+ */
+function applyAlters(sql: string, tables: Map<string, Table>): void {
+  const alter = /alter table\s+([\w."]+)\s+add column if not exists\s+([\w"]+)([^;]*)/gi;
+  for (const match of stripComments(sql).matchAll(alter)) {
+    const name = match[1] ?? "";
+    if (!inScope(name)) continue;
+    const table = tables.get(name);
+    if (!table) continue;
+    const column = (match[2] ?? "").replace(/"/g, "");
+    if (table.columns.some((existing) => existing.name === column)) continue;
+    (table.columns as Column[]).push({
+      name: column,
+      rest: (match[3] ?? "").trim().replace(/\s+/g, " "),
+    });
+  }
 }
 
 /**
@@ -162,7 +257,13 @@ function parseColumn(entry: string): { column: Column; primaryKey?: readonly str
   };
 }
 
-/** Both DDL sets, parsed into the same model. */
+/**
+ * Both DDL sets, parsed into the same model — creates first, then alters.
+ *
+ * `columns` is declared `readonly` on {@link Table} because nothing else should
+ * mutate it; {@link applyAlters} does, through one cast at its push, which is
+ * the alternative to threading a mutable twin of this type through the parse.
+ */
 function parseTables(sql: string): Map<string, Table> {
   const out = new Map<string, Table>();
   for (const [name, body] of tableBodies(sql)) {
@@ -180,25 +281,37 @@ function parseTables(sql: string): Map<string, Table> {
     }
     out.set(name, { columns, primaryKey });
   }
+  applyAlters(sql, out);
   return out;
 }
 
-/** Every `create index` / `create unique index` statement, whitespace-collapsed. */
+/**
+ * Every `create index` / `create unique index` over a table in {@link scope},
+ * whitespace-collapsed.
+ *
+ * Scoped for the reason the table parse is: reading every migration turns up 17
+ * indexes across the whole platform schema, and this gate's subject is five
+ * tables. The filter is on the statement TEXT naming an in-scope table, which is
+ * enough because an index statement always names the table it is on.
+ */
 function parseIndexes(sql: string): string[] {
-  return [...stripComments(sql).matchAll(/create (?:unique )?index[\s\S]*?(?=;|$)/g)].map((m) =>
-    m[0].trim().replace(/\s+/g, " "),
-  );
+  return [...stripComments(sql).matchAll(/create (?:unique )?index[\s\S]*?(?=;|$)/g)]
+    .map((m) => m[0].trim().replace(/\s+/g, " "))
+    .filter((statement) => [...(scope ?? [])].some((table) => statement.includes(table)));
 }
 
-const migrationSql = readFileSync(migrationPath, "utf8");
-const platform = parseTables(migrationSql);
+// The RUNTIME side first, unscoped: `workflowJournalDdl()` is exactly these five
+// tables, so it is the authority on which they are. Then the scope, then the
+// platform side — which is read out of every migration and needs one.
 const runtimeDdl = workflowJournalDdl();
 const runtime = parseTables(runtimeDdl.join(";\n"));
-const runsTable = [...runtime.keys()].find((name) => name.endsWith("_runs")) ?? "";
 const TABLE_PAIRS: readonly (readonly [string, string])[] = [...runtime.keys()].map((name) => [
   name,
   platformNameFor(name),
 ]);
+scope = new Set(TABLE_PAIRS.flat());
+const platform = parseTables(migrationSql);
+const runsTable = [...runtime.keys()].find((name) => name.endsWith("_runs")) ?? "";
 
 describe("the journal DDL parser sees both schemas", () => {
   // A floor, for the reason every counting gate in this repo has one: the whole
@@ -223,15 +336,36 @@ describe.each(TABLE_PAIRS)("%s mirrors %s", (runtimeName, platformName) => {
   const platformTable = platform.get(platformName);
   if (!(runtimeTable && platformTable)) throw new Error(`unparsed pair ${runtimeName}`);
 
-  test("the platform adds `slug` first, and nothing else", () => {
+  test("the platform adds `slug` first, plus only its declared own columns", () => {
     const [first, ...others] = platformTable.columns;
     expect(first?.name).toBe(TENANCY_COLUMN);
     expect(first?.rest).toBe(
       `text not null references aai_platform.agents (${TENANCY_COLUMN}) on delete cascade`,
     );
-    expect(others.map((column) => column.name)).toEqual(
-      runtimeTable.columns.map((column) => column.name),
+    // Compared as SETS, not in order, and the order test had to go: a column
+    // added by an `alter table` lands at the END of the table it alters, so the
+    // two sides diverge in position the moment either adds one — `started_at`
+    // sits before `finished_at` in the runtime's `create` and after it on the
+    // platform, which is a physical detail no statement here depends on. Every
+    // claim that DOES matter (type, nullability, default, primary key) is
+    // asserted by name below.
+    const sorted = (names: readonly string[]) => [...names].sort();
+    const platformOwn = new Set(
+      Object.keys(PLATFORM_ONLY_COLUMNS)
+        .filter((entry) => entry.startsWith(`${shortName}.`))
+        .map((entry) => entry.slice(shortName.length + 1)),
     );
+    expect(
+      sorted(others.map((column) => column.name).filter((name) => !platformOwn.has(name))),
+    ).toEqual(sorted(runtimeTable.columns.map((column) => column.name)));
+    // The declared entries have to BE there, so closing one on the platform
+    // fails here rather than leaving a stale exemption.
+    for (const own of platformOwn) {
+      expect(
+        others.map((column) => column.name),
+        `${shortName}.${own}`,
+      ).toContain(own);
+    }
   });
 
   test("every shared column has the same type, nullability and default", () => {
@@ -259,7 +393,9 @@ describe("the INDEXES are where the two schemas really differ", () => {
   const runtimeIndexes = parseIndexes(runtimeDdl.join(";\n"));
 
   test("both sides declare the indexes they declare", () => {
-    expect(platformIndexes).toHaveLength(3);
+    // A floor AND a ceiling: an index added on either side alone has to be
+    // classified by one of the three cases below rather than slipping in.
+    expect(platformIndexes).toHaveLength(5);
     expect(runtimeIndexes).toHaveLength(1);
   });
 
@@ -277,6 +413,24 @@ describe("the INDEXES are where the two schemas really differ", () => {
     expect(runtimeIndexes).toEqual([
       `create index if not exists ${runsTable}_recent on ${runsTable} (workflow, created_at desc)`,
     ]);
+  });
+
+  test("the two RECONCILE indexes are platform-only, and that is JUSTIFIED too", () => {
+    // Both arrived in `20260901020000_workflow_reconcile_cost.sql` and were
+    // uncompared until this gate began reading every migration rather than the
+    // one that creates the tables. Neither is drift: they serve
+    // `findStalledRuns`, the fleet-wide query that re-enqueues a run whose queue
+    // message went missing — the outer scan on `workflow_runs`, and the
+    // open-window anti-join on `workflow_hooks` that keeps a PARKED run from
+    // being read as a stalled one. A self-hosted engine issues neither: it
+    // delivers from its own in-process timers and recovers through
+    // `resumableRuns`, whose reads are all run-scoped.
+    expect(platformIndexes).toContain(
+      "create index if not exists workflow_runs_stalled_idx on aai_platform.workflow_runs (created_at) where status in ('pending', 'running')",
+    );
+    expect(platformIndexes).toContain(
+      "create index if not exists workflow_hooks_open_idx on aai_platform.workflow_hooks (slug, run_id) where delivered = false and closed = false",
+    );
   });
 
   test("the due-sleep index is platform-only, and that is JUSTIFIED", () => {

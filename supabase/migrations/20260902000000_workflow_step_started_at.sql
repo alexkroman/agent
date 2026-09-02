@@ -1,0 +1,46 @@
+-- `aai_platform.workflow_steps.started_at` — make "which step is slow" answerable.
+--
+-- A journal entry carried `attempts` and `finished_at` and no start, so the only
+-- elapsed time derivable from a run's history was the gap between one step's
+-- finish and the next's — which is the previous step's cost PLUS whatever the
+-- body did between them, and is nothing at all for the first step of a run or
+-- the first after a durable wait. The 660 MiB production case in
+-- `packages/aai-runtime/CLAUDE.md`'s park-curve section is described entirely in
+-- terms nobody could query: "`walkingForSeconds: 285` with ~45 behind it at 12 a
+-- minute" came from a log line, not from the journal.
+--
+-- An absolute instant rather than a stored duration, because the difference is
+-- derivable and the instant is not: the gap between one entry's `finished_at`
+-- and the next's `started_at` is DELIVERY latency, which is a different question
+-- from step cost and the one that tells a slow step from a slow queue.
+--
+-- ── Why NULLABLE, and why that is not a default waiting to be added ──
+--
+-- The rows already in this table have no start, and there is no value that
+-- honestly stands for one: `0` reads as the epoch and therefore as a step that
+-- took fifty-five years, and `finished_at` reads as a step that took no time.
+-- Both are worse than "unknown", which is what NULL says and what
+-- `StepEntry.startedAt` being optional obliges every reader to render. Every
+-- write from this release on sets it.
+--
+-- ── What it costs ──
+--
+-- 8 bytes per row on a table whose other columns include a `jsonb` output, and
+-- no index: nothing filters or orders on it. `add column` with no default and no
+-- `not null` is a catalogue-only operation in Postgres 11+ — it rewrites no
+-- rows and takes an ACCESS EXCLUSIVE lock for the duration of that catalogue
+-- write, which on this table is sub-millisecond. It is idempotent, so a re-run
+-- is a no-op.
+--
+-- RLS and grants are per-TABLE and unchanged: `20260901000000_platform_workflow_
+-- journal.sql` enabled row level security on `workflow_steps` with no policies,
+-- and a new column inherits that posture. Nothing here re-states it.
+--
+-- Everything else mirrors `aai-runtime/workflow-journal-schema.ts`, deliberately,
+-- so the two stores stay the same contract — `aai-server/journal-ddl-parity.test.ts`
+-- is what holds them to it, and it reads this file along with the base migration
+-- rather than the base migration alone, which is what makes an ALTER on either
+-- side visible to it at all.
+
+alter table aai_platform.workflow_steps
+  add column if not exists started_at bigint;
