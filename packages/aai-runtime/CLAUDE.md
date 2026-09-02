@@ -1744,6 +1744,18 @@ Decode still accepts a **bare** `__type` envelope, so `@workflow/world-local`'s
 own transport and every row already written are unaffected — which is why the
 deployment order is decoder-first.
 
+**Totality is a property of the ESCAPE, not of the envelope set, which is what
+makes the set extensible.** `Map` and `Set` joined it — `{ __type: "Map",
+entries: [[k, v], …] }` and `{ __type: "Set", values: […] }`, storage codec
+only, exactly where the date envelope sits and for the same reason. The escape
+never reads the tag's VALUE, so nothing in `workflow-typed-json-escape.ts`
+changed. Two rules for a third kind: encode PAIRS and let the replacer recurse
+on both halves (a `Map`'s keys are values, not strings), and refuse a malformed
+payload rather than let a constructor invent one. The remaining hole is that
+this codec still has no unsupported-type GUARD, so any other exotic value
+journals as `{}` — a structural check at the step boundary, not a fourth
+envelope.
+
 Two related strictnesses came with it, both replacing an invented value with a
 throw, and both classified at the callers that already existed for them
 (`decodeBody` catches into a 400; the guest fails the step). `Buffer.from(s,

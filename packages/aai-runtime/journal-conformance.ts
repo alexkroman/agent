@@ -6,11 +6,15 @@
  * This is `aai-server/store-conformance.ts` a second time, deliberately: read
  * that file first — it carries the argument for the pattern, and nothing here
  * restates it. What this module adds is the registry and the two helpers; the
- * cases themselves are {@link journalRunConformance} and
- * {@link journalWaitConformance}, split for the file-length cap at the seam the
- * platform's own store already splits on (`platform-workflow-journal-hooks.ts`):
- * a run, its steps and its attempts answer "what has this run DONE", and the
- * sleeps and hooks answer "may this wait still be answered".
+ * cases themselves are {@link journalRunConformance},
+ * {@link journalCodecConformance}, {@link journalWaitConformance} and
+ * {@link journalResumeConformance}, split for the file-length cap at seams the
+ * platform's own store already splits on
+ * (`platform-workflow-journal-hooks.ts`): a run, its steps and its attempts
+ * answer "what has this run DONE", the sleeps and hooks answer "may this wait
+ * still be answered", and the codec cases answer "did the run get back what
+ * the step returned" — the one group whose subject is neither the interface nor
+ * any backend's SQL, which is why it is the seam the third split landed on.
  *
  * ## Why the journal needed its own table rather than joining that one
  *
@@ -83,6 +87,7 @@
  */
 
 import { type JournalArm, journalRunConformance } from "./journal-conformance-cases.ts";
+import { journalCodecConformance } from "./journal-conformance-codec.ts";
 import { journalResumeConformance } from "./journal-conformance-resume.ts";
 import { journalWaitConformance } from "./journal-conformance-waits.ts";
 
@@ -216,6 +221,7 @@ export const JOURNAL_BACKENDS: readonly JournalBackend[] = [
  */
 export function journalConformance(arm: JournalArm): void {
   journalRunConformance(arm);
+  journalCodecConformance(arm);
   journalWaitConformance(arm);
   journalResumeConformance(arm);
 }

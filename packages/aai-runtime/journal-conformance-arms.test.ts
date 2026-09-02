@@ -80,6 +80,7 @@ const SITES = JOURNAL_BACKENDS.filter((b) => b.conformance !== false).flatMap((b
 /** The case modules, whose bodies must contain no silent skip. */
 const CASE_MODULES = [
   "aai-runtime/journal-conformance-cases.ts",
+  "aai-runtime/journal-conformance-codec.ts",
   "aai-runtime/journal-conformance-waits.ts",
   "aai-runtime/journal-conformance-resume.ts",
 ];

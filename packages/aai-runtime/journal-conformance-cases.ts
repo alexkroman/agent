@@ -5,10 +5,12 @@
  *
  * `journal-conformance.ts` is the entry point and carries the whole argument for
  * the pattern, the three arms and the rules for a new case. This file is the
- * shared VOCABULARY every arm and both halves need ({@link JournalArm},
+ * shared VOCABULARY every arm and every other half needs ({@link JournalArm},
  * {@link journalIds}, {@link keysFor}) plus the cases that read and write a run.
- * The wait half is `journal-conformance-waits.ts`; the split is the file-length
- * cap's doing and lands on the seam the platform's own store already splits on.
+ * The wait half is `journal-conformance-waits.ts`, the resume half
+ * `journal-conformance-resume.ts` and the typed-JSON half
+ * `journal-conformance-codec.ts`; each split is the file-length cap's doing and
+ * lands on a seam the entry module names.
  *
  * The vocabulary lives HERE rather than in the entry module for one mechanical
  * reason: the entry module imports both halves, so a helper declared there and
@@ -259,28 +261,6 @@ export function journalRunConformance(arm: JournalArm): void {
         await journal.createRun(runOf({ runId }));
         const stored = await journal.appendStep(runId, stepOf({ key: "lookup#0", output: null }));
         expect(stored.output).toBeNull();
-      });
-    });
-
-    describe("values are TYPED JSON at every boundary", () => {
-      test("a Uint8Array and a Date survive a step's output", async () => {
-        // `JSON.stringify` turns the first into an index map with NO error, so a
-        // backend that reaches for it resumes the run with garbage rather than
-        // failing. The codec is what carries them, and it has to run on every arm.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        const output = { bytes: new Uint8Array([1, 2, 3]), at: new Date(1_700_000_000_000) };
-        const stored = await journal.appendStep(runId, stepOf({ key: "render#0", output }));
-        expect(stored.output).toEqual(output);
-      });
-
-      test("a run's input survives as typed JSON", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        const input = { blob: new Uint8Array([9, 8]), when: new Date(1_700_000_000_001) };
-        await journal.createRun(runOf({ runId, input }));
-        expect((await journal.getRun(runId))?.input).toEqual(input);
       });
     });
 

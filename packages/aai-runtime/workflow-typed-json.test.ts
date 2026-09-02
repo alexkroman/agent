@@ -335,6 +335,172 @@ describe("dates", () => {
   });
 });
 
+describe("collections, which JSON.stringify loses without a word", () => {
+  test("plain JSON.stringify answers {} for both, which is the bug", () => {
+    // Spelled out so the reason these envelopes exist is visible rather than
+    // asserted. An index map at least still carries the bytes; this carries
+    // nothing, and a step whose output was a `Map` resumed with an empty object.
+    expect(JSON.stringify(new Map([["a", 1]]))).toBe("{}");
+    expect(JSON.stringify(new Set([1, 2]))).toBe("{}");
+  });
+
+  test("a Map comes back as a Map, with its insertion ORDER", () => {
+    // Order is a `Map`'s own guarantee, so it is asserted here — on the UNIT
+    // tier, where the wire is bytes. The journal-conformance case deliberately
+    // makes no ordering claim, because `jsonb` normalizes and a claim there
+    // would have to hold on all four arms.
+    const value = new Map<string, unknown>([
+      ["z", 1],
+      ["a", { nested: true }],
+    ]);
+    const back = storageRoundTrip(value);
+    expect(back).toBeInstanceOf(Map);
+    expect(back).toEqual(value);
+    expect([...(back as Map<string, unknown>).keys()]).toEqual(["z", "a"]);
+  });
+
+  test("a Set comes back as a Set, with its insertion order", () => {
+    const back = storageRoundTrip(new Set(["b", "a", "b"]));
+    expect(back).toBeInstanceOf(Set);
+    expect([...(back as Set<string>)]).toEqual(["b", "a"]);
+  });
+
+  test.each([
+    ["an empty Map", new Map()],
+    ["an empty Set", new Set()],
+  ])("%s survives, and is not confused with an empty object", (_label, value) => {
+    const back = storageRoundTrip({ v: value }) as { v: unknown };
+    expect(back.v).toEqual(value);
+    expect(back.v).not.toEqual({});
+  });
+
+  /**
+   * The case `Object.fromEntries(map)` gets wrong, and the reason the entries
+   * ride as PAIRS: a `Map`'s keys are arbitrary values, and stringifying them
+   * would turn a `Date` key into an ISO string and a `Uint8Array` key into
+   * `"1,2"`.
+   */
+  test.each([
+    ["a Date", new Date(1_700_000_000_000)],
+    ["a Uint8Array", new Uint8Array([1, 2])],
+    // `Buffer` is deliberately NOT in this list: it comes back as a plain
+    // `Uint8Array` by design (see "a Buffer is carried as binary too" above),
+    // so `toEqual(key)` would fail on the CONSTRUCTOR and say nothing about
+    // whether the key survived. It has its own case below.
+    ["a plain object", { id: 7 }],
+    ["an array", [1, 2]],
+    ["a nested Map", new Map([["inner", 1]])],
+    ["a Set", new Set([1])],
+    ["null", null],
+    ["a number", 42],
+  ])("carries %s as a Map KEY, not as a stringified one", (_label, key) => {
+    const value = new Map<unknown, unknown>([[key, "kept"]]);
+    const back = storageRoundTrip(value) as Map<unknown, unknown>;
+    expect(back).toBeInstanceOf(Map);
+    expect(back.size).toBe(1);
+    // Indexed rather than destructured, because `noUncheckedIndexedAccess`
+    // makes a nested array pattern an error on a possibly-empty array — and the
+    // size assertion above is what actually rules that out.
+    const [entry] = [...back];
+    expect(entry?.[0]).toEqual(key);
+    expect(entry?.[1]).toBe("kept");
+  });
+
+  test.each([
+    ["a Map inside a Set", new Set([new Map([["a", 1]])])],
+    ["a Set inside a Map", new Map([["s", new Set([1, 2])]])],
+    ["a Map two deep", new Map([["outer", new Map([["inner", new Map()]])]])],
+    [
+      "bytes and a date in one Map",
+      new Map<unknown, unknown>([[new Date(0), new Uint8Array([9])]]),
+    ],
+    ["a collection in an array in a record", { rows: [new Set([1]), new Map([["k", 2]])] }],
+    ["a Map at the ROOT, where the holder is stringify's own wrapper", new Map([["a", 1]])],
+  ])("round-trips %s", (_label, value) => {
+    expect(storageRoundTrip(value)).toEqual(value);
+  });
+
+  /**
+   * `withPlainViews` declines to walk INTO a collection (it is not a plain
+   * object), so the pre-pass never swaps these `Buffer`s for views and
+   * `Buffer.prototype.toJSON` fires on both. `binaryReplacer`'s HOLDER read is
+   * what saves them — the pair array the encoder builds is a holder like any
+   * other, which is the same mechanism the `Buffer`-in-an-array cases above
+   * rest on, reached by a new route. The KEY half is the one no existing case
+   * could have covered.
+   */
+  test("a Buffer inside a Map is carried as binary, as a value AND as a key", () => {
+    const key = Buffer.from([7, 8]);
+    const back = storageRoundTrip(
+      new Map<unknown, unknown>([
+        ["b", Buffer.from([1, 2, 3])],
+        [key, "keyed"],
+      ]),
+    ) as Map<unknown, unknown>;
+    expect(back.get("b")).toEqual(new Uint8Array([1, 2, 3]));
+    // The key half cannot be read with `get`: a decoded byte key is a new
+    // object, so nothing the test holds is `SameValueZero`-equal to it.
+    const keyed = [...back][1];
+    expect(keyed?.[0]).toEqual(new Uint8Array([7, 8]));
+    expect(keyed?.[1]).toBe("keyed");
+  });
+
+  test("an author's own toJSON returning a Map is encoded as one", () => {
+    // The ONE case where reading `value` differs from reading the holder, and
+    // the direction JSON's own semantics pick: `toJSON`'s RESULT is what gets
+    // serialized, so its result is what has to be tagged. Reading the holder
+    // here would see the wrapper object, miss the collection entirely and write
+    // `{}` — which is the opposite of the `Buffer`/`Date` checks, where only the
+    // holder can say what was really there. `collectionEnvelope`'s doc argues
+    // why the two directions are both right.
+    const holder = { toJSON: () => new Map([["k", 1]]) };
+    expect(storageRoundTrip({ h: holder })).toEqual({ h: new Map([["k", 1]]) });
+  });
+
+  test("encodes to the tagged envelopes, pairs and all", () => {
+    const encoded = JSON.parse(encodeStorageJson({ m: new Map([["k", 1]]), s: new Set([2]) })) as {
+      m: { __type: string; entries: unknown };
+      s: { __type: string; values: unknown };
+    };
+    expect(encoded.m).toEqual({ __type: "Map", entries: [["k", 1]] });
+    expect(encoded.s).toEqual({ __type: "Set", values: [2] });
+  });
+
+  test.each([
+    ["a wrong __type", '{"x":{"__type":"WeakMap","entries":[]}}'],
+    ["entries that are not an array", '{"x":{"__type":"Map","entries":"nope"}}'],
+    ["no entries field at all", '{"x":{"__type":"Map"}}'],
+    ["values that are not an array", '{"x":{"__type":"Set","values":7}}'],
+    ["a Set tag beside a Map payload", '{"x":{"__type":"Set","entries":[]}}'],
+  ])("leaves %s alone rather than guessing", (_label, text) => {
+    const back = decodeStorageJson(text) as { x: unknown };
+    expect(back.x).not.toBeInstanceOf(Map);
+    expect(back.x).not.toBeInstanceOf(Set);
+  });
+
+  /**
+   * `new Map(entries)` alone would raise `TypeError: Iterator value 1 is not an
+   * entry object` out of the middle of a `JSON.parse`, naming neither the wire
+   * nor the field — and a one-element entry would not raise at all, mapping the
+   * key to `undefined`, which is an invented value.
+   */
+  test.each([
+    ["a scalar entry", '{"x":{"__type":"Map","entries":[1]}}'],
+    ["a one-element entry", '{"x":{"__type":"Map","entries":[["k"]]}}'],
+    ["a three-element entry", '{"x":{"__type":"Map","entries":[["k",1,2]]}}'],
+    ["an object entry", '{"x":{"__type":"Map","entries":[{"0":"k","1":1}]}}'],
+  ])("throws on %s rather than inventing a Map", (_label, text) => {
+    expect(() => decodeStorageJson(text)).toThrow(/not a \[key, value\] pair/);
+  });
+
+  test("a Set of anything decodes, because an array is already the payload", () => {
+    const back = decodeStorageJson('{"x":{"__type":"Set","values":[1,"a",null]}}') as {
+      x: Set<unknown>;
+    };
+    expect([...back.x]).toEqual([1, "a", null]);
+  });
+});
+
 describe("the queue codec is the DevKit's, and stays theirs", () => {
   /**
    * The boundary that cost a second stalled run. `workflow-platform-queue.ts`
@@ -364,6 +530,27 @@ describe("the queue codec is the DevKit's, and stays theirs", () => {
     };
     expect(back.at).not.toBeInstanceOf(Date);
   });
+
+  /**
+   * The collection envelopes drew the SAME boundary as the date one, and this
+   * pins the emission side of it: a queue payload is engine-internal — a run id
+   * and a step key — so no author value reaches it, and an envelope of ours on
+   * this path is one the far end cannot read. The `{}` here is the general
+   * unsupported-type hole, deliberately still open on the wire that cannot
+   * carry an answer to it.
+   */
+  test("sends a Map and a Set as {} — no envelope on this path", () => {
+    expect(encodeTypedJson({ m: new Map([["k", 1]]), s: new Set([1]) })).toBe('{"m":{},"s":{}}');
+  });
+
+  test.each([
+    ["a Map envelope", '{"v":{"__type":"Map","entries":[["k",1]]}}'],
+    ["a Set envelope", '{"v":{"__type":"Set","values":[1]}}'],
+  ])("leaves %s unrevived, so nothing depends on it by accident", (_label, text) => {
+    const back = decodeTypedJson(text) as { v: unknown };
+    expect(back.v).not.toBeInstanceOf(Map);
+    expect(back.v).not.toBeInstanceOf(Set);
+  });
 });
 
 /**
@@ -388,6 +575,15 @@ describe("a forged or corrupt envelope on the wire", () => {
     ["at depth in an array", { chunks: [{ __type: "Uint8Array", data: "AAA=" }] }],
     ["a date envelope", { __type: "Date", iso: "2020-01-01T00:00:00.000Z" }],
     ["already-escaped, written by the author", { __type: "x", ___type: "y", ____type: "z" }],
+    // The collection envelopes, which are the reason the escape's totality is
+    // a property of the KEY family rather than of the tag values it has heard
+    // of: these two needed no change to `workflow-typed-json-escape.ts`.
+    ["a Map envelope", { __type: "Map", entries: [["k", 1]] }],
+    ["a Set envelope", { __type: "Set", values: [1, 2] }],
+    ["a Map envelope at depth", { runs: [{ out: { __type: "Map", entries: [] } }] }],
+    // A forged Map envelope whose entries would THROW if it were ever revived,
+    // so a lapse in the escape fails loudly here rather than mangling a value.
+    ["a Map envelope with unrevivable entries", { __type: "Map", entries: [1, 2] }],
   ])("an author's own envelope-shaped object survives as DATA %s", (_label, value) => {
     expect(roundTrip(value)).toEqual(value);
     expect(storageRoundTrip(value)).toEqual(value);
