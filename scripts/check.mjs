@@ -272,6 +272,12 @@ const GATES = [
     fatal: false,
     why: "Structural conventions: the shapes Biome and tsc cannot see because none of them is wrong WITHIN a file — a provider module exporting four of its five symbols, a package importing across a forbidden dependency-graph boundary. ~600 files in ~1s, no build.",
   },
+  {
+    script: "check:deploy-changeset",
+    phase: "ratchets",
+    fatal: false,
+    why: "The one gate here that is DIFF-scoped, and the reason is that the thing it checks is a property of a branch rather than of the tree: ship.yml arms its deploy on a version bump to a carrier, and `changeset status` is satisfied by an EMPTY changeset — so a branch can rewrite the platform, pass every other gate, merge, and ship nothing. That is #1341. An unresolvable base FAILS rather than skipping, which is the half of the no-git-ref rule that still applies.",
+  },
 
   // --- after the test run ------------------------------------------------
   {

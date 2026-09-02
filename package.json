@@ -42,6 +42,7 @@
     "check:affected": "turbo run build typecheck lint test:coverage --affected --continue",
     "test:coverage:affected": "turbo run test:coverage --affected --continue",
     "check:hatches": "node scripts/check-escape-hatches.mjs",
+    "check:deploy-changeset": "node scripts/check-deploy-changeset.mjs",
     "check:invariants": "node scripts/guard-invariants.mjs",
     "artifact-size": "node scripts/artifact-size-report.mjs",
     "check:file-length": "node scripts/check-file-length.mjs",
