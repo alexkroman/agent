@@ -1828,3 +1828,28 @@ the lines, and `dropped` reported rather than swallowed.
 `ctx.db` ran arbitrary SQL on it. `aai_platform.session_events` is a platform
 table under deny-all RLS now, on the admin connection only — so no tool reaches
 it. UNCHANGED: `discard` drops slots only, events going to the sweep.
+
+### The admin pool bounds guest THROUGHPUT, not just connections
+
+`ADMIN_POOL_MAX` reads as a connection budget and is also a concurrency limit,
+because the four guest-called platform routes — the workflow journal, the
+queue, session state, upload records — each run their work on a RESERVATION
+held for the whole request (`_platform-route.ts`'s `withReserved`). So it is
+the number of guest platform calls a replica may have in flight AT ALL, and the
+next one queues on `reserve()`.
+
+At 4 that was reached by ONE run: a deployed transcription workflow sustained
+~2 `POST /:slug/workflow-journal` a second at ~840 ms of server time each, on a
+replica also serving Vault, the agents row every broker call needs, and the
+sweeps. It is 16.
+
+**Raising it is a fact about the POOLER.** `MAX_PLATFORM_DB_CONNECTIONS`
+deliberately excludes this pool on the premise that it reaches the instance
+through `PLATFORM_POOLER_URL` in TRANSACTION mode, which multiplexes — a
+reserved-but-idle client connection pins no server backend. Under that premise
+these are cheap client-side slots. Unset, they are DIRECT session-mode
+backends: `unpooledAdminConnections` counts them into the budget and boot warns
+by name, which is what makes widening this safe rather than a landmine. The
+slug-lock pool stays direct and separate — `pg_advisory_lock` needs session
+affinity, which is the one thing that may not be pooled.
+

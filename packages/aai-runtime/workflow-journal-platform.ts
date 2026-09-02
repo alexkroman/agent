@@ -76,6 +76,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
+import { shareByKey } from "./_journal-shared-reads.ts";
 import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
 import { platformResult } from "./platform-rpc.ts";
 import type {
@@ -199,6 +200,23 @@ function toStep(value: unknown): StepEntry | undefined {
  * @internal
  */
 export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
+  // The two reads that are pure functions of a run id, so concurrent callers
+  // share one round trip — see `_journal-shared-reads.ts` for what
+  // issues them at once and why this is a coalescer rather than a cache. Built
+  // per client, so two journals never share an entry.
+  const sharedGetRun = shareByKey(
+    async (runId: string): Promise<RunRecord | undefined> =>
+      toRun(await call(opts, "getRun", { runId })),
+  );
+  const sharedReadSteps = shareByKey(async (runId: string): Promise<StepEntry[]> => {
+    const rows = await call(opts, "readSteps", { runId });
+    if (!Array.isArray(rows)) return [];
+    return rows.flatMap((row) => {
+      const step = toStep(row);
+      return step ? [step] : [];
+    });
+  });
+
   return {
     async createRun(record: RunRecord): Promise<void> {
       await call(opts, "createRun", {
@@ -211,7 +229,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
     },
 
     async getRun(runId: string): Promise<RunRecord | undefined> {
-      return toRun(await call(opts, "getRun", { runId }));
+      return await sharedGetRun(runId);
     },
 
     async listRuns(workflow: string, limit: number): Promise<RunRecord[]> {
@@ -243,12 +261,7 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
     },
 
     async readSteps(runId: string): Promise<StepEntry[]> {
-      const rows = await call(opts, "readSteps", { runId });
-      if (!Array.isArray(rows)) return [];
-      return rows.flatMap((row) => {
-        const step = toStep(row);
-        return step ? [step] : [];
-      });
+      return await sharedReadSteps(runId);
     },
 
     async claimAttempt(runId: string, key: string): Promise<number> {

@@ -220,12 +220,51 @@ export function resolveHarnessPath(env: NodeJS.ProcessEnv = process.env): string
 // its own.
 
 /**
- * Connections the platform admin pool may open per replica. Every statement
- * on it is a short query (Vault, agents rows, workspaces, chats, the sweeps)
- * — the one long-held resource, a slug lock's reserved connection, has its
- * own pool below.
+ * Connections the platform admin pool may open per replica.
+ *
+ * Every statement on it is a short query (Vault, agents rows, workspaces,
+ * chats, the sweeps) — the one long-held resource, a slug lock's reserved
+ * connection, has its own pool below.
+ *
+ * ## It was 4, and 4 was a ceiling on GUEST throughput that nothing intended
+ *
+ * The four guest-called platform routes — the workflow journal, the queue,
+ * session state, upload records — each run their work on a RESERVATION from
+ * this pool (`_platform-route.ts`'s `withReserved`), held for the whole
+ * request. So this number is not merely a connection budget: it is the count
+ * of guest platform calls a replica may have in flight AT ALL, and the fifth
+ * queues on `reserve()`.
+ *
+ * That was reached in production. A deployed transcription run sustained ~2
+ * `POST /:slug/workflow-journal` a second at ~840 ms of server time each — one
+ * run, on a replica that also serves Vault, the agents row every broker call
+ * needs, and the sweeps. At 4 slots x ~1.2 calls a second a slot, one busy
+ * durable run is most of the replica's control plane.
+ *
+ * ## Raising it costs the instance nothing, and that is a fact about the pooler
+ *
+ * `MAX_PLATFORM_DB_CONNECTIONS` deliberately does NOT count this pool, on the
+ * premise that it reaches the instance through `PLATFORM_POOLER_URL` in
+ * TRANSACTION mode, which really does multiplex — the argument, and the one
+ * thing that would break it (session-scoped `pg_advisory_lock`, which lives on
+ * the slug pool and stays direct), is in `platformDbConnectionsPerReplica`.
+ * Under it a reserved-but-idle client connection pins no server backend, so
+ * these are cheap client-side slots rather than `max_connections`.
+ *
+ * The number that is NOT free is the unpooled one: with `PLATFORM_POOLER_URL`
+ * unset every replica opens this many DIRECT session-mode backends, which
+ * `unpooledAdminConnections` counts into the budget and boot warns about by
+ * name. That warning is what makes raising this safe rather than a landmine —
+ * a deployment without a pooler is told, at boot, exactly what it now costs.
+ *
+ * 16 rather than something larger: it is 4x the measured bottleneck, keeps the
+ * fleet's unpooled worst case (`MAX_CONTAINERS` x this) inside what the boot
+ * capacity check can report against a 60-connection instance, and leaves the
+ * shape of the fix — collapsing duplicate reads at the source
+ * (`aai-runtime/_journal-shared-reads.ts`) — doing the work rather than being
+ * papered over by a wider pool.
  */
-export const ADMIN_POOL_MAX = 4;
+export const ADMIN_POOL_MAX = 16;
 
 /**
  * Connections reserved for per-slug mutation locks. Each concurrent

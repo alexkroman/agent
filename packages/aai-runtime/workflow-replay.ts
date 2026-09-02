@@ -108,6 +108,17 @@ export type ReplayOptions = {
   run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<unknown> | unknown;
   journal: JournalStore;
   /**
+   * This walk's step snapshot, already in flight.
+   *
+   * On a deployed agent the opening read below is a
+   * `POST /:slug/workflow-journal` — one of THREE the engine takes
+   * SEQUENTIALLY before a body runs (`getRun`, the `running` compare-and-set,
+   * then this) at ~840 ms each. Nothing about it depends on the other two, so
+   * `workflow-engine.ts` issues it beside the CAS and hands the promise down.
+   * Optional: a caller with nothing to overlap it with passes nothing.
+   */
+  steps?: Promise<StepEntry[]> | undefined;
+  /**
    * Where `report()` writes. Optional: a spec driving a body directly has no
    * reader, and a body that reports into nothing is not an error.
    */
@@ -200,7 +211,10 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // One read for the whole replay — see `JournalStore`'s doc for why this is not
   // a lookup per step. Indexed by `key`, which is what `ctx.step` computes.
   const settled = new Map<string, StepEntry>();
-  const entries = await journal.readSteps(runId);
+  // Awaited here whether the caller prefetched it or not, so the ordering below
+  // is identical either way: an overlapped read is the SAME read, started
+  // earlier — see `ReplayOptions.steps`.
+  const entries = await (options.steps ?? journal.readSteps(runId));
   for (const entry of entries) settled.set(entry.key, entry);
   // What this walk has read out of the journal, and whether reaching a key the
   // run never reached is evidence the body has lost its place. Seeded from the

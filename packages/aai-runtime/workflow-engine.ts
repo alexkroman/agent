@@ -233,7 +233,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
    */
   async function runWalk(
     runId: string,
-    walk: Pick<ReplayOptions, "workflow" | "input" | "run">,
+    walk: Pick<ReplayOptions, "workflow" | "input" | "run" | "steps">,
     callerSignal: AbortSignal | undefined,
   ): Promise<RunRecord["status"] | undefined> {
     // One controller per WALK, registered before the body can run, so `cancel`
@@ -329,6 +329,16 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
         );
       }
 
+      // Started BESIDE the compare-and-set below rather than after it. The walk
+      // opens with this read (`ReplayOptions.steps`) and nothing about it
+      // depends on the status write, so issuing them together takes a delivery
+      // from three sequential platform round trips to two — measured at ~840 ms
+      // each on a deployed run. A rejection belongs to whoever awaits it; the
+      // no-op catch is only so an early return below cannot leave one
+      // unhandled.
+      const steps = journal.readSteps(runId);
+      void steps.catch(() => undefined);
+
       // Compare-and-set, so exactly one delivery announces the run as started.
       // An overlapping delivery still wins it — `running` is in `expect` — so the
       // only way to lose is a status this delivery may not run: the run went
@@ -342,7 +352,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
 
       return runWalk(
         runId,
-        { workflow: record.workflow, input: record.input, run: def.run },
+        { workflow: record.workflow, input: record.input, run: def.run, steps },
         signal,
       );
     },
