@@ -669,10 +669,8 @@ what every platform pool connects as — carries no `rolconnlimit`.
   a replica also serving Vault, the agents row every broker call needs, and the
   sweeps. It is 16.
 
-  **A reservation logs TWO lines under the caller's trace id** — the wait when
-  `reserve()` returns, `workMs` when the statement does — so
-  `elapsed - (waited + work)` is the hop. Two, because the wait is the pool
-  alarm and must survive a statement that hangs.
+  **A reservation logs the wait and then `workMs`, under one trace id** —
+  `withReserved`'s doc says why it is two lines.
 
   **Raising it is a fact about the POOLER.** `MAX_PLATFORM_DB_CONNECTIONS`
   deliberately excludes this pool on the premise that it reaches the instance
