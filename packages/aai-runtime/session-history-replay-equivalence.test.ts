@@ -81,7 +81,7 @@
  * `dropTrailingUser` POPPED where `pushConversation` had already CAPPED, so an
  * injected prompt rolled back while the live window was full cost the oldest
  * real turn permanently. A push records what it evicted now, and
- * `transports/pipeline-history-rollback-property.test.ts` states the inverse
+ * `integration/pipeline-history-rollback.integration.test.ts` states the inverse
  * over generated depths. This property is not that claim and never was: it
  * compares TAILS because the two sides trim DIFFERENT sequences, which is true
  * of correct code — the lost message merely made a first draft comparing

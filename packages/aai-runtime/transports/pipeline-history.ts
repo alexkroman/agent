@@ -57,7 +57,7 @@ export interface PipelineHistory {
    * push unshifts it back. Nothing in the system could see the loss — both views
    * are the right shape afterwards, one turn shallower — which is why the claim
    * is now stated as a property over generated depths
-   * (`pipeline-history-rollback-property.test.ts`) rather than at the one depth a
+   * (`pipeline-history-rollback.integration.test.ts`) rather than at the one depth a
    * unit test picks.
    */
   dropTrailingUser(content: string): void;
@@ -251,7 +251,7 @@ export function persistInterruptedTurn(args: {
  * **A push is capped and a pop is not, so without this a rollback is not a
  * rollback.** An append at the cap trims the oldest message; popping the append
  * leaves the window one message shallower than it was, permanently — see
- * {@link PipelineHistory.dropTrailingUser}, and `pipeline-history-rollback-property.test.ts`
+ * {@link PipelineHistory.dropTrailingUser}, and `pipeline-history-rollback.integration.test.ts`
  * for the property that states it.
  *
  * Three properties, each of which is what keeps a restore from being a
