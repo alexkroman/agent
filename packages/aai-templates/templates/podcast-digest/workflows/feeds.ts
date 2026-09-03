@@ -68,6 +68,7 @@ import { type FeedItem, pageMetadata, parseFeed } from "@alexkroman1/aai/html";
 import { report } from "@alexkroman1/aai/step";
 import { FatalError, stepFetchOk } from "@alexkroman1/aai/step-errors";
 import { isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
+import { z } from "zod";
 
 /** How long any one of these lookups may take before it is a failure. */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -463,27 +464,64 @@ function normalizeTitle(value: string): string {
     .trim();
 }
 
+/** One iTunes hit, reduced to the three fields this file reads. */
+type AppleResult = { feedUrl?: string; title?: string; artist?: string };
+
 /**
- * The iTunes payload, reduced to the three fields this file reads.
+ * One entry of an iTunes `results` array, reduced on the way through.
+ *
+ * Every field is `.catch(undefined)`, which is this schema's whole subject: the
+ * caller is looking for a hit with a `feedUrl` on it, so a neighbouring entry
+ * that spells `collectionName` as a number is a hit that does not match, never
+ * a reason to abandon the search. The reduction rides in the `transform` for
+ * the same reason the fields are declared here rather than at the call site —
+ * `collectionName ?? trackName` is a fact about iTunes' payload, and this is
+ * the module that is allowed to know vendor facts.
  *
  * `omitUndefined` rather than a conditional spread per field: under
  * `exactOptionalPropertyTypes` an absent field and a field set to `undefined`
  * are different types, and this is the SDK's one spelling for the difference.
+ * It is still needed after a schema, because a field the `.catch` above turned
+ * into `undefined` is PRESENT in zod's output holding `undefined` (only an
+ * absent field stays absent).
  */
-function appleResults(body: unknown): Array<{ feedUrl?: string; title?: string; artist?: string }> {
-  if (!(isRecord(body) && Array.isArray(body.results))) return [];
-  return body.results.filter(isRecord).map((result) =>
-    omitUndefined({
-      feedUrl: asString(result.feedUrl),
-      title: asString(result.collectionName) ?? asString(result.trackName),
-      artist: asString(result.artistName),
-    }),
-  );
-}
+const AppleResultEntry = z
+  .object({
+    feedUrl: z.string().optional().catch(undefined),
+    collectionName: z.string().optional().catch(undefined),
+    trackName: z.string().optional().catch(undefined),
+    artistName: z.string().optional().catch(undefined),
+  })
+  .transform(
+    (result): AppleResult =>
+      omitUndefined({
+        feedUrl: result.feedUrl,
+        title: result.collectionName ?? result.trackName,
+        artist: result.artistName,
+      }),
+  )
+  // An entry that is not an object at all — the one shape the fields above
+  // cannot absorb — becomes `null` and is dropped below, rather than taking the
+  // whole array down with it. That is the `.filter(isRecord)` this replaces.
+  .nullable()
+  .catch(null);
 
-/** A JSON field, when the far side really did send a string. */
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
+/** The iTunes lookup and search payloads, which share the one field read here. */
+const AppleResponse = z.object({ results: z.array(AppleResultEntry) });
+
+/**
+ * The hits in an iTunes response, and NOTHING is an ordinary answer.
+ *
+ * `safeParse`, never `parse`: both callers treat an empty list as "no match
+ * found" and already have a sentence for it, so a body that is not an object,
+ * or one whose `results` is not an array, must degrade rather than fail the
+ * run. These are live third-party endpoints reached without an API key — a
+ * throw here would turn a rate-limit interstitial into a failed durable run.
+ */
+function appleResults(body: unknown): AppleResult[] {
+  const parsed = AppleResponse.safeParse(body);
+  if (!parsed.success) return [];
+  return parsed.data.results.filter((result) => result !== null);
 }
 
 // ---- HTTP -------------------------------------------------------------------

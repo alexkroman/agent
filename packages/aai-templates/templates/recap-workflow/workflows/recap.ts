@@ -120,7 +120,7 @@ import {
   stepTranscribeSubmitClassified,
   toStepError,
 } from "@alexkroman1/aai/step-errors";
-import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { retentionToken, transcriptToken } from "./tokens.ts";
 
@@ -277,6 +277,58 @@ export type TranscriptState = {
   error?: string;
   audioDuration?: number;
 };
+
+/**
+ * The four statuses this desk knows how to act on.
+ *
+ * Declared as a schema rather than checked with a `!==` chain because the union
+ * IS the provider's contract with this template — see {@link checkTranscript},
+ * which reads it as a value the saga branches on — and a schema is the one
+ * spelling that both narrows the type and names the four in the error.
+ */
+const TranscriptStatus = z.enum(["queued", "processing", "completed", "error"]);
+
+/**
+ * The poll response, as much of it as this desk reads.
+ *
+ * **The three optional fields DEGRADE and the status does not**, which is the
+ * whole reason each one is spelled differently. A provider that answers
+ * `"text": null` on a job still running, or drops `audio_duration` from a
+ * failed one, is describing a job this desk can still act on — so a field of
+ * the wrong type is `undefined` (`.catch`) and an absent one stays absent. A
+ * status outside the four is the opposite: nothing downstream knows what to do
+ * with it, and polling to the bound and failing with the wrong reason is worse
+ * than stopping here. So a bad status fails the parse and
+ * {@link checkTranscript} turns that into a sentence.
+ *
+ * `audio_duration` is `z.number()` rather than a coercion, and zod 4's
+ * `z.number()` refuses `NaN` and both infinities — the `Number.isFinite` test
+ * the hand-written reader carried, which is what stops a non-finite duration
+ * reaching `Math.round(… / 60)` in {@link summarize}.
+ */
+const TranscriptBody = z.object({
+  status: TranscriptStatus,
+  text: z.string().optional().catch(undefined),
+  error: z.string().optional().catch(undefined),
+  audio_duration: z.number().optional().catch(undefined),
+});
+
+/**
+ * The status to NAME when {@link TranscriptBody} refused the body.
+ *
+ * Reporting the value is the job, so nothing here may throw a second time while
+ * reporting the first. `.catch({})` absorbs every shape that is not "an object
+ * with a string status" — a body that is not an object at all, a `status` that
+ * is a number — and each then arrives in the sentence as the word "undefined",
+ * which is a truthful "the provider sent something this desk cannot read" and
+ * the same thing the per-field read this replaced said. That `.catch` is also
+ * what makes `.parse` legal at the one call site: there is no input left for it
+ * to throw on.
+ */
+const ReportedStatus = z
+  .object({ status: z.string().optional() })
+  .catch({})
+  .transform((body) => body.status);
 
 /**
  * One undo, and the name it goes by when it fails.
@@ -636,26 +688,31 @@ export function callbackUrl(token: string): string | undefined {
 export async function checkTranscript(id: string): Promise<TranscriptState> {
   const response = await request(`${TRANSCRIPT_ENDPOINT}/${id}`);
   const body = await response.json();
-  const status = readString(body, "status");
-  if (
-    status !== "queued" &&
-    status !== "processing" &&
-    status !== "completed" &&
-    status !== "error"
-  )
-    throw new Error(`The provider reported an unknown transcript status: ${String(status)}`);
+  // `safeParse`, not `parse`: the only shape this desk refuses is an
+  // unrecognised status, and it owes that a sentence naming what arrived rather
+  // than a zod issue about an enum.
+  const parsed = TranscriptBody.safeParse(body);
+  if (!parsed.success) {
+    throw new Error(
+      `The provider reported an unknown transcript status: ${String(ReportedStatus.parse(body))}`,
+    );
+  }
 
-  await report(`Transcript ${status}.`);
+  await report(`Transcript ${parsed.data.status}.`);
   return {
-    status,
+    status: parsed.data.status,
     // `omitUndefined` rather than a spread-ternary per field: under
     // `exactOptionalPropertyTypes` an absent field and a field set to
     // `undefined` are different types, and this is the SDK's one spelling for
-    // the difference.
+    // the difference. Still needed after the schema, and for a reason worth
+    // knowing: an ABSENT field is absent from zod's output too, but a field
+    // whose value the schema `.catch`-ed to `undefined` is PRESENT and holding
+    // `undefined` — and this result crosses a queue, where such a key does not
+    // survive the trip.
     ...omitUndefined({
-      text: readString(body, "text"),
-      error: readString(body, "error"),
-      audioDuration: readNumber(body, "audio_duration"),
+      text: parsed.data.text,
+      error: parsed.data.error,
+      audioDuration: parsed.data.audio_duration,
     }),
   };
 }
@@ -744,7 +801,7 @@ export async function note(line: string): Promise<void> {
   await report(line);
 }
 
-// ---- HTTP and parsing -------------------------------------------------------
+// ---- HTTP -------------------------------------------------------------------
 
 /**
  * One authenticated request to the pre-recorded API, with this desk's retry
@@ -775,16 +832,4 @@ async function request(
     headers: { authorization: requireStepEnv(API_KEY_ENV), "content-type": "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-}
-
-/** A string field of a JSON body, when it really is one. */
-function readString(body: unknown, key: string): string | undefined {
-  const value = isRecord(body) ? body[key] : undefined;
-  return typeof value === "string" ? value : undefined;
-}
-
-/** A number field of a JSON body, when it really is one. */
-function readNumber(body: unknown, key: string): number | undefined {
-  const value = isRecord(body) ? body[key] : undefined;
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
