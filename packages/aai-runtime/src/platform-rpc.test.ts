@@ -24,6 +24,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { PLATFORM_ROUTES } from "./platform-endpoint.ts";
 import { platformBearer, platformPost, platformResult } from "./platform-rpc.ts";
+import { PLATFORM_SOCKET_UNAVAILABLE_CODE } from "./platform-socket.ts";
+import { closePlatformSockets, ensurePlatformSocket } from "./platform-socket-registry.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "./workflow-api-error-status.ts";
 
 const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";
@@ -50,7 +53,29 @@ const endpoint = (fetch: typeof globalThis.fetch) => ({ base: BASE, token: TOKEN
 
 afterEach(() => {
   vi.useRealTimers();
+  closePlatformSockets();
 });
+
+/**
+ * Register a socket for {@link BASE} that answers however a case says.
+ *
+ * Through `ensurePlatformSocket` rather than by reaching into the registry,
+ * because the registry lookup is the thing under test: a call prefers a socket
+ * when one is REGISTERED AND OPEN, and nothing else.
+ */
+function registerSocket(answer: () => Promise<{ status: number; body: string }>) {
+  const calls: { route: string; body: string; traceparent: string | undefined }[] = [];
+  const socket = {
+    isOpen: () => true,
+    send: async (call: { route: string; body: string; traceparent: string | undefined }) => {
+      calls.push(call);
+      return await answer();
+    },
+    close: () => undefined,
+  };
+  ensurePlatformSocket({ base: BASE, token: TOKEN }, { socket });
+  return { calls };
+}
 
 describe("what crosses to the platform", () => {
   test("posts the body to the route's URL, with the bearer and a JSON content type", async () => {
@@ -235,5 +260,62 @@ describe("the `{result}` envelope", () => {
     await expect(platformResult(endpoint(platform.fetch), CALL)).rejects.toThrow(
       /session-state load answered 200 without a result/,
     );
+  });
+});
+
+/**
+ * The transport choice, which is the ONE thing the socket changed above this
+ * module. Everything else in this file runs on HTTP and still passes unchanged,
+ * which is the claim `platform-socket.ts` makes for the swap.
+ */
+describe("socket first, HTTP as the fallback", () => {
+  test("prefers a registered open socket and never touches fetch", async () => {
+    const platform = recordingPlatform();
+    const socket = registerSocket(async () => ({ status: 200, body: '{"result":1}' }));
+    await expect(platformPost(endpoint(platform.fetch), CALL)).resolves.toBe('{"result":1}');
+    expect(socket.calls).toEqual([
+      { route: CALL.route, body: CALL.body, traceparent: expect.stringMatching(/^00-/) },
+    ]);
+    expect(platform.calls).toHaveLength(0);
+  });
+
+  test("reads a socket's non-2xx exactly as it reads an HTTP one", async () => {
+    // Same error text, same 500-character slice, same `errorFor` consultation —
+    // the reason the five clients needed no edit.
+    registerSocket(async () => ({ status: 501, body: "queue not configured" }));
+    await expect(platformPost(endpoint(recordingPlatform().fetch), CALL)).rejects.toThrow(
+      /session-state load answered HTTP 501: queue not configured/,
+    );
+  });
+
+  test("falls back to HTTP when the socket REFUSES, because nothing was sent", async () => {
+    const platform = recordingPlatform();
+    registerSocket(async () => {
+      throw Object.assign(new Error("not connected"), {
+        code: PLATFORM_SOCKET_UNAVAILABLE_CODE,
+      });
+    });
+    await expect(platformPost(endpoint(platform.fetch), CALL)).resolves.toBe('{"result":null}');
+    expect(platform.calls).toHaveLength(1);
+  });
+
+  test("does NOT fall back when the call was already written", async () => {
+    // The correctness half: re-sending a written `appendEvents` over HTTP would
+    // apply it twice. A written call that fails is retryable-CODED and rethrown,
+    // so the caller's own retry decides.
+    const platform = recordingPlatform();
+    registerSocket(async () => {
+      throw Object.assign(new Error("platform socket closed with the call in flight"), {
+        code: PLATFORM_UNAVAILABLE_CODE,
+      });
+    });
+    await expect(platformPost(endpoint(platform.fetch), CALL)).rejects.toThrow(/in flight/);
+    expect(platform.calls).toHaveLength(0);
+  });
+
+  test("uses HTTP when no socket has been opened, which is every unit test", async () => {
+    const platform = recordingPlatform();
+    await expect(platformPost(endpoint(platform.fetch), CALL)).resolves.toBe('{"result":null}');
+    expect(platform.calls).toHaveLength(1);
   });
 });

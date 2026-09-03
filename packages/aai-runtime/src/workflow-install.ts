@@ -31,6 +31,7 @@ import {
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { closeEgressFetch } from "./_egress-fetch.ts";
 import { openAppDb } from "./app-db.ts";
+import { closePlatformSockets, ensurePlatformSocket } from "./platform-socket-registry.ts";
 import type { CloseableDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
@@ -148,6 +149,12 @@ export function installWorkflowSupport(opts: {
   // guest announced "workflow uploads are LOCAL … no platform" one line after the
   // harness announced the platform world. See `platformGuestOptions`.
   const platform = platformGuestOptions();
+  // ONE socket per process, opened here because this is the one composition root
+  // that runs once per `AgentServer` and already owns the egress pools' lifetime
+  // (see `close()` below). Every platform client prefers it and falls back to
+  // HTTP until it is open, so this is a latency decision rather than a
+  // durability one — `platform-socket.ts` carries the argument.
+  if (platform) ensurePlatformSocket(platform, { logger: opts.logger });
   const store = createUploadStore({
     db,
     localDir,
@@ -219,6 +226,10 @@ export function installWorkflowSupport(opts: {
       // Settled rather than awaited in sequence, and never rejecting: this runs
       // inside `AgentServer.close()`, where one pool refusing to drain must not
       // leave the other one open — nor turn an orderly shutdown into a throw.
+      // The socket close is synchronous, and goes with the pools for the reason
+      // they are here: `aai dev` builds a new server on every save, and a socket
+      // the old one left connected holds one of the platform's Modal inputs.
+      closePlatformSockets();
       await Promise.allSettled([db?.close(), stepFetch.close(), closeEgressFetch()]);
     },
   };

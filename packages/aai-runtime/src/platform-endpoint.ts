@@ -67,6 +67,44 @@ export const PLATFORM_ROUTES = {
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
 /**
+ * The upgrade path a guest's MULTIPLEXED socket is opened on.
+ *
+ * Not a member of {@link PLATFORM_ROUTES}, and the split is the whole design: the
+ * five above are what a CALL names, and this is the pipe every one of them can be
+ * carried down. A frame on this socket names one of those five and is dispatched
+ * to the very same handler, so nothing here is a second copy of a route — see
+ * `platform-socket.ts` (the guest's end) and
+ * `aai-server/platform-socket-handler.ts` (the platform's).
+ *
+ * It sits beside them rather than in `aai-server` for the reason the table does:
+ * both ends read it, and `aai-server` may import this package while the reverse is
+ * forbidden. A literal on each side is a rename away from a socket that never
+ * opens — which, because the transport falls back, is a permanent HTTP deployment
+ * that no test and no alert can see.
+ *
+ * @internal
+ */
+export const PLATFORM_SOCKET_PATH = "/platform-socket";
+
+/**
+ * The largest frame either end will read, in bytes.
+ *
+ * One number for both directions and both ends, because a cap the two disagree
+ * about is a socket that dies mid-run rather than a request that is refused: the
+ * reader simply closes, and every in-flight call on it fails at once.
+ *
+ * 16 MiB is twice the largest per-route body cap (`MAX_SESSION_STATE_BODY_BYTES`
+ * and the journal's, both 8 MiB), which is what it has to clear — the ROUTE still
+ * enforces its own cap on the request, and a REPLY has none of its own, so the
+ * generous side is where this belongs. It is far below `ws`'s own 100 MiB default,
+ * which is the number this replaces on both ends and which bounds nothing worth
+ * bounding on a socket the peer is a tenant's sandbox.
+ *
+ * @internal
+ */
+export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16_777_216;
+
+/**
  * What a guest needs to reach the platform, whichever route it is reaching.
  *
  * ONE type, aliased by each client's own name rather than restated: the four were

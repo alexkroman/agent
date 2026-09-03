@@ -182,9 +182,13 @@ export type OrchestratorOpts = {
   uploadBytes?: UploadBytes;
   /**
    * True once shutdown has begun. Fails `/health` so the platform's proxy
-   * stops routing here. (Upgrades on `/:slug/websocket` are pure handshake
-   * redirects to the sandbox — nothing long-lived starts here, so there is
-   * nothing to refuse while draining.)
+   * stops routing here, and REFUSES a new `/:slug/platform-socket` upgrade.
+   *
+   * Upgrades on `/:slug/websocket` are still pure handshake redirects to the
+   * sandbox, so there is nothing long-lived to refuse there. The platform
+   * socket is the one upgrade this server really terminates, which is why the
+   * sentence that used to end "nothing long-lived starts here" no longer holds
+   * — see `platform-socket-handler.ts`.
    */
   isDraining?: () => boolean;
 };
@@ -406,6 +410,15 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // long-living endpoint redirects to its session URL), which needs the
     // same dependencies the client-config broker uses.
     broker: brokerOpts,
+    // Upgrades on /:slug/platform-socket are a deployed guest's own RPC
+    // transport. It takes the APP because a frame is dispatched back through
+    // it as a real request — see `platform-socket-handler.ts` for why that
+    // rather than a second dispatch over the five handlers.
+    platformSocket: {
+      app,
+      store: opts.store,
+      ...omitUndefined({ isDraining: opts.isDraining }),
+    },
   });
 
   return { app, injectWebSocket };
