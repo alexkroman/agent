@@ -1615,10 +1615,14 @@ describe("nextPollDelay", () => {
   });
 
   test("clamps to the floor rather than spinning when the bytes are already there", () => {
-    // The segment is stored but the loop reached the sleep anyway (it is waiting on
-    // `complete`). A poll is cheap and not free — this must not become a spin.
+    // A remainder of zero, which the `Math.max` below the estimate answers with the
+    // floor — there is no arm of its own for it, and the one that used to be there
+    // was unreachable from the body anyway (a stored segment goes in `ready` and
+    // the loop `continue`s past the sleep). What the floor is FOR is that the body
+    // must not poll faster than the round trip its own sleep costs, which is why it
+    // is 1000ms and not the 250ms that could not sleep at all.
     const delay = nextPollDelay(view(60_000, 2000), view(10_000, 1000), planAt(30_000), new Set());
-    expect(delay).toBe(250);
+    expect(delay).toBe(1000);
   });
 
   test("waits for the HEADER window before there is a plan to aim at", () => {
@@ -1664,15 +1668,21 @@ describe("nextPollDelay", () => {
     // body plans when `at.size >= HEADER_PROBE_BYTES`, so a delay derived from
     // `stored` is answering a different question than the one the loop asks. A
     // megabyte has landed in later windows and the header has not arrived.
-    // 100 bytes/ms against the whole 64 KiB probe window is 656ms; measured
+    // 50 bytes/ms against the whole 64 KiB probe window is 1311ms; measured
     // against `stored` the remainder is negative and the answer is the floor.
+    //
+    // The rate is half what this case used to carry, and deliberately: at 100
+    // bytes/ms the answer is 656ms, which is UNDER `MIN_POLL_INTERVAL_MS` and
+    // therefore the same 1000 a broken remainder would give — the case would
+    // still pass while measuring nothing. Every case below keeps its answer
+    // clear of both bounds for that reason.
     const delay = nextPollDelay(
-      detached(100_000, 0, 2000),
+      detached(100_000, 0, 3000),
       detached(0, 0, 1000),
       undefined,
       new Set(),
     );
-    expect(delay).toBe(656);
+    expect(delay).toBe(1311);
   });
 
   /**
@@ -1722,15 +1732,15 @@ describe("nextPollDelay", () => {
     // saturates the ceiling and gives back the flat 5000ms interval this
     // function replaced, once per segment, for the entire recording.
     //
-    // Two 8 MiB windows have landed contiguously from byte zero, at ~932
+    // Two 8 MiB windows have landed contiguously from byte zero, at ~466
     // bytes/ms; the segment ends 866,384 bytes past them.
     const delay = nextPollDelay(
-      landed([{ start: 0, end: 2 * PART_BYTES }], 10_000),
+      landed([{ start: 0, end: 2 * PART_BYTES }], 19_000),
       landed([{ start: 0, end: PART_BYTES }], 1000),
       planOver([0, 17_643_600]),
       new Set(),
     );
-    expect(delay).toBe(930);
+    expect(delay).toBe(1860);
   });
 
   test("wakes for the segment CLOSEST to ready, which need not be the earliest", () => {
@@ -1739,13 +1749,13 @@ describe("nextPollDelay", () => {
     // has not done. Segment 0 has nothing covering its start and needs the whole
     // 20 MB prefix; segment 1 sits inside a window that is 500,000 bytes short.
     const delay = nextPollDelay(
-      landed([{ start: 16_000_000, end: 35_500_000 }], 10_000),
+      landed([{ start: 16_000_000, end: 35_500_000 }], 19_000),
       landed([{ start: 16_000_000, end: 27_111_608 }], 1000),
       planOver([0, 20_000_000], [16_000_000, 36_000_000]),
       new Set(),
     );
-    // 932 bytes/ms against the 500,000 still missing from segment 1's window.
-    expect(delay).toBe(537);
+    // 466 bytes/ms against the 500,000 still missing from segment 1's window.
+    expect(delay).toBe(1073);
   });
 
   test("falls back to the prefix for a window that does not cover the segment's START", () => {
