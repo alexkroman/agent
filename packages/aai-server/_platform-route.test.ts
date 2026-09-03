@@ -21,10 +21,16 @@
  * - **The ACQUIRE is timed, and every outcome of it says so.** A route holds one
  *   of `ADMIN_POOL_MAX` connections for its whole duration, and until this the
  *   only number anybody had was the total — so "the journal RPC costs ~840 ms"
- *   could not be attributed to our own pool or to the round trip. The three
- *   cases below are the three answers a request can print, and the failed-acquire
- *   one is a line that did not exist at all: the reservation is taken before the
- *   `try`, so `POOL_EXHAUSTED` reached the router with nothing naming the slug.
+ *   could not be attributed to our own pool or to the round trip. The cases below
+ *   are the answers a request can print, and the failed-acquire one is a line
+ *   that did not exist at all: the reservation is taken before the `try`, so
+ *   `POOL_EXHAUSTED` reached the router with nothing naming the slug.
+ * - **A SUCCEEDING call says how long its statement took**, which is the half
+ *   that was missing: `workMs` was computed in the `catch` and nowhere else, so
+ *   the `elapsed - (waited + work)` breakdown two guides advertise was absent
+ *   from every request that worked (measured: 11 `waitedMs` lines and zero
+ *   `workMs` on a local platform run). A spec over the failure path cannot see
+ *   that — it is the population an operator is not asking about.
  */
 
 import { HTTPException } from "hono/http-exception";
@@ -207,7 +213,12 @@ describe("the acquire is timed", () => {
 
   test("an ordinary wait is a DEBUG line, so it costs nothing unless asked for", async () => {
     await withReserved(slowDb(1), CALL, async () => "ok");
-    expect(debugs().map((l) => l.msg)).toEqual(["test.route Platform admin reservation"]);
+    // Two lines, in order: the acquire's outcome the moment it returns, then the
+    // statement's when it comes back.
+    expect(debugs().map((l) => l.msg)).toEqual([
+      "test.route Platform admin reservation",
+      "test.route Platform admin statement",
+    ]);
     expect(debugs()[0]?.ctx).toMatchObject({ slug: "my-agent", waitedMs: 1 });
     // Not news, so not a warn: an operator greps warns for a pool with nothing
     // to give, and one line per request would drown it.
@@ -217,12 +228,15 @@ describe("the acquire is timed", () => {
   test("a wait past the threshold WARNS, naming the pool rather than the route", async () => {
     await withReserved(slowDb(RESERVE_WAIT_WARN_MS), CALL, async () => "ok");
     expect(logs.warns()).toEqual(["test.route Platform admin reservation was slow"]);
-    expect(logs.all().at(-1)?.ctx).toMatchObject({
+    expect(logs.all().find((l) => l.level === "warn")?.ctx).toMatchObject({
       slug: "my-agent",
       waitedMs: RESERVE_WAIT_WARN_MS,
     });
-    // One line per reservation, at the level the number deserves — never both.
-    expect(debugs()).toEqual([]);
+    // The WAIT is reported once, at the level the number deserves — never both.
+    // The statement line beside it is a different fact and stays at DEBUG: the
+    // acquire is what an operator was warned about, and a duration with no
+    // threshold is not a second alarm.
+    expect(debugs().map((l) => l.msg)).toEqual(["test.route Platform admin statement"]);
   });
 
   test("a FAILED acquire warns with the wait it spent, and rethrows unchanged", async () => {
@@ -241,6 +255,45 @@ describe("the acquire is timed", () => {
       waitedMs: 5000,
       error: "no connection available",
     });
+  });
+
+  test("a SUCCEEDING call says how long its statement took, not just its wait", async () => {
+    // The defect: `workMs` was computed in the `catch` and nowhere else, so the
+    // breakdown `_trace-context.ts` documents was absent from every healthy
+    // request — 11 `waitedMs` lines and zero `workMs` on a measured local run.
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const db = {
+      listen: () => Promise.resolve(() => undefined),
+      reserve: async () => {
+        clock += 2;
+        return { query: () => Promise.resolve([]), release: () => undefined };
+      },
+    } as AdminDb;
+    await expect(
+      withReserved(db, CALL, async () => {
+        clock += 41;
+        return "ok";
+      }),
+    ).resolves.toBe("ok");
+    const statement = logs.all().find((l) => l.msg.endsWith("Platform admin statement"));
+    // `waitedMs` is repeated so the second line answers the question on its own,
+    // rather than only in company with the first.
+    expect(statement?.ctx).toMatchObject({ slug: "my-agent", waitedMs: 2, workMs: 41 });
+  });
+
+  test("the wait is already reported while the work is still running", async () => {
+    // Which is why this is two lines rather than one moved below `run`: the wait
+    // line is the pool alarm, so a statement that hangs forever must not be able
+    // to swallow it. Observed from inside the work, the acquire's line is written
+    // and the statement's is not.
+    const { db } = countingDb();
+    let seenFromInside: string[] = [];
+    await withReserved(db, CALL, async () => {
+      seenFromInside = debugs().map((l) => l.msg);
+      return "ok";
+    });
+    expect(seenFromInside).toEqual(["test.route Platform admin reservation"]);
   });
 
   test("a 503 says how much of itself was queueing and how much was work", async () => {
@@ -284,6 +337,16 @@ describe("the caller's trace id", () => {
     const { db } = countingDb();
     await withReserved(db, traced, async () => "ok");
     expect(logs.all().at(-1)?.ctx).toMatchObject({ slug: "my-agent", traceId: TRACE });
+  });
+
+  test("is on the statement line, which is what makes the hop computable", async () => {
+    // `elapsed - (waited + work)` needs both server lines under one id: the wait
+    // line alone leaves the statement inside the unaccounted remainder.
+    const { db } = countingDb();
+    await withReserved(db, traced, async () => "ok");
+    const statement = logs.all().find((l) => l.msg.endsWith("Platform admin statement"));
+    expect(statement?.ctx).toMatchObject({ traceId: TRACE, slug: "my-agent" });
+    expect(statement?.ctx).toHaveProperty("workMs");
   });
 
   test("is on the 503's warn, so a failed call is correlatable too", async () => {

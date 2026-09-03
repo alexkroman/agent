@@ -209,6 +209,17 @@ export type ReservedCall = {
 export const RESERVE_WAIT_WARN_MS = PLATFORM_DB_RESERVE_TIMEOUT_MS / 10;
 
 /**
+ * A route's `detail`, plus its trace id when it has one.
+ *
+ * `omitUndefined` rather than a spread of `{ traceId }`: a `traceId: undefined`
+ * in a log context prints as a field that is there and empty, which reads as a
+ * caller that sent a broken header rather than one that sent none.
+ */
+function traced(call: ReservedCall): Record<string, unknown> {
+  return { ...call.detail, ...omitUndefined({ traceId: call.trace }) };
+}
+
+/**
  * Run one call on a reserved admin connection, and release it whatever happens.
  *
  * ## The ACQUIRE is timed, because the number was unobservable and load-bearing
@@ -224,14 +235,35 @@ export const RESERVE_WAIT_WARN_MS = PLATFORM_DB_RESERVE_TIMEOUT_MS / 10;
  * anything — and `ADMIN_POOL_MAX` had already been widened once on the
  * assumption.
  *
- * Three lines, and which one a request prints is the answer:
+ * ## TWO lines per reservation, because the acquire cannot wait for the statement
  *
- * - **A wait past {@link RESERVE_WAIT_WARN_MS} WARNS.** Unambiguously abnormal,
- *   per that constant's doc, and it names the pool rather than the route.
- * - **Every other reservation logs at DEBUG**, which `consoleLogger` makes a
- *   no-op unless `AAI_DEBUG=1` — so the distribution is readable on one replica
- *   on demand, and absence of a warn is not the only evidence available. That
- *   matters: "no warns" is indistinguishable from "not deployed" otherwise.
+ * A healthy request prints the ACQUIRE's outcome and then the STATEMENT's, and
+ * the pair is joined by the caller's trace id — which is the shape
+ * `aai-runtime/_trace-context.ts` documents, and it is a shape rather than one
+ * line for a reason worth stating: the wait line is the POOL ALARM, so it has to
+ * be written the moment `reserve()` returns and must still be written when the
+ * statement underneath it never comes back at all. Deferring it until after
+ * `run` would trade the one line an exhausted pool is guaranteed to produce for
+ * a tidier log.
+ *
+ * - **The ACQUIRE is reported as soon as it returns**, at WARN past
+ *   {@link RESERVE_WAIT_WARN_MS} — unambiguously abnormal per that constant's
+ *   doc, and it names the pool rather than the route — and at DEBUG otherwise,
+ *   never both. DEBUG is a no-op in `consoleLogger` unless `AAI_DEBUG=1`, so the
+ *   distribution is readable on one replica on demand and absence of a warn is
+ *   not the only evidence available. That matters: "no warns" is
+ *   indistinguishable from "not deployed" otherwise.
+ * - **The STATEMENT is reported when it comes back**, at DEBUG, carrying
+ *   `workMs` beside the same `waitedMs` the line above printed. Repeating the
+ *   wait is what makes the second line answerable on its own; the trace id is
+ *   what ties it to the caller's `elapsedMs`, and `elapsed - (waited + work)` is
+ *   the hop.
+ *
+ *   It is DEBUG and not WARN because a slow statement is not abnormal by itself
+ *   and there is no threshold here that could say when it is — `ADMIN_POOL_MAX`
+ *   gives the pool one, and a statement's own budget belongs to whichever route
+ *   issued it. A statement that FAILED is warned below with these same two
+ *   numbers.
  * - **A FAILED acquire warns with the wait it spent.** It used to log nothing
  *   at all here, because the reservation is taken before the `try` below — so
  *   `POOL_EXHAUSTED` at the 5s deadline reached the router's error handler with
@@ -239,24 +271,25 @@ export const RESERVE_WAIT_WARN_MS = PLATFORM_DB_RESERVE_TIMEOUT_MS / 10;
  *   rethrown UNCHANGED: `isPlatformDbUnreachable` is what classifies it and this
  *   only reports it.
  *
- * The 503 below carries `waitedMs` and `workMs` for the same reason — a failure
- * after 20 ms of work behind 4,900 ms of queueing is a different incident from
- * one that spent thirty seconds in a statement, and the old line could not tell
- * them apart.
+ * ## `workMs` used to exist only on the failure path, and the docs said otherwise
+ *
+ * There was no statement line: `workMs` was computed in the `catch` below and
+ * nowhere else, so the breakdown two guides advertised as computable
+ * (`aai-runtime/_trace-context.ts`, and `packages/aai-runtime/CLAUDE.md`'s "A
+ * journal read is a round trip") was absent from every request that WORKED.
+ * Measured on a local platform run with `AAI_DEBUG=1`: 11 `waitedMs` lines and
+ * zero `workMs`. So the one question the timing was added to answer — was the
+ * ~840 ms our pool, our statement, or the hop — was answerable only about
+ * requests that had already failed, which is the population an operator is not
+ * asking about.
+ *
+ * The 503 below carries both numbers for a narrower reason — a failure after
+ * 20 ms of work behind 4,900 ms of queueing is a different incident from one
+ * that spent thirty seconds in a statement — and it is warned rather than
+ * debugged because a failure is news.
  *
  * @internal
  */
-/**
- * A route's `detail`, plus its trace id when it has one.
- *
- * `omitUndefined` rather than a spread of `{ traceId }`: a `traceId: undefined`
- * in a log context prints as a field that is there and empty, which reads as a
- * caller that sent a broken header rather than one that sent none.
- */
-function traced(call: ReservedCall): Record<string, unknown> {
-  return { ...call.detail, ...omitUndefined({ traceId: call.trace }) };
-}
-
 export async function withReserved<T>(
   adminDb: AdminDb,
   call: ReservedCall,
@@ -281,7 +314,16 @@ export async function withReserved<T>(
   else call.log.debug("Platform admin reservation", line);
   const heldAt = performance.now();
   try {
-    return await run((q, p) => reserved.query(q, p));
+    const result = await run((q, p) => reserved.query(q, p));
+    // The other half of the join, on the path that was missing it. See the doc
+    // above for why this is a second line rather than a later one, and why a
+    // duration nobody has a threshold for is DEBUG.
+    call.log.debug("Platform admin statement", {
+      ...traced(call),
+      waitedMs,
+      workMs: since(heldAt),
+    });
+    return result;
   } catch (err: unknown) {
     // An answer the route already decided on. Re-wrapping one as a 503 tells the
     // guest to retry a request that can never succeed — see the module doc.
