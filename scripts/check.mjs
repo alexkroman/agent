@@ -272,7 +272,13 @@ const GATES = [
     script: "check:deploy-changeset",
     phase: "ratchets",
     fatal: false,
-    why: "The one gate here that is DIFF-scoped, and the reason is that the thing it checks is a property of a branch rather than of the tree: ship.yml arms its deploy on a version bump to a carrier, and `changeset status` is satisfied by an EMPTY changeset — so a branch can rewrite the platform, pass every other gate, merge, and ship nothing. That is #1341. An unresolvable base FAILS rather than skipping, which is the half of the no-git-ref rule that still applies.",
+    why: "One of the two gates here that are DIFF-scoped, and the reason is that the thing it checks is a property of a branch rather than of the tree: ship.yml arms its deploy on a version bump to a carrier, and `changeset status` is satisfied by an EMPTY changeset — so a branch can rewrite the platform, pass every other gate, merge, and ship nothing. That is #1341. An unresolvable base FAILS rather than skipping, which is the half of the no-git-ref rule that still applies. `supabase/migrations/**` is in scope too, where the same hole was wider: nothing else could ask, since `changeset status` answers for workspace packages and supabase/ is not one.",
+  },
+  {
+    script: "check:migration-order",
+    phase: "ratchets",
+    fatal: false,
+    why: "The other diff-scoped one, and a merge hazard rather than an authoring one: each branch picks a plausible next timestamp against the main it can see, both apply cleanly in isolation, and the inversion exists only in the merge. `supabase db push` then REFUSES a pending file older than the last remote row — at release time, after the npm publish, on a branch that has merged and gone. It has already cost a manual re-dating of two migrations (f376585). platform-schema.test.ts catches two files claiming ONE version; nothing caught one file claiming an older one.",
   },
 
   // --- after the test run ------------------------------------------------

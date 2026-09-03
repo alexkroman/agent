@@ -39,6 +39,47 @@ export const DEPLOY_CARRIED = ["aai-server", "aai-studio-server", "aai-studio-cl
 export const DEPLOY_CARRIERS = ["aai-server", "aai-studio-server"];
 
 /**
+ * The one deploy-carried thing that is not a package: the platform SCHEMA.
+ *
+ * `ship.yml`'s `migrate` job applies `supabase/migrations` with
+ * `supabase db push`, and it is armed by a carrier version bump and nothing
+ * else — the `HEAD^..HEAD` diff over this directory that used to arm it was
+ * removed because at a release commit it finds nothing (the migration sits in
+ * an earlier commit). So a merged migration waits for the next release, and
+ * until this entry existed NOTHING obliged one:
+ *
+ *   - this gate matched `packages/<carried>/` only, so a migration-only branch
+ *     changed no "deploy-carried source" and the gate printed its checkmark;
+ *   - `changeset status` answers for PACKAGES, so the pre-push hook did not ask
+ *     for a changeset either — `supabase/` is not a workspace package.
+ *
+ * That is #1341's failure class — merge, and ship nothing — reachable by a
+ * second door, and it has already fired once through it:
+ * `20260808120000_agents_config_default.sql` stopped `agents.config` being
+ * written, was never pushed, and every `POST /deploy` died on a not-null
+ * violation while CI was green (`supabase/README.md` carries the account).
+ *
+ * Scoped to `migrations/` rather than to `supabase/`, because that is the only
+ * part of the directory a deploy carries: `config.toml` configures the LOCAL
+ * stack and is never applied to production, and the README is prose.
+ */
+export const SCHEMA_DIR = "supabase/migrations";
+
+/**
+ * Every prefix a deploy carries, as `[bucket key, path prefix]`.
+ *
+ * Derived from {@link DEPLOY_CARRIED} plus {@link SCHEMA_DIR} rather than
+ * written out, so a package added to that table is in scope here with no second
+ * edit — the drift this repo pays for whenever one list is restated as two.
+ *
+ * @type {readonly (readonly [key: string, prefix: string])[]}
+ */
+export const CARRIED_PREFIXES = [
+  ...DEPLOY_CARRIED.map((name) => [name, `packages/${name}/`]),
+  [SCHEMA_DIR, `${SCHEMA_DIR}/`],
+];
+
+/**
  * Does this path hold bytes a deploy actually ships?
  *
  * The exclusions are the things that unambiguously never reach a container:
@@ -74,20 +115,22 @@ export function isShippedSource(path) {
 }
 
 /**
- * The changed files a deploy carries, grouped by their package.
+ * The changed files a deploy carries, grouped by what carries them.
  *
  * @param {readonly string[]} changed Repo-relative paths.
- * @returns {Map<string, string[]>} Keyed by `DEPLOY_CARRIED` entry, empty when
- *   nothing a deploy carries changed.
+ * @returns {Map<string, string[]>} Keyed by `CARRIED_PREFIXES` entry — a
+ *   `DEPLOY_CARRIED` package name, or `SCHEMA_DIR` for a migration — and empty
+ *   when nothing a deploy carries changed.
  */
 export function triggeringFiles(changed) {
   /** @type {Map<string, string[]>} */
   const byPackage = new Map();
   for (const path of changed) {
-    const pkg = DEPLOY_CARRIED.find((name) => path.startsWith(`packages/${name}/`));
-    if (pkg === undefined || !isShippedSource(path)) continue;
-    const bucket = byPackage.get(pkg);
-    if (bucket === undefined) byPackage.set(pkg, [path]);
+    const hit = CARRIED_PREFIXES.find(([, prefix]) => path.startsWith(prefix));
+    if (hit === undefined || !isShippedSource(path)) continue;
+    const [key] = hit;
+    const bucket = byPackage.get(key);
+    if (bucket === undefined) byPackage.set(key, [path]);
     else bucket.push(path);
   }
   return byPackage;

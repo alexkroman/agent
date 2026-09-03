@@ -46,10 +46,17 @@ const scope = sole(
   import.meta.glob<{
     DEPLOY_CARRIED: string[];
     DEPLOY_CARRIERS: string[];
+    SCHEMA_DIR: string;
+    CARRIED_PREFIXES: readonly (readonly [string, string])[];
     isShippedSource: (path: string) => boolean;
     triggeringFiles: (changed: readonly string[]) => Map<string, string[]>;
     namedCarriers: (entries: readonly { name: string }[]) => string[];
   }>("../../scripts/_deploy-changeset-scope.mjs", { eager: true }),
+);
+
+/** Every migration filename, from the real directory. */
+const migrationFiles = Object.keys(
+  import.meta.glob("../../supabase/migrations/*.sql", { query: "?raw" }),
 );
 
 /**
@@ -198,6 +205,73 @@ describe("the scope decides what a deploy carries", () => {
     // The common case — a docs or SDK-only branch — must not be asked for a
     // platform changeset, or the gate becomes the thing people work around.
     expect(scope?.triggeringFiles(["AGENTS.md", "packages/aai/sdk/agent.ts"]).size).toBe(0);
+  });
+});
+
+describe("the SCHEMA is carried too", () => {
+  /**
+   * The wider half of the same hole, and the one nothing else could have asked
+   * about: this gate matched `packages/<carried>/` only, and `changeset status`
+   * answers for workspace packages — which `supabase/` is not. So a
+   * migration-only branch cleared the gate AND the pre-push hook, and the
+   * migration then waited for whatever unrelated release next moved a version
+   * line. It has fired once already, through
+   * `20260808120000_agents_config_default.sql`.
+   */
+  test("a migration triggers the gate", () => {
+    const grouped = scope?.triggeringFiles([
+      "supabase/migrations/20260903030000_workflow_run_keys.sql",
+    ]);
+    expect([...(grouped?.keys() ?? [])]).toEqual([scope?.SCHEMA_DIR]);
+  });
+
+  test("only migrations/ is carried, not the rest of supabase/", () => {
+    // `config.toml` configures the LOCAL stack and is never applied to
+    // production; the README is prose. Scoping to the whole directory would
+    // make every doc edit ask for a platform changeset, which is how a gate
+    // becomes the thing people route around.
+    const grouped = scope?.triggeringFiles([
+      "supabase/config.toml",
+      "supabase/README.md",
+      "supabase/migrations/20260903030000_workflow_run_keys.sql",
+    ]);
+    expect(grouped?.get(scope?.SCHEMA_DIR ?? "")).toEqual([
+      "supabase/migrations/20260903030000_workflow_run_keys.sql",
+    ]);
+    expect(grouped?.size).toBe(1);
+  });
+
+  test("SCHEMA_DIR names a directory that holds migrations", () => {
+    // The same argument as `DEPLOY_CARRIED names packages that exist`: a
+    // renamed directory contributes no paths, matches no change, and prints a
+    // checkmark. The gate carries a `MIN_TRACKED_MIGRATIONS` floor against
+    // `git ls-files`; this is the half that fails in an ordinary test run.
+    expect(scope?.SCHEMA_DIR).toBe("supabase/migrations");
+    expect(migrationFiles.length).toBeGreaterThan(15);
+  });
+
+  test("CARRIED_PREFIXES covers every package plus the schema, and nothing else", () => {
+    // Derived rather than restated, so a package added to DEPLOY_CARRIED is in
+    // scope with no second edit. Asserted because the derivation is the only
+    // thing standing between the two lists and the drift this repo pays for.
+    const keys = (scope?.CARRIED_PREFIXES ?? []).map(([key]) => key);
+    expect(keys).toEqual([...(scope?.DEPLOY_CARRIED ?? []), scope?.SCHEMA_DIR]);
+    for (const [key, prefix] of scope?.CARRIED_PREFIXES ?? []) {
+      expect(prefix, `${key} prefix must end in a slash`).toMatch(/\/$/);
+    }
+  });
+
+  test("the gate declares a floor for the schema corpus", () => {
+    expect(script).toBeTypeOf("string");
+    const floor = numericConstant(
+      script ?? "",
+      "MIN_TRACKED_MIGRATIONS",
+      "check-deploy-changeset.mjs",
+    );
+    // Under the real count, so ordinary consolidation does not trip it, and
+    // above zero, so a pathspec matching nothing still fails.
+    expect(floor).toBeGreaterThan(0);
+    expect(floor).toBeLessThan(migrationFiles.length);
   });
 });
 

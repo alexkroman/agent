@@ -636,10 +636,22 @@ jobs:
           # changes without a commit. This is the version the migrations in this
           # repo were applied with locally.
           version: 2.109.1
+      # The paragraph above this job forbids the transaction pooler, and until
+      # now that was the only thing enforcing it. `assertSessionModeUrl` refuses
+      # one in the SERVER, on the same secret, by the same rule — so the
+      # platform is protected and the one place that runs DDL was not, which is
+      # backwards: transaction pooling cannot hold the locks a migration takes,
+      # and the failure it produces names neither pooling nor this URL.
+      #
+      # Checked before the push rather than trusted, for the reason this
+      # repository states everywhere else: a rule that belongs in a guard does
+      # not belong in prose. The port and the flag are the two forms
+      # `assertSessionModeUrl` refuses, deliberately spelled the same way.
       - name: Apply Supabase migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
+          set -euo pipefail
           if [ -z "${SUPABASE_DB_URL:-}" ]; then
             echo "::error::SUPABASE_DB_URL is not set on the production environment." \
                  "Add it as an environment secret — the DIRECT session-mode" \
@@ -647,6 +659,33 @@ jobs:
                  "ship code against an unmigrated schema."
             exit 1
           fi
+          case "$SUPABASE_DB_URL" in
+            *:6543*|*pgbouncer=true*)
+              echo "::error title=Transaction pooler::SUPABASE_DB_URL names Supavisor's" \
+                   "TRANSACTION pooler (port 6543, or pgbouncer=true). Migrations run DDL" \
+                   "in transactions and take locks, which transaction pooling will not" \
+                   "hold — and the resulting failure names neither pooling nor this URL." \
+                   "Use the direct connection, or Supavisor SESSION mode on port 5432;" \
+                   "supabase/README.md has both, and assertSessionModeUrl refuses exactly" \
+                   "these two forms in the server."
+              exit 1 ;;
+          esac
+
+          # What is PENDING, side by side with what the remote has already
+          # applied, BEFORE anything is applied. `db push` reports an inversion
+          # as "Remote migration versions not found in local migrations
+          # directory", which reads as a missing file rather than as an ordering
+          # problem; this prints the two histories so the log says which it is.
+          #
+          # `check:migration-order` is the gate that stops an inversion reaching
+          # main at all. This is the arm for what the tree cannot know — a
+          # migration applied out of band, or a repair the history carries — so
+          # a failure here is diagnosable from the log instead of from a
+          # database nobody can reach mid-release.
+          echo "::group::Pending migrations"
+          supabase migration list --db-url "$SUPABASE_DB_URL"
+          echo "::endgroup::"
+
           # `--yes` because there is no TTY to confirm at; the CLI otherwise
           # prompts before applying and would hang the job.
           supabase db push --db-url "$SUPABASE_DB_URL" --yes
@@ -713,18 +752,32 @@ jobs:
           fi
           echo "$GUEST_IMAGE_REF is pullable ✓"
 
+      # `--tag` is what makes a Modal app version name its commit. Modal
+      # increments a version number per deploy and `modal app history` lists
+      # them; without a tag those numbers carry no provenance, so the question
+      # this whole file's header is an account of — WHICH commit is production
+      # running — is answerable from GitHub and not from Modal. That matters at
+      # exactly the moment you are in Modal's dashboard rather than this log,
+      # and it is also what lets `modal app rollback` be aimed at a version
+      # somebody can identify (see MODAL-CLAUDE.md, "Rolling back").
+      #
+      # The same `inputs.ref || github.sha` every checkout in this file resolves,
+      # so the tag names the tree that was actually built rather than a branch
+      # pointer — the distinction the header's run 33660483457 is about.
       - name: Deploy platform
         id: deploy
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          DEPLOY_TAG: ${{ inputs.ref || github.sha }}
         run: |
           set -o pipefail
           # Stamped BEFORE the deploy: the verify step below asserts a
           # container started after this instant, which is what separates a
           # real rollout from the previous deploy's containers still serving.
           echo "started=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" >> "$GITHUB_OUTPUT"
-          modal deploy packages/aai-server/modal_deploy.py 2>&1 | tee /tmp/modal-deploy.log
+          modal deploy --tag "$DEPLOY_TAG" packages/aai-server/modal_deploy.py 2>&1 \
+            | tee /tmp/modal-deploy.log
           # Self-configuring rather than a hardcoded workspace hostname —
           # `modal deploy` prints the app's URL on success.
           url="$(grep -oE 'https://[a-z0-9.-]+\.modal\.run' /tmp/modal-deploy.log | head -1)"

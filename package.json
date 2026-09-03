@@ -38,6 +38,7 @@
     "check:konsistent-config": "konsistent validate",
     "check:local": "node scripts/check.mjs --local",
     "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude' '#.superpowers'",
+    "check:migration-order": "node scripts/check-migration-order.mjs",
     "check:property-floors": "node scripts/check-property-floors.mjs",
     "check:publint": "turbo run check:publint",
     "check:publish-names": "node scripts/check-publish-names.mjs",
