@@ -1117,6 +1117,21 @@ that decided first. If it is only a NAME that is wanted, note the asymmetry:
 adding a column is easy, backfilling one is not — existing agents would carry
 nothing until redeployed.
 
+## Queryable run state is not `workflow_runs`' job
+
+A filterable listing — status, a time range, a cursor, a run's STEPS over HTTP
+— does not go on `aai_platform.workflow_runs`. It goes on a projection updated
+OFF the write path. That row is what the engine rewrites on every status
+transition, and it carries three secondary indexes today against
+`workflow_steps`' zero. DBOS Transact indexed the status row directly and runs
+fourteen, five of them partial on `status` itself; Temporal keeps `executions`
+index-poor and puts every query on `executions_visibility`, updated
+asynchronously. Copy the second shape.
+
+Revisit when a projection's lag is unaffordable to a real caller — not because
+one more index looks cheap. Counts and sources:
+[`SCHEMA-CLAUDE.md`](SCHEMA-CLAUDE.md).
+
 ## Security architecture
 
 ### Modal sandbox isolation
