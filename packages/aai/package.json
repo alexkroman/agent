@@ -150,7 +150,7 @@
     "bogon": "^1.3.0",
     "eventsource-parser": "catalog:",
     "expr-eval-fork": "^3.0.3",
-    "html-to-text": "^10.0.0",
+    "html-to-text": "^10.0.1",
     "htmlparser2": "^12.0.0",
     "p-timeout": "catalog:",
     "undici": "^8.10.0",
