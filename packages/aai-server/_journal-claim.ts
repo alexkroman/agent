@@ -61,6 +61,45 @@ const CLAIM_ATTEMPTS = 3;
  * time, and a long run with overlapping walks pays that per walk per wait. This
  * shape keeps the read a read.
  *
+ * ## And `do nothing` really does keep it a read — MEASURED, the objection named
+ *
+ * The paragraph above was challenged on the grounds that it refutes itself:
+ * `insert … on conflict do nothing` performs SPECULATIVE INSERTION — the heap
+ * tuple and its index entries are written and then super-deleted once the
+ * conflict is detected — so this shape would leave the very dead tuple per walk
+ * per wait it claims to avoid, and `do update` would cost nothing extra.
+ *
+ * It does not, and the reason is that the speculative path is not the conflicting
+ * path. Postgres PRE-CHECKS the arbiter index before writing anything
+ * (`ExecCheckIndexConstraints`, ahead of the heap insert in `ExecInsert`); a
+ * `do nothing` whose pre-check finds a COMMITTED conflicting row returns having
+ * written no tuple. Speculative insertion — and its super-deletion — is reached
+ * only when the pre-check passes and the index insert then races an inserter it
+ * could not see, which is the same rival {@link firstWriteWins} exists for and is
+ * not the walk.
+ *
+ * PostgreSQL 16.13, 1000 conflicting claims of one already-claimed row, on a
+ * table with `autovacuum_enabled = false` so nothing reclaims behind the count:
+ *
+ * | shape | `n_tup_ins` | `n_tup_upd` | dead tuples |
+ * | --- | --- | --- | --- |
+ * | this one — `on conflict do nothing` | 1 | 0 | **0** |
+ * | a leading `existing` CTE guarding the insert | 1 | 0 | **0** |
+ * | the rejected `on conflict … do update` | 1 | 1000 | **24** |
+ *
+ * The `1` is the row the measurement seeded, and the third line is the positive
+ * control — without it a run of zeroes is indistinguishable from a harness that
+ * cannot see a dead tuple. `explain analyze` states it with no arithmetic at all:
+ * `Tuples Inserted: 0`, `Conflicting Tuples: 1`. {@link claimHook}'s BARE
+ * `on conflict do nothing` was measured the same way, conflicting on the primary
+ * key and on `workflow_hooks_token_idx` in turn, and answered `0` for both: with
+ * no arbiter named the pre-check covers every unique index on the table.
+ *
+ * The middle line is the one to read before "fixing" this shape. Putting the
+ * existing row in a leading CTE and guarding the insert with it saves NOTHING on
+ * the read path — there was no write to remove — and adds an index probe to
+ * every claim on the busiest journal call the engine makes.
+ *
  * Exhausting the attempts throws, which is a 503 and correct: the store genuinely
  * cannot say what the row holds, and this call is idempotent.
  *

@@ -456,13 +456,44 @@ describe("the INDEXES are where the two schemas really differ", () => {
   });
 
   test("the due-sleep index is platform-only, and that is JUSTIFIED", () => {
-    // The one asymmetry that is not drift: `workflow_sleeps_due_idx` serves the
-    // platform's fleet-wide wake sweep, which scans the earliest unwoken
-    // deadline across every agent. The runtime has no such query — its
-    // `wake_at` reads are all run-scoped (`claimSleep`'s read-back and
-    // `wakeSleeps`' update both key on `run_id`), because a self-hosted engine
-    // delivers from its own in-process timers. An index for a query nobody
-    // issues is the dead-config shape this repo keeps paying for.
+    // The one asymmetry that is not drift, and its justification was RE-MEASURED
+    // after the query it originally named was retired.
+    //
+    // It used to read "serves the platform's fleet-wide wake sweep, which scans
+    // the earliest unwoken deadline across every agent". That sweep is GONE —
+    // `agent-sweeps.ts` says so in place, the queue's delivery pass replaced it —
+    // so on the face of it this was the dead-config shape this repo keeps paying
+    // for: the only predicate left over `workflow_sleeps` outside the journal's
+    // own `(slug, run_id, key)`-scoped statements is `findStalledRuns`'s
+    // elapsed-deadline arm, which is run-scoped and leads with the primary key.
+    //
+    // It is NOT dead, and `explain` is the only thing that could have said so.
+    // Postgres FLATTENS that correlated `exists` into a HASHED subplan over the
+    // fleet-wide half of the predicate — `woken = false and wake_at < cutoff`,
+    // which is exactly `(wake_at) where woken = false` — rather than probing the
+    // primary key once per candidate run. So the index really is "exactly this
+    // predicate", for a reason neither justification stated: not because the
+    // subquery is fleet-wide, but because the PLANNER makes it so.
+    //
+    // Measured on PostgreSQL 16.13 against the real migration set, 200k runs /
+    // 200k sleeps / 200k hooks, ~66.7k of them due and unwoken:
+    //
+    //   index present -> Index Scan using workflow_sleeps_due_idx
+    //                    (66,666 rows, 17.4 ms), statement 110.3 ms
+    //   index dropped -> Seq Scan on workflow_sleeps
+    //                    (66,666 rows, 25.1 ms), statement 120.6 ms
+    //
+    // `findStalledRuns` runs on every idle tick of every replica
+    // (`workflow-queue-sweep.ts` — NO leader lock), so what the index buys is
+    // removing a sequential scan of that table from a >= 1 Hz per-replica query.
+    // The index is 2,936 kB against the primary key's 15 MB.
+    //
+    // The runtime still has no query that can use it — its `wake_at` reads are
+    // all run-scoped (`claimSleep`'s read-back and `wakeSleeps`' update both key
+    // on `run_id`) and none of them is a fleet-wide `exists` a planner could
+    // flatten — because a self-hosted engine delivers from its own in-process
+    // timers. So the asymmetry is the platform having a reconcile pass, not the
+    // runtime having lost an index.
     expect(platformIndexes).toContain(
       "create index if not exists workflow_sleeps_due_idx on aai_platform.workflow_sleeps (wake_at) where woken = false",
     );
