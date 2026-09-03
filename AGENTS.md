@@ -888,6 +888,22 @@ few lines.
   but which no pipeline ran and which blocked for 30+ minutes at repo root.
   A `tools/` file is exempted by an override: its name mirrors the
   snake_case LLM tool name.
+
+  **The version is pinned EXACTLY (`2.5.8`), and only until 2.5.12 clears the
+  release-age window.** 2.5.9 through 2.5.11 regress the nursery
+  `noFloatingPromises` rule on `p-timeout`: nine `await pTimeout(…)` call
+  sites across four packages are reported as floating promises, and the
+  offered fix is `await await pTimeout(…)`. Every one is already awaited, so
+  the only way to take those versions is nine `biome-ignore` comments the
+  escape-hatch ratchet exists to refuse. A CARET cannot hold the line — pnpm
+  keeps a locked 2.5.11 against `^2.5.8`, which is why this is an exact pin
+  rather than a lowered floor, the same shape as `konsistent`'s. 2.5.12 fixes
+  it (verified by running its binary against
+  `postgres-pool-exhaustion.scenario.test.ts`, which 2.5.11 reports and 2.5.12
+  does not); it was six hours old when this was written, so taking it needed a
+  `minimumReleaseAgeExclude` entry — a hole in a supply-chain control for a
+  linter's convenience. Restore `^2.5.12` once the window has passed, and
+  delete this paragraph with it.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
   publishing.

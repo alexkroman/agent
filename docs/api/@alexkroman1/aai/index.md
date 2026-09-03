@@ -227,10 +227,11 @@ a bare `lock()` leaves to the caller's `finally`.
 #### Call Signature
 
 ```ts
-function dialog<M>(
+function dialog<M extends AnyStateMachine>(
    key: string, 
    machine: M, 
-options?: DialogOptions): Dialog<M>;
+   options?: DialogOptions
+): Dialog<M>;
 ```
 
 Declare a dialog statechart for an agent's conversation.
@@ -345,10 +346,11 @@ DURABLY, outliving the session.
 #### Call Signature
 
 ```ts
-function dialog<S>(
+function dialog<S extends DialogSpec>(
    key: string, 
    spec: S, 
-options?: DialogOptions): Dialog<AnyStateMachine, DialogEvent<S>>;
+   options?: DialogOptions
+): Dialog<AnyStateMachine, DialogEvent<S>>;
 ```
 
 Declare a dialog from a plain state map — see [DialogSpec](#dialogspec).
@@ -440,7 +442,7 @@ function readStatus(body: string): string | undefined {
 ### omitUndefined()
 
 ```ts
-function omitUndefined<T>(obj: T): { [K in string | number | symbol]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined> };
+function omitUndefined<T extends object>(obj: T): { [K in string | number | symbol]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined> };
 ```
 
 Drop the `undefined`-valued entries of `obj`, typing every surviving key as
@@ -497,7 +499,7 @@ const config: { slug: string; name?: string; greeting?: string } = {
 ### procedure()
 
 ```ts
-function procedure<M>(machine: M): Procedure<M>;
+function procedure<M extends AnyStateMachine>(machine: M): Procedure<M>;
 ```
 
 Wrap a machine so a tool body can run it without touching an actor.
@@ -612,7 +614,8 @@ export default tool({
 function resolveOne<T>(
    candidates: readonly T[], 
    spoken: string, 
-   opts: ResolveOneOptions<T>): ToolFailure | T;
+   opts: ResolveOneOptions<T>
+): ToolFailure | T;
 ```
 
 Pick the one candidate an utterance names, or fail saying why.
@@ -702,10 +705,11 @@ Parse JSON, returning `undefined` on malformed input. JSON cannot encode
 ### sessionSlot()
 
 ```ts
-function sessionSlot<K, T, After>(
+function sessionSlot<K extends string, T, After = void>(
    key: K, 
    create: () => T, 
-options?: SessionSlotOptions<T, After>): SessionSlot<K, T>;
+   options?: SessionSlotOptions<T, After>
+): SessionSlot<K, T>;
 ```
 
 Declare a named slot of per-session state.
@@ -892,7 +896,7 @@ rebuilt inside `execute` on every call.
 ### tool()
 
 ```ts
-function tool<P, R>(def: ToolDef<P, R>): ToolDef<P, R>;
+function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: ToolDef<P, R>): ToolDef<P, R>;
 ```
 
 Define a tool with a typed input schema and execute function.
@@ -968,7 +972,7 @@ neither an annotated context nor a cast.
 #### Call Signature
 
 ```ts
-function workflow<P, O>(def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & {
+function workflow<P extends ToolInputSchema = ToolInputSchema, O extends StandardSchemaV1<unknown, unknown> = StandardSchemaV1<unknown, unknown>>(def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & {
   output: O;
 }): WorkflowDef<P, InferSchemaOutput<O>>;
 ```
@@ -1066,7 +1070,7 @@ export default tool({
 #### Call Signature
 
 ```ts
-function workflow<P, R>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
+function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
 ```
 
 Declare a durable workflow.
@@ -1227,7 +1231,8 @@ Thrown when an acquire deadline lapses before the key came free.
 new KeyedLockTimeoutError(
    key: string, 
    timeoutMs: number, 
-   options?: ErrorOptions): KeyedLockTimeoutError;
+   options?: ErrorOptions
+): KeyedLockTimeoutError;
 ```
 
 ###### Parameters
@@ -2321,7 +2326,7 @@ available. The returned position is what actually happened; compare its
 ##### tool()
 
 ```ts
-tool<P, R>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<
+tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<
   | ToolFailure
 | DialogToolResult<R>>>;
 ```
@@ -3312,7 +3317,7 @@ its draft is a copy; this is the same rule applied to the other writer.
 ##### tool()
 
 ```ts
-tool<P, R>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
+tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
 ```
 
 Define a READ-ONLY tool over this slot: `execute` is handed the frozen
@@ -3434,7 +3439,7 @@ has nothing to serialize.
 ##### updateTool()
 
 ```ts
-updateTool<P, R>(def: SlotToolDef<P, T, R> & RejectThenable<R>): ToolDef<P, R>;
+updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R> & RejectThenable<R>): ToolDef<P, R>;
 ```
 
 Define a MUTATING tool over this slot: the body runs inside
@@ -3619,7 +3624,8 @@ What `execute` is handed: a deep-frozen
 execute(
    args: InferSchemaOutput<P>, 
    value: V, 
-   ctx: ToolContext): R;
+   ctx: ToolContext
+): R;
 ```
 
 The tool body, handed this session's slot value alongside the usual args.
@@ -4063,7 +4069,7 @@ recover from it.
 ### DialogEvent
 
 ```ts
-type DialogEvent<S> = EventOf<NamesInMap<S["states"]>>;
+type DialogEvent<S extends DialogSpec> = EventOf<NamesInMap<S["states"]>>;
 ```
 
 The event union a [DialogSpec](#dialogspec) declares — synthesized from its `on`
@@ -4103,7 +4109,7 @@ schema and non-optional; a plain-JSON-Schema or schemaless call returns
 #### Call Signature
 
 ```ts
-<S>(options: GenerateOptions & {
+<S extends StandardSchemaV1<unknown, unknown>>(options: GenerateOptions & {
   schema: S;
 }): Promise<GenerateObjectResult<InferSchemaOutput<S>>>;
 ```
@@ -4319,7 +4325,7 @@ The output (validated) type of a Standard Schema.
 ### InferToolInput
 
 ```ts
-type InferToolInput<T> = Parameters<T["execute"]>[0];
+type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["execute"]>[0];
 ```
 
 The validated input type a tool's `execute` receives — inferred from the
@@ -4350,7 +4356,7 @@ type AddInput = InferToolInput<typeof add>; // { item: string }
 ### InferToolOutput
 
 ```ts
-type InferToolOutput<T> = Awaited<ReturnType<T["execute"]>>;
+type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<ReturnType<T["execute"]>>;
 ```
 
 The result type a tool's `execute` returns (awaited, so a sync and an `async`
@@ -4767,7 +4773,7 @@ slot means a crash in between loses it.
 ### SessionEventHandler
 
 ```ts
-type SessionEventHandler<E> = (event: E, ctx: SessionEventContext) => unknown;
+type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
 ```
 
 One handler: an event of the type it was declared under, plus the context.
@@ -5003,7 +5009,8 @@ The returned object is FROZEN — see `freezeStorable` in this module.
 write(
    key: string, 
    value: unknown, 
-   durable: boolean): void;
+   durable: boolean
+): void;
 ```
 
 Store this session's value for `key`.
@@ -5068,7 +5075,7 @@ rule and what to do about it. Never pass one as a string.
 ### StepOptions
 
 ```ts
-type StepOptions<S> = {
+type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
   maxAttempts?: number;
   schema?: S;
 };
@@ -5143,7 +5150,7 @@ reads the same thing this one was handed.
 ### StepSchemaOptions
 
 ```ts
-type StepSchemaOptions<S> = StepOptions<S> & {
+type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
   schema: S;
 };
 ```
@@ -5545,7 +5552,7 @@ backend configured, naming which.
 ### ToolDef
 
 ```ts
-type ToolDef<P, R> = {
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
   description: string;
   inputSchema?: P;
   execute: R;
@@ -5684,7 +5691,7 @@ Compile-time stage tag; never present at runtime.
 ### WaitForOptions
 
 ```ts
-type WaitForOptions<S> = {
+type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
   schema?: S;
   timeoutMs: number;
 };
@@ -5785,7 +5792,7 @@ cannot be told their answer was taken when it was not.
 ### WaitForSchemaOptions
 
 ```ts
-type WaitForSchemaOptions<S> = {
+type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
   schema: S;
 };
 ```
@@ -5877,10 +5884,11 @@ so what it did before stopping stays readable.
 ###### Call Signature
 
 ```ts
-find<P, R>(
+find<P extends ToolInputSchema, R>(
    workflow: WorkflowDef<P, R>, 
    key: string, 
-options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+   options?: FindOptions
+): Promise<WorkflowRunSnapshot<R>[]>;
 ```
 
 Runs of `workflow` started with this correlation key, newest first.
@@ -5922,7 +5930,8 @@ needs it. Resolves an empty array when nothing matches.
 find(
    workflow: string, 
    key: string, 
-options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+   options?: FindOptions
+): Promise<WorkflowRunSnapshot[]>;
 ```
 
 ###### Parameters
@@ -6109,7 +6118,7 @@ option. The token is the CALLER's, exactly as [signal](#signal-2) takes it. See
 ###### Call Signature
 
 ```ts
-recent<P, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
 ```
 
 Runs of `workflow`, newest first, whatever key they carry.
@@ -6229,10 +6238,11 @@ treat it as an error.
 ###### Call Signature
 
 ```ts
-start<P, R>(
+start<P extends ToolInputSchema, R>(
    workflow: WorkflowDef<P, R>, 
    input: InferSchemaOutput<P>, 
-options?: StartOptions): Promise<string>;
+   options?: StartOptions
+): Promise<string>;
 ```
 
 Create a run and return its id without waiting for it to finish — the
@@ -6282,7 +6292,8 @@ overload exists to catch; `{}` is a small cost for that.
 start(
    workflow: string, 
    input?: unknown, 
-options?: StartOptions): Promise<string>;
+   options?: StartOptions
+): Promise<string>;
 ```
 
 ###### Parameters
@@ -6507,10 +6518,11 @@ and the reason a BULK draw belongs in a step:
 ##### sleep()
 
 ```ts
-sleep<Label>(
+sleep<Label extends string>(
    label: Label & Literal<Label>, 
    until: number | Date, 
-options?: SleepOptions): Promise<void>;
+   options?: SleepOptions
+): Promise<void>;
 ```
 
 Wait, durably — for a duration in milliseconds, or until an absolute `Date`.
@@ -6608,10 +6620,11 @@ Milliseconds to wait, or the `Date` to wait until. A value
 ###### Call Signature
 
 ```ts
-step<S, Name>(
+step<S extends StandardSchemaV1<unknown, unknown>, Name extends string>(
    name: Name & Literal<Name>, 
    fn: () => unknown, 
-options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+   options: StepSchemaOptions<S>
+): Promise<InferSchemaOutput<S>>;
 ```
 
 Run `fn` once and journal what it returns; on every later replay, return
@@ -6674,10 +6687,11 @@ for what each side catches, and why a read-side failure is not the step's.
 ###### Call Signature
 
 ```ts
-step<T, Name>(
+step<T, Name extends string>(
    name: Name & Literal<Name>, 
    fn: () => T | Promise<T>, 
-options?: StepOptions): Promise<T>;
+   options?: StepOptions
+): Promise<T>;
 ```
 
 ###### Type Parameters
@@ -6748,7 +6762,7 @@ replays and still unnameable from outside the body.
 ###### Call Signature
 
 ```ts
-waitFor<S>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+waitFor<S extends StandardSchemaV1<unknown, unknown>>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
 ```
 
 Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
@@ -6849,7 +6863,7 @@ Who is being waited for, and also this wait's IDENTITY in
 ###### Call Signature
 
 ```ts
-waitFor<S>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+waitFor<S extends StandardSchemaV1<unknown, unknown>>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
 ```
 
 ###### Type Parameters
@@ -6875,7 +6889,7 @@ waitFor<S>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchema
 ###### Call Signature
 
 ```ts
-waitFor<T>(token: string): Promise<T>;
+waitFor<T = unknown>(token: string): Promise<T>;
 ```
 
 ###### Type Parameters
@@ -6897,7 +6911,7 @@ waitFor<T>(token: string): Promise<T>;
 ###### Call Signature
 
 ```ts
-waitFor<T>(token: string, options: WaitForOptions): Promise<T | undefined>;
+waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 ```
 
 ###### Type Parameters
@@ -6943,7 +6957,7 @@ Key the workflow is declared under in `agent({ workflows })`.
 ### WorkflowDef
 
 ```ts
-type WorkflowDef<P, R> = {
+type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
   description?: string;
   input?: P;
   output?: StandardSchemaV1<unknown, R>;

@@ -77,7 +77,7 @@ const workflows = createStubWorkflows({
 ### createRunSnapshot()
 
 ```ts
-function createRunSnapshot<R>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+function createRunSnapshot<R = unknown>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
 ```
 
 Build a [WorkflowRunSnapshot](workflow-api.md#workflowrunsnapshot) — the right arm of the union, without a
@@ -257,7 +257,7 @@ expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
 ### deployedAgent()
 
 ```ts
-function deployedAgent<D>(authored: D, project: ProjectFiles): D;
+function deployedAgent<D extends AgentDef>(authored: D, project: ProjectFiles): D;
 ```
 
 The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
@@ -434,10 +434,11 @@ expect(answered.result.quoted).toBe(42);
 ### parseSchemaInput()
 
 ```ts
-function parseSchemaInput<T>(
+function parseSchemaInput<T = Record<string, unknown>>(
    schema: StandardSchemaV1<unknown, unknown> | undefined, 
    value: unknown, 
-what?: string): Promise<T>;
+   what?: string
+): Promise<T>;
 ```
 
 Validate `value` against `schema`, or throw naming every issue.
@@ -501,10 +502,11 @@ expect(parsed.voice).toBe("jane");
 ### parseToolInput()
 
 ```ts
-function parseToolInput<T>(
+function parseToolInput<T = Record<string, unknown>>(
    agent: ToolBearingAgent, 
    name: string, 
-value: unknown): Promise<T>;
+   value: unknown
+): Promise<T>;
 ```
 
 Validate `value` against the input schema of the tool `name`.
@@ -569,7 +571,8 @@ function runTool(
    agent: ToolBearingAgent, 
    name: string, 
    argsOrCtx?: Record<string, unknown> | ToolContext, 
-ctx?: ToolContext): Promise<unknown>;
+   ctx?: ToolContext
+): Promise<unknown>;
 ```
 
 Run a tool by the name the model calls it by.
@@ -652,7 +655,8 @@ expect(await runTool(agentDef, "view_order", ctx)).toEqual({ items: ["apple"] })
 function schemaInputIssues(
    schema: StandardSchemaV1<unknown, unknown> | undefined, 
    value: unknown, 
-what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
+   what?: string
+): Promise<readonly StandardSchemaIssue[] | undefined>;
 ```
 
 The issues `schema` found in `value`, or `undefined` when it accepted it.
@@ -1205,7 +1209,8 @@ expect(uploads.writes.map((one) => one.name)).toEqual(["summary.wav"]);
 function toolInputIssues(
    agent: ToolBearingAgent, 
    name: string, 
-value: unknown): Promise<readonly StandardSchemaIssue[] | undefined>;
+   value: unknown
+): Promise<readonly StandardSchemaIssue[] | undefined>;
 ```
 
 The issues the tool `name`'s input schema found in `value`, or `undefined`.
@@ -1757,7 +1762,7 @@ name: string;
 ### RunSnapshotOverrides
 
 ```ts
-type RunSnapshotOverrides<R> = Partial<WorkflowRunBase> & 
+type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & 
   | {
   status?: "pending" | "running";
 }

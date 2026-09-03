@@ -29,7 +29,7 @@
     "@alexkroman1/aai-runtime": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@hono/zod-validator": "catalog:",
-    "@octokit/auth-app": "^8.3.0",
+    "@octokit/auth-app": "^8.3.1",
     "@octokit/core": "^7.0.8",
     "aai-server": "workspace:*",
     "aai-studio-client": "workspace:*",

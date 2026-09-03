@@ -53,7 +53,7 @@ const TOOL_CALL_STEP: StreamPart[] = [
   {
     type: "finish",
     usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    finishReason: "tool-calls",
+    finishReason: { unified: "tool-calls", raw: "tool-calls" },
   },
 ];
 
@@ -68,7 +68,7 @@ const ANSWER_STEP: StreamPart[] = [
   {
     type: "finish",
     usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    finishReason: "stop",
+    finishReason: { unified: "stop", raw: "stop" },
   },
 ];
 

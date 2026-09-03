@@ -257,7 +257,7 @@ this call works with no `token`, and a workflow API closed by
 ### AnyWorkflowDef
 
 ```ts
-type AnyWorkflowDef<R> = {
+type AnyWorkflowDef<R = unknown> = {
   description?: string;
   input?: ToolInputSchema;
   output?: StandardSchemaV1<unknown, R>;
@@ -504,7 +504,7 @@ the off-by-one at that boundary is what a default `followOutput` was losing
 ### TerminalWorkflowRun
 
 ```ts
-type TerminalWorkflowRun<R> = Extract<WorkflowRunSnapshot<R>, {
+type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
   status: "completed" | "failed" | "cancelled";
 }>;
 ```
@@ -936,7 +936,8 @@ find(
    key: string, 
    options?: {
   limit?: number;
-}): Promise<WorkflowRunSnapshot[]>;
+}
+): Promise<WorkflowRunSnapshot[]>;
 ```
 
 Runs of `workflow` started with `key`, newest first.
@@ -1141,7 +1142,8 @@ start(
    input?: unknown, 
    options?: {
   key?: string;
-}): Promise<string>;
+}
+): Promise<string>;
 ```
 
 Start a run and resolve its id WITHOUT waiting for it — the point of the
@@ -1182,7 +1184,8 @@ startAndWait(
    options?: {
   key?: string;
   wait?: number;
-}): Promise<WorkflowRunSnapshot>;
+}
+): Promise<WorkflowRunSnapshot>;
 ```
 
 Start a run and resolve the FINISHED one — the synchronous call.
@@ -1332,7 +1335,8 @@ which a slow link and a dead client both produce.
 uploadStream(
    id: string, 
    file: UploadBody, 
-options?: UploadOptions): Promise<UploadRef>;
+   options?: UploadOptions
+): Promise<UploadRef>;
 ```
 
 Store a file under an id YOU chose, so a run can start before it is all in.
@@ -1508,7 +1512,7 @@ reader reach for a `!` or a conditional spread.
 ### WorkflowBody
 
 ```ts
-type WorkflowBody<I, R> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx) => Promise<R> | R;
 ```
 
 A workflow body: an ordinary async function of its input and a
@@ -1780,7 +1784,7 @@ function describe(run: WorkflowRunOf<typeof research>): string {
 ### WorkflowRunSnapshot
 
 ```ts
-type WorkflowRunSnapshot<R> = 
+type WorkflowRunSnapshot<R = unknown> = 
   | WorkflowRunBase & {
   status: "pending" | "running";
 }

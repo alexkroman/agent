@@ -222,7 +222,8 @@ step's whole budget to arrive at the same failure several seconds later.
 function mapConcurrent<T, R>(
    items: readonly T[], 
    size: number, 
-run: (item: T, index: number) => R | Promise<R>): Promise<R[]>;
+   run: (item: T, index: number) => R | Promise<R>
+): Promise<R[]>;
 ```
 
 Map `items` through `run`, at most `size` at a time, in a replay-safe order.
@@ -755,7 +756,7 @@ On EVERY failure of this call, which is the point
 ### stepGenerateJson()
 
 ```ts
-function stepGenerateJson<S>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+function stepGenerateJson<S extends StandardSchemaV1<unknown, unknown>>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 ```
 
 Ask the model for JSON and return it validated.
@@ -2081,7 +2082,7 @@ optional signal?: AbortSignal;
 ### StepGenerateJsonOptions
 
 ```ts
-type StepGenerateJsonOptions<S> = StepGenerateOptions & {
+type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
   schema: S;
 };
 ```

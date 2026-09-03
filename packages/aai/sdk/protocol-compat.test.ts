@@ -9,7 +9,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import type { ZodTypeAny } from "zod";
+import type { ZodType } from "zod";
 import {
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
@@ -74,7 +74,7 @@ function compatError(fixture: string, schema: string, msg: unknown, zodError: st
 // A minimal-discriminant parse fails either with "Invalid discriminator" (variant
 // removed) or with missing-field errors (variant exists). The Zod issue code for
 // discriminated-union mismatches varies across versions, so match on message text.
-function schemaAcceptsDiscriminant(schema: ZodTypeAny, value: Record<string, unknown>): boolean {
+function schemaAcceptsDiscriminant(schema: ZodType, value: Record<string, unknown>): boolean {
   const result = schema.safeParse(value);
   if (result.success) return true;
   return !result.error.issues.some((i) => i.message.includes("Invalid discriminator"));
@@ -82,7 +82,7 @@ function schemaAcceptsDiscriminant(schema: ZodTypeAny, value: Record<string, unk
 
 type CompatGroup = {
   label: string;
-  schema: ZodTypeAny;
+  schema: ZodType;
   messages: Record<string, unknown>[];
   discriminant: "type" | "op";
 };

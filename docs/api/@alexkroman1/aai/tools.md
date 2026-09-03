@@ -71,7 +71,7 @@ for are unaffected, and the ones precise enough to have a shape get checked.
 ### fetchJson()
 
 ```ts
-function fetchJson<T>(url: 
+function fetchJson<T = any>(url: 
   | string
   | {
   headers?: Record<string, string>;
@@ -118,7 +118,7 @@ oversized body, matching what the model-facing builtin returns. Narrow it with
 ### visitWebpage()
 
 ```ts
-function visitWebpage<T>(url: 
+function visitWebpage<T = any>(url: 
   | string
   | {
   url: string;
@@ -158,7 +158,7 @@ Answers `{ error }` for a page it could not read — narrow with
 ### webSearch()
 
 ```ts
-function webSearch<T>(query: 
+function webSearch<T = any>(query: 
   | string
   | {
   maxResults?: number;
