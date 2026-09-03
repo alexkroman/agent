@@ -928,9 +928,21 @@ describe("the body's step policy", () => {
  *
  * The block above drives the body through `createWorkflowCtx` with
  * `runSteps: false` and a journaled result per step, which is what makes it
- * affordable: `ingestRecording` runs ffmpeg, and this repo's test environment
- * has none — the `ingestRecording` and `narrate` specs above assert the
- * `FatalError` that produces, unconditionally.
+ * affordable: `ingestRecording` shells out to the ffmpeg toolchain, which this
+ * tier cannot usefully feed — the `ingestRecording` and `narrate` specs above
+ * assert the `FatalError` that produces, unconditionally.
+ *
+ * **The run fails here whether or not ffmpeg is installed, and the two failures
+ * do not say the same thing** — which is what the assertion below has to be
+ * written against. With no binary on `PATH` the step reports the missing
+ * toolchain as an instruction (the template's own doc promises that rather than
+ * `spawn ffmpeg ENOENT`); WITH one, the step gets a step further and `ffprobe`
+ * rejects the 2 KB stub above with `ffprobe exited with code 1`. This docblock
+ * used to state "this repo's test environment has none" as a premise, and the
+ * spec below matched `/ffmpeg/i` on the strength of it — so the test passed only
+ * on a machine where ffmpeg was ABSENT, and a developer with Homebrew's ffmpeg
+ * saw a red suite on a clean checkout of `main`. CI has no ffmpeg, so nothing
+ * caught it.
  *
  * So a whole run of this desk is not reachable here and this file does not
  * pretend otherwise; `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier
@@ -953,7 +965,11 @@ describe("the run is DURABLE, as far as ffmpeg allows", () => {
     const run = await runWorkflow(audit, { recording: UPLOAD_ID }, { name: "audit" });
 
     expect(run.status).toBe("failed");
-    expect(run.error).toMatch(/ffmpeg/i);
+    // Either member of the toolchain, for the reason this block's doc gives: the
+    // step names `ffmpeg` when the binary is missing and `ffprobe` when it is
+    // present, and this spec is about neither. What it is about is the two
+    // assertions below — the ENGINE honouring `FatalError`.
+    expect(run.error).toMatch(/ff(mpeg|probe)/i);
     const ingest = run.steps.find((step) => step.name === "ingestRecording");
     // The whole point of `FatalError`: `maxAttempts: 6` is the budget this call
     // site asks for, and a failure that cannot change must not spend it. A step
