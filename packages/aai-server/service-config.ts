@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
+import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai-runtime";
 import {
   assertServiceRoleKey,
   hasPlatformDb,
@@ -36,6 +36,7 @@ import {
   PLATFORM_DB_RESERVE_TIMEOUT_MS,
   platformDb,
 } from "./platform-db-errors.ts";
+import { QUEUE_NOTIFY_LISTEN } from "./platform-db-limits.ts";
 import {
   createMemoryPlatformEvents,
   type PlatformEvents,
@@ -192,11 +193,21 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   /** Platform admin SQL executor, with a platform db — see ServiceConfig.sql. */
   sql?: SqlExec;
   /**
-   * The admin pool itself, for the consumers that need a RESERVED connection
-   * rather than a statement: the durable-workflow queue sweep
-   * (`workflow-queue-sweep.ts`), whose `LISTEN` and whose claim/ack pair must run
-   * on one connection, and the five guest-called platform routes, each of which
-   * reserves one for the life of its request.
+   * The platform's own coordination slice: a RESERVED connection, and a `NOTIFY`
+   * subscription. TWO handles behind one object, because its two members want
+   * OPPOSITE things from a connection and only one of them may be pooled.
+   *
+   * `reserve` is the ADMIN pool, which may be transaction-pooled: the queue
+   * sweep reserves per STATEMENT (a delivery must not hold a connection across
+   * an HTTP call into a guest) and each guest-called platform route holds one
+   * for the life of its request — both wanting a connection nobody else uses
+   * WHILE they use it, which is exactly what a transaction pooler pins.
+   * `listen` cannot live there and takes its own session-mode handle.
+   *
+   * This doc used to name the sweep's `LISTEN` and its claim/ack pair together
+   * as two things that "must run on one connection". Neither half held: those
+   * two must run on DIFFERENT connections, and the claim and the ack are
+   * separate reservations by design.
    */
   adminDb?: AdminDb;
 } {
@@ -262,17 +273,54 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       // them unbounded: on a silent partition, ADMIN_POOL_MAX hung reads is
       // every other platform read on this replica — Vault, the agents row the
       // broker needs, the rate limits — queued behind them, and each 503s on
-      // its own client-side deadline. Reachable with FOUR concurrent watchers.
+      // its own client-side deadline. That took FOUR concurrent watchers when
+      // this pool was 4; the shape is unchanged at 16 (see ADMIN_POOL_MAX).
       reservedQueryTimeoutMs: PLATFORM_DB_QUERY_TIMEOUT_MS,
       // And the ACQUIRE, which those two do not cover: a statement's deadline
       // starts once a connection is in hand, so a request that never got one
-      // was bounded by nothing on this side. Four hung reads is the same
-      // arithmetic as the line above, one step earlier — every further platform
-      // request queues on `reserve()` with no deadline, and each fails on its
-      // CALLER's timeout instead, which is a 500 where this is a 503.
+      // was bounded by nothing on this side. A pool's worth of hung reads is the
+      // same arithmetic as the line above, one step earlier — every further
+      // platform request queues on `reserve()` with no deadline, and each fails
+      // on its CALLER's timeout instead, which is a 500 where this is a 503.
       reserveTimeoutMs: PLATFORM_DB_RESERVE_TIMEOUT_MS,
     }),
   );
+  // The queue sweep's `NOTIFY` subscription gets its OWN handle, on the
+  // SESSION-mode `url` — never `poolerUrl`. A subscription IS session state and
+  // a transaction pooler returns the backend after every statement, so it
+  // cannot hold one; opened on the admin pool it established without error and
+  // received nothing, and the only symptom was every step-to-step hop paying
+  // the poll interval again. `QUEUE_NOTIFY_LISTEN` (`platform-db-limits.ts`)
+  // carries that account and what the handle costs.
+  //
+  // LAZY and memoized: postgres.js connects on first use, so this costs nothing
+  // until something listens and `buildPlatformDb` still constructs exactly two
+  // POOLS. Deliberately NOT wrapped in `platformDb`, which passes `listen`
+  // through unclassified on purpose — a `LISTEN` has no request behind it to
+  // answer 503, so wrapping would put a request-shaped taxonomy over a `query`
+  // this handle never issues. Nothing closes it, exactly as nothing closes the
+  // pools above: one handle per process, holding the one backend the budget
+  // already counts.
+  let listenerDb: CloseableDb | undefined;
+  const queueListener = (): CloseableDb => {
+    listenerDb ??= createPostgresDb({
+      url,
+      // One connection is the whole handle, and the budget term says so. No
+      // `idleTimeoutSeconds`: postgres.js opens the listening connection
+      // OUTSIDE this pool with its own `max: 1, idle_timeout: null`, so the
+      // driver already pins the lifetime of the only connection that exists and
+      // a value here would be dead config. `max` still bounds the accident — a
+      // stray `query` on this handle must not cost the budget four backends.
+      // Measured on PG 16.13: constructing this opens NO backend, `listen()`
+      // opens exactly one, and a query on the same handle opens a SECOND.
+      max: QUEUE_NOTIFY_LISTEN,
+      // The listening connection copies these options, and nothing about
+      // ESTABLISHING one is unbounded by nature.
+      connectTimeoutSeconds: PLATFORM_DB_CONNECT_TIMEOUT_SECONDS,
+    });
+    return listenerDb;
+  };
+
   const exec: SqlExec = (query, params) => admin.query(query, params);
   // Change notifications ride Supabase Realtime — the Postgres rows are the
   // emitters (postgres_changes), so unlike the memory path the stores need no
@@ -339,10 +387,14 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       ),
     ),
     sql: exec,
-    // The admin POOL, not another one. The platform's own sweeps reserve a
-    // connection from it per tick, so the fleet-wide budget
-    // (MAX_PLATFORM_DB_CONNECTIONS) is unchanged by any of them.
-    adminDb: admin,
+    adminDb: {
+      // The admin POOL for the reservation: the platform's own sweeps take one
+      // per tick, so the fleet-wide budget (MAX_PLATFORM_DB_CONNECTIONS) is
+      // unchanged by any of them.
+      reserve: () => admin.reserve(),
+      // ...and the dedicated session-mode handle for the subscription.
+      listen: (channel, onNotify) => queueListener().listen(channel, onNotify),
+    },
   };
 }
 
@@ -377,17 +429,6 @@ export async function buildServiceConfig(env: NodeJS.ProcessEnv): Promise<Servic
   const uploadBytes = buildUploadBytes(env);
   const { secrets, agents, workspaces, chats, events, slugLock, sql, adminDb } =
     buildPlatformDb(env);
-  // The DevKit's world on the platform's own database — where a durable run's
-  // journal lives now that no agent has a database of its own.
-  //
-  // `SUPABASE_DB_URL`, never `PLATFORM_POOLER_URL`: their streamer holds a
-  // dedicated `LISTEN` client, and a `LISTEN` needs session affinity for the same
-  // reason a session-scoped advisory lock does. That is also why
-  // `platformDbConnectionsPerReplica` counts this pool as DIRECT rather than
-  // excusing it as pooled. `assertSessionModeUrl` has already run over this URL
-  // inside `buildPlatformDb`, so a pooler pasted here was refused before we get
-  // here.
-  //
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure

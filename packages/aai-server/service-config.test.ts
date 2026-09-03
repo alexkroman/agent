@@ -23,7 +23,16 @@
  * The `postgres` module is never reached: `createPostgresDb` is mocked, so no
  * connection is opened and what this spec reads is the options object.
  *
- * The second half covers `buildServiceConfig`'s three AUTH-shaped call sites,
+ * The SECOND section is the `LISTEN`'s own handle, and it is the one assertion
+ * this file makes about ROUTING rather than about deadlines: a `LISTEN` is
+ * session state, so subscribing through the transaction-mode pooler established
+ * a subscription that received nothing, with the poll interval covering for it —
+ * pure latency, no error anywhere. Nothing pinned which connection the
+ * subscription opened on, so the fix has to be pinned by the member: `listen`
+ * reaches the session-mode URL while `reserve` reaches the pooler, asserted from
+ * the handles themselves rather than from the options list.
+ *
+ * The THIRD covers `buildServiceConfig`'s three AUTH-shaped call sites,
  * all of which fail in the same direction — the platform ACCEPTING a request it
  * should refuse — and all of which were guarded by nothing. Each is asserted as
  * DERIVED rather than by the shape of the argument: the edit to be afraid of is
@@ -41,6 +50,8 @@ import {
   PLATFORM_DB_QUERY_TIMEOUT_MS,
   PLATFORM_DB_RESERVE_TIMEOUT_MS,
 } from "./platform-db-errors.ts";
+import { QUEUE_NOTIFY_LISTEN } from "./platform-db-limits.ts";
+import type { AdminDb } from "./platform-lock.ts";
 import { buildPlatformDb, buildServiceConfig } from "./service-config.ts";
 import { captureLogs } from "./test-utils.ts";
 
@@ -48,15 +59,38 @@ import { captureLogs } from "./test-utils.ts";
 const pools: CreatePostgresDbOptions[] = [];
 
 /**
+ * Which handle a `reserve()` or a `listen()` actually reached, by that handle's
+ * URL.
+ *
+ * The options list cannot answer this. `AdminDb` is composed from TWO handles
+ * now — `reserve` off the admin pool, `listen` off a session-mode handle of its
+ * own — and reading the third pool's `url` only proves such a pool was BUILT,
+ * not that the subscription is the thing that goes there. So the fake records
+ * per call, which is the claim: a `listen` that reached the pooler URL is the
+ * bug, and it is invisible in production (the subscription establishes and
+ * receives nothing).
+ */
+const calls: { kind: "listen" | "reserve"; url: string }[] = [];
+
+/**
  * A pool handle that opens nothing. The boot-time consumers (Vault, the pg_cron
  * scheduling, the capacity read) run against it and see no rows, which is all
  * this spec needs — it reads the OPTIONS, never a row.
+ *
+ * It knows the `url` it was built from so `calls` can name the handle rather
+ * than merely counting.
  */
-function inertDb(): CloseableDb {
+function inertDb(url: string): CloseableDb {
   return {
     query: () => Promise.resolve([]),
-    reserve: () => Promise.resolve({ query: () => Promise.resolve([]), release: () => undefined }),
-    listen: () => Promise.resolve(() => undefined),
+    reserve: () => {
+      calls.push({ kind: "reserve", url });
+      return Promise.resolve({ query: () => Promise.resolve([]), release: () => undefined });
+    },
+    listen: () => {
+      calls.push({ kind: "listen", url });
+      return Promise.resolve(() => undefined);
+    },
     close: () => Promise.resolve(),
   };
 }
@@ -65,7 +99,7 @@ vi.mock("@alexkroman1/aai-runtime", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@alexkroman1/aai-runtime")>()),
   createPostgresDb: (opts: CreatePostgresDbOptions) => {
     pools.push(opts);
-    return inertDb();
+    return inertDb(opts.url);
   },
 }));
 
@@ -240,6 +274,97 @@ describe("buildPlatformDb pool wiring", () => {
     // transaction pooler excluding nothing.
     expect(admin.url).toBe(POOLER_URL);
     expect(slugLock.url).toBe(DIRECT_URL);
+  });
+});
+
+/**
+ * The composed `adminDb`, read one member at a time.
+ *
+ * THROWS rather than asserting, so it is legal outside a test body. An absent
+ * handle on this tier is a wiring failure and not a case to branch on.
+ */
+function adminOf(env: NodeJS.ProcessEnv): AdminDb {
+  const { adminDb } = buildPlatformDb(env);
+  if (!adminDb) throw new Error("the platform tier must expose adminDb");
+  return adminDb;
+}
+
+/** Every URL a call of `kind` reached, in order. */
+function reached(kind: "listen" | "reserve"): string[] {
+  return calls.filter((call) => call.kind === kind).map((call) => call.url);
+}
+
+describe("the queue LISTEN's own connection", () => {
+  captureLogs();
+
+  beforeEach(() => {
+    pools.length = 0;
+    calls.length = 0;
+  });
+
+  test("`listen` reaches the SESSION-mode URL while `reserve` reaches the POOLER", async () => {
+    // The whole bug, as one assertion. A `LISTEN` subscription is session state
+    // and Supavisor in transaction mode returns the backend after every
+    // statement (supabase/supavisor#85), so a subscription opened on the admin
+    // pool ESTABLISHED and then received nothing — and every layer stayed quiet
+    // about it: `NOTIFY` is an ordinary statement and works pooled, and the
+    // scheduler's `.catch` only fires when a subscription fails to establish.
+    // With the 1s interval as a designed fallback the only symptom was every
+    // step-to-step hop paying it again.
+    const adminDb = adminOf(platformEnv({ PLATFORM_POOLER_URL: POOLER_URL }));
+    await adminDb.listen("aai_test_channel", () => undefined);
+    (await adminDb.reserve()).release();
+
+    expect(reached("listen")).toEqual([DIRECT_URL]);
+    // The other half, and it has to be asserted here too: moving the `LISTEN`
+    // off the admin pool must not take the RESERVATION with it. Transaction
+    // pooling is what keeps `ADMIN_POOL_MAX x MAX_CONTAINERS` out of the
+    // instance's `max_connections`, and every guest platform route reserves
+    // from that pool.
+    expect(reached("reserve")).toEqual([POOLER_URL]);
+  });
+
+  test("with no pooler configured both members reach the same direct URL", async () => {
+    // Which is why the bug was invisible in dev and in every test that came
+    // before this one: unset, `poolerUrl` falls back to `url`, so the two
+    // handles differ in nothing an assertion could read. The routing only
+    // splits where production sets it — which is why the test above sets it.
+    const adminDb = adminOf(platformEnv());
+    await adminDb.listen("aai_test_channel", () => undefined);
+    (await adminDb.reserve()).release();
+
+    expect(reached("listen")).toEqual([DIRECT_URL]);
+    expect(reached("reserve")).toEqual([DIRECT_URL]);
+  });
+
+  test("the handle is LAZY, memoized, and sized at the budget term", async () => {
+    const adminDb = adminOf(platformEnv());
+    // Lazy is what keeps "exactly two pools at construction" true, which is the
+    // premise `builtPools` above reads by.
+    const before = pools.length;
+    expect(before).toBe(2);
+
+    await adminDb.listen("first", () => undefined);
+    await adminDb.listen("second", () => undefined);
+    // Identified by having APPEARED when we listened, rather than by any option
+    // this test then asserts.
+    const listener = pools[before];
+    expect(pools).toHaveLength(before + 1);
+
+    expect(listener?.url).toBe(DIRECT_URL);
+    // One connection is the whole handle, and the fleet budget's
+    // `QUEUE_NOTIFY_LISTEN` term is that same one.
+    expect(listener?.max).toBe(QUEUE_NOTIFY_LISTEN);
+    // Deliberately UNSET: postgres.js opens the listening connection outside
+    // this pool with its own `max: 1, idle_timeout: null`, so the driver already
+    // pins the lifetime of the only connection that exists and a value here
+    // would be dead config.
+    expect(listener?.idleTimeoutSeconds).toBeUndefined();
+    // Inherited by that listening connection, which copies these options.
+    expect(listener?.connectTimeoutSeconds).toBe(PLATFORM_DB_CONNECT_TIMEOUT_SECONDS);
+    // Neither query bound: this handle issues no query of ours at all.
+    expect(listener?.queryTimeoutMs).toBeUndefined();
+    expect(listener?.reservedQueryTimeoutMs).toBeUndefined();
   });
 });
 

@@ -267,10 +267,10 @@ export function resolveHarnessPath(env: NodeJS.ProcessEnv = process.env): string
  * provisions no tenant database, so every deployed agent's journal, session
  * state and upload records reach Postgres ONLY through these routes.
  *
- * So this number is not four connections per replica across a fleet. It is
- * four connections, total, for every deployed agent on the platform, sharing
- * them with Vault, the agents row every broker call needs, and the sweeps.
- * That is why one transcription run could saturate it.
+ * So this number is not a per-replica share of some larger fleet allowance. It
+ * is this many connections, TOTAL, for every deployed agent on the platform,
+ * shared with Vault, the agents row every broker call needs, and the sweeps.
+ * That is why one transcription run could saturate it at 4.
  *
  * ## Why 16: `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` sets the floor
  *

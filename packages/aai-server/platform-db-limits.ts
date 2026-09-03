@@ -75,10 +75,39 @@ export const PLATFORM_WORLD_LISTEN = 1;
  * connection, and a dedicated connection is what a `LISTEN` fundamentally needs
  * (the subscription is session state, so a pooled query cannot hold it).
  *
+ * ## It has to be a SESSION-mode connection, and for a while it was not
+ *
+ * "A pooled query cannot hold it" was written here as a property of a POOL and
+ * is really a property of the POOLER: the subscription lives in one backend's
+ * session, and a transaction-mode pooler hands that backend to somebody else
+ * after every statement. Supavisor does not support `LISTEN` in transaction
+ * mode (supabase/supavisor#85, open as an enhancement since May 2023).
+ *
+ * The sweep nonetheless subscribed through the ADMIN pool, which
+ * `PLATFORM_POOLER_URL` routes through exactly that — and NOTHING reported it.
+ * `NOTIFY` is an ordinary statement and works pooled, so the announce side
+ * succeeded; the subscription itself ESTABLISHED without error and simply
+ * received nothing; and `workflow-queue-scheduler.ts`'s `.catch` only fires
+ * when a subscription fails to establish. Because the poll interval is a
+ * designed fallback, the entire symptom was latency — every step-to-step hop
+ * paying the interval again, which reads as "durable workflows are just slow",
+ * precisely the failure `WORKFLOW_QUEUE_CHANNEL`'s own doc predicts for a
+ * broken announcement. `service-config.ts` gives the `LISTEN` its own handle on
+ * `SUPABASE_DB_URL` now, which `assertSessionModeUrl` has already validated.
+ *
+ * ## Which is what makes this term's arithmetic true
+ *
  * Counted here rather than treated as free, because that is exactly the mistake
  * the per-app database allowance made: a connection outside a pool is still a
  * backend on the instance. One per replica is a constant, which is the property
  * this budget needs — see {@link platformDbConnectionsPerReplica}.
+ *
+ * Note this term counts a DIRECT backend, and until the fix above it was not
+ * one: a pooler CLIENT connection costs the instance a share of Supavisor's own
+ * pool rather than a `max_connections` slot of its own, so the budget overstated
+ * a replica by one. Harmlessly — an overstatement only spends headroom — but the
+ * term and the wiring now agree, and the term is why the fix needs no budget
+ * change: the connection it moves onto the instance is the one already claimed.
  */
 export const QUEUE_NOTIFY_LISTEN = 1;
 
@@ -126,8 +155,19 @@ export function platformWorldConnections(): number {
  *
  * Everything else on the admin pool is a single short query (Vault, agents rows,
  * workspaces, chats, the sweeps' scheduling), `createPostgresDb` already sets
- * `prepare: false`, and nothing on it ever `LISTEN`s — the three things that make
- * transaction pooling unusable for the Workflow DevKit all fail to apply here.
+ * `prepare: false`, and nothing on the POOL `LISTEN`s — the three things that
+ * make transaction pooling unusable for the Workflow DevKit all fail to apply
+ * here.
+ *
+ * That third clause is TRUE now, and it was FALSE when written: the queue
+ * sweep's subscription reaches the platform through the same `AdminDb`, so for
+ * as long as `AdminDb.listen` resolved to the admin pool this paragraph claimed
+ * the pool never listened one line above a sum that adds
+ * {@link QUEUE_NOTIFY_LISTEN} for that very listener — both halves of the
+ * contradiction inside one doc comment. `service-config.ts` composes the two members from two handles now —
+ * `reserve` from this pool, `listen` from a session-mode handle of its own — so
+ * "nothing on the pool listens" describes the wiring instead of contradicting
+ * it, and the term below counts a connection that is really direct.
  *
  * With `PLATFORM_POOLER_URL` unset the admin pool is DIRECT and this understates
  * a replica by `ADMIN_POOL_MAX`, so boot announces it rather than leaving the
