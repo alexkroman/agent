@@ -12,6 +12,7 @@
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import { type WorkflowInputOf, type WorkflowRunOf, workflow } from "./workflow.ts";
+import type { WorkflowCtx } from "./workflow-ctx.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /** A schema with all three shapes a body reads differently: required, optional, defaulted. */
@@ -82,4 +83,50 @@ test("a schemaless workflow still yields a usable pair", () => {
 test("neither helper accepts something that is not a workflow definition", () => {
   expectTypeOf<WorkflowInputOf<{ nope: true }>>().toBeNever();
   expectTypeOf<WorkflowRunOf<{ nope: true }>>().toEqualTypeOf<WorkflowRunSnapshot<never>>();
+});
+
+/**
+ * The two schema options, as the types they resolve.
+ *
+ * Both replace a CAST — `answered.payload as T`, `entry.output as T` — so the
+ * question the runtime specs cannot ask is whether the option actually reaches
+ * the call site's type. A schema that validated at run time while the body still
+ * saw `unknown` would be half the feature and would look like all of it.
+ */
+declare const ctx: WorkflowCtx;
+const Approval = z.object({ approved: z.boolean() });
+
+test("a wait's schema supersedes the type parameter, and a deadline adds `| undefined`", async () => {
+  expectTypeOf(await ctx.waitFor("tok", { schema: Approval })).toEqualTypeOf<{
+    approved: boolean;
+  }>();
+  // The deadline arm is the only one that can resolve nothing, which is why the
+  // two option bags are separate types.
+  expectTypeOf(await ctx.waitFor("tok", { schema: Approval, timeoutMs: 1000 })).toEqualTypeOf<
+    { approved: boolean } | undefined
+  >();
+});
+
+test("a wait with no schema still means what it meant", async () => {
+  // The overloads that predate the option, unchanged — every existing body is
+  // one of these two calls.
+  expectTypeOf(await ctx.waitFor<{ ok: boolean }>("tok")).toEqualTypeOf<{ ok: boolean }>();
+  expectTypeOf(await ctx.waitFor<{ ok: boolean }>("tok", { timeoutMs: 5 })).toEqualTypeOf<
+    { ok: boolean } | undefined
+  >();
+});
+
+test("a step's schema decides its result, over whatever the body returned", async () => {
+  // `z.coerce` is the case worth pinning: the body produces a string and the
+  // step resolves a number, which is only sound because what is JOURNALED is
+  // the schema's value rather than the body's.
+  const Count = z.object({ n: z.coerce.number() });
+  expectTypeOf(await ctx.step("count", () => ({ n: "3" }), { schema: Count })).toEqualTypeOf<{
+    n: number;
+  }>();
+});
+
+test("a step with no schema still infers from the body", async () => {
+  expectTypeOf(await ctx.step("count", () => ({ n: 3 }))).toEqualTypeOf<{ n: number }>();
+  expectTypeOf(await ctx.step("count", () => "x", { maxAttempts: 2 })).toEqualTypeOf<string>();
 });

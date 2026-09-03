@@ -81,7 +81,9 @@ export type {
   // from this entry point.
   SleepOptions,
   StepOptions,
+  StepSchemaOptions,
   WaitForOptions,
+  WaitForSchemaOptions,
   WorkflowBody,
   WorkflowCtx,
   // `WorkflowDef` and `WorkflowClient` belong to the `workflow` capability and

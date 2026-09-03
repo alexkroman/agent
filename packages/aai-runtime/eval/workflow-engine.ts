@@ -100,7 +100,14 @@ import {
   publishStepReporter,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
-import type { WorkflowCtx, WorkflowDef } from "@alexkroman1/aai/workflow-api";
+import type {
+  StepOptions,
+  WaitForOptions,
+  WaitForSchemaOptions,
+  WorkflowCtx,
+  WorkflowDef,
+} from "@alexkroman1/aai/workflow-api";
+import { checkedStepOutput } from "../workflow-replay-schema.ts";
 import type { WdkAdapter, WdkRunRecord } from "../workflow-wdk-types.ts";
 
 import type {
@@ -218,7 +225,15 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
     return {
       runId: record.runId,
       workflow: record.workflowName,
-      step: async (_name, fn) => await fn(),
+      // The parameters are annotated because `WorkflowCtx.step` is OVERLOADED —
+      // a schema selects a second signature — and TypeScript contextually types
+      // a function expression from one signature only. The pass-through is
+      // unchanged; what it gained is that a declared `schema` is still CHECKED
+      // here, which costs nothing and keeps a case from passing on a shape a
+      // deployed run would refuse. (It is the write side only: there is no
+      // journal here, so there is no read side to disagree with it.)
+      step: async (name: string, fn: () => unknown, options?: StepOptions) =>
+        await checkedStepOutput(options?.schema, name, await fn()),
       // LIVE, not journaled — the same pass-through `step` is, and for the same
       // reason: there is no journal here, so there is nothing to answer a second
       // walk from and no second walk to answer. A case that needs a FIXED clock
@@ -248,12 +263,16 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // case it costs. The seam that would close it is an
       // `openEvalWorkflows({ hooks })` supplying payloads by token; it is not
       // built, and this message is what says so.
-      waitFor: (_token: string, waitOptions?: { timeoutMs: number }) =>
+      // Both option bags, because a wait may carry a schema and no deadline at
+      // all. It is the DEADLINE that decides the branch below, never the mere
+      // presence of options — a schema does not make a wait bounded.
+      waitFor: (_token: string, waitOptions?: WaitForOptions | WaitForSchemaOptions) =>
         // A wait with a DEADLINE has an honest answer here — nobody signalled, so
         // the window closed — and it is the branch a retention gate or an
         // approval window takes when no one replies. Only an UNBOUNDED wait has
-        // nothing this engine can say.
-        waitOptions !== undefined
+        // nothing this engine can say. The schema is never consulted: there is
+        // no payload to check, which is the same rule the real engine follows.
+        waitOptions !== undefined && "timeoutMs" in waitOptions
           ? Promise.resolve(undefined)
           : Promise.reject(
               new Error(

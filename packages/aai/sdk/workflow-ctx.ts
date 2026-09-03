@@ -173,7 +173,15 @@
  * @module
  */
 
-import type { SleepOptions, StepOptions, WaitForOptions } from "./workflow-ctx-options.ts";
+import type { Literal } from "./_workflow-ctx-literal.ts";
+import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
+import type {
+  SleepOptions,
+  StepOptions,
+  StepSchemaOptions,
+  WaitForOptions,
+  WaitForSchemaOptions,
+} from "./workflow-ctx-options.ts";
 
 // Re-exported so `workflow-ctx.ts` stays the one module an author (or a reader
 // following a `{@link}`) needs for the whole authoring surface — the split is a
@@ -182,38 +190,10 @@ export {
   DEFAULT_STEP_MAX_ATTEMPTS,
   type SleepOptions,
   type StepOptions,
+  type StepSchemaOptions,
   type WaitForOptions,
+  type WaitForSchemaOptions,
 } from "./workflow-ctx-options.ts";
-
-/**
- * A string LITERAL — the same type, unless it has widened to `string`.
- *
- * `string extends S` is only true when `S` IS `string`, so a widened argument
- * resolves to `never` and the call site is a compile error naming the parameter.
- * That turns "make it a string LITERAL" from advice in the doc below into
- * something the checker says.
- *
- * ## What it CANNOT catch, stated because the gap is the interesting part
- *
- * Determinism is a fact about how a value was PRODUCED; a type records only what
- * shape it HAS, and `Math.random() < 0.5 ? "h" : "t"` and `config.mode` are the
- * SAME TYPE. So this rejects a widened `string` and nothing subtler:
- *
- * - `` `charge-${coin}` `` where `coin` is `"h" | "t"` infers a UNION OF
- *   LITERALS, which is not `string`, so it passes. That is the measured bug — 7
- *   of 10 runs executing a side effect twice, see
- *   `aai-runtime/workflow-replay-divergence.ts` — and it is caught at RUNTIME
- *   instead.
- * - `` `charge-${Date.now()}` `` is `` `charge-${number}` ``, also not `string`,
- *   also passes. `guard-invariants` rule 30 is the layer that sees that one, by
- *   banning the clock in a shipped body rather than by typing the name.
- *
- * An `IsUnion` rejection would catch the first case and was deliberately NOT
- * added: it false-positives on a name derived from a legitimate config union,
- * and a gate that refuses correct code is worse than the runtime check catching
- * the mistake. Three layers, none a substitute for another.
- */
-type Literal<S extends string> = string extends S ? never : S;
 
 /**
  * The handle a workflow body receives as its second argument.
@@ -265,10 +245,19 @@ export type WorkflowCtx = {
    * rather than a sentence in this paragraph. It is deliberately not exported —
    * an author meets it as the message tsc prints, never by name — so its doc,
    * carrying the two shapes it cannot reach and which layer catches each, is in
-   * `sdk/workflow-ctx.ts` beside the declaration. A harness that means
+   * `sdk/_workflow-ctx-literal.ts` beside the declaration. A harness that means
    * to pass an unbounded name narrows `ctx.step` through one typed alias rather
    * than casting at each site.
+   *
+   * `options.schema` checks the output on both sides of the journal and makes
+   * the schema's output what this resolves to — see {@link StepOptions.schema}
+   * for what each side catches, and why a read-side failure is not the step's.
    */
+  step<S extends StandardSchemaV1, const Name extends string>(
+    name: Name & Literal<Name>,
+    fn: () => unknown,
+    options: StepSchemaOptions<S>,
+  ): Promise<InferSchemaOutput<S>>;
   step<T, const Name extends string>(
     name: Name & Literal<Name>,
     fn: () => Promise<T> | T,
@@ -454,8 +443,11 @@ export type WorkflowCtx = {
    * generated body-side for exactly this reason a problem.
    *
    * **A payload is UNTRUSTED.** It arrives over public HTTP, so validate it with
-   * a schema before acting on it; the type parameter is a claim about what you
-   * expect, not a check.
+   * `options.schema` — the type parameter is a claim, not a check, and until
+   * that option existed this paragraph was advice with no mechanism under it. A
+   * schema SUPERSEDES the parameter, and a payload failing one fails the RUN
+   * fatally with the window left as the delivery found it;
+   * {@link WaitForOptions.schema} carries why none of the three can be otherwise.
    *
    * ## A deadline is an OPTION, and still the one to reach for
    *
@@ -489,8 +481,18 @@ export type WorkflowCtx = {
    *   other waits forever.
    * @param options - `timeoutMs` closes the window. Measured from the first time
    *   the wait is REACHED and journaled there, so a replay does not extend it.
-   * @typeParam T - What the signaller is expected to send.
+   *   `schema` checks what the signaller actually sent, and decides the type.
+   * @typeParam T - What the signaller is expected to send. A `schema` supersedes
+   *   it, which is the point: the parameter is a claim and the schema is a check.
    */
+  waitFor<S extends StandardSchemaV1>(
+    token: string,
+    options: WaitForOptions<S> & WaitForSchemaOptions<S>,
+  ): Promise<InferSchemaOutput<S> | undefined>;
+  waitFor<S extends StandardSchemaV1>(
+    token: string,
+    options: WaitForSchemaOptions<S>,
+  ): Promise<InferSchemaOutput<S>>;
   waitFor<T = unknown>(token: string): Promise<T>;
   waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };

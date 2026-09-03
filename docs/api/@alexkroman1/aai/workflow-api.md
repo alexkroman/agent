@@ -1866,6 +1866,12 @@ Re-exports [StepOptions](index.md#stepoptions)
 
 ***
 
+### StepSchemaOptions
+
+Re-exports [StepSchemaOptions](index.md#stepschemaoptions)
+
+***
+
 ### UploadInfo
 
 Re-exports [UploadInfo](step.md#uploadinfo)
@@ -1881,6 +1887,12 @@ Re-exports [UploadRange](step.md#uploadrange)
 ### WaitForOptions
 
 Re-exports [WaitForOptions](index.md#waitforoptions)
+
+***
+
+### WaitForSchemaOptions
+
+Re-exports [WaitForSchemaOptions](index.md#waitforschemaoptions)
 
 ***
 

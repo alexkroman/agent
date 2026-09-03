@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 15,
-    "supported": [15],
+    "current": 16,
+    "supported": [16],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
@@ -16,7 +16,8 @@
       "11": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
       "12": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "13": "WorkflowCtx gains now()/random()/uuid() — three journaled non-deterministic reads — so this epoch would in fact still compile: a workflow BODY only ever receives that type. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "14": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report."
+      "14": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
+      "15": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's new schema options reach it. The change is the schema check over a step's journaled output and a hook's payload, not this surface."
     }
   },
   "builtins": {
@@ -37,8 +38,8 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 12,
-    "supported": [12],
+    "current": 13,
+    "supported": [13],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -50,7 +51,8 @@
       "8": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
       "9": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "10": "WorkflowCtx gains now()/random()/uuid() — three journaled non-deterministic reads — so this epoch would in fact still compile: a workflow BODY only ever receives that type. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "11": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report."
+      "11": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
+      "12": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's new schema options reach it. The change is the schema check over a step's journaled output and a hook's payload, not this surface."
     }
   },
   "ffmpeg": {
@@ -91,8 +93,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 12,
-    "supported": [12],
+    "current": 13,
+    "supported": [13],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -104,7 +106,8 @@
       "8": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
       "9": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "10": "WorkflowCtx gains now()/random()/uuid() — three journaled non-deterministic reads — so this epoch would in fact still compile: a workflow BODY only ever receives that type. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "11": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report."
+      "11": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
+      "12": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's new schema options reach it. The change is the schema check over a step's journaled output and a hook's payload, not this surface."
     }
   },
   "step": {
@@ -135,8 +138,8 @@
     "dropped": {}
   },
   "subagent": {
-    "current": 11,
-    "supported": [11],
+    "current": 12,
+    "supported": [12],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
@@ -147,12 +150,13 @@
       "7": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
       "8": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "9": "WorkflowCtx gains now()/random()/uuid() — three journaled non-deterministic reads — so this epoch would in fact still compile: a workflow BODY only ever receives that type. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "10": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report."
+      "10": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
+      "11": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's new schema options reach it. The change is the schema check over a step's journaled output and a hook's payload, not this surface."
     }
   },
   "testing": {
-    "current": 17,
-    "supported": [17],
+    "current": 18,
+    "supported": [18],
     "dropped": {
       "1": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
       "2": "Pre-release: the SDK has no external consumers, so no superseded authoring style is owed a compiling example.",
@@ -169,12 +173,13 @@
       "13": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "14": "WorkflowCtxOptions gains now/random/uuid overrides and WORKFLOW_CTX_NOW is added, both purely additive — and WorkflowCtx, which createWorkflowCtx returns, gains three methods, so a caller written against this epoch would in fact still compile. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "15": "createWorkflowCtx's ctx.sleep takes a label, and RecordedSleep carries it: a case asserting a schedule can now say WHICH wait the body reached.",
-      "16": "stubStepInfo joins the capability: it is how a spec reaches a step body's retry branch, which stepInfo() answering undefined outside a run made unreachable."
+      "16": "stubStepInfo joins the capability: it is how a spec reaches a step body's retry branch, which stepInfo() answering undefined outside a run made unreachable.",
+      "17": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's new schema options reach it. The change is the schema check over a step's journaled output and a hook's payload, not this surface."
     }
   },
   "tool": {
-    "current": 12,
-    "supported": [12],
+    "current": 13,
+    "supported": [13],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "ctx.db is removed from ToolContext: the platform provisions no database and hands tool code none, so an agent, tool, dialog or subagent body that read ctx.db no longer compiles.",
@@ -186,7 +191,8 @@
       "8": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's waitFor overload reaches it.",
       "9": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "10": "WorkflowCtx gains now()/random()/uuid() — three journaled non-deterministic reads — so this epoch would in fact still compile: a workflow BODY only ever receives that type. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "11": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report."
+      "11": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
+      "12": "Collateral: this capability's report names ToolContext.workflows / WorkflowClient, so WorkflowCtx's new schema options reach it. The change is the schema check over a step's journaled output and a hook's payload, not this surface."
     }
   },
   "transcribe": {
@@ -212,8 +218,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 10,
-    "supported": [10],
+    "current": 11,
+    "supported": [11],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "A workflow body is now (input, ctx) and carries no compiler-stamped workflowId: the Workflow DevKit's \"use workflow\"/\"use step\" directives are replaced by ctx.step, so a body written at epoch 2 does not compile.",
@@ -223,12 +229,13 @@
       "6": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "7": "WorkflowCtx gains now()/random()/uuid() — three journaled non-deterministic reads — so this epoch would in fact still compile: a workflow BODY only ever receives that type. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "8": "isWorkflowSuspend is REMOVED, because a suspension can no longer reach a workflow body at all. ctx.sleep and ctx.waitFor used to suspend by THROWING a branded signal, so a body's catch had to test it and re-throw — advice, which one shipped template forgot, deleting the transcript its run was waiting for. A wait now returns a promise that never settles and the engine races the body against an out-of-band interruption channel, so there is nothing for a catch to catch and nothing left for an author to remember. A body written at epoch 8 that named the predicate does not compile.",
-      "9": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report."
+      "9": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
+      "10": "ctx.step and ctx.waitFor take an optional `schema` — the first check over the two values a durable body handles that it did not compute: a step's journaled output and a hook's payload, both of which reached the body as a cast. Purely additive, so this epoch would in fact still compile: StepOptions and WaitForOptions gain an optional field and a defaulted type parameter, and the new overloads are selected only by a schema being present. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   },
   "workflow-api": {
-    "current": 9,
-    "supported": [9],
+    "current": 10,
+    "supported": [10],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -237,7 +244,8 @@
       "5": "ctx.waitFor gained a timeout option, so a hook's deadline is a parameter rather than a Promise.race against ctx.sleep — both suspend, and a suspend unwinds the stack, so the race stops the body before the other side is reached.",
       "6": "`WorkflowCtx.step`'s `name` narrowed from `string` to `Name & Literal<Name>`, so a name that has widened to `string` — exactly the shape that re-executes a step on replay — is now a compile error rather than a runtime surprise. Epoch N authoring code that built a step name at runtime therefore does not compile, which is the point of the change; and this package has no external consumer to keep an epoch-N template for.",
       "7": "WorkflowCtx gains now()/random()/uuid() — three journaled non-deterministic reads — so this epoch would in fact still compile: a workflow BODY only ever receives that type. Dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
-      "8": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report."
+      "8": "ctx.sleep takes a label as its first argument: a wait is keyed sleep!<label>#<occurrence> rather than positionally, so a body reaching a different number of waits no longer reads another wait's record. WorkflowCtx is reachable from this capability's report.",
+      "9": "StepOptions and WaitForOptions gain an optional `schema`, and WaitForSchemaOptions / StepSchemaOptions join them — this capability publishes the option bags a body's ctx methods take. Additive, so this epoch would in fact still compile; dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty."
     }
   }
 }

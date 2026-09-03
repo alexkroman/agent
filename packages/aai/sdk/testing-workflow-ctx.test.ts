@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { createWorkflowCtx, WORKFLOW_CTX_NOW } from "./testing-workflow-ctx.ts";
 import type { WorkflowCtx } from "./workflow-ctx.ts";
 
@@ -174,6 +175,44 @@ describe("the three journaled reads", () => {
     const walking = createWorkflowCtx({ now: () => 1000 + reach++ * 3000 });
     await expect(walking.now()).resolves.toBe(1000);
     await expect(walking.now()).resolves.toBe(4000);
+  });
+});
+
+describe("a declared schema", () => {
+  const Count = z.object({ n: z.coerce.number() });
+
+  test("checks a step's output, and hands back what the schema produced", async () => {
+    // The same check the engine makes on the WRITE side, for the same reason:
+    // a fixture that does not satisfy the body's own schema is one a deployed
+    // run would refuse, and a recorder that handed it over would let a spec
+    // pass on a value no real run can produce.
+    const ctx = createWorkflowCtx();
+    await expect(ctx.step("count", () => ({ n: "3" }), { schema: Count })).resolves.toEqual({
+      n: 3,
+    });
+    await expect(ctx.step("count", () => ({ n: "nope" }), { schema: Count })).rejects.toThrow(
+      /the output of step count does not match the schema/,
+    );
+  });
+
+  test("checks a `results` fixture too, which is the one a spec is most likely to get wrong", async () => {
+    const ctx = createWorkflowCtx({ results: { count: { n: "not a number" } } });
+    await expect(ctx.step("count", () => ({ n: 1 }), { schema: Count })).rejects.toThrow(
+      /the result for step count/,
+    );
+  });
+
+  test("checks a hook payload, and a schema alone still leaves the wait unbounded", async () => {
+    const ctx = createWorkflowCtx({ hooks: { tok_gate: { approved: "yes" } } });
+    await expect(
+      ctx.waitFor("tok_gate", { schema: z.object({ approved: z.boolean() }) }),
+    ).rejects.toThrow(/the payload for hook tok_gate/);
+    // No `timeoutMs`, so an unanswered wait still has no honest answer — the
+    // presence of a schema must not be read as a deadline.
+    const bare = createWorkflowCtx();
+    await expect(bare.waitFor("tok_gate", { schema: z.object({}) })).rejects.toThrow(
+      /no payload for hook "tok_gate"/,
+    );
   });
 });
 

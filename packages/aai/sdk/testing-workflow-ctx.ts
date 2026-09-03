@@ -62,7 +62,43 @@
  * @module testing-workflow-ctx
  */
 
-import type { SleepOptions, StepOptions, WaitForOptions, WorkflowCtx } from "./workflow-ctx.ts";
+import { formatSchemaIssues, type StandardSchemaV1 } from "./standard-schema.ts";
+import type {
+  SleepOptions,
+  StepOptions,
+  WaitForOptions,
+  WaitForSchemaOptions,
+  WorkflowCtx,
+} from "./workflow-ctx.ts";
+
+/**
+ * The value a `schema` option passed, or a throw naming what it rejected.
+ *
+ * The recorder journals nothing, so it cannot make the engine's WRITE/READ
+ * distinction — but it can make the half a spec is written against: a fixture
+ * that does not satisfy the schema the body declared is one a deployed run would
+ * refuse, and a recorder that handed it over anyway would let a spec pass on a
+ * value the real engine cannot produce. Which is the same argument the option
+ * itself rests on, one layer up.
+ *
+ * `what` names the step or hook rather than the shape, because the issues carry
+ * the shape and the reader needs to know which call produced them.
+ */
+async function checkedAgainst(
+  what: string,
+  value: unknown,
+  schema: StandardSchemaV1 | undefined,
+): Promise<unknown> {
+  if (schema === undefined) return value;
+  const result = await schema["~standard"].validate(value);
+  if (result.issues) {
+    throw new Error(
+      `createWorkflowCtx: ${what} does not match the schema it declared: ` +
+        formatSchemaIssues(result.issues),
+    );
+  }
+  return result.value;
+}
 
 /** One step the body reached, as the recorder saw it. */
 export type RecordedStep = {
@@ -213,13 +249,20 @@ export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtx
       // `Object.hasOwn`, never `in`: `in` walks the prototype chain, so a step
       // named `toString` or `constructor` would be answered with an inherited
       // `Object.prototype` method instead of being run.
-      if (Object.hasOwn(results, name)) return results[name] as T;
+      const schema = stepOptions?.schema;
+      if (Object.hasOwn(results, name)) {
+        return (await checkedAgainst(`the result for step ${name}`, results[name], schema)) as T;
+      }
       // The cast is the honest shape of `runSteps: false`: the caller has said it
       // does not want the work done and named no result, so there is no `T` to
       // answer with. A body that reads it sees `undefined`, which is what that
       // combination costs — pass a `results` entry when the body needs a value.
+      //
+      // Deliberately BEFORE the check below and never checked itself: there is no
+      // value here to validate, and running the schema over the stand-in would
+      // fail every step of a recorder configured not to run any.
       if (!runSteps) return undefined as T;
-      return fn();
+      return (await checkedAgainst(`the output of step ${name}`, await fn(), schema)) as T;
     },
 
     async sleep(label: string, until: number | Date, sleepOptions?: SleepOptions): Promise<void> {
@@ -244,15 +287,29 @@ export function createWorkflowCtx(options: WorkflowCtxOptions = {}): WorkflowCtx
       return uuidOf();
     },
 
-    async waitFor<T>(token: string, waitOptions?: WaitForOptions): Promise<T | undefined> {
+    async waitFor<T>(
+      token: string,
+      // Both bags, because a wait may carry a schema with no deadline at all —
+      // see `WaitForSchemaOptions`. `timeoutMs` is what tells them apart, and it
+      // is the presence of a DEADLINE rather than of options that decides the
+      // unanswered branch below.
+      waitOptions?: WaitForOptions | WaitForSchemaOptions,
+    ): Promise<T | undefined> {
       waited.push(token);
       // `Object.hasOwn` for the reason `step` gives: `in` would answer a token
       // named after an `Object.prototype` member with an inherited function.
-      if (Object.hasOwn(hooks, token)) return hooks[token] as T;
+      if (Object.hasOwn(hooks, token)) {
+        const payload = hooks[token];
+        return (await checkedAgainst(
+          `the payload for hook ${token}`,
+          payload,
+          waitOptions?.schema,
+        )) as T;
+      }
       // A wait with a DEADLINE resolves `undefined` when nobody answered, which
       // is the branch a body written for a closing window takes — so a spec
       // reaches that branch by simply not supplying a payload.
-      if (waitOptions !== undefined) return undefined;
+      if (waitOptions !== undefined && "timeoutMs" in waitOptions) return undefined;
       // Without one there is no honest answer, and hanging would report a
       // runner timeout instead of the missing payload.
       throw new Error(

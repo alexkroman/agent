@@ -69,6 +69,7 @@ import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { createDeterminismReads } from "./workflow-replay-determinism.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
 import { watchJournalFailure } from "./workflow-replay-journal-failure.ts";
+import { journaledStepOutput } from "./workflow-replay-schema.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
 import { createSuspendController, type SuspendController } from "./workflow-replay-suspend.ts";
 import { createWaitMethods } from "./workflow-replay-waits.ts";
@@ -241,10 +242,15 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // earlier — see `ReplayOptions.steps`.
   const entries = await (options.steps ?? journal.readSteps(runId));
   for (const entry of entries) settled.set(entry.key, entry);
+  // What the run record says about the CODE, read once. Two refusals narrate
+  // themselves with it and each states a different conclusion from the same
+  // three-way verdict — a divergence and a journaled output that no longer
+  // satisfies its step's schema. See `workflow-code-version.ts`.
+  const code = describeCodeChange(options.startedUnder);
   // What this walk has read out of the journal, and whether reaching a key the
   // run never reached is evidence the body has lost its place. Seeded from the
   // read above and from nothing this walk appends — see the module.
-  const divergence = watchDivergence(entries, describeCodeChange(options.startedUnder));
+  const divergence = watchDivergence(entries, code);
 
   // How many times each NAME has been reached in this execution. Reset per call
   // because it is a property of the walk, not of the run — a replay walks the
@@ -303,7 +309,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     // Split out for the reason the reads above are — see
     // `workflow-replay-waits.ts`, which also carries what naming the waits
     // closed and the one residual it did not.
-    ...createWaitMethods({ runId, journal, suspend, refuse: setRefused }),
+    ...createWaitMethods({ runId, workflow, journal, suspend, refuse: setRefused }),
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       // IDENTITY first: which journal key is this call? See `WorkflowCtx` in the
       // SDK for why it is a name plus an occurrence count.
@@ -371,6 +377,11 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
             // on that path leaves its children displaced and the next
             // first-reached key is refused on a healthy run.
             onAnsweredLate: (late) => divergence.answeredLate(late),
+            // The WRITE half of `StepOptions.schema`: checked before the entry is
+            // appended, and a rejection is the step's own failure. The read half
+            // is below — see `workflow-replay-schema.ts` for why the same schema
+            // means two different verdicts on the two sides of the journal.
+            schema: stepOptions?.schema,
             fn,
           }),
         ));
@@ -379,8 +390,18 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       if (entry.status === "failed") throw stepFailure(entry);
       // The STORE's entry, not this execution's own value: a redelivery that
       // raced this one may have appended first, and both executions must return
-      // the same thing or the two replays diverge from here on.
-      return entry.output as T;
+      // the same thing or the two replays diverge from here on. Which is exactly
+      // why the schema is checked HERE as well as at the write: this value may
+      // have been produced by another walk, or by another BUNDLE days ago, and
+      // until now it reached the body as a bare cast.
+      return (await journaledStepOutput({
+        entry,
+        name,
+        key,
+        schema: stepOptions?.schema,
+        code,
+        refuse: setRefused,
+      })) as T;
     },
   };
 

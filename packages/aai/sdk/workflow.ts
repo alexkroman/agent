@@ -89,7 +89,9 @@ export {
   DEFAULT_STEP_MAX_ATTEMPTS,
   type SleepOptions,
   type StepOptions,
+  type StepSchemaOptions,
   type WaitForOptions,
+  type WaitForSchemaOptions,
   type WorkflowCtx,
 } from "./workflow-ctx.ts";
 

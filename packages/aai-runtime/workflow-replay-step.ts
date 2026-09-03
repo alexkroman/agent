@@ -56,14 +56,29 @@
  * refused although nothing has died. Closing it needs a lease with an expiry,
  * i.e. a heartbeat. `settledSince` (in the module beside this one) is what keeps
  * the SETTLED half of it from re-running the work meanwhile.
+ *
+ * ## A `StepOptions.schema` is checked HERE, and that is the retryable half
+ *
+ * The check runs inside the attempt's `try` and BEFORE `appendStep`, so a value
+ * the schema rejects is an ordinary attempt failure: nothing is journaled, the
+ * backoff runs and is narrated, and a body that produced a bad shape once may
+ * produce a good one next time — which is what an attempt is FOR, and why the
+ * write side raises a plain error rather than a `FatalError`.
+ *
+ * Its counterpart on the READ side is deliberately not here, and it is not a step
+ * failure at all: a step answered from the journal already SUCCEEDED, so
+ * journaling `failed` over it would break the rule this module's own title
+ * paragraph rests on. `workflow-replay-schema.ts` carries that argument and
+ * `workflow-replay.ts` runs the arm.
  */
 
-import { sleep } from "@alexkroman1/aai/host-internal";
+import { type StandardSchemaV1, sleep } from "@alexkroman1/aai/host-internal";
 import { report } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { chargeAttempt, StepAbandonedError } from "./workflow-replay-attempt.ts";
+import { checkedStepOutput } from "./workflow-replay-schema.ts";
 import { withStepContext } from "./workflow-run-context.ts";
 import type { StepGate } from "./workflow-step-gate.ts";
 
@@ -263,6 +278,14 @@ export type StepAttemptOptions = {
    * journal held. See `DivergenceWatch.answeredLate`.
    */
   onAnsweredLate?: ((entry: StepEntry) => void) | undefined;
+  /**
+   * `StepOptions.schema`, when the body declared one.
+   *
+   * Checked against what the body RETURNS, before the entry is appended — the
+   * write half of the pair the module doc argues. The read half is the caller's,
+   * because only the caller knows whether an entry came from the journal.
+   */
+  schema?: StandardSchemaV1 | undefined;
   fn: () => unknown;
 };
 
@@ -356,10 +379,15 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
       // helper it calls is attributed to THIS step and this attempt — and so
       // that `stepFetch` can reach the WALK's signal without the body having to
       // thread one down to it. See `RunContext["step"].signal`.
-      const output = await withStepContext(
+      const produced = await withStepContext(
         { name, key, attempt: tries, maxAttempts, signal },
         async () => fn(),
       );
+      // INSIDE the try and before the append, so a rejected value spends an
+      // attempt and journals nothing — see the schema section of the module doc.
+      // Awaited deliberately, unlike the append below: this throw is one this
+      // loop MUST classify, where a journal rejection is one it must not.
+      const output = await checkedStepOutput(options.schema, name, produced);
       // No release: the entry below is authoritative from now on, so every later
       // walk answers from `readSteps` and nothing reads the charge again. That
       // is what keeps the happy path at one journal round trip per step.
