@@ -83,7 +83,7 @@ exports[`cli usage snapshots > aai secret --help 1`] = `
 "Manage agent secrets (secret)
 USAGE secret put|delete|list
 COMMANDS
-     put    Create or update a secret
+     put    Create or update a secret (value read from stdin, or prompted on a terminal)
   delete    Delete a secret
     list    List all secrets
 Use secret <command> --help for more information about a command."
@@ -108,10 +108,10 @@ OPTIONS
 `;
 
 exports[`cli usage snapshots > aai secret put --help 1`] = `
-"Create or update a secret (put)
+"Create or update a secret (value read from stdin, or prompted on a terminal) (put)
 USAGE put [OPTIONS] <NAME>
 ARGUMENTS
-  NAME    Secret name (Required)
+  NAME    Secret name. The VALUE is not an argument — pipe it in (\`printf %s "$VALUE" | aai secret put NAME\`), or be prompted, masked, when stdin is a terminal (Required)
 OPTIONS
   -s, --server=<server>    Platform server URL
                  --json    Output JSON (auto-detected in non-TTY)"

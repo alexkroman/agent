@@ -3,7 +3,14 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineCommand, runMain, showUsage } from "citty";
+import {
+  type ArgsDef,
+  type CommandDef,
+  defineCommand,
+  type Resolvable,
+  runMain,
+  showUsage,
+} from "citty";
 import { commandPath, defineExec, sharedArgs, unknownFlagsForArgv } from "./_cli-common.ts";
 import { fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
 import { logs, secret } from "./_resource-commands.ts";
@@ -322,6 +329,74 @@ if (process.env.VITEST !== "true") {
   };
 
   /**
+   * Report a pre-parse failure the way the active output mode allows, then
+   * exit 1.
+   *
+   * Mode-aware for the same reason `usageForMode` is: JSON mode promises
+   * exactly one result line on stdout, and it is auto-detected on a pipe —
+   * so a clack block here left `aai push --json --serverr=x` emitting a
+   * human error where a script's `jq` expected a result, and no JSON at all.
+   * The guards below run BEFORE citty parses, so neither can lean on
+   * `defineExec`'s mode plumbing.
+   */
+  const reportAndExit = async (label: string, hint: string): Promise<never> => {
+    if (getOutputMode({}) === "json") {
+      await writeLine(`${JSON.stringify(fail("usage", label, hint))}\n`);
+    } else {
+      log.error(label);
+      log.info(hint);
+    }
+    process.exit(1);
+  };
+
+  /**
+   * Resolve a citty `Resolvable` field. The cast is `Resolvable<T>` admitting
+   * `T` itself, so `typeof value === "function"` narrows to `T & Function`
+   * alongside the two thunk signatures; `_cli-common.ts`'s copy does the same.
+   */
+  const resolveField = async <T>(value: Resolvable<T> | undefined): Promise<T | undefined> =>
+    typeof value === "function" ? await (value as () => T | Promise<T>)() : await value;
+
+  /**
+   * Answer an unknown SUBCOMMAND here rather than leaving it to citty.
+   *
+   * citty throws `Unknown command ${cyan(name)}` and its own catch writes that
+   * message with `console.error` — colour escapes and all, whatever the output
+   * mode and whether or not stderr is a terminal — AFTER `showUsage` has
+   * already emitted the result line. So `aai deploy-now | jq` produced an
+   * envelope that named `aai` instead of the token the user typed, plus an
+   * ANSI-studded sentence on stderr that no JSON consumer asked for. Reported
+   * here instead: the envelope names the command, and nothing colours a pipe.
+   *
+   * The tree walk is the same one `unknownFlagsForArgv` does in
+   * `_cli-common.ts`, which cannot report this case (it returns `[]` for it,
+   * because the flags would be matched against the wrong command). Worth
+   * hoisting into that module next to it.
+   */
+  const assertKnownCommand = async (): Promise<void> => {
+    let cmd: CommandDef<ArgsDef> = mainCommand;
+    const named: string[] = ["aai"];
+    for (const token of process.argv.slice(2)) {
+      // A flag ends the subcommand path; from here on citty's own parser and
+      // `assertKnownFlags` own the argv.
+      if (token.startsWith("-")) return;
+      const subCommands = await resolveField(cmd.subCommands);
+      // A leaf command's remaining positionals are arguments, not commands.
+      if (!subCommands || Object.keys(subCommands).length === 0) return;
+      const next = await resolveField(subCommands[token]);
+      if (next === undefined) {
+        await reportAndExit(
+          `Unknown command: ${token}`,
+          `Run \`${named.join(" ")} --help\` to see the commands it accepts.`,
+        );
+        return;
+      }
+      cmd = next;
+      named.push(token);
+    }
+  };
+
+  /**
    * Refuse an unrecognized flag instead of ignoring it.
    *
    * citty drops one silently, so `aai push --serverr=http://x` exited 0 having
@@ -332,23 +407,13 @@ if (process.env.VITEST !== "true") {
     const unknown = await unknownFlagsForArgv(mainCommand, process.argv.slice(2));
     if (unknown.length === 0) return;
     const label = `Unknown ${unknown.length === 1 ? "option" : "options"}: ${unknown.join(", ")}`;
-    const hint = "Run `aai <command> --help` to see the options it accepts.";
-    // Mode-aware for the same reason `usageForMode` is: JSON mode promises
-    // exactly one result line on stdout, and it is auto-detected on a pipe —
-    // so a clack block here left `aai push --json --serverr=x` emitting a
-    // human error where a script's `jq` expected a result, and no JSON at all.
-    if (getOutputMode({}) === "json") {
-      await writeLine(`${JSON.stringify(fail("usage", label, hint))}\n`);
-    } else {
-      log.error(label);
-      log.info(hint);
-    }
-    process.exit(1);
+    await reportAndExit(label, "Run `aai <command> --help` to see the options it accepts.");
   };
 
   // API key acquisition happens inside the platform commands, after citty
   // parses args — so --help/--version never prompt for a key.
   void runDefault()
+    .then(assertKnownCommand)
     .then(assertKnownFlags)
     .then(() => runMain(mainCommand, { showUsage: usageForMode }))
     .catch((err: unknown) => {
