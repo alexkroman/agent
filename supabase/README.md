@@ -172,9 +172,20 @@ the store suites assert that no store issues DDL.
 
 **`supabase db push` is MANUAL, and nothing tells you when you have forgotten
 it.** This is no longer true: `.github/workflows/ship.yml` has a `migrate` job
-that runs `supabase db push --db-url` ahead of the deploy, on a version bump or
-on any push touching `supabase/migrations/**`. The account below is why that job
-exists, and it stands as the reason not to remove it. It has
+that runs `supabase db push --db-url` ahead of the deploy, **on a RELEASE** —
+i.e. a commit that moved a workspace `package.json` version line — and on a
+`workflow_dispatch` that arms the deploy. It used to also arm off a
+`HEAD^..HEAD` diff over `supabase/migrations/**`, and that arm was REMOVED
+because at a release commit it finds nothing: the migration sits in an earlier
+commit, so the diff that was supposed to catch it is empty exactly when it
+matters (`ship-workflow-gate.test.ts`, "the branch that arms a release also
+arms the migration"). The consequence to know is that **a merged migration
+waits for the next release**, and nothing obliges one — `check:deploy-changeset`
+is scoped to `packages/<carried>/`, and `changeset status` answers for packages
+rather than paths, so a migration-only branch needs no changeset and arms
+nothing. Give a branch that adds a migration a changeset naming a deploy
+carrier. The account below is why that job exists, and it stands as the reason
+not to remove it. It has
 already happened once: `20260808120000_agents_config_default.sql` stopped
 `agents.config` being written but was never pushed, so **every** `POST /deploy`
 died on `null value in column "config" violates not-null constraint` — Publish
