@@ -8880,6 +8880,7 @@ export const PLATFORM_ROUTES: {
     readonly uploadRecords: "/upload-records";
     readonly workflowJournal: "/workflow-journal";
     readonly workflowEnqueue: "/workflow-enqueue";
+    readonly workflowKeys: "/workflow-keys";
 };
 
 // @internal
