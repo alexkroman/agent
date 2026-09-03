@@ -83,7 +83,8 @@
 # release credentials.
 #
 # Renaming or moving it revokes them, and does it SILENTLY: the exchange fails,
-# npm falls back to `NODE_AUTH_TOKEN`, and the registry answers a masked 403 —
+# npm falls back to whatever `_authToken` the runner's `.npmrc` holds — nothing,
+# deliberately, see the publish step — and the registry answers a masked 403 —
 #
 #     E404: Not Found - PUT https://registry.npmjs.org/@alexkroman1%2faai
 #
@@ -98,6 +99,33 @@
 # `environment:` to the release job, which puts an environment claim in the
 # token that npm's config does not name. `npm-trusted-publisher-gate.test.ts`
 # fails on either.
+#
+# ## A release TAG needs a git identity, and the push needs VERIFYING
+#
+# Four npm versions are half of a release. The other half is four git tags
+# naming the commit those versions were built from, and that half was silently
+# broken from 2026-08-10 until this comment was written: npm is at
+# `@alexkroman1/aai@13.0.0`, the highest tag in this repository is
+# `@alexkroman1/aai@5.14.0`, and `git ls-remote --tags origin` lists nothing
+# above it. Nine releases — 9.0.1 through 13.0.0 — name no commit.
+#
+# Every layer of it reported success, which is why it lasted nine releases:
+#
+#   * `@changesets/git`'s `tag()` runs `git tag <name> -m <name>`. The `-m`
+#     makes it an ANNOTATED tag, the one kind git will not write without a
+#     committer identity — `fatal: unable to auto-detect email address (got
+#     'root@vm.(none)')`, exit 128.
+#   * `createGitTags` in `@changesets/cli` DISCARDS the boolean `git.tag()`
+#     returns and writes "Created git tags" to its reporter regardless.
+#   * `git push --tags` with nothing to push prints `Everything up-to-date`.
+#
+# The identity used to come from `changesets/action`, which stopped being the
+# thing that publishes here in the consolidation above — on exactly the date
+# tagging stopped. So the release job configures it itself, tags with the
+# dedicated `changeset git-tag` command, and then reads the tags back OFF THE
+# REMOTE. The steps carry the rest of the argument; the rule is the one this
+# repository applies everywhere else — never report success over a comparison
+# you could not make.
 #
 # ## ONE-TIME MANUAL STEP
 #
@@ -175,6 +203,20 @@ jobs:
   # else. `guard-invariants` rule 20 covers the specific cause; this covers the
   # class.
   version-pr:
+    # A PUSH only, and this is the one job in the file that a dispatch must not
+    # reach. `workflow_dispatch` is the rollback and out-of-band path, and its
+    # `inputs.ref` may name an OLD commit — so a rollback dispatch would run
+    # `changeset version` against that older tree and FORCE-PUSH the result to
+    # `changeset-release/main`, replacing the Version Packages PR that is
+    # currently open with whatever the changesets in the tree being rolled back
+    # to happened to say. Shipping an old ref and re-planning the next release
+    # are unrelated acts; a dispatch does the first.
+    #
+    # The job had no `if:` at all, so it ran on both events. Every other job
+    # here is behind `changed`, which answers `release=true` on a dispatch by
+    # design (a human named the ref) — this one is behind nothing, so it needs
+    # the event named directly.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -457,33 +499,175 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      # BEFORE the publish, because the publish is what tags: `changeset
+      # publish` creates the release tags as a side effect, and a tag
+      # `@changesets/git` writes is ANNOTATED (`git tag <name> -m <name>`) —
+      # the one kind git refuses without a committer identity. It then reports
+      # success anyway. See "A release TAG needs a git identity" in the header
+      # for the nine releases that cost, and note the dedicated `changeset
+      # git-tag` step below has the SAME requirement, so this is not optional
+      # under either spelling.
+      #
+      # The standard bot identity, so the tags are attributed the way every
+      # other automated commit in this repository is.
+      - name: Configure the git identity that tags the release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Publish the packed release
         run: pnpm exec changeset publish --from-pack-dir .changeset-pack
         env:
-          # The FALLBACK, not the path: these packages publish through the
-          # trusted publisher (see the header). When the OIDC exchange fails
-          # this token is what npm tries next, and it is what produced the
-          # `E404 … PUT` on run 33416507871 — so an E404 here is a question
-          # about the trusted publisher's configuration, not about the package.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          # VERIFY THIS ON THE FIRST RELEASE THROUGH THIS PATH: provenance in
-          # artifact mode is `npm publish <tarball> --provenance`, which npm
-          # accepts, but whether it still mints an attestation from the CI OIDC
-          # context is not something a dry run can answer. If it does not, the
-          # remedy is `--provenance-file`, not dropping the flag.
+          # There is deliberately NO token here, and nothing to add: these
+          # packages publish through the trusted publisher (see the header), so
+          # the credential is an OIDC exchange the runner makes per publish.
+          #
+          # `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` used to sit on this
+          # step as "the fallback". That secret does not exist, so every step in
+          # this job logged
+          #
+          #     WARN Issue while reading "…/_temp/.npmrc".
+          #     Failed to replace env in config: ${NODE_AUTH_TOKEN}
+          #
+          # and it was worse than dead config: an EMPTY `_authToken` in
+          # `.npmrc` is the documented way to SUPPRESS the OIDC exchange
+          # (actions/setup-node#1551). So the "fallback" was a switch that
+          # turns the real credential off, and its symptom is precisely the
+          # masked `E404 … PUT` the header spends twenty lines on.
+          #
+          # Nor is there a fallback to restore. npm revoked classic tokens
+          # permanently on 2025-12-09 and granular tokens expire in at most 90
+          # days, so a long-lived token is not a thing this workflow can hold.
+          # A failed exchange must therefore fail LOUDLY rather than degrade
+          # into a rejected token: an E404 on a PUT here is a question about the
+          # trusted publisher's configuration, never about the package.
+          #
+          # `registry-url` stays on `setup-node` above — it is what points npm
+          # at registry.npmjs.org, and it is not what supplied a token.
+          #
+          # ANSWERED, on 13.0.0, by the TODO this line used to carry: provenance
+          # in artifact mode (`npm publish <tarball> --provenance`) really does
+          # mint an attestation from the CI OIDC context. That version carries
+          # `dist.attestations` with a `https://slsa.dev/provenance/v1`
+          # predicate, and the SLSA statement's `buildDefinition` names
+          # `{"repository": "https://github.com/alexkroman/agent", "path":
+          # ".github/workflows/ship.yml"}` — which independently confirms the
+          # workflow-filename coupling the header documents. So no
+          # `--provenance-file`.
+          #
+          # Kept rather than dropped, though trusted publishing attaches
+          # provenance implicitly: the evidence above was gathered WITH this
+          # flag set, so it says the flag works and not that it is unnecessary,
+          # and the only way to learn the difference is a release that loses its
+          # attestation. An explicit flag also survives a publish that ever runs
+          # outside the trusted-publisher path.
           NPM_CONFIG_PROVENANCE: true
 
-      # `changeset publish` creates the release tags LOCALLY — `createGitTags`
-      # calls `git tag` and nothing else — and pushing them was the changesets
-      # action's job, which no longer runs the publish. Without this the
-      # versions reach npm and `@alexkroman1/aai@9.1.0` names no commit, which
-      # is invisible until somebody goes looking for one.
+      # `changeset publish` above already created the tags for what it
+      # uploaded, locally, as a side effect. This runs the DEDICATED command
+      # anyway, and it is not redundant:
       #
+      #   * A tag is a release artifact, so creating it should be a step whose
+      #     failure is visible rather than a by-product of a command named
+      #     "publish" that discards the result (see the header).
+      #   * It is idempotent and it never moves a tag: `splitByTagStatus`
+      #     consults the local tags AND `git.remoteTagExists` before writing,
+      #     and skips one that already exists. That is the same property the
+      #     absent `--force` on the push below has.
+      #   * It tags every non-private workspace package at the version its
+      #     manifest declares (`privatePackages.tag` is false in
+      #     `.changeset/config.json`), rather than only what THIS run packed —
+      #     so a release that publishes nothing new still owes, and writes, the
+      #     tag for the version in its tree.
+      #
+      # What it does NOT do is close a hole behind it. It tags the CURRENT
+      # manifest version, so once the next release bumps past a version that
+      # was published untagged, that version is unreachable from here — which
+      # is the state 9.0.1 through 13.0.0 are in, and why they are backfilled
+      # by hand rather than by the next run of this step.
+      #
+      # Unconditional for the same reason: the tag is owed by the commit that
+      # declares the version, not by whether this particular run happened to
+      # upload tarballs.
+      - name: Tag the release
+        run: pnpm exec changeset git-tag
+
       # No `--force`: a tag that already exists means an earlier run published
       # that version, and overwriting it would move a released tag.
       - name: Push the release tags
-        if: steps.pack.outputs.packed == 'true'
+        env:
+          # `git push` runs the lefthook pre-push hook, and in this job that is
+          # the ENTIRE `pnpm check`. Measured on run 33772177324, where this one
+          # step ran `changeset-status`, `✔️ check (683.15 seconds)` — build,
+          # api-report, docs:md, typedoc AND the e2e suite —
+          # `no-conflicts-with-main`, `no-push-main` and `up-to-date-with-main`,
+          # and then printed `Everything up-to-date`: 11m26s (15:23:20 →
+          # 15:34:46) to push nothing, on the critical path, since `guest-image`
+          # started 8 seconds after this job finished and `deploy` waits on
+          # that.
+          #
+          # Redundant as well as slow: the merge commit was already gated by the
+          # Check workflow. `version-pr` sets this for the same reason and its
+          # comment carries the argument.
+          LEFTHOOK: "0"
         run: git push --tags
+
+      # The push is VERIFIED, not trusted, and that is the whole reason the
+      # missing-identity bug survived nine releases: `git push --tags` reported
+      # `Everything up-to-date` over tags that had never been created, and
+      # nothing else in the run had an opinion about whether they existed.
+      - name: Verify the release tags reached the remote
+        run: |
+          set -euo pipefail
+          # The expected set comes from the WORKSPACE MANIFESTS — every
+          # `packages/*/package.json` without `"private": true`, at the version
+          # it declares — which is the same predicate `changeset git-tag` uses
+          # to decide what to tag, and the same `<name>@<version>` shape
+          # `buildGitTag` writes for a non-root tool.
+          #
+          # `.changeset-pack/publish-plan.json` answers a near-identical
+          # question and is deliberately NOT the source: it exists only on a run
+          # that packed, and its entries are what this run uploaded rather than
+          # what this commit owes a tag — so a version already on npm and never
+          # tagged, which is exactly the hole being closed, is the one case it
+          # cannot see.
+          #
+          # Declared before `mapfile` writes it: `${#expected[@]}` on a variable
+          # that was never assigned is an unbound-variable error under `set -u`,
+          # and the branch below has to be reachable rather than fatal.
+          expected=()
+          mapfile -t expected < <(node -e '
+            const fs = require("node:fs");
+            for (const entry of fs.readdirSync("packages")) {
+              const manifestPath = `packages/${entry}/package.json`;
+              if (!fs.existsSync(manifestPath)) continue;
+              const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+              if (manifest.private || !manifest.name || !manifest.version) continue;
+              console.log(`${manifest.name}@${manifest.version}`);
+            }
+          ')
+          if [ "${#expected[@]}" -eq 0 ]; then
+            echo "::error title=No release tags expected::No publishable workspace package" \
+                 "resolved, so this check would pass over any number of missing tags." \
+                 "It reads packages/*/package.json for every manifest without a private" \
+                 "flag; a layout change is what empties it."
+            exit 1
+          fi
+          # ONE remote read rather than one per tag, so an unreachable remote
+          # fails HERE instead of reading as every tag being missing.
+          remote="$(git ls-remote --tags origin | cut -f2 | sed 's/\^{}$//')"
+          missing=()
+          for tag in "${expected[@]}"; do
+            printf '%s\n' "$remote" | grep -qxF "refs/tags/$tag" || missing+=("$tag")
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "::error title=Release tags missing from the remote::${missing[*]}" \
+                 "-- these versions ship without naming a commit. The tags are annotated," \
+                 "so the usual cause is a missing git identity in this job (see the step" \
+                 "above and the header); the push step reports success either way."
+            exit 1
+          fi
+          printf 'on origin: %s\n' "${expected[@]}"
 
   # ── 3. the guest sandbox image ──────────────────────────────────────────────
   #

@@ -11,7 +11,8 @@
  *
  * So the name of the file that runs `changeset publish` is part of the release
  * credentials, and renaming it revokes them. Silently: the exchange fails, npm
- * falls back to `NODE_AUTH_TOKEN`, and the registry answers a masked 403 —
+ * falls back to whatever `_authToken` the runner's `.npmrc` holds — nothing,
+ * deliberately, see the third test — and the registry answers a masked 403 —
  *
  *     E404: Not Found - PUT https://registry.npmjs.org/@alexkroman1%2faai
  *
@@ -21,10 +22,12 @@
  * was built, packed, uploaded and then rejected. The rename is invisible to
  * every other gate here, because the workflow it produced is perfectly valid.
  *
- * Two facts are asserted, and both are things a reviewer cannot see: WHICH file
- * publishes, and which OIDC claims that file will present. Change either and
- * the same change is owed on npmjs.com, for all four packages, before the next
- * version can ship.
+ * Three facts are asserted, and every one is a thing a reviewer cannot see:
+ * WHICH file publishes, which OIDC claims that file will present, and that the
+ * exchange is the only credential in the job — an empty `NODE_AUTH_TOKEN`
+ * SUPPRESSES it and answers with the same masked E404. Change any of the first
+ * two and the same change is owed on npmjs.com, for all four packages, before
+ * the next version can ship.
  */
 
 import { describe, expect, test } from "vitest";
@@ -75,6 +78,58 @@ describe("the publishing workflow is the one npm trusts", () => {
     // ACTIONS_ID_TOKEN_REQUEST_URL, npm skips the exchange entirely, and the
     // publish takes the same rejected token fallback as a filename mismatch.
     expect(source).toContain("id-token: write");
+  });
+
+  /**
+   * An empty token is not "no token" — it is the OIDC exchange switched OFF.
+   *
+   * `NODE_AUTH_TOKEN` set to `secrets.NPM_TOKEN` sat on the publish step as
+   * the documented fallback. That secret does not exist, so every step in the
+   * release job logged
+   *
+   *     WARN Issue while reading "…/_temp/.npmrc".
+   *     Failed to replace env in config: the NODE_AUTH_TOKEN placeholder
+   *
+   * and the `.npmrc` `setup-node` wrote was left holding an EMPTY `_authToken`
+   * — which is the documented way to suppress the exchange entirely
+   * (actions/setup-node#1551). So the line that reads as a safety net is a
+   * switch that turns the real credential off, and its symptom is the same
+   * masked `E404: Not Found - PUT` this file's header is an account of: the
+   * publish is rejected and the log blames the package.
+   *
+   * There is also nothing to put back. npm revoked classic tokens permanently
+   * on 2025-12-09 and granular tokens expire in at most 90 days, so no
+   * long-lived token can live in this workflow — a failed exchange must fail
+   * loudly rather than degrade into a rejected one.
+   *
+   * Asserted over the step with its COMMENT LINES REMOVED, because the step's
+   * own prose names both identifiers while explaining why neither may be set —
+   * the comment-versus-condition problem `ship-workflow-gate.test.ts` documents
+   * for the same file. `registry-url` is asserted present as well: it is what
+   * points npm at the registry, it was never what supplied a token, and it is
+   * the line a reader deleting "the npm config" would take with it.
+   */
+  test("the publish step passes no npm token", () => {
+    const source = workflows[`../../${TRUSTED_PUBLISHER_WORKFLOW}`] ?? "";
+    const release = source.slice(
+      source.indexOf("\n  release:\n"),
+      source.indexOf("\n  guest-image:"),
+    );
+    const steps = release
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("#"))
+      .join("\n");
+    expect(steps, "the release job no longer slices out — its shape moved").toContain(
+      "changeset publish",
+    );
+    expect(steps).toContain("registry-url: https://registry.npmjs.org");
+    for (const forbidden of ["NODE_AUTH_TOKEN", "NPM_TOKEN"]) {
+      expect(
+        steps,
+        `${forbidden} on the publish step leaves an empty _authToken in .npmrc, which ` +
+          "suppresses the OIDC exchange and masks the failure as an E404 on a PUT",
+      ).not.toContain(forbidden);
+    }
   });
 
   test("the release job claims no environment", () => {
