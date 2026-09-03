@@ -57,17 +57,55 @@ export type GithubAppConfig = {
 };
 
 /**
+ * A PEM re-wrapped from its own header, body and footer — the one repair that
+ * survives a key pasted into a single-line field.
+ *
+ * **The space-collapsed shape is the one that gets past a header test.** The
+ * production GitHub App key arrived with 32 spaces and zero newlines: every
+ * line break had become a single space, so `includes("-----BEGIN")` was true,
+ * the value was returned unchanged, and OpenSSL rejected it with
+ * `DECODER routines::unsupported` at the last step of the install callback —
+ * after GitHub had already authorized the user, which is why it reads as
+ * "GitHub could not complete the connection" rather than as our
+ * misconfiguration.
+ *
+ * The repair has to be STRUCTURAL rather than a whitespace substitution: the
+ * label legitimately contains spaces, so replacing them with newlines shatters
+ * `-----BEGIN RSA PRIVATE KEY-----` into four lines. Base64 contains none, so
+ * stripping all whitespace from the body between the two markers is lossless.
+ *
+ * Deterministic and idempotent, both load-bearing. This value is also the HMAC
+ * key behind every install `state` (studio-github-state.ts), so it must be a
+ * function of the key alone — two replicas that disagree by a newline are a
+ * fleet whose halves reject each other's callbacks. Re-wrapping at 64 is what
+ * PEM emitters use, so an intact key passes through byte-identical.
+ *
+ * A value that is not a delimited PEM is returned untouched: the honest report
+ * for that is OpenSSL's, at the point of use.
+ */
+function rewrapPem(pem: string): string {
+  const match = /^(-----BEGIN [A-Z0-9 ]+-----)([\s\S]*)(-----END [A-Z0-9 ]+-----)$/.exec(pem);
+  if (!match) return pem;
+  const [, header, body, footer] = match;
+  const base64 = (body ?? "").replace(/\s+/g, "");
+  if (!base64) return pem;
+  return [header, ...(base64.match(/.{1,64}/g) ?? []), footer].join("\n");
+}
+
+/**
  * PEM as a value that survived an environment variable.
  *
  * A private key is multi-line and environment variables in practice are not,
- * so the same key reaches us in three shapes depending on who set it: intact
+ * so the same key reaches us in FOUR shapes depending on who set it: intact
  * (a `.env` file with real newlines, or Modal's secret store), with the
  * newlines backslash-escaped (every shell `export`, and most CI secret UIs),
- * or base64 (the workaround people reach for once the escaping has bitten
- * them). All three are the same key and none of them is a mistake worth
- * failing a boot over — but only the first one signs a JWT, and the failure
- * from the other two is `error:1E08010C:DECODER routines::unsupported` at the
- * first sync, hours later, nowhere near the misconfiguration.
+ * with the newlines collapsed to SPACES (a paste through a single-line form
+ * field — see {@link rewrapPem}), or base64 (the workaround people reach for
+ * once the escaping has bitten them). All four are the same key and none of
+ * them is a mistake worth failing a boot over — but only the first one signs a
+ * JWT, and the failure from the other three is
+ * `error:1E08010C:DECODER routines::unsupported` at the first sync, hours
+ * later, nowhere near the misconfiguration.
  */
 function normalizePrivateKey(raw: string): string {
   const trimmed = raw.trim();
@@ -75,19 +113,19 @@ function normalizePrivateKey(raw: string): string {
   // an unescape that was not needed cannot turn a valid key into an invalid
   // one — `\n` never appears in base64 or in a real PEM body.
   const unescaped = trimmed.includes("\\n") ? trimmed.replaceAll("\\n", "\n") : trimmed;
-  // Trimmed AGAIN after each decode, so all three spellings of one key produce
-  // the byte-identical result. Both decodes restore the PEM's trailing
-  // newline that the first trim removed, and this value is hashed — it is the
-  // HMAC key behind every install `state` (studio-github-state.ts) — so a key
-  // that differs by a newline between two deployments of the same App is a
-  // fleet whose halves reject each other's states.
-  if (unescaped.includes("-----BEGIN")) return unescaped.trim();
+  // Trimmed AGAIN after each decode, and re-wrapped, so all four spellings of
+  // one key produce the byte-identical result. Both decodes restore the PEM's
+  // trailing newline that the first trim removed, and this value is hashed —
+  // it is the HMAC key behind every install `state` (studio-github-state.ts) —
+  // so a key that differs by a newline between two deployments of the same App
+  // is a fleet whose halves reject each other's states.
+  if (unescaped.includes("-----BEGIN")) return rewrapPem(unescaped.trim());
   // Not a PEM in any spelling, so the remaining shape is base64 OF one. A
   // decode that yields something without a header is returned unchanged: it
   // is not a key we recognize, and the honest report for that is OpenSSL's,
   // at the point of use, rather than a truncated guess from here.
   const decoded = Buffer.from(unescaped, "base64").toString("utf8");
-  return decoded.includes("-----BEGIN") ? decoded.trim() : unescaped;
+  return decoded.includes("-----BEGIN") ? rewrapPem(decoded.trim()) : unescaped;
 }
 
 /**
