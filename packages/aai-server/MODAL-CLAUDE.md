@@ -164,7 +164,7 @@ leaves unset; `build_image` (scripts/modal_image.py) deliberately bakes no
 value.
 
 **The web service is the exception, and it is a LIST.** `modal_deploy.py`
-passes `region=REGIONS`, `["us-east-2", "us-east-1"]`. Read the two halves
+passes `region=REGIONS`, `["us-east-2", "us-east"]`. Read the two halves
 separately, because they answer to different failures: the PREFERENCE is
 earned by a measurement, and the FALLBACK is what keeps the outage below
 unreachable.
@@ -179,8 +179,28 @@ container's distance from the database. Measured on a deployed
 ~7.3 s, to move 2.3 KiB of JSON.** The same 14 calls over the same route and
 statements against a local Postgres: **31.4 ms**. So ~99% was distance, and
 none of it the statements, the pool, the bearer check or the payload. The
-`aai` project is `us-east-2`; `us-east-1` is ~15 ms from it, so a spill still
-lands two orders of magnitude better than an unpinned placement.
+`aai` project is `us-east-2`, and everything under the broad `us-east` is tens
+of milliseconds from it, so a spill still lands two orders of magnitude better
+than an unpinned placement.
+
+**The fallback is a BROAD region rather than a second datacenter, and that was
+Modal's call.** The spill was first written as `us-east-1`, and the deploy
+refused it:
+
+```text
+Regions us-east-1 are not supported. See
+https://modal.com/docs/guide/region-selection for supported regions
+```
+
+Note the shape of that failure: it is a DEPLOY error, not a placement one, so
+`modal deploy` exits non-zero, the app keeps serving the previous revision, and
+the release ships nothing — a change looks merged and is not running. Which
+specific regions a workspace may name is Modal's to decide and nothing in this
+tree can derive it, so `REGIONS` is held to strings a real deploy has accepted
+(`modal-image-inputs.test.ts`), and adding an entry means having deployed it.
+Reaching for a granularity level instead of a datacenter is also what Modal's
+own guide recommends: a wider pool is what improves availability, which is the
+same property the fallback exists for.
 
 A single-value pin is a different thing and stays forbidden. The WEB
 service's earlier bare `us-east-2` took production down, and it is worth
@@ -199,8 +219,9 @@ fallback ORDER rather than either a bare region or no preference at all: a
 second entry makes "placed nothing" unreachable while still expressing where
 this container wants to be. `modal-image-inputs.test.ts` pins the list's
 length, its first entry (against the database's region — a first entry that
-drifts keeps the risk and deletes the benefit) and that the decorator really
-reads it; all three are A/B'd against the corresponding regression.
+drifts keeps the risk and deletes the benefit), that every entry is one a
+deploy has accepted, and that the decorator really reads it; each is A/B'd
+against the corresponding regression.
 
 Guests were once pinned by exporting `MODAL_SANDBOX_REGION` too, so every
 guest was confined to one region's spare capacity. The failure that buys is a spawn
