@@ -119,7 +119,9 @@ describe("an answer is refused rather than invented", () => {
     // The attempt ledger's whole job is that a wedged step reaches its ceiling.
     // A default here would be a ceiling that never arrives.
     const { journal } = journalOver([null]);
-    await expect(journal.claimAttempt("wrun_1", "a#0")).rejects.toThrow(/claimAttempt answered/);
+    await expect(journal.claimAttempt("wrun_1", "a#0", "w", 1000)).rejects.toThrow(
+      /claimAttempt answered/,
+    );
   });
 
   test("appendStep on an unreadable answer, because the STORED entry is the one that counts", async () => {

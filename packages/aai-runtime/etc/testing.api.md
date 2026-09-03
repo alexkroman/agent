@@ -35,8 +35,8 @@ type JournalStore = {
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
-    claimAttempt(runId: string, key: string): Promise<number>;
-    releaseAttempt(runId: string, key: string): Promise<void>;
+    claimAttempt(runId: string, key: string, holder: string, leaseMs: number): Promise<number>;
+    releaseAttempt(runId: string, key: string, holder: string): Promise<void>;
     readSleeps(runId: string): Promise<SleepEntry[]>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;

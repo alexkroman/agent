@@ -59,9 +59,9 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import { platformCronJobs } from "./pg-cron.ts";
 import { SLUG_LOCK_NAMESPACE } from "./platform-lock.ts";
+import { platformMigrationSql } from "./platform-schema-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { PLATFORM_STORAGE_KEY_SECRET } from "./secret-store.ts";
-import { platformMigrationSql } from "./test-utils.ts";
 
 /** Every sweep, including the blob GC — which needs a storage config to exist. */
 const JOBS = platformCronJobs({ storage: { url: "https://probe.test", bucket: "blobs" } });

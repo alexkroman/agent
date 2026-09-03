@@ -34,6 +34,7 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { UNKNOWN_CLIENT_IP } from "./client-ip.ts";
+import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
 import {
   createPgAgentRateLimiters,
   createPgRateLimiter,
@@ -41,7 +42,6 @@ import {
   WORKFLOW_START_IP_RATE_LIMIT,
 } from "./rate-limit.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { ensurePlatformTables } from "./test-utils.ts";
 
 /** Every key this file mints. The sweep matches this and nothing else. */
 const KEY_PREFIX = `rl-scenario-${process.pid}-`;

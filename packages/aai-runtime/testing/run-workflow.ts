@@ -189,8 +189,8 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
   const store = options.journal ?? createMemoryJournal();
   const journal: JournalStore = {
     ...store,
-    claimAttempt: async (runId, key) => {
-      const attempt = await store.claimAttempt(runId, key);
+    claimAttempt: async (runId, key, holder, leaseMs) => {
+      const attempt = await store.claimAttempt(runId, key, holder, leaseMs);
       if (armed !== undefined && key.startsWith(`${armed}#`)) {
         armed = undefined;
         crash?.abort(new Error(`runWorkflow: the worker died at ${key}`));

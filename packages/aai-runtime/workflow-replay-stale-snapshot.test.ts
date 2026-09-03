@@ -106,7 +106,8 @@ describe("a walk whose snapshot went stale", () => {
   test("answers a settled step from the journal even with its budget spent", async () => {
     const journal = await seed();
     // Three attempts outstanding on a budget of three: the next reach is over.
-    for (let i = 0; i < 3; i++) await journal.claimAttempt(RUN_ID, "s#0");
+    for (const walk of ["w1", "w2", "w3"])
+      await journal.claimAttempt(RUN_ID, "s#0", walk, 60 * 60 * 1000);
     await journal.appendStep(RUN_ID, {
       key: "s#0",
       name: "s",
@@ -153,7 +154,7 @@ describe("a walk whose snapshot went stale", () => {
     const journal = await seed();
     // One charge already standing, so `onFirstReach` cannot fire for `outer#0`:
     // a walk beside this one reached it, which is the whole premise.
-    await journal.claimAttempt(RUN_ID, "outer#0");
+    await journal.claimAttempt(RUN_ID, "outer#0", "earlier-walk", 60 * 60 * 1000);
     const entry = (key: string, name: string, finishedAt: number) => ({
       key,
       name,

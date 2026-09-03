@@ -224,3 +224,124 @@ Three things not to relitigate:
 `workflow-wait-snapshot.test.ts` is the regression, and its module doc carries
 the A/B: with the snapshot arm removed, claims per delivery go
 `[1, 2, 3, 4, 5, 5]` against the flat `[1, 1, 1, 1, 1, 0]` it asserts.
+
+## An attempt is a LEASE, and it EXPIRES
+
+Moved here from `CLAUDE.md`, which is at its 120,000-character cap and now
+carries three lines and a pointer. What is below is the original account of why
+a charge is a lease rather than a tally, followed by the two things the lease
+grew: a HOLDER, and an expiry.
+
+`claimAttempt` charges an attempt before a step's body runs — a crash therefore
+burns it, which is the whole reason the charge precedes the body — and
+`releaseAttempt` gives one back. The number a claim answers is not "how many
+times has this step been tried"; it is **how many attempts are outstanding
+right now**, this one included. Only an attempt that never ENDED keeps its
+charge, and only a dead worker fails to end one, so the pre-body ceiling bounds
+ABANDONMENT.
+
+It used to be a bare tally, and one number served two budgets that pull in
+opposite directions — how many times to TRY (the author's `maxAttempts`) and how
+many workers may die holding this step. A property harness
+(`workflow-concurrent-delivery.test.ts`) shrank the defect to a ONE-node body
+under three deliveries: a `ctx.step` whose body sleeps — a shape the engine now
+REFUSES outright, see "A step body may not WAIT" in `CLAUDE.md` — all three
+suspending
+inside it having charged one each, so the next reach found the budget spent and
+appended `{status: "failed", error: "step s0 exhausted 3 attempt(s)"}` over a
+step that then SUCCEEDED — whose own walk read that failure back out of the
+idempotent append and failed the run. Tries are counted in the WALK now, and the
+pre-body refusal is no longer a journal entry at all
+(`StepAbandonedError`, classified like a divergence: a verdict about the walk,
+never about the step). **A step that succeeded is never journaled `failed`,
+because only a walk whose own body threw may write a `failed` entry.**
+`workflow-replay-step.ts`'s module doc carries the rest.
+
+**The residual that account ends on is the rest of this section.** It read: a
+charge cannot tell an abandoned attempt from a LIVE one, so `maxAttempts`
+simultaneous in-flight deliveries of one step is the most this tolerates, and
+closing it needs a heartbeat. Half of that is now closed — a charge EXPIRES, so
+an abandoned one stops counting — and the half that is not is stated at "The
+window is generous, and there is no heartbeat" below: without a refresh the
+window has to be long, so the ceiling bounds concurrency over an hour rather
+than over minutes.
+
+### A charge names its HOLDER
+
+`claimAttempt(runId, key, holder, leaseMs)`, where `holder` is the WALK's own id
+— `replayRun` mints one per walk. Two things follow:
+
+- **A claim is IDEMPOTENT for a holder that already has one.** Re-claiming
+  answers the same number rather than a higher one. The engine claims once per
+  walk per key, so this is a defence rather than a fix — but a claim is a
+  non-idempotent write over an at-least-once transport, and
+  `workflow-journal-platform.ts` had to carry a rule about it ("must not soften
+  it by retrying the call itself — a retried claim would burn two").
+- **A charge can EXPIRE**, which is the half that fixes a real defect. A scalar
+  counter cannot: the charge a dead walk left was indistinguishable from a live
+  one, so it stood forever and `maxAttempts` deaths on one step key refused that
+  step permanently, with `StepAbandonedError` reporting a run nobody could
+  revive. Expiring individual charges needs an instant per charge, which needs
+  the holder.
+
+### The shape is ONE ROW per key, holding a MAP
+
+`aai_workflow_attempt_leases (run_id, key, holders jsonb)`, primary key
+`(run_id, key)`, where `holders` maps holder to the instant it claimed. The row
+is what makes the claim ATOMIC — two concurrent claims collide on it, so the
+second blocks on its lock and re-evaluates against the first's committed value,
+exactly as the scalar counter's `n = n + 1` did.
+
+**A row per HOLDER is the obvious shape and it is WRONG.** It was written that
+way first: two claims by different holders conflict on nothing, so each inserts
+its own row and each counts under a snapshot the other's insert is absent from.
+Both answer `1`, both read that as a first reach, and the ceiling bounds nothing.
+Measured on a real Postgres — three concurrent claims answered **`[1, 1, 3]`**
+against a contract that no two ever agree, caught by the conformance suite's
+"two concurrent claims never hand out the same number".
+
+`_workflow-journal-attempts.ts` holds the statement and the three cases its
+`case` expression gets right; the platform twin is in
+`aai-server/platform-workflow-journal.ts` with a `slug` added to the key.
+
+### The window is generous, and there is no heartbeat
+
+`ATTEMPT_LEASE_MS` is an hour. A live walk does NOT refresh its charge, so the
+window has to clear the longest walk that can legitimately be running — measured
+at 285 s and ~900 s in production, with a step's own `stepFetch` allowed
+`STEP_FETCH_INACTIVITY_MS` (10 minutes) per stall.
+
+**Both ways of being wrong are not equal, which is what makes a generous window
+right.** Too SHORT and a live walk's charge vanishes: the ceiling under-counts,
+a step is re-run, and the engine's stated at-least-once cost applies — the
+direction `JournalStore.releaseAttempt` already calls safe. Too LONG and a dead
+walk's charge lingers: the ceiling over-counts and refuses a healthy step, which
+is the bug being fixed. An hour turns "forever" into "an hour" for every death
+and cannot be wrong in the expensive direction.
+
+**What a heartbeat would buy is a SHORTER window**, not a different mechanism: a
+walk that renewed its lease could be given one measured in minutes, and the
+ceiling would bound concurrency in near-real time. It needs a timer per in-flight
+step and its teardown, and is not built.
+
+**A live holder's re-claim must NOT refresh its instant.** Otherwise a walk
+that keeps re-reaching one key holds its charge for as long as it keeps
+reaching — the failure the expiry exists to end, by a slower route. That is
+what the `case` in the statement is for, and an unconditional add would delete
+it silently; the
+recorder tests in `workflow-journal-postgres.test.ts` and
+`platform-workflow-journal.test.ts` pin the branch with no clock in them, because
+the conformance case that pins the EFFECT can only fail in one direction.
+
+### The old table is gone, and the fixture had to learn to drop one
+
+`aai_workflow_attempts` is dropped by
+`supabase/migrations/20260903160000_workflow_attempt_leases.sql`, which also
+re-issues `sweep_terminal_workflow_runs` — a function body naming a dropped table
+fails at RUN time, and that one runs from pg_cron with nobody watching.
+
+`ensurePlatformTables` replayed only creates, alters and indexes, so the test
+fixtures kept a table production no longer has: `schema-drift.scenario.test.ts`
+failed on an undeclared `workflow_attempts` and `journal-ddl-parity.test.ts`
+would have failed its bijection. It replays `drop table if exists` now, last, on
+the stated assumption that no migration re-creates a table it dropped.

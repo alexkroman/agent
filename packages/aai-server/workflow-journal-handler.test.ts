@@ -198,6 +198,10 @@ describe("POST /:slug/workflow-journal", () => {
           now: 1,
           kind: "sleep",
           token: "tok",
+          // The attempt lease's two, both required — see the route's own note on
+          // why neither is defaulted here.
+          holder: "walk-1",
+          leaseMs: 60_000,
           entry: {
             key: "a#0",
             name: "a",
@@ -212,6 +216,28 @@ describe("POST /:slug/workflow-journal", () => {
       // database answering oddly, which is what a missing method looks like.
       expect(res.status, method).not.toBe(400);
     });
+
+    test.each(["holder", "leaseMs"] as const)(
+      "claimAttempt without %s is a 400, never a defaulted lease",
+      async (missing) => {
+        // Both are REQUIRED at the door. An absent holder would make every walk
+        // one holder and put the scalar counter back; an absent window would
+        // need a default here, and a ceiling whose window this route chose is a
+        // ceiling the engine cannot reason about. 400 says so; a default would
+        // be a silently different budget.
+        const p = await platform();
+        const body: Record<string, unknown> = {
+          method: "claimAttempt",
+          runId: "wrun_1",
+          key: "a#0",
+          holder: "walk-1",
+          leaseMs: 60_000,
+        };
+        delete body[missing];
+        const res = await callRoute(p.fetch, MINE, body, await bearerFor(p.store, MINE));
+        expect(res.status, missing).toBe(400);
+      },
+    );
 
     /**
      * The trace id end to end, over the real route rather than over

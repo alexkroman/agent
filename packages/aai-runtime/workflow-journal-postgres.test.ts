@@ -292,20 +292,60 @@ function journalOf(db: Db) {
 }
 
 describe("claimAttempt", () => {
+  const HOUR = 60 * 60 * 1000;
+
   test("is ONE statement, which IS the atomicity claim", async () => {
     // Read-then-increment would let two concurrent deliveries of the same run
     // read the same number and take a step past its ceiling. Nothing a recorder
     // can do proves the database is atomic — but a SECOND query here would prove
     // it is not, and that is the regression worth catching in the fast tier.
     const { db, issued } = recorder([[{ n: 3 }]]);
-    expect(await journalOf(db).claimAttempt("wrun_1", "a#0")).toBe(3);
+    expect(await journalOf(db).claimAttempt("wrun_1", "a#0", "walk-1", HOUR)).toBe(3);
     expect(issued).toHaveLength(1);
-    expect(issued[0]?.sql).toMatch(/on conflict .* do update set/s);
+    expect(issued[0]?.sql).toMatch(/on conflict .* do update\s+set holders/s);
+  });
+
+  test("the upsert is CONDITIONAL, or a live holder's lease would be refreshed", async () => {
+    // The whole of what stops a walk that keeps re-reaching one key holding its
+    // charge indefinitely — see `_workflow-journal-attempts.ts`. A recorder
+    // cannot see the effect, but it can see the `where` go missing.
+    const { db, issued } = recorder([[{ n: 1 }]]);
+    await journalOf(db).claimAttempt("wrun_1", "a#0", "walk-1", HOUR);
+    // The `case` is the whole of what stops a LIVE holder's instant being
+    // refreshed, and an unconditional `||` would delete it silently. A recorder
+    // cannot see the effect; it can see the branch go missing.
+    expect(issued[0]?.sql).toMatch(/case\s+when .*holders ->> \$3.*>= \$5\s+then '\{\}'::jsonb/s);
+  });
+
+  test("the CUTOFF crosses as a parameter derived from the lease, not as SQL", async () => {
+    // `now() - interval` would make the DATABASE the clock, where every other
+    // instant in this schema is the engine's. Asserted on the bound value so a
+    // future rewrite cannot quietly move the comparison server-side.
+    const { db, issued } = recorder([[{ n: 1 }]]);
+    const before = Date.now();
+    await journalOf(db).claimAttempt("wrun_1", "a#0", "walk-1", HOUR);
+    const [, , , at, cutoff] = issued[0]?.params ?? [];
+    expect(Number(at)).toBeGreaterThanOrEqual(before);
+    expect(Number(at) - Number(cutoff)).toBe(HOUR);
   });
 
   test("refuses an empty result rather than inventing an attempt number", async () => {
     const { db } = recorder([[]]);
-    await expect(journalOf(db).claimAttempt("wrun_1", "a#0")).rejects.toThrow(/returned nothing/);
+    await expect(journalOf(db).claimAttempt("wrun_1", "a#0", "walk-1", HOUR)).rejects.toThrow(
+      /returned nothing/,
+    );
+  });
+});
+
+describe("releaseAttempt", () => {
+  test("deletes the NAMED charge, so it cannot take another walk's", async () => {
+    const { db, issued } = recorder([[]]);
+    await journalOf(db).releaseAttempt("wrun_1", "a#0", "walk-1");
+    expect(issued).toHaveLength(1);
+    // `holders - $3` and not a decrement: the charge being given back is named,
+    // so a release that lands twice removes nothing the second time.
+    expect(issued[0]?.sql).toMatch(/set holders = holders - \$3/s);
+    expect(issued[0]?.params).toEqual(["wrun_1", "a#0", "walk-1"]);
   });
 });
 

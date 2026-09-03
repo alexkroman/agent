@@ -121,12 +121,12 @@ const CALLS: readonly {
   {
     name: "claimAttempt",
     rows: [[{ n: 1 }]],
-    run: (sql) => journal.claimAttempt(sql, SLUG, "wrun_1", "a#0"),
+    run: (sql) => journal.claimAttempt(sql, SLUG, "wrun_1", "a#0", "walk-1", 60_000),
   },
   {
     name: "releaseAttempt",
     rows: [[]],
-    run: (sql) => journal.releaseAttempt(sql, SLUG, "wrun_1", "a#0"),
+    run: (sql) => journal.releaseAttempt(sql, SLUG, "wrun_1", "a#0", "walk-1"),
   },
   {
     name: "readSleeps",
@@ -326,16 +326,26 @@ describe("claimAttempt", () => {
     // makes the single statement atomic is the scenario tier's question; whether
     // there is only one is this one's, and a second query would settle it here.
     const { sql, issued } = recorder([[{ n: 3 }]]);
-    expect(await journal.claimAttempt(sql, SLUG, "wrun_1", "a#0")).toBe(3);
+    expect(await journal.claimAttempt(sql, SLUG, "wrun_1", "a#0", "walk-1", 60_000)).toBe(3);
     expect(issued).toHaveLength(1);
-    expect(issued[0]?.sql).toMatch(/on conflict .* do update set/s);
+    expect(issued[0]?.sql).toMatch(/on conflict .* do update\s+set holders/s);
+  });
+
+  test("keeps a LIVE holder's instant, which is the whole of the `case`", async () => {
+    // An unconditional `||` would refresh it, and a walk that keeps re-reaching
+    // one key would hold its charge indefinitely — the failure the expiry exists
+    // to end, by a slower route. A recorder cannot see the effect; it can see
+    // the branch go missing.
+    const { sql, issued } = recorder([[{ n: 1 }]]);
+    await journal.claimAttempt(sql, SLUG, "wrun_1", "a#0", "walk-1", 60_000);
+    expect(issued[0]?.sql).toMatch(/case\s+when .*holders ->> \$4.*>= \$6\s+then '\{\}'::jsonb/s);
   });
 
   test("refuses an empty result rather than inventing an attempt number", async () => {
     const { sql } = recorder([[]]);
-    await expect(journal.claimAttempt(sql, SLUG, "wrun_1", "a#0")).rejects.toThrow(
-      /returned nothing/,
-    );
+    await expect(
+      journal.claimAttempt(sql, SLUG, "wrun_1", "a#0", "walk-1", 60_000),
+    ).rejects.toThrow(/returned nothing/);
   });
 });
 

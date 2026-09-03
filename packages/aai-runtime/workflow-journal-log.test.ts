@@ -150,7 +150,7 @@ describe("rebuildJournal", () => {
   test("reconstructs a run, its steps and its waits from the log alone", async () => {
     const { journal, writes } = recordJournal(createMemoryJournal());
     await journal.createRun(run({ status: "running", input: { topic: "otters" } }));
-    await journal.claimAttempt("wrun_1", "work#0");
+    await journal.claimAttempt("wrun_1", "work#0", "walk-1", 60 * 60 * 1000);
     await journal.appendStep("wrun_1", step({ output: "done" }));
     await journal.claimSleep("wrun_1", "sleep!0", 5000, "later", "sleep");
     await journal.setStatus("wrun_1", "completed", { output: "done" }, ["running"]);
@@ -167,7 +167,7 @@ describe("rebuildJournal", () => {
       kind: "sleep",
     });
     // The lease came back too, which is what a divergence check reads.
-    expect(await replica.claimAttempt("wrun_1", "work#0")).toBe(2);
+    expect(await replica.claimAttempt("wrun_1", "work#0", "walk-2", 60 * 60 * 1000)).toBe(2);
   });
 
   test("replays neither a rejected write nor a compare-and-set that lost", async () => {

@@ -230,6 +230,15 @@ export type StepAttemptOptions = {
   key: string;
   maxAttempts: number;
   journal: JournalStore;
+  /**
+   * This WALK's id, which is who holds the attempt charges it takes.
+   *
+   * One per `replayRun` rather than one per step, because the thing a charge
+   * attributes is the walk: a walk that dies takes every charge it holds with
+   * it, and a walk that reaches the same key twice must not pay twice. See
+   * `JournalStore.claimAttempt`.
+   */
+  holder: string;
   signal: AbortSignal | undefined;
   /**
    * How many step bodies may execute at once in this process.

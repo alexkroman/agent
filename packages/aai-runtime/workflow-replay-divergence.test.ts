@@ -227,7 +227,7 @@ describe("what the check must NOT accuse", () => {
   test("a fan-out gap, where the missing key was REACHED and lost", async () => {
     const journal = await seed();
     // `segment#0` was reached and never settled; `segment#1` landed.
-    await journal.claimAttempt(RUN, "segment#0");
+    await journal.claimAttempt(RUN, "segment#0", "earlier-walk", 60 * 60 * 1000);
     await journal.appendStep(RUN, {
       key: "segment#1",
       name: "segment",
@@ -266,7 +266,7 @@ describe("what the check must NOT accuse", () => {
     const journal = await seed();
     // `segment#0` was reached and lost, so its claim exonerates it — this walk
     // may legitimately re-run it, and it is NOT what gets refused.
-    await journal.claimAttempt(RUN, "segment#0");
+    await journal.claimAttempt(RUN, "segment#0", "earlier-walk", 60 * 60 * 1000);
     // A journaled step this walk never reads, finished after everything it has
     // answered: the displaced entry.
     await journal.appendStep(RUN, {

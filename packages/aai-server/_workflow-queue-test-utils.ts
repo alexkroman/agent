@@ -40,9 +40,10 @@ import type { HonoEnv } from "./context.ts";
 import { guestTokenFor } from "./guest-token.ts";
 import { slugMw } from "./middleware.ts";
 import type { AdminDb } from "./platform-lock.ts";
+import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { createTestStore, ensurePlatformTables, type TestFetch } from "./test-utils.ts";
+import { createTestStore, type TestFetch } from "./test-utils.ts";
 import { createWorkflowEnqueueHandler } from "./workflow-enqueue-handler.ts";
 import { type EnqueueParams, WORKFLOW_QUEUE_CHANNEL } from "./workflow-queue-store.ts";
 

@@ -802,34 +802,19 @@ trip, so a polling run's traffic was quadratic. `JournalStore.readSleeps` and
 [`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md), "A wait was outside the whole-read
 guarantee", carry the measurement and the rule for using the snapshot.
 
-### An attempt is a LEASE, not a tally
+### An attempt is a LEASE, and it EXPIRES
 
 `claimAttempt` charges an attempt before a step's body runs — a crash therefore
-burns it, which is the whole reason the charge precedes the body — and
-`releaseAttempt` gives one back. The number a claim answers is not "how many
-times has this step been tried"; it is **how many attempts are outstanding
-right now**, this one included. Only an attempt that never ENDED keeps its
-charge, and only a dead worker fails to end one, so the pre-body ceiling bounds
-ABANDONMENT.
+burns it, which is the whole reason the charge precedes the body — and the
+number it answers is **how many attempts are outstanding right now**, not how
+many times the step has been tried.
 
-It used to be a bare tally, and one number served two budgets that pull in
-opposite directions — how many times to TRY (the author's `maxAttempts`) and how
-many workers may die holding this step. A property harness
-(`workflow-concurrent-delivery.test.ts`) shrank the defect to a ONE-node body
-under three deliveries: a `ctx.step` whose body sleeps — a shape the engine now
-REFUSES outright, see the section below — all three suspending
-inside it having charged one each, so the next reach found the budget spent and
-appended `{status: "failed", error: "step s0 exhausted 3 attempt(s)"}` over a
-step that then SUCCEEDED — whose own walk read that failure back out of the
-idempotent append and failed the run. Tries are counted in the WALK now, and the
-pre-body refusal is no longer a journal entry at all
-(`StepAbandonedError`, classified like a divergence: a verdict about the walk,
-never about the step). **A step that succeeded is never journaled `failed`,
-because only a walk whose own body threw may write a `failed` entry.**
-`workflow-replay-step.ts`'s module doc carries the rest, including the one
-residual — a charge cannot tell an abandoned attempt from a LIVE one, so
-`maxAttempts` simultaneous in-flight deliveries of one step is the most this
-tolerates, which needs a heartbeat to close.
+Two things about it are worth knowing before touching the engine, and the whole
+account is in [`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md), "An attempt is a LEASE,
+and it EXPIRES": a charge names its HOLDER, so a re-claim by the walk that has
+one answers the same number; and a charge older than `ATTEMPT_LEASE_MS` does not
+count, which is what stopped a dead walk's charge standing forever and refusing
+a healthy step for the life of the run.
 
 ### A clock, a random number and a uuid are AFFORDANCES
 

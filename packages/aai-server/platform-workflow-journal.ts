@@ -116,7 +116,7 @@ const TERMINAL = new Set(["completed", "failed", "cancelled"]);
  */
 const RUNS = "aai_platform.workflow_runs";
 const STEPS = "aai_platform.workflow_steps";
-const ATTEMPTS = "aai_platform.workflow_attempts";
+const ATTEMPTS = "aai_platform.workflow_attempt_leases";
 
 /**
  * Raised when a run id is already taken.
@@ -330,23 +330,43 @@ export async function readStep(
 }
 
 /**
- * Burn an attempt and answer the new count.
+ * Charge one attempt, and answer how many are OUTSTANDING.
  *
- * ONE statement. Read-then-increment lets two concurrent deliveries of the same
- * run read the same number, after which a wedged step retries past its ceiling
- * forever — which is the failure the attempt ledger exists to stop.
+ * The platform twin of `_workflow-journal-attempts.ts`, which carries the whole
+ * argument — why ONE row per key rather than one per holder (the row lock is the
+ * atomicity, and a row per holder measured `[1, 1, 3]` on three concurrent
+ * claims), the three cases the `case` gets right, why a live holder's instant
+ * must not be refreshed, and why the `||` rather than the cutoff comparison is
+ * what guarantees the claimer counts. The only difference here is the `slug` on
+ * the key.
  */
 export async function claimAttempt(
   sql: SqlExec,
   slug: string,
   runId: string,
   key: string,
+  holder: string,
+  leaseMs: number,
 ): Promise<number> {
+  const at = Date.now();
   const rows = await sql(
-    `insert into ${ATTEMPTS} (slug, run_id, key, n) values ($1, $2, $3, 1)
-     on conflict (slug, run_id, key) do update set n = ${ATTEMPTS}.n + 1
-     returning n`,
-    [slug, runId, key],
+    `insert into ${ATTEMPTS} (slug, run_id, key, holders)
+     values ($1, $2, $3, jsonb_build_object($4::text, $5::text))
+     on conflict (slug, run_id, key) do update
+        set holders = (
+              select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+                from jsonb_each_text(${ATTEMPTS}.holders) as e
+               where e.value::bigint >= $6
+            ) || (
+              case
+                when (${ATTEMPTS}.holders ->> $4) is not null
+                 and (${ATTEMPTS}.holders ->> $4)::bigint >= $6
+                then '{}'::jsonb
+                else jsonb_build_object($4::text, $5::text)
+              end
+            )
+     returning (select count(*) from jsonb_object_keys(holders))::int as n`,
+    [slug, runId, key, holder, String(at), String(at - leaseMs)],
   );
   const n = rows[0]?.n;
   if (n === undefined) throw new Error(`workflow attempt claim returned nothing for ${runId}`);
@@ -356,21 +376,25 @@ export async function claimAttempt(
 /**
  * Give an attempt back, because it ENDED without settling the step.
  *
- * ONE statement, and `greatest` is the floor rather than tidiness: a release
- * that lands twice may only under-charge a budget the next claim re-takes, where
- * a negative count is an unbounded budget for a step that wedges the guest. A
- * missing row is a no-op — there is nothing charged to give back.
+ * ONE statement, and `holders - $4` removes exactly that holder's entry: a
+ * release that lands twice removes nothing the second time, and no release can
+ * take another walk's charge. The `greatest` floor the counter needed is gone
+ * with the counter.
+ *
+ * Answers `null` because this route's envelope carries a result and there is
+ * nothing to say beyond "it happened".
  */
 export async function releaseAttempt(
   sql: SqlExec,
   slug: string,
   runId: string,
   key: string,
+  holder: string,
 ): Promise<null> {
   await sql(
-    `update ${ATTEMPTS} set n = greatest(n - 1, 0)
-     where slug = $1 and run_id = $2 and key = $3`,
-    [slug, runId, key],
+    `update ${ATTEMPTS} set holders = holders - $4::text
+      where slug = $1 and run_id = $2 and key = $3`,
+    [slug, runId, key, holder],
   );
   return null;
 }

@@ -51,8 +51,8 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import { createPgChatStore } from "./chat-store.ts";
+import { platformMigrationSql } from "./platform-schema-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { platformMigrationSql } from "./test-utils.ts";
 import { createPgWorkspaceStore } from "./workspace-store.ts";
 
 // The migration as it ships, minus the one line a throwaway database cannot

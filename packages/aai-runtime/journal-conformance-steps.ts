@@ -17,6 +17,7 @@
  * @internal
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { type JournalArm, keysFor, runOf, stepOf } from "./journal-conformance-cases.ts";
 
@@ -179,27 +180,126 @@ export function journalStepConformance(arm: JournalArm): void {
       });
     });
 
-    describe("claimAttempt is MONOTONIC, per run and per key", () => {
-      test("the first claim is 1 and every later one is the next number", async () => {
+    describe("claimAttempt counts LIVE HOLDERS, per run and per key", () => {
+      /** A generous window, so nothing in this block expires by accident. */
+      const HOUR = 60 * 60 * 1000;
+
+      test("each new holder is one more outstanding attempt", async () => {
         // Claimed BEFORE the body runs, so a process that dies mid-step has
         // already burned the attempt and a step that wedges the guest cannot be
-        // redelivered forever.
+        // redelivered forever. The number is how many are outstanding, not how
+        // many times the step has been tried.
         const journal = arm.journal();
         const { runId } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(1);
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(2);
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(3);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-2", HOUR)).toBe(2);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-3", HOUR)).toBe(3);
+      });
+
+      test("the SAME holder re-claiming answers the same number", async () => {
+        // The idempotence the holder buys. This is a non-idempotent write over
+        // an at-least-once transport, and before the holder the platform
+        // backend's own doc had to say "must not soften it by retrying the call
+        // itself — a retried claim would burn two".
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
+      });
+
+      /**
+       * How long the expiry cases let a charge age, and the window they then
+       * read it under.
+       *
+       * REAL elapsed time, because `claimed_at` is the store's own clock and
+       * three backends cannot share an injected one. The margin is 4x, which is
+       * what keeps a slow machine from changing the answer: a charge is 60 ms
+       * old and the window is 15.
+       */
+      const AGED_MS = 60;
+      const SHORT = 15;
+
+      test("a charge older than the lease does not count", async () => {
+        // The whole reason a charge is a row with a timestamp. A walk that DIED
+        // cannot release, so before this its charge stood forever and
+        // `maxAttempts` deaths on one key refused that step permanently.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        await journal.claimAttempt(runId, "charge#0", "dead-1", HOUR);
+        await journal.claimAttempt(runId, "charge#0", "dead-2", HOUR);
+        await sleep(AGED_MS);
+        // Both are past a short window, so only the claimer counts.
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-3", SHORT)).toBe(1);
+      });
+
+      test("the CLAIMER always counts, whatever the window", async () => {
+        // An answer of 0 says nobody holds an attempt on a call that just took
+        // one, and `chargeAttempt` reads it as neither a first reach nor a spent
+        // budget. A window of zero is the shape that produces it: an earlier
+        // draft counted the claimer out of a separate subquery and answered 0.
+        //
+        // Both paths, because they are different code: a FRESH key inserts its
+        // whole map, where an existing key goes through the prune-and-add.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        expect(await journal.claimAttempt(runId, "fresh#0", "walk-1", 0)).toBe(1);
+        // The other holder is AGED first, so this is a claim whose window
+        // excludes everything already there. Without the ageing the two claims
+        // can land in the same millisecond, the inclusive cutoff keeps the
+        // other one, and the answer is legitimately 2 — which is a fact about
+        // the boundary rather than about the claimer.
+        await journal.claimAttempt(runId, "existing#0", "walk-1", HOUR);
+        await sleep(AGED_MS);
+        expect(await journal.claimAttempt(runId, "existing#0", "walk-2", SHORT)).toBe(1);
+      });
+
+      test("an EXPIRED holder re-claiming is live again, and counts", async () => {
+        // The third case of `claimAttempt`'s upsert, and the one an
+        // `on conflict do nothing` gets wrong: the row exists, so nothing is
+        // inserted, and the old timestamp keeps it out of the count — an
+        // attempt that answers 0 and is charged to nobody.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
+        await sleep(AGED_MS);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-1", SHORT)).toBe(1);
+        // Live again on the next generous read, rather than gone.
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-2", HOUR)).toBe(2);
+      });
+
+      test("a LIVE holder's claim does not refresh its own lease", async () => {
+        // Otherwise a walk that keeps re-reaching one key holds its charge for
+        // as long as it keeps reaching — the failure the expiry exists to end,
+        // by a slower route.
+        //
+        // COARSE, and deliberately paired: this can only fail in one direction
+        // (a refresh makes `walk-1` live and the answer 2), so a machine slow
+        // enough to age a refreshed charge past `SHORT` would pass it wrongly.
+        // The sharp assertion is the SQL shape — `workflow-journal-postgres.ts`
+        // pins the conditional `where` on the upsert, with no clock in it.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
+        await sleep(AGED_MS);
+        await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-2", SHORT)).toBe(1);
       });
 
       test("two keys on one run are counted independently", async () => {
         const journal = arm.journal();
         const { runId } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
-        await journal.claimAttempt(runId, "charge#0");
-        await journal.claimAttempt(runId, "charge#0");
-        expect(await journal.claimAttempt(runId, "ship#0")).toBe(1);
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(3);
+        await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
+        await journal.claimAttempt(runId, "charge#0", "walk-2", HOUR);
+        expect(await journal.claimAttempt(runId, "ship#0", "walk-1", HOUR)).toBe(1);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-3", HOUR)).toBe(3);
       });
 
       test("two runs sharing a key are counted independently", async () => {
@@ -208,8 +308,8 @@ export function journalStepConformance(arm: JournalArm): void {
         const two = keysFor(arm);
         await journal.createRun(runOf({ runId: one.runId }));
         await journal.createRun(runOf({ runId: two.runId }));
-        await journal.claimAttempt(one.runId, "charge#0");
-        expect(await journal.claimAttempt(two.runId, "charge#0")).toBe(1);
+        await journal.claimAttempt(one.runId, "charge#0", "walk-1", HOUR);
+        expect(await journal.claimAttempt(two.runId, "charge#0", "walk-1", HOUR)).toBe(1);
       });
 
       test("two concurrent claims never hand out the same number", async () => {
@@ -220,36 +320,47 @@ export function journalStepConformance(arm: JournalArm): void {
         const { runId } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
         const claimed = await Promise.all([
-          journal.claimAttempt(runId, "charge#0"),
-          journal.claimAttempt(runId, "charge#0"),
-          journal.claimAttempt(runId, "charge#0"),
+          journal.claimAttempt(runId, "charge#0", "walk-1", HOUR),
+          journal.claimAttempt(runId, "charge#0", "walk-2", HOUR),
+          journal.claimAttempt(runId, "charge#0", "walk-3", HOUR),
         ]);
         expect([...claimed].sort((a, b) => a - b)).toEqual([1, 2, 3]);
       });
 
-      test("a release gives one back, and the next claim re-takes it", async () => {
+      test("a release gives one back, and the next holder re-takes it", async () => {
         // A charge is a LEASE — see `JournalStore.releaseAttempt`. Only an
         // attempt that never ENDED keeps one, which is what makes the ceiling a
         // bound on abandonment rather than on reaches.
         const journal = arm.journal();
         const { runId } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
-        await journal.claimAttempt(runId, "charge#0");
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(2);
-        await journal.releaseAttempt(runId, "charge#0");
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(2);
+        await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-2", HOUR)).toBe(2);
+        await journal.releaseAttempt(runId, "charge#0", "walk-2");
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-3", HOUR)).toBe(2);
       });
 
-      test("a release can never take the count below zero", async () => {
-        // Floored, so a release that lands twice may only under-charge a budget
-        // the next claim re-takes — where a negative count is an unbounded budget
-        // for a step that wedges the guest.
+      test("a release names the charge, so it cannot take another walk's", async () => {
+        // The floor the counter needed is gone with the counter: a decrement
+        // could not tell whose charge it was spending, and a delete can.
         const journal = arm.journal();
         const { runId } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
-        await journal.releaseAttempt(runId, "charge#0");
-        await journal.releaseAttempt(runId, "charge#0");
-        expect(await journal.claimAttempt(runId, "charge#0")).toBe(1);
+        await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
+        await journal.releaseAttempt(runId, "charge#0", "walk-2");
+        await journal.releaseAttempt(runId, "charge#0", "walk-2");
+        // `walk-1`'s charge is untouched, so the next holder is the second.
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-3", HOUR)).toBe(2);
+      });
+
+      test("a release that lands twice is a no-op the second time", async () => {
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
+        await journal.releaseAttempt(runId, "charge#0", "walk-1");
+        await journal.releaseAttempt(runId, "charge#0", "walk-1");
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
       });
     });
   });

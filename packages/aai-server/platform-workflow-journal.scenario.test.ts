@@ -34,9 +34,9 @@
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { ensurePlatformTables } from "./platform-schema-test-utils.ts";
 import * as journal from "./platform-workflow-journal.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { ensurePlatformTables } from "./test-utils.ts";
 
 /** Two tenants, so every read can be asked whether it crosses. */
 const SLUG = "wfj-tenant";
@@ -185,9 +185,9 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
     const runId = nextRun();
     await seed(runId);
     const claims = await Promise.all([
-      journal.claimAttempt(sql, SLUG, runId, "a#0"),
-      journal.claimAttempt(sql, SLUG, runId, "a#0"),
-      journal.claimAttempt(sql, SLUG, runId, "a#0"),
+      journal.claimAttempt(sql, SLUG, runId, "a#0", "walk-1", 60_000),
+      journal.claimAttempt(sql, SLUG, runId, "a#0", "walk-2", 60_000),
+      journal.claimAttempt(sql, SLUG, runId, "a#0", "walk-3", 60_000),
     ]);
     expect([...claims].sort((x, y) => x - y)).toEqual([1, 2, 3]);
   });

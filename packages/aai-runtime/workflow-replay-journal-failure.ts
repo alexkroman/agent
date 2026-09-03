@@ -129,8 +129,10 @@ export function watchJournalFailure(journal: JournalStore): JournalFailureWatch 
       readSteps: (runId) => journal.readSteps(runId).catch(note),
       readStep: (runId, key) => journal.readStep(runId, key).catch(note),
       readSleeps: (runId) => journal.readSleeps(runId).catch(note),
-      claimAttempt: (runId, key) => journal.claimAttempt(runId, key).catch(note),
-      releaseAttempt: (runId, key) => journal.releaseAttempt(runId, key).catch(note),
+      claimAttempt: (runId, key, holder, leaseMs) =>
+        journal.claimAttempt(runId, key, holder, leaseMs).catch(note),
+      releaseAttempt: (runId, key, holder) =>
+        journal.releaseAttempt(runId, key, holder).catch(note),
       claimSleep: (runId, key, wakeAt, correlationId, kind) =>
         journal.claimSleep(runId, key, wakeAt, correlationId, kind).catch(note),
       wakeSleeps: (runId, ids) => journal.wakeSleeps(runId, ids).catch(note),
