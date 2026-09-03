@@ -69,8 +69,21 @@ export type FakeGithubOptions = {
   userInstallations?: readonly number[];
   /** Make the `code` exchange fail, as a replayed or forged code does. */
   rejectUserCode?: boolean;
-  /** Force a status for the first request whose path contains this fragment. */
-  failWith?: { pathIncludes: string; status: number };
+  /**
+   * Force a status for requests whose path contains this fragment.
+   *
+   * `times` (default 1) is how many matching requests fail, which is what
+   * lets a suite distinguish a conflict the sync retries THROUGH from one it
+   * gives up on. `headAfter` is the concurrent push itself: the branch starts
+   * at `head` and reports this once the failure has fired, so a retry reads
+   * the parent somebody else's commit left behind.
+   */
+  failWith?: {
+    pathIncludes: string;
+    status: number;
+    times?: number;
+    headAfter?: string | null;
+  };
 };
 
 export type FakeGithub = {
@@ -239,7 +252,25 @@ export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
     accountType: options.accountType ?? "Organization",
     blobCount: 0,
   };
-  let failed = false;
+  let failures = 0;
+
+  /**
+   * The injected failure, when this call is one of the ones it claims.
+   *
+   * Split out of `fetchFn` rather than inlined because it is the half with a
+   * policy in it — how many calls fail, and what the branch looks like
+   * afterwards — while the caller around it is plumbing.
+   */
+  const injectedFailure = (call: GithubCall): Response | null => {
+    const fail = options.failWith;
+    if (!fail || failures >= (fail.times ?? 1)) return null;
+    // Never on the token exchange: a failure injected for the call under test
+    // must not be spent on the auth round trip that precedes it.
+    if (call.path.endsWith("/access_tokens") || !call.path.includes(fail.pathIncludes)) return null;
+    failures += 1;
+    if (fail.headAfter !== undefined) ctx.head = fail.headAfter;
+    return json({ message: "injected failure" }, fail.status);
+  };
 
   const fetchFn: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(typeof input === "string" ? input : String(input));
@@ -251,18 +282,8 @@ export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
     };
     calls.push(call);
 
-    const fail = options.failWith;
-    // Never on the token exchange: a failure injected for the call under test
-    // must not be spent on the auth round trip that precedes it.
-    if (
-      fail &&
-      !failed &&
-      !call.path.endsWith("/access_tokens") &&
-      call.path.includes(fail.pathIncludes)
-    ) {
-      failed = true;
-      return json({ message: "injected failure" }, fail.status);
-    }
+    const injected = injectedFailure(call);
+    if (injected) return injected;
 
     const route = FAKE_ROUTES.find(
       (entry) => entry.method === call.method && entry.matches(call.path),

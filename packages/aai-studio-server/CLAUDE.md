@@ -978,6 +978,22 @@ project's workspace to a branch as ONE commit.
   one outcome a sync must never produce. An empty repository is the COMMON
   case (a user makes one for this), so a 404/409 on the ref read takes the
   `POST /git/refs` path with a parentless commit.
+- **A head that moved is REBUILT onto, and only a spent retry budget may say
+  "try again".** Unforced means the ref update can lose, so the sync re-reads
+  the head and rebuilds the same tree onto the winner's commit
+  (`REF_CONFLICT_RETRIES`) — the blobs and the tree are written once, being
+  content-addressed. The create path is the same race seen from the other
+  side (`POST /git/refs` answers 422 "Reference already exists"), and it
+  switches to updating; a create refused while the ref STILL does not exist
+  raced nobody, so GitHub's own words are surfaced instead of a second
+  identical request. This is what fixed a user pressing Sync against
+  **"That branch moved while the sync was running — try again"** forever:
+  that sentence answered EVERY 409 and 422 in the push, so a tree GitHub
+  would never accept and a ref name it would never create both read as a
+  transient race, and the advice was a loop with no exit. It is now produced
+  only by `GithubRefConflictError`, which the sync raises about itself — so
+  wherever the sentence appears it is true, and the retry it asks for is one
+  the sync has already tried.
 - **Idempotent on the same `filesHash` everything else uses.**
   `githubRepo`/`githubBranch`/`githubHash`/`githubCommit` are `WorkspaceStamp`
   fields, so the sync records where it landed through `stampWorkspaceMeta` —

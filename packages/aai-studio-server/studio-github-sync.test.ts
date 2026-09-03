@@ -17,6 +17,7 @@ import {
 } from "./_studio-github-test-utils.ts";
 import { createGithubOctokit } from "./studio-github-client.ts";
 import {
+  GithubRefConflictError,
   githubSyncErrorMessage,
   parseRepoFullName,
   syncWorkspaceToGithub,
@@ -175,6 +176,72 @@ describe("syncWorkspaceToGithub", () => {
     });
     await expect(runSync(github)).rejects.toThrow();
   });
+
+  test("a head that moved is rebuilt onto — the sync retries, it does not advise", async () => {
+    // The race the unforced PATCH exists to catch: somebody pushed while the
+    // blobs were uploading. Telling the user to press Sync again is this same
+    // loop run by hand, so the sync runs it.
+    const github = createFakeGithub({
+      head: "abc123",
+      failWith: { pathIncludes: "/git/refs/", status: 422, headAfter: "def456" },
+    });
+    const result = await runSync(github);
+
+    expect(result.changed).toBe(true);
+    // Two commits, the second naming THEIR commit as its parent — their work
+    // is carried forward rather than discarded, which is what `force: false`
+    // buys and what the retry is obliged to preserve.
+    const commits = github.calls.filter((call) => call.path.endsWith("/git/commits"));
+    expect(commits).toHaveLength(2);
+    expect(commits.at(-1)?.body).toMatchObject({ parents: ["def456"] });
+    // ONE upload: the tree is content-addressed, so a moved head changes which
+    // commit is built and never which tree it carries.
+    expect(github.calls.filter((call) => call.path.endsWith("/git/blobs"))).toHaveLength(1);
+    expect(github.calls.filter((call) => call.path.endsWith("/git/trees"))).toHaveLength(1);
+  });
+
+  test("a ref CREATE that lost the race switches to updating the ref", async () => {
+    // Both syncs read no head and both created; the loser's 422 is
+    // "Reference already exists", the same situation as the non-fast-forward
+    // seen from the other path — and equally not a reason to fail.
+    const github = createFakeGithub({
+      head: null,
+      failWith: { pathIncludes: "/git/refs", status: 422, headAfter: "def456" },
+    });
+    const result = await runSync(github);
+
+    expect(result.changed).toBe(true);
+    expect(github.lastCall("/git/refs/")?.method).toBe("PATCH");
+    expect(github.lastCall("/git/commits")?.body).toMatchObject({ parents: ["def456"] });
+  });
+
+  test("a ref CREATE refused while the ref still does not exist keeps GitHub's words", async () => {
+    // Nothing raced — the ref name itself is being rejected, so a second
+    // create is the same request with the same answer. This is the case the
+    // old blanket "try again" turned into a loop the user could not break.
+    const github = createFakeGithub({
+      head: null,
+      failWith: { pathIncludes: "/git/refs", status: 422, times: 10 },
+    });
+
+    await expect(runSync(github)).rejects.toSatisfy(
+      (err: unknown) => !(err instanceof GithubRefConflictError),
+    );
+    // One attempt, not three: a retry here could never do anything different.
+    expect(github.calls.filter((call) => call.path.endsWith("/git/refs"))).toHaveLength(1);
+  });
+
+  test("a branch that keeps moving gives up as a conflict, not as a GitHub status", async () => {
+    // The retries are bounded, so a branch under constant push terminates —
+    // and terminates as the one failure "try again" is honest advice for.
+    const github = createFakeGithub({
+      head: "abc123",
+      failWith: { pathIncludes: "/git/refs/", status: 422, times: 10, headAfter: "def456" },
+    });
+
+    await expect(runSync(github)).rejects.toBeInstanceOf(GithubRefConflictError);
+    expect(github.calls.filter((call) => call.method === "PATCH")).toHaveLength(3);
+  });
 });
 
 describe("githubSyncErrorMessage", () => {
@@ -185,8 +252,18 @@ describe("githubSyncErrorMessage", () => {
     expect(githubSyncErrorMessage({ status: 404 })).toContain("reconnect GitHub");
     expect(githubSyncErrorMessage({ status: 401 })).toContain("reconnect GitHub");
     expect(githubSyncErrorMessage({ status: 403 })).toContain("Contents: read and write");
-    expect(githubSyncErrorMessage({ status: 422 })).toContain("moved while the sync was running");
-    expect(githubSyncErrorMessage({ status: 409 })).toContain("moved while the sync was running");
+    // Only the sync's OWN verdict, reached after the retries are spent, may
+    // say the branch moved. A bare 409 or 422 is a request GitHub refuses on
+    // its merits, and "try again" is advice that cannot ever work.
+    expect(githubSyncErrorMessage(new GithubRefConflictError("main"))).toContain(
+      "moved while the sync was running",
+    );
+    expect(githubSyncErrorMessage({ status: 422, message: "tree.path is invalid" })).toBe(
+      "tree.path is invalid",
+    );
+    expect(githubSyncErrorMessage({ status: 409, message: "Git Repository is empty" })).toBe(
+      "Git Repository is empty",
+    );
   });
 
   test("an unanticipated failure keeps its own words", () => {
