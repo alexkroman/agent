@@ -1274,8 +1274,20 @@ flag is OFF. So "it is private, therefore it owes an empty changeset" is wrong
 — and it was believed for a whole session's worth of `aai-server` work, which
 matters because of what that version gates.
 
-**`ship.yml`'s deploy fires on a server VERSION bump, and NOT on a server
-source change.** A source-diff arm over `packages/aai-server/**` /
+**Nothing in `ship.yml` ships on a merge to `main` — only on a RELEASE**, i.e.
+the merged Version Packages PR, detected as a commit that moved a version line
+in a workspace `package.json`. Job 1 (`changed`) is that gate and every other
+job sits behind it, so an ordinary merge updates the PR that will ship it and
+stops. Half of it was true by accident already — `changeset pack` packs nothing
+when every version is on the registry — but the guest image ran on every push
+and pushed a tag to a PUBLIC registry no deploy would ever pin. A release also
+arms `migrate` on its own, since `supabase db push` applies what is PENDING and
+a schema change merged earlier sits in an earlier commit. `workflow_dispatch`
+(with `ref`) ships or rolls back a commit that is not a release; that file's
+job-1 comment carries the rest.
+
+**Within a release, the deploy fires on a server VERSION bump, and NOT on a
+server source change.** A source-diff arm over `packages/aai-server/**` /
 `packages/aai-studio-server/**` was added (#1343) and is reverted: it made a
 production rollout the consequence of a MERGE rather than of a RELEASE, so
 every server PR deployed on its own, several times a day — a rolling Modal
@@ -1292,8 +1304,9 @@ not have covered either. To ship a merged server change without waiting for a
 release, dispatch `ship.yml` with `deploy: true`.
 
 Any branch arming `deploy` must arm `migrate` with it, since the deploy job
-waits on migrate with a plain condition; `ship-workflow-gate.test.ts` pins that
-and that the reverted arm stays reverted.
+waits on migrate with a plain condition; `ship-workflow-gate.test.ts` pins that,
+that the reverted arm stays reverted, and that the release gate above is a
+version line rather than a branch name or a commit subject.
 
 **The half a version gate needs is `check:deploy-changeset`** (see "Quality
 ratchets"), because `changeset status` accepts an EMPTY changeset: without it a

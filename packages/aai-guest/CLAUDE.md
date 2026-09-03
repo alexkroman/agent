@@ -838,18 +838,21 @@ can read it back — the evidence is in
 BECAUSE the flip happened: on the day after it, five pinned tags resolved to a
 registry that had never held them.
 
-**A guest image is published on every push to main; PROD does not boot one until
-a DEPLOY.** Both halves matter. The publish is ungated (see below), so main's
-head always has an image — but the tag a spawn asks for is decided by the
+**A guest image is published by a RELEASE, and PROD does not boot one until a
+DEPLOY.** Both halves matter. The tag a spawn asks for is decided by the
 DEPLOYED server: `agents.harness_image_tag` for an agent deployed earlier, and
-otherwise `localHarnessImageTag` over the harness bytes that server carries. A
-tag CI pushed on an ordinary merge is referenced by nothing until a deploy ships
-a server that hashes to it, which is why `ship.yml` gating the deploy on a
-version bump is what decides when a new guest image goes live. It was briefly
-not: #1343 armed the deploy off a server SOURCE diff, so every server merge
-deployed and every server merge therefore put a new guest image under
-production. That is reverted — see "A VERSION BUMP is what arms a deploy" in
-`ship.yml`.
+otherwise `localHarnessImageTag` over the harness bytes that server carries. So
+a tag CI pushed is referenced by nothing until a deploy ships a server that
+hashes to it, which is why `ship.yml` gating the deploy on a version bump is
+what decides when a new guest image goes live. It was briefly not: #1343 armed
+the deploy off a server SOURCE diff, so every server merge deployed and every
+server merge therefore put a new guest image under production. That is reverted
+— see "A VERSION BUMP is what arms a deploy" in `ship.yml`.
+
+The publish used to be UNGATED, and that is what changed: the image job now
+`needs: release`, so an ordinary merge to main publishes nothing (see "A RELEASE
+ships. A MERGE does not." in `ship.yml`). Main's head therefore does NOT always
+have an image between releases, which the paragraph below is about.
 
 **The TAG is unchanged across the switch, deliberately.** Both sources key on the
 same `localHarnessImageTag` string and the registry source only PREPENDS a
@@ -869,22 +872,27 @@ release published them in a parallel workflow, so a run that got there first
 404s — approximated for a while by a 320-line poll on npm's install view. Both
 are now jobs of `.github/workflows/ship.yml` joined by `needs:`, and on a
 release the image installs the packed tarballs rather than consulting the
-registry at all. It runs on every push to main with no `paths` filter, because
-the tag hashes the harness BUNDLE — which bundles the SDK, the runtime, the UI
-and the CLI, so almost any change to `packages/` mints a new tag and a filter
-would silently stop publishing once it went stale.
+registry at all. It carries no `paths` filter, because the tag hashes the
+harness BUNDLE — which bundles the SDK, the runtime, the UI and the CLI, so
+almost any change to `packages/` mints a new tag and a filter would silently
+stop publishing once it went stale.
 
-**And it is deliberately NOT gated on a version bump the way the deploy is.**
-The reasoning that gates the deploy — ship on a release, not on a merge — does
-not transfer, because the same property that rules out a `paths` filter rules
-out a version gate: any `packages/` change mints a new tag, so between releases
-main's head would name an image nobody published. That breaks the one thing
-these images are for outside a deploy, `GUEST_IMAGE_REGISTRY=ghcr.io/<owner>
-pnpm dev:aai-server`, and breaks it in the worst available way — `fromRegistry`
-is lazy, so the developer gets Modal's empty-exception build failure at sandbox
-CREATE rather than anything naming a missing tag. The cost of publishing on
-every merge is CI minutes and GHCR storage for tags no server pins; the cost of
-gating it is a dev affordance that fails without saying why.
+**It IS gated on the release now, and the cost is a dev affordance — know which
+one.** The argument for publishing on every merge was that the same property
+which rules out a `paths` filter rules out a version gate: any `packages/`
+change mints a new tag, so between releases main's head names an image nobody
+published. What that costs is `GUEST_IMAGE_REGISTRY=ghcr.io/<owner> pnpm
+dev:aai-server` on a tree that is ahead of the last release, and it costs it in
+the worst available way — `fromRegistry` is lazy, so the developer gets Modal's
+empty-exception build failure at sandbox CREATE rather than anything naming a
+missing tag. What publishing on every merge cost was a push to a PUBLIC registry
+as a side effect of merging, several times a day, for tags no server would ever
+pin, and that is the half a reader of the run list cannot see. The dev
+affordance has three ways out and merging did not: leave `GUEST_IMAGE_REGISTRY`
+unset (the default builds the Modal snapshot image from local bytes — see
+`guestImageSource`'s `reason`), push the tag yourself with
+`scripts/build-guest-image.mjs`, or dispatch `ship.yml` on the ref you want an
+image for.
 
 **The Dockerfile lives in `aai-server`, beside the constants it mirrors, and the
 build CONTEXT is this package.** That split is deliberate: the recipe's inputs
