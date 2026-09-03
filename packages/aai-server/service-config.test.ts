@@ -121,20 +121,42 @@ function memoryEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 const PUBLISHABLE_KEY = "sb_publishable_deadbeef";
 
 /**
- * The two pools, by CONSTRUCTION order — the admin pool first, the slug-lock
- * pool with the returned `slugLock`. They cannot be told apart by `max`
- * (`ADMIN_POOL_MAX` and `SLUG_LOCK_POOL_MAX` are both 4 — pinned by its own test
- * below, so this reading stops being silently wrong if one of them moves), and
- * telling them apart by the timeouts would be circular: those are the subject.
+ * The two pools, told apart by `max` — which is what this file's own note said
+ * to do "if either constant ever moves".
+ *
+ * It moved: `ADMIN_POOL_MAX` is 16 against `SLUG_LOCK_POOL_MAX`'s 4, so the
+ * reading by CONSTRUCTION order this used to take is no longer the only one
+ * available — and order was always the weaker premise, being a fact about
+ * `buildPlatformDb`'s statement sequence rather than about either pool. The
+ * timeouts still cannot serve: they are the subject of the tests below, so
+ * reading them here would be circular.
+ *
+ * The identification is ASSERTED rather than assumed — `expectOne` throws when
+ * the `max` it names does not appear exactly once — so a future value that
+ * collapses the two back together fails here, naming the collision, instead of
+ * silently handing every test below the same pool twice.
  *
  * THROWS rather than asserting, so the helper is legal outside a test body.
  */
 function builtPools(): { admin: CreatePostgresDbOptions; slugLock: CreatePostgresDbOptions } {
-  const [admin, slugLock, ...rest] = pools;
-  if (!(admin && slugLock) || rest.length > 0) {
+  if (pools.length !== 2) {
     throw new Error(`expected exactly two platform pools, got ${pools.length}`);
   }
-  return { admin, slugLock };
+  const expectOne = (max: number, which: string): CreatePostgresDbOptions => {
+    const matches = pools.filter((pool) => pool.max === max);
+    const only = matches[0];
+    if (!only || matches.length !== 1) {
+      throw new Error(
+        `expected exactly one ${which} pool with max ${max}, got ${matches.length} — ` +
+          "ADMIN_POOL_MAX and SLUG_LOCK_POOL_MAX must stay distinct for this reading",
+      );
+    }
+    return only;
+  };
+  return {
+    admin: expectOne(ADMIN_POOL_MAX, "admin"),
+    slugLock: expectOne(SLUG_LOCK_POOL_MAX, "slug-lock"),
+  };
 }
 
 describe("buildPlatformDb pool wiring", () => {
@@ -189,13 +211,24 @@ describe("buildPlatformDb pool wiring", () => {
     expect(slugLock.connectTimeoutSeconds).toBe(PLATFORM_DB_CONNECT_TIMEOUT_SECONDS);
   });
 
-  test("builds exactly two pools, indistinguishable by `max`", () => {
-    // The premise `builtPools` reads by ORDER rests on: if either constant ever
-    // moves, prefer telling them apart by it and delete this.
+  test("builds exactly two pools, and BOTH readings of them agree", () => {
+    // Two things, and neither is what this test used to assert. `builtPools`
+    // now identifies by `max`, so re-asserting `max` here would be circular —
+    // it would restate the selector.
+    //
+    // What is worth pinning is the PREMISE that selector rests on (the two
+    // constants are distinct, or the identification is ambiguous and every test
+    // in this describe silently reads one pool twice) and the fact that the
+    // reading it REPLACED still gives the same answer: the admin pool is built
+    // first. That is no longer load-bearing, which is exactly why it is worth a
+    // cheap assertion — a `buildPlatformDb` that reorders its two pools is a
+    // thing to find out about here rather than in whichever test next assumes
+    // it.
+    expect(ADMIN_POOL_MAX).not.toBe(SLUG_LOCK_POOL_MAX);
     buildPlatformDb(platformEnv());
     const { admin, slugLock } = builtPools();
-    expect(admin.max).toBe(ADMIN_POOL_MAX);
-    expect(slugLock.max).toBe(SLUG_LOCK_POOL_MAX);
+    expect(pools[0]).toBe(admin);
+    expect(pools[1]).toBe(slugLock);
   });
 
   test("the pooler routes the ADMIN pool only; the slug lock stays DIRECT", () => {
