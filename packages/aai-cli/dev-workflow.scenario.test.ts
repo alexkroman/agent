@@ -526,16 +526,14 @@ describe("aai dev serves the workflow HTTP API", () => {
     // reached its `sleep` yet has nothing to interrupt, and asserting a count
     // before then would be a race dressed as a finding.
     let lastWakeStatus = 0;
-    await expect
-      .poll(
-        async () => {
-          const result = await api(`/workflows/runs/${runId}/wake`, { method: "POST" });
-          lastWakeStatus = result.status;
-          return Number(result.body.woken);
-        },
-        { timeout: 10_000, interval: 50 },
-      )
-      .toBeGreaterThan(0);
+    await vi.waitFor(
+      async () => {
+        const result = await api(`/workflows/runs/${runId}/wake`, { method: "POST" });
+        lastWakeStatus = result.status;
+        expect(Number(result.body.woken)).toBeGreaterThan(0);
+      },
+      { timeout: 10_000, interval: 50 },
+    );
     expect(lastWakeStatus).toBe(200);
     const finished = await api(`/workflows/runs/${runId}?wait=30000`);
     expect(finished.body).toMatchObject({ status: "completed", output: { topic: "kelp beds" } });

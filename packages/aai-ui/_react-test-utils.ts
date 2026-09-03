@@ -131,11 +131,14 @@ export function flushEffects(): Promise<void> {
  * MICROTASK yield repo-wide, and one identifier meaning two different waits is
  * what that split exists to prevent.
  *
- * Reach for this rather than writing the promise out: an inline
- * `new Promise<void>((r) => setTimeout(r, 0))` is invisible to
- * `guard-invariants` rules 4 and 19 — the `<void>` type argument breaks the
- * literal `new Promise(` both patterns require — so the one occurrence in this
- * package was in no baseline and reported by nothing.
+ * Reach for this rather than writing the promise out. That used to come with a
+ * warning that an inline `new Promise<void>((r) => setTimeout(r, 0))` was
+ * invisible to `guard-invariants` rules 4 and 19, blamed on the type argument
+ * — which had since been fixed, while THIS occurrence stayed unreported,
+ * because the executor below is a BLOCK and a line-based pattern cannot see a
+ * construct that spans lines. Both rules are node rules now and both see it, so
+ * writing one out is reported. This file is exempt from rule 4 for the reason
+ * `aai/host/_test-utils.ts` is: it is the remedy, not a violation.
  */
 export function tick(): Promise<void> {
   return new Promise<void>((r) => {

@@ -71,6 +71,26 @@ interface RuleSamples {
   ignores: string[];
 }
 
+/**
+ * A rule answered by a PARSE rather than by `git grep -E`.
+ *
+ * Its samples are SOURCE, not lines, which is why the `multilineMatches` field
+ * this file used to carry is gone: that existed solely because rule 3's
+ * positive sample could not be written in the wrapped form the code is written
+ * in, and a line-based rule could only ever be asserted one line at a time.
+ * A node rule's sample is parsed and scanned exactly the way the gate scans a
+ * file, so there is one kind of sample and no second assertion.
+ */
+interface NodeRule {
+  id: number;
+  key: string;
+  label: string;
+  paths: string[];
+  match: (node: object) => boolean;
+  at?: (node: object) => object;
+  samples?: RuleSamples;
+}
+
 interface LineRule {
   id: number;
   key: string;
@@ -125,16 +145,51 @@ const shippedLineRules: LineRule[] =
   ) ?? [];
 
 /**
+ * The NODE rules, imported the same way and for the same reason.
+ *
+ * They are a separate export because they are SCANNED differently and by
+ * nothing else — same baseline, same budgets, same failure report — so every
+ * assertion below that is about a rule's identity (a key, a baseline entry, a
+ * sample) has to see both lists, and only the two that are about a PATTERN are
+ * line-rule-shaped.
+ */
+const shippedNodeRules: NodeRule[] =
+  sole(
+    import.meta.glob<NodeRule[]>("../../scripts/guard-invariants-rules.mjs", {
+      import: "NODE_RULES",
+      eager: true,
+    }),
+  ) ?? [];
+
+/** Every rule with a baseline key, whichever engine answers it. */
+const shippedRules: (LineRule | NodeRule)[] = [...shippedLineRules, ...shippedNodeRules];
+
+/**
+ * `matchesIn` from the node-rule ENGINE, so a sample is scanned exactly the way
+ * a repo file is.
+ *
+ * A hand-rolled walk here would be a second implementation of the thing under
+ * test, which is the mistake this suite's own third-draft note records in
+ * another form — it used to regex-scrape the rules out of the gate's source.
+ */
+const astScan = sole(
+  import.meta.glob<{
+    matchesIn: (
+      rule: Pick<NodeRule, "match" | "at">,
+      file: string,
+      source: string,
+    ) => { file: string; line: number; text: string }[];
+  }>("../../scripts/_ast-scan.mjs", { eager: true }),
+);
+
+/**
  * One positive and one negative sample per rule, keyed by the rule's `key`.
  *
  * The positives are written to look like the real anti-pattern rather than
  * minimally satisfying the regex — a sample tuned to the pattern would pass
  * even if the pattern had drifted away from the code it is meant to catch.
  */
-const SAMPLES: Record<
-  string,
-  { matches: string[]; ignores: string[]; multilineMatches?: string[] }
-> = {
+const SAMPLES: Record<string, RuleSamples> = {
   rule2_spreadTernary: {
     matches: [
       "    ...(body !== undefined ? { body } : {}),",
@@ -159,55 +214,6 @@ const SAMPLES: Record<
       '        ...(opts.system === undefined ? [] : [{ role: "system", content: opts.system }]),',
       "    ...(opts.languages !== undefined && opts.languages.length > 0",
     ],
-  },
-  rule3_raceTimeout: {
-    matches: [
-      "  const won = await Promise.race([work, new Promise((_, r) => setTimeout(r, ms))]);",
-    ],
-    // The form Biome actually produces once the race does not fit on one line,
-    // which is how every real occurrence in this tree is written. See the
-    // multi-line assertion that consumes this.
-    multilineMatches: [
-      [
-        "  const won = await Promise.race([",
-        "    work,",
-        "    new Promise((_, reject) => setTimeout(reject, ms)),",
-        "  ]);",
-      ].join("\n"),
-      [
-        "    await Promise.race([",
-        "      settled,",
-        "      new Promise((resolve) => {",
-        "        setTimeout(resolve, GRACE_MS);",
-        "      }),",
-        "    ]);",
-      ].join("\n"),
-    ],
-    // The legitimate race this rule must not break: no timer in it.
-    ignores: [
-      "  const outcome = await Promise.race([work.then((value) => ({ value })), exited]);",
-      "  return pTimeout(work, { milliseconds: ms });",
-    ],
-  },
-  rule4_inlineTickPromise: {
-    matches: [
-      "    await new Promise((resolve) => setTimeout(resolve, 0));",
-      "  return new Promise((r) => setTimeout(r, 0));",
-      // A TYPE ARGUMENT, which a literal `(` after `new Promise` cannot cross —
-      // five live occurrences across aai, aai-ui and the two fuzz harnesses.
-      // Rule 4's own comment celebrates fixing a draft that "reported 0 against
-      // five real occurrences"; the fixed version reports 0 against five
-      // different ones, for an adjacent reason.
-      "  return new Promise<void>((r) => setTimeout(r, 0));",
-      // The OTHER zero-length yield, which neither timer rule knows: eight live
-      // occurrences. It takes no delay, so it can only ever be rule 4's.
-      "    await new Promise((r) => setImmediate(r));",
-    ],
-    // The 50ms twin is deliberately here AND in rule 19's `matches`: rule 4
-    // owns the zero-length yield, rule 19 the nonzero sleep, and the samples
-    // are only ever tested against their own rule. That the same line appears
-    // on both sides is the split working, not a contradiction.
-    ignores: ["    await flush();", "    await new Promise((r) => setTimeout(r, 50));"],
   },
   rule5_deleteProcessEnv: {
     matches: ['    delete process.env["AAI_API_KEY"];', "    delete process.env.AAI_API_KEY;"],
@@ -297,37 +303,6 @@ const SAMPLES: Record<
       '  return typeof root === "object" ? root.types : undefined;',
     ],
   },
-  rule19_handRolledSleep: {
-    matches: [
-      // A literal delay, a named one, and an EXPRESSION — the third is what the
-      // first draft of the delay fragment could not see, and it is a real line
-      // in a workflow fixture.
-      "    await new Promise((resolve) => setTimeout(resolve, 250));",
-      "  return new Promise((r) => setTimeout(r, ms));",
-      "  await new Promise((resolve) => setTimeout(resolve, (8 - index) * 20));",
-      // The type argument again, same gap as rule 4's.
-      '    new Promise<"hung">((r) => setTimeout(r, 5000)),',
-      // The other family: the one timer `vi.useFakeTimers()` cannot drive.
-      '    import { setTimeout as sleep } from "node:timers/promises";',
-      '    import { setTimeout as nodeSleep } from "node:timers/promises";',
-    ],
-    ignores: [
-      "    await sleep(250);",
-      "    await sleep(GUEST_DIAL_RETRY_MS, { unref: true });",
-      "    await sleep(delayMs, omitUndefined({ signal }));",
-      // Rule 4's shape, which this rule must NOT sweep in — a zero-length yield
-      // has a different remedy (`flush()` vs `tick()`, and which one you meant).
-      "    await new Promise((resolve) => setTimeout(resolve, 0));",
-      "  return new Promise((r) => setTimeout(r, 0));",
-      // A two-parameter executor supplying the comma. Without `[^,)]*` inside
-      // the call the greedy `.*` reads `, r` as the delay and reports a yield as
-      // a sleep.
-      "    await new Promise((resolve, reject) => setTimeout(resolve, 0));",
-      // Importing something else from the same module, which this rule has
-      // nothing to say about.
-      '    import { scheduler } from "node:timers/promises";',
-    ],
-  },
   rule18_splitOnQuestionMark: {
     matches: [
       // Both halves — the truncating query cut and the path cut with its dead
@@ -352,7 +327,8 @@ const SAMPLES: Record<
  * The samples a rule is checked against: the rule's own where it carries them,
  * this file's table otherwise.
  */
-const sampleFor = (rule: LineRule): RuleSamples | undefined => rule.samples ?? SAMPLES[rule.key];
+const sampleFor = (rule: LineRule | NodeRule): RuleSamples | undefined =>
+  rule.samples ?? SAMPLES[rule.key];
 
 describe("guard-invariants gate", () => {
   test("the script and baseline are readable", () => {
@@ -371,10 +347,13 @@ describe("guard-invariants gate", () => {
     }
   });
 
-  test("every line rule has samples", () => {
+  test("every rule has samples", () => {
     // A rule added without samples would be untested, which is the state this
-    // suite exists to make impossible. Either source counts.
-    for (const rule of shippedLineRules) {
+    // suite exists to make impossible. Either source counts, and BOTH engines
+    // are covered — a node rule added with no samples is exactly as invisible
+    // as a line rule with a dead pattern.
+    expect(shippedRules.length, "no rules parsed").toBeGreaterThanOrEqual(20);
+    for (const rule of shippedRules) {
       expect(
         sampleFor(rule),
         `rule ${rule.id} (${rule.key}) has no positive/negative samples`,
@@ -388,8 +367,11 @@ describe("guard-invariants gate", () => {
     // were being maintained, read and trusted while matching against nothing.
     // A dead sample is worse than no sample — it reads as coverage, and only
     // the "every rule has samples" direction was ever asserted.
-    const keys = new Set(shippedLineRules.map((r) => r.key));
-    expect(keys.size, "no line rules parsed").toBeGreaterThanOrEqual(7);
+    // Across BOTH kinds: a rule that migrates from grep to a parse keeps its
+    // key and brings its own samples, so a stale entry here is the same dead
+    // coverage rule 6's was — it just arrives by a new route.
+    const keys = new Set(shippedRules.map((r) => r.key));
+    expect(keys.size, "no rules parsed").toBeGreaterThanOrEqual(20);
     for (const key of Object.keys(SAMPLES)) {
       expect(keys, `SAMPLES has "${key}", which is not a shipped rule — retired?`).toContain(key);
     }
@@ -402,27 +384,6 @@ describe("guard-invariants gate", () => {
       expect(
         new RegExp(rule.re).test(line),
         `rule ${rule.key} does NOT match a line it must catch — the pattern is dead:\n  ${line}`,
-      ).toBe(true);
-    }
-  });
-
-  test.each(
-    shippedLineRules.filter(({ key }) => (SAMPLES[key]?.multilineMatches?.length ?? 0) > 0),
-  )("rule $id ($key) matches a REALISTIC multi-line occurrence", ({ key, re }) => {
-    // The scan is `git grep -nIE`, which is LINE-BASED, so this asserts the
-    // sample the way the gate would really see it: at least one line of it must
-    // match on its own. A JS-side `dotAll` test would pass here and prove
-    // nothing, because the shipped scanner can never look at two lines at once.
-    //
-    // Rule 3 is why this exists. Its only positive sample was a single line, so
-    // the guard was green while the rule was blind to the wrapped form Biome
-    // actually emits — the live occurrences are all written that way.
-    const samples = SAMPLES[key]?.multilineMatches ?? [];
-    for (const sample of samples) {
-      expect(
-        sample.split("\n").some((line) => new RegExp(re).test(line)),
-        `rule ${key} sees NO line of an occurrence it must catch — a line-anchored\n` +
-          `pattern cannot reach this shape:\n${sample}`,
       ).toBe(true);
     }
   });
@@ -472,7 +433,7 @@ describe("guard-invariants gate", () => {
   });
 
   test("baseline keys name real rules", () => {
-    const keys = new Set(shippedLineRules.map((r) => r.key));
+    const keys = new Set(shippedRules.map((r) => r.key));
     for (const key of Object.keys(baseline)) {
       if (key.startsWith("_")) continue;
       expect(keys, `the baseline names "${key}", which is not a shipped rule`).toContain(key);
@@ -492,6 +453,66 @@ describe("guard-invariants gate", () => {
     expect(script).toContain("_ratchet.mjs");
   });
 
+  test("every node rule carries a match function and no dead pattern fields", () => {
+    // A `re` or a `skipComments` on a node rule would be SILENTLY IGNORED —
+    // `scanNodeGroups` never reads either — which is the gate's own recurring
+    // failure shape wearing a new hat: a rule that looks configured and is not.
+    expect(
+      shippedNodeRules.length,
+      "no node rules parsed — has the rule shape changed?",
+    ).toBeGreaterThanOrEqual(6);
+    for (const rule of shippedNodeRules) {
+      expect(rule.key, `rule ${rule.id} parsed with an empty key`).not.toBe("");
+      expect(rule.match, `rule ${rule.id} has no match function`).toBeTypeOf("function");
+      expect(rule, `rule ${rule.id} carries an "re", which a node rule ignores`).not.toHaveProperty(
+        "re",
+      );
+      expect(
+        rule,
+        `rule ${rule.id} carries "skipComments", which a node rule ignores — a comment is not a node`,
+      ).not.toHaveProperty("skipComments");
+    }
+  });
+
+  test("no rule id is claimed by both engines", () => {
+    // Ids are stable identifiers quoted in commits and in the baseline's
+    // history. A migration MOVES a rule between the two lists; a copy-paste
+    // that left the original behind would double-count every occurrence
+    // against one budget and read as a rule that suddenly regressed.
+    const ids = shippedRules.map((r) => r.id).sort((a, b) => a - b);
+    expect(new Set(ids).size, `a rule id appears twice: ${ids.join(", ")}`).toBe(ids.length);
+  });
+
+  test.each(shippedNodeRules)("rule $id ($key) matches its anti-pattern", (rule) => {
+    const samples = sampleFor(rule);
+    if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
+    for (const source of samples.matches) {
+      expect(
+        astScan?.matchesIn(rule, "sample.ts", source).length ?? 0,
+        `rule ${rule.key} does NOT match source it must catch — the rule is dead:\n${source}`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  test.each(shippedNodeRules)("rule $id ($key) spares its legitimate twin", (rule) => {
+    const samples = sampleFor(rule);
+    if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
+    for (const source of samples.ignores) {
+      expect(
+        astScan?.matchesIn(rule, "sample.ts", source) ?? [],
+        `rule ${rule.key} matches source it must NOT flag:\n${source}`,
+      ).toEqual([]);
+    }
+  });
+
+  test("the gate scans both engines", () => {
+    // The line half is asserted above by `_ratchet.mjs`. This is its twin: a
+    // node rule that is defined, sampled and never SCANNED would pass every
+    // assertion in this file while checking nothing in the tree.
+    expect(script).toContain("scanNodeGroups");
+    expect(script).toContain("NODE_RULES");
+  });
+
   test("the gate is wired into both the local check and CI", () => {
     // The repo has been here before: the quality ratchets lived only in
     // the local check script, which CI never invokes, so `git push --no-verify`
@@ -500,200 +521,5 @@ describe("guard-invariants gate", () => {
       expect(text, `${path} not found`).toBeTypeOf("string");
       expect(text, `${path} no longer references check:invariants`).toContain("check:invariants");
     }
-  });
-});
-
-/**
- * Rule 20 is a SCANNER, not a line rule, so the sample table above cannot reach
- * it — and a scanner is where the silent-blindness failure is worst: it reads
- * the real tree, and a healthy tree is exactly a tree with nothing to find. Its
- * whole success output is `0 ✓`, which is also what a scanner that had stopped
- * parsing frontmatter, or stopped finding `.changeset/*.md`, would print.
- *
- * So the per-file half is split out as `checkChangeset(file, source, known)` and
- * driven here with real samples. Rule 20's own subject is a gate that reports
- * success over a mistake — `pnpm changeset status` exits 0 on a typo'd package
- * name — so shipping it with a spec that could do the same would be the joke
- * writing itself.
- */
-const changesets = sole(
-  import.meta.glob<{
-    checkChangeset: (
-      file: string,
-      source: string,
-      known: Set<string>,
-    ) => { file: string; line: number; text: string }[];
-    checkChangesetConsumable: (
-      file: string,
-      source: string,
-      versionable: Set<string>,
-    ) => { file: string; line: number; text: string }[];
-    checkChangesetShippable: (
-      file: string,
-      source: string,
-    ) => { file: string; line: number; text: string }[];
-    workspacePackageNames: () => Set<string>;
-    versionablePackageNames: () => Set<string>;
-  }>("../../scripts/guard-invariants-changesets.mjs", { eager: true }),
-);
-
-describe("guard-invariants rule 20 (changeset package names)", () => {
-  const known = new Set(["@alexkroman1/aai", "aai-server"]);
-  const check = (source: string) => changesets?.checkChangeset("c.md", source, known) ?? [];
-
-  test.each([
-    ["a package that does not exist", '---\n"@alexkroman1/aai-typo": patch\n---\n\nx\n'],
-    ["a bump type that does not exist", '---\n"@alexkroman1/aai": pathc\n---\n\nx\n'],
-    ["an unquoted unknown package", "---\naai-servr: patch\n---\n\nx\n"],
-    ["no frontmatter at all", "just a summary\n"],
-    ["frontmatter that never closes", '---\n"@alexkroman1/aai": patch\n\nx\n'],
-  ])("flags %s", (_label, source) => {
-    expect(check(source).length, "rule 20 found nothing in a bad changeset").toBeGreaterThan(0);
-  });
-
-  test.each([
-    ["a valid single-package changeset", '---\n"@alexkroman1/aai": patch\n---\n\nx\n'],
-    ["a private workspace package", '---\n"aai-server": minor\n---\n\nx\n'],
-    ["an unquoted valid package", "---\naai-server: major\n---\n\nx\n"],
-    // `pnpm changeset add --empty` is the documented way to say "no release".
-    ["an empty frontmatter block", "---\n---\n\n"],
-  ])("spares %s", (_label, source) => {
-    expect(check(source), "rule 20 flagged a legitimate changeset").toEqual([]);
-  });
-
-  test("the workspace-name corpus is floored", () => {
-    // Every name is checked by MEMBERSHIP in this set, so a derivation that has
-    // gone blind must throw rather than let the comparison run against nothing.
-    const names = changesets?.workspacePackageNames() ?? new Set();
-    expect(names.size, "too few workspace packages discovered").toBeGreaterThanOrEqual(9);
-    expect(names, "the SDK is not among the discovered packages").toContain("@alexkroman1/aai");
-  });
-
-  test("the rule is wired into the gate", () => {
-    expect(script).toContain("scanChangesetPackageNames");
-  });
-
-  /**
-   * The second half of rule 20: a changeset that names real packages and STILL
-   * cannot move any of them. It wedges the release pipeline permanently and,
-   * because the action only publishes when nothing is pending, stops publishing
-   * altogether — which took production down, since the guest image installs the
-   * SDK from npm at the version this repo declares.
-   *
-   * Driven with an explicit `versionable` set rather than the real config, so the
-   * samples keep asserting the same thing after somebody flips
-   * `privatePackages.version`.
-   */
-  describe("consumability", () => {
-    // What it looks like with `privatePackages.version` off: the private ones
-    // are real packages and are not versionable.
-    const versionable = new Set(["@alexkroman1/aai"]);
-    const consumable = (source: string) =>
-      changesets?.checkChangesetConsumable("c.md", source, versionable) ?? [];
-
-    test.each([
-      ["only a non-versionable package", '---\n"aai-server": patch\n---\n\nx\n'],
-      ["several, none versionable", '---\n"aai-server": patch\n"aai-guest": patch\n---\n\nx\n'],
-    ])("flags a changeset naming %s", (_label, source) => {
-      expect(consumable(source).length, "an inert changeset was not flagged").toBeGreaterThan(0);
-      expect(consumable(source)[0]?.text).toContain("never be consumed");
-    });
-
-    test.each([
-      ["a versionable package", '---\n"@alexkroman1/aai": patch\n---\n\nx\n'],
-      [
-        "a mix, at least one versionable",
-        '---\n"@alexkroman1/aai": patch\n"aai-server": patch\n---\n\nx\n',
-      ],
-      // `--empty` names nothing, is consumed, and bumps nothing by design.
-      ["nothing at all (--empty)", "---\n---\n\n"],
-      // A malformed changeset is checkChangeset's finding; reporting it twice
-      // would make one mistake look like two.
-      ["malformed frontmatter", "no frontmatter here\n"],
-    ])("spares a changeset naming %s", (_label, source) => {
-      expect(consumable(source), "a legitimate changeset was flagged").toEqual([]);
-    });
-
-    describe("a bump that ships nowhere", () => {
-      /**
-       * The THIRD flavour of inert release metadata, and the one every other
-       * gate passes. `aai-studio-client`, `aai-guest` and `aai-templates` are
-       * each built into another package's artifact, so bumping one alone writes
-       * a version and a CHANGELOG entry and delivers nothing — while the
-       * pre-push `changeset status` is satisfied, because it only asks whether
-       * the changed packages have A changeset. An author who changes the studio
-       * front-end, is correctly told to write a changeset, and names the package
-       * they changed has cleared every check and deployed nothing.
-       */
-      const shippable = (source: string) =>
-        changesets?.checkChangesetShippable("c.md", source) ?? [];
-
-      test.each([
-        ["aai-studio-client alone", '---\n"aai-studio-client": patch\n---\n\nx\n'],
-        ["aai-guest alone", '---\n"aai-guest": patch\n---\n\nx\n'],
-        ["aai-templates alone", '---\n"aai-templates": patch\n---\n\nx\n'],
-        [
-          "a built-in package beside a NON-carrier",
-          '---\n"aai-studio-client": patch\n"aai-evals": patch\n---\n\nx\n',
-        ],
-      ])("flags a changeset naming %s", (_label, source) => {
-        expect(
-          shippable(source).length,
-          "a bump that ships nowhere was not flagged",
-        ).toBeGreaterThan(0);
-      });
-
-      test.each([
-        [
-          "aai-studio-client with the studio server",
-          '---\n"aai-studio-client": patch\n"aai-studio-server": patch\n---\n\nx\n',
-        ],
-        [
-          "aai-guest with the platform server",
-          '---\n"aai-guest": patch\n"aai-server": patch\n---\n\nx\n',
-        ],
-        [
-          "aai-templates with a fixed-group member",
-          '---\n"aai-templates": patch\n"@alexkroman1/aai-cli": patch\n---\n\nx\n',
-        ],
-        // A package with its own ship path is not this rule's business.
-        ["only the platform server", '---\n"aai-server": patch\n---\n\nx\n'],
-        ["nothing at all (--empty)", "---\n---\n\n"],
-        ["malformed frontmatter", "no frontmatter here\n"],
-      ])("spares a changeset naming %s", (_label, source) => {
-        expect(shippable(source), "a legitimate changeset was flagged").toEqual([]);
-      });
-
-      test("every package the table names still exists in the workspace", () => {
-        // The table matches by NAME, so a rename would make it match nothing and
-        // report `0 ✓` over the hole it exists to close. The scan asserts this
-        // too; pinning it here is what makes a rename fail in the ordinary test
-        // run rather than only under `pnpm check`.
-        const known = changesets?.workspacePackageNames() ?? new Set<string>();
-        for (const name of [
-          "aai-studio-client",
-          "aai-guest",
-          "aai-templates",
-          "aai-server",
-          "aai-studio-server",
-          "@alexkroman1/aai-cli",
-        ]) {
-          expect(known, `${name} is no longer a workspace package`).toContain(name);
-        }
-      });
-    });
-
-    test("the real config versions private packages, so nothing in the tree is inert", () => {
-      // The fix for the incident, asserted as a property rather than trusted:
-      // this repo writes changesets for its private packages (aai-server,
-      // aai-studio-server, aai-guest…), so versioning them is what keeps those
-      // changesets consumable.
-      const real = changesets?.versionablePackageNames() ?? new Set<string>();
-      expect(real, "the SDK is not versionable").toContain("@alexkroman1/aai");
-      expect(
-        real,
-        "private packages are not versionable — changesets naming them would wedge the release",
-      ).toContain("aai-server");
-    });
   });
 });
