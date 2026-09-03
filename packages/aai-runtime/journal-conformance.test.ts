@@ -70,7 +70,7 @@ import {
 } from "./journal-conformance.ts";
 import { createMemoryJournal } from "./workflow-journal-memory.ts";
 import { createPlatformJournal } from "./workflow-journal-platform.ts";
-import type { JournalStore, RunRecord, RunStatus } from "./workflow-journal-types.ts";
+import type { JournalStore, RunRecord, RunStatus, StepEntry } from "./workflow-journal-types.ts";
 import { JournalConflictError } from "./workflow-journal-types.ts";
 
 /* -------------------------------------------------------------------------- */
@@ -149,6 +149,25 @@ function optStrs(body: Body, key: string): readonly string[] | undefined {
 /** A stored value on its way back out: the platform's `text()` helper. */
 const text = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
+
+/**
+ * One step as the ROUTE answers it, shared by the two step reads.
+ *
+ * One mapping, because the two reads differ only in how many rows they answer
+ * and a field added to one is silently absent from the other — which is a drift
+ * between the wire and the client's `toStep`, not between two backends, so the
+ * conformance list itself cannot see it.
+ */
+const stepRow = (step: StepEntry): Record<string, unknown> => ({
+  key: step.key,
+  name: step.name,
+  status: step.status,
+  output: text(step.output),
+  error: step.error?.message,
+  attempts: step.attempts,
+  startedAt: step.startedAt,
+  finishedAt: step.finishedAt,
+});
 
 /**
  * The status, CHECKED — the route takes it as a plain string and the union is
@@ -245,18 +264,14 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
       );
     }
     case "readSteps":
-      return store.readSteps(str(body, "runId")).then((steps) =>
-        steps.map((step) => ({
-          key: step.key,
-          name: step.name,
-          status: step.status,
-          output: text(step.output),
-          error: step.error?.message,
-          attempts: step.attempts,
-          startedAt: step.startedAt,
-          finishedAt: step.finishedAt,
-        })),
-      );
+      return store.readSteps(str(body, "runId")).then((steps) => steps.map(stepRow));
+    case "readStep":
+      // `null` and not `undefined` for the absent case, because this crosses
+      // `JSON.stringify` — the real route answers the same way, and the client's
+      // `toStep` reads either as "not settled".
+      return store
+        .readStep(str(body, "runId"), str(body, "key"))
+        .then((step) => (step ? stepRow(step) : null));
     case "claimAttempt":
       return store.claimAttempt(str(body, "runId"), str(body, "key"));
     case "releaseAttempt":

@@ -445,6 +445,11 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
     });
     expect(await journal.readSteps(sql, SLUG, runId)).toHaveLength(1);
     expect(await journal.readSteps(sql, OTHER, runId)).toEqual([]);
+    // The KEYED read is the same claim on the same table by a second statement,
+    // and a neighbour who guessed the run id has usually guessed the step key
+    // too — `name#occurrence` is the author's own literal plus a counter.
+    expect(await journal.readStep(sql, SLUG, runId, "a#0")).toBeDefined();
+    expect(await journal.readStep(sql, OTHER, runId, "a#0")).toBeNull();
   });
 
   test("a neighbour cannot move this tenant's status", async () => {

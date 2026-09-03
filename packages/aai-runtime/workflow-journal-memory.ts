@@ -328,6 +328,13 @@ export function createMemoryJournal(): JournalStore {
       return [...(slotOf(runId)?.steps ?? [])].sort(settledFirst).map((entry) => ({ ...entry }));
     },
 
+    async readStep(runId: string, key: string): Promise<StepEntry | undefined> {
+      // A COPY, for the same reason `readSteps` maps one: the stored array is
+      // append-only and `appendStep`'s own idempotency reads it.
+      const entry = slotOf(runId)?.steps.find((step) => step.key === key);
+      return entry ? { ...entry } : undefined;
+    },
+
     async claimAttempt(runId: string, key: string): Promise<number> {
       const slot = slotOf(runId);
       if (!slot) throw new Error(`workflow run ${runId} not found`);

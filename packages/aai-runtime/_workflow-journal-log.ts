@@ -131,6 +131,7 @@ export function recordJournal(inner: JournalStore = createMemoryJournal()): Reco
     getRun: (runId) => inner.getRun(runId),
     listRuns: (workflow, limit) => inner.listRuns(workflow, limit),
     readSteps: (runId) => inner.readSteps(runId),
+    readStep: (runId, key) => inner.readStep(runId, key),
 
     createRun: (record) =>
       log(

@@ -22,11 +22,19 @@ The claims are of four different kinds, which is why there are four files:
   rather than invented: `claimAttempt` on a non-number (a made-up ceiling does
   not hold), `appendStep` on an unreadable answer (the STORED entry is what makes
   a double execution deterministic), `claimSleep` likewise.
-- **`aai-server/platform-workflow-journal.test.ts`** — SHAPE, over all twelve
+- **`aai-server/platform-workflow-journal.test.ts`** — SHAPE, over all thirteen
   methods as a TABLE rather than a case each: every statement binds the slug as
   `$1`, no statement binds a bare `$n::jsonb`, `claimAttempt` issues exactly one
   query. A table because the interesting failure is one method forgetting, and a
   hand-written case per method is what a thirteenth method would not get.
+
+  **It did not get it, and there is now an assertion instead of this warning.**
+  `readStep` was added and the table did not notice — the paragraph above
+  predicted exactly that and was still only prose. The roster is checked against
+  the imported NAMESPACE now ("the table names every journal method"), so a
+  fourteenth method fails this suite rather than being remembered. Same reason
+  every counting gate in this repo carries a floor: the success output of a
+  hand-kept table is indistinguishable from a complete one.
 - **`aai-server/platform-workflow-journal.scenario.test.ts`** — the only place
   TENANCY is testable, that being a claim about column values in a shared table.
   Two tenants' rows, and every cross-tenant read comes back empty.
