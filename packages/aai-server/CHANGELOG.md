@@ -1,5 +1,19 @@
 # @alexkroman1/aai-server
 
+## 5.1.1
+
+### Patch Changes
+
+- 9cb7392: Forward AAI_DEBUG from the server's env into an agent guest's boot env, so a deployed guest's debug logging can be switched on at all. debugLoggingEnabled is a module-level const over process.env and a guest's own env arrives as a boot file that is never merged into it, so every runtime debug line — including platform-rpc.ts's per-call decomposition of the guest to platform journal RPC, the only place that RPC exists — was dead in production. Forwarded explicitly like AAI_GUEST_IDLE_EXIT_MS, so the minimal-env property is preserved: the guest still inherits nothing. Boot-time only, and per replica.
+- 9cb7392: Log a platform admin reservation's statement duration on the SUCCESS path, so the guest's elapsed minus (waitedMs + workMs) is really computable
+- Updated dependencies [4fb6b05]
+- Updated dependencies [9cb7392]
+- Updated dependencies [93ea30c]
+  - @alexkroman1/aai@13.2.0
+  - @alexkroman1/aai-runtime@13.2.0
+  - aai-guest@0.5.16
+  - @alexkroman1/aai-ui@13.2.0
+
 ## 5.1.0
 
 ### Minor Changes
