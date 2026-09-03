@@ -29,8 +29,10 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import {
   createVmRunCode,
   customEventsIn,
+  describeTurn,
   lastStateIn,
   toolArgsIn,
+  toolNames,
   toolResultIn,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -120,7 +122,7 @@ describeEval(
 
         // "to watch" is the category and "cozy" is the mood; the shelf is the
         // tool's, so answering from the model's own taste is the regression.
-        expect(turn.toolCalls.map((c) => c.name)).toEqual(["recommend"]);
+        expect(toolNames(turn.toolCalls)).toEqual(["recommend"]);
         const call = turn.toolCalls[0]!;
         expect(call.args).toEqual({ category: "movie", mood: "cozy" });
 
@@ -146,7 +148,7 @@ describeEval(
         await session.say("I want something cozy to watch tonight.");
         const turn = await session.say("Now give me something spooky to read.");
 
-        expect(turn.toolCalls.map((c) => c.name)).toEqual(["recommend"]);
+        expect(toolNames(turn.toolCalls)).toEqual(["recommend"]);
         expect(turn.toolCalls[0]!.args).toEqual({ category: "book", mood: "spooky" });
 
         // The slot survived the turn boundary: the frame the page renders after
@@ -208,10 +210,11 @@ describeEval(
         // reached for code at all, and the results are read off the same list
         // below. `toolArgsIn` answers the other half, the code it submitted.
         const ran = turn.toolCalls.filter((c) => c.name === "run_code");
-        expect(
-          ran,
-          `tools called: [${turn.toolCalls.map((c) => c.name).join(", ")}]; said: ${turn.text}`,
-        ).not.toEqual([]);
+        // `describeTurn` is the message: "expected [] not to equal []" says
+        // nothing about a companion that talked its way through the sum
+        // instead, and it names a cancelled reply, which is the usual reason a
+        // turn reached for nothing at all.
+        expect(ran, describeTurn(turn)).not.toEqual([]);
         // The recipe is the prompt's, and it is two constants: a 90-minute cycle
         // plus the 15 minutes it takes to fall asleep. Arithmetic done in the
         // model's head has neither of them anywhere in the code.

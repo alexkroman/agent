@@ -24,7 +24,13 @@
 
 /** The def a DEPLOYED agent runs — see `agent.test.ts` on why the glob is here. */
 import agentDef from "virtual:aai/agent";
-import { type EvalSession, lastStateIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  describeToolCalls,
+  describeTurn,
+  type EvalSession,
+  lastStateIn,
+  toolNames,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -56,8 +62,6 @@ const ProjectedPlan = z.object({
  * reader for exactly this.
  */
 const planState = (session: EvalSession) => lastStateIn(session.events(), ProjectedPlan);
-
-const named = (calls: readonly { name: string }[]): string[] => calls.map((call) => call.name);
 
 describeEval(agentDef, (test) => {
   test(
@@ -122,7 +126,10 @@ describeEval(agentDef, (test) => {
         "I want to work out whether it is cheaper to take the train or fly from London to Edinburgh next month.",
       );
       const started = session.toolCalls().find((call) => call.name === "start_plan");
-      expect(started, `tools called: ${named(session.toolCalls()).join(", ")}`).toBeDefined();
+      // The whole SESSION's calls, not one turn's: the plan may be started on
+      // either utterance, and "expected undefined to be defined" says nothing
+      // about a desk that talked instead. `describeToolCalls` is that sentence.
+      expect(started, describeToolCalls(session.toolCalls())).toBeDefined();
       const planned = planState(session);
       // The tool's own result rides in the message: a planner that FAILED (a
       // gateway error, a schema the provider would not honour) writes nothing,
@@ -131,8 +138,8 @@ describeEval(agentDef, (test) => {
       expect(planned?.plan.length ?? 0).toBeGreaterThan(0);
 
       const worked = await session.say("Yes, go ahead and start on it.");
-      const calls = named(worked.toolCalls).filter((name) => name === "work_next_step").length;
-      expect(calls, `tools called: [${named(worked.toolCalls).join(", ")}]`).toBeGreaterThan(0);
+      const calls = toolNames(worked.toolCalls).filter((name) => name === "work_next_step").length;
+      expect(calls, describeTurn(worked)).toBeGreaterThan(0);
 
       const after = planState(session);
       const done = after?.done ?? [];
@@ -180,7 +187,7 @@ describeEval(agentDef, (test) => {
       const revised = turn.toolCalls.find((call) => call.name === "revise_plan");
       expect(
         revised,
-        `tools called: ${named(turn.toolCalls).join(", ")} — the caller changed the objective, ` +
+        `${describeTurn(turn)} — the caller changed the objective, ` +
           "so this is `revise_plan`, not a plan rewritten by hand",
       ).toBeDefined();
       expect(revised?.args.instruction).toBeTruthy();

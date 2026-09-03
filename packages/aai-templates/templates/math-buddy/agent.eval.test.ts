@@ -18,6 +18,7 @@ import {
   createVmRunCode,
   type EvalTurn,
   toolArgsIn,
+  toolNames,
   toolResultsIn,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -59,7 +60,7 @@ describeEval(
         // The prompt hands the tutor the factors; the finding it guards against
         // is a tutor that recites a remembered figure instead. A factor in the
         // code is the evidence that the conversion was computed, not recalled.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
+        expect(toolNames(turn.toolCalls)).toContain("run_code");
         const code = codeIn(turn);
         expect(code).toContain("5");
         expect(code).toMatch(/1\.60|1\.61|0\.621|8\.04/);
@@ -79,7 +80,7 @@ describeEval(
         // A model asked for dice will happily make three numbers up, and the
         // reply is indistinguishable from a real roll. `Math.random` in the code
         // is the only thing that tells them apart.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
+        expect(toolNames(turn.toolCalls)).toContain("run_code");
         const code = codeIn(turn);
         expect(code).toMatch(/Math\.random/);
         expect(code).toContain("20");

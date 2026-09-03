@@ -27,7 +27,13 @@
 
 /** The def a DEPLOYED agent runs — see `agent.test.ts` on why the glob is here. */
 import agentDef from "virtual:aai/agent";
-import { type EvalSession, statesIn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  describeToolCalls,
+  describeTurn,
+  type EvalSession,
+  statesIn,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -110,10 +116,10 @@ describeEval(agentDef, (test) => {
       // The reply rides in the message, because the failure that matters here is
       // a turn that SPOKE without looking anything up — "let me check that for
       // you" and then nothing, or worse, a notice period from memory.
-      expect(
-        asked.length,
-        `tools called: [${turn.toolCalls.map((c) => c.name).join(", ")}]; said: ${turn.text}`,
-      ).toBe(1);
+      // `describeTurn` is that sentence, and it says the two things a
+      // hand-built one left out: "called no tools" rather than an empty
+      // bracket, and whether the reply was cancelled.
+      expect(asked.length, describeTurn(turn)).toBe(1);
 
       for (const payload of lookups(session)) {
         // Three legal outcomes, and the invariant that spans them: an answer the
@@ -143,13 +149,9 @@ describeEval(agentDef, (test) => {
       await session.say("Yes please, log that one — my callback number is 07700 900123.");
 
       const logged = session.toolCalls().find((call) => call.name === "log_ticket");
-      expect(
-        logged,
-        `tools called: ${session
-          .toolCalls()
-          .map((c) => c.name)
-          .join(", ")}`,
-      ).toBeDefined();
+      // The claim spans both turns, so the message does too: `describeToolCalls`
+      // over the session's own list, where `describeTurn` would describe one.
+      expect(logged, describeToolCalls(session.toolCalls())).toBeDefined();
       expect(logged?.result).toMatch(/TCK\d{4}/);
 
       const latest = frames(session).at(-1);
@@ -190,10 +192,7 @@ describeEval(agentDef, (test) => {
       const turn = await session.say("How much notice do I have to give to cancel my contract?");
 
       const [payload] = lookups(session);
-      expect(
-        payload,
-        `tools called: [${turn.toolCalls.map((c) => c.name).join(", ")}]; said: ${turn.text}`,
-      ).toBeDefined();
+      expect(payload, describeTurn(turn)).toBeDefined();
       // The whole verdict in the message: `grounded: undefined` on its own does
       // not say whether the lookup failed, or ran and refused.
       const verdict = JSON.stringify(payload);
@@ -239,10 +238,7 @@ describeEval(agentDef, (test) => {
       );
 
       const [payload] = lookups(session);
-      expect(
-        payload,
-        `tools called: [${turn.toolCalls.map((c) => c.name).join(", ")}]; said: ${turn.text}`,
-      ).toBeDefined();
+      expect(payload, describeTurn(turn)).toBeDefined();
       // Withheld, not softened: `answer: null` is the tool refusing to hand the
       // model something to read out, and the guidance is the exit the grading
       // apparatus needs — a support line that can only answer will answer wrong.

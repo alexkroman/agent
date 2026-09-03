@@ -25,7 +25,7 @@
  * tool-choice claim below then passes or fails for the wrong reason.
  */
 import agentDef from "virtual:aai/agent";
-import { toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import { toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -57,7 +57,7 @@ describeEval(agentDef, (test) => {
       // about voice frameworks in general.
       const turn = await session.say("Can your agents make HTTP requests?");
 
-      expect(turn.toolCalls.map((c) => c.name)).toEqual(["search_knowledge"]);
+      expect(toolNames(turn.toolCalls)).toEqual(["search_knowledge"]);
       const call = turn.toolCalls[0]!;
       expect(typeof (call.args as { query?: unknown }).query).toBe("string");
       // The right entry, out of four: the one this question is really about.
@@ -81,7 +81,7 @@ describeEval(agentDef, (test) => {
     async ({ session }) => {
       const turn = await session.say("What topics can you help me with?");
 
-      expect(turn.toolCalls.map((c) => c.name)).toEqual(["list_topics"]);
+      expect(toolNames(turn.toolCalls)).toEqual(["list_topics"]);
       // Every question in `knowledge.json` and nothing else — the check that
       // catches an index built from a stale copy of the asset.
       expect(toolResultIn(turn.toolCalls, "list_topics", z.array(z.string()))).toEqual(

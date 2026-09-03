@@ -13,7 +13,7 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 // SCRIPTED model (its `stubReply`), which still boots this agent, still
 // resolves `tools/`, and still executes the tool a script names — so a stub run
 // proves the wiring and proves nothing about what the agent chose.
-import { lastStateIn, statesIn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import { lastStateIn, statesIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -63,7 +63,7 @@ describeEval(agentDef, (test) => {
 
       // One tool, and the right one: quoting a price without adding the pizza,
       // or adding it twice, are both real findings.
-      expect(turn.toolCalls.map((c) => c.name)).toEqual(["add_pizza"]);
+      expect(toolNames(turn.toolCalls)).toEqual(["add_pizza"]);
       const call = turn.toolCalls[0]!;
       const args = call.args as { size: string; crust: string; toppings: string[] };
       expect(args.size).toBe("large");
@@ -111,7 +111,7 @@ describeEval(agentDef, (test) => {
       // turn leaves the model with nothing to address.
       const turn = await session.say("Actually, make that a large.");
 
-      expect(turn.toolCalls.map((c) => c.name)).toEqual(["update_pizza"]);
+      expect(toolNames(turn.toolCalls)).toEqual(["update_pizza"]);
       const call = turn.toolCalls[0]!;
       expect(call.args).toMatchObject({ pizza_id: 1, size: "large" });
 

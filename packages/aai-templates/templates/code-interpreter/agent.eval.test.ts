@@ -28,6 +28,7 @@ import {
   createVmRunCode,
   type EvalTurn,
   toolArgsIn,
+  toolNames,
   toolResultsIn,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -68,7 +69,7 @@ describeEval(
         // The template's CRITICAL RULE, and the whole reason it declares
         // run_code: a model that answers this one directly has regressed, and it
         // is the easiest question in the file to answer wrongly with confidence.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
+        expect(toolNames(turn.toolCalls)).toContain("run_code");
         const code = codeIn(turn);
         expect(code).toContain("127");
         expect(code).toContain("849");
@@ -99,7 +100,7 @@ describeEval(
         // The prompt lists this exact question under "you MUST use code for".
         // It is the case a narrower reading of the rule ("code is for maths")
         // silently drops.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
+        expect(toolNames(turn.toolCalls)).toContain("run_code");
         expect(codeIn(turn)).toMatch(/Date|2000/);
         // The code RAN rather than being refused — but the ANSWER is
         // deliberately not asserted here, and the reason is worth knowing before
