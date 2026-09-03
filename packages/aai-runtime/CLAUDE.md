@@ -765,7 +765,7 @@ exist, and `readSteps`'s tie order. Read that file when you are changing a
 backend or the conformance table; nothing in it is needed to work elsewhere in
 this package.
 
-### A journal read is a round trip, and three shapes issued it N times
+### A journal read is a round trip, and four shapes issued it N times
 
 Every platform-arm `JournalStore` call is one `POST /:slug/workflow-journal`,
 measured at **~840 ms of server time**, on a route holding one of
@@ -775,15 +775,22 @@ on ONE run: a fan-out's `settledSince` re-reads the WHOLE journal once per step,
 the overlapping walks above each do it again, and a delivery takes three
 SEQUENTIAL opening reads.
 
-`_journal-shared-reads.ts` collapses the first two — `getRun` and `readSteps`
-are the only methods that are pure functions of a run id — and its module doc
-carries the argument. The one thing to know first: it is a **COALESCER, not a
-cache**, so a caller arriving mid-flight gets a TRAILING read and none is
-answered from a read that started before it asked. `settledSince` exists to
-rely on exactly that; a cache would silently defeat it.
+`_journal-shared-reads.ts` collapses the first two — `getRun`, `readSteps` and
+`readSleeps` being the reads that are pure functions of a run id — and its
+module doc carries the argument. The one thing to know first: it is a
+**COALESCER, not a cache**, so a caller arriving mid-flight gets a TRAILING read
+and none is answered from a read that started before it asked. `settledSince`
+exists to rely on exactly that; a cache would silently defeat it.
 `ReplayOptions.steps` is the third — the step read is issued BESIDE the
 `running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them (the
 admin pool note under "Stateless server", `packages/aai-server/CLAUDE.md`).
+
+The FOURTH is a WAIT, and it was the worst of them because it grew with the
+number of DELIVERIES rather than with the body: a settled step was answered from
+the walk's snapshot and every elapsed `ctx.sleep` was still a `claimSleep` round
+trip, so a polling run's traffic was quadratic. `JournalStore.readSleeps` and
+[`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md), "A wait was outside the whole-read
+guarantee", carry the measurement and the rule for using the snapshot.
 
 ### An attempt is a LEASE, not a tally
 

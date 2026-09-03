@@ -34,7 +34,7 @@ export const overlappingStepAppend: Interleaving = {
   deliveries: 2,
   stepConcurrency: 2,
   arm: "direct",
-  ordering: [2, 1, 4, 3, 5, 6, 8, 7, 10, 11, 9, 12, 13, 14, 15, 16],
+  ordering: [2, 1, 3, 5, 7, 6, 8, 4, 9, 11, 10, 12, 13, 14, 15, 16, 17, 18],
   catches: {
     defect: "overwritingAppend",
     law: "and read back as",

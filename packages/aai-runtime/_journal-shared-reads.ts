@@ -34,10 +34,12 @@
  * earlier snapshot missed). N simultaneous callers therefore cost TWO round
  * trips rather than N, and a caller asking after the burst reads fresh.
  *
- * That is also why only the two READ methods are wrapped. A write, a claim and
- * a compare-and-set each carry their own arguments and must each reach the
- * platform; only `getRun(runId)` and `readSteps(runId)` are pure functions of a
- * key.
+ * That is also why only the BULK READS are wrapped. A write, a claim and a
+ * compare-and-set each carry their own arguments and must each reach the
+ * platform; `getRun(runId)`, `readSteps(runId)` and `readSleeps(runId)` are the
+ * three that are pure functions of a key. `readStep(runId, key)` is not — it is
+ * keyed by two things, and its one caller reaches it once per contended step
+ * rather than in the concurrent burst this exists for.
  *
  * @internal
  */

@@ -15,7 +15,7 @@
  * records, where a SQL template read a constant declared below it.
  */
 
-import type { RunRecord, RunStatus, StepEntry } from "./workflow-journal-types.ts";
+import type { RunRecord, RunStatus, SleepRecord, StepEntry } from "./workflow-journal-types.ts";
 import { decodeStorageJson, encodeStorageJson } from "./workflow-typed-json.ts";
 
 /** A run row, as the driver hands it back. */
@@ -43,6 +43,21 @@ export type StepRow = {
   /** NULL for a row written before the column existed — see `StepEntry.startedAt`. */
   started_at: string | number | null;
   finished_at: string | number;
+};
+
+/**
+ * A sleep row, from the claim's `returning` and from the bulk read alike.
+ *
+ * `key` is optional because the CLAIM already knows which key it asked about and
+ * its statement does not select one back; the bulk read selects it, and narrows
+ * the type at its own call site — {@link toSleepRecord} never reads it.
+ */
+export type SleepRow = {
+  key?: string;
+  wake_at: string | number;
+  woken: boolean;
+  correlation_id: string | null;
+  kind: SleepRecord["kind"];
 };
 
 /**
@@ -89,6 +104,18 @@ export function toRunRecord(row: RunRow): RunRecord {
     ...(row.output === null ? {} : { output: decodeStorageJson(row.output) }),
     ...(row.error === null ? {} : { error: { message: row.error } }),
     ...(row.code_version === null ? {} : { codeVersion: row.code_version }),
+  };
+}
+
+export function toSleepRecord(row: SleepRow): SleepRecord {
+  return {
+    wakeAt: millis(row.wake_at),
+    woken: row.woken,
+    // `undefined` and not `null`, so a wait declared with no id compares equal
+    // across the three backends — and so the strict `correlationId !== undefined`
+    // test a targeted wake makes reads the same here as in memory.
+    correlationId: row.correlation_id ?? undefined,
+    kind: row.kind,
   };
 }
 

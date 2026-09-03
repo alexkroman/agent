@@ -23,7 +23,7 @@
  * reason — "one case list cannot span the boundary" — and the reason is true of
  * THAT table: it lives in `aai-server`, and `aai-runtime` may not import it.
  * What it is not is a reason for the contract to go unparried, which is how
- * three implementations of twelve methods came to be checked by three unrelated
+ * three implementations of one interface came to be checked by three unrelated
  * suites that shared no assertion. A review of the branch that added the third
  * found FIVE drifts between them, and every one was an edge case about ABSENCE:
  * `undefined` bound to a driver that refuses it, a wire record parsed as a step

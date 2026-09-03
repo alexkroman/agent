@@ -36,11 +36,14 @@ import type { Interleaving } from "./interleaving.ts";
  * run wrun_concurrent was created twice
  * ```
  *
- * The ordering is the same one `double-terminal-move.ts` carries, and that is
- * not a copy: both shrink to the same minimal program — one ordinary step under
- * two deliveries — so the same schedule reaches both moments. They are kept
- * apart because a reader looking for the START race should not have to find it
- * inside a file named for the terminal one.
+ * It shrinks to the same minimal program `double-terminal-move.ts` does — one
+ * ordinary step under two deliveries — and for a while carried the same ordering
+ * too, which was not a copy: one schedule reached both moments. The two
+ * regenerated apart when `readSleeps` added a round trip per walk (a walk that
+ * short-circuits on a terminal status takes a different NUMBER of them), so they
+ * are two orderings now. They were always kept in two files, because a reader
+ * looking for the START race should not have to find it inside a file named for
+ * the terminal one.
  */
 export const collidingStart: Interleaving = {
   name: "colliding-start",
@@ -49,6 +52,6 @@ export const collidingStart: Interleaving = {
   deliveries: 2,
   stepConcurrency: 1,
   arm: "direct",
-  ordering: [2, 1, 4, 3, 5, 6, 8, 7, 9, 10, 12, 11, 13, 14, 15],
+  ordering: [2, 1, 3, 5, 7, 6, 8, 9, 4, 11, 12, 13, 10, 14],
   catches: { defect: "silentDuplicateCreate", law: "colliding starts won the id" },
 };

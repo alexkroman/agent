@@ -113,6 +113,7 @@ const METHODS = [
   "readStep",
   "claimAttempt",
   "releaseAttempt",
+  "readSleeps",
   "claimSleep",
   "wakeSleeps",
   "claimHook",
@@ -257,8 +258,9 @@ export function createWorkflowJournalHandler(
  * The slug is the BEARER's, never the body's. Every `requiredString`,
  * `requiredInt`, `listLimit`, `optionalStrings` and `stepEntry` below runs HERE —
  * outside `withReserved` — which is the whole point of the shape: see
- * `PlatformCall`. Thirteen arms, so the discipline is worth stating: an arm reads
- * its fields into locals and the returned closure names only those, never `body`.
+ * `PlatformCall`. One arm per `METHODS` entry, so the discipline is worth
+ * stating: an arm reads its fields into locals and the returned closure names
+ * only those, never `body`.
  */
 function plan(method: Method, slug: string, body: Record<string, unknown>): PlatformCall {
   switch (method) {
@@ -313,6 +315,10 @@ function plan(method: Method, slug: string, body: Record<string, unknown>): Plat
       const runId = requiredString(body, "runId");
       const key = requiredString(body, "key");
       return (sql) => journal.releaseAttempt(sql, slug, runId, key);
+    }
+    case "readSleeps": {
+      const runId = requiredString(body, "runId");
+      return (sql) => journal.readSleeps(sql, slug, runId);
     }
     case "claimSleep": {
       const runId = requiredString(body, "runId");

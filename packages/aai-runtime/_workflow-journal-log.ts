@@ -32,9 +32,9 @@
  *
  * ## A read is not a write, and is not recorded
  *
- * `getRun`, `listRuns`, `readSteps` and `resumableRuns` leave the store as they
- * found it, so nothing about them belongs in a log whose purpose is to
- * reconstruct one. They are still wrapped — the table below is exhaustive so a
+ * `getRun`, `listRuns`, `readSteps`, `readStep`, `readSleeps` and
+ * `resumableRuns` leave the store as they found it, so nothing about them
+ * belongs in a log whose purpose is to reconstruct one. They are still wrapped — the table below is exhaustive so a
  * method added to {@link JournalStore} is a compile error here rather than a
  * silently unrecorded effect.
  */
@@ -132,6 +132,7 @@ export function recordJournal(inner: JournalStore = createMemoryJournal()): Reco
     listRuns: (workflow, limit) => inner.listRuns(workflow, limit),
     readSteps: (runId) => inner.readSteps(runId),
     readStep: (runId, key) => inner.readStep(runId, key),
+    readSleeps: (runId) => inner.readSleeps(runId),
 
     createRun: (record) =>
       log(

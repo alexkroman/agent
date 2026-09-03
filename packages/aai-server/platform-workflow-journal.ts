@@ -67,17 +67,14 @@
 
 import { firstWriteWins } from "./_journal-claim.ts";
 import { HOOKS } from "./platform-workflow-journal-hooks.ts";
-import type {
-  JournalRunRow,
-  JournalSleepRow,
-  JournalStepRow,
-} from "./platform-workflow-journal-rows.ts";
-import { millis, text, toRun, toStep } from "./platform-workflow-journal-rows.ts";
+import type { JournalRunRow, JournalStepRow } from "./platform-workflow-journal-rows.ts";
+import { toRun, toStep } from "./platform-workflow-journal-rows.ts";
 import type { SqlExec } from "./secret-store.ts";
 
-// One hook WINDOW is its own module — five hundred lines is the cap and the hook
-// half is a self-contained subject. Re-exported so the route above still reaches
-// one journal, and so a caller cannot come to depend on which file a method is in.
+// One hook WINDOW is its own module, and so are the sleep table's three — five
+// hundred lines is the cap and each half is a self-contained subject. Re-exported
+// so the route above still reaches one journal, and so a caller cannot come to
+// depend on which file a method is in.
 export {
   claimHook,
   closeHook,
@@ -93,6 +90,11 @@ export type {
   JournalSleepRow,
   JournalStepRow,
 } from "./platform-workflow-journal-rows.ts";
+export {
+  claimSleep,
+  readSleeps,
+  wakeSleeps,
+} from "./platform-workflow-journal-waits.ts";
 
 /**
  * Statuses nothing will change again.
@@ -107,14 +109,14 @@ const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 /**
  * Where the journal lives. One schema-qualified name per table, spelled once.
  *
- * `HOOKS` is the exception and lives with the operations that own it
- * (`platform-workflow-journal-hooks.ts`); it is imported back for `setStatus`'s
- * release CTE, which is the one statement here that reaches that table.
+ * `HOOKS` and `SLEEPS` are the exceptions and live with the operations that own
+ * them (`platform-workflow-journal-hooks.ts`, `-waits.ts`). `HOOKS` is imported
+ * back for `setStatus`'s release CTE, which is the one statement here that
+ * reaches that table; nothing left here reaches the sleeps table at all.
  */
 const RUNS = "aai_platform.workflow_runs";
 const STEPS = "aai_platform.workflow_steps";
 const ATTEMPTS = "aai_platform.workflow_attempts";
-const SLEEPS = "aai_platform.workflow_sleeps";
 
 /**
  * Raised when a run id is already taken.
@@ -371,81 +373,6 @@ export async function releaseAttempt(
     [slug, runId, key],
   );
   return null;
-}
-
-/**
- * Record a wait, or read the one already recorded.
- *
- * First write wins and later calls are READS — which is what stops a replay
- * pushing the deadline further out on every walk of the body. ONE statement,
- * re-run while the answer is indeterminate: {@link firstWriteWins}.
- */
-export async function claimSleep(
-  sql: SqlExec,
-  slug: string,
-  runId: string,
-  key: string,
-  wakeAt: number,
-  correlationId: string | undefined,
-  kind: string,
-): Promise<JournalSleepRow> {
-  return await firstWriteWins(
-    async () => {
-      const rows = await sql(
-        `with mine as (
-           insert into ${SLEEPS} (slug, run_id, key, wake_at, correlation_id, kind)
-           values ($1, $2, $3, $4, $5, $6)
-           on conflict (slug, run_id, key) do nothing
-           returning wake_at, woken, correlation_id, kind
-         )
-         select wake_at, woken, correlation_id, kind from mine
-         union all
-         select wake_at, woken, correlation_id, kind from ${SLEEPS}
-          where slug = $1 and run_id = $2 and key = $3`,
-        [slug, runId, key, wakeAt, correlationId ?? null, kind],
-      );
-      const row = rows[0];
-      if (!row) return;
-      return {
-        wakeAt: millis(row.wake_at),
-        woken: Boolean(row.woken),
-        correlationId: text(row.correlation_id),
-        kind: String(row.kind),
-      };
-    },
-    () => `workflow sleep ${key} vanished for run ${runId}`,
-  );
-}
-
-/**
- * Cut short every wait this call reaches, and answer how many.
- *
- * Three refusals as one `where`, the same three the memory backend makes: an
- * ELAPSED wait is not one this call stopped, nor is an already-woken one, and a
- * BARE wake reaches ordinary sleeps only — so cutting a schedule short cannot
- * also close an approval window.
- */
-export async function wakeSleeps(
-  sql: SqlExec,
-  slug: string,
-  runId: string,
-  now: number,
-  correlationIds: readonly string[] | undefined,
-): Promise<number> {
-  const rows = await sql(
-    `update ${SLEEPS}
-        set woken = true
-      where slug = $1 and run_id = $2
-        and woken = false
-        and wake_at > $3
-        and case
-              when $4::text[] is null then kind = 'sleep'
-              else correlation_id = any($4::text[])
-            end
-      returning key`,
-    [slug, runId, now, correlationIds ?? null],
-  );
-  return rows.length;
 }
 
 /**

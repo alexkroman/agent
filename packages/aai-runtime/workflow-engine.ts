@@ -241,7 +241,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
    */
   async function runWalk(
     runId: string,
-    walk: Pick<ReplayOptions, "workflow" | "input" | "run" | "steps" | "startedUnder">,
+    walk: Pick<ReplayOptions, "workflow" | "input" | "run" | "steps" | "sleeps" | "startedUnder">,
     callerSignal: AbortSignal | undefined,
   ): Promise<RunRecord["status"] | undefined> {
     // One controller per WALK, registered before the body can run, so `cancel`
@@ -353,6 +353,12 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // unhandled.
       const steps = journal.readSteps(runId);
       void steps.catch(() => undefined);
+      // And the WAIT snapshot, beside it. It costs a run with no waits one extra
+      // round trip per delivery — concurrent with the step read, so no extra
+      // latency — and saves a polling run one per elapsed sleep per delivery,
+      // which is the term that grows. See `ReplayOptions.sleeps`.
+      const sleeps = journal.readSleeps(runId);
+      void sleeps.catch(() => undefined);
 
       // Compare-and-set, so exactly one delivery announces the run as started.
       // An overlapping delivery still wins it — `running` is in `expect` — so the
@@ -372,6 +378,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
           input: record.input,
           run: def.run,
           steps,
+          sleeps,
           // The version this run STARTED against, for the divergence message to
           // compare against this process's. Passed even when absent: the field
           // takes `undefined` and the comparison reads it as unknown.

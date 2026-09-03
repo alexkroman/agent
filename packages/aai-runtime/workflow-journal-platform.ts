@@ -84,6 +84,7 @@ import type {
   JournalStore,
   RunRecord,
   RunStatus,
+  SleepEntry,
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-types.ts";
@@ -237,6 +238,25 @@ function toStep(value: unknown): StepEntry | undefined {
 }
 
 /**
+ * A durable wait off the wire.
+ *
+ * Field by field rather than a cast, for the reason {@link toStep} is — and note
+ * every read here is TOTAL: an unreadable `wakeAt` becomes `NaN`, which every
+ * `now >= wakeAt` comparison answers `false` to, so a garbled record reads as
+ * "not elapsed" and the wait round-trips exactly as it did before the snapshot
+ * existed. That is the safe direction, and it is the same asymmetry `readStep`
+ * records: this answer only ever SKIPS a round trip.
+ */
+function toSleep(value: Record<string, unknown>): SleepRecord {
+  return {
+    wakeAt: Number(value.wakeAt),
+    woken: value.woken === true,
+    correlationId: typeof value.correlationId === "string" ? value.correlationId : undefined,
+    kind: value.kind === "hookTimeout" ? "hookTimeout" : "sleep",
+  };
+}
+
+/**
  * Build the platform-backed journal.
  *
  * @internal
@@ -257,6 +277,19 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       const step = toStep(row);
       return step ? [step] : [];
     });
+  });
+  // The THIRD read that is a pure function of a run id, and it is taken at the
+  // same moment as the step read — so overlapping walks of one run share it for
+  // exactly the reason they share that one.
+  const sharedReadSleeps = shareByKey(async (runId: string): Promise<SleepEntry[]> => {
+    const rows = await call(opts, "readSleeps", { runId });
+    if (!Array.isArray(rows)) return [];
+    // A row with no `key` is DROPPED rather than guessed at: an absent wait
+    // round-trips through `claimSleep`, which is what happened before this read
+    // existed. Same asymmetry as `readStep`.
+    return rows.flatMap((row) =>
+      isRecord(row) && typeof row.key === "string" ? [{ ...toSleep(row), key: row.key }] : [],
+    );
   });
 
   return {
@@ -349,12 +382,11 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       const row = await call(opts, "claimSleep", { runId, key, wakeAt, correlationId, kind });
       if (!isRecord(row))
         throw new Error(`workflow-journal claimSleep answered nothing for ${key}`);
-      return {
-        wakeAt: Number(row.wakeAt),
-        woken: row.woken === true,
-        correlationId: typeof row.correlationId === "string" ? row.correlationId : undefined,
-        kind: row.kind === "hookTimeout" ? "hookTimeout" : "sleep",
-      };
+      return toSleep(row);
+    },
+
+    async readSleeps(runId: string): Promise<SleepEntry[]> {
+      return await sharedReadSleeps(runId);
     },
 
     async wakeSleeps(

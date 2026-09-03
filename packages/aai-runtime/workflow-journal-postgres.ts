@@ -72,8 +72,10 @@ import {
   encodedOrNull,
   millis,
   type RunRow,
+  type SleepRow,
   type StepRow,
   toRunRecord,
+  toSleepRecord,
   toStepEntry,
 } from "./_workflow-journal-postgres-rows.ts";
 import {
@@ -89,6 +91,7 @@ import type {
   ResumableRun,
   RunRecord,
   RunStatus,
+  SleepEntry,
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-types.ts";
@@ -97,6 +100,9 @@ import { decodeStorageJson } from "./workflow-typed-json.ts";
 
 /** Every column a {@link StepEntry} is rebuilt from — ONE list, so the two reads below cannot drift. */
 const SELECT_STEP = `select key, name, status, output::text as output, error, attempts, started_at, finished_at from ${WORKFLOW_STEP_TABLE}`;
+
+/** The same, for a {@link RunRecord} and the two reads that rebuild one. */
+const SELECT_RUN = `select run_id, workflow, status, created_at, input::text as input, output::text as output, error, code_version from ${WORKFLOW_RUN_TABLE}`;
 
 /**
  * Build a journal over `db`.
@@ -129,24 +135,14 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
     },
 
     async getRun(runId: string): Promise<RunRecord | undefined> {
-      const rows = await db.query<RunRow>(
-        `select run_id, workflow, status, created_at, input::text as input,
-                output::text as output, error, code_version
-         from ${WORKFLOW_RUN_TABLE} where run_id = $1`,
-        [runId],
-      );
+      const rows = await db.query<RunRow>(`${SELECT_RUN} where run_id = $1`, [runId]);
       const row = rows[0];
       return row ? toRunRecord(row) : undefined;
     },
 
     async listRuns(workflow: string, limit: number): Promise<RunRecord[]> {
       const rows = await db.query<RunRow>(
-        `select run_id, workflow, status, created_at, input::text as input,
-                output::text as output, error, code_version
-         from ${WORKFLOW_RUN_TABLE}
-         where workflow = $1
-         order by created_at desc, run_id desc
-         limit $2`,
+        `${SELECT_RUN} where workflow = $1 order by created_at desc, run_id desc limit $2`,
         [workflow, limit],
       );
       return rows.map(toRunRecord);
@@ -245,6 +241,19 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       );
     },
 
+    async readSleeps(runId: string): Promise<SleepEntry[]> {
+      // `order by key`, which is what the interface promises and what makes the
+      // three backends comparable. No index is added for it: the table's primary
+      // key is `(run_id, key)`, so this is a range scan of one run's rows already
+      // in the order asked for.
+      const rows = await db.query<SleepRow & { key: string }>(
+        `select key, wake_at, woken, correlation_id, kind from ${WORKFLOW_SLEEP_TABLE}
+         where run_id = $1 order by key`,
+        [runId],
+      );
+      return rows.map((row) => ({ ...toSleepRecord(row), key: row.key }));
+    },
+
     async claimSleep(
       runId: string,
       key: string,
@@ -257,12 +266,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
       // for the rival this one cannot see — `firstWriteWins`.
       return await firstWriteWins(
         async () => {
-          const rows = await db.query<{
-            wake_at: string | number;
-            woken: boolean;
-            correlation_id: string | null;
-            kind: SleepRecord["kind"];
-          }>(
+          const rows = await db.query<SleepRow>(
             `with mine as (
                insert into ${WORKFLOW_SLEEP_TABLE}
                  (run_id, key, wake_at, correlation_id, kind)
@@ -277,13 +281,7 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
             [runId, key, wakeAt, correlationId ?? null, kind],
           );
           const row = rows[0];
-          if (!row) return;
-          return {
-            wakeAt: millis(row.wake_at),
-            woken: row.woken,
-            correlationId: row.correlation_id ?? undefined,
-            kind: row.kind,
-          };
+          return row ? toSleepRecord(row) : undefined;
         },
         () => `workflow sleep ${key} vanished for run ${runId}`,
       );

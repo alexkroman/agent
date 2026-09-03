@@ -67,7 +67,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { describeCodeChange } from "./workflow-code-version.ts";
 import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS } from "./workflow-journal-bound.ts";
-import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
+import type { JournalStore, SleepEntry, SleepRecord, StepEntry } from "./workflow-journal-types.ts";
 import { createDeterminismReads } from "./workflow-replay-determinism.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
 import { watchJournalFailure } from "./workflow-replay-journal-failure.ts";
@@ -133,6 +133,21 @@ export type ReplayOptions = {
    * Optional: a caller with nothing to overlap it with passes nothing.
    */
   steps?: Promise<StepEntry[]> | undefined;
+  /**
+   * This walk's WAIT snapshot, already in flight — the other half of
+   * {@link ReplayOptions.steps}, issued at the same moment and for the same
+   * reason.
+   *
+   * It buys more than the step read does, because what it removes is not one
+   * round trip but N: a body that sleeps in a loop reaches every one of its
+   * ELAPSED sleeps again on the next delivery, and each of those used to be its
+   * own `claimSleep`. See `workflow-replay-waits.ts` for the rule deciding which
+   * of them this snapshot may answer.
+   *
+   * Optional on the same terms: a caller with nothing to overlap it with passes
+   * nothing and the read is taken here.
+   */
+  sleeps?: Promise<SleepEntry[]> | undefined;
   /**
    * Where `report()` writes. Optional: a spec driving a body directly has no
    * reader, and a body that reports into nothing is not an error.
@@ -253,6 +268,13 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // earlier — see `ReplayOptions.steps`.
   const entries = await (options.steps ?? journal.readSteps(runId));
   for (const entry of entries) settled.set(entry.key, entry);
+  // The WAIT half of the same snapshot — see `ReplayOptions.sleeps`. Awaited
+  // beside the steps rather than lazily at the first wait, so the ordering is
+  // identical whether or not the caller prefetched, exactly as above.
+  const sleeps = new Map<string, SleepRecord>();
+  for (const record of await (options.sleeps ?? journal.readSleeps(runId))) {
+    sleeps.set(record.key, record);
+  }
   // BEFORE the body runs, because the point is not to start work this run cannot
   // finish — a walk of a journal at the ceiling is the slowest thing the engine
   // does and the least likely to reach an end. A refusal is an ordinary `failed`
@@ -336,7 +358,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     // Split out for the reason the reads above are — see
     // `workflow-replay-waits.ts`, which also carries what naming the waits
     // closed and the one residual it did not.
-    ...createWaitMethods({ runId, workflow, journal, suspend, refuse: setRefused }),
+    ...createWaitMethods({ runId, workflow, journal, sleeps, suspend, refuse: setRefused }),
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       // IDENTITY first: which journal key is this call? See `WorkflowCtx` in the
       // SDK for why it is a name plus an occurrence count.

@@ -32,6 +32,6 @@ export const hookCloseRace: Interleaving = {
   deliveries: 2,
   stepConcurrency: 1,
   arm: "direct",
-  ordering: [2, 1, 5, 4, 7, 8, 9, 3, 6, 11, 13, 10, 14, 12, 15, 16, 17, 18, 19],
+  ordering: [1, 2, 3, 4, 7, 5, 6, 8, 11, 12, 10, 9, 13, 14, 16, 17, 15, 19, 18, 20, 21],
   catches: { defect: "unconditionalClose", law: "was both delivered and closed" },
 };

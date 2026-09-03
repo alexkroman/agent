@@ -31,6 +31,6 @@ export const doubleTerminalMove: Interleaving = {
   deliveries: 2,
   stepConcurrency: 1,
   arm: "direct",
-  ordering: [2, 1, 4, 3, 5, 6, 8, 7, 9, 10, 12, 11, 13, 14, 15],
+  ordering: [2, 1, 4, 3, 7, 10, 9, 5, 8, 11, 12, 13, 6, 14, 15, 16, 17],
   catches: { defect: "unguardedStatus", law: "moved the run terminal" },
 };
