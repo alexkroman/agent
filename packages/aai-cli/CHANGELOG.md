@@ -1,5 +1,16 @@
 # @alexkroman1/aai-cli
 
+## 13.2.0
+
+### Patch Changes
+
+- Updated dependencies [4fb6b05]
+- Updated dependencies [9cb7392]
+- Updated dependencies [93ea30c]
+  - @alexkroman1/aai@13.2.0
+  - @alexkroman1/aai-runtime@13.2.0
+  - @alexkroman1/aai-ui@13.2.0
+
 ## 13.1.0
 
 ### Patch Changes
