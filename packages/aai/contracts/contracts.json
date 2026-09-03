@@ -111,8 +111,8 @@
     }
   },
   "step": {
-    "current": 5,
-    "supported": [3, 5],
+    "current": 6,
+    "supported": [3, 5, 6],
     "dropped": {
       "1": "Pre-release: `error.reported.fatal` and `ClientConfigResponse.page` are required now, and the deprecated `mapInBatches` alias is gone — a caller written against the older spelling no longer compiles, and no external consumer is owed it.",
       "2": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
@@ -120,16 +120,16 @@
     }
   },
   "step-errors": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [3, 4],
     "dropped": {
       "1": "Pre-release: StandardSchemaIssue gains an OPTIONAL `errors` field (a vendor extension formatSchemaIssues reads for union branches), so this epoch would in fact still compile — dropped rather than retained because the SDK has no external consumers and contracts/compatibility/ stays empty.",
       "2": "FatalError and RetryableError are this SDK's own classes rather than @workflow/errors', and RetryableErrorOptions.retryAfter no longer accepts a duration string. Membership is a brand rather than instanceof."
     }
   },
   "step-files": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "stt": {
@@ -196,8 +196,8 @@
     }
   },
   "transcribe": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "tts": {

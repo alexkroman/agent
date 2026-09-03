@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { encodeWav, pcmDurationMs, WAV_HEADER_BYTES } from "./wav.ts";
+import { encodeWav, type PcmFormat, pcmDurationMs, WAV_HEADER_BYTES, wavHeader } from "./wav.ts";
 
 /** Read the header back the way a player does, so the assertions name fields. */
 function readHeader(wav: Uint8Array) {
@@ -88,6 +88,65 @@ describe("encodeWav", () => {
     ["a bit depth that is not a whole byte", { sampleRate: 24_000, bitsPerSample: 12 }],
   ])("refuses %s", (_label, format) => {
     expect(() => encodeWav(new Uint8Array(4), format)).toThrow(RangeError);
+  });
+});
+
+describe("wavHeader", () => {
+  /** The formats the two must agree on, spread across every field a header states. */
+  const FORMATS: readonly [string, PcmFormat][] = [
+    ["the defaults", { sampleRate: 24_000 }],
+    ["stereo 24-bit", { sampleRate: 48_000, channels: 2, bitsPerSample: 24 }],
+    ["8-bit mono", { sampleRate: 8000, channels: 1, bitsPerSample: 8 }],
+    ["five channels of 32-bit", { sampleRate: 44_100, channels: 5, bitsPerSample: 32 }],
+  ];
+
+  test.each(FORMATS)(
+    "is byte-for-byte the first 44 bytes `encodeWav` writes — %s",
+    (_label, format) => {
+      // Across several payload lengths, because both of the header's declared
+      // lengths are derived from that number and an empty payload is the one
+      // that hides an off-by-36.
+      for (const length of [0, 1, 44, 4096]) {
+        const header = wavHeader(format, length);
+        expect(header.byteLength).toBe(WAV_HEADER_BYTES);
+        expect(header).toEqual(
+          encodeWav(new Uint8Array(length), format).subarray(0, WAV_HEADER_BYTES),
+        );
+      }
+    },
+  );
+
+  test("states BOTH lengths off the one it was given", () => {
+    const header = readHeader(wavHeader({ sampleRate: 16_000 }, 1234));
+
+    expect(header.dataSize).toBe(1234);
+    expect(header.riffSize).toBe(36 + 1234);
+  });
+
+  test.each([
+    ["a zero rate", { sampleRate: 0 }],
+    ["a fractional rate", { sampleRate: 24_000.5 }],
+    ["a zero channel count", { sampleRate: 24_000, channels: 0 }],
+    ["a bit depth that is not a whole byte", { sampleRate: 24_000, bitsPerSample: 12 }],
+  ])("refuses %s, exactly as the encoder does", (_label, format) => {
+    // The same rejected SET, so a caller cannot get a header out of a format
+    // that `encodeWav` would refuse — and its own name in the message, for the
+    // reason `pcmDurationMs` has one.
+    expect(() => wavHeader(format, 8)).toThrow(RangeError);
+    expect(() => encodeWav(new Uint8Array(8), format)).toThrow(RangeError);
+    expect(() => wavHeader(format, 8)).toThrow(/^wavHeader:/);
+  });
+
+  test("refuses BYTES where a byte count goes, the way its sibling does", () => {
+    // It takes a LENGTH where `encodeWav` beside it takes bytes, which is the
+    // one misuse the signature invites: unchecked, a `Uint8Array` becomes a 0
+    // in both declared lengths and the file claims to hold no audio.
+    const fromJournal: unknown = new Uint8Array(64);
+    expect(() => wavHeader({ sampleRate: 16_000 }, fromJournal as number)).toThrow(
+      /byteLength must be a non-negative number of bytes, got a value of type object/,
+    );
+    expect(() => wavHeader({ sampleRate: 16_000 }, Number.NaN)).toThrow(/^wavHeader:/);
+    expect(() => wavHeader({ sampleRate: 16_000 }, -1)).toThrow(RangeError);
   });
 });
 

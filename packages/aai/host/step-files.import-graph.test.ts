@@ -112,6 +112,10 @@ describe("step-files.ts itself", () => {
     expect(direct.sort(byCodeUnit)).toEqual([
       "../sdk/format.ts",
       "../sdk/is-record.ts",
+      // The fan-out `readUploadToFile` reads its windows with. Another leaf: it
+      // imports nothing at all, which is what lets a bounded map live in `sdk/`
+      // and be reached from here without widening this graph by one module.
+      "../sdk/map-concurrent.ts",
       // The completeness gate, whose own graph is `step-uploads.ts` and nothing
       // else — so it costs this module no new leaf.
       "../sdk/step-uploads-complete.ts",

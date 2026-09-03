@@ -73,9 +73,20 @@ function sliceableBytes(file: UploadBody): number | undefined {
     : undefined;
 }
 
-/** One window of the body, however it is spelled. */
+/**
+ * One window of the body, however it is spelled.
+ *
+ * A VIEW in both byte-array arms, never a copy. `ArrayBuffer.prototype.slice`
+ * copies where the `isView` arm below does not, and the copy bought nothing: the
+ * caller holds the whole body for the length of the upload either way (a resume
+ * re-cuts the same body, and every part is re-sliced per attempt), so a window
+ * aliasing it retains nothing that was not already retained. Nothing downstream
+ * mutates a window — a part is handed to `fetch` or to `XMLHttpRequest.send` and
+ * read — so aliasing is unobservable apart from the copy it removes, which at
+ * the default part size is 8 MiB per part in flight.
+ */
 export function sliceOf(file: UploadBody, start: number, end: number): UploadBody {
-  if (file instanceof ArrayBuffer) return file.slice(start, end);
+  if (file instanceof ArrayBuffer) return new Uint8Array(file, start, end - start);
   if (ArrayBuffer.isView(file)) {
     return new Uint8Array(file.buffer, file.byteOffset + start, end - start);
   }

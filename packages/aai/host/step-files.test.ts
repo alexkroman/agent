@@ -24,11 +24,12 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
-import { uploadInfo } from "../sdk/step-uploads.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { publishUploadReader, uploadInfo } from "../sdk/step-uploads.ts";
 import { stubUploads } from "../sdk/testing-uploads.ts";
 import {
   readUploadToFile,
+  STEP_FILE_READ_CONCURRENCY,
   STEP_FILE_WINDOW_BYTES,
   withTempDir,
   writeUploadFromFile,
@@ -56,6 +57,75 @@ function uploadStore(...args: Parameters<typeof stubUploads>): ReturnType<typeof
 /** Bytes that differ at every offset, so a chunk pasted at the wrong one shows. */
 function pattern(length: number, step = 7): Uint8Array {
   return new Uint8Array(length).map((_, at) => (at * step) % 251);
+}
+
+/**
+ * A store whose reads are OBSERVABLE — how many were in flight at once, and in
+ * what order they were asked for.
+ *
+ * `stubUploads` answers every read from an already-resolved promise, which makes
+ * both properties this file has to check unmeasurable: the fan-out settles each
+ * window before the next slot has anything to overlap with, so concurrency reads
+ * as 1 whatever the code does. Each read here resolves on a macrotask instead,
+ * which is enough for the whole width to be outstanding at once and is still
+ * deterministic — nothing is racing a deadline.
+ *
+ * `short` stages the case the fan-out has to survive on a COMPLETE file: a store
+ * answering a window with fewer bytes than the range it was handed, for reasons
+ * of its own. `readUpload` would not clamp here — `info.complete` is true and its
+ * `size` covers the file — so the shortness is visible only in the bytes.
+ */
+function watchedStore(
+  bytes: Uint8Array,
+  opts: { short?: { start: number; length: number } | undefined } = {},
+): { maxInFlight: () => number; starts: () => number[] } {
+  let inFlight = 0;
+  let peak = 0;
+  const starts: number[] = [];
+  publishUploadReader({
+    info: (id) =>
+      Promise.resolve({ id, name: "", type: "", size: bytes.byteLength, complete: true }),
+    read: (_id, start, end) => {
+      starts.push(start);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      const stop = opts.short?.start === start ? start + opts.short.length : end;
+      return new Promise<Uint8Array>((resolve) => {
+        setTimeout(() => {
+          inFlight -= 1;
+          resolve(bytes.subarray(start, stop));
+        }, 0);
+      });
+    },
+  });
+  restores.push(() => publishUploadReader(undefined));
+  return { maxInFlight: () => peak, starts: () => [...starts] };
+}
+
+/**
+ * A store that HOLDS every read until the spec releases it, so a spec decides the
+ * order the windows land in.
+ *
+ * The out-of-order case cannot be staged any other way: with a real store the
+ * order is a race, and asserting on a race is how a spec passes for the wrong
+ * reason. Here the fan-out is stopped with its whole width outstanding, and the
+ * spec resolves them LAST FIRST.
+ */
+function heldStore(bytes: Uint8Array): {
+  pending: Array<{ start: number; release: () => void }>;
+} {
+  const pending: Array<{ start: number; release: () => void }> = [];
+  publishUploadReader({
+    info: (id) =>
+      Promise.resolve({ id, name: "", type: "", size: bytes.byteLength, complete: true }),
+    read: (_id, start, end) => {
+      const { promise, resolve } = Promise.withResolvers<Uint8Array>();
+      pending.push({ start, release: () => resolve(bytes.subarray(start, end)) });
+      return promise;
+    },
+  });
+  restores.push(() => publishUploadReader(undefined));
+  return { pending };
 }
 
 describe("withTempDir", () => {
@@ -211,6 +281,162 @@ describe("readUploadToFile", () => {
     await withTempDir(async (dir) => {
       const path = join(dir, "source");
       expect(await readUploadToFile(UPLOAD_ID, path, { size: 2048, windowBytes: 512 })).toBe(2048);
+    });
+  });
+});
+
+describe("readUploadToFile — the windows are read concurrently", () => {
+  test("produces the same file the serial walk does, across many windows", async () => {
+    // The property that makes the fan-out substitutable at all: same bytes, same
+    // length, whatever order the windows landed in. Both halves run against one
+    // store, so nothing but the path taken differs.
+    const bytes = pattern(4096, 13);
+    uploadStore({ [UPLOAD_ID]: bytes });
+
+    await withTempDir(async (dir) => {
+      const serial = join(dir, "serial");
+      const concurrent = join(dir, "concurrent");
+      // `size` passed is the serial walk; omitted is the fan-out.
+      expect(await readUploadToFile(UPLOAD_ID, serial, { size: 4096, windowBytes: 1024 })).toBe(
+        4096,
+      );
+      expect(await readUploadToFile(UPLOAD_ID, concurrent, { windowBytes: 1024 })).toBe(4096);
+      expect(new Uint8Array(await readFile(concurrent))).toEqual(
+        new Uint8Array(await readFile(serial)),
+      );
+      expect(new Uint8Array(await readFile(concurrent))).toEqual(bytes);
+    });
+  });
+
+  test("really does overlap its reads, which is the whole point", async () => {
+    // Without this the rest of the suite passes over a `for` loop. Four windows
+    // at the default width, so the ceiling is reachable and the assertion is
+    // about the shape rather than about hitting exactly 4.
+    const store = watchedStore(pattern(4096, 3));
+    await withTempDir(async (dir) => {
+      expect(await readUploadToFile(UPLOAD_ID, join(dir, "source"), { windowBytes: 1024 })).toBe(
+        4096,
+      );
+    });
+    expect(store.maxInFlight()).toBeGreaterThan(1);
+    expect(store.maxInFlight()).toBeLessThanOrEqual(STEP_FILE_READ_CONCURRENCY);
+  });
+
+  test("honours an explicit concurrency, and 1 is the serial shape", async () => {
+    const store = watchedStore(pattern(4096, 3));
+    await withTempDir(async (dir) => {
+      await readUploadToFile(UPLOAD_ID, join(dir, "source"), {
+        windowBytes: 1024,
+        concurrency: 2,
+      });
+    });
+    expect(store.maxInFlight()).toBe(2);
+
+    const one = watchedStore(pattern(4096, 3));
+    await withTempDir(async (dir) => {
+      await readUploadToFile(UPLOAD_ID, join(dir, "source"), {
+        windowBytes: 1024,
+        concurrency: 1,
+      });
+    });
+    expect(one.maxInFlight()).toBe(1);
+  });
+
+  test("writes the right file when the windows land OUT OF ORDER", async () => {
+    // The case a fan-out over one file exists to survive, and the reason the
+    // writes are positional: window 3 finishing first must not put its bytes at
+    // offset 0. Staged rather than raced — every read is held until all four are
+    // outstanding, then released last-first.
+    const bytes = pattern(4096, 17);
+    const store = heldStore(bytes);
+
+    await withTempDir(async (dir) => {
+      const path = join(dir, "source");
+      const walk = readUploadToFile(UPLOAD_ID, path, {
+        windowBytes: 1024,
+      });
+      await vi.waitFor(() => expect(store.pending.length).toBe(4));
+      expect(store.pending.map((one) => one.start)).toEqual([0, 1024, 2048, 3072]);
+      for (const read of [...store.pending].reverse()) read.release();
+
+      expect(await walk).toBe(4096);
+      expect(new Uint8Array(await readFile(path))).toEqual(bytes);
+    });
+  });
+
+  test("a short window answers the CONTIGUOUS PREFIX and leaves no hole on disk", async () => {
+    // A complete upload whose store answers the second window short. Windows 3
+    // and 4 land in full and are written at their own offsets, so the count must
+    // NOT be the sum of what was written — that number would name a length whose
+    // first bytes include a gap nobody stored. It is the prefix, and the file is
+    // cut back to it, so neither the answer nor the bytes claim the hole is not
+    // there.
+    const bytes = pattern(4096, 23);
+    watchedStore(bytes, { short: { start: 1024, length: 300 } });
+
+    await withTempDir(async (dir) => {
+      const path = join(dir, "source");
+      const written = await readUploadToFile(UPLOAD_ID, path, {
+        windowBytes: 1024,
+      });
+      expect(written).toBe(1324);
+      expect((await stat(path)).size).toBe(1324);
+      expect(new Uint8Array(await readFile(path))).toEqual(bytes.subarray(0, 1324));
+    });
+  });
+
+  test("an empty first window answers 0, however much landed behind it", async () => {
+    const bytes = pattern(4096, 29);
+    watchedStore(bytes, { short: { start: 0, length: 0 } });
+
+    await withTempDir(async (dir) => {
+      const path = join(dir, "source");
+      expect(await readUploadToFile(UPLOAD_ID, path, { windowBytes: 1024 })).toBe(0);
+      expect((await stat(path)).size).toBe(0);
+    });
+  });
+
+  test("a passed `size` still walks one window at a time, and still stops short", async () => {
+    // The path that may not fan out: `size` means the caller is judging
+    // completeness itself, which it can only do if it sees the windows in order.
+    // A store that comes back short at window two must end the walk THERE — a
+    // fan-out would have already read the rest.
+    const bytes = pattern(4096, 31);
+    const store = watchedStore(bytes, { short: { start: 1024, length: 300 } });
+
+    await withTempDir(async (dir) => {
+      const path = join(dir, "source");
+      const written = await readUploadToFile(UPLOAD_ID, path, {
+        size: 4096,
+        windowBytes: 1024,
+        // Named and ignored: the option is read only on the complete-file path.
+        concurrency: 4,
+      });
+      // The serial walk advances by the `end` the read echoes back rather than by
+      // the bytes, so a store answering short inside its own range is the one
+      // shape it does not catch — what it does catch, and what this asserts, is
+      // that it never has more than one window outstanding.
+      expect(written).toBeLessThanOrEqual(4096);
+      expect(store.maxInFlight()).toBe(1);
+      expect(store.starts()).toEqual([0, 1024, 2048, 3072]);
+    });
+  });
+
+  test("stops the walk at the first window a still-arriving upload cannot fill", async () => {
+    // The same serial contract through the real clamp rather than a rigged store:
+    // `readUpload` cuts the window to what has ARRIVED, and the walk must stop at
+    // that answer instead of striding a whole window past it.
+    const arrived = pattern(2500, 5);
+    uploadStore({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
+
+    await withTempDir(async (dir) => {
+      const path = join(dir, "source");
+      const written = await readUploadToFile(UPLOAD_ID, path, {
+        size: 8192,
+        windowBytes: 1024,
+      });
+      expect(written).toBe(2500);
+      expect(new Uint8Array(await readFile(path))).toEqual(arrived);
     });
   });
 });

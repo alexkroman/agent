@@ -18,6 +18,11 @@
  * pool: `sliceableBytes` measures a view in BYTES (`byteLength`), so an
  * element-width confusion is a second way to name the wrong bytes.
  *
+ * The `ArrayBuffer` arm answers a view too now, where it used to `.slice()` —
+ * so the claim there is IDENTITY rather than content, and it needs a case of its
+ * own: a copy has exactly the right bytes, which is what makes the property
+ * above blind to it.
+ *
  * ## Two properties, two classes
  *
  * - **`sliceOf` is VALUE-LEVEL** — one body, one window, one round trip. It
@@ -127,6 +132,21 @@ describe("sliceOf", () => {
       ),
       { numRuns: 200 },
     );
+  });
+
+  test("an ArrayBuffer window is a VIEW over the caller's buffer, not a copy", () => {
+    // `ArrayBuffer.prototype.slice` copies where the `isView` arm does not, and
+    // the copy bought nothing: the caller holds the whole body for the length of
+    // the upload either way, so a window aliasing it retains nothing that was not
+    // already retained. Asserted on IDENTITY, because a copy has the right bytes.
+    const file = SOURCE.buffer.slice(0, 64);
+    const window = sliceOf(file, 7, 21);
+
+    expect(ArrayBuffer.isView(window)).toBe(true);
+    expect((window as Uint8Array).buffer).toBe(file);
+    expect((window as Uint8Array).byteOffset).toBe(7);
+    // And it still names the right bytes, which identity alone does not say.
+    expect(sameBytes(bytesOf(window), new Uint8Array(file, 7, 14))).toBe(true);
   });
 
   test("a Blob is sliced by delegation, offsets and all", async () => {

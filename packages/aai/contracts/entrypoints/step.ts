@@ -18,11 +18,14 @@
  * a fan-out over one connection is where a capacity limit stops being a status a
  * retry policy can read. See `sdk/step-fetch.ts`.
  *
- * `stepSpeak` and `encodeWav`/`pcmDurationMs` are the reason to read this
- * contract beside `uploads`: a step that SPEAKS is useless without somewhere to
- * put what it made. `stepSpeak` is a slot the way `stepFetch` is — the
- * synthesizer needs a WebSocket client, which this subpath may not carry — and
- * the WAV framing is the zero-dependency half.
+ * `stepSpeak` and `encodeWav`/`wavHeader`/`pcmDurationMs` are the reason to read
+ * this contract beside `uploads`: a step that SPEAKS is useless without
+ * somewhere to put what it made. `stepSpeak` is a slot the way `stepFetch` is —
+ * the synthesizer needs a WebSocket client, which this subpath may not carry —
+ * and the WAV framing is the zero-dependency half. `wavHeader` is `encodeWav`
+ * without the join, for a caller handing the header and the samples to something
+ * that takes a list (`multipartBody`, on this same contract) rather than holding
+ * a second copy of the audio to put them in one buffer first.
  *
  * `stepInfo` is the one member that reads the ENGINE rather than doing work: it
  * says which attempt of a step this is and whether it is the last, which is what
@@ -74,4 +77,5 @@ export {
   stepWebhookUrl,
   stripJsonFence,
   WAV_HEADER_BYTES,
+  wavHeader,
 } from "../../sdk/step-barrel.ts";

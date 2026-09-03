@@ -352,7 +352,8 @@ to it is refused rather than divided: `bytes / blockAlign` is `NaN`, and a
 `NaN` duration is journaled by a step, rendered into a progress bar and
 reported to a caller without anything on the way saying which call produced
 it. That is the one misuse this signature invites — `encodeWav`, `stepSpeak`
-and `readUpload` all deal in the bytes themselves.
+and `readUpload` all deal in the bytes themselves. [wavHeader](#wavheader) is the
+other function here taking a count, and shares this check for that reason.
 
 #### Parameters
 
@@ -1036,7 +1037,9 @@ retried until the attempts run out.
 ### stepTranscribeSync()
 
 ```ts
-function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
+function stepTranscribeSync(bytes: 
+  | Uint8Array<ArrayBufferLike>
+  | readonly Uint8Array<ArrayBufferLike>[], opts?: TranscribeSyncOptions): Promise<{
   text: string;
 }>;
 ```
@@ -1054,10 +1057,15 @@ failure — a `404` that means "already deleted".
 
 ##### bytes
 
-`Uint8Array`
+  \| `Uint8Array`\<`ArrayBufferLike`\>
+  \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
 
 A whole file, header included. The endpoint decodes each
-  request independently, so a headerless tail is bytes it will refuse.
+  request independently, so a headerless tail is bytes it will refuse. A LIST
+  is still a whole file — the same bytes in the same order, just not
+  contiguous in memory — which is what lets a caller cutting a WAV hand over
+  `[wavHeader(format, window.byteLength), window]` rather than joining the two
+  into a buffer this function would then copy into the body a second time.
 
 ##### opts?
 
@@ -1095,9 +1103,9 @@ is not a decision this function can make, because it depends on what the audio
 IS.
 
 **Whole files only.** A caller cutting a WAV re-attaches a header to every
-window — [encodeWav](#encodewav) is the 44 bytes — and a caller handed complete
-files (parts of a multi-file upload, [stepSpeak](#stepspeak)'s output) passes them
-through untouched.
+window — [encodeWav](#encodewav) is the 44 bytes, or [wavHeader](#wavheader) and the
+window as two chunks — and a caller handed complete files (parts of a
+multi-file upload, [stepSpeak](#stepspeak)'s output) passes them through untouched.
 
 #### Example
 
@@ -1319,13 +1327,58 @@ when the id names no upload — a step that reaches for one and finds
 
 ***
 
+### wavHeader()
+
+```ts
+function wavHeader(format: PcmFormat, byteLength: number): Uint8Array<ArrayBuffer>;
+```
+
+The WAV header for a payload of `byteLength` bytes, and nothing else.
+
+For a caller handing the header and the samples to something that takes a
+LIST — [multipartBody](#multipartbody-1), a stream — where [encodeWav](#encodewav)'s joined
+buffer would be a second full copy of the audio held at the same time. Two
+chunks are the same bytes in the same order on the wire.
+
+#### Parameters
+
+##### format
+
+[`PcmFormat`](#pcmformat)
+
+How to read the samples the header will sit in front of. See
+  [PcmFormat](#pcmformat) for the two defaults.
+
+##### byteLength
+
+`number`
+
+How many bytes of PCM follow. The header states TWO
+  lengths and both derive from this one, so a value that does not match what
+  is actually sent is a file a decoder reads past the end of or stops short
+  inside.
+
+#### Returns
+
+`Uint8Array`\<`ArrayBuffer`\>
+
+Exactly [WAV\_HEADER\_BYTES](#wav_header_bytes) bytes.
+
+#### Throws
+
+for a format no header can describe — the same check
+  [encodeWav](#encodewav) makes, so the two cannot disagree about what is legal —
+  or for a `byteLength` that is not a length.
+
+***
+
 ### writeUpload()
 
 ```ts
 function writeUpload(bytes: 
   | Uint8Array<ArrayBufferLike>
-  | AsyncIterable<Uint8Array<ArrayBufferLike>, any, any>
-| readonly Uint8Array<ArrayBufferLike>[], opts?: WriteUploadOptions): Promise<UploadInfo>;
+  | readonly Uint8Array<ArrayBufferLike>[]
+| AsyncIterable<Uint8Array<ArrayBufferLike>, any, any>, opts?: WriteUploadOptions): Promise<UploadInfo>;
 ```
 
 Store a file a step PRODUCED, and answer with the record naming it.
@@ -1360,8 +1413,8 @@ cannot retry at all.
 ##### bytes
 
   \| `Uint8Array`\<`ArrayBufferLike`\>
-  \| `AsyncIterable`\<`Uint8Array`\<`ArrayBufferLike`\>, `any`, `any`\>
   \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
+  \| `AsyncIterable`\<`Uint8Array`\<`ArrayBufferLike`\>, `any`, `any`\>
 
 The file. A LIST is stored in order and an async iterable is
   streamed, so a step producing something large — a long recording, a
@@ -1754,7 +1807,7 @@ Content-Type: string;
 
 ```ts
 type MultipartPart = {
-  bytes: Uint8Array;
+  bytes: Uint8Array | readonly Uint8Array[];
   filename?: string;
   name: string;
   type?: string;
@@ -1768,10 +1821,20 @@ One file part, as [multipartBody](#multipartbody-1) takes it.
 ##### bytes
 
 ```ts
-bytes: Uint8Array;
+bytes: Uint8Array | readonly Uint8Array[];
 ```
 
-The bytes.
+The bytes, as one buffer or as the chunks they already are.
+
+A LIST is concatenated into the body in order and is indistinguishable on
+the wire from the same content passed as one buffer. It exists so a caller
+holding a payload in pieces — a [wavHeader](#wavheader) in front of the samples it
+describes, a file read window by window — need not JOIN them first only for
+this function to copy the join into the body: for a multi-megabyte part that
+intermediate buffer is a second full copy of the payload, held at the same
+time as the first. The body itself is still one buffer, which is what buys
+`Content-Length` and a retryable request; this removes the copy in front of
+it, not the one it is.
 
 ##### filename?
 

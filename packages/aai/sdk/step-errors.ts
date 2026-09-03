@@ -309,7 +309,7 @@ export function stepGenerateJsonClassified<S extends StandardSchemaV1>(
  * @public
  */
 export function stepTranscribeSyncClassified(
-  bytes: Uint8Array,
+  bytes: Uint8Array | readonly Uint8Array[],
   opts?: TranscribeSyncOptions,
 ): Promise<{ text: string }> {
   return stepTranscribeSync(bytes, opts).catch(throwStepError);

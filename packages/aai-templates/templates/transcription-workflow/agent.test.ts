@@ -779,6 +779,16 @@ describe("transcribeSegment", () => {
     expect(decoded).toContain('name="audio"; filename="segment-0.wav"');
     // The WAV really rides in the part, header and all.
     expect(decoded).toContain("RIFF");
+    // And the header is CONTIGUOUS with its samples, which is what the two-chunk
+    // form (`[wavHeader(…), window]`) has to preserve and the only thing it could
+    // plausibly lose: the part's payload is exactly the 44 bytes plus the window,
+    // with nothing between them and nothing appended. A body that grew or shrank
+    // here is a file the endpoint decodes into confident nonsense rather than
+    // refusing.
+    const latin = new TextDecoder("latin1").decode(sent);
+    const from = latin.indexOf("RIFF");
+    const to = latin.lastIndexOf("\r\n--");
+    expect(to - from).toBe(44 + (SEGMENT.end - SEGMENT.start));
   });
 
   test("sends the DOWNSAMPLED window when the recording is heavier than 16 kHz mono", async () => {

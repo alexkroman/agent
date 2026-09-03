@@ -239,6 +239,65 @@ describe("multipartBody", () => {
     expect(roundTripped).not.toEqual(bytes);
   });
 
+  test("a LIST part is byte-identical to the same content passed as one buffer", () => {
+    // The whole claim behind widening `MultipartPart.bytes`: a caller holding a
+    // header and the samples it describes may hand both over instead of joining
+    // them, and nothing about the request changes. Compared against a body built
+    // from the joined bytes with the SAME boundary, since the boundary is random
+    // per call — so the two bodies are directly comparable rather than compared
+    // modulo a substitution.
+    // Pinned so both calls mint the SAME boundary — `multipartBody` draws it
+    // from `Math.random()` and `Date.now()` per call. `restoreMocks` puts both
+    // back before the next test.
+    vi.spyOn(Math, "random").mockReturnValue(0.42);
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+
+    const header = new Uint8Array([0x52, 0x49, 0x46, 0x46]);
+    const payload = new Uint8Array([0x00, 0x80, 0xff, 0xfe, 0x7f]);
+    const joined = new Uint8Array([...header, ...payload]);
+
+    const asList = multipartBody({
+      name: "audio",
+      filename: "clip.wav",
+      type: "audio/wav",
+      bytes: [header, payload],
+    });
+    const asBuffer = multipartBody({
+      name: "audio",
+      filename: "clip.wav",
+      type: "audio/wav",
+      bytes: joined,
+    });
+
+    // Byte-identical OUTRIGHT, which is only assertable because the boundary was
+    // pinned above. Comparing modulo a substituted boundary was the first draft
+    // and it hid a real trap: `Math.random().toString(36).slice(2)` is
+    // VARIABLE-LENGTH, so two calls routinely produce boundaries of different
+    // lengths and any assertion about the bodies' sizes fails a few runs in a
+    // hundred — a flake in a test whose whole subject is that two spellings
+    // agree byte for byte.
+    expect(asList.body).toEqual(asBuffer.body);
+    expect(asList.headers).toEqual(asBuffer.headers);
+  });
+
+  test("a list of MANY chunks is concatenated in order, and an empty list is a field", () => {
+    // Two shapes the two-chunk case does not cover: the loop really walks the
+    // list rather than reading its first entry, and a part with no bytes at all
+    // is still a well-formed part rather than a body with a hole in it.
+    const many = multipartBody({
+      name: "f",
+      bytes: [
+        new TextEncoder().encode("a"),
+        new TextEncoder().encode("b"),
+        new TextEncoder().encode("c"),
+      ],
+    });
+    expect(new TextDecoder().decode(many.body)).toContain('name="f"\r\n\r\nabc\r\n');
+
+    const none = multipartBody({ name: "f", bytes: [] });
+    expect(new TextDecoder().decode(none.body)).toContain('name="f"\r\n\r\n\r\n--');
+  });
+
   test("the boundary differs per call, so two concurrent bodies cannot collide", () => {
     const one = multipartBody({ name: "a", bytes: new Uint8Array(0) });
     const two = multipartBody({ name: "a", bytes: new Uint8Array(0) });

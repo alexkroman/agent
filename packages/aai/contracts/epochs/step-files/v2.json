@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "step-files",
+  "epoch": 2,
+  "sha256": "bafe26f78c6600e9574cbcf2b3721e901d04d100c8755c99ebb742b150f2d848",
+  "exports": [
+    "ReadUploadToFileOptions",
+    "STEP_FILE_READ_CONCURRENCY",
+    "STEP_FILE_WINDOW_BYTES",
+    "WithTempDirOptions",
+    "WriteUploadFromFileOptions",
+    "readUploadToFile",
+    "withTempDir",
+    "writeUploadFromFile"
+  ]
+}
