@@ -2,19 +2,21 @@
 // @vitest-environment jsdom
 
 /**
- * `useWorkflows` and `useWorkflowSubmit`.
+ * `useWorkflowSubmit`.
  *
- * Both are glue — the transport is `createWorkflowApi`'s and the watching is
+ * It is glue — the transport is `createWorkflowApi`'s and the watching is
  * `useWorkflowRun`'s, each specced next door — so what is asserted here is only
  * what the glue itself decides: when `pending` is true, which failure wins, and
- * that a new submit cannot leave the previous run's result on screen.
+ * that a new submit cannot leave the previous run's result on screen. The run
+ * this hook adopts on MOUNT is `use-workflow-form-recover.test.ts`'s subject,
+ * and the listing beside it is `use-workflows.test.ts`'s.
  */
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockWorkflowApi, refuseNetwork, workflowRun as run } from "./_react-test-utils.ts";
 import type { TestWorkflow } from "./_workflow-test-defs.ts";
-import { useWorkflowSubmit, useWorkflows } from "./use-workflow-form.ts";
+import { useWorkflowSubmit } from "./use-workflow-form.ts";
 import { MAX_MISSING_READS } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
@@ -36,6 +38,17 @@ import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
  * conflict this comment used to give as the reason for real time everywhere.
  */
 const POLL_MS = 5;
+
+/**
+ * The key every submit now carries, whether or not the page named one.
+ *
+ * `useWorkflowSubmit` mints an opaque per-page key and records runs under it,
+ * which is what lets the next load find them — see `use-run-key.ts`. These
+ * specs are not about its VALUE (that is `use-workflow-form-recover.test.ts`'s
+ * subject), only that a submit is unchanged by its presence, so they match the
+ * shape rather than restating a uuid.
+ */
+const DEFAULT_KEY = expect.any(String);
 
 /**
  * A client whose `watch` always declines, so the hook under test falls through
@@ -72,39 +85,6 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-describe("useWorkflows", () => {
-  test("reports the declared workflows", async () => {
-    const api = fakeApi();
-    const { result } = renderHook(() => useWorkflows({ api }));
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.workflows).toEqual([{ name: "digest" }]);
-  });
-
-  test("reports a failure instead of an empty list that reads as 'none declared'", async () => {
-    // The distinction matters because an empty list renders as a form with no
-    // fields, which looks like a correct answer about a different agent.
-    const api = fakeApi({
-      list: vi.fn(async () => {
-        throw new Error("agent unavailable");
-      }),
-    });
-    const { result } = renderHook(() => useWorkflows({ api }));
-    await waitFor(() => expect(result.current.error).toBe("agent unavailable"));
-    expect(result.current.workflows).toEqual([]);
-  });
-
-  test("reads once, not once per render", async () => {
-    // The client is held in a ref rather than named as a dependency; as a
-    // dependency the natural call site re-reads on every render it causes.
-    const api = fakeApi();
-    const { result, rerender } = renderHook(() => useWorkflows({ api }));
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    rerender();
-    rerender();
-    expect(api.list).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe("useWorkflowSubmit", () => {
   test("starts a run and follows it to completion", async () => {
     const api = fakeApi();
@@ -114,7 +94,7 @@ describe("useWorkflowSubmit", () => {
 
     await act(() => result.current.submit({ url: "u" }));
 
-    expect(api.start).toHaveBeenCalledWith("digest", { url: "u" }, {});
+    expect(api.start).toHaveBeenCalledWith("digest", { url: "u" }, { key: DEFAULT_KEY });
     await waitFor(() => expect(result.current.run?.status).toBe("completed"));
   });
 
@@ -161,7 +141,11 @@ describe("useWorkflowSubmit", () => {
       onProgress: expect.any(Function),
     });
     const [id] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
-    expect(api.start).toHaveBeenCalledWith("digest", { recording: id, languageCode: "en" }, {});
+    expect(api.start).toHaveBeenCalledWith(
+      "digest",
+      { recording: id, languageCode: "en" },
+      { key: DEFAULT_KEY },
+    );
   });
 
   test("passes `parallel` down to the upload, and omits it when unasked", async () => {
@@ -254,7 +238,7 @@ describe("useWorkflowSubmit", () => {
     // one left at 100% under a running workflow reads as the slow part.
     expect(result.current.upload).toBeUndefined();
     const ids = vi.mocked(api.uploadStream).mock.calls.map(([id]) => id);
-    expect(api.start).toHaveBeenCalledWith("digest", { recordings: ids }, {});
+    expect(api.start).toHaveBeenCalledWith("digest", { recordings: ids }, { key: DEFAULT_KEY });
   });
 
   test("drops the report when the upload FAILS, so no bar sits under the error", async () => {
@@ -329,7 +313,11 @@ describe("useWorkflowSubmit", () => {
     // only the tail of the file.
     const ids = vi.mocked(api.uploadStream).mock.calls.map(([id]) => id);
     expect(ids[1]).toBe(ids[2]);
-    expect(api.start).toHaveBeenCalledWith("digest", { recordings: [ids[0], ids[1]] }, {});
+    expect(api.start).toHaveBeenCalledWith(
+      "digest",
+      { recordings: [ids[0], ids[1]] },
+      { key: DEFAULT_KEY },
+    );
   });
 
   test("reset abandons an upload in flight rather than reporting it as failed", async () => {
@@ -379,7 +367,7 @@ describe("useWorkflowSubmit", () => {
     await act(() => result.current.submit({ recordings: mixed }));
 
     expect(api.uploadStream).not.toHaveBeenCalled();
-    expect(api.start).toHaveBeenCalledWith("digest", { recordings: mixed }, {});
+    expect(api.start).toHaveBeenCalledWith("digest", { recordings: mixed }, { key: DEFAULT_KEY });
   });
 
   test("stores every file of a multiple field, in order", async () => {
@@ -396,7 +384,7 @@ describe("useWorkflowSubmit", () => {
     // Two files, two ids: an id is per FILE, so a shared one would have the
     // second recording writing over the first.
     expect(new Set(stored).size).toBe(2);
-    expect(api.start).toHaveBeenCalledWith("digest", { recordings: stored }, {});
+    expect(api.start).toHaveBeenCalledWith("digest", { recordings: stored }, { key: DEFAULT_KEY });
   });
 
   test("leaves an input with no files exactly as it was", async () => {
@@ -408,7 +396,11 @@ describe("useWorkflowSubmit", () => {
     await act(() => result.current.submit({ url: "u", count: 3, deep: true }));
 
     expect(api.uploadStream).not.toHaveBeenCalled();
-    expect(api.start).toHaveBeenCalledWith("digest", { url: "u", count: 3, deep: true }, {});
+    expect(api.start).toHaveBeenCalledWith(
+      "digest",
+      { url: "u", count: 3, deep: true },
+      { key: DEFAULT_KEY },
+    );
   });
 
   test("reports a failed upload as the submit's error, without starting a run", async () => {
@@ -446,7 +438,7 @@ describe("useWorkflowSubmit", () => {
 
     await act(() => result.current.submit({}));
 
-    expect(api.startAndWait).toHaveBeenCalledWith("digest", {}, { wait: 5000 });
+    expect(api.startAndWait).toHaveBeenCalledWith("digest", {}, { key: DEFAULT_KEY, wait: 5000 });
     expect(api.start).not.toHaveBeenCalled();
     await waitFor(() => expect(result.current.run).toBeDefined());
   });

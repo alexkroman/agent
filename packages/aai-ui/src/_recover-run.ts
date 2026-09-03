@@ -38,12 +38,18 @@
  * `useWorkflows`, for the same reason: an empty answer here is a confident
  * false statement.
  *
- * ## It is OPT-IN
+ * ## It is ON by default, and it used to be opt-in
  *
- * A `key` on its own still means only "record this with the run", which is what
- * a voice agent's `ctx.workflows.start({ key })` means and what a page passing
- * an account id may well want. Adopting a run is a decision about the PAGE, so
- * it is `recover: true` and the two together read as what they do.
+ * The argument for opt-in was that a `key` on its own means only "record this
+ * with the run" — which is what a voice agent's `ctx.workflows.start({ key })`
+ * means, there being no page to put a run back on. A FORM is the other case: it
+ * is the page, and losing the run is the thing it cannot recover from. Six of
+ * six page templates wrote `useRunKey()` and `recover: true` together, which is
+ * the same shape `session-resume-store.ts` names on the voice side — a default
+ * in the wrong place — so `useWorkflowSubmit` now mints the key and asks.
+ *
+ * `enabled` remains, because `recover: false` remains: a page whose form must
+ * always open empty says so, and then nothing here runs.
  */
 
 import { errorMessage } from "@alexkroman1/aai";

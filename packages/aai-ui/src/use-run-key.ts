@@ -2,13 +2,22 @@
 /**
  * The handle a page keeps on the runs it started, across a reload.
  *
- * `useWorkflowSubmit({ key, recover: true })` is what makes a run survivable —
- * the run id is that hook's own state, so a refresh loses it while the run
- * carries on — and the `key` is deliberately the caller's to choose, because it
- * is a lookup CAPABILITY: there is no per-user filtering behind `find`, so the
- * key IS the scoping mechanism. Choosing one is easy to get wrong in three
- * separate ways, and six shipped templates had each written the same twenty
- * lines to get it right. This is those lines.
+ * `useWorkflowSubmit` is what makes a run survivable — the run id is that
+ * hook's own state, so a refresh loses it while the run carries on — and the
+ * `key` is what it looks the run up BY, because it is a lookup CAPABILITY:
+ * there is no per-user filtering behind `find`, so the key IS the scoping
+ * mechanism. Choosing one is easy to get wrong in three separate ways, and six
+ * shipped templates had each written the same twenty lines to get it right.
+ * This is those lines.
+ *
+ * **`useWorkflowSubmit` now mints one for itself** ({@link useDefaultRunKey}),
+ * so a page resumes its own run across a reload with nothing written at the
+ * call site — six of six page templates passed `useRunKey()` and
+ * `recover: true`, which is a default in the wrong place. The hook stays
+ * PUBLIC for the page that wants to choose: an app with accounts passes the
+ * ACCOUNT's own id instead, and a run then follows the person to a new device,
+ * which is a promise only a login can keep; a page whose run outlives the tab
+ * passes `useRunKey({ storage: "local" })`.
  *
  * ## Three properties, and the rejected alternatives are why each one matters
  *
@@ -43,7 +52,9 @@
  * coming back on Friday to press Stop is the ordinary case rather than an edge
  * one, and a tab-scoped key would answer that with an empty form beside a run
  * still posting somewhere. It is as far as a key can go without a login, and no
- * further. `podcast-digest` is that template; the other five ship the default.
+ * further. `podcast-digest` is that template, and the reason this hook is still
+ * called by name anywhere; the other five take the tab-scoped default the
+ * submit hook mints for them.
  *
  * ## Anything ELSE a page stores back must be VALIDATED on read
  *
@@ -120,8 +131,41 @@ function mintRunKey(storage: "session" | "local"): string {
 }
 
 /**
- * A lookup key for `useWorkflowSubmit({ key, recover: true })`, stable across
- * reloads.
+ * The key `useWorkflowSubmit` uses when the page named none.
+ *
+ * Two things it does that a plain `useRunKey()` at the call site cannot, and
+ * both are about a page that DID name one:
+ *
+ * - **It mints nothing when the caller has a key.** Minting writes to storage,
+ *   so an unconditional `useRunKey()` inside the hook would leave a slot behind
+ *   on every page that passes an account id and never reads it back.
+ * - **It stays reactive to the caller's key.** A key that arrives late — an
+ *   account id resolved after a login — must reach the lookup, which re-asks on
+ *   a changed key by design; freezing it into `useState` would pin the page to
+ *   whatever it held on its first render.
+ *
+ * The minted half is still frozen for the component's life, which is what
+ * `useRunKey` freezes it for: a fresh key per render would record every run
+ * under a name the next load cannot produce.
+ *
+ * @param explicit - The caller's own key, or undefined for a page with none.
+ * @returns The key to record runs under and look them up by.
+ *
+ * @internal
+ */
+export function useDefaultRunKey(explicit: string | undefined): string {
+  // STORAGE is touched only when the first render had no key of its own; a page
+  // that named one gets a plain id it will never use, which costs nothing and
+  // leaves nothing behind. Either way the value is frozen for the component's
+  // life, which is what makes the next load able to produce the same one.
+  const [minted] = useState(() =>
+    explicit === undefined ? mintRunKey("session") : crypto.randomUUID(),
+  );
+  return explicit ?? minted;
+}
+
+/**
+ * A lookup key for `useWorkflowSubmit({ key })`, stable across reloads.
  *
  * @param options - See the module doc for the whole argument. The storage kind
  *   is read once, when the key is minted: a value that changed afterwards would

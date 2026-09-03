@@ -106,8 +106,9 @@ export {
   type UseDownloadUrlResult,
   useDownloadUrl,
 } from "./use-download-url.ts";
-// The opaque, storage-backed key `useWorkflowSubmit({ recover: true })` looks a
-// run up by — the twenty lines six templates had each written to get one right.
+// The opaque, storage-backed key `useWorkflowSubmit` looks a run up by. It
+// mints one of these for itself now, so this is for the page that wants a
+// different one — an account's id, or a key that outlives the tab.
 export { useRunKey } from "./use-run-key.ts";
 // The caller's in-progress turn, with `null` (silent) and `""` (speech
 // detected, no words yet) kept apart — see the module doc.
@@ -115,10 +116,7 @@ export { type UseUserTranscriptResult, useUserTranscript } from "./use-user-tran
 export {
   type UploadStatus,
   type UseWorkflowSubmitOptions,
-  type UseWorkflowsOptions,
-  type UseWorkflowsResult,
   useWorkflowSubmit,
-  useWorkflows,
   type WorkflowSubmission,
 } from "./use-workflow-form.ts";
 // `RunProgressReader` stays unexported, like `RunWatcher` next door: both are
@@ -140,6 +138,13 @@ export {
   useWorkflowStream,
   type WorkflowStreamSubmission,
 } from "./use-workflow-stream.ts";
+// The listing `<WorkflowFields>` renders a form from — the other half of
+// `use-workflow-form.ts` before that file reached its cap.
+export {
+  type UseWorkflowsOptions,
+  type UseWorkflowsResult,
+  useWorkflows,
+} from "./use-workflows.ts";
 export {
   createWorkflowApi,
   isTerminal,

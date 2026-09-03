@@ -30,15 +30,16 @@
  * cutting and auditing. On this template that is the most expensive orphaning
  * in `templates/`: the recording is already stored, so the work is paid for, and
  * a page with no handle on it invites somebody to upload a 700 MB call a second
- * time and run the whole pipeline again. `key` is the handle that survives a
- * reload and `recover: true` is what reads it back.
+ * time and run the whole pipeline again. The handle that survives a reload is a
+ * correlation KEY, and this desk passes none: `useWorkflowSubmit` mints one,
+ * records every run under it, and asks for that key's newest run as it mounts.
  *
- * The upload half of a reload is already the SDK's: `useWorkflowSubmit`
- * remembers the id it minted, so picking the same file again sends only the
- * windows that did not land. What it needs from the page is the same LIFETIME
- * on both halves, which is the first reason this desk takes `useRunKey()`'s
- * default — `sessionStorage`, the same store the upload recall uses. A handle
- * that outlived it would promise a return the other half cannot keep.
+ * The upload half of a reload is the same hook's: it remembers the id it
+ * minted, so picking the same file again sends only the windows that did not
+ * land. Both halves therefore have the same LIFETIME — `sessionStorage`, one
+ * store — which is the first reason this desk wants the default rather than a
+ * key of its own. A handle that outlived it would promise a return the other
+ * half cannot keep.
  *
  * ## Why the artifact being shareable does NOT make the key shareable
  *
@@ -61,7 +62,7 @@
  * needs none of it — the page renders the audit and offers `Download audit.mp3`,
  * so a person sends the file and the findings deliberately, to exactly who they
  * meant. A shareable key would trade a deliberate send for an accidental one, on
- * the most sensitive input any template here accepts. It stays in
+ * the most sensitive input any template here accepts. The default key stays in
  * `sessionStorage`, which covers the reload this section is about and dies with
  * the tab.
  *
@@ -81,7 +82,6 @@ import {
   SubmitButton,
   UploadProgressBar,
   useDownloadUrl,
-  useRunKey,
   useWorkflowSubmit,
   WorkflowFields,
   WorkflowProgress,
@@ -146,20 +146,17 @@ function Findings({ title, items }: { title: string; items: string[] }) {
 }
 
 export function App() {
-  // This tab's handle on its own audits, in the store the upload recall uses —
-  // see the module doc for why a `?key=` is the wrong trade on this desk.
-  const key = useRunKey();
   // Did THIS load start the run? A reload cannot have, and that is the only way
   // the page can tell "auditing what you just uploaded" from "picking up where
   // you left off" — the hook reports the run, not who asked for it.
   const [startedHere, setStartedHere] = useState(false);
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
-  // `run.output` instead of `unknown`. Neither half of the recovery is useful
-  // alone: without `key` there is nothing to find the run by, and without
-  // `recover` the key is only ever written.
+  // `run.output` instead of `unknown`. The reload — both halves of it — is the
+  // hook's own doing; see the module doc for why the key it mints is the one
+  // this desk wants.
   const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = useWorkflowSubmit<
     typeof audit
-  >(WORKFLOW, { api, key, recover: true });
+  >(WORKFLOW, { api });
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the

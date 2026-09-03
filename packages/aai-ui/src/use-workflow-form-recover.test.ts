@@ -2,23 +2,29 @@
 // @vitest-environment jsdom
 
 /**
- * Finding the run again after a RELOAD — `useWorkflowSubmit({ key, recover })`.
+ * Finding the run again after a RELOAD — what `useWorkflowSubmit` does on mount.
  *
  * A reload is reproducible here exactly: unmount the hook and render it again.
  * Nothing else about the page changes — same agent, same client, same workflow —
  * and that is the whole of what a refresh does to this hook, because the run id
  * it holds is plain `useState`.
  *
- * The first spec is the defect, kept as the control: with no key there is
- * nothing to look a run up BY, so a remount is entitled to come back empty and
- * the assertions say so. Every spec after it is about the key, and what they
- * pin is the four decisions the lookup makes rather than the request itself —
- * `find` is `workflow-client.test.ts`'s subject, and the watch that follows the
- * adopted id is `use-workflow-run.test.ts`'s.
+ * The first two specs are what this file exists for now that recovery is the
+ * DEFAULT: a page that passes nothing at all still records its runs under a key
+ * the next load produces again, and still gets the live one back. `recover:
+ * false` is the control that used to be "no key" — it is the only way left to
+ * reach the old behaviour, and its assertions are the ones the defect had.
+ * Everything after that is the four decisions the lookup makes rather than the
+ * request itself — `find` is `workflow-client.test.ts`'s subject, and the watch
+ * that follows the adopted id is `use-workflow-run.test.ts`'s.
  *
  * Its own file rather than more of `use-workflow-form.test.ts`, on that file's
  * own precedent (`use-workflow-form-recall.test.ts`, the upload half of the
  * same reload): one subject per file, and that one is near the test-length cap.
+ *
+ * Every spec clears `sessionStorage` after it, because the default key LIVES
+ * there for the life of the tab: one spec's key would otherwise be the next
+ * one's, which is the same cross-spec leak the upload recall specs clear for.
  */
 
 import { act, renderHook, waitFor } from "@testing-library/react";
@@ -63,25 +69,55 @@ beforeEach(refuseNetwork);
 
 afterEach(() => {
   vi.useRealTimers();
+  // The default key lives here for the life of the tab — see the module doc.
+  sessionStorage.clear();
 });
 
 describe("useWorkflowSubmit — the run after a reload", () => {
-  test("with no key, a remount cannot find the run — and asks nobody", async () => {
+  test("a page that passes nothing records its runs under a key it keeps", async () => {
     const api = fakeApi();
     const first = renderSubmit(api);
     await act(() => first.result.current.submit({ url: "u" }));
-    await waitFor(() => expect(first.result.current.run?.runId).toBe("wrun_1"));
 
-    // The reload. The run is still going on the agent; the id was in this
-    // component's state and the state is gone with it.
+    const started = vi.mocked(api.start).mock.calls[0]?.[2];
+    const key = started?.key;
+    // The whole default: an opaque key, minted here, recorded with the run.
+    expect(key).toEqual(expect.any(String));
+
+    // The reload. The run id was this component's state and is gone with it —
+    // the key is not, because it is in storage rather than in React.
     first.unmount();
     const second = renderSubmit(api);
+    await waitFor(() => expect(second.result.current.pending).toBe(false));
+    expect(api.find).toHaveBeenLastCalledWith("digest", key, { limit: 1 });
+  });
+
+  test("gets the live run back on the next load, with no options at all", async () => {
+    const api = fakeApi({
+      find: vi.fn(async () => [run({ runId: "wrun_9", status: "running" })]),
+    });
+    const { result } = renderSubmit(api);
+
+    // Nothing was passed: no key, no `recover`. This is the reload a person
+    // actually performs, and what they get back is the run they left.
+    await waitFor(() => expect(result.current.run?.runId).toBe("wrun_9"));
+  });
+
+  test("`recover: false` looks nothing up, and the run is lost with the page", async () => {
+    const api = fakeApi({ find: vi.fn(async () => [run({ runId: "wrun_9" })]) });
+    const first = renderSubmit(api, { recover: false });
+    await act(() => first.result.current.submit({ url: "u" }));
+    await waitFor(() => expect(first.result.current.run?.runId).toBe("wrun_1"));
+
+    first.unmount();
+    const second = renderSubmit(api, { recover: false });
 
     await waitFor(() => expect(second.result.current.pending).toBe(false));
     expect(second.result.current.run).toBeUndefined();
-    // The point of the control: there is no lookup to make without a key, so
-    // the page is not merely unlucky — it holds nothing to ask with.
+    // The opt-out is about the LOOKUP, and this is what it costs: the run is
+    // still there and still recorded under the key, and this page will not ask.
     expect(api.find).not.toHaveBeenCalled();
+    expect(vi.mocked(api.start).mock.calls[0]?.[2]?.key).toEqual(expect.any(String));
   });
 
   test("adopts the key's newest run on mount, so the reload finds it again", async () => {
@@ -177,15 +213,17 @@ describe("useWorkflowSubmit — the run after a reload", () => {
     expect(api.find).toHaveBeenCalledTimes(1);
   });
 
-  test("a key without `recover` records the run and looks up nothing", async () => {
-    const api = fakeApi({ find: vi.fn(async () => [run({ runId: "wrun_9" })]) });
+  test("a caller's key displaces the minted one, and nothing is stored for it", async () => {
+    const api = fakeApi({ find: vi.fn(async () => []) });
     const { result } = renderSubmit(api, { key: KEY });
 
     await act(() => result.current.submit({ url: "u" }));
 
-    // The key still reaches `start`, which is what makes the run findable at
-    // all — by this page on its next load, or by anything else holding the key.
+    // The page named the scope — an account id is the case this is for — so
+    // both halves use it, and the hook mints nothing into storage that only it
+    // would ever read.
     expect(api.start).toHaveBeenCalledWith("digest", { url: "u" }, { key: KEY });
-    expect(api.find).not.toHaveBeenCalled();
+    expect(api.find).toHaveBeenCalledWith("digest", KEY, { limit: 1 });
+    expect(sessionStorage.length).toBe(0);
   });
 });

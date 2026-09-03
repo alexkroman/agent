@@ -17,12 +17,13 @@
  * minutes, this one loses the only Stop button a thirty-digest commitment has,
  * and the run is invisible from then on to everything but `curl`.
  *
- * `key` is the handle that survives and `recover: true` is what reads it back,
- * so a later load lands on the same count, the same newest line, and the same
- * Wake and Cancel buttons bound to the same run.
+ * A correlation KEY is the handle that survives, and `useWorkflowSubmit` looks
+ * that key's newest run up as it mounts, so a later load lands on the same
+ * count, the same newest line, and the same Wake and Cancel buttons bound to
+ * the same run.
  *
- * **The key is `useRunKey({ storage: "local" })`, and this is the one workflow
- * app that passes that option.** Its siblings take the default,
+ * **This is the one workflow app that passes a `key` of its own, and it is
+ * `useRunKey({ storage: "local" })`.** Its siblings let the hook mint one into
  * `sessionStorage`, which dies with the tab and covers exactly the interruption
  * they have — a reload, a same-tab navigation, a crashed tab. A schedule
  * outlives all of that by design: closing the browser on Tuesday and coming
@@ -42,9 +43,9 @@
  *   URL would carry a credential into a lookup token — which is why the
  *   platform stopped writing keys to the operator's log.
  *
- * A real app with accounts passes the account's own id instead, and then the
- * schedule follows the person to a new device — a promise only a login can
- * keep.
+ * A real app with accounts passes the account's own id as `key` instead, and
+ * then the schedule follows the person to a new device — a promise only a login
+ * can keep.
  *
  * ## The form is DECLARED, not written
  *
@@ -135,15 +136,11 @@ export function App() {
   // `run.output` instead of `unknown`. `error` is the agent's own sentence for a
   // rejected input — better copy than anything this page could write, and the
   // reason there is no `try`/`catch` here.
+  // The key REPLACES the tab-scoped one the hook would mint; the lookup that
+  // reads it back on the next load happens either way.
   const { submitForm, run, pending, error, wake, cancel } = useWorkflowSubmit<typeof dailyDigest>(
     WORKFLOW,
-    {
-      // Recorded with the run, and read back on the next load. Neither half is
-      // useful alone: without the key there is nothing to find the run by, and
-      // without `recover` the key is only ever written.
-      key,
-      recover: true,
-    },
+    { key },
   );
 
   return (

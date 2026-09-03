@@ -119,7 +119,10 @@ import type { SubmitInputOf } from "./workflow-def-types.ts";
  * would sit waiting for bytes nobody is sending until its own abandonment
  * bound. That is the same reason `_upload-recall.ts` deliberately does not
  * recall for this hook, one layer up: here the id is part of a run's INPUT.
- * `key` itself still works, and still makes the run findable.
+ * `key` itself still works, and still makes the run findable — but it is NOT
+ * defaulted here the way `useWorkflowSubmit` defaults it, because the whole
+ * value of that default is the lookup this hook refuses, and minting a key
+ * nothing will ever read back is a slot left in storage for no one.
  *
  * `parallel` COMPOSES with what this hook is for rather than competing with it.
  * The run still starts before the bytes, and the store still publishes how far
