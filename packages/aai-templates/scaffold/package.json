@@ -14,9 +14,9 @@
     "publish:agent": "aai publish"
   },
   "dependencies": {
-    "@alexkroman1/aai": "^12.0.0",
-    "@alexkroman1/aai-runtime": "^12.0.0",
-    "@alexkroman1/aai-ui": "^12.0.0",
+    "@alexkroman1/aai": "^13.0.0",
+    "@alexkroman1/aai-runtime": "^13.0.0",
+    "@alexkroman1/aai-ui": "^13.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.0.0",
@@ -24,7 +24,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@alexkroman1/aai-cli": "^12.0.0",
+    "@alexkroman1/aai-cli": "^13.0.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
