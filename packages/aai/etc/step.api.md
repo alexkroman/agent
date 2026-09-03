@@ -33,7 +33,7 @@ export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody
 // @public
 export type MultipartPart = {
     name: string;
-    bytes: Uint8Array;
+    bytes: Uint8Array | readonly Uint8Array[];
     filename?: string | undefined;
     type?: string | undefined;
 };
@@ -200,7 +200,7 @@ export function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOp
 }>;
 
 // @public
-export function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
+export function stepTranscribeSync(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
     text: string;
 }>;
 
@@ -333,6 +333,9 @@ export type UploadSlice = {
 
 // @public
 export const WAV_HEADER_BYTES = 44;
+
+// @public
+export function wavHeader(format: PcmFormat, byteLength: number): Uint8Array<ArrayBuffer>;
 
 // @public
 export function writeUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;

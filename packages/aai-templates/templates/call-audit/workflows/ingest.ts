@@ -143,7 +143,16 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
       const normalized = join(dir, "audio.pcm");
       const silenceLog = join(dir, "silence.txt");
 
-      await readUploadToFile(uploadId, source, { size: stored.size });
+      // NO `size`, though `stored.size` is right there — and that is the whole
+      // difference between this copy being one window at a time and being
+      // `STEP_FILE_READ_CONCURRENCY` of them. Passing `size` means "I am judging
+      // completeness myself", which is what a body polling a still-arriving
+      // upload needs and is the opposite of what happened above: this step has
+      // already called `requireCompleteUpload`, so the file IS whole and the
+      // windows may land in any order. Omitting it lets `readUploadToFile`
+      // establish that for itself and fan out. The cost is one metadata round
+      // trip, against the dozens of window reads it overlaps.
+      await readUploadToFile(uploadId, source);
 
       // What it WAS, for the progress log and the page. Worth one ffprobe: "41
       // minutes of aac" explains the shape of the run, where "the recording" leaves

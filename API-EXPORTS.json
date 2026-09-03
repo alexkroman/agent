@@ -591,6 +591,7 @@
     "stepWebhookUrl",
     "stripJsonFence",
     "uploadInfo",
+    "wavHeader",
     "writeUpload"
   ],
   "@alexkroman1/aai/step-errors": [
@@ -613,6 +614,7 @@
   ],
   "@alexkroman1/aai/step-files": [
     "ReadUploadToFileOptions",
+    "STEP_FILE_READ_CONCURRENCY",
     "STEP_FILE_WINDOW_BYTES",
     "WithTempDirOptions",
     "WriteUploadFromFileOptions",

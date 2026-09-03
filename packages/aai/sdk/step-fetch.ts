@@ -285,8 +285,20 @@ function causeChain(err: unknown): { text: string; code?: string }[] {
 export type MultipartPart = {
   /** The form field name the endpoint reads. */
   name: string;
-  /** The bytes. */
-  bytes: Uint8Array;
+  /**
+   * The bytes, as one buffer or as the chunks they already are.
+   *
+   * A LIST is concatenated into the body in order and is indistinguishable on
+   * the wire from the same content passed as one buffer. It exists so a caller
+   * holding a payload in pieces — a {@link wavHeader} in front of the samples it
+   * describes, a file read window by window — need not JOIN them first only for
+   * this function to copy the join into the body: for a multi-megabyte part that
+   * intermediate buffer is a second full copy of the payload, held at the same
+   * time as the first. The body itself is still one buffer, which is what buys
+   * `Content-Length` and a retryable request; this removes the copy in front of
+   * it, not the one it is.
+   */
+  bytes: Uint8Array | readonly Uint8Array[];
   /** Filename to declare. Omitted makes this an ordinary field rather than a file. */
   filename?: string | undefined;
   /** Content type of the part. Defaults to `application/octet-stream` for a file. */
@@ -341,9 +353,13 @@ export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody
       encoder.encode(
         `--${boundary}\r\nContent-Disposition: form-data; name="${escapeHeaderQuoted(part.name)}"${disposition}\r\n${type}\r\n`,
       ),
-      part.bytes,
-      encoder.encode("\r\n"),
     );
+    // Spread with a loop rather than `chunks.push(...part.bytes)`: the argument
+    // list is bounded by the stack, and a part's chunk count is the caller's
+    // business rather than something this can promise stays at two.
+    if (part.bytes instanceof Uint8Array) chunks.push(part.bytes);
+    else for (const chunk of part.bytes) chunks.push(chunk);
+    chunks.push(encoder.encode("\r\n"));
   }
   chunks.push(encoder.encode(`--${boundary}--\r\n`));
   return {

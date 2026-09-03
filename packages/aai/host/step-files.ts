@@ -37,6 +37,9 @@
  *
  * Nothing here holds a whole recording in memory at any point, which is the
  * property that makes a step written on it work on the input it was written for.
+ * What the read direction DOES hold is {@link STEP_FILE_READ_CONCURRENCY}
+ * windows — 32 MiB, a constant — because it reads them at once; see
+ * {@link readUploadToFile} for why the remote read is what that buys.
  *
  * ## Why this is a subpath of its own, and not three more names on `/step`
  *
@@ -65,11 +68,12 @@
  * @module step-files
  */
 
-import { mkdtemp, open, rm, statfs } from "node:fs/promises";
+import { type FileHandle, mkdtemp, open, rm, statfs } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { formatBytes } from "../sdk/format.ts";
 import { isRecord } from "../sdk/is-record.ts";
+import { mapConcurrent } from "../sdk/map-concurrent.ts";
 import { readUpload, type UploadInfo } from "../sdk/step-uploads.ts";
 import { requireCompleteUpload } from "../sdk/step-uploads-complete.ts";
 import { type WriteUploadOptions, writeUpload } from "../sdk/step-uploads-write.ts";
@@ -90,6 +94,33 @@ import { type WriteUploadOptions, writeUpload } from "../sdk/step-uploads-write.
 // contract hash. See "Value-carrying constants carry a LITERAL type" in
 // AGENTS.md.
 export const STEP_FILE_WINDOW_BYTES = 8_388_608;
+
+/**
+ * Windows {@link readUploadToFile} reads at once, when the file is known to be
+ * whole.
+ *
+ * What it costs is memory, and exactly this much: the width times
+ * {@link STEP_FILE_WINDOW_BYTES}, i.e. **32 MiB** held while a copy is in flight,
+ * because a window is buffered before its write starts. That is the same budget
+ * the WRITE half of this round trip already accepts — `UPLOAD_WINDOW_CONCURRENCY`
+ * (`aai-runtime/_upload-store.ts`) is 4 over the same 8 MiB window, and its doc
+ * calls that "the number that decides whether the uplink and the bucket work at
+ * the same time or take turns". Matching it is the whole argument for this value:
+ * a step that pulls a recording in and pushes it back out should not hold two
+ * different amounts of it, and 4 is a width the guest is already sized for.
+ *
+ * **It is UNMEASURED on the READ side, and that is stated rather than dressed up
+ * in a table** — the write width was swept against a bucket and an uplink, and
+ * nothing here has been swept against the brokered read path. What is known is
+ * the shape of the cost it attacks: on a deployed guest each window is a brokered
+ * `302` + `Range` GET against object storage
+ * (`aai-runtime/_upload-blobs-brokered.ts`), which `UPLOAD_PART_BYTES`
+ * (`sdk/upload-constants.ts`) measures at 1.9-4.3 MB/s per request, so a serial
+ * walk cannot start window N+1 until window N has fully landed. Re-measure before
+ * moving it; a wider default costs a guest's resident set linearly, and a metered
+ * link takes back throughput that width alone tries to buy.
+ */
+export const STEP_FILE_READ_CONCURRENCY = 4;
 
 /** Options for {@link withTempDir}. */
 export type WithTempDirOptions = {
@@ -156,22 +187,60 @@ export type ReadUploadToFileOptions = {
   size?: number | undefined;
   /** Bytes per read. Defaults to {@link STEP_FILE_WINDOW_BYTES}. */
   windowBytes?: number | undefined;
+  /**
+   * How many windows to read at once. Defaults to
+   * {@link STEP_FILE_READ_CONCURRENCY}; rounded down and floored at 1, as
+   * `mapConcurrent` does.
+   *
+   * **Read only when `size` is absent.** That option puts the completeness
+   * judgement on the caller, and judging it means seeing the windows in order —
+   * see {@link readUploadToFile}, which is where the two paths are cut apart.
+   */
+  concurrency?: number | undefined;
 };
 
 /**
  * Write an upload to a local path, a window at a time, and answer with the byte
  * count that landed.
  *
- * A `for` loop rather than a fan-out deliberately: the bytes land in one file at
- * one offset each, so concurrency buys nothing and costs exactly the memory the
- * windows are here to bound.
+ * **The windows are read CONCURRENTLY, because the cost here is the REMOTE read
+ * and not the local write.** This was a `for` loop, argued as *"the bytes land
+ * in one file at one offset each, so concurrency buys nothing and costs exactly
+ * the memory the windows are here to bound"* — which is true of the WRITE and
+ * says nothing about the read. On a deployed guest every window is a brokered
+ * `302` + `Range` GET against object storage
+ * (`aai-runtime/_upload-blobs-brokered.ts`), measured at 1.9-4.3 MB/s per
+ * request under `UPLOAD_PART_BYTES`, so window N+1's request did not start until
+ * window N's bytes had fully landed and the whole leg was latency-bound. The
+ * other half of the same round trip has always fanned out — `putWindows`
+ * (`aai-runtime/_upload-store-blobs.ts`) runs `UPLOAD_WINDOW_CONCURRENCY` wide —
+ * so a step normalizing a recording pulled it in one window at a time and pushed
+ * it back out four at a time. See {@link STEP_FILE_READ_CONCURRENCY}, which is
+ * that same 4 and the same 32 MiB held.
  *
- * **The walk advances by what was READ, not by the window it asked for.** A
- * `readUpload` window is clamped to the bytes that have arrived, so on a STREAMED
- * upload — or on any stale `size` — a fixed `at += windowBytes` stride writes a
- * short chunk and then resumes a whole window later, silently leaving a hole in
- * the middle of the file. Advancing by `slice.end` cannot: a short answer ends
- * the walk, and the returned count is how the caller learns it was short.
+ * **The walk advances by what was READ, not by the window it asked for, and that
+ * contract only holds IN ORDER.** A `readUpload` window is clamped to the bytes
+ * that have ARRIVED, so on a STREAMED upload — or on any stale `size` — a short
+ * answer means the file ends there, and the returned count is how the caller
+ * learns it. A fan-out cannot preserve that by itself: window 5 may land in full
+ * while window 2 comes back short, and writing 5 leaves a HOLE the returned count
+ * claims is not there — silent truncation, which is the failure this whole module
+ * keeps being rewritten to refuse. So the two paths are cut on exactly that line:
+ *
+ * - **No `size`** — `requireCompleteUpload` has established the file is whole, so
+ *   every window but the last is full BY CONSTRUCTION and landing order cannot
+ *   change the result. This path fans out.
+ * - **A `size`** — the caller is judging completeness itself, which is what makes
+ *   a polling body expressible (see {@link ReadUploadToFileOptions.size}). This
+ *   path stays serial, so it can stop at the first window the store came back
+ *   short on rather than discovering it four windows later.
+ *
+ * **The concurrent path is still short-safe**, because a store may answer short
+ * for reasons of its own. What it returns is the length of the CONTIGUOUS PREFIX
+ * that landed — never the sum of the bytes it wrote — and it TRUNCATES the file to
+ * that prefix, so a hole is neither reported as present nor left on disk in front
+ * of bytes the count denies. That makes the two paths produce the same file, which
+ * is what `step-files.test.ts` asserts rather than assumes.
  *
  * **With no `size`, an upload that is still arriving is REFUSED.** That count was
  * documented as how a caller learns the store came back short, and against a
@@ -193,29 +262,122 @@ export async function readUploadToFile(
   path: string,
   opts: ReadUploadToFileOptions = {},
 ): Promise<number> {
+  // Resolved BEFORE the handle is opened, which `open(path, "w")` makes
+  // load-bearing: a refused incomplete upload must leave the destination alone
+  // rather than truncate it to nothing on its way out.
   const size = opts.size ?? (await requireCompleteUpload(uploadId)).size;
   const windowBytes = opts.windowBytes ?? STEP_FILE_WINDOW_BYTES;
   const handle = await open(path, "w");
   try {
-    let at = 0;
-    while (at < size) {
-      const slice = await readUpload(uploadId, {
-        start: at,
-        end: Math.min(at + windowBytes, size),
-      });
-      // Nothing more is there. `slice.end <= at` is the same finding by another
-      // route and is here so a store that answers a window with no progress ends
-      // the walk instead of spinning on it forever.
-      if (slice.bytes.length === 0 || slice.end <= at) break;
-      // `at` and `size` are only knowable here, and the capacity only from the
-      // path — see `outOfSpace`.
-      await handle.write(slice.bytes).catch(outOfSpace(path, at, size));
-      at = slice.end;
-    }
-    return at;
+    // The presence of `size`, never its VALUE, is what picks the path — it is the
+    // caller saying "I am judging completeness", and a caller who did that gets
+    // the serial walk however whole the file happens to be.
+    if (opts.size !== undefined)
+      return await walkWindows(uploadId, handle, path, size, windowBytes);
+    return await fanOutWindows(uploadId, handle, path, size, windowBytes, {
+      width: opts.concurrency ?? STEP_FILE_READ_CONCURRENCY,
+    });
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * The serial walk — for a caller judging completeness itself.
+ *
+ * Nothing here may be reordered, and that is the whole reason this survives
+ * beside the fan-out: the contract is that the walk STOPS at the first window the
+ * store could not fill, which is only observable in order. It advances by
+ * `slice.end` rather than by the window it asked for, so a short answer ends the
+ * walk instead of striding past it and leaving a hole mid-file.
+ */
+async function walkWindows(
+  uploadId: string,
+  handle: FileHandle,
+  path: string,
+  size: number,
+  windowBytes: number,
+): Promise<number> {
+  let at = 0;
+  while (at < size) {
+    const slice = await readUpload(uploadId, {
+      start: at,
+      end: Math.min(at + windowBytes, size),
+    });
+    // Nothing more is there. `slice.end <= at` is the same finding by another
+    // route and is here so a store that answers a window with no progress ends
+    // the walk instead of spinning on it forever.
+    if (slice.bytes.length === 0 || slice.end <= at) break;
+    // `at` and `size` are only knowable here, and the capacity only from the
+    // path — see `outOfSpace`.
+    await handle.write(slice.bytes).catch(outOfSpace(path, at, size));
+    at = slice.end;
+  }
+  return at;
+}
+
+/**
+ * The fan-out — for a file `requireCompleteUpload` has established is whole.
+ *
+ * `mapConcurrent` rather than a pool of our own, and three of its documented
+ * properties are what this rests on: it holds the width, its results come back in
+ * ITEM order however the individual reads settle (so the prefix below is a walk
+ * over windows in file order, not over completions), and a rejection is raised
+ * only once the calls already in flight have SETTLED — so an `ENOSPC` on one
+ * window cannot abandon a sibling mid-write against a handle the `finally` is
+ * about to close.
+ *
+ * Positional writes are what make out-of-order landing legal: a window's offset is
+ * its own and nothing depends on the file's cursor. What that buys has to be paid
+ * for at the end, in the prefix walk.
+ */
+async function fanOutWindows(
+  uploadId: string,
+  handle: FileHandle,
+  path: string,
+  size: number,
+  windowBytes: number,
+  opts: { width: number },
+): Promise<number> {
+  const windows: Array<{ start: number; end: number }> = [];
+  for (let at = 0; at < size; at += windowBytes) {
+    windows.push({ start: at, end: Math.min(at + windowBytes, size) });
+  }
+
+  const landed = await mapConcurrent(windows, opts.width, async (window) => {
+    const slice = await readUpload(uploadId, window);
+    // How far this window really got, from the BYTES rather than from the `end`
+    // the read echoes back: those agree for every well-behaved store, and where
+    // they do not the bytes are the half that cannot over-claim. Clamped to the
+    // window so a store answering with more than it was asked for cannot write
+    // over its neighbour either.
+    const reached = Math.min(window.start + slice.bytes.length, window.end);
+    if (reached <= window.start) return { ...window, reached: window.start };
+    // `window.start` rather than a running total: windows land out of order, so
+    // there is no "how far the walk got" to report, and where this one sits is
+    // the honest figure — see `outOfSpace`.
+    await handle
+      .write(slice.bytes, 0, reached - window.start, window.start)
+      .catch(outOfSpace(path, window.start, size));
+    return { ...window, reached };
+  });
+
+  // The prefix, and only the prefix: a window that came back short or empty ends
+  // the file, whatever its successors managed to land. Summing what was written
+  // instead is the silent-truncation bug written the other way up — it reports a
+  // length the file's first N bytes do not back.
+  let at = 0;
+  for (const window of landed) {
+    if (window.reached <= window.start) break;
+    at = window.reached;
+    if (window.reached < window.end) break;
+  }
+  // And the hole is not merely unreported — it is not on disk. A positional write
+  // past the prefix leaves a sparse gap, so a caller that ignored the count would
+  // read zeroes and then real bytes; cutting the file back makes it exactly what
+  // was answered for, which is what the serial walk produces by construction.
+  if (at < size) await handle.truncate(at);
+  return at;
 }
 
 /**

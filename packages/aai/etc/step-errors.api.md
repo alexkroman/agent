@@ -139,7 +139,7 @@ export function stepTranscribeSubmitClassified(audioUrl: string, opts?: Transcri
 }>;
 
 // @public
-export function stepTranscribeSyncClassified(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
+export function stepTranscribeSyncClassified(bytes: Uint8Array | readonly Uint8Array[], opts?: TranscribeSyncOptions): Promise<{
     text: string;
 }>;
 

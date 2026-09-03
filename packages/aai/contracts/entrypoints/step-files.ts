@@ -18,12 +18,14 @@
  * for `/ffmpeg`. Nothing here is framework plumbing an author never names.
  *
  * The promise is the SHAPE of the round trip rather than the byte count.
- * `STEP_FILE_WINDOW_BYTES` is on the contract because both functions take it as
- * an option and a spec drives their multi-window paths through it; what must not
- * move is that neither ever holds a whole recording in memory, and that what
- * crosses a step boundary is an upload id rather than a path — a step is
- * journaled by its RETURN VALUE and may be replayed in another process, so a
- * path in one names a file that is gone.
+ * `STEP_FILE_WINDOW_BYTES` and `STEP_FILE_READ_CONCURRENCY` are on the contract
+ * because both are defaults a caller may override through an option — the same
+ * test, and a spec drives the multi-window and concurrent paths through them.
+ * What must not move is that neither function ever holds a whole recording in
+ * memory (the read now holds the width times the window, which is a constant and
+ * not a fraction of the file), and that what crosses a step boundary is an upload
+ * id rather than a path — a step is journaled by its RETURN VALUE and may be
+ * replayed in another process, so a path in one names a file that is gone.
  *
  * Re-exported from `@alexkroman1/aai/step-files`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
@@ -34,6 +36,7 @@
 export {
   type ReadUploadToFileOptions,
   readUploadToFile,
+  STEP_FILE_READ_CONCURRENCY,
   STEP_FILE_WINDOW_BYTES,
   type WithTempDirOptions,
   type WriteUploadFromFileOptions,

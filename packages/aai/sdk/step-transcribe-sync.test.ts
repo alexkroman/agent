@@ -15,6 +15,7 @@ import {
   TRANSCRIBE_SYNC_ENDPOINT,
   TRANSCRIBE_SYNC_MODEL,
 } from "./step-transcribe-sync.ts";
+import { wavHeader } from "./wav.ts";
 
 function stubSync(reply: { status?: number; body: unknown }) {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -63,6 +64,28 @@ describe("stepTranscribeSync", () => {
     const body = new TextDecoder().decode(sync.calls[0]?.init.body as Uint8Array);
     expect(body).toContain('filename="segment-04.wav"');
     expect(body).toContain("Content-Type: audio/wav");
+  });
+
+  test("a LIST body reaches the endpoint as one file, header and samples in order", async () => {
+    // The shape a fan-out sends: a header written for a window, and the window,
+    // handed over as two chunks so neither this call nor `multipartBody` has to
+    // hold a joined copy of the segment. What the endpoint receives is the
+    // ordinary multipart body — asserted on the BYTES between the part's header
+    // terminator and the closing boundary, since that is the whole file it will
+    // decode.
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    const sync = stubSync({ body: { text: "hi" } });
+
+    const header = wavHeader({ sampleRate: 16_000 }, 4);
+    const samples = new Uint8Array([0x00, 0x80, 0xff, 0x7f]);
+    await stepTranscribeSync([header, samples], { filename: "segment-04.wav" });
+
+    const body = sync.calls[0]?.init.body as Uint8Array;
+    const boundary = /boundary=(.+)$/.exec(sync.headers()["Content-Type"] ?? "")?.[1] ?? "";
+    const text = new TextDecoder("latin1").decode(body);
+    const from = text.indexOf("\r\n\r\n") + 4;
+    const to = text.lastIndexOf(`\r\n--${boundary}--`);
+    expect(body.subarray(from, to)).toEqual(new Uint8Array([...header, ...samples]));
   });
 
   test("a silent segment answers with an empty string rather than throwing", async () => {

@@ -352,7 +352,9 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 ### stepTranscribeSyncClassified()
 
 ```ts
-function stepTranscribeSyncClassified(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
+function stepTranscribeSyncClassified(bytes: 
+  | Uint8Array<ArrayBufferLike>
+  | readonly Uint8Array<ArrayBufferLike>[], opts?: TranscribeSyncOptions): Promise<{
   text: string;
 }>;
 ```
@@ -370,7 +372,8 @@ never going to transcribe.
 
 ##### bytes
 
-`Uint8Array`
+  \| `Uint8Array`\<`ArrayBufferLike`\>
+  \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
 
 ##### opts?
 

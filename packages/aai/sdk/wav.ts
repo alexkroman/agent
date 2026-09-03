@@ -35,6 +35,21 @@
  * `reduce`-then-`set` loop, and the one that gets it wrong writes a file whose
  * tail is silence. Passing the array is the whole of it.
  *
+ * ## The header is separately reachable, and that is a MEMORY affordance
+ *
+ * {@link wavHeader} writes the 44 bytes on their own, for a caller that is going
+ * to hand the header and the samples to something that takes a LIST — a
+ * multipart body, a stream. `encodeWav` allocates `44 + N` and copies the
+ * samples into it, so a step that encodes a segment and then encodes a request
+ * around it holds the same audio twice; two chunks hold it once. Nothing about
+ * the bytes on the wire changes, and neither does the time (a `set` over a few
+ * megabytes is around a millisecond against a multi-second request) — what
+ * changes is the peak, which is what bounds how many segments may be in flight
+ * at once.
+ *
+ * `encodeWav` is written in terms of it rather than beside it, so the two can
+ * never disagree about a field.
+ *
  * ## What it deliberately does NOT do
  *
  * Resample, mix down, or convert between bit depths. It writes a header over
@@ -112,6 +127,103 @@ function assertFormat(
   }
 }
 
+/**
+ * Refuse a `byteLength` that is not a length.
+ *
+ * Shared by the two functions that take a COUNT where their neighbours take
+ * bytes ({@link wavHeader}, {@link pcmDurationMs}), which is the one misuse
+ * either signature invites — and both fail the same way if it is not made: a
+ * `NaN` becomes a `0` in a header field and a `NaN` in a duration, neither of
+ * which names the call that produced it.
+ */
+function assertByteLength(caller: string, byteLength: number): void {
+  if (Number.isFinite(byteLength) && byteLength >= 0) return;
+  // `typeof` for anything that is not a number, never the value: the value
+  // handed here is usually the whole buffer, and `String(bytes)` on 48 kB of
+  // audio is a comma-separated error message nobody can read.
+  const shown =
+    typeof byteLength === "number" ? String(byteLength) : `a value of type ${typeof byteLength}`;
+  throw new RangeError(
+    `${caller}: byteLength must be a non-negative number of bytes, got ${shown}` +
+      " — pass `bytes.byteLength`, not the bytes.",
+  );
+}
+
+/**
+ * The 44 bytes, with the name of whoever the author actually called.
+ *
+ * `caller` is threaded for the reason {@link assertFormat} takes one:
+ * {@link encodeWav} is expressed in terms of this, and a message saying
+ * `wavHeader:` points at a function that call site never named.
+ */
+function writeWavHeader(
+  caller: string,
+  format: PcmFormat,
+  byteLength: number,
+): Uint8Array<ArrayBuffer> {
+  const { sampleRate } = format;
+  const channels = format.channels ?? 1;
+  const bitsPerSample = format.bitsPerSample ?? 16;
+  assertFormat(caller, sampleRate, channels, bitsPerSample);
+  assertByteLength(caller, byteLength);
+
+  const frame = blockAlign(channels, bitsPerSample);
+  const out = new Uint8Array(WAV_HEADER_BYTES);
+  const view = new DataView(out.buffer);
+  const ascii = (at: number, text: string): void => {
+    for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i));
+  };
+
+  ascii(0, "RIFF");
+  // The FIRST of the two lengths this header states, and both are derived from
+  // `byteLength`: everything after this field, which is the header minus `RIFF`
+  // and this field itself (36) plus the payload.
+  view.setUint32(4, 36 + byteLength, true);
+  ascii(8, "WAVEfmt ");
+  view.setUint32(16, 16, true); // `fmt ` payload length, for linear PCM
+  view.setUint16(20, 1, true); // WAVE_FORMAT_PCM
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  // DERIVED, both of them — see the module doc for why these two are the
+  // fields a hand-written header gets wrong.
+  view.setUint32(28, sampleRate * frame, true);
+  view.setUint16(32, frame, true);
+  view.setUint16(34, bitsPerSample, true);
+  ascii(36, "data");
+  // The SECOND length: the payload alone. A decoder reads this one to find the
+  // end of the samples and the one at offset 4 to find the end of the file, so
+  // a header that derived them from different numbers is a file that plays past
+  // its own audio or stops short of it.
+  view.setUint32(40, byteLength, true);
+  return out;
+}
+
+/**
+ * The WAV header for a payload of `byteLength` bytes, and nothing else.
+ *
+ * For a caller handing the header and the samples to something that takes a
+ * LIST — {@link multipartBody}, a stream — where {@link encodeWav}'s joined
+ * buffer would be a second full copy of the audio held at the same time. Two
+ * chunks are the same bytes in the same order on the wire.
+ *
+ * @param format - How to read the samples the header will sit in front of. See
+ *   {@link PcmFormat} for the two defaults.
+ * @param byteLength - How many bytes of PCM follow. The header states TWO
+ *   lengths and both derive from this one, so a value that does not match what
+ *   is actually sent is a file a decoder reads past the end of or stops short
+ *   inside.
+ * @returns Exactly {@link WAV_HEADER_BYTES} bytes.
+ *
+ * @throws {RangeError} for a format no header can describe — the same check
+ *   {@link encodeWav} makes, so the two cannot disagree about what is legal —
+ *   or for a `byteLength` that is not a length.
+ *
+ * @public
+ */
+export function wavHeader(format: PcmFormat, byteLength: number): Uint8Array<ArrayBuffer> {
+  return writeWavHeader("wavHeader", format, byteLength);
+}
+
 /** Join a list of chunks into one buffer, sizing it in a single pass first. */
 function joinChunks(chunks: readonly Uint8Array[]): Uint8Array {
   if (chunks.length === 1) return chunks[0] as Uint8Array;
@@ -146,34 +258,13 @@ export function encodeWav(
   samples: Uint8Array | readonly Uint8Array[],
   format: PcmFormat,
 ): Uint8Array<ArrayBuffer> {
-  const { sampleRate } = format;
-  const channels = format.channels ?? 1;
-  const bitsPerSample = format.bitsPerSample ?? 16;
-  assertFormat("encodeWav", sampleRate, channels, bitsPerSample);
-
   const pcm = samples instanceof Uint8Array ? samples : joinChunks(samples);
-  const frame = blockAlign(channels, bitsPerSample);
-  const out = new Uint8Array(WAV_HEADER_BYTES + pcm.length);
-  const view = new DataView(out.buffer);
-  const ascii = (at: number, text: string): void => {
-    for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i));
-  };
-
-  ascii(0, "RIFF");
-  // Everything after this field. `36` is the header minus `RIFF` and this.
-  view.setUint32(4, 36 + pcm.length, true);
-  ascii(8, "WAVEfmt ");
-  view.setUint32(16, 16, true); // `fmt ` payload length, for linear PCM
-  view.setUint16(20, 1, true); // WAVE_FORMAT_PCM
-  view.setUint16(22, channels, true);
-  view.setUint32(24, sampleRate, true);
-  // DERIVED, both of them — see the module doc for why these two are the
-  // fields a hand-written header gets wrong.
-  view.setUint32(28, sampleRate * frame, true);
-  view.setUint16(32, frame, true);
-  view.setUint16(34, bitsPerSample, true);
-  ascii(36, "data");
-  view.setUint32(40, pcm.length, true);
+  // `byteLength`, not `length`: `samples` may be a VIEW into a larger buffer,
+  // and for a `Uint8Array` the two agree while for the header they must not be
+  // allowed to drift apart — the same confusion `_bytes.ts` records.
+  const header = writeWavHeader("encodeWav", format, pcm.byteLength);
+  const out = new Uint8Array(WAV_HEADER_BYTES + pcm.byteLength);
+  out.set(header, 0);
   out.set(pcm, WAV_HEADER_BYTES);
   return out;
 }
@@ -191,7 +282,8 @@ export function encodeWav(
  * `NaN` duration is journaled by a step, rendered into a progress bar and
  * reported to a caller without anything on the way saying which call produced
  * it. That is the one misuse this signature invites — `encodeWav`, `stepSpeak`
- * and `readUpload` all deal in the bytes themselves.
+ * and `readUpload` all deal in the bytes themselves. {@link wavHeader} is the
+ * other function here taking a count, and shares this check for that reason.
  *
  * @throws {RangeError} for a format no header can describe — the same check
  *   {@link encodeWav} makes, so the two cannot disagree about what is legal —
@@ -202,17 +294,7 @@ export function encodeWav(
 export function pcmDurationMs(byteLength: number, format: PcmFormat): number {
   const channels = format.channels ?? 1;
   const bitsPerSample = format.bitsPerSample ?? 16;
-  if (!Number.isFinite(byteLength) || byteLength < 0) {
-    // `typeof` for anything that is not a number, never the value: the value
-    // handed here is usually the whole buffer, and `String(bytes)` on 48 kB of
-    // audio is a comma-separated error message nobody can read.
-    const shown =
-      typeof byteLength === "number" ? String(byteLength) : `a value of type ${typeof byteLength}`;
-    throw new RangeError(
-      `pcmDurationMs: byteLength must be a non-negative number of bytes, got ${shown}` +
-        " — pass `bytes.byteLength`, not the bytes.",
-    );
-  }
+  assertByteLength("pcmDurationMs", byteLength);
   assertFormat("pcmDurationMs", format.sampleRate, channels, bitsPerSample);
   return Math.round(
     (byteLength / (blockAlign(channels, bitsPerSample) * format.sampleRate)) * 1000,

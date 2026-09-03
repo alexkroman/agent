@@ -66,12 +66,12 @@
 import type { WorkflowCtx } from "@alexkroman1/aai";
 import {
   emit,
-  encodeWav,
   mapConcurrent,
   readUpload,
   report,
   requireCompleteUpload,
   uploadInfo,
+  wavHeader,
 } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
@@ -358,13 +358,20 @@ export async function transcribeSegment(
   // answers better — and getting it wrong is a whole transcript in the wrong
   // language. Add one back only for a desk that really knows.
   //
-  // `encodeWav` is what makes a WINDOW decodable: the endpoint decodes each
+  // A HEADER is what makes a WINDOW decodable: the endpoint decodes each
   // request independently, so a slice of the middle of a recording is a headerless
   // tail until one is put back on it. The streaming flow needs no equivalent — its
   // parts were cut with a header each. The header is the SDK's rather than this
   // template's: a `WavFormat` is structurally a `PcmFormat`, and 22 lines of
   // `DataView` writes with a comment about which of the two declared lengths a
   // decoder trusts is not a thing worth a second copy of.
+  // It goes down as its own CHUNK rather than through `encodeWav`, which is a
+  // MEMORY decision and not a speed one: `encodeWav` allocates `44 + N` and
+  // copies the segment into it, and `multipartBody` then allocates the body and
+  // copies that again — so the audio was resident three times at the moment the
+  // request went out, on a fan-out whose width is set by exactly that peak (see
+  // `MAX_SEGMENT_CONCURRENCY`). Header and samples are contiguous on the wire
+  // either way; this holds `44 + N` once, ~3 MB per in-flight 16 kHz segment.
   // Down to 16 kHz mono BEFORE the header goes on, because the endpoint's budget
   // is 30 seconds of wall clock and that covers the upload. At 48 kHz stereo this
   // window is 17.66 MB and the same audio is 2.94 MB normalized — six times the
@@ -382,12 +389,12 @@ export async function transcribeSegment(
   // identical answer. BOTH flows can reach it, which is newer than it looks:
   // the check used to hang off the resampler, so a 12-bit recording already at
   // 16 kHz mono — light for both flows, and therefore converted by neither —
-  // sailed past it into an unclassified `RangeError` from `encodeWav`.
+  // sailed past it into an unclassified `RangeError` from the header writer.
   const light = fatalOnUnsupported(() => downsampleSegment(audio.bytes, format));
 
   const { value: text, ms } = await timed(() =>
     transcribeWav(
-      encodeWav(light.bytes, light.format),
+      [wavHeader(light.format, light.bytes.byteLength), light.bytes],
       `segment-${segment.index}.wav`,
       `Segment ${segment.index} (${formatDuration(segment.startMs)})`,
     ),

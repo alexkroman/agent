@@ -11,7 +11,11 @@ export function readUploadToFile(uploadId: string, path: string, opts?: ReadUplo
 export type ReadUploadToFileOptions = {
     size?: number | undefined;
     windowBytes?: number | undefined;
+    concurrency?: number | undefined;
 };
+
+// @public
+export const STEP_FILE_READ_CONCURRENCY = 4;
 
 // @public
 export const STEP_FILE_WINDOW_BYTES = 8388608;

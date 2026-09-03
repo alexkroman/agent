@@ -52,7 +52,10 @@ export function elapsed(ms: number): string {
  * `bytes` must be a whole file, header included — the endpoint decodes each
  * request independently, so a headerless tail is bytes it will refuse. Both
  * callers arrive at that differently: one re-attaches a header to a window it
- * read, the other is handed parts that already carry one.
+ * read, the other is handed parts that already carry one. A LIST is a whole
+ * file too: the segment caller passes `[wavHeader(...), window]` so the two are
+ * concatenated straight into the request body rather than into an intermediate
+ * buffer that doubles the segment's footprint.
  *
  * `stepTranscribeSyncClassified` — the SDK's own `stepTranscribeSync` plus
  * `throwStepError`, and nothing else — is the whole of what this adds to the SDK
@@ -68,7 +71,7 @@ export function elapsed(ms: number): string {
  *   log has in front of them.
  */
 export async function transcribeWav(
-  bytes: Uint8Array,
+  bytes: Uint8Array | readonly Uint8Array[],
   filename: string,
   label: string,
 ): Promise<string> {

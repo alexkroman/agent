@@ -30,6 +30,11 @@
  * complete files (parts of a multi-file upload, {@link stepSpeak}'s output)
  * passes them through untouched.
  *
+ * A LIST is a whole file too, and that is the shape a fan-out wants: a window
+ * plus the {@link wavHeader} written for it is two chunks, and joining them
+ * first only means holding the segment twice while the multipart body is built
+ * around it. The bytes on the wire are identical either way.
+ *
  * ```ts
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  * import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
@@ -113,7 +118,11 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
  * failure — a `404` that means "already deleted".
  *
  * @param bytes - A whole file, header included. The endpoint decodes each
- *   request independently, so a headerless tail is bytes it will refuse.
+ *   request independently, so a headerless tail is bytes it will refuse. A LIST
+ *   is still a whole file — the same bytes in the same order, just not
+ *   contiguous in memory — which is what lets a caller cutting a WAV hand over
+ *   `[wavHeader(format, window.byteLength), window]` rather than joining the two
+ *   into a buffer this function would then copy into the body a second time.
  *
  * @returns The text, trimmed. An EMPTY string is a legitimate answer here and
  *   is not refused, unlike the async API's: a caller fanning out over segments
@@ -139,9 +148,9 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
  * IS.
  *
  * **Whole files only.** A caller cutting a WAV re-attaches a header to every
- * window — {@link encodeWav} is the 44 bytes — and a caller handed complete
- * files (parts of a multi-file upload, {@link stepSpeak}'s output) passes them
- * through untouched.
+ * window — {@link encodeWav} is the 44 bytes, or {@link wavHeader} and the
+ * window as two chunks — and a caller handed complete files (parts of a
+ * multi-file upload, {@link stepSpeak}'s output) passes them through untouched.
  *
  * @example
  * One clip, one request. Compare {@link stepTranscribeSubmit} for a recording
@@ -159,7 +168,7 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
  * @public
  */
 export async function stepTranscribeSync(
-  bytes: Uint8Array,
+  bytes: Uint8Array | readonly Uint8Array[],
   opts: TranscribeSyncOptions = {},
 ): Promise<{ text: string }> {
   const filename = opts.filename ?? "audio.wav";
