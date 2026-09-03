@@ -187,7 +187,7 @@ than an unpinned placement.
 Modal's call.** The spill was first written as `us-east-1`, and the deploy
 refused it:
 
-```
+```text
 Regions us-east-1 are not supported. See
 https://modal.com/docs/guide/region-selection for supported regions
 ```
