@@ -113,14 +113,18 @@ describe("GET /studio/github", () => {
 });
 
 describe("POST /studio/github/connect", () => {
-  test("mints an install URL carrying a state this server will accept", async () => {
+  test("mints an AUTHORIZE URL carrying a state this server will accept", async () => {
     const harness = await studio();
     const res = await post(harness.fetch, "/studio/github/connect", { project: "demo" });
     expect(res.status).toBe(200);
 
     const { installUrl } = (await res.json()) as { installUrl: string };
     const url = new URL(installUrl);
-    expect(url.pathname).toBe("/apps/aai-studio/installations/new");
+    // NOT `/apps/<slug>/installations/new`: that page does not redirect back
+    // for an App the user has already installed, which strands the flow with
+    // the App visibly installed and the studio's button still saying Connect.
+    expect(url.pathname).toBe("/login/oauth/authorize");
+    expect(url.searchParams.get("client_id")).toBe(testGithubApp.clientId);
     // Minted at CLICK time rather than handed out with the status, because the
     // state expires — so the one thing worth asserting is that the round trip
     // it starts really lands.
@@ -153,6 +157,44 @@ describe("GET /studio/github/callback", () => {
     // No project hint: home, not a dead project URL.
     expect(res.headers.get("location")).toBe("/?github=connected");
     expect(await harness.secrets.get(githubLinkSecretName(UID))).toContain("acme");
+  });
+
+  test("an ALREADY-INSTALLED App links without any installation_id", async () => {
+    // The bug this whole flow was reshaped for. GitHub sends `installation_id`
+    // only when the App was installed during the round trip, so a user who
+    // installed it earlier — a first attempt that was interrupted, another
+    // studio account, or installing it from GitHub directly — comes back with
+    // a `code` and nothing else. Refusing that is what left the App visibly
+    // installed while the card kept offering Connect, forever.
+    const state = signInstallState(testGithubApp, { uid: UID, project: "demo" });
+    const res = await harness.fetch(
+      `/studio/github/callback?code=user-code&state=${encodeURIComponent(state)}`,
+    );
+    expect(res.headers.get("location")).toBe("/studio/chat/demo?github=connected");
+    expect(await harness.secrets.get(githubLinkSecretName(UID))).toContain("acme");
+  });
+
+  test("no installation at all sends the user on to the install page", async () => {
+    // Authorizing without installing is a legitimate half-finished flow, not a
+    // failure — so it continues rather than reporting one, and the state it
+    // carries is what makes the return trip land back here.
+    const github = createFakeGithub({ userInstallations: [] });
+    const secrets = createMemorySecretStore();
+    const fresh = await withDevAuth({
+      githubApp: testGithubApp,
+      githubFetch: github.fetchFn,
+      secrets,
+    });
+    await onboardKey(fresh.fetch, bearer);
+
+    const state = signInstallState(testGithubApp, { uid: UID, project: "demo" });
+    const res = await fresh.fetch(
+      `/studio/github/callback?code=user-code&state=${encodeURIComponent(state)}`,
+    );
+    const location = new URL(res.headers.get("location") ?? "");
+    expect(location.pathname).toBe("/apps/aai-studio/installations/new");
+    expect(location.searchParams.get("state")).not.toBe("");
+    expect(await secrets.get(githubLinkSecretName(UID))).toBeNull();
   });
 
   test("a forged state links NOTHING", async () => {
@@ -255,6 +297,17 @@ describe("GET /studio/github/callback", () => {
     );
     expect(res.headers.get("location")).toBe("/?github=unverified");
     expect(await secrets.get(githubLinkSecretName(UID))).toBeNull();
+  });
+
+  test("an EMPTY installation id reads as absent, not as malformed", async () => {
+    // `Number("")` is 0, so a check that parsed before testing the string
+    // turned a blank parameter into a failed connect for a user whose
+    // installation the token could have resolved perfectly well.
+    const state = signInstallState(testGithubApp, { uid: UID });
+    const res = await harness.fetch(
+      `/studio/github/callback?installation_id=&code=user-code&state=${encodeURIComponent(state)}`,
+    );
+    expect(res.headers.get("location")).toBe("/?github=connected");
   });
 
   test("a non-numeric installation id links nothing", async () => {

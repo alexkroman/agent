@@ -14,12 +14,17 @@
  * enumerable, and a link to somebody else's installation grants list access
  * plus force-push over every repository in it.
  *
- * GitHub's own answer is a USER access token: the App is configured to
- * "Request user authorization (OAuth) during installation", the callback then
- * carries a `code` alongside `installation_id`, and `GET /user/installations`
- * with the token that code exchanges for lists exactly the installations that
- * user can administer. An attacker cannot obtain a token for a victim, so the
- * intersection is the authorization.
+ * GitHub's own answer is a USER access token: the connect flow goes through
+ * `/login/oauth/authorize`, so the callback always carries a `code`, and
+ * `GET /user/installations` with the token that code exchanges for lists
+ * exactly the installations that user can administer. An attacker cannot
+ * obtain a token for a victim, so the intersection is the authorization.
+ *
+ * That list answers a second question as well, and only because the first one
+ * made it available: WHICH installation to link when the redirect names none.
+ * GitHub sends `installation_id` only when the App was installed during this
+ * round trip, so for everyone who already had it installed the list is the
+ * sole source of that id.
  *
  * The user token is used for this ONE question and then dropped — never
  * stored, never used to reach a repository. Everything the studio actually
@@ -76,17 +81,28 @@ export async function exchangeUserCode(
 }
 
 /**
- * True when `installationId` is one the token's owner can administer.
+ * Every installation OF THIS APP the token's owner can administer, newest
+ * first.
  *
- * The whole authorization decision. Any failure reads as FALSE rather than
- * throwing: this gate must fail closed, and "we could not confirm" and "you do
- * not control it" call for the same refusal.
+ * The endpoint is already scoped to the App the token was issued for — it
+ * lists "installations of your GitHub App that the authenticated user has
+ * explicit permission to access" — so there is nothing to filter by app id,
+ * and an entry here is by construction one this platform can act as.
+ *
+ * **Any failure reads as an EMPTY list rather than throwing.** Both callers
+ * fail closed on that: the entitlement check refuses, and the resolver bounces
+ * the user to the install page. A thrown error would instead reach the
+ * callback's catch and report `failed`, which is the one answer that tells the
+ * user nothing about what to do next.
+ *
+ * Sorted DESCENDING by id, which is creation order — see
+ * {@link resolveUserInstallation} for the one decision that reads it.
  */
-export async function userControlsInstallation(
+export async function listUserInstallations(
   userToken: string,
-  installationId: number,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
-): Promise<boolean> {
+): Promise<readonly number[]> {
+  const ids: number[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const url = `https://api.github.com/user/installations?per_page=${PAGE_SIZE}&page=${page}`;
     const res = await fetchFn(url, {
@@ -97,13 +113,54 @@ export async function userControlsInstallation(
       },
       signal: deadline(),
     });
-    if (!res.ok) return false;
+    // A partial read is discarded whole: a page that failed halfway through
+    // cannot be told from a user who administers only what we already have,
+    // and the difference decides both a refusal and an automatic pick.
+    if (!res.ok) return [];
     const body: unknown = await res.json().catch(() => null);
-    if (!(isRecord(body) && Array.isArray(body.installations))) return false;
+    if (!(isRecord(body) && Array.isArray(body.installations))) return [];
     for (const entry of body.installations) {
-      if (isRecord(entry) && entry.id === installationId) return true;
+      if (isRecord(entry) && typeof entry.id === "number") ids.push(entry.id);
     }
-    if (body.installations.length < PAGE_SIZE) return false;
+    if (body.installations.length < PAGE_SIZE) break;
   }
-  return false;
+  return ids.sort((a, b) => b - a);
+}
+
+/**
+ * True when `installationId` is one the token's owner can administer.
+ *
+ * The whole authorization decision, and it is asked ONLY of an id that arrived
+ * in the redirect — a resolved one (below) came from this same list and cannot
+ * disagree with it.
+ */
+export function userControlsInstallation(
+  installations: readonly number[],
+  installationId: number,
+): boolean {
+  return installations.includes(installationId);
+}
+
+/**
+ * Which installation to link when the redirect named none.
+ *
+ * GitHub sends `installation_id` only when the user installed the App during
+ * this round trip; an authorization by someone who already had it installed
+ * carries a `code` and nothing else, which is the common case now that connect
+ * goes through the authorize endpoint (studio-github-config.ts). So the id
+ * comes from the user's own list instead — the same list the entitlement check
+ * reads, so this can never link something the check would have refused.
+ *
+ * `undefined` when they administer none: the caller sends them to the install
+ * page, which is exactly what that state means.
+ *
+ * With several, the NEWEST wins (the list is id-descending, and ids increase
+ * with creation). One link per account is the model this feature has, so some
+ * choice has to be made, and the newest is the one the user most likely just
+ * set up. It is never silent — the card names the account it connected and
+ * links straight to GitHub's own picker — where refusing would leave a user
+ * with the App on two accounts unable to connect at all.
+ */
+export function resolveUserInstallation(installations: readonly number[]): number | undefined {
+  return installations[0];
 }

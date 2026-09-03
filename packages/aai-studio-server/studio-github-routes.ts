@@ -4,9 +4,10 @@
  *
  * - `GET    /studio/github`         — session-authed: is it configured, is
  *   this account connected, and to which GitHub account
- * - `POST   /studio/github/connect` — session-authed: mint the install URL
+ * - `POST   /studio/github/connect` — session-authed: mint the authorize URL
  * - `GET    /studio/github/callback`— **PUBLIC**: GitHub returns the browser
- *   here after an install; the signed `state` is the only thing naming a user
+ *   here after the user authorizes; the signed `state` is the only thing
+ *   naming a user
  * - `DELETE /studio/github`         — session-authed: forget the link
  * - `GET    /studio/github/repos`   — session-authed: the picker's list
  * - `POST   /studio/github/repos`   — session-authed: create one (orgs only)
@@ -44,19 +45,15 @@ import {
   type GithubOctokit,
   listInstallationRepos,
   readRepoDefaultBranch,
-  resolveInstallation,
 } from "./studio-github-client.ts";
 import {
   type GithubAppConfig,
+  githubAuthorizeUrl,
   githubInstallPageUrl,
   githubInstallUrl,
 } from "./studio-github-config.ts";
-import {
-  deleteGithubLink,
-  type GithubLink,
-  readGithubLink,
-  writeGithubLink,
-} from "./studio-github-link.ts";
+import { type ConnectOutcome, completeGithubConnect } from "./studio-github-connect.ts";
+import { deleteGithubLink, type GithubLink, readGithubLink } from "./studio-github-link.ts";
 import { signInstallState, verifyInstallState } from "./studio-github-state.ts";
 import {
   type GithubSyncResult,
@@ -65,7 +62,6 @@ import {
   parseRepoFullName,
   syncWorkspaceToGithub,
 } from "./studio-github-sync.ts";
-import { exchangeUserCode, userControlsInstallation } from "./studio-github-user.ts";
 import type { RefuseFn } from "./studio-route-limits.ts";
 import { GithubConnectSchema, GithubCreateRepoSchema, GithubSyncSchema } from "./studio-schemas.ts";
 import { getWorkspace, type StudioWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
@@ -84,30 +80,6 @@ const log = createLogger("studio.github");
  */
 function studioProjectPath(project?: string): string {
   return project ? `/studio/chat/${project}` : "/";
-}
-
-/**
- * Does the person finishing this install actually control the installation?
- *
- * The signed `state` proves WHO is asking and `resolveInstallation` proves the
- * id is real; neither proves entitlement — and `installation_id` is a small
- * integer whose success is distinguishable from its failure, so it is
- * enumerable. Without this, any studio user could attach somebody else's
- * installation and force-push to every repository in it.
- *
- * A missing `code` is refused rather than waved through: the App is configured
- * to request user authorization during installation, so a callback without one
- * did not come from that flow.
- */
-async function entitled(
-  config: GithubAppConfig,
-  code: string,
-  installationId: number,
-  fetchFn?: typeof globalThis.fetch,
-): Promise<boolean> {
-  if (!code) return false;
-  const userToken = await exchangeUserCode(config, code, fetchFn);
-  return userToken !== null && (await userControlsInstallation(userToken, installationId, fetchFn));
 }
 
 export type GithubRouteDeps = {
@@ -237,13 +209,19 @@ export function registerGithubRoutes(studio: Hono<StudioHonoEnv>, deps: GithubRo
   });
 
   /**
-   * Mint the install redirect.
+   * Mint the connect redirect.
    *
    * A POST at CLICK time rather than a URL handed out with the status above,
    * because the state expires (`INSTALL_STATE_TTL_MS`) and a settings pane
    * left open for an hour would otherwise hold a link that fails on arrival —
    * at GitHub, after the user has picked repositories, which is the worst
    * possible moment to discover it.
+   *
+   * It is the AUTHORIZE url, not the install page: the install page does not
+   * redirect back for an App that is already installed, which stranded the
+   * whole flow (see `githubAuthorizeUrl`). The response field keeps its name
+   * — what the client does with it is unchanged, and renaming it would be a
+   * wire break for a distinction the caller does not make.
    */
   studio.post("/github/connect", zValidator("json", GithubConnectSchema), async (c) => {
     const user = await requireStudioUser(c.req.raw, c.env);
@@ -252,7 +230,7 @@ export function registerGithubRoutes(studio: Hono<StudioHonoEnv>, deps: GithubRo
       uid: user.id,
       project: c.req.valid("json").project,
     });
-    return c.json({ installUrl: githubInstallUrl(config, state) });
+    return c.json({ installUrl: githubAuthorizeUrl(config, state) });
   });
 
   studio.delete("/github", async (c) => {
@@ -292,12 +270,14 @@ export function registerGithubRoutes(studio: Hono<StudioHonoEnv>, deps: GithubRo
   );
 
   /**
-   * Where GitHub returns the browser after an install or a reconfiguration.
+   * Where GitHub returns the browser after the user authorizes the App.
    *
-   * Every exit is a REDIRECT carrying a `?github=` result rather than a JSON
-   * body: the caller is a navigating browser, and a JSON error page at the end
-   * of an OAuth-shaped flow strands the user on a dead URL. The client reads
-   * the parameter and renders the outcome in the pane they started from.
+   * Every exit is a REDIRECT rather than a JSON body: the caller is a
+   * navigating browser, and a JSON error page at the end of an OAuth-shaped
+   * flow strands the user on a dead URL. All but one carry a `?github=`
+   * result the client renders in the pane they started from; the exception
+   * sends a user with nothing installed on to GitHub's install page, which is
+   * the continuation of this flow rather than the end of it.
    */
   studio.get("/github/callback", async (c) => {
     const back = (result: string, project?: string): Response =>
@@ -313,34 +293,32 @@ export function registerGithubRoutes(studio: Hono<StudioHonoEnv>, deps: GithubRo
     // tells a prober which half of a forgery they got right.
     if (!claims) return back("expired");
 
-    const installationId = Number(c.req.query("installation_id"));
-    if (!Number.isSafeInteger(installationId) || installationId <= 0) {
-      return back("failed", claims.project);
-    }
+    let outcome: ConnectOutcome;
     try {
-      // The check that actually AUTHORIZES the link — see `entitled`.
-      if (!(await entitled(config, c.req.query("code") ?? "", installationId, fetchFn))) {
-        log.warn("github install callback refused an unverified installation", {
-          uid: claims.uid,
-          installationId,
-        });
-        return back("unverified", claims.project);
-      }
-      // Only now: the id names a real installation of this App, and the person
-      // finishing the flow administers it.
-      const account = await resolveInstallation(config, installationId, clientOptions);
-      if (!account) return back("failed", claims.project);
-      await writeGithubLink(c.env.secrets, claims.uid, {
-        installationId,
-        account: account.account,
-        accountType: account.accountType,
-        connectedAt: Date.now(),
+      outcome = await completeGithubConnect({
+        config,
+        secrets: c.env.secrets,
+        uid: claims.uid,
+        code: c.req.query("code") ?? "",
+        // Absent for everyone who already had the App installed, which is the
+        // majority case through the authorize endpoint — so it is resolved
+        // from the user token rather than refused.
+        rawInstallationId: c.req.query("installation_id"),
+        fetchFn,
       });
     } catch (err) {
       log.warn("github install callback failed", { reason: errorMessage(err) });
       return back("failed", claims.project);
     }
-    return back("connected", claims.project);
+    // Authorized us and holds no installation of this App — so the next step is
+    // picking repositories, not an error. A fresh state, because the one that
+    // got here is minutes into its ten-minute life and the install page is
+    // where the user spends the rest of them.
+    if (outcome === "install") {
+      const state = signInstallState(config, { uid: claims.uid, project: claims.project });
+      return c.redirect(githubInstallUrl(config, state));
+    }
+    return back(outcome, claims.project);
   });
 
   /**

@@ -53,11 +53,14 @@ Required Modal Secret named ``aai-server`` with (at least):
   Storage reads/writes of deploy artifacts
 - ``GITHUB_APP_ID`` / ``GITHUB_APP_PRIVATE_KEY`` / ``GITHUB_APP_SLUG`` /
   ``GITHUB_APP_CLIENT_ID`` / ``GITHUB_APP_CLIENT_SECRET`` —
-  the studio's "Sync to GitHub" App. The OAuth pair is what lets the install
-  callback verify the person finishing the flow actually administers the
-  installation they are attaching; without it that callback accepts any
-  (enumerable) ``installation_id``, so the App must have **"Request user
-  authorization (OAuth) during installation"** enabled. All of them or none: a half-configured App
+  the studio's "Sync to GitHub" App. The OAuth pair is what the Connect button
+  drives — the flow goes through ``/login/oauth/authorize`` rather than the
+  App's install page, which does not redirect back once the App is installed —
+  and what lets the callback verify the person finishing the flow actually
+  administers the installation they are attaching; without it that callback
+  accepts any (enumerable) ``installation_id``. Leave **"Request user
+  authorization (OAuth) during installation"** enabled as well, so a first-time
+  install returns its ``installation_id`` directly. All of them or none: a half-configured App
   is the state where the install link works and every sync fails, so absence
   reads as "not configured" and the studio's GitHub card renders nothing (see
   "Sync to GitHub" in ``packages/aai-studio-server/CLAUDE.md``). The private
@@ -65,8 +68,10 @@ Required Modal Secret named ``aai-server`` with (at least):
   to one value, which matters because it is also the HMAC key behind the
   install ``state``, so two replicas disagreeing by a newline would reject
   each other's callbacks. The App needs **Contents: read and write** on the
-  repositories a user grants it, and its post-install callback must point at
-  ``<origin>/studio/github/callback``
+  repositories a user grants it, and its **Callback URL** must be
+  ``<origin>/studio/github/callback`` — GitHub sends authorization to the
+  first registered callback URL whatever ``redirect_uri`` a client passes, so
+  that entry is what the whole flow lands on
 - ``PLATFORM_POOLER_URL`` — Supavisor's TRANSACTION-mode URL (port 6543) for
   the admin pool. **Undocumented here for as long as it existed, and unset in
   production**: boot warns that the pool is opening DIRECT connections, which

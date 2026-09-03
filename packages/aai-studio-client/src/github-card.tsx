@@ -80,13 +80,24 @@ function Note({ children, error = false }: { children: React.ReactNode; error?: 
   return <p className={`m-0 text-[13px] ${error ? "text-err" : "text-muted"}`}>{children}</p>;
 }
 
-/** Not connected: the one button that starts the install round trip. */
+/** Not connected: the one button that starts the authorize round trip. */
 function ConnectPrompt({ bearer, project }: { bearer: string; project: string }) {
   const connect = useMutation({
     mutationFn: () => api.githubConnect(bearer, project),
     onSuccess: ({ installUrl }) => {
-      // A full navigation, not a popup: the install flow is several GitHub
-      // pages and ends in a redirect back here, which a popup would strand.
+      // A full navigation, not a popup. The round trip ends in a redirect
+      // back to this project with `?github=`, which reloads the page and so
+      // re-reads the status below — there is nothing for a popup to report
+      // that the reload does not already carry.
+      //
+      // A popup was proposed when this flow appeared to hang: connecting
+      // worked on GitHub's side and the button never became Sync. The cause
+      // was on the SERVER — the URL used to be the App's install page, which
+      // GitHub does not redirect back from once the App is installed, so the
+      // callback never ran (`githubAuthorizeUrl` in
+      // aai-studio-server/studio-github-config.ts). A popup would have made
+      // that worse rather than better: it would have sat on a GitHub settings
+      // page with nothing to post back and no reload to recover through.
       window.location.href = installUrl;
     },
   });

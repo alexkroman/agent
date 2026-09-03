@@ -1616,7 +1616,7 @@ exactly ONE message, and consumed by IDENTITY rather than by content. `capLlm`'s
 healed tool-pair halves count as part of the eviction, so a restore hands back
 the array the push found rather than a prefix of it.
 
-`transports/pipeline-history-rollback-property.test.ts` is the oracle — a
+`integration/pipeline-history-rollback.integration.test.ts` is the oracle — a
 fast-check property over generated fill scripts, driving both the module's door
 and the real one (`persistBargeIn` with a `syntheticPrompt`), whose oracle is a
 snapshot of the two views taken before the push. It was written RED and shrinks

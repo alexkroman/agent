@@ -37,10 +37,22 @@
  * `persistBargeIn` with a `syntheticPrompt` and a turn that left no trace, so
  * `leftNoTrace` and the `historyCurrent` gate are production code too.
  *
- * ## Why this is a UNIT test
+ * ## Why this is an INTEGRATION test
  *
- * No clock, socket, disk or provider. The TTS fake records text and synthesizes
- * nothing; `stt` is `null`.
+ * No clock, socket, disk or provider — the TTS fake records text and
+ * synthesizes nothing, `stt` is `null` — so nothing here needs the scenario
+ * tier. It is here for the reason `pipeline-fuzz.integration.test.ts` states
+ * for itself: **it is too slow for the 5s unit budget**, being several modules
+ * driven in memory, which is that tier's membership rule anyway.
+ *
+ * It began in `transports/` and timed out in CI, on `main` as well as on a
+ * branch. The cost is written down two screens below: `numRuns` went 20 -> 80
+ * to give the floors a distribution they could actually describe, which took
+ * the body from 635ms to ~2.6s where it was measured — and 3.2-4.0s on other
+ * developer machines, against a 5s deadline, on a runner sharing itself with
+ * 205 other test files. Lowering `numRuns` back is the one fix NOT available:
+ * that comment records an ~8% failure rate for the floors at 20 draws, so it
+ * would buy the green by making the assertions stop meaning anything.
  */
 
 import type { Message } from "@alexkroman1/aai";
@@ -49,11 +61,11 @@ import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import { createPipelineHistory, type PipelineHistory } from "./pipeline-history.ts";
-import type { PipelineProviderSessions } from "./pipeline-providers.ts";
-import { createTurnGate } from "./pipeline-turn-gate.ts";
-import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
-import type { TransportCallbacks } from "./types.ts";
+import { createPipelineHistory, type PipelineHistory } from "../transports/pipeline-history.ts";
+import type { PipelineProviderSessions } from "../transports/pipeline-providers.ts";
+import { createTurnGate } from "../transports/pipeline-turn-gate.ts";
+import { createTurnOutcome } from "../transports/pipeline-turn-outcome.ts";
+import type { TransportCallbacks } from "../transports/types.ts";
 
 /**
  * One thing that can happen to a history between rollbacks.

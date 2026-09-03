@@ -390,7 +390,7 @@ describe("createPipelineHistory — dropTrailingUser", () => {
   });
 
   // Two regression pins beside the property in
-  // `pipeline-history-rollback-property.test.ts`: a pin says "this shape still
+  // `pipeline-history-rollback.integration.test.ts`: a pin says "this shape still
   // works", the property says "no depth breaks it".
   test("restores the message its own push trimmed at the text cap", () => {
     const h = createPipelineHistory();
