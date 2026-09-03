@@ -110,7 +110,7 @@ export async function napFlow(input: { ms: number }, ctx: WorkflowCtx) {
   // Two names for one function, so a run's history says WHICH side of the sleep
   // an entry is — `tick#0`/`tick#1` would say the same thing and read worse.
   const before = await ctx.step("tickBefore", () => tick(0, 100));
-  await ctx.sleep(Math.max(1, Math.round(input.ms)));
+  await ctx.sleep("nap", Math.max(1, Math.round(input.ms)));
   const after = await ctx.step("tickAfter", () => tick(1, 100));
   return { sleptMs: input.ms, before: before.acc, after: after.acc };
 }
