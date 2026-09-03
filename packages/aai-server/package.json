@@ -40,7 +40,8 @@
     "./orchestrator": "./orchestrator.ts",
     "./supabase-auth": "./supabase-auth.ts",
     "./platform-barrel": "./platform-barrel.ts",
-    "./test-utils": "./test-utils.ts"
+    "./test-utils": "./test-utils.ts",
+    "./platform-schema-test-utils": "./platform-schema-test-utils.ts"
   },
   "scripts": {
     "check:scenario": "pnpm run test:scenario",

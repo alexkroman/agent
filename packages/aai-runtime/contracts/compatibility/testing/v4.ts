@@ -39,7 +39,15 @@
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
 import { z } from "zod";
-import { runWorkflow, type WorkflowTestHandle } from "../../../testing-barrel.ts";
+import {
+  DEFAULT_MAX_DELIVERIES,
+  type RunWorkflowOptions,
+  runWorkflow,
+  type WorkflowTestHandle,
+  type WorkflowTestRead,
+  type WorkflowTestRun,
+  type WorkflowTestStep,
+} from "../../../testing-barrel.ts";
 
 /** ── EDIT: the workflow under test. ────────────────────────────────────── */
 const digest = workflow({
@@ -63,6 +71,21 @@ export const app = workflowApp({
 });
 
 /**
+ * ── EDIT: how this project drives a run. ────────────────────────────────
+ *
+ * `name` is what the run is recorded under, so it has to match the workflow the
+ * app declares or a page reading the run back finds nothing. `maxDeliveries`
+ * bounds how many times the harness will walk the run before giving up, which is
+ * what turns a body that never settles into a failed spec rather than a hung
+ * one; {@link DEFAULT_MAX_DELIVERIES} is the default and generous, and a body
+ * with a polling loop is the case for naming a smaller one.
+ */
+const OPTIONS: RunWorkflowOptions = {
+  name: "digest",
+  maxDeliveries: DEFAULT_MAX_DELIVERIES,
+};
+
+/**
  * ── EDIT: what "the run got as far as the wait" means for you. ──────────
  *
  * The suspended shape is worth asserting on its own: every step before the wait
@@ -70,11 +93,30 @@ export const app = workflowApp({
  * says the run is waiting rather than finished.
  */
 export async function untilWait(topic: string): Promise<WorkflowTestHandle<string>> {
-  const run = await runWorkflow(digest, { topic }, { name: "digest" });
+  const run = await runWorkflow(digest, { topic }, OPTIONS);
   if (run.status !== "running" || run.wakeAt === undefined) {
     throw new Error(`expected a suspended run, got ${run.status}`);
   }
   return run;
+}
+
+/**
+ * ── EDIT: what your spec wants to read off a finished run. ──────────────
+ *
+ * The handle IS a {@link WorkflowTestRun}, so everything a spec asserts on is a
+ * property rather than a second call: the steps it journaled, the
+ * non-deterministic values it read ({@link WorkflowTestRead} — one per
+ * `ctx.now()`, `ctx.random()` or `ctx.uuid()`, which is what makes a replay
+ * comparable), and how many deliveries it took.
+ */
+export type DigestReport = {
+  steps: readonly WorkflowTestStep[];
+  reads: readonly WorkflowTestRead[];
+  deliveries: number;
+};
+
+export function reportOf(run: WorkflowTestRun<string>): DigestReport {
+  return { steps: run.steps, reads: run.reads, deliveries: run.deliveries };
 }
 
 /**
