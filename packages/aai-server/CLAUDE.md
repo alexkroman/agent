@@ -1117,6 +1117,15 @@ that decided first. If it is only a NAME that is wanted, note the asymmetry:
 adding a column is easy, backfilling one is not — existing agents would carry
 nothing until redeployed.
 
+## Queryable run state is not `workflow_runs`' job
+
+A filterable listing — status, a time range, a cursor, a run's STEPS over HTTP
+— goes on a projection updated OFF the write path, never on
+`aai_platform.workflow_runs`: that row is what the engine rewrites on every
+status transition. [`SCHEMA-CLAUDE.md`](SCHEMA-CLAUDE.md) has the measured
+index counts, what DBOS and Temporal each did with the same table, and what
+would make this wrong.
+
 ## Security architecture
 
 ### Modal sandbox isolation
