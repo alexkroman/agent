@@ -82,14 +82,21 @@ between them is the design:
   narrow path is (see above) — nothing had to learn the other command's
   filename. The failure's hint names the project's own `npm test` FIRST and the
   flag second, because the script is the answer that needs nothing remembered.
+- **`aai build` runs the WHOLE suite**, not `agent.test.ts` alone
+  (`runVitest(cwd, { candidates: TEST_FILES, all: true })`). The narrow default
+  above is a fast-inner-loop contract — one documented file, so a spec that is
+  slow or wants credentials is not dragged into every save. A build is the
+  opposite situation: it previews the deploy artifact and it is run
+  deliberately, so a gate reading one file out of eight is the same false green
+  one command over. It printed "Build complete" over exactly that.
+  `--skipTests` remains the opt-out, and it is the honest one — it says no
+  tests ran, where the narrowed gate implied they all had.
 - **`runVitest` announces the unrun set ITSELF by default**
-  (`announceUnrun`, default `true`), which is what finally covers `aai build`.
-  That command runs the same narrowed gate as its pre-build check and printed
-  "Build complete" with no notice of any kind. The default is on so the caller
-  that does not know it is narrowing cannot stay silent; `aai test` and
-  `aai eval` pass `false` — the first because its own result and failure report
-  the set, the second because "did not run" is a claim about the TEST tier and
-  an eval run would otherwise name every unit spec in the project.
+  (`announceUnrun`, default `true`), so a caller that narrows without knowing it
+  cannot stay silent. `aai test` and `aai eval` pass `false` — the first because
+  its own result and failure report the set, the second because "did not run" is
+  a claim about the TEST tier and an eval run would otherwise name every unit
+  spec in the project.
 
 **And the scaffold's `test` script is no longer `aai test`.** It is
 `vitest run --exclude "**/*.eval.test.*"` (`scaffold/package.json`), with the

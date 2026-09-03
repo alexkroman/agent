@@ -121,5 +121,6 @@ exports[`cli usage snapshots > aai test --help 1`] = `
 "Run agent tests (test)
 USAGE test [OPTIONS]
 OPTIONS
-  --json    Output JSON (auto-detected in non-TTY)"
+  --json    Output JSON (auto-detected in non-TTY)
+   --all    Run every spec in the project, not just agent.test.ts"
 `;

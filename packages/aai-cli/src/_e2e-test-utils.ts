@@ -103,26 +103,40 @@ export function aai(aaiBin: string, args: string[], cwd: string, timeoutMs = 120
 }
 
 /**
- * {@link aai}, but CAPTURING — for the cases whose subject is what the CLI
- * SAID rather than that it exited 0.
+ * {@link aai}, but CAPTURING and expecting the CLI to FAIL — for the cases
+ * whose subject is what it SAID on its way to a non-zero exit.
  *
- * Separate rather than a flag, because `stdio: "inherit"` is load-bearing for
- * every other call: an e2e failure's only diagnosis trail is the child's output
- * in the run log, and capturing it by default would take that away.
+ * Capturing is separate from {@link aai} rather than a flag on it, because
+ * `stdio: "inherit"` is load-bearing for every other call: an e2e failure's
+ * only diagnosis trail is the child's output in the run log, and capturing it
+ * by default would take that away.
+ *
+ * The exit code is asserted HERE rather than left to the caller. `execaSync`
+ * throws on a non-zero exit, so the capturing helper this replaced could only
+ * be pointed at commands that succeed — and a `try`/`catch` around it would
+ * pass just as happily on a zero exit, which is the bug the one caller exists
+ * to catch (`aai test` named its unrun specs and exited 0 anyway).
  */
-export function aaiOutput(
+export function aaiOutputFailing(
   aaiBin: string,
   args: string[],
   cwd: string,
   timeoutMs = 120_000,
-): { stdout: string; stderr: string } {
+): { stdout: string; stderr: string; exitCode: number } {
   const res = execaSync(process.execPath, [aaiBin, ...args], {
     cwd,
     extendEnv: false,
     env: aaiEnv(),
     timeout: timeoutMs,
+    reject: false,
   });
-  return { stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+  const exitCode = res.exitCode ?? 0;
+  if (exitCode === 0) {
+    throw new Error(
+      `Expected \`aai ${args.join(" ")}\` to fail, but it exited 0.\n${res.stdout ?? ""}`,
+    );
+  }
+  return { stdout: res.stdout ?? "", stderr: res.stderr ?? "", exitCode };
 }
 
 /**

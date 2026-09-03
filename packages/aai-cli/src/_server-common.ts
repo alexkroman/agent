@@ -46,10 +46,22 @@ export async function resolveServerEnv(
 
   // Only include explicitly-declared keys (not all of process.env).
   // Shell env takes precedence over .env file values.
+  //
+  // An EMPTY value is dropped, not kept. A declared-but-blank key is how
+  // `.env.example` says "you need to set this" (`BRAVE_API_KEY=`), and `aai
+  // init` copies that file straight to `.env` — so keeping it put `""` into
+  // the agent env, where it does more damage than absence:
+  // `withHostCredentialFallback` fills a provider credential only when the
+  // name is `undefined` in the env it is given, and `""` is not undefined. So
+  // a blank line defeated the host fallback silently and the provider
+  // authenticated with the empty string instead of reporting the credential
+  // as missing. The self-hosted `server.mjs` has always dropped empties and
+  // says why; this is the CLI catching up, and it is what lets `.env.example`
+  // declare a key it has no value for.
   const env: Record<string, string> = {};
   for (const [key, fileVal] of Object.entries(fileEntries)) {
     const val = source[key] ?? fileVal;
-    if (val !== undefined) env[key] = val;
+    if (val !== undefined && val !== "") env[key] = val;
   }
 
   return env;

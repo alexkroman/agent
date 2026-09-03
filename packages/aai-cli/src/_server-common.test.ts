@@ -26,6 +26,29 @@ describe("resolveServerEnv", () => {
     });
   });
 
+  test('a declared-but-blank key is dropped, not carried through as ""', async () => {
+    // `.env.example` declares keys it has no value for, and `aai init` copies
+    // that file to `.env` — so a blank line is the COMMON case, not an odd one.
+    // Carrying `""` through is worse than dropping it:
+    // `withHostCredentialFallback` fills a provider credential only where the
+    // name is `undefined`, so an empty string silently defeated the host
+    // fallback and the provider authenticated with "".
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=\nBRAVE_API_KEY=\n");
+      const env = await resolveServerEnv(dir, {});
+      expect(env).not.toHaveProperty("ASSEMBLYAI_API_KEY");
+      expect(env).not.toHaveProperty("BRAVE_API_KEY");
+    });
+  });
+
+  test("a blank .env line does not mask a value from the shell", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=\n");
+      const env = await resolveServerEnv(dir, { ASSEMBLYAI_API_KEY: "from-shell" });
+      expect(env.ASSEMBLYAI_API_KEY).toBe("from-shell");
+    });
+  });
+
   test("loads only declared keys from .env file", async () => {
     await withTempDir(async (dir) => {
       await fs.writeFile(

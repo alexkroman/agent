@@ -20,7 +20,7 @@ import { CliError, type CommandResult, ok } from "./_output.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log, notify } from "./_ui.ts";
 import { determinismWarnings, scanWorkflowDeterminism } from "./_workflow-determinism.ts";
-import { classifyVitestError, runVitest } from "./test.ts";
+import { classifyVitestError, runVitest, TEST_FILES } from "./test.ts";
 
 /**
  * Where the built worker lands, relative to the project root — under `.aai/`,
@@ -60,7 +60,15 @@ export async function executeBuild(opts: {
   const { cwd } = opts;
   if (!opts.skipTests) {
     try {
-      runVitest(cwd);
+      // The WHOLE suite, not `agent.test.ts` alone. `aai test`'s narrowing is
+      // a fast-inner-loop contract — one documented file, so a spec that is
+      // slow or wants credentials is not dragged into every iteration. A build
+      // is the opposite situation: it previews the deploy artifact, it is run
+      // deliberately, and a gate that reads one file out of eight is the false
+      // green this whole change is about. Measured on the retail template:
+      // adding one tool broke `registry.test.ts` and `aai build` stayed green
+      // through all of it. `--skipTests` remains the way to opt out.
+      runVitest(cwd, { candidates: TEST_FILES, all: true });
     } catch (err: unknown) {
       throw testGateError(err);
     }

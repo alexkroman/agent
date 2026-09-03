@@ -32,7 +32,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   aai,
   aaiEnv,
-  aaiOutput,
+  aaiOutputFailing,
   buildCli,
   detachedCli,
   installDeps,
@@ -432,14 +432,24 @@ describe("aai dev: a scaffolded workflow template", () => {
   // this covers webhooks with nothing, deliberately: see the note in
   // `dev-workflow.scenario.test.ts` for what closes it.
 
-  test("`aai test` names the spec files it did NOT run", async ({ skip }) => {
+  test("`aai test` FAILS naming the spec files it did not run", async ({ skip }) => {
     // The lab leaves a spec `aai test` does not run and no `agent.test.ts`, so
     // this drives the arm that stayed broken longest: the CLI printed "No test
     // file found. Create agent.test.ts to add tests." while the project's specs
     // sat right there unrun. Only a scaffolded project can observe it — the
     // rule is about a real directory, not about a function's arguments.
+    //
+    // Naming them was never enough: the exit code is what CI reads, and this
+    // arm returned 0. So the assertion is the code FIRST and the message
+    // second — a version that only greps stdout passed throughout the years
+    // this was green over an unrun suite.
     if (skipReason !== undefined) skip(skipReason);
-    const { stdout, stderr } = aaiOutput(aaiBin, ["test"], path.join(tmpDir, "_dev-workflow"));
+    const { stdout, stderr, exitCode } = aaiOutputFailing(
+      aaiBin,
+      ["test"],
+      path.join(tmpDir, "_dev-workflow"),
+    );
+    expect(exitCode).toBe(1);
     expect(`${stdout}${stderr}`).toContain("lab.test.ts");
   });
 

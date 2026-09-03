@@ -117,6 +117,13 @@ const test = defineExec({
   meta: { name: "test", description: "Run agent tests" },
   args: {
     json: sharedArgs.json,
+    // The widening `executeTest`'s own `incomplete_run` failure recommends.
+    // Without it declared here `assertKnownFlags` rejects the very flag that
+    // error tells the reader to run.
+    all: {
+      type: "boolean",
+      description: "Run every spec in the project, not just agent.test.ts",
+    },
   },
   // Like dev/build/push/publish. This command shipped once WITHOUT the agent
   // gate, and that is the incident `defineExec`'s `cwd` field exists for: in a
@@ -124,9 +131,9 @@ const test = defineExec({
   // `{ passed: true, skipped: true }` and exited 0 — a green result for a
   // project that is not there, which in CI reads as a passing suite.
   cwd: "agent",
-  async run({ cwd }) {
+  async run({ args, cwd }) {
     const { executeTest } = await import("./test.ts");
-    return executeTest(cwd);
+    return executeTest(cwd, { all: args.all === true });
   },
 });
 
