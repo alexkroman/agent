@@ -35,6 +35,14 @@ pnpm check:local         # Fast pre-commit gate (single turbo invocation, max pa
 pnpm check:affected      # Only check packages affected by changes since main
 ```
 
+**Never type `turbo run <task>` across the workspace directly** — the six
+fan-out scripts go through `node scripts/with-worker-budget.mjs turbo run …`,
+because turbo's concurrency and each task's vitest pool are ONE mechanism and
+only bound the machine when `TURBO_CONCURRENCY` is set. Unset, `pnpm test` ran
+~40 processes on 4 cores and timed out `aai-cli`'s bundler specs on contention
+alone. That script, `_turbo-concurrency.mjs` and `vitest.shared.ts` carry the rest;
+a longer timeout is never the fix.
+
 ### Test tiers
 
 **Tiers are cut by what a test may TOUCH: pick the tightest one that can express
@@ -889,21 +897,12 @@ few lines.
   A `tools/` file is exempted by an override: its name mirrors the
   snake_case LLM tool name.
 
-  **The version is pinned EXACTLY (`2.5.8`), and only until 2.5.12 clears the
-  release-age window.** 2.5.9 through 2.5.11 regress the nursery
-  `noFloatingPromises` rule on `p-timeout`: nine `await pTimeout(…)` call
-  sites across four packages are reported as floating promises, and the
-  offered fix is `await await pTimeout(…)`. Every one is already awaited, so
-  the only way to take those versions is nine `biome-ignore` comments the
-  escape-hatch ratchet exists to refuse. A CARET cannot hold the line — pnpm
-  keeps a locked 2.5.11 against `^2.5.8`, which is why this is an exact pin
-  rather than a lowered floor, the same shape as `konsistent`'s. 2.5.12 fixes
-  it (verified by running its binary against
-  `postgres-pool-exhaustion.scenario.test.ts`, which 2.5.11 reports and 2.5.12
-  does not); it was six hours old when this was written, so taking it needed a
-  `minimumReleaseAgeExclude` entry — a hole in a supply-chain control for a
-  linter's convenience. Restore `^2.5.12` once the window has passed, and
-  delete this paragraph with it.
+  **`^2.5.12` is a FLOOR, and biome is the one dependency exempt from the
+  release-age quarantine** — argued at `minimumReleaseAgeExclude` in
+  `pnpm-workspace.yaml`. 2.5.9-2.5.11 report an already-awaited
+  `await pTimeout(…)` as floating, costing nine suppressions; 2.5.12 also
+  retires the one this cost at 2.5.8. Do not lower the floor.
+
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
   publishing.
@@ -1139,9 +1138,9 @@ could see).
 All four assertions were A/B'd against a broken manifest before landing — a
 check that has never failed is indistinguishable from one that cannot.
 
-### A new version is quarantined for 48 hours
+### A new version is quarantined for 24 hours
 
-`pnpm-workspace.yaml` sets `minimumReleaseAge: 2880`. This is the half of
+`pnpm-workspace.yaml` sets `minimumReleaseAge: 1440`. This is the half of
 supply-chain defence that `onlyBuiltDependencies` cannot cover: a hijacked
 release does not need an install script when the package is imported by our own
 code at build or test time. Nearly every npm account compromise is caught and
@@ -1153,11 +1152,15 @@ It applies to RESOLUTION, so it only bites when the lockfile is being changed �
 deliberate same-day bump adds a `minimumReleaseAgeExclude` entry WITH a reason,
 rather than lowering the number.
 
-**There is deliberately no `minimumReleaseAgeExclude` at the root**, and the
-absence is the interesting part: an exemption for our own packages is the first
-thing you would reach for and it would be dead config, because this workspace
-resolves `@alexkroman1/*` through `workspace:*` and never from the registry. The
-place that DOES need it is `scaffold/pnpm-workspace.yaml` — see
+**The root `minimumReleaseAgeExclude` holds exactly one entry, `@biomejs/*`**,
+argued at the setting; an exemption for our own packages would be dead config,
+since this workspace resolves `@alexkroman1/*` through `workspace:*`. Two
+mechanics generalize: the pattern must be the SCOPE, because a CLI's platform
+binary is an optionalDependency published in the same batch and exempting only
+the wrapper fails resolution on a package nothing here declares; and an entry is
+meant to be DELETED once its version clears the window.
+
+The place that also needs one is `scaffold/pnpm-workspace.yaml` — see
 `packages/aai-templates/CLAUDE.md` for the
 `ERR_PNPM_NO_MATURE_MATCHING_VERSION` failure it prevents. The e2e suite is
 likewise unaffected and not by luck: it already sets

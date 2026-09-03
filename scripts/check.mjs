@@ -64,11 +64,11 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { cpus } from "node:os";
 import process from "node:process";
 
 import { parseScriptArgs, USAGE_EXIT } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
+import { boundTurboConcurrency } from "./_turbo-concurrency.mjs";
 
 const ROOT = repoRoot(import.meta.url);
 
@@ -100,18 +100,11 @@ const RED = "\u001b[0;31m";
 const YELLOW = "\u001b[1;33m";
 const NC = "\u001b[0m";
 
-/**
- * Turbo defaults to 10 concurrent tasks, but each task spawns its own worker
- * pool (vitest forks/threads), so on a small machine that oversubscribes the
- * CPUs several times over. The visible symptom was flaky failures rather than
- * slowness: aai-server's credential tests run PBKDF2 at 600k iterations, which
- * stretches from ~300ms to ~750ms per hash under contention and pushed whole
- * tests past their timeout. Leave room for each task's internal parallelism.
- * An explicit TURBO_CONCURRENCY still wins.
- */
-if (!process.env.TURBO_CONCURRENCY) {
-  process.env.TURBO_CONCURRENCY = String(Math.max(2, Math.floor(cpus().length / 2)));
-}
+// Bound turbo's task concurrency, which sizes each task's vitest worker pool
+// in turn — `scripts/_turbo-concurrency.mjs` carries why, and is shared with
+// the fan-out doors so the two cannot compute different numbers. An explicit
+// TURBO_CONCURRENCY still wins.
+boundTurboConcurrency();
 
 // ---------------------------------------------------------------------------
 // The turbo invocations

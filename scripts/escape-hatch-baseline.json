@@ -10,7 +10,6 @@
     "packages/aai-cli/_utils.ts": 1,
     "packages/aai-cli/cli.test.ts": 1,
     "packages/aai-runtime/_mock-ws.ts": 1,
-    "packages/aai-runtime/providers/_utils.ts": 1,
     "packages/aai-runtime/transports/_pipeline-transport-harness.ts": 1,
     "packages/aai-runtime/transports/pipeline-transport.ts": 1,
     "packages/aai-server/middleware.ts": 1,
