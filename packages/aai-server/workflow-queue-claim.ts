@@ -145,86 +145,91 @@ export const WORKFLOW_QUEUE_STEPS_PER_RUN = 8;
  *   in the same microsecond claim in a stable order rather than an arbitrary one.
  */
 /**
- * What one claim COSTS as the due set deepens, measured — and the rewrite that
- * fixes it, which is NOT applied because its price is a decision rather than a
- * measurement.
+ * What one claim COSTS as the due set deepens, and the three changes that
+ * flattened it.
  *
- * The shape of the problem: {@link claimDue} re-orders the WHOLE due set before
- * its limit (deliberately — that ordering is the anti-starvation mechanism), so
- * cost grows with the backlog while throughput stays fixed at
- * `min(WORKFLOW_QUEUE_MAX_PER_TICK, free delivery slots)`. Database work per
- * message DELIVERED therefore grows linearly with how far behind the queue is.
- * Checked with `explain (analyze, buffers)` on PostgreSQL 16.13, one busy tenant
- * and 40 claims in flight, committed and vacuumed between runs:
+ * The shape of the problem: this re-orders the WHOLE due set before its limit
+ * (deliberately — that ordering is the anti-starvation mechanism), while
+ * throughput is fixed at `min(WORKFLOW_QUEUE_MAX_PER_TICK, free delivery
+ * slots)`. So database work per message DELIVERED grew with how far behind the
+ * queue was, and ticks OVERLAP by design (`workflow-queue-scheduler.ts`), which
+ * on a busy replica makes that near-continuous rather than once a second.
  *
- * | due | claim | shared buffers | temp spilled |
- * | --- | --- | --- | --- |
- * | 1,000 | 2.7 ms | 171 | 0 |
- * | 5,000 | 12.6 ms | 370 | 0 |
- * | 20,000 | 49.4 ms | 1,087 | 0 |
- * | 60,000 | 167.7 ms | 2,989 | 3.2 MB |
- * | 180,000 | 475.5 ms | 8,721 | 13.3 MB |
+ * `explain (analyze, buffers)` on PostgreSQL 16.13, one busy tenant, 40 claims
+ * in flight, committed and vacuumed between runs:
  *
- * At the bottom row it sorts 179,960 rows to return 8 — 0.34 ms of database work
- * per message at 1,000 due against 59 ms at 180,000. Ticks OVERLAP by design
- * (`workflow-queue-scheduler.ts`), so on a busy replica that is near-continuous
- * rather than once a second, bounded only by how fast delivery slots free.
- *
- * ## The rewrite works, and it is three changes rather than one
- *
- * - **`distinct on (slug, run_id)` becomes a group-minimum ANTI-JOIN** — `not
- *   exists (… where (e.available_at, e.id) < (q.available_at, q.id))` selects the
- *   same row and can early-terminate where a sort cannot.
- * - **The `locked_at` OR is SPLIT into a `union all`** of its two disjoint
- *   branches, which is what lets the unclaimed branch be an ordered index scan on
- *   `workflow_queue_due_idx` — 33 index entries instead of 135,000 rows.
- * - **The outer limit is PUSHED INTO each arm.** Provably free: a row among the
- *   union's 8 oldest is among its own arm's 8 oldest. On its own it buys nothing
- *   (measured, inside the noise) — both arms still sort — so it pays off only
- *   beside the anti-join.
- *
- * It needs one new index, `(slug, run_id, kind, available_at, id)`, for the
- * probes to be seeks rather than scans of the busy tenant's backlog. It is
- * result-identical, verified two ways: the candidate set at limits
- * 1/2/3/8/16/32/64/200, and a 40-fixture randomised differential over colliding
- * groups, `available_at` ties, stale locks and in-flight claims.
- *
- * **One behaviour difference, and it is a refinement.** The current `order by
- * slug, run_id, available_at` carries no `id` tiebreak, so which of two same-run
- * messages due in the same instant gets claimed is PLAN-dependent; the anti-join
- * always takes the lower id. 22 of those 40 fixtures differed on exactly that,
- * and none differed once `available_at` was made unique. Same class of fix as
- * wrapping the UPDATE in a `claimed` CTE because `UPDATE … RETURNING` has no
- * defined row order.
- *
- * ## Why it is not applied: the price is paid in the HEALTHY state
- *
- * | due | current | rewritten |
+ * | due | before | after |
  * | --- | --- | --- |
- * | 100 | 0.89 ms | 1.05 ms |
- * | 1,000 | 2.76 ms | 1.71 ms |
- * | 5,000 | 11.3 ms | 4.4 ms |
- * | 20,000 | 50.8 ms | 5.9 ms |
- * | 60,000 | 165.2 ms | 15.4 ms |
- * | 180,000 | 495.8 ms | 133.8 ms |
+ * | 100 | 0.92 ms | 0.94 ms |
+ * | 1,000 | 2.85 ms | 1.96 ms |
+ * | 20,000 | 47.0 ms | 13.8 ms |
+ * | 180,000 | 466.9 ms | 141.8 ms |
  *
- * The crossover is around 500 due messages, and the index costs **+22% on
- * enqueue, +35% on claim, +20% on ack** (20,000 of each) plus **30 MB on 180,000
- * rows** against a 34 MB table and 41 MB of existing indexes — it nearly doubles
- * this table's index footprint, permanently.
+ * At the bottom row it used to sort 179,960 rows to return 8. Temp spill went
+ * 13.3 MB to 3.3 MB and buffers 8,725 to 4,499; the 10 MB sort that served the
+ * `distinct on` is gone and only the step arm's 3.3 MB remains. The IDLE tick —
+ * the state a 1 Hz tick is in almost always, and the one
+ * `20260903010000_workflow_queue_run_kind_columns.sql` says must not regress —
+ * is unchanged over 12 samples (median 0.896 ms against 0.899 ms) and halves its
+ * buffers, 12 to 6.
  *
- * So it is insurance against a backlog, bought with a standing tax on a queue
- * that is keeping up, which is where a healthy fleet lives.
- * `20260903010000_workflow_queue_run_kind_columns.sql` declined a new index here
- * from the other direction ("write-path cost for nothing"); this is the same
- * trade with a number attached to the "something". The numbers are recorded so
- * the decision is CHEAP, not so it is made.
+ * ## The three changes, and why none of them alters what is claimed
  *
- * The step arm is the residual either way: its `row_number()` needs a full
- * partition sort, its budget predicate cannot become a join, and replacing it
- * with a bounded count probe measured SLOWER (1,500 ms) unless the due set is
- * also capped — and capping it is the one change that really would weaken the
- * anti-starvation ordering, so it is not on the table.
+ * - **`distinct on (slug, run_id)` is a group-minimum ANTI-JOIN.** `not exists
+ *   (… where (e.available_at, e.id) < (d.available_at, d.id))` selects the row
+ *   `distinct on` selected — each group's oldest — and can early-terminate where
+ *   a sort cannot.
+ * - **The `locked_at` OR is SPLIT into a `union all`** of its two disjoint
+ *   branches (a NULL `locked_at` cannot satisfy `< stale`), which is what lets
+ *   the unclaimed branch be an ordered index scan on `workflow_queue_due_idx`
+ *   that stops at the limit: 33 index entries instead of 135,000 rows.
+ * - **The outer limit is PUSHED INTO each arm.** Provably free — a row among the
+ *   union's N oldest is among its own arm's N oldest, since at most N-1 rows of
+ *   the union, and so at most N-1 of that arm, precede it. Measured ALONE it
+ *   buys nothing (both arms still sorted), so it pays off only beside the
+ *   anti-join, which is the part that needs an ordered, stoppable input.
+ *
+ * `workflow_queue_group_idx` is what makes the probes seeks rather than scans of
+ * the busy tenant's backlog (28.6 ms each without it); its migration carries the
+ * write cost and why it does not regress the idle tick.
+ *
+ * **One behaviour difference, and it is a refinement.** The old `order by slug,
+ * run_id, available_at` carried no `id` tiebreak, so which of two same-run
+ * messages due in the same instant got claimed was PLAN-dependent; the anti-join
+ * always takes the lower id. Verified: 22 of 40 randomised fixtures differed on
+ * exactly that when `available_at` collided, and 0 of 40 differed once it was
+ * unique. Same class of fix as wrapping the UPDATE in `claimed` because
+ * `UPDATE … RETURNING` has no defined row order.
+ *
+ * Equivalence is checked against a FROZEN copy of the old selection, two ways,
+ * both in `workflow-queue-claim.scenario.test.ts`: the candidate set at limits
+ * 1/2/3/8/16/32/64/200, and a randomised differential over colliding groups,
+ * stale locks and in-flight claims. That file's doc says why the baseline is
+ * frozen rather than derived, and both differentials compare at the sweep's own
+ * width AND at one wider than the whole due set — at the narrow width the answer
+ * is the global oldest 8, so one group's internal budget is usually invisible,
+ * and a `claimDue` that stops charging in-flight steps against the fan-out
+ * budget passes. Every step of the rewrite is A/B'd there, plus the one
+ * MUTATION that must not fail: dropping the orchestration arm's own `limit`,
+ * which is the "provably free" claim above stated as a test.
+ *
+ * ## Why this landed when the same trade was declined before
+ *
+ * Read as wall clock it looks marginal: a permanent index against a
+ * degraded-state win. The deciding currency is **backend-seconds**. Supavisor's
+ * pool is 15 server connections for the whole fleet and every
+ * `adminDb.reserve()` draws on it, so 325 ms saved per tick is 325 ms of a
+ * one-in-15 shared resource — of the order of a full backend-second per second
+ * across replicas ticking at 1 Hz, before NOTIFY-driven passes. Against that the
+ * index costs microseconds per queue write (+2.9/+4.4/+0.5 µs on
+ * enqueue/claim/ack), so break-even is around 85,000 queue writes per claim
+ * tick. Nothing is near that.
+ *
+ * The step arm is the residual: its `row_number()` needs a full partition sort,
+ * its budget predicate cannot become a join, and replacing it with a bounded
+ * count probe measured SLOWER (1,500 ms) unless the due set is also capped —
+ * capping it is the one change that really would weaken the anti-starvation
+ * ordering, so it stays off the table.
  */
 export async function claimDue(
   sql: SqlExec,
@@ -286,20 +291,41 @@ export async function claimDue(
        select now() - $2::bigint * interval '1 millisecond' as before
      ),
      orchestration_due as (
-       select distinct on (q.slug, q.run_id) q.id, q.available_at
-       from aai_platform.workflow_queue q
-       where q.available_at <= now()
-         and q.kind = 'workflow'
-         and q.run_id is not null
-         and (q.locked_at is null or q.locked_at < (select before from stale))
+       select d.id, d.available_at
+       from (
+         (select q.id, q.available_at, q.slug, q.run_id
+            from aai_platform.workflow_queue q
+           where q.locked_at is null
+             and q.available_at <= now()
+             and q.kind = 'workflow'
+             and q.run_id is not null
+           order by q.available_at, q.id)
+         union all
+         (select q.id, q.available_at, q.slug, q.run_id
+            from aai_platform.workflow_queue q
+           where q.locked_at < (select before from stale)
+             and q.available_at <= now()
+             and q.kind = 'workflow'
+             and q.run_id is not null)
+       ) d
+       where not exists (
+               select 1 from aai_platform.workflow_queue o
+                where o.slug = d.slug
+                  and o.run_id = d.run_id
+                  and o.kind = 'workflow'
+                  and o.locked_at >= (select before from stale)
+             )
          and not exists (
-           select 1 from aai_platform.workflow_queue o
-           where o.slug = q.slug
-             and o.kind = 'workflow'
-             and o.run_id = q.run_id
-             and o.locked_at >= (select before from stale)
-         )
-       order by q.slug, q.run_id, q.available_at
+               select 1 from aai_platform.workflow_queue e
+                where e.slug = d.slug
+                  and e.run_id = d.run_id
+                  and e.kind = 'workflow'
+                  and e.available_at <= now()
+                  and (e.locked_at is null or e.locked_at < (select before from stale))
+                  and (e.available_at, e.id) < (d.available_at, d.id)
+             )
+       order by d.available_at, d.id
+       limit $1
      ),
      step_due as (
        select ranked.id, ranked.available_at
@@ -323,6 +349,8 @@ export async function claimDue(
          group by o.slug, o.run_id
        ) in_flight on in_flight.slug = ranked.slug and in_flight.run_id = ranked.run_id
        where ranked.rn <= greatest($3 - coalesce(in_flight.n, 0), 0)
+       order by ranked.available_at, ranked.id
+       limit $1
      ),
      candidates as (
        select id from (

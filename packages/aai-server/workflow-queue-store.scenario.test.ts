@@ -36,6 +36,15 @@
  * So the seam here is still the HARNESS, not the subject. If this file has to
  * shrink again, extract more setup or move a group whose tests touch neither
  * `claimDue` nor the channel.
+ *
+ * **And the "must not be" above expired when the database became private.**
+ * `workflow-queue-claim.scenario.test.ts` is a second suite over this same
+ * surface — the equivalence differential for the anti-join rewrite — and it does
+ * not collide with this one, because `useQueueFixture` registers a
+ * {@link useThrowawayPlatformDb} of its own: the claim it runs is fleet-wide over
+ * a fleet of one file. The rule that survives is the REASON rather than the
+ * conclusion: a suite over a fleet-wide predicate needs its own database, and a
+ * suite that shares one still must not exist.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";

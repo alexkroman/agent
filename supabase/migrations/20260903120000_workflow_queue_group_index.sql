@@ -1,0 +1,76 @@
+-- The index the claim's GROUP PROBES seek on, and the query change that needs it.
+--
+-- `20260903010000_workflow_queue_run_kind_columns.sql` dropped
+-- `workflow_queue_run_idx` and added nothing back, on measured grounds: the
+-- planner did not want a replacement over the new columns, and taking it made
+-- the IDLE tick worse (0.882-0.907 ms to 6.254-6.318 ms) because it was chosen
+-- for the step arm's ORDERING and walked the whole `kind = 'step'` half.
+--
+-- That conclusion was right about that index and that query. This is a different
+-- index for a differently-shaped query, and it is measured the same way.
+--
+-- ── WHAT CHANGED IN THE QUERY ───────────────────────────────────────────────
+--
+-- `claimDue`'s orchestration arm was `distinct on (slug, run_id) … order by
+-- slug, run_id, available_at`, which needs a FULL SORT of the workflow-kind due
+-- set. Its step arm's `row_number()` needs one too. Both then feed a `limit`,
+-- so at a 180,000-row backlog the statement sorted 179,960 rows to return 8 —
+-- 475 ms and 13.3 MB of temp, against sub-millisecond index scans for every
+-- other journal statement.
+--
+-- Three changes, none of which alters what is claimed:
+--
+--   1. `distinct on` becomes a group-minimum ANTI-JOIN: `not exists (… where
+--      (e.available_at, e.id) < (q.available_at, q.id))` selects the same row
+--      and can early-terminate, where a sort cannot.
+--   2. The `locked_at` OR is SPLIT into its two disjoint branches, so the
+--      unclaimed one is an ordered index scan on `workflow_queue_due_idx` that
+--      stops at the limit — 33 index entries instead of 135,000 rows.
+--   3. The outer limit is PUSHED INTO each arm. Provably free: a row among the
+--      union's N oldest is among its own arm's N oldest. Measured alone it buys
+--      nothing (both arms still sorted), so it only pays off beside (1).
+--
+-- ── WHY THIS INDEX, AND WHAT IT COSTS ───────────────────────────────────────
+--
+-- The probes filter on `(slug, run_id, kind)` plus `available_at`, so without a
+-- matching index the planner reaches for `workflow_queue_run_topic_idx (slug,
+-- queue_name)` — no `run_id` — and scans the busy tenant's whole backlog:
+-- 28.6 ms per probe, 8 probes, 229 ms. With this index each probe is a seek.
+--
+-- Measured, one claim tick, busy tenant, 40 claims in flight, vacuumed between:
+--
+--   |     due | before | after |
+--   | ------- | ------ | ----- |
+--   |     100 |   0.89 |  1.05 |
+--   |   1,000 |   2.76 |  1.71 |
+--   |   5,000 |  11.3  |  4.4  |
+--   |  20,000 |  50.8  |  5.9  |
+--   |  60,000 | 165.2  | 15.4  |
+--   | 180,000 | 495.8  | 133.8 |
+--
+-- The crossover is ~500 due messages; below it the extra probes cost ~0.16 ms.
+-- Write cost, 20,000 operations each: +22% enqueue, +35% claim, +20% ack — in
+-- absolute terms +2.9/+4.4/+0.5 microseconds per operation. Size: 30 MB on
+-- 180,000 rows, against a 34 MB table and 41 MB of existing indexes.
+--
+-- **The deciding currency is BACKEND-SECONDS, not wall clock.** Supavisor's
+-- pool is 15 server connections for the whole fleet and every `adminDb.reserve()`
+-- draws on it, so 342 ms saved per claim tick is 342 ms of a one-in-15 shared
+-- resource — roughly 1.0 backend-second per second at three replicas ticking.
+-- Break-even against the write cost is about 85,000 queue writes per claim tick.
+-- Read as a permanent tax against degraded-state insurance this looks marginal;
+-- in backend-seconds it is ~1000:1.
+--
+-- **It does NOT regress the idle tick**, which is the failure the earlier
+-- migration measured: 0.72-1.05 ms with this index against 0.80-1.12 ms without,
+-- 12 buffers, on a committed and vacuumed 180,000-row queue with nothing due.
+-- It leads with `slug, run_id` rather than `kind`, so it is not attractive for
+-- the step arm's ordering — which is what the rejected index was taken for.
+--
+-- NOT partial on `locked_at is null`: the probes span both branches of the split
+-- OR by construction, so a partial index serves only one of them.
+--
+-- `concurrently` is impossible here — this file runs inside the migration's
+-- transaction. The table is small enough (34 MB) that the build is brief.
+create index if not exists workflow_queue_group_idx
+  on aai_platform.workflow_queue (slug, run_id, kind, available_at, id);
