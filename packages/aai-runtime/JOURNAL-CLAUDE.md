@@ -328,10 +328,19 @@ step and its teardown, and is not built.
 that keeps re-reaching one key holds its charge for as long as it keeps
 reaching — the failure the expiry exists to end, by a slower route. That is
 what the `case` in the statement is for, and an unconditional add would delete
-it silently; the
+it silently.
+
+It is pinned twice, and the conformance half is exact rather than coarse. The
 recorder tests in `workflow-journal-postgres.test.ts` and
-`platform-workflow-journal.test.ts` pin the branch with no clock in them, because
-the conformance case that pins the EFFECT can only fail in one direction.
+`platform-workflow-journal.test.ts` assert the branch with no clock in them at
+all. The conformance case OWNS the clock instead of racing it: it spies
+`Date.now` to stamp the first claim half an hour ago, re-claims now, and reads
+under a ten-minute window, so 1 means the instant was kept and 2 means it was
+refreshed. A first draft aged charges with real `sleep()`s, and that version
+could only fail in one direction — a machine slow enough to age a refreshed
+charge past the window passed it wrongly, which made the interesting half of
+the assertion untestable. Every arm runs in-process, including the platform
+ones, which is what makes one spy reach all three backends.
 
 ### The old table is RETIRED, not dropped
 

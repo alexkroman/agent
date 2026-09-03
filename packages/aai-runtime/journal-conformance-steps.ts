@@ -17,8 +17,7 @@
  * @internal
  */
 
-import { sleep } from "@alexkroman1/aai/internal";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { type JournalArm, keysFor, runOf, stepOf } from "./journal-conformance-cases.ts";
 
 /**
@@ -211,29 +210,43 @@ export function journalStepConformance(arm: JournalArm): void {
       });
 
       /**
-       * How long the expiry cases let a charge age, and the window they then
-       * read it under.
+       * Ages a charge by moving the CLOCK the store stamps with.
        *
-       * REAL elapsed time, because `claimed_at` is the store's own clock and
-       * three backends cannot share an injected one. The margin is 4x, which is
-       * what keeps a slow machine from changing the answer: a charge is 60 ms
-       * old and the window is 15.
+       * `claimed_at` is `Date.now()` inside each backend and there are three of
+       * them, so no injected clock can reach all three — but every arm runs
+       * IN-PROCESS (the platform ones through a handler-shaped transport), so a
+       * spy on `Date.now` reaches all of them. `restoreMocks` puts it back, and
+       * the same pattern is what `workflow-replay.test.ts` uses to burn attempts
+       * two hours ago.
+       *
+       * This replaced real `sleep()`s, and the reason is not speed. A charge aged
+       * by 60 ms and read under a 15 ms window can only fail in ONE direction —
+       * a machine slow enough to age a REFRESHED charge past the window passes
+       * the "does not refresh" case wrongly — so the interesting half of the
+       * assertion was untestable. With the clock owned, that case states its
+       * property exactly.
        */
-      const AGED_MS = 60;
-      const SHORT = 15;
+      const claimingAt = async (atMs: number, claim: () => Promise<unknown>): Promise<void> => {
+        const clock = vi.spyOn(Date, "now").mockReturnValue(atMs);
+        try {
+          await claim();
+        } finally {
+          clock.mockRestore();
+        }
+      };
 
       test("a charge older than the lease does not count", async () => {
-        // The whole reason a charge is a row with a timestamp. A walk that DIED
-        // cannot release, so before this its charge stood forever and
-        // `maxAttempts` deaths on one key refused that step permanently.
+        // The whole reason a charge carries an instant. A walk that DIED cannot
+        // release, so before this its charge stood forever and `maxAttempts`
+        // deaths on one key refused that step permanently.
         const journal = arm.journal();
         const { runId } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
-        await journal.claimAttempt(runId, "charge#0", "dead-1", HOUR);
-        await journal.claimAttempt(runId, "charge#0", "dead-2", HOUR);
-        await sleep(AGED_MS);
-        // Both are past a short window, so only the claimer counts.
-        expect(await journal.claimAttempt(runId, "charge#0", "walk-3", SHORT)).toBe(1);
+        const longAgo = Date.now() - 2 * HOUR;
+        await claimingAt(longAgo, () => journal.claimAttempt(runId, "charge#0", "dead-1", HOUR));
+        await claimingAt(longAgo, () => journal.claimAttempt(runId, "charge#0", "dead-2", HOUR));
+        // Two hours old against a one-hour window, so only the claimer counts.
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-3", HOUR)).toBe(1);
       });
 
       test("the CLAIMER always counts, whatever the window", async () => {
@@ -248,28 +261,25 @@ export function journalStepConformance(arm: JournalArm): void {
         const { runId } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
         expect(await journal.claimAttempt(runId, "fresh#0", "walk-1", 0)).toBe(1);
-        // The other holder is AGED first, so this is a claim whose window
-        // excludes everything already there. Without the ageing the two claims
-        // can land in the same millisecond, the inclusive cutoff keeps the
-        // other one, and the answer is legitimately 2 — which is a fact about
-        // the boundary rather than about the claimer.
-        await journal.claimAttempt(runId, "existing#0", "walk-1", HOUR);
-        await sleep(AGED_MS);
-        expect(await journal.claimAttempt(runId, "existing#0", "walk-2", SHORT)).toBe(1);
+        await claimingAt(Date.now() - 2 * HOUR, () =>
+          journal.claimAttempt(runId, "existing#0", "walk-1", HOUR),
+        );
+        expect(await journal.claimAttempt(runId, "existing#0", "walk-2", HOUR)).toBe(1);
       });
 
       test("an EXPIRED holder re-claiming is live again, and counts", async () => {
         // The third case of `claimAttempt`'s upsert, and the one an
         // `on conflict do nothing` gets wrong: the row exists, so nothing is
-        // inserted, and the old timestamp keeps it out of the count — an
-        // attempt that answers 0 and is charged to nobody.
+        // written, and the old instant keeps it out of the count — an attempt
+        // that answers 0 and is charged to nobody.
         const journal = arm.journal();
         const { runId } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
-        await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
-        await sleep(AGED_MS);
-        expect(await journal.claimAttempt(runId, "charge#0", "walk-1", SHORT)).toBe(1);
-        // Live again on the next generous read, rather than gone.
+        await claimingAt(Date.now() - 2 * HOUR, () =>
+          journal.claimAttempt(runId, "charge#0", "walk-1", HOUR),
+        );
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
+        // Live again on the next read, rather than gone.
         expect(await journal.claimAttempt(runId, "charge#0", "walk-2", HOUR)).toBe(2);
       });
 
@@ -278,18 +288,18 @@ export function journalStepConformance(arm: JournalArm): void {
         // as long as it keeps reaching — the failure the expiry exists to end,
         // by a slower route.
         //
-        // COARSE, and deliberately paired: this can only fail in one direction
-        // (a refresh makes `walk-1` live and the answer 2), so a machine slow
-        // enough to age a refreshed charge past `SHORT` would pass it wrongly.
-        // The sharp assertion is the SQL shape — `workflow-journal-postgres.ts`
-        // pins the conditional `where` on the upsert, with no clock in it.
+        // Stated EXACTLY, which the real-sleep version could not: the first
+        // claim is stamped half an hour ago and the re-claim happens now, so a
+        // ten-minute window includes a refreshed instant and excludes the
+        // original. 1 means it was not refreshed; 2 means it was.
         const journal = arm.journal();
         const { runId } = keysFor(arm);
         await journal.createRun(runOf({ runId }));
+        await claimingAt(Date.now() - HOUR / 2, () =>
+          journal.claimAttempt(runId, "charge#0", "walk-1", HOUR),
+        );
         await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
-        await sleep(AGED_MS);
-        await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
-        expect(await journal.claimAttempt(runId, "charge#0", "walk-2", SHORT)).toBe(1);
+        expect(await journal.claimAttempt(runId, "charge#0", "walk-2", HOUR / 6)).toBe(1);
       });
 
       test("two keys on one run are counted independently", async () => {
