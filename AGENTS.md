@@ -542,51 +542,26 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   instead, so a violation is self-correcting and a reviewer never re-explains
   it.
 
-  | # | Rule | Instead |
-  | --- | --- | --- |
-  | 1 | no symlinks anywhere | a real file, or a module that re-exports |
-  | 2 | no conditional spread on a `!== undefined` presence test — all three spellings | `omitUndefined()` |
-  | 3 | no `Promise.race` against a `setTimeout`, WRAPPED FORM INCLUDED | `p-timeout` |
-  | 4 | no inline `new Promise(r => setTimeout(r, 0))`, `setImmediate` and `<T>` included | `flush()` / `tick()` |
-  | 5 | no `delete process.env.X` | `vi.stubEnv(name, undefined)` |
-  | 7 | no floating-tag GitHub Action | a 40-char commit SHA |
-  | 8 | no `if (m.get(k) === mine) m.delete(k)` | `createOwnedMap()` |
-  | 9 | no `tails.get(k) ?? Promise.resolve()` | `createKeyedLock()` / `slot.update` |
-  | 11 | no hardcoded `/tmp` in shipped source | `join(tmpdir(), …)` |
-  | 12 | every guest route literal is in `GUEST_ROUTES` — `aai-guest` AND the `aai/host` modules it bundles | declare it + its exposure |
-  | 13 | no template import escaping its template dir | move it in, or publish it |
-  | 14 | no fixture directory nothing reads | delete it, or add the reader |
-  | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
-  | 17 | no open-coded record guard, in either polarity | `isRecord()` |
-  | 18 | no `req.url.split("?")` | `requestPath()` / `requestQuery()` |
-  | 19 | no hand-rolled sleep (or `node:timers/promises`), `<T>` included | `sleep()` |
-  | 20 | no changeset that cannot bump, or that ships nowhere | a real name, plus a package that carries it |
-  | 21 | no `expect.poll` — a `test.concurrent` sibling clears the pointer it reads | `vi.waitFor()` |
-  | 22 | no truthiness-guarded conditional spread — `...(x && { x })` | a judgement: see the rule's remedy |
-  | 23 | no `async` function handed straight to `.on`/`addEventListener` | a sync listener + `void p.catch(report)` |
-  | 24 | no new field on `ToolContext` | that value's own module + capability root |
-  | 25 | no new field on the shared channel message shape | that kind's own options type |
-  | 26 | no raw step call in a shipped `workflows/` body | the `*Classified` sibling |
-  | 27 | no explicit `[Symbol.dispose]()` call in shipped source | `using` / `await using` |
-  | 28 | no hand-rolled `process.argv` scan in `scripts/` | `parseScriptArgs()` |
-  | 29 | no `globalThis.fetch` as a runtime egress default | `egressFetch()` |
-  | 30 | no non-deterministic read in a shipped `workflows/` body | move it inside `ctx.step` |
-  | 31 | no hand-rolled jittered backoff | `jitteredBackoff()` |
-  | 32 | no computed journal identity (a template-literal step/wait name) | a plain string literal |
+  **`node scripts/guard-invariants.mjs --rules` prints the catalogue.** There
+  used to be a copy of it here, a `# | Rule | Instead` table of all 32, and it
+  went stale twice — it stopped at 23, then at 28 — while the one DERIVED line
+  beside it, the printed count, stayed right. That is the same failure the
+  script's own prose catalogue was deleted for, and the file already said so
+  about itself ("when it disagrees with `--rules`, `--rules` is right"), which
+  is an instruction to read the other thing rather than a reason to keep this
+  one. So there is no copy now: the catalogue is computed from the `id`,
+  `label` and `remedy` every rule carries, and a new rule joins it by existing.
 
-  Hand-kept, and it keeps going stale — it stopped at 23, then at 28, and
-  `--rules` is the derived source to read instead. The recurrence IS the
-  argument: this table is a convenience copy, so when it disagrees with
-  `--rules`, `--rules` is right.
   Rule IDs are **stable** — they appear in commit messages and in the baseline,
   so a deleted rule leaves its number retired rather than letting a later rule
   inherit it (6, retired with `ctx.state`; 10, with the `research/` directory it
   checked; 15, reserved). Several are at zero and enforced
-  absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
-  was widened**: a wrapped `Promise.race([` is matched by its opening line,
-  which cannot see whether a timer is among the elements, so a timer-free
-  wrapped race is a legitimate entry. Over-reporting is the cheap error here —
-  see `RACE_CONTINUES` in `guard-invariants-ere.mjs`.
+  absolutely; the rest carry per-file baselines. **Rule 3 is back at zero**: it
+  used to carry a baselined entry that was never a violation — a wrapped
+  `Promise.race([` was matched by its opening LINE, which cannot see whether a
+  timer is among the elements, so a timer-free race scored. It is a node rule
+  now and looks at the elements, which is the difference between over-reporting
+  as the cheap error and not having to choose.
 
   **Rule 2's `undefined` scope is a BOUNDARY, and rule 22 is why.** Rule 2 tests
   presence, which `omitUndefined` *is*, so its matches rewrite without changing
@@ -604,24 +579,45 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   asymmetry is exactly why the grep-based rules announced their own blindness
   and these two could not.
 
-  **The rule definitions are six modules behind one barrel.**
-  `guard-invariants-rules.mjs` re-exports `LINE_RULES` (sorted by id) and the
-  scope constants; under it sit `-ere.mjs` (the regex vocabulary),
-  `-scopes.mjs` (the corpora), and four rule groups — `-rules-timing.mjs` /
-  `-rules-shape.mjs` / `-rules-state.mjs` / `-rules-workflow.mjs`, the last
-  holding the two rules over a shipped `workflows/` body, which left the timing
-  module when rule 31 took it past the source cap.
-  **Every one is in the gate's `SELF_REFERENTIAL` set**,
+  **TWO ENGINES, chosen by what a rule ASKS.** A **line rule** carries a POSIX
+  ERE for `git grep -E`; a **node rule** carries a `match(node)` over a real
+  parse (`oxc-parser`, via `scripts/_ast-scan.mjs`, predicates in
+  `-nodes.mjs`). Everything else is shared — one baseline, one `--update`
+  contract, one report — so a rule keeps its id, key and budgets across a
+  migration, and the gate interleaves both lists by id. Ask whether the thing
+  banned is a **name** or a **shape**: `delete process.env.X` (5), a `/tmp`
+  literal (11), an `on*` declaration (16) are names, and grep answers them
+  exactly; "a callback that is `async`", "a delay that is zero", "a timer among
+  a race's elements" are shapes, and **every gap this gate has ever had was a
+  shape written as a pattern.** The timing family (3, 4, 19, 21, 23, 31) is all
+  six of them and went first — its module doc lists the four misses that closed,
+  including a rule 21 printing `0 ✓` over two live `expect.poll` calls Biome had
+  wrapped. Line rules keep one thing the parse gives up: they see code inside a
+  TEMPLATE LITERAL, which several fixtures write out and then execute. Parsing
+  the repo costs ~1.6 s; the gate went 1.2 s to 2.4 s.
+
+  **The rule definitions are seven modules behind one barrel.**
+  `guard-invariants-rules.mjs` re-exports `LINE_RULES` and `NODE_RULES` (each
+  sorted by id) and the scope constants; under it sit `-ere.mjs` and `-nodes.mjs`
+  (the two vocabularies), `-scopes.mjs` (the corpora), and four rule groups —
+  `-rules-timing.mjs` / `-rules-shape.mjs` / `-rules-state.mjs` /
+  `-rules-workflow.mjs`, the last holding the two rules over a shipped
+  `workflows/` body, which left the timing module when rule 31 took it past the
+  source cap.
+  **Every LINE-rule module is in the gate's `SELF_REFERENTIAL` set**,
   because each `label` and `re` describes the thing it bans — a split that
-  forgot one file would be the fifth time this repo pays for that trap. A rule
-  may also carry `samples: { matches, ignores }`, where a widened pattern's
+  forgot one file would be the fifth time this repo pays for that trap. The two
+  node modules are absent by proof rather than by oversight: a node rule's own
+  definition cannot match it, a remedy quoting the anti-pattern being a string
+  literal and not a call — the entry was removed and the gate stayed green. A
+  rule may also carry `samples: { matches, ignores }`, where a widened pattern's
   proof belongs: rule 3 shipped for months with a single-line positive sample
-  while the rule was blind to the multi-line form.
-  `node scripts/guard-invariants.mjs --rules` prints the catalogue DERIVED from
-  the definitions — the prose copy that used to live in the script's header went
-  three rules stale (17, 18, 19) while the one computed line, the printed count,
-  stayed right. The per-file baselines carry the same `--update`-only-lowers
-  contract as `check:hatches`.
+  while blind to the multi-line form. A node rule's samples are SOURCE, so that
+  gap is not expressible — but a node rule can still be silently dead, and rule
+  31 was, matching nothing until `unwrap` existed (oxc preserves
+  `ParenthesizedExpression`). Its own sample caught it.
+  The per-file baselines carry the same `--update`-only-lowers contract as
+  `check:hatches`.
 
   **A baselined occurrence needs a reason, and the JSON is NOT where it goes** —
   that file is a bare `{path: count}` map written by `--update`, with

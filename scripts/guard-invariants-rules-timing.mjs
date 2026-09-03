@@ -1,111 +1,164 @@
+// Copyright 2026 the AAI authors. MIT license.
 /**
- * The TIMING rules — 3, 4, 19, 21, 23 and 31.
+ * The TIMING rules — 3, 4, 19, 21, 23 and 31 — and the repo's first NODE rules.
  *
  * They are grouped because they are the same question asked six ways ("how is
- * this code waiting?") and because they share a failure history: all of them
- * are substring guards over a language with syntax, and every gap found in this
- * gate has been in one of them. 31 is the newest and the one that waits
- * BETWEEN attempts rather than for a condition.
+ * this code waiting?") and because they share a failure history: this file used
+ * to open by saying "all of them are substring guards over a language with
+ * syntax, and every gap found in this gate has been in one of them." That
+ * sentence was the argument for parsing, and it is why this family went first.
  *
- * Rule 21's hazard is not the wait itself: `expect.poll` waits correctly and
- * reads the RUNNER's current test to do it, which under `test.concurrent` a
- * sibling has already cleared. It sits here because the remedy is the same
- * shape as the other four — a different wait primitive, named. Rule 23 is the
- * `async` listener, whose promise the emitter discards.
+ * ## What the migration changed
  *
- * **26 and 30 have LEFT**, to `-rules-workflow.mjs`. They were here on the
- * concession that neither is about waiting, and rule 31 took this file past the
- * 500-line source cap — so the seam its own doc already named is the one the
- * split took. Ids are unchanged, `LINE_RULES` being sorted by id rather than by
- * module order.
+ * Each rule now carries a `match(node)` over a parsed AST instead of an `re`
+ * handed to `git grep -E`. `scripts/_ast-scan.mjs` carries the engine and the
+ * cost; `guard-invariants-nodes.mjs` carries the predicates. The rules keep
+ * their ids, their baseline keys and their recorded budgets, because a rule's
+ * NUMBER is a stable identifier and the engine underneath it is not part of
+ * that identity.
  *
- * Three widenings landed together, each against LIVE occurrences the previous
- * pattern could not see:
+ * Four things stopped being true, all of them recorded here as defects first:
  *
- *   - rule 3 was LINE-ANCHORED, so the multi-line `Promise.race([` Biome emits
- *     was invisible (3 occurrences);
- *   - rules 4 and 19 required a literal `(` after `new Promise`, so a `<T>`
- *     type argument evaded both (5 occurrences);
- *   - neither knew `setImmediate` (8 occurrences).
+ *   - **A wrapped call is visible.** Rule 21's pattern was `expect\.poll\(`,
+ *     and Biome writes `await expect` + newline + `.poll(` the moment the call
+ *     does not fit. Two live occurrences — `aai-cli/dev-workflow.scenario` and
+ *     `aai-server/session-state.scenario` — sat in two scenario suites while
+ *     the gate printed `allowed=0 now=0` and a checkmark. Rule 21's own remedy
+ *     records that this API took out both e2e legs of a Version Packages PR.
+ *   - **A block body is visible.** Rules 4 and 19 required the executor and its
+ *     timer on ONE line. `aai-ui/_react-test-utils.ts` writes its `tick()` as a
+ *     three-line block and says so in a doc comment — "the one occurrence in
+ *     this package was in no baseline and reported by nothing" — blaming the
+ *     type argument, which had since been fixed. The block was the real reason.
+ *   - **Rule 3 stopped over-reporting.** Its multi-line alternative was
+ *     `Promise\.race\(\[?$`, which by construction cannot see whether a timer
+ *     is among the elements, so a timer-free race was a legitimate baseline
+ *     entry (`aai-server/guest-readiness.ts`). The parse looks at the elements.
+ *     A timeout arm HOISTED to a variable is out of the race's reach and needs
+ *     no special case: standalone, it is a hand-rolled sleep and rule 19 has it.
+ *   - **`skipComments` went away.** A comment is not a node, so nothing here
+ *     needs the `isCommentOnly` heuristic — and this module needs no
+ *     `SELF_REFERENTIAL` entry either, where all four ERE rule modules do,
+ *     because a remedy quoting the anti-pattern is a string literal.
  *
- * Rule IDs are STABLE across this split: 6 stays retired, 15 stays reserved,
- * and nothing here was renumbered.
+ * The samples came with it. A line rule's positive sample is a LINE, so the
+ * sample proving rule 3 saw the wrapped form could not be written in it — this
+ * file's own history records the rule shipping for months with a single-line
+ * sample while blind to the shape the code is written in. A node rule's samples
+ * are source the spec parses, so they are written the way the code is written.
+ *
+ * Rule IDs are STABLE: 6 stays retired, 15 stays reserved, and 26 and 30 remain
+ * in `-rules-workflow.mjs` where an earlier split put them.
  */
 
+import { walk } from "./_ast-scan.mjs";
 import {
-  ASYNC_LISTENER,
-  IMMEDIATE_PROMISE,
-  JITTERED_WINDOW,
-  RACE_CONTINUES,
-  RACE_TIMEOUT,
-  SLEEP_PROMISE,
-  TICK_PROMISE,
-  TIMERS_PROMISES,
-} from "./guard-invariants-ere.mjs";
+  asyncListener,
+  isCallOfMember,
+  isJitteredWindow,
+  isTimersPromisesSleep,
+  promiseWait,
+} from "./guard-invariants-nodes.mjs";
 import { SOURCE_PATHSPECS } from "./guard-invariants-scopes.mjs";
 
-/** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
+/** @type {import("./guard-invariants-rules.mjs").NodeRule[]} */
 export const TIMING_RULES = [
   {
     id: 3,
     key: "rule3_raceTimeout",
     label: "hand-rolled Promise.race timeout",
-    re: `${RACE_TIMEOUT}|${RACE_CONTINUES}`,
+    match(node) {
+      if (!isCallOfMember(node, "Promise", "race")) return false;
+      let timer = false;
+      walk(node.arguments, (inner) => {
+        if (timer) return false;
+        if (promiseWait(inner) !== undefined) timer = true;
+      });
+      return timer;
+    },
     paths: SOURCE_PATHSPECS,
-    skipComments: true,
     samples: {
       matches: [
-        "  const won = await Promise.race([work, new Promise((_, r) => setTimeout(r, ms))]);",
-        // The MULTI-LINE form, which the line-anchored pattern could not see —
-        // two live occurrences in the fuzz harnesses, and the reason the second
-        // alternative exists.
-        "  const outcome = await Promise.race([",
-        "    return Promise.race(",
+        "const won = await Promise.race([work, new Promise((_, r) => setTimeout(r, ms))]);",
+        // The wrapped form Biome emits, which the line-anchored pattern could
+        // not see and its replacement could only guess at.
+        [
+          "const won = await Promise.race([",
+          "  work,",
+          "  new Promise((_, reject) => setTimeout(reject, ms)),",
+          "]);",
+        ].join("\n"),
+        [
+          "await Promise.race([",
+          "  settled,",
+          "  new Promise((resolve) => {",
+          "    setTimeout(resolve, GRACE_MS);",
+          "  }),",
+          "]);",
+        ].join("\n"),
       ],
       ignores: [
-        "  const outcome = await Promise.race([work.then((value) => ({ value })), exited]);",
-        "  return pTimeout(work, { milliseconds: ms });",
+        "const outcome = await Promise.race([work.then((value) => ({ value })), exited]);",
+        "const settled = await pTimeout(work, { milliseconds: ms });",
+        // The entry this rule's baseline used to carry: a real race with no
+        // timer in it, over-reported because a line-based pattern cannot look
+        // inside the brackets. It is not a violation and is not exempted — the
+        // rule simply answers correctly now.
+        ["const ready = await Promise.race([", "  probe(),", "  exited,", "]);"].join("\n"),
       ],
     },
     remedy:
       "Use `p-timeout` — it is already a dependency of aai, aai-cli,\n" +
       "aai-guest and aai-server. A race with no timer in it is fine: this rule\n" +
-      "is about the hand-rolled timeout, not the race.\n\n" +
-      "A race whose arguments run onto the NEXT line is reported WITHOUT the\n" +
-      "gate being able to see whether a timer is among them — `git grep` is\n" +
-      "line-based, and the line-anchored pattern this replaces was blind to the\n" +
-      "wrapped shape Biome actually emits. Baseline the occurrence when there is\n" +
-      "genuinely no timer in it: `aai-server/guest-readiness.ts` races the work\n" +
-      "against the child's `exit`, and is the entry to copy.",
+      "is about the hand-rolled timeout, not the race.\n" +
+      "\n" +
+      "The timer is found by looking INSIDE the race's arguments, so the\n" +
+      "wrapped form Biome emits is reported and a timer-free race is not —\n" +
+      "the line-based version could do neither, and carried a baselined\n" +
+      "occurrence that was never a violation. A timeout arm assigned to a\n" +
+      "variable first is out of this rule's reach and needs none: standalone,\n" +
+      "it is a hand-rolled sleep and rule 19 reports it.",
   },
   {
     id: 4,
     key: "rule4_inlineTickPromise",
     label: "inline new Promise(r => setTimeout(r, 0))",
-    // `.*` between the two calls, NOT `[^)]*`. The arrow's own parameter list
-    // closes a paren before `setTimeout` is reached
-    // (`new Promise((resolve) => setTimeout(resolve, 0))`), so a negated-paren
-    // class matches nothing at all — which is how the first version of this
-    // rule reported 0 against five real occurrences. The optional `<T>` inside
-    // `TICK_PROMISE` is the SECOND version of that same miss.
-    re: `${TICK_PROMISE}|${IMMEDIATE_PROMISE}`,
+    match: (node) => promiseWait(node) === "yield",
     paths: SOURCE_PATHSPECS,
-    skipComments: true,
     samples: {
       matches: [
-        "    await new Promise((resolve) => setTimeout(resolve, 0));",
-        "  return new Promise((r) => setTimeout(r, 0));",
-        // A type argument, which the literal `(` requirement could not cross.
-        "  return new Promise<void>((r) => setTimeout(r, 0));",
-        // The other zero-length yield, which neither timer rule knew.
-        "    await new Promise((r) => setImmediate(r));",
-        "const flush = () => new Promise<void>((resolve) => setImmediate(resolve));",
+        "await new Promise((resolve) => setTimeout(resolve, 0));",
+        "const yielded = new Promise<void>((r) => setTimeout(r, 0));",
+        // The other zero-length yield. It takes no delay, so it can only ever
+        // be rule 4's and never rule 19's.
+        "await new Promise((r) => setImmediate(r));",
+        // The BLOCK body, which is how `aai-ui/_react-test-utils.ts` writes its
+        // `tick()` — invisible to a pattern requiring both calls on one line,
+        // and the occurrence that file's own doc comment says was "in no
+        // baseline and reported by nothing".
+        ["const tick = () => new Promise<void>((r) => {", "  setTimeout(r, 0);", "});"].join("\n"),
       ],
       ignores: [
-        "    await flush();",
-        "    await tick();",
-        "    await new Promise((r) => setTimeout(r, 50));",
-        "  return new Promise<void>((r) => setTimeout(r, 250));",
+        "await flush();",
+        "await tick();",
+        // Rule 19's shape: a real delay has a different remedy.
+        "await new Promise((r) => setTimeout(r, 50));",
+        // SCHEDULED WORK rather than a yield. The timer's callback does
+        // something before it settles, so `flush()`/`tick()` cannot replace it
+        // — `host/step-files.test.ts` defers a read exactly this way, and the
+        // line-based rule had no way to tell the two apart.
+        // Spelled a fragment per line rather than as one literal: at call-site
+        // length biome's `noSecrets` entropy heuristic scores a sample as a
+        // credential, which is the same tax `guard-invariants-ere.mjs` records
+        // paying to name its fragments one at a time.
+        [
+          `const deferred = new ${"Promise<number>"}${"((resolve) => {"}`,
+          "  setTimeout(() => {",
+          "    inFlight -= 1;",
+          "    resolve(bytes);",
+          "  }, 0);",
+          "});",
+        ].join("\n"),
       ],
     },
     remedy:
@@ -118,7 +171,9 @@ export const TIMING_RULES = [
       "sleep. SHIPPED source that yields deliberately is the legitimate baseline\n" +
       "entry — `host/tool-executor.ts` uses it between tool calls for its\n" +
       "I/O-phase semantics, and a test helper is not the remedy for production\n" +
-      "code.",
+      "code.\n\n" +
+      "A promise whose timer callback does WORK before it settles is not this\n" +
+      "and is not reported: that is a deferral, and neither yield replaces it.",
   },
   {
     id: 19,
@@ -127,39 +182,30 @@ export const TIMING_RULES = [
     // Two shapes in one rule because they are the same mistake reached from two
     // directions — hand-rolling the timer promise, and reaching for the ONE
     // built-in the test runner cannot drive.
-    //
-    // The nonzero delay is what distinguishes this from rule 4, which owns the
-    // `, 0)` case (a yield, whose remedy is `flush()`/`tick()` — two different
-    // waits that must not be spelled the same). `[1-9]` after the comma is the
-    // whole difference: a literal 0 belongs to rule 4, and a NAMED delay
-    // (`setTimeout(resolve, ms)`) is a sleep whatever it holds, so an identifier
-    // matches here too.
-    re: `${SLEEP_PROMISE}|${TIMERS_PROMISES}`,
+    match: (node) => promiseWait(node) === "sleep" || isTimersPromisesSleep(node),
     paths: SOURCE_PATHSPECS,
-    skipComments: true,
     samples: {
       matches: [
-        "    await new Promise((resolve) => setTimeout(resolve, 250));",
-        "  return new Promise((r) => setTimeout(r, ms));",
-        "  await new Promise((resolve) => setTimeout(resolve, (8 - index) * 20));",
-        // The type argument AND a callback first argument — the two-level form
-        // the flat `[^,)]*` could not cross. A real five-second wait in both
-        // fuzz harnesses. Spelled in two halves because biome's `noSecrets`
-        // scores the whole literal as high entropy, the same reason the ERE
-        // fragments are named one at a time.
-        `  new Promise<"x">((r) => ${'setTimeout(() => r("x"), 5000));'}`,
-        '    import { setTimeout as sleep } from "node:timers/promises";',
+        "await new Promise((resolve) => setTimeout(resolve, 250));",
+        "const waited = new Promise((r) => setTimeout(r, ms));",
+        "await new Promise((resolve) => setTimeout(resolve, (8 - index) * 20));",
+        // A settler reached through a wrapper — the real five-second wait in
+        // both fuzz harnesses, which the flat argument class could not cross.
+        // In two halves, for the entropy reason the sample above carries.
+        `const hung = new Promise<"x">((r) => ${'setTimeout(() => r("x"), 5000));'}`,
+        'import { setTimeout as sleep } from "node:timers/promises";',
       ],
       ignores: [
-        "    await sleep(250);",
-        "    await sleep(GUEST_DIAL_RETRY_MS, { unref: true });",
+        "await sleep(250);",
+        "await sleep(GUEST_DIAL_RETRY_MS, { unref: true });",
         // Rule 4's shapes, which this rule must NOT sweep in.
-        "    await new Promise((resolve) => setTimeout(resolve, 0));",
-        "  return new Promise<void>((r) => setTimeout(r, 0));",
-        // A two-parameter executor supplying the comma.
-        "    await new Promise((resolve, reject) => setTimeout(resolve, 0));",
-        "    await new Promise((r) => setImmediate(r));",
-        '    import { scheduler } from "node:timers/promises";',
+        "await new Promise((resolve) => setTimeout(resolve, 0));",
+        "await new Promise((resolve, reject) => setTimeout(resolve, 0));",
+        "await new Promise((r) => setImmediate(r));",
+        'import { scheduler } from "node:timers/promises";',
+        // A rename of `setTimeout` from ANY OTHER module. The line-based rule
+        // keyed on the substring alone and would have reported this one.
+        'import { setTimeout as raf } from "./_timer.ts";',
       ],
     },
     remedy:
@@ -189,25 +235,29 @@ export const TIMING_RULES = [
     id: 21,
     key: "rule21_expectPoll",
     label: "expect.poll (bound to the runner's current test)",
-    // No prefix beyond the literal, because the point is the SPELLING: a
-    // context-bound `expect` destructured from the test arguments is spelled
-    // identically at the call site. No regex can tell the two apart, which is
-    // the argument for banning the API rather than for policing where it is
-    // reached from.
-    re: "expect\\.poll\\(",
+    match: (node) => isCallOfMember(node, "expect", "poll"),
+    // Report at `.poll` rather than at the call's own start: wrapped, the call
+    // begins on an `await expect` line that names nothing a reader can act on.
+    at: (node) => node.callee.property,
     paths: SOURCE_PATHSPECS,
-    skipComments: true,
-    // Every sample here is SHORT on purpose: spelled out at call-site length,
-    // biome's `noSecrets` entropy heuristic scores them as credentials — the
-    // same trap this module's header records rule 19 paying for.
     samples: {
-      matches: ["    await expect.poll(() => n).toBe(0);", "  await expect.poll(read).toEqual(1);"],
+      matches: [
+        "await expect.poll(() => n).toBe(0);",
+        // The WRAPPED form, which is what Biome emits once the poll options do
+        // not fit on one line, and what the line-based rule reported 0 for
+        // against two live occurrences in two scenario suites.
+        [
+          "await expect",
+          "  .poll(async () => (await read()).length, { timeout: 10_000 })",
+          "  .toBe(1);",
+        ].join("\n"),
+      ],
       ignores: [
-        "    await vi.waitFor(() => expect(n).toBe(0));",
-        "    await vi.waitUntil(() => n > 0, { interval: 50 });",
-        "    expect(n).toBe(0);",
+        "await vi.waitFor(() => expect(n).toBe(0));",
+        "await vi.waitUntil(() => n > 0, { interval: 50 });",
+        "expect(n).toBe(0);",
         // The name is a hazard only on `expect`. A poll of one's own is fine.
-        "    await pollUntilReady(url);",
+        "await pollUntilReady(url);",
       ],
     },
     remedy:
@@ -236,7 +286,11 @@ export const TIMING_RULES = [
       "the upstream remedy — it is not the one here, because the two are spelled\n" +
       "the same at the call site. A rule that cannot see the difference would\n" +
       "have to trust a destructuring one screen up, and this repo has paid four\n" +
-      "times for a guard that reports success over the shape it cannot see.",
+      "times for a guard that reports success over the shape it cannot see.\n" +
+      "\n" +
+      "This rule spent its whole life as a line pattern that could not see\n" +
+      "`await expect` with `.poll(` on the next line, and reported 0 over two\n" +
+      "live occurrences. It is a node rule now.",
   },
   {
     id: 23,
@@ -247,27 +301,29 @@ export const TIMING_RULES = [
     // "it isn't, and neither is anyone else". Rule 21 already established that
     // a rule belongs here when the REMEDY is a different way of handing off an
     // async result, even when the hazard is not the wait itself.
-    re: ASYNC_LISTENER,
+    match: (node) => asyncListener(node) !== undefined,
     paths: SOURCE_PATHSPECS,
-    skipComments: true,
     samples: {
       matches: [
-        '  ws.on("message", async (raw) => {',
-        '  signal.addEventListener("abort", async () => {',
-        '  emitter.once("open", async function reconnect() {',
-        "  target.addListener(EVENTS.data, async (chunk) => {",
+        'ws.on("message", async (raw) => { await handle(raw); });',
+        'signal.addEventListener("abort", async () => { await drain(); });',
+        'emitter.once("open", async function reconnect() { await dial(); });',
+        "target.addListener(EVENTS.data, async (chunk) => { await write(chunk); });",
+        // A listener with an OPTIONS argument after it — the hazard with a
+        // third argument, which the event-name character class could not reach.
+        'signal.addEventListener("abort", async () => { await drain(); }, { once: true });',
       ],
       ignores: [
         // The remedy: a sync listener that hands the promise somewhere.
-        '  ws.on("message", (raw) => { void handle(raw).catch(report); });',
-        '  signal.addEventListener("abort", () => controller.abort());',
-        '  emitter.on("data", onData);',
+        'ws.on("message", (raw) => { void handle(raw).catch(report); });',
+        'signal.addEventListener("abort", () => controller.abort());',
+        'emitter.on("data", onData);',
         // `once` as the node:events HELPER, which awaits and is the correct
-        // spelling. No leading dot, so the pattern cannot reach it.
-        '  const [chunk] = await once(stream, "data");',
+        // spelling. It is a bare call, not a registration on an object.
+        'const [chunk] = await once(stream, "data");',
         // A hono handler: the framework awaits it, and the `async` sits in the
-        // THIRD argument position. The event-name class cannot cross the comma.
-        '  app.on("GET", "/health", async (c) => c.text("ok"));',
+        // THIRD argument position rather than the listener's.
+        'app.on("GET", "/health", async (c) => c.text("ok"));',
       ],
     },
     remedy:
@@ -293,8 +349,8 @@ export const TIMING_RULES = [
       "`AbortSignal.addEventListener`, whose types come from `@types/node` and\n" +
       "`lib.dom`. The same blind spot hides every floating promise returned by a\n" +
       "`node:` builtin (`writeFile`, `pipeline`, `finished`, `setTimeout` from\n" +
-      "node:timers/promises). This rule closes the half a line-based scan can\n" +
-      "see; the other half is a documented limitation in AGENTS.md, because the\n" +
+      "node:timers/promises). This rule closes the half a scan can see; the\n" +
+      "other half is a documented limitation in AGENTS.md, because the\n" +
       "floating-call form is indistinguishable from an arrow expression body\n" +
       "that legitimately RETURNS the promise.",
   },
@@ -302,22 +358,21 @@ export const TIMING_RULES = [
     id: 31,
     key: "rule31_handRolledJitter",
     label: "hand-rolled jittered backoff",
-    re: JITTERED_WINDOW,
+    match: isJitteredWindow,
     paths: SOURCE_PATHSPECS,
-    skipComments: true,
     samples: {
       matches: [
-        "  return window / 2 + Math.random() * (window / 2);",
-        "  return Math.random() * (window / 2) + window / 2;",
-        "    const wait = span / 3 + Math.random() * (span / 3);",
+        "const wait = window / 2 + Math.random() * (window / 2);",
+        "const wait = Math.random() * (window / 2) + window / 2;",
+        "const wait = span / 3 + Math.random() * (span / 3);",
       ],
       ignores: [
-        "  return jitteredBackoff(attempt, { baseMs: UPLOAD_RETRY_BASE_MS });",
+        "const wait = jitteredBackoff(attempt, { baseMs: UPLOAD_RETRY_BASE_MS });",
         // The DOUBLING on its own is legitimate and must not be swept in.
-        "  const delay = Math.min(EVENTS_RETRY_MS * 2 ** (failures - 1), EVENTS_RETRY_MAX_MS);",
-        "  return Math.min(UPLOAD_PART_BYTES, UPLOAD_CHUNK_BYTES * 2 ** n);",
+        "const delay = Math.min(EVENTS_RETRY_MS * 2 ** (failures - 1), EVENTS_RETRY_MAX_MS);",
+        "const size = Math.min(UPLOAD_PART_BYTES, UPLOAD_CHUNK_BYTES * 2 ** n);",
         // A bare draw, with no window to spread over, is a different thing.
-        "    const pick = items[Math.floor(Math.random() * items.length)];",
+        "const pick = items[Math.floor(Math.random() * items.length)];",
       ],
     },
     remedy:

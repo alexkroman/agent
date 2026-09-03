@@ -1,12 +1,9 @@
 {
-  "_description": "Per-file budgets for guard-invariants' line rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 26, rule 28.",
+  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 3, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 23, rule 26, rule 28, rule 31, rule 32.",
   "rule2_spreadTernary": {
     "packages/aai-cli/_utils.ts": 1,
     "packages/aai-server/subprocess-sandbox.ts": 1,
     "packages/aai-server/test-utils.ts": 1
-  },
-  "rule3_raceTimeout": {
-    "packages/aai-server/guest-readiness.ts": 1
   },
   "rule4_inlineTickPromise": {
     "packages/aai-runtime/integration/_s2s-fuzz-harness.ts": 1,
@@ -41,11 +38,10 @@
     "packages/aai-evals/assertions.ts": 1,
     "packages/aai/sdk/standard-schema.ts": 1,
     "scripts/_api-contracts.mjs": 1,
-    "scripts/_property-floors-parse.mjs": 1,
-    "scripts/_test-assertions-parse.mjs": 1
+    "scripts/_ast-scan.mjs": 1,
+    "scripts/_property-floors-parse.mjs": 1
   },
   "rule19_handRolledSleep": {
-    "packages/aai-cli/dev-workflow.scenario.test.ts": 1,
     "scripts/loadtest-runs.mjs": 1
   },
   "rule22_truthySpread": {
@@ -76,9 +72,6 @@
     "packages/aai/sdk/providers/stt/elevenlabs.ts": 1,
     "packages/aai/sdk/step-fetch.ts": 1,
     "scripts/with-test-pg.mjs": 1
-  },
-  "rule23_asyncEventListener": {
-    "packages/aai-ui/worklets/_playback-bench-page.ts": 1
   },
   "rule24_toolContextField": {
     "packages/aai/sdk/tool-context.ts": 9

@@ -37,7 +37,7 @@ import {
   SESSION_STATE_TABLE,
   sessionStateDdl,
 } from "@alexkroman1/aai-runtime/internal";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 
 /**
@@ -267,15 +267,13 @@ describeWithPg("session state over a real Postgres", () => {
       await store.flush(sid);
     }
     store.discard("s-drop");
-    await expect
-      .poll(async () => {
-        const rows = await sql<{ session_id: string }>(
-          `select session_id from ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE}
-           where session_id in ('s-keep', 's-drop')`,
-        );
-        return rows.map((r) => r.session_id);
-      })
-      .toEqual(["s-keep"]);
+    await vi.waitFor(async () => {
+      const rows = await sql<{ session_id: string }>(
+        `select session_id from ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE}
+         where session_id in ('s-keep', 's-drop')`,
+      );
+      expect(rows.map((r) => r.session_id)).toEqual(["s-keep"]);
+    });
   });
 
   test("a session's EVENT log survives a new process, at its own indices", async () => {

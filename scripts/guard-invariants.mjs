@@ -23,7 +23,7 @@
  * the way a hand-kept list of anything does here: rules 17, 18 and 19 were
  * absent, and a missing newline had run two rules' paragraphs together. The
  * one line that did NOT drift was the printed count, because it is computed from
- * `ABSOLUTE_RULES.length + LINE_RULES.length`. So the catalogue is computed the
+ * the rule counts. So the catalogue is computed the
  * same way now, from the `id`/`label`/`remedy` every rule already carries, and
  * `--rules` prints it. A new rule joins the catalogue by existing.
  *
@@ -45,7 +45,7 @@
 import { readFileSync } from "node:fs";
 
 import { parseScriptArgs } from "./_args.mjs";
-
+import { scanNodeGroups } from "./_ast-scan.mjs";
 import {
   assertNotUniversallyEmpty,
   assertScanCorpus,
@@ -57,7 +57,7 @@ import {
   warnStale,
 } from "./_ratchet.mjs";
 import { scanChangesetPackageNames } from "./guard-invariants-changesets.mjs";
-import { LINE_RULES, SCAN_CORPORA } from "./guard-invariants-rules.mjs";
+import { LINE_RULES, NODE_RULES, SCAN_CORPORA } from "./guard-invariants-rules.mjs";
 import {
   scanSymlinks,
   scanTemplateEscapingImports,
@@ -99,16 +99,21 @@ const BASELINE_PATH = new URL("guard-invariants-baseline.json", import.meta.url)
  */
 const SELF_REFERENTIAL = new Map([
   ["scripts/guard-invariants.mjs", "*"],
-  // The rule definitions. Every pattern's `label` and `re` is a description of
+  // The rule definitions. Every LINE rule's `label` and `re` is a description of
   // the thing it bans, so these files match most of their own rules — and the
   // set has to name ALL of them. `guard-invariants-rules.mjs` was one 649-line
   // module until it passed the source cap; the split into a barrel plus an ERE
   // vocabulary, a scopes module and FOUR rule groups multiplies this trap by
   // six, which AGENTS.md records having already been paid for four times.
+  //
+  // `-rules-timing.mjs` and `-nodes.mjs` are deliberately ABSENT: those are the
+  // node rules, and a node rule's own definition cannot match it, because a
+  // remedy or a sample quoting the anti-pattern is a string literal and a
+  // string literal is not a call. That is not a claim taken on trust — the
+  // entry was removed and the gate stayed green.
   ["scripts/guard-invariants-rules.mjs", "*"],
   ["scripts/guard-invariants-ere.mjs", "*"],
   ["scripts/guard-invariants-scopes.mjs", "*"],
-  ["scripts/guard-invariants-rules-timing.mjs", "*"],
   ["scripts/guard-invariants-rules-workflow.mjs", "*"],
   ["scripts/guard-invariants-rules-shape.mjs", "*"],
   ["scripts/guard-invariants-rules-state.mjs", "*"],
@@ -121,10 +126,18 @@ const SELF_REFERENTIAL = new Map([
   ["packages/aai/sdk/omit-undefined.ts", ["rule2_spreadTernary"]], // its doc shows the banned spelling
   ["packages/aai/sdk/keyed-lock.ts", ["rule9_handRolledKeyedLock"]], // rule 9 IS this implementation
   ["packages/aai/sdk/owned-map.ts", ["rule8_handRolledOwnedMap"]], // rule 8 IS this implementation
-  // Both copies DEFINE `tick()`, so both are the remedy rather than a violation.
-  // The split duplicated the helper: aai-runtime owns the full set, and
-  // packages/aai keeps the four its remaining host/ modules need.
+  // All three DEFINE `tick()`, so all three are the remedy rather than a
+  // violation. The split duplicated the helper: aai-runtime owns the full set,
+  // packages/aai keeps the four its remaining host/ modules need, and aai-ui
+  // spells it again because those modules are `_`-internal to their packages.
+  //
+  // The aai-ui entry was ADDED BY THE PARSE. That copy writes its executor as a
+  // block, so the line rule could not see it, and its own doc comment says as
+  // much — "the one occurrence in this package was in no baseline and reported
+  // by nothing". An exemption you can only write once the gate can see the file
+  // is the difference between a rule that is at zero and one that is blind.
   ["packages/aai-runtime/_test-utils.ts", ["rule4_inlineTickPromise"]],
+  ["packages/aai-ui/_react-test-utils.ts", ["rule4_inlineTickPromise"]],
   ["packages/aai/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
   ["packages/aai/sdk/is-record.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body
   ["packages/aai/sdk/jittered-backoff.ts", ["rule31_handRolledJitter"]], // rule 31 IS this body
@@ -258,6 +271,21 @@ const ABSOLUTE_RULES = [
   },
 ];
 
+/**
+ * Every rule with a per-file budget, whichever ENGINE answers it.
+ *
+ * A line rule is scanned by `git grep -E` and a node rule by a parse
+ * (`scripts/_ast-scan.mjs`), and past that one difference nothing downstream
+ * distinguishes them: they share `guard-invariants-baseline.json`, the
+ * `--update` refuse-to-raise contract, the per-file comparison and the failure
+ * report. Interleaving them BY ID rather than concatenating is what keeps the
+ * summary in rule-number order and the generated baseline's key order a
+ * function of the rule set — the same property the four rule modules already
+ * relied on, now across the two kinds as well, so migrating a rule from one to
+ * the other does not rewrite the baseline.
+ */
+const BASELINED_RULES = [...LINE_RULES, ...NODE_RULES].sort((a, b) => a.id - b.id);
+
 const { values: FLAGS } = parseScriptArgs({
   script: import.meta.url,
   options: { rules: { type: "boolean" }, update: { type: "boolean" } },
@@ -277,7 +305,7 @@ const UPDATE_COMMAND = "node scripts/guard-invariants.mjs --update";
 function ruleCatalogue() {
   const rows = [
     ...ABSOLUTE_RULES.map((r) => ({ ...r, enforcement: "absolute (no baseline)" })),
-    ...LINE_RULES.map((r) => ({ ...r, enforcement: `per-file baseline (${r.key})` })),
+    ...BASELINED_RULES.map((r) => ({ ...r, enforcement: `per-file baseline (${r.key})` })),
   ].sort((a, b) => a.id - b.id);
   const lines = [`${GATE}: ${rows.length} rule(s).\n`];
   for (const { id, label, remedy, enforcement } of rows) {
@@ -308,10 +336,10 @@ if (FLAGS.rules === true) {
 function baselineDescription(next) {
   const zeroed = [
     ...ABSOLUTE_RULES.map((r) => r.id),
-    ...LINE_RULES.filter((r) => next[r.key] === undefined).map((r) => r.id),
+    ...BASELINED_RULES.filter((r) => next[r.key] === undefined).map((r) => r.id),
   ].sort((a, b) => a - b);
   return (
-    "Per-file budgets for guard-invariants' line rules — see scripts/guard-invariants.mjs " +
+    "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs " +
     "and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its " +
     "number and may never hold more; `--update` lowers an entry and refuses to raise one. " +
     "Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, " +
@@ -323,8 +351,28 @@ const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
 
 for (const corpus of SCAN_CORPORA) assertScanCorpus({ gate: GATE, ...corpus });
 
-/** Per-baselined-rule `{ file: count }` in the current tree, plus the lines. */
-const { counts: actual, occurrences } = scanGroups(LINE_RULES, { filter: countsAsViolation });
+/**
+ * Per-baselined-rule `{ file: count }` in the current tree, plus the lines.
+ *
+ * Two scans, one result. `scanNodeGroups` returns the same
+ * `{ counts, occurrences }` shape `scanGroups` does, so merging them is a map
+ * union and every consumer below is written against one set of rules rather
+ * than against an engine.
+ *
+ * `NODE_RULE_FILE_FLOOR` is the node scan's own corpus floor, and it is not
+ * redundant with `SCAN_CORPORA` above: those floor what the PATHSPECS resolve
+ * to, and this floors what survives the parseable-extension filter — a brand
+ * new way for a scan to walk nothing while every pathspec still resolves.
+ * Measured at 1,410 of the 1,530 files `SOURCE_PATHSPECS` names.
+ */
+const NODE_RULE_FILE_FLOOR = 800;
+const lineScan = scanGroups(LINE_RULES, { filter: countsAsViolation });
+const nodeScan = scanNodeGroups(NODE_RULES, {
+  filter: countsAsViolation,
+  minFiles: NODE_RULE_FILE_FLOOR,
+});
+const actual = new Map([...lineScan.counts, ...nodeScan.counts]);
+const occurrences = new Map([...lineScan.occurrences, ...nodeScan.occurrences]);
 
 // ---------------------------------------------------------------------------
 // --update
@@ -335,7 +383,7 @@ if (FLAGS.update === true) {
     gate: GATE,
     baselinePath: BASELINE_PATH,
     baseline,
-    groups: LINE_RULES.map((rule) => ({ ...rule, label: `rule ${rule.id}` })),
+    groups: BASELINED_RULES.map((rule) => ({ ...rule, label: `rule ${rule.id}` })),
     counts: actual,
     describe: baselineDescription,
     advice:
@@ -385,12 +433,12 @@ const {
   allowedTotal: baselineTotal,
   currentTotal: treeTotal,
 } = compareToBaseline(
-  LINE_RULES.map((rule) => ({ ...rule, label: `rule ${rule.id}` })),
+  BASELINED_RULES.map((rule) => ({ ...rule, label: `rule ${rule.id}` })),
   baseline,
   actual,
 );
 
-for (const rule of LINE_RULES) {
+for (const rule of BASELINED_RULES) {
   const allowed = baseline[rule.key] ?? {};
   const current = actual.get(rule.key) ?? new Map();
   const allowedTotal = totalOf(allowed);
@@ -434,8 +482,8 @@ if (failed) {
   process.exit(1);
 }
 
-// Every line rule at zero against a non-empty baseline is a blind scan until
-// proven otherwise — see `_ratchet.mjs`.
+// Every baselined rule at zero against a non-empty baseline is a blind scan
+// until proven otherwise — see `_ratchet.mjs`.
 assertNotUniversallyEmpty({
   gate: GATE,
   allowedTotal: baselineTotal,
@@ -445,4 +493,6 @@ assertNotUniversallyEmpty({
 
 warnStale({ gate: GATE, stale, updateCommand: UPDATE_COMMAND, maxShown: MAX_SHOWN });
 
-console.log(`\nguard-invariants: ${ABSOLUTE_RULES.length + LINE_RULES.length} rule(s) hold. ✓`);
+console.log(
+  `\nguard-invariants: ${ABSOLUTE_RULES.length + BASELINED_RULES.length} rule(s) hold. ✓`,
+);
