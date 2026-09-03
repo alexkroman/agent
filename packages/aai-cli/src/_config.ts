@@ -304,6 +304,39 @@ export async function writeGlobalConfig(configDir: string, data: GlobalConfig): 
 }
 
 /**
+ * Why the caller wants the key, which is what the FAILURE has to answer.
+ *
+ * One source, two questions. `"platform"` asks "who is this CLI logged in
+ * as?" — for `publish`/`push`/`logs`/`secret` a platform account genuinely IS
+ * the requirement, so the refusal is account-shaped and points at
+ * `aai login`. `"local-session"` is `aai dev` asking for a PROVIDER
+ * credential that the logged-in account merely happens to be able to supply:
+ * `ASSEMBLYAI_API_KEY` in `.env`, or exported in the shell, starts the same
+ * server with no account anywhere (see `resolveAgentEnv` in `_dev-server.ts`,
+ * which reaches here only when neither carries one).
+ *
+ * Answering the second question with the first's sentence is the defect this
+ * parameter exists to fix: `not_logged_in` names only account remedies
+ * (`aai login`, `AAI_CONFIG_DIR`), so `aai dev` read as "local development is
+ * gated on a cloud account" — and most of a twenty-persona DX audit believed
+ * it and abandoned the documented primary feedback loop, which was never
+ * gated at all.
+ *
+ * A PARAMETER rather than a second exported function because the source is
+ * shared: both answers must keep reading the one slot `aai login` writes, and
+ * a sibling function is how the two come to disagree about where a key lives.
+ */
+export type ApiKeyUse = "platform" | "local-session";
+
+/** Local-session remedies FIRST — the two that need no account at all. */
+const LOCAL_SESSION_HINT =
+  "Any ONE of these is enough, and the first two need no aai account:\n" +
+  "  1. Put ASSEMBLYAI_API_KEY=<your key> in this project's .env — the same file `aai publish` uploads.\n" +
+  "  2. Or export it in your shell: export ASSEMBLYAI_API_KEY=<your key>\n" +
+  "  3. Or run `aai login`, and `aai dev` will use your account's key.\n" +
+  "Get a key at https://www.assemblyai.com/dashboard.";
+
+/**
  * The credential every platform command runs on.
  *
  * ONE source: the key `aai login` saved to the global config. Nothing else
@@ -324,10 +357,22 @@ export async function writeGlobalConfig(configDir: string, data: GlobalConfig): 
  * pointing `AAI_CONFIG_DIR` at a config dir holding a key from an interactive
  * `aai login`.
  */
-export async function ensureApiKey(configDir?: string): Promise<string> {
+export async function ensureApiKey(
+  configDir?: string,
+  use: ApiKeyUse = "platform",
+): Promise<string> {
   const dir = configDir ?? getConfigDir();
   const config = await readGlobalConfig(dir);
   if (config.apiKey) return config.apiKey;
+
+  // Credential-shaped question, credential-shaped answer — see {@link ApiKeyUse}.
+  if (use === "local-session") {
+    throw new CliError(
+      "missing_assemblyai_key",
+      "ASSEMBLYAI_API_KEY is not set, and this agent's pipeline needs it to start a session.",
+      LOCAL_SESSION_HINT,
+    );
+  }
 
   throw new CliError(
     "not_logged_in",

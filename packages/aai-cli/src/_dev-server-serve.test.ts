@@ -62,7 +62,8 @@ describe("agentEnvWarnings", () => {
     // The `page` field has to be in the Pick, or a static agent is warned about
     // a key it never dials — and `resolveAgentEnv` reads the same list to decide
     // whether to reach for the logged-in key, so on that path the same omission
-    // is a `not_logged_in` that stops `aai dev` from starting at all.
+    // is a `missing_assemblyai_key` that stops `aai dev` from starting at all —
+    // demanding a credential of an app that dials no provider.
     expect(agentEnvWarnings({ page: "static" }, {}, {})).toEqual([]);
   });
 

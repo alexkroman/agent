@@ -47,6 +47,36 @@ describe("runInit", () => {
     );
   });
 
+  /**
+   * The generated README is the only doc a scaffolded project ships, and it
+   * used to be wrong in two ways that both stop a new author dead: it told
+   * them to run a bare `aai dev` (the CLI is a devDependency, so the binary is
+   * in `node_modules/.bin` and not on `PATH`), and `aai login` — which its own
+   * publish step needs — appeared nowhere in any user-facing doc. It also
+   * never named the one credential a local session cannot start without, so
+   * the account-shaped failure that followed read as "local dev needs an
+   * account".
+   */
+  test("the README runs the CLI through npm and names the key plus `aai login`", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        const target = path.join(dir, "cool-agent");
+        await runInit({ targetDir: target, template: "simple" });
+        const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
+
+        expect(readme).toContain("npm run dev");
+        expect(readme).toContain("npm run publish:agent");
+        expect(readme).toContain("aai login");
+        expect(readme).toContain("ASSEMBLYAI_API_KEY");
+        // No line may TELL the reader to type a bare `aai …` — that is the
+        // `command not found` the quickstart shipped with. A line STARTING with
+        // it is the whole family: prose mentions sit mid-sentence in backticks.
+        expect(readme.split("\n").find((line) => line.startsWith("aai "))).toBeUndefined();
+      }),
+    );
+  });
+
   test("does not overwrite existing README.md", async () => {
     await withTempDir(
       silenced(async (dir) => {

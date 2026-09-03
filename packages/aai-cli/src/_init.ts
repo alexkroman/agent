@@ -5,6 +5,21 @@ import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { downloadAndMergeTemplate, REPO_URL } from "./_templates.ts";
 import { isEexist, readJson, writeJson } from "./_utils.ts";
 
+/**
+ * The README every scaffolded project gets, and the first thing a new author
+ * reads. Three things in it are corrections rather than prose:
+ *
+ * - **`npm run dev`, never a bare `aai dev`.** The CLI is a devDependency, so
+ *   after `npm install` the binary is in `node_modules/.bin` and NOT on
+ *   `PATH`. The old quickstart said `aai dev`, which fails with
+ *   `command not found` for everyone who has not installed the CLI globally.
+ * - **The key `aai dev` needs is named, with the two LOCAL ways first.** No
+ *   step of local development needs a platform account; a twenty-persona DX
+ *   audit read the account-shaped failure it used to get and concluded the
+ *   opposite, then stopped using the loop this file documents.
+ * - **`aai login` appears where it is actually required.** It was in no
+ *   user-facing doc at all, while the quickstart's own publish step needs it.
+ */
 function readmeContent(slug: string): string {
   return `# ${slug}
 
@@ -14,8 +29,41 @@ A voice agent built with [aai](${REPO_URL}).
 
 \`\`\`sh
 npm install        # Install dependencies
-aai dev            # Run locally (opens browser)
-aai publish        # Publish to production (and sync to the studio)
+npm run dev        # Run locally on http://localhost:3000 (opens browser)
+\`\`\`
+
+The \`aai\` CLI is a devDependency of this project, so it lives in
+\`node_modules/.bin\` rather than on your \`PATH\`. Run it through npm
+(\`npm run dev\`, \`npm test\`, \`npm run build\`) or with \`npx aai <command>\`.
+
+### The one key local development needs
+
+The default pipeline (speech-to-text → LLM → text-to-speech) runs on a single
+AssemblyAI key. **Any one of these is enough, and the first two need no aai
+account** — nothing about running this agent locally is gated on one:
+
+1. Put \`ASSEMBLYAI_API_KEY=<your key>\` in \`.env\` (this project's \`.env.example\`
+   documents it, and it is the same file \`aai publish\` uploads as secrets).
+2. Or export it in your shell: \`export ASSEMBLYAI_API_KEY=<your key>\`.
+3. Or run \`npx aai login\`, and \`aai dev\` will use your account's key.
+
+Get a key at <https://www.assemblyai.com/dashboard>.
+
+## Publishing
+
+Publishing (and the studio it syncs to) is the one part that does need an
+account:
+
+\`\`\`sh
+npx aai login          # Link your account — once per machine
+npm run publish:agent  # Publish to production (and sync to the studio)
+\`\`\`
+
+You can also run this agent as a plain Node server, with no aai account and
+nothing managed:
+
+\`\`\`sh
+npm start              # Builds, then serves on http://127.0.0.1:3000
 \`\`\`
 
 ## Secrets
@@ -32,9 +80,9 @@ MY_API_KEY=secret-value
 **Production** — set secrets on the server:
 
 \`\`\`sh
-aai secret put MY_KEY    # Set a secret (prompts for value)
-aai secret list          # List secret names
-aai secret delete MY_KEY # Remove a secret
+npx aai secret put MY_KEY    # Set a secret (prompts for value)
+npx aai secret list          # List secret names
+npx aai secret delete MY_KEY # Remove a secret
 \`\`\`
 
 `;

@@ -118,12 +118,16 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
   // to the provider resolvers without letting it into `ctx.env`, and
   // `agentEnvWarnings` flags it as shell-only so the "works here, dead after
   // deploy" case stays visible. Without this check `aai dev` would hard-fail
-  // with `not_logged_in` for a developer whose key is exported the usual way,
+  // on a missing LOGIN for a developer whose key is exported the usual way,
   // since `ensureApiKey` reads the login key and nothing else.
+  //
+  // `"local-session"` is what keeps the FAILURE credential-shaped: nothing
+  // here needs a platform account, so the refusal names `.env` and a shell
+  // export before `aai login`. See {@link ApiKeyUse}.
   const required = requiredProviderEnvVars(agentDef);
   const hasShellKey = Boolean(process.env.ASSEMBLYAI_API_KEY);
   if (required.includes("ASSEMBLYAI_API_KEY") && !env.ASSEMBLYAI_API_KEY && !hasShellKey) {
-    env.ASSEMBLYAI_API_KEY = await ensureApiKey();
+    env.ASSEMBLYAI_API_KEY = await ensureApiKey(undefined, "local-session");
   }
 
   // Anything still unresolved would otherwise surface as an auth failure on
