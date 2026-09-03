@@ -20,11 +20,19 @@
  * which is the regression an eval exists to catch. Tool arguments are produced
  * by the model, tool results and state frames cross the wire serialized, so all
  * three are `unknown` and `String(args.code ?? "")` turns an argument the model
- * renamed into `""`. Four of the six readers here are SINGULAR/PLURAL pairs
+ * renamed into `""`. Four of the eight readers here are SINGULAR/PLURAL pairs
  * (`toolResultIn`/`toolResultsIn`, `lastStateIn`/`statesIn`) and the asymmetry
  * between each pair is deliberate: the singular throws when there is nothing to
  * read, because for it that can only be a mistake, and the plural answers `[]`,
  * because "it never called this" is a claim a case makes.
+ *
+ * **Two exports here are DIAGNOSTICS rather than readers**
+ * ({@link toolNames}, {@link describeToolCalls}), and they exist for the same
+ * reason the readers throw with names: a legible failure is what makes a noisy
+ * instrument usable. A reader that throws says what happened; an `expect` that
+ * fails says only "expected undefined to be defined" unless the case hands it a
+ * message, and every case in the corpus was hand-building one. `eval/turns.ts`
+ * carries the per-TURN half.
  *
  * @module
  */
@@ -91,6 +99,57 @@ export function toolCallsIn(events: readonly SessionEvent[]): readonly EvalToolC
     });
   }
   return calls;
+}
+
+/**
+ * The names of `calls`, in call order — what the agent reached for.
+ *
+ * Thirty `.map((c) => c.name)` sites across the eval corpus, one of which
+ * (`plan-and-execute`) had wrapped it as a local `named()`. Mostly it feeds a
+ * failure message ({@link describeToolCalls} is that, done properly), but about
+ * six sites are the ASSERTION itself —
+ * `expect(toolNames(turn.toolCalls)).toEqual(["add_pizza"])` — which is the
+ * strongest claim about tool ORDER available, and the reason this is an export
+ * of its own rather than folded into the diagnostic.
+ *
+ * Names only: a claim about what a tool was ASKED for goes through
+ * {@link toolArgsIn} with a schema, because `args` is `unknown` on the wire and
+ * reading a field off it by hand is how an argument the model renamed becomes
+ * `""`.
+ */
+export function toolNames(calls: readonly EvalToolCall[]): readonly string[] {
+  return calls.map((call) => call.name);
+}
+
+/**
+ * `calls` as one line, for the message argument of a failing assertion.
+ *
+ * `expect(logged).toBeDefined()` failing prints "expected undefined to be
+ * defined", which says nothing about a desk that talked through three turns
+ * without ever logging the ticket — so every case in the corpus passed a
+ * message, and three of them built this exact string from
+ * `session.toolCalls()`. It is the harness's own job: the readers next door
+ * throw with names precisely because a legible failure is what makes a noisy
+ * instrument usable, and then each case hand-rolled the same sentence anyway.
+ *
+ * **A call list that is EMPTY reads as "called no tools", never as an empty
+ * bracket.** That is the case the message exists for — the agent answered with
+ * a question instead of acting — and `tools called: []` is one character away
+ * from looking like the message got truncated.
+ *
+ * ```ts
+ * import { describeToolCalls, type EvalSession } from "@alexkroman1/aai-runtime/eval";
+ *
+ * export function loggedTicket(session: EvalSession): void {
+ *   const logged = session.toolCalls().find((call) => call.name === "log_ticket");
+ *   // The message an `expect(logged, …)` would carry, and what a bare
+ *   // `toBeDefined()` failure leaves out.
+ *   if (logged === undefined) throw new Error(describeToolCalls(session.toolCalls()));
+ * }
+ * ```
+ */
+export function describeToolCalls(calls: readonly EvalToolCall[]): string {
+  return calls.length === 0 ? "called no tools" : `called ${toolNames(calls).join(", ")}`;
 }
 
 /**

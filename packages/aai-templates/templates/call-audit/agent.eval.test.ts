@@ -52,6 +52,7 @@
 // the tier that really resumes a run.
 import { spawnSync } from "node:child_process";
 import { encodeWav } from "@alexkroman1/aai/step";
+import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubTranscribe, installStubUploads } from "@alexkroman1/aai/testing/vitest";
 import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { describe, expect, test } from "vitest";
@@ -211,19 +212,21 @@ function publish(bytes: Uint8Array, name: string, type: string) {
  * Answer the sync transcription endpoint and the model in memory.
  *
  * ONE fake, because publishing a `stepFetch` REPLACES — a flow that transcribes
- * AND calls a model cannot install two, which is what `otherwise` is for. The
- * transcription half is the SDK's own fake rather than this file's hand-typed
- * wire: it routes off the SDK's endpoint constants, so a case cannot pass
- * because the fake and the step agree on a typo.
+ * AND calls a model cannot install two, which is what `otherwise` is for. BOTH
+ * halves are the SDK's own fakes rather than this file's hand-typed wire, and
+ * for the same reason: each routes off the SDK's own endpoint constant, so a
+ * case cannot pass because the fake and the step agree on a typo. The gateway
+ * envelope is the half where that matters most — it is a WIRE shape, so getting
+ * a field wrong does not fail: `stepGenerate` reads no content, reports an empty
+ * completion, and the case blames the desk.
+ *
+ * `route` answers `undefined` for anything that is not a completion request, so
+ * it drops straight into `otherwise` and the transcription legs still reach the
+ * fake below it.
  */
 function scriptProvider(text: readonly string[]) {
-  return installStubTranscribe({
-    text,
-    otherwise: (request) =>
-      request.url.includes("/chat/completions")
-        ? { body: { choices: [{ message: { content: JSON.stringify(REPLY) } }] } }
-        : undefined,
-  });
+  const model = stubGatewayRoute(JSON.stringify(REPLY));
+  return installStubTranscribe({ text, otherwise: (request) => model.route(request) });
 }
 
 describeWorkflowEvalWithFfmpeg(

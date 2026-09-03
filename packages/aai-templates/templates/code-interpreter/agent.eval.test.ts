@@ -24,27 +24,37 @@
 // Coda reached for code, and what the code came back with.
 
 import agentDef from "virtual:aai/agent";
-import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  createVmRunCode,
+  type EvalTurn,
+  toolArgsIn,
+  toolNames,
+  toolResultsIn,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
+import { z } from "zod";
 
-/** The code every `run_code` call in this turn carried, joined. */
-const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string, unknown> }[] }) =>
-  turn.toolCalls
-    .filter((c) => c.name === "run_code")
-    .map((c) => String(c.args.code ?? ""))
+/**
+ * The code every `run_code` call in this turn carried, joined.
+ *
+ * Read through `toolArgsIn` WITH a schema, which is what that reader takes one
+ * for: `args` is `Record<string, unknown>` on the wire — the model wrote it and
+ * nothing validated it — so the `String(c.args.code ?? "")` this replaced turned
+ * an argument Coda renamed, or never sent, into `""`, and every claim below about
+ * the code she wrote would have been a claim about an empty string. A `code`
+ * that stops arriving FAILS here, naming the field.
+ */
+const RunCodeArgs = z.object({ code: z.string() });
+const codeIn = (turn: EvalTurn) =>
+  toolArgsIn(turn.toolCalls, "run_code", RunCodeArgs)
+    .map((args) => args.code)
     .join("\n");
 
 /**
- * A `run_code` executor, so these cases can assert the ANSWER.
- *
- * The builtin refuses without one — the Modal container is the security
- * boundary, and off-platform there is none — so a case could assert the CALL and
- * the code it carried, and never what the code came back with.
- * `createVmRunCode()` is a `node:vm` context with a capturing `console.log`,
- * which is enough here: what runs is arithmetic, not a program. It is NOT a
- * sandbox and does not pretend to be one; a deployed agent still gets the
- * refusal.
+ * A `run_code` executor, so these cases can assert the ANSWER and not merely the
+ * call — `createVmRunCode`'s own doc carries why the builtin refuses without one
+ * and why a `node:vm` context is the right thing to hand it here.
  */
 const runCode = createVmRunCode();
 
@@ -59,7 +69,7 @@ describeEval(
         // The template's CRITICAL RULE, and the whole reason it declares
         // run_code: a model that answers this one directly has regressed, and it
         // is the easiest question in the file to answer wrongly with confidence.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
+        expect(toolNames(turn.toolCalls)).toContain("run_code");
         const code = codeIn(turn);
         expect(code).toContain("127");
         expect(code).toContain("849");
@@ -90,7 +100,7 @@ describeEval(
         // The prompt lists this exact question under "you MUST use code for".
         // It is the case a narrower reading of the rule ("code is for maths")
         // silently drops.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
+        expect(toolNames(turn.toolCalls)).toContain("run_code");
         expect(codeIn(turn)).toMatch(/Date|2000/);
         // The code RAN rather than being refused — but the ANSWER is
         // deliberately not asserted here, and the reason is worth knowing before

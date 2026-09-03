@@ -113,6 +113,52 @@ describe("openEvalSession", () => {
     }
   });
 
+  test("sayAll drives every line in order and hands back one turn each", async () => {
+    const { llm, providerEnv, release } = scriptedAgent({
+      steps: [
+        [{ type: "text", text: "Sure — what is the order number?" }],
+        [{ type: "text", text: "W1234, got it." }],
+      ],
+    });
+    const session = await openEvalSession({
+      agent: agent({ name: "Order Desk" }),
+      llm,
+      providerEnv,
+    });
+    try {
+      const turns = await session.sayAll(["I want to check an order", "W1234"]);
+      // One turn per line, in the order they were said — which is what lets a
+      // case ask which turn a mechanism fired in rather than pinning an index.
+      expect(turns.map((t) => t.text)).toEqual([
+        "Sure — what is the order number?",
+        "W1234, got it.",
+      ]);
+      // Sequential: the second utterance is committed only after the first
+      // reply ended, so no turn contains the other's events.
+      expect(turns[0]?.events).not.toEqual(turns[1]?.events);
+    } finally {
+      await session.close();
+      release();
+    }
+  });
+
+  test("sayAll over no lines drives nothing and answers no turns", async () => {
+    const { llm, providerEnv, release } = scriptedAgent({ steps: [] });
+    const session = await openEvalSession({
+      agent: agent({ name: "Order Desk" }),
+      llm,
+      providerEnv,
+    });
+    try {
+      const before = session.events().length;
+      expect(await session.sayAll([])).toEqual([]);
+      expect(session.events()).toHaveLength(before);
+    } finally {
+      await session.close();
+      release();
+    }
+  });
+
   test("records a tool call with its arguments and its result", async () => {
     const { llm, providerEnv, release } = scriptedAgent({
       steps: [

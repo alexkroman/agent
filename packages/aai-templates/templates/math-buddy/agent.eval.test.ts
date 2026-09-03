@@ -14,27 +14,38 @@
 // back with as well as the code the tutor wrote.
 
 import agentDef from "virtual:aai/agent";
-import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  createVmRunCode,
+  type EvalTurn,
+  toolArgsIn,
+  toolNames,
+  toolResultsIn,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
+import { z } from "zod";
 
-/** The code every `run_code` call in this turn carried, joined. */
-const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string, unknown> }[] }) =>
-  turn.toolCalls
-    .filter((c) => c.name === "run_code")
-    .map((c) => String(c.args.code ?? ""))
+/**
+ * The code every `run_code` call in this turn carried, joined.
+ *
+ * Read through `toolArgsIn` WITH a schema, which is what that reader takes one
+ * for: `args` is `Record<string, unknown>` on the wire — the tutor wrote it and
+ * nothing validated it — so the `String(c.args.code ?? "")` this replaced turned
+ * an argument the model renamed, or never sent, into `""`. The claims below are
+ * about the recipe the tutor wrote, and against `""` every one of them would
+ * have been a claim about nothing. A `code` that stops arriving FAILS here,
+ * naming the field.
+ */
+const RunCodeArgs = z.object({ code: z.string() });
+const codeIn = (turn: EvalTurn) =>
+  toolArgsIn(turn.toolCalls, "run_code", RunCodeArgs)
+    .map((args) => args.code)
     .join("\n");
 
 /**
- * A `run_code` executor, so these cases can assert the ANSWER.
- *
- * The builtin refuses without one — the Modal container is the security
- * boundary, and off-platform there is none — so a case could assert the CALL and
- * the code it carried, and never what the code came back with.
- * `createVmRunCode()` is a `node:vm` context with a capturing `console.log`,
- * which is enough here: what runs is arithmetic, not a program. It is NOT a
- * sandbox and does not pretend to be one; a deployed agent still gets the
- * refusal.
+ * A `run_code` executor, so these cases can assert the answer the tutor's code
+ * came back with and not merely the code — `createVmRunCode`'s own doc carries
+ * why the builtin refuses without one.
  */
 const runCode = createVmRunCode();
 
@@ -49,7 +60,7 @@ describeEval(
         // The prompt hands the tutor the factors; the finding it guards against
         // is a tutor that recites a remembered figure instead. A factor in the
         // code is the evidence that the conversion was computed, not recalled.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
+        expect(toolNames(turn.toolCalls)).toContain("run_code");
         const code = codeIn(turn);
         expect(code).toContain("5");
         expect(code).toMatch(/1\.60|1\.61|0\.621|8\.04/);
@@ -69,7 +80,7 @@ describeEval(
         // A model asked for dice will happily make three numbers up, and the
         // reply is indistinguishable from a real roll. `Math.random` in the code
         // is the only thing that tells them apart.
-        expect(turn.toolCalls.map((c) => c.name)).toContain("run_code");
+        expect(toolNames(turn.toolCalls)).toContain("run_code");
         const code = codeIn(turn);
         expect(code).toMatch(/Math\.random/);
         expect(code).toContain("20");

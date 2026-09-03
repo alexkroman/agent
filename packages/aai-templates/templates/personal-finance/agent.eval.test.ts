@@ -16,33 +16,43 @@
 // live rates API.
 
 import agentDef from "virtual:aai/agent";
-import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  createVmRunCode,
+  type EvalTurn,
+  toolArgsIn,
+  toolResultsIn,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
+import { z } from "zod";
 
-type Turn = { toolCalls: readonly { name: string; args: Record<string, unknown> }[] };
+/**
+ * The arguments Penny's two builtins carry, as the wire has them.
+ *
+ * Schemas rather than `String(args.code ?? "")`, which is what `toolArgsIn`
+ * takes one for: `args` is `Record<string, unknown>` — the model wrote it and
+ * nothing validated it — so an argument Penny renamed, or never sent, used to
+ * read as `""`, and the claims below about the code she submitted and the URL
+ * she asked for would have been claims about an empty string. An argument that
+ * stops arriving FAILS here, naming the field.
+ */
+const RunCodeArgs = z.object({ code: z.string() });
+const FetchJsonArgs = z.object({ url: z.string() });
 
 /** The code every `run_code` call in this turn carried, joined. */
-const codeIn = (turn: Turn) =>
-  turn.toolCalls
-    .filter((c) => c.name === "run_code")
-    .map((c) => String(c.args.code ?? ""))
+const codeIn = (turn: EvalTurn) =>
+  toolArgsIn(turn.toolCalls, "run_code", RunCodeArgs)
+    .map((args) => args.code)
     .join("\n");
 
 /** Every URL this turn's `fetch_json` calls asked for. */
-const fetchedUrls = (turn: Turn) =>
-  turn.toolCalls.filter((c) => c.name === "fetch_json").map((c) => String(c.args.url ?? ""));
+const fetchedUrls = (turn: EvalTurn) =>
+  toolArgsIn(turn.toolCalls, "fetch_json", FetchJsonArgs).map((args) => args.url);
 
 /**
- * A `run_code` executor, so these cases can assert the ANSWER.
- *
- * The builtin refuses without one — the Modal container is the security
- * boundary, and off-platform there is none — so a case could assert the CALL and
- * the code it carried, and never what the code came back with.
- * `createVmRunCode()` is a `node:vm` context with a capturing `console.log`,
- * which is enough here: what runs is arithmetic, not a program. It is NOT a
- * sandbox and does not pretend to be one; a deployed agent still gets the
- * refusal.
+ * A `run_code` executor, so the arithmetic cases can assert the ANSWER and not
+ * merely the call — `createVmRunCode`'s own doc carries why the builtin refuses
+ * without one. `fetch_json` needs nothing of the sort: it makes a real request.
  */
 const runCode = createVmRunCode();
 

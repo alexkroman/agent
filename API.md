@@ -7268,6 +7268,9 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
+export function callsIn(turns: readonly EvalTurn[]): readonly EvalToolCall[];
+
+// @public
 export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
 
 // @public
@@ -7288,6 +7291,12 @@ export function customEventsIn(events: readonly SessionEvent[], name?: string): 
     readonly event: string;
     readonly data: unknown;
 }[];
+
+// @public
+export function describeToolCalls(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function describeTurn(turn: EvalTurn): string;
 
 // @public
 export type EvalCredentials = {
@@ -7315,6 +7324,7 @@ export type EvalRunOptions = StartOptions & {
 export type EvalSession = {
     readonly id: string;
     say(text: string): Promise<EvalTurn>;
+    sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
     events(): readonly SessionEvent[];
     said(): readonly string[];
     toolCalls(): readonly EvalToolCall[];
@@ -7397,6 +7407,9 @@ export type EvalWorkflows = {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun>;
     runs(): Promise<readonly EvalWorkflowRun[]>;
+    settleAll(options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<readonly EvalWorkflowRun[]>;
     close(): Promise<void>;
 };
 
@@ -7513,6 +7526,9 @@ export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readon
 export function toolCallsIn(events: readonly SessionEvent[]): readonly EvalToolCall[];
 
 // @public
+export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
+
+// @public
 export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
 
 // @public
@@ -7520,6 +7536,9 @@ export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name:
 
 // @public
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
+
+// @public
+export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
 
 // @public
 export type VmRunCodeOptions = {
@@ -7586,6 +7605,7 @@ type EvalRunOptions = StartOptions & {
 type EvalSession = {
     readonly id: string;
     say(text: string): Promise<EvalTurn>;
+    sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
     events(): readonly SessionEvent[];
     said(): readonly string[];
     toolCalls(): readonly EvalToolCall[];
@@ -7680,6 +7700,9 @@ type EvalWorkflows = {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun>;
     runs(): Promise<readonly EvalWorkflowRun[]>;
+    settleAll(options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<readonly EvalWorkflowRun[]>;
     close(): Promise<void>;
 };
 

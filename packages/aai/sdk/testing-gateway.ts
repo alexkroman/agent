@@ -134,7 +134,13 @@ export function stubGateway(
  * rather than a taste: template evals routing a model leg by URL had written
  * both `url.includes("/chat/completions")` and `url.includes("llm-gateway")`,
  * and the second is wrong for any caller passing `stepGenerate`'s own
- * `gatewayUrl` option — including the EU endpoint, which is a different host.
+ * `gatewayUrl` option at a host of their own — an OpenAI-compatible proxy, or a
+ * local mock. This used to cite the EU endpoint as the example and that example
+ * does not demonstrate the rule: `ASSEMBLYAI_LLM_GATEWAY_EU_URL` is
+ * `https://llm-gateway.eu.assemblyai.com/v1`, which contains `llm-gateway` and
+ * matches the host predicate fine. Both of AssemblyAI's own bases do, which is
+ * exactly why two predicates could sit in the template evals for as long as they
+ * did without either one failing.
  */
 const COMPLETIONS_PATH = "/chat/completions";
 

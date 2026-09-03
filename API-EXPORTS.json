@@ -862,11 +862,14 @@
     "StubStep",
     "TURN_ENDS",
     "VmRunCodeOptions",
+    "callsIn",
     "completedOutput",
     "createFakeSttOpener",
     "createFakeTtsOpener",
     "createVmRunCode",
     "customEventsIn",
+    "describeToolCalls",
+    "describeTurn",
     "evalCredentials",
     "evalWorkflowCredentials",
     "installFakeSpeech",
@@ -878,8 +881,10 @@
     "statesIn",
     "toolArgsIn",
     "toolCallsIn",
+    "toolNames",
     "toolResultIn",
-    "toolResultsIn"
+    "toolResultsIn",
+    "turnCalling"
   ],
   "@alexkroman1/aai-runtime/eval/vitest": [
     "DescribeEvalOptions",

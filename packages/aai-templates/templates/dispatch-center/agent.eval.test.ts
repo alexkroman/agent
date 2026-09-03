@@ -34,7 +34,12 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 // What no eval here can see: anything below the audio boundary. Whether a
 // dispatcher reading a callsign in bursts lands as one turn is a property of
 // endpointing, and these fake speech stages remove it.
-import { type EvalSession, type EvalTurn, lastStateIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  type EvalSession,
+  lastStateIn,
+  toolNames,
+  turnCalling,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -99,20 +104,6 @@ const boardEntry = (events: readonly SessionEvent[], id: string) =>
  */
 const refusalAt = (state: string) =>
   new RegExp(`Not available yet: this conversation is at [\\\\"]*${state}`);
-
-/**
- * Drive a whole shift, one dispatcher line at a time, and hand back every turn.
- *
- * The cases below assert about the turn a MECHANISM fired in rather than about
- * turn number two: how many turns a desk takes to get there is the model's
- * business and it varies, and a case pinned to a turn index is a flake with a
- * misleading name.
- */
-async function sayAll(session: EvalSession, lines: readonly string[]): Promise<EvalTurn[]> {
-  const turns: EvalTurn[] = [];
-  for (const line of lines) turns.push(await session.say(line));
-  return turns;
-}
 
 /** Every call to `tool` across the whole shift. */
 const callsTo = (session: EvalSession, tool: string) =>
@@ -200,12 +191,15 @@ describeEval(dispatchAgent, (test) => {
   test(
     "rolls units on a logged incident and follows them to monitoring",
     async ({ session }) => {
-      const turns = await sayAll(session, [THE_CALL, "Dispatch the recommended units now."]);
+      const turns = await session.sayAll([THE_CALL, "Dispatch the recommended units now."]);
 
-      const dispatching = turns.find((t) =>
-        t.toolCalls.some((c) => c.name === "resources_dispatch"),
-      );
-      const rolled = dispatching?.toolCalls.find((c) => c.name === "resources_dispatch");
+      // The turn the dispatch fired in, whichever one that turned out to be:
+      // how many turns a desk spends getting there is the model's business, so
+      // a case pinned to turn two is a flake with a misleading name. A shift
+      // that never dispatched at all fails HERE, with every turn's tool list in
+      // the message, rather than as an `undefined` three assertions later.
+      const dispatching = turnCalling(turns, "resources_dispatch");
+      const rolled = dispatching.toolCalls.find((c) => c.name === "resources_dispatch");
       // Units really assigned — `dispatched` is empty when every requested
       // callsign was busy, which is the case the fourth test owns.
       expect(rolled?.result).toMatch(/"dispatched":\[\{/);
@@ -215,7 +209,7 @@ describeEval(dispatchAgent, (test) => {
       // The board agrees: the incident is dispatched, not merely triaged.
       expect(boardEntry(session.events(), FIRST_INCIDENT)?.status).toBe("dispatched");
       // And the order is the one the desk's flow requires: log, then dispatch.
-      const names = session.toolCalls().map((c) => c.name);
+      const names = toolNames(session.toolCalls());
       expect(names.indexOf("resources_dispatch")).toBeGreaterThan(names.indexOf("incident_create"));
     },
     {
@@ -230,7 +224,7 @@ describeEval(dispatchAgent, (test) => {
   test(
     "closing an incident releases the units that were on it",
     async ({ session }) => {
-      await sayAll(session, [
+      await session.sayAll([
         THE_CALL,
         "Dispatch the recommended units, emergency priority.",
         "Units report the patient is transported and they're clear. Close it out.",
@@ -252,7 +246,7 @@ describeEval(dispatchAgent, (test) => {
       // The board agrees, which is the half a browser would show.
       expect(boardEntry(session.events(), FIRST_INCIDENT)?.status).toBe("resolved");
       // And the shift ran in the order the flow requires.
-      const names = session.toolCalls().map((c) => c.name);
+      const names = toolNames(session.toolCalls());
       expect(names.indexOf("incident_create")).toBeGreaterThanOrEqual(0);
       expect(names.indexOf("resources_dispatch")).toBeGreaterThan(names.indexOf("incident_create"));
       expect(names.lastIndexOf("incident_update_status")).toBeGreaterThan(
@@ -279,7 +273,7 @@ describeEval(dispatchAgent, (test) => {
   test(
     "a unit already rolling is not sent to a second call",
     async ({ session }) => {
-      await sayAll(session, [
+      await session.sayAll([
         THE_CALL,
         "Send Medic-1 to Oak Street.",
         "New call: 12 Pine Lane, chest pains. Log it.",

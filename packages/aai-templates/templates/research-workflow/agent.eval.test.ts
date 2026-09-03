@@ -29,8 +29,9 @@
 // endpointing, barge-in, whether two sentences merged into one turn.
 
 import agentDef from "virtual:aai/agent";
+import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
-import type { EvalToolCall, EvalWorkflows } from "@alexkroman1/aai-runtime/eval";
+import { type EvalToolCall, type EvalWorkflows, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -112,7 +113,17 @@ type ScriptedSteps = {
  * on the live path, so a live case still measures the agent. Anything that is
  * not the gateway THROWS rather than answering 200: an unexpected request from
  * a step is a finding, and a silent empty body would be read as a model that
- * said nothing.
+ * said nothing. `stubGatewayRoute` is what decides which is which, and it
+ * decides on the SDK's own completions PATH — so the script cannot come unstuck
+ * from the step by the two agreeing on a typo, and the envelope it answers with
+ * is the SDK's rather than this file's. That last part is the one worth having:
+ * the envelope is a WIRE shape, so a field typed one off does not fail —
+ * `stepGenerate` reads no content, reports an empty completion, and the case
+ * blames the run.
+ *
+ * The CURSOR is the reader's too: the last reply repeats, which is what a stage
+ * that legitimately calls the model twice needs and what stops a script running
+ * out mid-run and failing on itself.
  *
  * `hold` keeps the FIRST answer pending, which is the only way to observe a run
  * that is still going: a durable `sleep` is skipped here, so an unheld run
@@ -120,15 +131,17 @@ type ScriptedSteps = {
  */
 function scriptSteps(options: { hold?: boolean } = {}): ScriptedSteps {
   const gate = Promise.withResolvers<void>();
-  let served = 0;
+  const model = stubGatewayRoute(MODEL_SCRIPT);
   const stub = installStubStepFetch(async (request) => {
-    if (!request.url.includes("/chat/completions")) {
+    const answered = model.route(request);
+    if (answered === undefined) {
       throw new Error(`unexpected step request in an eval: ${request.method} ${request.url}`);
     }
-    const at = served++;
-    if (options.hold === true && at === 0) await gate.promise;
-    const content = MODEL_SCRIPT[Math.min(at, MODEL_SCRIPT.length - 1)];
-    return { body: { choices: [{ message: { content } }] } };
+    // `model.calls` has already recorded this one, so a length of 1 IS the first
+    // answer — and holding after the route rather than before it keeps the reply
+    // this returns the one the script owed that call.
+    if (options.hold === true && model.calls.length === 1) await gate.promise;
+    return answered;
   });
   return { calls: stub.calls, release: () => gate.resolve() };
 }
@@ -141,20 +154,16 @@ const Started = z.object({
 });
 
 /**
- * The run id a `request_research` call reported.
+ * The run id the `request_research` call reported.
  *
- * Parsed rather than regexed: a tool result reaches the event stream as a
- * serialized string, and a shape that stopped matching should fail HERE naming
- * the field instead of handing the next assertion `undefined`.
+ * `toolResultIn` rather than a `find` and a parse: a tool result reaches the
+ * event stream as a serialized string, and a shape that stopped matching should
+ * fail HERE naming the field instead of handing the next assertion `undefined`.
+ * It throws for the two other ways this can go wrong as well, each naming what
+ * was really called — no such call, and a call that never returned.
  */
 function startedRunId(calls: readonly EvalToolCall[]): string {
-  const call = calls.find((one) => one.name === "request_research");
-  if (call?.result === undefined) {
-    throw new Error(
-      `the desk called no request_research: ${calls.map((one) => one.name).join(", ") || "(no tools)"}`,
-    );
-  }
-  return Started.parse(JSON.parse(call.result)).runId;
+  return toolResultIn(calls, "request_research", Started).runId;
 }
 
 /** Every tool call in this turn that READS a run, whichever the model picked. */
@@ -177,12 +186,13 @@ const START_TURN = [
  * Not tidiness: the scripted `stepFetch` is unpublished when the test that
  * installed it finishes, so a body still mid-flight would make its next model
  * call against whatever the next case publishes — or against the real gateway.
+ * `close()` reports that on stderr (`EvalRunAbandoned`) rather than fixing it:
+ * the wait is `settleAll`'s, and the RELEASE stays here, because what holds the
+ * run in flight is this file's own gate and nothing in the harness can open one.
  */
 async function drain(workflows: EvalWorkflows | undefined, steps: ScriptedSteps): Promise<void> {
   steps.release();
-  for (const run of await (workflows?.runs() ?? [])) {
-    await workflows?.settle(run.runId, research);
-  }
+  await workflows?.settleAll();
 }
 
 describeEval(

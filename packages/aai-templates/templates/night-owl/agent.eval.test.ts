@@ -29,7 +29,10 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import {
   createVmRunCode,
   customEventsIn,
+  describeTurn,
   lastStateIn,
+  toolArgsIn,
+  toolNames,
   toolResultIn,
 } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -66,16 +69,22 @@ const pushedRecs = (events: readonly SessionEvent[]) =>
 const nudges = (events: readonly SessionEvent[]) => customEventsIn(events, "wind_down");
 
 /**
- * A `run_code` executor, so the sleep-cycle case can assert the ANSWER.
- *
- * The builtin refuses without one — the Modal container is the security
- * boundary, and off-platform there is none — which left this template's
- * headline feature assertable as a CALL and never as a number. A `node:vm`
- * context with a capturing `console.log` is what a developer would reach for on
- * their own machine, and `createVmRunCode()` is exactly that: the code under
- * test is arithmetic the model wrote, not a program.
+ * A `run_code` executor, so the sleep-cycle case can assert the bedtime NUMBER
+ * and not merely the call — this template's headline feature is the arithmetic.
+ * `createVmRunCode`'s own doc carries why the builtin refuses without one.
  */
 const runCode = createVmRunCode();
+
+/**
+ * The `code` argument a `run_code` call carries.
+ *
+ * The schema is what `toolArgsIn` takes one for: `args` is
+ * `Record<string, unknown>` on the wire — the model wrote it and nothing
+ * validated it — so the `String(c.args.code ?? "")` this replaced turned an
+ * argument the companion renamed, or never sent, into `""`, and the two
+ * constants asserted below would have been looked for in nothing at all.
+ */
+const RunCodeArgs = z.object({ code: z.string() });
 
 /** Two-digit, for the clock arithmetic below. */
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -113,7 +122,7 @@ describeEval(
 
         // "to watch" is the category and "cozy" is the mood; the shelf is the
         // tool's, so answering from the model's own taste is the regression.
-        expect(turn.toolCalls.map((c) => c.name)).toEqual(["recommend"]);
+        expect(toolNames(turn.toolCalls)).toEqual(["recommend"]);
         const call = turn.toolCalls[0]!;
         expect(call.args).toEqual({ category: "movie", mood: "cozy" });
 
@@ -139,7 +148,7 @@ describeEval(
         await session.say("I want something cozy to watch tonight.");
         const turn = await session.say("Now give me something spooky to read.");
 
-        expect(turn.toolCalls.map((c) => c.name)).toEqual(["recommend"]);
+        expect(toolNames(turn.toolCalls)).toEqual(["recommend"]);
         expect(turn.toolCalls[0]!.args).toEqual({ category: "book", mood: "spooky" });
 
         // The slot survived the turn boundary: the frame the page renders after
@@ -197,15 +206,21 @@ describeEval(
           "I need to be up at 7 in the morning. When should I fall asleep?",
         );
 
+        // The CALLS, not their arguments: what this asserts is that the companion
+        // reached for code at all, and the results are read off the same list
+        // below. `toolArgsIn` answers the other half, the code it submitted.
         const ran = turn.toolCalls.filter((c) => c.name === "run_code");
-        expect(
-          ran,
-          `tools called: [${turn.toolCalls.map((c) => c.name).join(", ")}]; said: ${turn.text}`,
-        ).not.toEqual([]);
+        // `describeTurn` is the message: "expected [] not to equal []" says
+        // nothing about a companion that talked its way through the sum
+        // instead, and it names a cancelled reply, which is the usual reason a
+        // turn reached for nothing at all.
+        expect(ran, describeTurn(turn)).not.toEqual([]);
         // The recipe is the prompt's, and it is two constants: a 90-minute cycle
         // plus the 15 minutes it takes to fall asleep. Arithmetic done in the
         // model's head has neither of them anywhere in the code.
-        const code = ran.map((c) => String(c.args.code ?? "")).join("\n");
+        const code = toolArgsIn(turn.toolCalls, "run_code", RunCodeArgs)
+          .map((args) => args.code)
+          .join("\n");
         expect(code).toContain("90");
         expect(code).toContain("15");
 

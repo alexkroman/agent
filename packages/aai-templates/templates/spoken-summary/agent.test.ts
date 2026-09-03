@@ -257,15 +257,20 @@ describe("the whole run", () => {
    * spec cannot pass because the fake and the step agree on a typo.
    */
   function stubProvider(reply: { headline: string; points: string[]; spoken: string }) {
+    // The model leg goes through `stubGatewayRoute` for the same reason, which
+    // this helper used to claim and not do: it hand-typed the completion
+    // envelope and recognised a model call by `llm-gateway`, the HOST. That is a
+    // property of one deployment rather than of the request — `stepGenerate`
+    // dials `${gatewayUrl ?? ASSEMBLYAI_LLM_GATEWAY_URL}/chat/completions`, so a
+    // caller pointing `gatewayUrl` at an OpenAI-compatible proxy of their own
+    // stops matching and the transcription fake answers a 404 to a model call.
+    const model = stubGatewayRoute(JSON.stringify(reply));
     return installStubTranscribe({
       audioUrl: "https://cdn/aai/1",
       jobIdPrefix: "t_",
       text: "we ship tuesday and two bugs are left",
       durationSec: 42,
-      otherwise: (request) =>
-        request.url.includes("llm-gateway")
-          ? { body: { choices: [{ message: { content: JSON.stringify(reply) } }] } }
-          : undefined,
+      otherwise: (request) => model.route(request),
     });
   }
 

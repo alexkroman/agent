@@ -31,7 +31,7 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 // What no eval here can see: anything below the audio boundary. Whether a
 // caller reading an order number in bursts lands as one turn is a property of
 // endpointing, and these fake speech stages remove it.
-import { type EvalSession, type EvalTurn, lastStateIn } from "@alexkroman1/aai-runtime/eval";
+import { describeTurn, lastStateIn, toolNames, turnCalling } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -92,26 +92,6 @@ function statusOf(events: readonly SessionEvent[], orderId: string): string | un
  */
 const refusalAt = (state: string) =>
   new RegExp(`Not available yet: this conversation is at [\\\\"]*${state}`);
-
-/**
- * Drive a whole call, one caller line at a time, and hand back every turn.
- *
- * The cases below assert about the turn a MECHANISM fired in rather than about
- * turn number two, because how many turns a desk takes to get there is the
- * model's business and it really does vary: measured live, this agent reads the
- * order back out of `get_order_details` and asks before it stages, so the
- * staging call has landed in turn two, three and four across runs. A case
- * pinned to a turn index is a flake with a misleading name.
- */
-async function sayAll(session: EvalSession, lines: readonly string[]): Promise<EvalTurn[]> {
-  const turns: EvalTurn[] = [];
-  for (const line of lines) turns.push(await session.say(line));
-  return turns;
-}
-
-/** The turn a named tool was called in, if any. */
-const turnCalling = (turns: readonly EvalTurn[], tool: string) =>
-  turns.find((t) => t.toolCalls.some((c) => c.name === tool));
 
 /** One line the caller says to identify themselves, and the scripted tool call
  *  that answers it — the first turn of three of these four cases. */
@@ -175,7 +155,7 @@ describeEval(retailAgent, (test) => {
       // turn, and whether it spends one is not something an eval should pin.
       // Every assertion below is about the turn the staging landed in, so a
       // later apply cannot affect any of them.
-      const turns = await sayAll(session, [
+      const turns = await session.sayAll([
         `My email is ${CALLER_EMAIL}.`,
         "I'd like to cancel my pending order — I ordered it by mistake.",
         "Yes, please go ahead and cancel it.",
@@ -183,8 +163,13 @@ describeEval(retailAgent, (test) => {
         "Yes. Cancel it, please.",
       ]);
 
+      // The turn the staging landed in, whichever it was — measured live it has
+      // been turn two, three and four. `turnCalling` throws when no turn staged
+      // at all, naming every turn's tool list: a desk that talked through all
+      // five without staging is the finding, and "expected undefined to be
+      // defined" is not a report of it.
       const staging = turnCalling(turns, "cancel_pending_order");
-      const staged = staging?.toolCalls.find((c) => c.name === "cancel_pending_order");
+      const staged = staging.toolCalls.find((c) => c.name === "cancel_pending_order");
       expect(staged?.result).toMatch(/NOTHING HAS CHANGED YET/);
       // The gate is a POSITION, and this is it moving: the tool reported the
       // state it landed in, which is the only state `confirm_change` is legal
@@ -192,13 +177,13 @@ describeEval(retailAgent, (test) => {
       expect(staged?.result).toMatch(/serving\.awaitingConfirmation/);
       // A change cannot be described and applied in the same turn. This is the
       // property the prose in the system prompt could never have.
-      expect(staging?.toolCalls.map((c) => c.name)).not.toContain("confirm_change");
+      expect(toolNames(staging.toolCalls)).not.toContain("confirm_change");
       // And after the turn that staged it, the store really is untouched — read
       // off the projection the BROWSER was sent in that same turn.
-      expect(statusOf(staging?.events ?? [], PENDING_ORDER)).toBe("pending");
-      expect(projection(staging?.events ?? [])?.pending?.kind).toBe("cancel_pending_order");
+      expect(statusOf(staging.events, PENDING_ORDER)).toBe("pending");
+      expect(projection(staging.events)?.pending?.kind).toBe("cancel_pending_order");
       // Step 2 of the policy: read it back and ask.
-      expect(staging?.text).toMatch(/\?/);
+      expect(staging.text).toMatch(/\?/);
     },
     { stubReply: [...AUTH_TURN, ...STAGE_TURN, "Cancelling it now — one moment."] },
   );
@@ -210,7 +195,7 @@ describeEval(retailAgent, (test) => {
       // in is its own business, and saying yes repeatedly is what makes
       // "exactly once" below a claim about the MECHANISM rather than about the
       // model's pacing.
-      await sayAll(session, [
+      await session.sayAll([
         `My email is ${CALLER_EMAIL}.`,
         "Please cancel my pending order — I ordered it by mistake.",
         "Yes, that's right, go ahead.",
@@ -231,7 +216,7 @@ describeEval(retailAgent, (test) => {
         expect(extra.result).toMatch(/Not available yet/);
       }
       // And it came after the stage, never instead of it.
-      const names = session.toolCalls().map((c) => c.name);
+      const names = toolNames(session.toolCalls());
       expect(names.indexOf("cancel_pending_order")).toBeGreaterThanOrEqual(0);
       expect(names.indexOf("confirm_change")).toBeGreaterThan(
         names.indexOf("cancel_pending_order"),
@@ -262,11 +247,10 @@ describeEval(retailAgent, (test) => {
       // Named first, and with a message: a live model that answers the request
       // with a question instead of the tool leaves `transfer` undefined, and
       // `.toMatch()` on it reports only "expected a string, got undefined" —
-      // which says nothing about what the desk actually did.
-      expect(
-        transfer,
-        `tools called: [${handoff.toolCalls.map((c) => c.name).join(", ")}]; said: ${handoff.text}`,
-      ).toBeDefined();
+      // which says nothing about what the desk actually did. `describeTurn` is
+      // that sentence, done by the harness: the tools it called and what it
+      // said, plus whether the reply was cancelled.
+      expect(transfer, describeTurn(handoff)).toBeDefined();
       // The terminal state is what makes "say nothing else after this" a
       // property of the agent rather than a line in its prompt: `done` is the
       // flow saying there is nowhere left to go.

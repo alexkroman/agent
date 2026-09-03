@@ -7,6 +7,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import {
   customEventsIn,
+  describeToolCalls,
   type EvalToolCall,
   lastStateIn,
   saidIn,
@@ -14,6 +15,7 @@ import {
   TURN_ENDS,
   toolArgsIn,
   toolCallsIn,
+  toolNames,
   toolResultIn,
   toolResultsIn,
 } from "./events.ts";
@@ -293,5 +295,27 @@ describe("statesIn", () => {
     expect(() => statesIn([pushed({ placed: false }), pushed({ done: true })], View)).toThrow(
       /state frame 1 does not match the schema/,
     );
+  });
+});
+
+describe("toolNames", () => {
+  test("reads the names in call order — the strongest claim about tool ORDER", () => {
+    expect(toolNames(RUN_CODE)).toEqual(["run_code", "think", "run_code"]);
+  });
+
+  test("is empty for a turn that called nothing", () => {
+    expect(toolNames([])).toEqual([]);
+  });
+});
+
+describe("describeToolCalls", () => {
+  test("names every call, in order, for a failure message", () => {
+    expect(describeToolCalls(RUN_CODE)).toBe("called run_code, think, run_code");
+  });
+
+  test('an empty list reads as "called no tools", never as an empty bracket', () => {
+    // The case the message exists for — the agent answered with a question
+    // instead of acting — and `tools called: []` reads like a truncated message.
+    expect(describeToolCalls([])).toBe("called no tools");
   });
 });
