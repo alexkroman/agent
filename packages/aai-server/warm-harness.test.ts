@@ -173,6 +173,50 @@ describe("agentBootEnv", () => {
     );
   });
 
+  /**
+   * The flag an operator has to be able to set, and could not.
+   *
+   * `debugLoggingEnabled` (aai-runtime/runtime-config.ts) is a module-level
+   * `const` over `process.env`, and a deployed agent's env arrives as a boot FILE
+   * the harness parses into an object — never merged into `process.env`. So the
+   * one line that decomposes the guest→platform journal RPC
+   * (`platform-rpc.ts`'s `{ label, route, traceId, status, elapsedMs }`) was
+   * unreachable in every deployed guest, which is the only place that RPC exists.
+   * Forwarding it explicitly keeps the minimal-env property: the guest inherits
+   * nothing, and this is one more declared `AAI_*` boot parameter.
+   */
+  it("forwards the debug-logging flag from the server's env", () => {
+    expect(agentBootEnv(boot, { AAI_DEBUG: "1" })).toMatchObject({ AAI_DEBUG: "1" });
+  });
+
+  // Off unless the operator says so — and blank is not saying so, same trim as the
+  // idle-exit override beside it. The minimal env is the whole reason this file
+  // exists, so a key that appears when nothing asked for it is the regression.
+  it("omits the debug flag when the server's env does not set it", () => {
+    expect(agentBootEnv(boot, {})).not.toHaveProperty("AAI_DEBUG");
+    expect(agentBootEnv(boot, { AAI_DEBUG: "  " })).not.toHaveProperty("AAI_DEBUG");
+  });
+
+  /**
+   * Two spellings NOT forwarded, both deliberately.
+   *
+   * `debugLoggingEnabled` also accepts `LOG_LEVEL=DEBUG`, but `LOG_LEVEL` is a
+   * generic name a hosting stack sets for its own reasons — forwarding it would
+   * make the PLATFORM's own log level arm per-message logging inside a tenant's
+   * guest as a side effect, and every other key in this env is `AAI_*` by rule.
+   * `AAI_DEBUG_PARTIALS` is a second, much louder flag (one line per ~200 ms of
+   * speech) that the runtime leaves off even under `AAI_DEBUG=1` precisely so the
+   * turn-level lines stay readable; it says nothing about a platform round trip.
+   * Its absence is a decision, not an oversight — and one line to reverse.
+   */
+  it("forwards neither LOG_LEVEL nor the partials flag", () => {
+    const env = agentBootEnv(boot, { LOG_LEVEL: "DEBUG", AAI_DEBUG_PARTIALS: "1" });
+    expect(env).not.toHaveProperty("LOG_LEVEL");
+    expect(env).not.toHaveProperty("AAI_DEBUG_PARTIALS");
+    // And neither one arms the flag by another route.
+    expect(env).not.toHaveProperty("AAI_DEBUG");
+  });
+
   // The one key whose consumer is the BUNDLE's SDK rather than the harness: it
   // becomes `createRuntime`'s `publicUrl`, and `ctx.workflows.publicWebhookUrl`
   // is what reads it. The slug is part of the value because the platform serves

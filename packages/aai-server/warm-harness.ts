@@ -227,6 +227,26 @@ export function startGuestLogging(proc: GuestProcLike, label: string): void {
  * parameter, not env inheritance, so that rule still holds. The guest owns
  * the parse (an unusable value falls back to its default).
  *
+ * `AAI_DEBUG` is forwarded the same way, for a sharper version of the same
+ * reason: `debugLoggingEnabled` (aai-runtime/runtime-config.ts) is a module-level
+ * `const` read from `process.env` at IMPORT time, while a deployed agent's own env
+ * arrives as the boot FILE at `AAI_AGENT_ENV_PATH`, parsed into an object that is
+ * never merged into `process.env`. So there was NO WAY AT ALL to switch the guest's
+ * debug logging on in a deployed guest — and the guest is where the numbers are:
+ * `platform-rpc.ts`'s per-call `{ label, route, traceId, status, elapsedMs }` line
+ * is the only decomposition of the guest→platform journal RPC anything measures,
+ * and it was dead in production by construction. Read it back off the host log
+ * (`startGuestLogging` drains both guest streams) or `aai logs`. Three things
+ * before reaching for it: it takes effect at guest BOOT ONLY, that flag being read
+ * once at module load, so a resident guest must respawn (redeploy, or idle-exit)
+ * before the value is read; it is per REPLICA rather than per slug, arming every
+ * agent guest this server goes on to spawn; and `AAI_DEBUG` is the one spelling
+ * forwarded — not the `LOG_LEVEL=DEBUG` form `debugLoggingEnabled` also accepts,
+ * which is a generic name a hosting stack sets for its own reasons and would make
+ * the PLATFORM's log level arm per-message logging inside a tenant's guest, and
+ * not `AAI_DEBUG_PARTIALS`, off even under `AAI_DEBUG=1` by the runtime's own
+ * design so the turn-level lines stay readable. Its absence is a decision.
+ *
  * `AAI_UPLOAD_BROKER_URL` carries the same value as `AAI_PUBLIC_BASE_URL` under a
  * second name on purpose — see the comment at its own line for why one key cannot
  * serve both claims.
@@ -263,6 +283,7 @@ export function agentBootEnv(
   serverEnv: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
   const idleExitMs = serverEnv.AAI_GUEST_IDLE_EXIT_MS?.trim();
+  const debugLogging = serverEnv.AAI_DEBUG?.trim() || undefined;
   const publicBaseUrl = agentPublicBaseUrl(opts.slug, serverEnv);
   const platformBaseUrl = agentPlatformBaseUrl(opts.slug, serverEnv);
   return {
@@ -275,6 +296,10 @@ export function agentBootEnv(
     AAI_BUNDLE_SHA256: opts.bundleSha256,
     AAI_AGENT_ENV_PATH: opts.envPath,
     ...(idleExitMs ? { AAI_GUEST_IDLE_EXIT_MS: idleExitMs } : {}),
+    // Blank means "not set", normalized to `undefined` above — so this is the
+    // `omitUndefined` spelling the three URL keys below argue for, not a
+    // truthiness guard (`guard-invariants` rule 22).
+    ...omitUndefined({ AAI_DEBUG: debugLogging }),
     // OMITTED rather than set empty when there is no origin to name: the guest
     // trims and drops a blank anyway, but a key that is present and useless is
     // the shape a `publicUrl: ""` bug takes, and a URL a third party cannot
