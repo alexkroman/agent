@@ -2,7 +2,7 @@
 // the SDK, and this config is repo tooling rather than something we ship.
 
 import { configDefaults, defineConfig } from "vitest/config";
-import { aaiAgentPlugin } from "./packages/aai/host/testing-vite.ts";
+import { aaiAgentPlugin } from "./packages/aai/src/host/testing-vite.ts";
 import { sharedConfig, sharedSetupFiles } from "./vitest.shared.ts";
 
 /**

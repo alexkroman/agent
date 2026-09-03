@@ -36,7 +36,7 @@
  * **It also sees a whole class the regex could not.** The old opener matched
  * `test(`, `it(`, and exactly one `.word(…)` in between (`test.each([…])(`) —
  * so `test.concurrent("…", fn)` was invisible to the gate, and eleven such
- * tests in `packages/aai-cli/e2e.test.ts` asserted nothing while it reported a
+ * tests in `packages/aai-cli/src/e2e.test.ts` asserted nothing while it reported a
  * clean run. Chains are walked here instead of enumerated, so `test.concurrent`,
  * `test.for`, `test.concurrent.for(…)` and `test.each\`…\`` all land.
  */

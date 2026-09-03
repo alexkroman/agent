@@ -492,9 +492,9 @@ a mode whose whole job is to inject faults has to be shown to inject them.
 
 ### The other fault mode lives in `aai`, and faults a SOCKET
 
-`packages/aai/host/_fault-socket.ts` is the sibling of this one: a TCP proxy that
-SEVERS live connections, for testing that a session continues across a
-disconnect. It sits in `aai` rather than here because what it faults —
+`packages/aai/src/host/_fault-socket.ts` is the sibling of this one: a TCP
+proxy that SEVERS live connections, for testing that a session continues
+across a disconnect. It sits in `aai` rather than here because what it faults —
 `createServer`, the WebSocket upgrade, session resume — lives there.
 
 Three things separate the two, and picking the wrong one measures nothing:
@@ -806,7 +806,7 @@ guess is not trusted where egress is real.
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
-The SDK's `createServer` (`packages/aai/host/server.ts`) is what `aai dev` runs,
+The SDK's `createServer` (`packages/aai/src/host/server.ts`) is what `aai dev` runs,
 and its defaults are documented here because this is the caller that owns
 `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`. The two fail-closed
 defaults are summarised in `packages/aai/CLAUDE.md`, "Self-hosted server
@@ -1008,7 +1008,7 @@ scaffold already declares — so `npm ci --omit=dev` in a container is not a
 supported shape, and `prestart` skips only the TESTS: `npm test` is where a suite
 belongs, and a failing test must not be what stops a container from starting.
 
-`packages/aai-cli/e2e.test.ts` boots `npm start` against a real installed
+`packages/aai-cli/src/e2e.test.ts` boots `npm start` against a real installed
 project — **`pizza-ordering`, chosen for its `tools/` directory**, which is what
 this leg is now about (it keeps the old `math-buddy` coverage anyway, whose
 prompt is a discovered `system-prompt.md`). It probes `/health`,

@@ -25,7 +25,12 @@ export default defineConfig({
       // capability roots are re-export lists and the frozen examples are never
       // executed, so both would count at 0% and drag the package under floors
       // that have nothing to do with what they measure.
-      exclude: [...sharedCoverageExclude, "contracts/**", "fixtures/**", "integration/**"],
+      exclude: [
+        ...sharedCoverageExclude,
+        "src/contracts/**",
+        "src/fixtures/**",
+        "src/integration/**",
+      ],
       // Ratchet: floors only move up. Seeded at ZERO after the split and left
       // there, which made them a gate that could not fail — and the package was
       // also absent from CI's test matrix, so nothing measured them either.

@@ -4,7 +4,7 @@
 //   pnpm loadtest:phone --port=4900                  # the stub agent
 //   pnpm loadtest:phone --port=4900 --carrier=telnyx --seconds=4
 //
-// `packages/aai-runtime/telephony/` has unit tests for the codecs, the bridge
+// `packages/aai-runtime/src/telephony/` has unit tests for the codecs, the bridge
 // and the resampler; what it has never had is a caller. This is one: it sends
 // the frames a carrier really sends, in the shapes `carriers.ts` parses, and
 // reports what came back.

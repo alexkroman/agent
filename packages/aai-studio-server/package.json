@@ -8,14 +8,14 @@
   },
   "exports": {
     ".": {
-      "@dev/source": "./index.ts",
+      "@dev/source": "./src/index.ts",
       "import": "./dist/index.mjs"
     }
   },
   "scripts": {
     "build": "tsdown",
     "check:scenario": "pnpm run test:scenario",
-    "dev": "node ../../scripts/dev-server.mjs node --conditions=@dev/source index.ts",
+    "dev": "node ../../scripts/dev-server.mjs node --conditions=@dev/source src/index.ts",
     "lint": "biome check .",
     "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 26) { console.error('Node >=26 required (got ' + process.version + '). Run: fnm use 26'); process.exit(1); }\" && node ../../scripts/ensure-guest-harness.mjs && node ../../scripts/ensure-guest-image.mjs && pnpm --filter aai-studio-client build",
     "start": "node dist/index.mjs",

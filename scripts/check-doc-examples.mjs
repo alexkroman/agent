@@ -49,7 +49,7 @@ const { values: FLAGS } = parseScriptArgs({
 
 // Inside aai-templates so bare imports (`@alexkroman1/aai`, `zod`, react)
 // resolve by the normal node_modules walk-up, exactly as templates do.
-const scratch = path.join(repo, `packages/aai-templates/.doc-examples-scratch-${process.pid}`);
+const scratch = path.join(repo, `packages/aai-templates/src/.doc-examples-scratch-${process.pid}`);
 
 /**
  * Doc-comment sources: published packages' source trees — ALL FOUR of them.
@@ -122,14 +122,14 @@ const MARKDOWN_FILES = [
 const PROMPT_SOURCES = [
   // The main studio guide is the scaffold CLAUDE.md, covered above via
   // MARKDOWN_FILES; these are the other modules that compose prompt text.
-  "packages/aai-studio-server/studio-prompt.ts",
-  "packages/aai-studio-server/studio-preamble.ts",
+  "packages/aai-studio-server/src/studio-prompt.ts",
+  "packages/aai-studio-server/src/studio-preamble.ts",
   // The preamble's mode-dependent fragments (voice agent vs workflow app).
   // Carries no fence today; listed because it is prompt text, so the first
   // example added is checked rather than discovered by a user.
-  "packages/aai-studio-server/studio-preamble-mode.ts",
-  "packages/aai-studio-server/studio-preamble-sdk.ts",
-  "packages/aai-guest/studio-chat.ts",
+  "packages/aai-studio-server/src/studio-preamble-mode.ts",
+  "packages/aai-studio-server/src/studio-preamble-sdk.ts",
+  "packages/aai-guest/src/studio-chat.ts",
 ];
 
 /**
@@ -339,7 +339,7 @@ const manifest = new Map();
  * Reported rather than FLOORED, deliberately: a floor here would fire when a doc
  * legitimately drops its last directive, which is a smaller hole rather than a
  * blind scan. What holds the scan honest is
- * `packages/aai-templates/doc-examples-ambient-gate.test.ts`, which imports the
+ * `packages/aai-templates/src/doc-examples-ambient-gate.test.ts`, which imports the
  * stripper and re-derives this count from the corpus with its own parser.
  */
 let directivesStripped = 0;

@@ -31,7 +31,7 @@ import { cp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-import { templateCopyFilter } from "./_templates.ts";
+import { templateCopyFilter } from "./src/_templates.ts";
 
 /** Directories copied from the templates package into `dist/`. */
 const BUNDLED_DIRS = ["templates", "scaffold"];

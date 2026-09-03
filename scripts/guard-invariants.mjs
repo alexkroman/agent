@@ -121,11 +121,11 @@ const SELF_REFERENTIAL = new Map([
   // The spec that proves each rule still matches. Its samples ARE the
   // anti-patterns, spelled out on purpose — it exists because a pattern
   // matching nothing prints the same checkmark as a rule being upheld.
-  ["packages/aai-templates/guard-invariants-gate.test.ts", "*"],
+  ["packages/aai-templates/src/guard-invariants-gate.test.ts", "*"],
   // The primitives the rules point AT — each exempt from ITS OWN rule only.
-  ["packages/aai/sdk/omit-undefined.ts", ["rule2_spreadTernary"]], // its doc shows the banned spelling
-  ["packages/aai/sdk/keyed-lock.ts", ["rule9_handRolledKeyedLock"]], // rule 9 IS this implementation
-  ["packages/aai/sdk/owned-map.ts", ["rule8_handRolledOwnedMap"]], // rule 8 IS this implementation
+  ["packages/aai/src/sdk/omit-undefined.ts", ["rule2_spreadTernary"]], // its doc shows the banned spelling
+  ["packages/aai/src/sdk/keyed-lock.ts", ["rule9_handRolledKeyedLock"]], // rule 9 IS this implementation
+  ["packages/aai/src/sdk/owned-map.ts", ["rule8_handRolledOwnedMap"]], // rule 8 IS this implementation
   // All three DEFINE `tick()`, so all three are the remedy rather than a
   // violation. The split duplicated the helper: aai-runtime owns the full set,
   // packages/aai keeps the four its remaining host/ modules need, and aai-ui
@@ -136,11 +136,11 @@ const SELF_REFERENTIAL = new Map([
   // much — "the one occurrence in this package was in no baseline and reported
   // by nothing". An exemption you can only write once the gate can see the file
   // is the difference between a rule that is at zero and one that is blind.
-  ["packages/aai-runtime/_test-utils.ts", ["rule4_inlineTickPromise"]],
-  ["packages/aai-ui/_react-test-utils.ts", ["rule4_inlineTickPromise"]],
-  ["packages/aai/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
-  ["packages/aai/sdk/is-record.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body
-  ["packages/aai/sdk/jittered-backoff.ts", ["rule31_handRolledJitter"]], // rule 31 IS this body
+  ["packages/aai-runtime/src/_test-utils.ts", ["rule4_inlineTickPromise"]],
+  ["packages/aai-ui/src/_react-test-utils.ts", ["rule4_inlineTickPromise"]],
+  ["packages/aai/src/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
+  ["packages/aai/src/sdk/is-record.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body
+  ["packages/aai/src/sdk/jittered-backoff.ts", ["rule31_handRolledJitter"]], // rule 31 IS this body
 ]);
 
 /** Is `file` exempt from the rule keyed `ruleKey`? */
@@ -194,7 +194,7 @@ const ABSOLUTE_RULES = [
     label: "undeclared guest route",
     scan: scanUndeclaredGuestRoutes,
     remedy:
-      "Add the path to `GUEST_ROUTES` in packages/aai-server/guest-routes.ts and\n" +
+      "Add the path to `GUEST_ROUTES` in packages/aai-server/src/guest-routes.ts and\n" +
       "give it an exposure in `GUEST_ROUTE_EXPOSURE` (the `satisfies` makes the\n" +
       "second half a compile error once the first is done).\n\n" +
       "The exposure is decided by WHO CALLS IT: `direct-dial` when a browser or a\n" +

@@ -30,7 +30,7 @@ export default defineConfig({
     //
     // `templates/*/*.test.ts` covers each template's own tests, so a new
     // template is picked up on creation.
-    include: ["*.test.ts", "templates/*/*.test.ts"],
+    include: ["src/*.test.ts", "templates/*/*.test.ts"],
     // The slow-tier infixes, excluded here for the reason every other package
     // excludes them: membership is a NAMING CONVENTION, and the `include` globs
     // above match all three infixes. The gap was latent until it was not —

@@ -25,10 +25,10 @@ import { base } from "./stryker.base.config.mjs";
 export default {
   ...base,
   mutate: [
-    "packages/aai/sdk/protocol.ts",
-    "packages/aai/sdk/manifest.ts",
-    "packages/aai/sdk/_internal-types.ts",
-    "packages/aai/sdk/system-prompt.ts",
+    "packages/aai/src/sdk/protocol.ts",
+    "packages/aai/src/sdk/manifest.ts",
+    "packages/aai/src/sdk/_internal-types.ts",
+    "packages/aai/src/sdk/system-prompt.ts",
   ],
   htmlReporter: { fileName: "reports/mutation/sdk/index.html" },
   incrementalFile: ".stryker-incremental-sdk.json",

@@ -1640,7 +1640,7 @@ make it correct rather than merely present:
 
 ## Fuzz harnesses
 
-`packages/aai-ui/fuzz-*.test.ts` drive the browser session's four
+`packages/aai-ui/src/fuzz-*.test.ts` drive the browser session's four
 concurrency-bearing layers with generated operation sequences and assert
 INVARIANTS rather than scenarios — `fuzz-session-core` (server frames ×
 client control calls × socket lifecycle: snapshot monotonicity, caps, and

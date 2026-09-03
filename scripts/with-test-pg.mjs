@@ -7,7 +7,7 @@
  * The real-Postgres suites are the only tier that can see a driver-level bug —
  * an encoding that round-trips wrong, a lock that is not held by the session
  * that thinks it holds it — and they skip themselves when no database is
- * configured (see `packages/aai-server/_pg-test-utils.ts`). The friction was
+ * configured (see `packages/aai-server/src/_pg-test-utils.ts`). The friction was
  * that "configure a database" meant knowing the variable exists, knowing which
  * port your stack listens on, and pasting a URL each time. So the tier's own
  * bugs got found by hand, one branch at a time, and #1058 found four of them

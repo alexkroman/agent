@@ -17,7 +17,7 @@
  * A side-effect-free module set, for two reasons:
  *
  *   1. **The gate's spec can import the real values.** An earlier draft had
- *      `packages/aai-templates/guard-invariants-gate.test.ts` regex-scrape
+ *      `packages/aai-templates/src/guard-invariants-gate.test.ts` regex-scrape
  *      `re: "..."` out of the script's source, which is fragile in the exact
  *      way that matters here — a rule whose shape drifted would silently stop
  *      being parsed, so the suite proving no rule is dead would itself go
@@ -93,7 +93,7 @@ export {
  * @property {{ matches: string[], ignores: string[] }} [samples]
  *   A positive and a negative sample, carried BY THE RULE.
  *
- *   `packages/aai-templates/guard-invariants-gate.test.ts` holds a `SAMPLES`
+ *   `packages/aai-templates/src/guard-invariants-gate.test.ts` holds a `SAMPLES`
  *   table keyed by rule, which is the right discipline in the wrong file: a
  *   widened pattern and the sample proving it widened land in two packages, and
  *   rule 3 shipped for months with a SINGLE-LINE positive sample while the rule

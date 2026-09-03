@@ -1,12 +1,12 @@
 {
   "_description": "Per-file statement-coverage floors for files below the global floor — see scripts/check-coverage-per-file.mjs. A file may cover MORE than its number and may never cover less; `--update` raises an entry and refuses to lower one, and never creates one. Generated: do not hand-edit except to bless a deliberate regression. Global floor: 50% of statements, for files with at least 10 statements.",
   "files": {
-    "packages/aai-cli/_studio-commands.ts": 38.4,
-    "packages/aai-guest/harness.ts": 26.5,
-    "packages/aai-guest/studio-build.ts": 30.3,
-    "packages/aai-guest/studio-test.ts": 38.7,
-    "packages/aai-server/modal-context.ts": 48.6,
-    "packages/aai-studio-server/studio-secret-routes.ts": 30.7,
+    "packages/aai-cli/src/_studio-commands.ts": 38.4,
+    "packages/aai-guest/src/harness.ts": 26.5,
+    "packages/aai-guest/src/studio-build.ts": 30.3,
+    "packages/aai-guest/src/studio-test.ts": 38.7,
+    "packages/aai-server/src/modal-context.ts": 48.6,
+    "packages/aai-studio-server/src/studio-secret-routes.ts": 30.7,
     "packages/aai-templates/templates/call-audit/workflows/ingest.ts": 46.8,
     "packages/aai-templates/templates/dispatch-center/tools/ops_dashboard.ts": 0,
     "packages/aai-templates/templates/health-assistant/fda.ts": 44.8

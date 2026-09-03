@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
@@ -10,11 +10,10 @@
     "allowImportingTsExtensions": false,
     "rewriteRelativeImportExtensions": true
   },
+  "include": ["src"],
   "exclude": [
     "node_modules",
     "dist",
-    "templates",
-    "bundle-templates.mjs",
     "**/*.test.ts",
     "**/*.test-d.ts",
     "**/_test-*.ts",

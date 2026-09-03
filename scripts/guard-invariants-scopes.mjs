@@ -36,7 +36,7 @@
  * derivable from a filename; the gate spec asserts it exists so a rename cannot
  * silently empty the corpus.
  */
-export const TOOL_CONTEXT_PATHS = ["packages/aai/sdk/tool-context.ts"];
+export const TOOL_CONTEXT_PATHS = ["packages/aai/src/sdk/tool-context.ts"];
 
 /**
  * The platform-neutral channel message shape — `ChannelMessage` and
@@ -46,24 +46,24 @@ export const TOOL_CONTEXT_PATHS = ["packages/aai/sdk/tool-context.ts"];
  * from a path, and the gate spec asserts it exists so a rename cannot empty the
  * corpus silently.
  */
-export const CHANNEL_MESSAGE_PATHS = ["packages/aai/sdk/channels/channel-types.ts"];
+export const CHANNEL_MESSAGE_PATHS = ["packages/aai/src/sdk/channels/channel-types.ts"];
 
 export const SESSION_SURFACE_PATHS = [
-  "packages/aai-runtime/session-core.ts",
-  "packages/aai-runtime/session-commands.ts",
-  "packages/aai-runtime/transports/types.ts",
-  "packages/aai-runtime/runtime-types.ts",
-  "packages/aai-runtime/runtime-session-callbacks.ts",
-  "packages/aai-runtime/runtime.ts",
-  "packages/aai-runtime/ws-handler.ts",
+  "packages/aai-runtime/src/session-core.ts",
+  "packages/aai-runtime/src/session-commands.ts",
+  "packages/aai-runtime/src/transports/types.ts",
+  "packages/aai-runtime/src/runtime-types.ts",
+  "packages/aai-runtime/src/runtime-session-callbacks.ts",
+  "packages/aai-runtime/src/runtime.ts",
+  "packages/aai-runtime/src/ws-handler.ts",
   // The doubles. A per-name callback surface has a MULTIPLIER: every harness
   // standing in for the thing that fires a callback has to satisfy its whole
   // shape, and 78 of the original 157 occurrences were exactly that.
-  "packages/aai/host/_test-utils.ts",
-  "packages/aai-runtime/transports/_transport-recorder.ts",
-  "packages/aai-runtime/transports/_pipeline-transport-harness.ts",
-  "packages/aai-runtime/integration/_pipeline-fuzz-model.ts",
-  "packages/aai-runtime/integration/_s2s-fuzz-harness.ts",
+  "packages/aai/src/host/_test-utils.ts",
+  "packages/aai-runtime/src/transports/_transport-recorder.ts",
+  "packages/aai-runtime/src/transports/_pipeline-transport-harness.ts",
+  "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts",
+  "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts",
 ];
 
 /**
@@ -98,7 +98,7 @@ export const SOURCE_PATHSPECS = [
   // the same hole. Rule 2's widening did exactly that — four reviewers
   // reported `workflow/v5.ts` independently, each proposing a per-rule
   // exemption, and the next rule would have collected a fifth report.
-  ":!packages/*/contracts/compatibility/**",
+  ":!packages/*/src/contracts/compatibility/**",
 ];
 
 /**
@@ -192,7 +192,7 @@ export const WORKFLOW_BODY_PATHSPECS = ["packages/aai-templates/templates/*/work
  * Measured: the guest package holds 8 route literals while `GUEST_ROUTES`
  * declares 15. The other seven — `/health`, `/websocket`, `/phone`,
  * `/client-config`, `/workflows`, `/session-events` and the
- * `/.well-known/workflow/v1/` prefix — are implemented in `packages/aai/host`
+ * `/.well-known/workflow/v1/` prefix — are implemented in `packages/aai/src/host`
  * and BUNDLED BY the guest, which is where the surface actually grows. Adding
  * `if (url === "/metrics")` to `host/server.ts` is served by every guest and
  * was invisible to the rule written to catch exactly that.
@@ -214,12 +214,12 @@ export const WORKFLOW_BODY_PATHSPECS = ["packages/aai-templates/templates/*/work
  * violation.
  */
 export const RUNTIME_ROUTE_SOURCES = [
-  "packages/aai-runtime/server.ts",
-  "packages/aai-runtime/server-routes.ts",
-  "packages/aai-runtime/telephony/telephony-server.ts",
-  "packages/aai-runtime/session-events-api.ts",
-  "packages/aai-runtime/workflow-serve.ts",
-  "packages/aai-runtime/workflow-queue-dispatch.ts",
+  "packages/aai-runtime/src/server.ts",
+  "packages/aai-runtime/src/server-routes.ts",
+  "packages/aai-runtime/src/telephony/telephony-server.ts",
+  "packages/aai-runtime/src/session-events-api.ts",
+  "packages/aai-runtime/src/workflow-serve.ts",
+  "packages/aai-runtime/src/workflow-queue-dispatch.ts",
 ];
 
 export const GUEST_SURFACE_PATHSPECS = [
@@ -232,20 +232,20 @@ export const GUEST_SURFACE_PATHSPECS = [
   //
   // Both spellings, and NOT as a style choice: a git pathspec is fnmatch
   // WITHOUT FNM_PATHNAME, so the literal slash in `**/*.ts` makes a
-  // subdirectory mandatory. Every source file in this package sits at the top
-  // level, so `packages/aai-guest/**/*.ts` alone resolves to ZERO files —
-  // verified with `git ls-files`. That is the same trap `check-file-length`'s
+  // subdirectory mandatory. Most of this package's source sits directly in
+  // `src/`, so `packages/aai-guest/src/**/*.ts` alone MISSES it — verified
+  // with `git ls-files`. That is the same trap `check-file-length`'s
   // `scripts/**/*.mjs` fell into; the corpus floor below is what turns a
   // future recurrence into a failure instead of a checkmark.
-  "packages/aai-guest/*.ts",
-  "packages/aai-guest/**/*.ts",
+  "packages/aai-guest/src/*.ts",
+  "packages/aai-guest/src/**/*.ts",
   ":!packages/aai-guest/dist/**",
-  // Both spellings again: the suites sit directly in the package root, which
-  // `**/*.test.ts` does not match on its own.
-  ":!packages/aai-guest/*.test.ts",
-  ":!packages/aai-guest/**/*.test.ts",
+  // Both spellings again: the suites sit directly in `src/`, which
+  // `src/**/*.test.ts` does not match on its own.
+  ":!packages/aai-guest/src/*.test.ts",
+  ":!packages/aai-guest/src/**/*.test.ts",
   ...RUNTIME_ROUTE_SOURCES,
-  "packages/aai/sdk/workflow-api-client.ts",
+  "packages/aai/src/sdk/workflow-api-client.ts",
 ];
 
 /**
@@ -266,17 +266,17 @@ export const GUEST_SURFACE_PATHSPECS = [
  *
  * Both pathspec shapes for the trap this file opens with — a git pathspec is
  * fnmatch WITHOUT `FNM_PATHNAME`, so the literal slash in `**` + `/` + `*.ts`
- * makes a subdirectory mandatory, and most of this package's modules sit at the
- * top level. `git ls-files` it rather than reading it.
+ * makes a subdirectory mandatory, and most of this package's modules sit directly
+ * in `src/`. `git ls-files` it rather than reading it.
  */
 export const RUNTIME_EGRESS_PATHSPECS = [
-  "packages/aai-runtime/*.ts",
-  "packages/aai-runtime/**/*.ts",
+  "packages/aai-runtime/src/*.ts",
+  "packages/aai-runtime/src/**/*.ts",
   ":!packages/aai-runtime/dist/**",
-  ":!packages/aai-runtime/*.test.ts",
-  ":!packages/aai-runtime/**/*.test.ts",
-  ":!packages/aai-runtime/_*test-utils.ts",
-  ":!packages/aai-runtime/contracts/**",
+  ":!packages/aai-runtime/src/*.test.ts",
+  ":!packages/aai-runtime/src/**/*.test.ts",
+  ":!packages/aai-runtime/src/_*test-utils.ts",
+  ":!packages/aai-runtime/src/contracts/**",
 ];
 
 /**
