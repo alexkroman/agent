@@ -80,7 +80,10 @@ import type { StepGate } from "./workflow-step-gate.ts";
 import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
 
 // Re-exported at the surface it has always had — see `workflow-replay-outcome.ts`.
-export type { ReplayOutcome };
+// `export ... from` rather than exporting the imported binding: the import above
+// is for this module's OWN use of the type, and Biome's `noExportedImports`
+// wants the re-export to name its source.
+export type { ReplayOutcome } from "./workflow-replay-outcome.ts";
 
 /** What {@link replayRun} needs to run one body. */
 export type ReplayOptions = {
