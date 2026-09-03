@@ -84,7 +84,7 @@
     "@types/react-dom": "catalog:",
     "@types/ws": "catalog:",
     "fast-check": "catalog:",
-    "microsandbox": "0.6.10",
+    "microsandbox": "0.6.16",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"
