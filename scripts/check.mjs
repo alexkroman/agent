@@ -281,6 +281,12 @@ const GATES = [
     fatal: false,
     why: "The one gate here that is DIFF-scoped, and the reason is that the thing it checks is a property of a branch rather than of the tree: ship.yml arms its deploy on a version bump to a carrier, and `changeset status` is satisfied by an EMPTY changeset — so a branch can rewrite the platform, pass every other gate, merge, and ship nothing. That is #1341. An unresolvable base FAILS rather than skipping, which is the half of the no-git-ref rule that still applies.",
   },
+  {
+    script: "check:migration-order",
+    phase: "ratchets",
+    fatal: false,
+    why: "The SECOND diff-scoped gate, and the same shape one layer down: a version bump arms the deploy, and `migrate` is what the deploy waits on. `supabase db push` refuses the whole push when a pending migration sorts at or before the last row in the remote history table, so two branches open at once can each add a correct migration and merge into a pair that blocks every release (#1360, 37 minutes after #1358). Neither PR can see the other, and a `--dry-run` in CI is structurally blind to it: `supabase start` applies every migration on init, so there is no later row to collide with. Measured, in the script.",
+  },
 
   // --- after the test run ------------------------------------------------
   {

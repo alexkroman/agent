@@ -710,6 +710,16 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   `aai-templates` has the same shape by the npm route and is deliberately out of
   scope.
 
+- **`pnpm check:migration-order`** (`scripts/check-migration-order.mjs`) — a
+  migration this branch adds must sort AFTER every migration on the base.
+  `supabase db push` refuses the WHOLE push when a pending file sorts at or
+  before the last row in the remote history table, and `deploy` declares
+  `needs: migrate`, so two branches open at once can each add a correct
+  migration and merge into a pair that blocks every release (#1360, 37 minutes
+  after #1358). **A CI `--dry-run` cannot catch it** — `supabase start` applies
+  every migration on init, so that database has no later row to collide with.
+  The script's doc carries the measurement, the three rules, and why only the
+  order rule is diff-scoped.
 - **`pnpm check:agent-guide`** (`scripts/sync-agent-guide.mjs`) — asserts
   `packages/aai/AGENT_GUIDE.md` is the current copy of
   `packages/aai-templates/scaffold/CLAUDE.md`; see "The authoring guide ships
