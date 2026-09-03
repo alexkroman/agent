@@ -3,26 +3,35 @@
 import type { LanguageModelMiddleware } from "ai";
 import type { JSONSchema7 } from "json-schema";
 import { describe, expect, test } from "vitest";
-import { gatewayToolSchemaMiddleware, pruneToolSchema } from "./_gateway-tool-schema.ts";
+import { gatewayToolSchemaMiddleware } from "./_gateway-tool-schema.ts";
 
 /** The one argument shape `transformParams` is called with, from the vendor type. */
 type TransformArgs = Parameters<NonNullable<LanguageModelMiddleware["transformParams"]>>[0];
 type CallParams = TransformArgs["params"];
 
 /**
- * The middleware reads `params` and nothing else, but the vendor's type requires
- * a model. One typed seam rather than a laundered cast per call — the root
- * guide's rule about a concentration of identical casts being a missing seam.
+ * The middleware reads `params` and the model's id and nothing else, but the
+ * vendor's type requires a whole model. One typed seam rather than a laundered
+ * cast per call — the root guide's rule about a concentration of identical
+ * casts being a missing seam.
  */
-const UNUSED_MODEL = {} as TransformArgs["model"];
+function modelWith(modelId: string): TransformArgs["model"] {
+  return { modelId } as TransformArgs["model"];
+}
 
-async function transform(params: CallParams): Promise<CallParams> {
+/** A model whose id selects no provider layer beyond the unconditional one. */
+const OPENAI_MODEL = modelWith("gpt-5.2");
+
+async function transform(
+  params: CallParams,
+  model: TransformArgs["model"] = OPENAI_MODEL,
+): Promise<CallParams> {
   const { transformParams } = gatewayToolSchemaMiddleware();
   // A plain throw rather than `expect.fail`: this is a helper precondition, and
   // an assertion outside a test body is what `noMisplacedAssertion` bans. The
   // vendor type makes `transformParams` optional; the middleware always sets it.
   if (!transformParams) throw new Error("gatewayToolSchemaMiddleware defines no transformParams");
-  return await transformParams({ type: "stream", params, model: UNUSED_MODEL });
+  return await transformParams({ type: "stream", params, model });
 }
 
 /** Call params carrying `tools` and nothing else that matters. */
@@ -34,64 +43,10 @@ function functionTool(inputSchema: JSONSchema7): NonNullable<CallParams["tools"]
   return { type: "function", name: "read_file", inputSchema };
 }
 
-describe("pruneToolSchema", () => {
-  test("removes $schema from the root of a tool schema", () => {
-    // Emitted by the AI SDK's zod conversion on every derived tool schema, and
-    // the keyword that made 9 of the studio's 10 tools 500 on the Gemini path.
-    const out = pruneToolSchema({
-      $schema: "http://json-schema.org/draft-07/schema#",
-      type: "object",
-      properties: { path: { type: "string" } },
-      required: ["path"],
-    });
-    expect(out.$schema).toBeUndefined();
-    // Everything the model actually needs survives.
-    expect(out).toEqual({
-      type: "object",
-      properties: { path: { type: "string" } },
-      required: ["path"],
-    });
-  });
-
-  test("removes propertyNames from a nested property", () => {
-    // How `z.record(z.string(), …)` serializes — nested, not at the root, so a
-    // root-only strip would miss it.
-    const out = pruneToolSchema({
-      type: "object",
-      properties: { args: { type: "object", propertyNames: { type: "string" } } },
-    });
-    expect(out.properties?.args).toEqual({ type: "object" });
-  });
-
-  test("prunes inside an array-valued keyword", () => {
-    // `anyOf`/`oneOf` branches are an array of schemas, so the walk has to
-    // descend through arrays as well as objects.
-    const out = pruneToolSchema({
-      type: "object",
-      properties: {
-        mode: {
-          anyOf: [{ type: "string" }, { type: "object", propertyNames: { type: "string" } }],
-        },
-      },
-    });
-    expect(out.properties?.mode).toEqual({ anyOf: [{ type: "string" }, { type: "object" }] });
-  });
-
-  test("keeps additionalProperties, which the gateway accepts", () => {
-    // Bisected explicitly: removing `additionalProperties` did NOT fix the 500,
-    // so it stays — stripping more than necessary would quietly widen what a
-    // tool accepts.
-    const out = pruneToolSchema({ type: "object", properties: {}, additionalProperties: false });
-    expect(out.additionalProperties).toBe(false);
-  });
-
-  test("returns a clean schema by IDENTITY", () => {
-    // The prune runs on every request of every model, so the common case — a
-    // schema with nothing to remove — must allocate nothing.
-    const clean: JSONSchema7 = { type: "object", properties: { path: { type: "string" } } };
-    expect(pruneToolSchema(clean)).toBe(clean);
-  });
-});
+/** The one property of a tool the assertions below are about. */
+function schemasOf(params: CallParams): unknown[] {
+  return (params.tools ?? []).map((tool) => (tool.type === "function" ? tool.inputSchema : tool));
+}
 
 describe("gatewayToolSchemaMiddleware", () => {
   test("prunes every function tool's input schema", async () => {
@@ -138,5 +93,41 @@ describe("gatewayToolSchemaMiddleware", () => {
   test("returns the params object by IDENTITY for an empty tool list", async () => {
     const params = paramsWith([]);
     expect(await transform(params)).toBe(params);
+  });
+});
+
+describe("gatewayToolSchemaMiddleware model selection", () => {
+  /** A schema the unconditional layer leaves alone and the Gemini layer folds. */
+  const constrained: JSONSchema7 = {
+    type: "object",
+    properties: { path: { type: "string", minLength: 2 } },
+  };
+
+  test("a Gemini model id selects the lossy layer", async () => {
+    const out = await transform(
+      paramsWith([functionTool(constrained)]),
+      modelWith("gemini-3.5-flash-lite"),
+    );
+    expect(schemasOf(out)).toEqual([
+      {
+        type: "object",
+        properties: { path: { type: "string", description: "constraints: minimum length 2" } },
+      },
+    ]);
+  });
+
+  test("a non-Gemini model id keeps every constraint it declares", async () => {
+    // The whole reason the second layer is gated: OpenAI, Claude and Qwen all
+    // accept these keywords, and folding one into prose is strictly worse there.
+    const params = paramsWith([functionTool(constrained)]);
+    expect(await transform(params)).toBe(params);
+  });
+
+  test("an id the runtime did not supply falls back to the unconditional layer", async () => {
+    // The vendor's type promises `modelId: string`; this asserts what happens
+    // when its runtime does not keep that promise, which is the safe half
+    // rather than a crash inside a request.
+    const params = paramsWith([functionTool(constrained)]);
+    expect(await transform(params, {} as TransformArgs["model"])).toBe(params);
   });
 });
