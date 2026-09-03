@@ -24,27 +24,36 @@
 // Coda reached for code, and what the code came back with.
 
 import agentDef from "virtual:aai/agent";
-import { createVmRunCode, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  createVmRunCode,
+  type EvalTurn,
+  toolArgsIn,
+  toolResultsIn,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
+import { z } from "zod";
 
-/** The code every `run_code` call in this turn carried, joined. */
-const codeIn = (turn: { toolCalls: readonly { name: string; args: Record<string, unknown> }[] }) =>
-  turn.toolCalls
-    .filter((c) => c.name === "run_code")
-    .map((c) => String(c.args.code ?? ""))
+/**
+ * The code every `run_code` call in this turn carried, joined.
+ *
+ * Read through `toolArgsIn` WITH a schema, which is what that reader takes one
+ * for: `args` is `Record<string, unknown>` on the wire — the model wrote it and
+ * nothing validated it — so the `String(c.args.code ?? "")` this replaced turned
+ * an argument Coda renamed, or never sent, into `""`, and every claim below about
+ * the code she wrote would have been a claim about an empty string. A `code`
+ * that stops arriving FAILS here, naming the field.
+ */
+const RunCodeArgs = z.object({ code: z.string() });
+const codeIn = (turn: EvalTurn) =>
+  toolArgsIn(turn.toolCalls, "run_code", RunCodeArgs)
+    .map((args) => args.code)
     .join("\n");
 
 /**
- * A `run_code` executor, so these cases can assert the ANSWER.
- *
- * The builtin refuses without one — the Modal container is the security
- * boundary, and off-platform there is none — so a case could assert the CALL and
- * the code it carried, and never what the code came back with.
- * `createVmRunCode()` is a `node:vm` context with a capturing `console.log`,
- * which is enough here: what runs is arithmetic, not a program. It is NOT a
- * sandbox and does not pretend to be one; a deployed agent still gets the
- * refusal.
+ * A `run_code` executor, so these cases can assert the ANSWER and not merely the
+ * call — `createVmRunCode`'s own doc carries why the builtin refuses without one
+ * and why a `node:vm` context is the right thing to hand it here.
  */
 const runCode = createVmRunCode();
 

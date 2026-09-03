@@ -27,7 +27,7 @@
 
 /** The def a DEPLOYED agent runs — see `agent.test.ts` on why the glob is here. */
 import agentDef from "virtual:aai/agent";
-import { type EvalSession, toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import { type EvalSession, statesIn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -71,13 +71,14 @@ const Lookup = z.object({
   error: z.string().optional(),
 });
 
-/** Every `syncState` frame, in stream order. */
+/**
+ * Every `syncState` frame, in stream order.
+ *
+ * `statesIn` reads an EVENT LIST rather than a session, which is what lets a
+ * case slice the stream first; the schema above is what it takes one for.
+ */
 function frames(session: EvalSession) {
-  return session
-    .events()
-    .flatMap((event) =>
-      event.type === "state.updated" ? [ProjectedSupport.parse(event.state)] : [],
-    );
+  return statesIn(session.events(), ProjectedSupport);
 }
 
 /**

@@ -13,7 +13,7 @@ import type { SessionEvent } from "@alexkroman1/aai/protocol";
 // SCRIPTED model (its `stubReply`), which still boots this agent, still
 // resolves `tools/`, and still executes the tool a script names — so a stub run
 // proves the wiring and proves nothing about what the agent chose.
-import { lastStateIn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import { lastStateIn, statesIn, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -44,9 +44,14 @@ const ProjectedOrder = z.object({
  */
 const lastPushedView = (events: readonly SessionEvent[]) => lastStateIn(events, ProjectedOrder);
 
-/** Every cart the session pushed, in stream order. */
-const pushedViews = (events: readonly SessionEvent[]) =>
-  events.flatMap((e) => (e.type === "state.updated" ? [ProjectedOrder.parse(e.state)] : []));
+/**
+ * Every cart the session pushed, in stream order — `statesIn` is `lastStateIn`'s
+ * plural half, and takes the schema for the same reason.
+ *
+ * The SEQUENCE is the stronger claim: not "the cart is not placed now" but "no
+ * frame the customer ever saw showed it placed".
+ */
+const pushedViews = (events: readonly SessionEvent[]) => statesIn(events, ProjectedOrder);
 
 describeEval(agentDef, (test) => {
   test(
