@@ -28,10 +28,17 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
+import { formatSchemaIssues, isConvertibleSchema } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, test } from "vitest";
-import { createGenerateFn } from "../generate.ts";
+import { createGenerateFn, type HostGenerateFn } from "../generate.ts";
+import {
+  announceEvalCoverage,
+  announceEvalMode,
+  type EvalMode,
+  registerEmptySuiteFailure,
+} from "./_announce.ts";
 import {
   type EvalCredentials,
   type EvalSession,
@@ -105,8 +112,12 @@ export type EvalCaseOptions = {
   readonly scripted?: boolean;
 };
 
-/** How the suite is running, and why. */
-export type EvalMode = "live" | "stub";
+// `EvalMode` is DECLARED in `_announce.ts`, beside the three functions that
+// report a suite's mode and its case counts, and re-exported here because it is
+// on this package's `/eval/vitest` barrel — moving a published name to a new
+// file must not move where a reader imports it from. The three functions are
+// not re-exported: their callers name that module directly.
+export type { EvalMode } from "./_announce.ts";
 
 /** What a case body is handed: its own session, and which model it is on. */
 export type EvalTestContext = {
@@ -244,36 +255,6 @@ function modeFrom(
 }
 
 /**
- * Say which mode this run got — one line, every run, before any case.
- *
- * A DIRECT stderr write, not `console.warn`, and that is the whole point of the
- * function. Vitest INTERCEPTS `console` and hands what it captures to the
- * reporter, so whether the line is ever seen is the REPORTER's decision — and
- * vitest 4 picks that reporter for you: with `reporters` unset it resolves
- * `std-env`'s `isAgent ? "agent" : "default"`, and the agent reporter prints a
- * passing file's captured output nowhere. A scaffolded agent project sets no
- * `reporters`. So `aai eval` run BY AN AGENT — this repo's own studio coding
- * agent included — showed the line only when the run FAILED, which is the one
- * case where it does not matter.
- *
- * Measured on a scaffolded project, vitest 4.1.10, one passing case: with the
- * agent markers in the environment `console.warn` printed nothing while a
- * `process.stderr.write` beside it printed; with those markers stripped — a
- * human at a terminal — `console.warn` printed too. Pinning
- * `reporters: ["default"]` restores it as well, which is exactly why THIS repo
- * never saw it: `vitest.shared.ts` pins that value and every config here
- * spreads it.
- *
- * A stderr write is right rather than merely sufficient: it is the reporter's
- * job to decide what a TEST said, and not the reporter's job to decide whether
- * the harness may state what it just did. The trailing newline is ours for the
- * same reason — nothing is formatting this.
- */
-export function announceEvalMode(line: string): void {
-  process.stderr.write(`${line}\n`);
-}
-
-/**
  * Declare an eval suite for `agent`.
  *
  * ```ts no-check
@@ -306,14 +287,20 @@ export function describeEval(
   );
 
   describe(agent.name, () => {
+    let declared = 0;
+    let skippedCases = 0;
     const evalTest: EvalTest = (name, body, caseOptions) => {
+      declared += 1;
       const skipped =
         (mode === "stub" && caseOptions?.live === true) ||
         (mode === "live" && caseOptions?.scripted === true);
+      if (skipped) skippedCases += 1;
       const run = skipped ? test.skip : test;
       run(name, () => runCase({ agent, mode, options, caseOptions, body }));
     };
     define(evalTest);
+    announceEvalCoverage(agent.name, mode, declared, skippedCases);
+    registerEmptySuiteFailure(agent.name, mode, declared, skippedCases);
   });
 }
 
@@ -367,7 +354,7 @@ async function runCase(run: CaseRun): Promise<void> {
       generate:
         generateStub === undefined
           ? undefined
-          : createGenerateFn({ llm: generateStub.llm, env: generateStub.env }),
+          : checkedGenerate(createGenerateFn({ llm: generateStub.llm, env: generateStub.env })),
     }),
     ...(stub === undefined
       ? {}
@@ -386,4 +373,52 @@ async function runCase(run: CaseRun): Promise<void> {
 /** Does this agent declare a workflow for a tool to start? */
 function hasWorkflows(agent: AgentDef): boolean {
   return Object.keys(agent.workflows ?? {}).length > 0;
+}
+
+/**
+ * A scripted `ctx.generate` that cannot answer with a TYPED LIE.
+ *
+ * `ctx.generate({ schema })` is `generateText` + `Output.object` over
+ * `jsonSchema(...)`, and an `ai` JSON schema built that way carries no
+ * validator — so the object handed back is whatever parsed, typed as whatever
+ * the schema said. Measured: a script of `{"issues":"not-an-array"}` against
+ * `z.object({ issues: z.array(z.string()) })` resolves, `answer.object.issues`
+ * is the string, and a case asserting on `issues.length` reads `13`.
+ *
+ * That is a live defect in `ctx.generate` itself and the fix belongs there; what
+ * belongs HERE is that the harness must not be the thing that plants it. A
+ * script is written by the case author, against a schema the tool declares one
+ * file away, and a stub that quietly satisfies neither is a case measuring its
+ * own typo. A live model's invalid output is a finding about the model; a
+ * SCRIPT's is a finding about the script, which is why this wrapper is only ever
+ * put on `stubGenerate`.
+ *
+ * A plain JSON-Schema object passes through unchecked — there is nothing to
+ * validate WITH, `isConvertibleSchema` being the test for a Standard Schema. So
+ * is an async validator, for the reason `eval/events.ts` gives at every reader
+ * that takes a schema: a promise is truthy, so probing it for `.issues` would
+ * pass every case rather than none.
+ */
+function checkedGenerate(generate: HostGenerateFn): HostGenerateFn {
+  return async (options, callOpts) => {
+    const answer = await generate(options, callOpts);
+    const schema = options.schema;
+    if (schema === undefined || !isConvertibleSchema(schema)) return answer;
+    const result = schema["~standard"].validate(answer.object);
+    if (result instanceof Promise) {
+      throw new TypeError(
+        "stubGenerate needs a synchronous schema — this one validates async, so the " +
+          "scripted answer cannot be checked against it",
+      );
+    }
+    if (result.issues) {
+      throw new Error(
+        "stubGenerate answered something the call's own schema rejects: " +
+          `${formatSchemaIssues(result.issues)}. The script is ${JSON.stringify(answer.text)} — ` +
+          "write it as the JSON the model would have returned, matching the schema the tool " +
+          "declares, or the case is measuring the script rather than the agent.",
+      );
+    }
+    return answer;
+  };
 }

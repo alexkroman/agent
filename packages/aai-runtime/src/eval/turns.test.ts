@@ -54,8 +54,18 @@ describe("describeTurn", () => {
   });
 
   test('a reply with no committed text reads as "said nothing", not a dangling "said:"', () => {
-    expect(describeTurn(turn("", [call("stage_change")]))).toBe(
+    expect(describeTurn(turn("", [call("stage_change", '{"ok":true}')]))).toBe(
       "called stage_change; said nothing",
+    );
+  });
+
+  test("a call the runtime never ran says so beside its name", () => {
+    // `result: undefined` is what a `tool.called` with no `tool.completed`
+    // leaves behind — a tool the agent does not declare, or a turn cut short —
+    // and a message that renders it identically to a call that ANSWERED is how
+    // a case comes to meet it as a chai type error four lines later.
+    expect(describeTurn(turn("", [call("stage_change")]))).toBe(
+      "called stage_change (never completed); said nothing",
     );
   });
 
