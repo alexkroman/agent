@@ -5,5 +5,5 @@
     "tsBuildInfoFile": "../../.tsbuildinfo/aai-guest.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["."]
+  "include": ["src", "*.ts"]
 }

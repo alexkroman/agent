@@ -1,42 +1,42 @@
 {
   "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 3, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 23, rule 26, rule 28, rule 31, rule 32.",
   "rule2_spreadTernary": {
-    "packages/aai-cli/_utils.ts": 1,
-    "packages/aai-server/subprocess-sandbox.ts": 1,
-    "packages/aai-server/test-utils.ts": 1
+    "packages/aai-cli/src/_utils.ts": 1,
+    "packages/aai-server/src/subprocess-sandbox.ts": 1,
+    "packages/aai-server/src/test-utils.ts": 1
   },
   "rule4_inlineTickPromise": {
-    "packages/aai-runtime/integration/_s2s-fuzz-harness.ts": 1,
-    "packages/aai-runtime/tool-executor.ts": 1,
-    "packages/aai-server/platform-lock.test.ts": 3,
-    "packages/aai-server/slug-lock.test.ts": 1,
+    "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts": 1,
+    "packages/aai-runtime/src/tool-executor.ts": 1,
+    "packages/aai-server/src/platform-lock.test.ts": 3,
+    "packages/aai-server/src/slug-lock.test.ts": 1,
     "packages/aai-studio-client/src/_test-utils.ts": 1,
-    "packages/aai-studio-server/studio-session-broker.test.ts": 2
+    "packages/aai-studio-server/src/studio-session-broker.test.ts": 2
   },
   "rule5_deleteProcessEnv": {
-    "packages/aai-cli/_test-setup.ts": 1
+    "packages/aai-cli/src/_test-setup.ts": 1
   },
   "rule8_handRolledOwnedMap": {
-    "packages/aai-studio-server/studio-sse.ts": 1
+    "packages/aai-studio-server/src/studio-sse.ts": 1
   },
   "rule11_hardcodedTmp": {
-    "packages/aai-server/modal-agent-sandbox.ts": 2
+    "packages/aai-server/src/modal-agent-sandbox.ts": 2
   },
   "rule16_sessionCallbackName": {
-    "packages/aai-runtime/integration/_pipeline-fuzz-model.ts": 2,
-    "packages/aai-runtime/integration/_s2s-fuzz-harness.ts": 2,
-    "packages/aai-runtime/runtime-session-callbacks.ts": 2,
-    "packages/aai-runtime/runtime-types.ts": 5,
-    "packages/aai-runtime/runtime.ts": 1,
-    "packages/aai-runtime/session-commands.ts": 1,
-    "packages/aai-runtime/session-core.ts": 3,
-    "packages/aai-runtime/transports/_transport-recorder.ts": 2,
-    "packages/aai-runtime/transports/types.ts": 3,
-    "packages/aai-runtime/ws-handler.ts": 4
+    "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts": 2,
+    "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts": 2,
+    "packages/aai-runtime/src/runtime-session-callbacks.ts": 2,
+    "packages/aai-runtime/src/runtime-types.ts": 5,
+    "packages/aai-runtime/src/runtime.ts": 1,
+    "packages/aai-runtime/src/session-commands.ts": 1,
+    "packages/aai-runtime/src/session-core.ts": 3,
+    "packages/aai-runtime/src/transports/_transport-recorder.ts": 2,
+    "packages/aai-runtime/src/transports/types.ts": 3,
+    "packages/aai-runtime/src/ws-handler.ts": 4
   },
   "rule17_openCodedRecordGuard": {
-    "packages/aai-evals/assertions.ts": 1,
-    "packages/aai/sdk/standard-schema.ts": 1,
+    "packages/aai-evals/src/assertions.ts": 1,
+    "packages/aai/src/sdk/standard-schema.ts": 1,
     "scripts/_api-contracts.mjs": 1,
     "scripts/_ast-scan.mjs": 1,
     "scripts/_property-floors-parse.mjs": 1
@@ -45,46 +45,46 @@
     "scripts/loadtest-runs.mjs": 1
   },
   "rule22_truthySpread": {
-    "packages/aai-cli/_deploy.ts": 2,
-    "packages/aai-cli/deploy.ts": 1,
-    "packages/aai-cli/studio.ts": 1,
-    "packages/aai-guest/harness-bundle.ts": 1,
-    "packages/aai-runtime/_test-utils.ts": 1,
-    "packages/aai-runtime/providers/stt/elevenlabs.ts": 1,
-    "packages/aai-runtime/transports/pipeline-llm-trace.ts": 1,
-    "packages/aai-runtime/workflow-report.ts": 2,
-    "packages/aai-server/guest-forward.ts": 1,
-    "packages/aai-server/modal-agent-sandbox.test.ts": 1,
-    "packages/aai-server/supabase-auth.test.ts": 2,
-    "packages/aai-server/warm-harness.ts": 1,
-    "packages/aai-studio-server/_test-combined.ts": 1,
-    "packages/aai-studio-server/studio-account-routes.ts": 1,
-    "packages/aai-studio-server/studio-deploy.test.ts": 1,
-    "packages/aai-studio-server/studio-session-ensure.ts": 1,
-    "packages/aai-studio-server/studio-session-publish.ts": 1,
-    "packages/aai-studio-server/studio-sse.test.ts": 1,
+    "packages/aai-cli/src/_deploy.ts": 2,
+    "packages/aai-cli/src/deploy.ts": 1,
+    "packages/aai-cli/src/studio.ts": 1,
+    "packages/aai-guest/src/harness-bundle.ts": 1,
+    "packages/aai-runtime/src/_test-utils.ts": 1,
+    "packages/aai-runtime/src/providers/stt/elevenlabs.ts": 1,
+    "packages/aai-runtime/src/transports/pipeline-llm-trace.ts": 1,
+    "packages/aai-runtime/src/workflow-report.ts": 2,
+    "packages/aai-server/src/guest-forward.ts": 1,
+    "packages/aai-server/src/modal-agent-sandbox.test.ts": 1,
+    "packages/aai-server/src/supabase-auth.test.ts": 2,
+    "packages/aai-server/src/warm-harness.ts": 1,
+    "packages/aai-studio-server/src/_test-combined.ts": 1,
+    "packages/aai-studio-server/src/studio-account-routes.ts": 1,
+    "packages/aai-studio-server/src/studio-deploy.test.ts": 1,
+    "packages/aai-studio-server/src/studio-session-ensure.ts": 1,
+    "packages/aai-studio-server/src/studio-session-publish.ts": 1,
+    "packages/aai-studio-server/src/studio-sse.test.ts": 1,
     "packages/aai-templates/scaffold/server.mjs": 1,
     "packages/aai-templates/templates/retail/shared.ts": 1,
     "packages/aai-templates/templates/retail/tools/get_order_details.ts": 1,
-    "packages/aai/host/builtin-tools.ts": 1,
-    "packages/aai/host/page-design.ts": 4,
-    "packages/aai/sdk/providers/stt/assemblyai.ts": 1,
-    "packages/aai/sdk/providers/stt/elevenlabs.ts": 1,
-    "packages/aai/sdk/step-fetch.ts": 1,
+    "packages/aai/src/host/builtin-tools.ts": 1,
+    "packages/aai/src/host/page-design.ts": 4,
+    "packages/aai/src/sdk/providers/stt/assemblyai.ts": 1,
+    "packages/aai/src/sdk/providers/stt/elevenlabs.ts": 1,
+    "packages/aai/src/sdk/step-fetch.ts": 1,
     "scripts/with-test-pg.mjs": 1
   },
   "rule24_toolContextField": {
-    "packages/aai/sdk/tool-context.ts": 9
+    "packages/aai/src/sdk/tool-context.ts": 9
   },
   "rule25_channelMessageField": {
-    "packages/aai/sdk/channels/channel-types.ts": 29
+    "packages/aai/src/sdk/channels/channel-types.ts": 29
   },
   "rule27_explicitDisposeCall": {
-    "packages/aai-studio-server/studio-session-idle.ts": 1,
-    "packages/aai-ui/define-client.tsx": 1
+    "packages/aai-studio-server/src/studio-session-idle.ts": 1,
+    "packages/aai-ui/src/define-client.tsx": 1
   },
   "rule29_globalFetchInRuntime": {
-    "packages/aai-runtime/providers/_openai-stream-repair.ts": 1
+    "packages/aai-runtime/src/providers/_openai-stream-repair.ts": 1
   },
   "rule30_nondeterministicWorkflowBody": {
     "packages/aai-templates/templates/link-digest/workflows/digest.ts": 1,

@@ -25,7 +25,7 @@ enableCompileCache();
 // Source wins when present: a checkout that has also been built must keep
 // running `cli.ts`, or `pnpm link --global` would silently serve a stale
 // `dist/` instead of the working tree.
-const source = new URL("./cli.ts", import.meta.url);
+const source = new URL("./src/cli.ts", import.meta.url);
 const entry = existsSync(fileURLToPath(source))
   ? source
   : new URL("./dist/cli.mjs", import.meta.url);

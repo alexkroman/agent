@@ -40,7 +40,7 @@ export default defineConfig({
       exclude: [
         ...sharedCoverageExclude,
         // CLI entry point can't be unit tested.
-        "packages/aai-cli/cli.ts",
+        "packages/aai-cli/src/cli.ts",
       ],
       // There are deliberately NO thresholds here. The floors that gate a PR are
       // the PER-PACKAGE ones: `pnpm test:coverage` is `turbo run test:coverage`,

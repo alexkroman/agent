@@ -5,7 +5,7 @@
  * Reading a build input back out of the TypeScript that DECLARES it.
  *
  * Every ARG the guest Dockerfile takes has exactly one source of truth, and it is
- * a constant in `packages/aai-server/*.ts` — never a value restated in a script.
+ * a constant in `packages/aai-server/src/*.ts` — never a value restated in a script.
  * These two readers are how a plain `.mjs` gets at them without a TypeScript
  * loader, and `guest-image-dockerfile.test.ts` closes the loop from the other
  * side by IMPORTING the real constants and asserting these agree.
@@ -34,7 +34,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
-const SERVER_DIR = path.join(REPO_ROOT, "packages", "aai-server");
+const SERVER_DIR = path.join(REPO_ROOT, "packages", "aai-server", "src");
 
 export function read(file) {
   try {

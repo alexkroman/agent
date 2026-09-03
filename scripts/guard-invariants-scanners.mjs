@@ -160,7 +160,7 @@ export function findUndeclaredGuestRoutes(literals, declared) {
  * Route-shaped string literals in the guest's HTTP surface.
  *
  * Whole LINES rather than `-o` fragments, so a comment-only line can be
- * dropped. That is not cosmetic: widening the scan into `packages/aai/host`
+ * dropped. That is not cosmetic: widening the scan into `packages/aai/src/host`
  * and `sdk/` immediately picked up `new URL("/x", base)` from a JSDoc
  * paragraph in `workflow-api-client.ts` explaining why an absolute URL is
  * wrong — prose scored as a route, which is the same code-versus-prose
@@ -191,7 +191,7 @@ function guestRouteLiterals() {
  *
  * Ten of `GUEST_ROUTES`' entries are no longer literals — they compose
  * `SERVER_ROUTES` / `WORKFLOW_CALLBACK_ROUTES` from
- * `packages/aai-runtime/server-routes.ts`, so the text read below finds seven
+ * `packages/aai-runtime/src/server-routes.ts`, so the text read below finds seven
  * strings where it used to find seventeen and would report the runtime's own
  * declarations as undeclared. That is the reader being right about the text and
  * wrong about the program.
@@ -211,7 +211,7 @@ function guestRouteLiterals() {
  * route out of both checks.
  */
 function tableDeclaredRoutes() {
-  const tableUrl = new URL("../packages/aai-runtime/server-routes.ts", import.meta.url);
+  const tableUrl = new URL("../packages/aai-runtime/src/server-routes.ts", import.meta.url);
   const table = readFileSync(tableUrl, "utf8");
 
   // Every `path: <IDENT>` in the two tables, plus the paths this module declares
@@ -221,7 +221,7 @@ function tableDeclaredRoutes() {
   );
   if (referenced.size === 0) {
     throw new Error(
-      "guard-invariants rule 12: packages/aai-runtime/server-routes.ts named no " +
+      "guard-invariants rule 12: packages/aai-runtime/src/server-routes.ts named no " +
         "`path: CONSTANT` entries. The scan reads it as text, so a reshaped table " +
         "silently stops declaring the runtime's routes — fix the pattern.",
     );
@@ -251,14 +251,14 @@ function tableDeclaredRoutes() {
 /** The paths `GUEST_ROUTES` declares, read as text — never imported. */
 function declaredGuestRoutes() {
   const source = readFileSync(
-    new URL("../packages/aai-server/guest-routes.ts", import.meta.url),
+    new URL("../packages/aai-server/src/guest-routes.ts", import.meta.url),
     "utf8",
   );
   const block = /export const GUEST_ROUTES = \{([\s\S]*?)\n\} as const;/.exec(source);
   if (block === null) {
     throw new Error(
       "guard-invariants rule 12: could not find `export const GUEST_ROUTES = { … } as const;` " +
-        "in packages/aai-server/guest-routes.ts. The scan reads it as text (the boundary " +
+        "in packages/aai-server/src/guest-routes.ts. The scan reads it as text (the boundary " +
         "forbids importing it), so a rename here silently empties the rule — fix the pattern.",
     );
   }
@@ -355,7 +355,7 @@ const FIXTURE_DIR_SEGMENT = /fixtures/i;
 const SELF_REFERENTIAL_READERS = new Set([
   "scripts/guard-invariants-scanners.mjs",
   "scripts/guard-invariants.mjs",
-  "packages/aai-templates/guard-invariants-gate.test.ts",
+  "packages/aai-templates/src/guard-invariants-gate.test.ts",
 ]);
 
 /**
@@ -405,9 +405,9 @@ export function fixtureDirs() {
  *
  * **A reference must RESOLVE, not merely match the name** — that is the whole
  * design, and matching the basename would have missed the case this rule exists
- * for. `packages/aai-server/compat-fixtures/` outlived its only reader
+ * for. `packages/aai-server/src/compat-fixtures/` outlived its only reader
  * (`sandbox-compat.test.ts`, deleted in 30914c9b) by five commits while
- * `packages/aai/sdk/protocol-compat.test.ts` held the string
+ * `packages/aai/src/sdk/protocol-compat.test.ts` held the string
  * `"compat-fixtures"` all along — pointing at its OWN sibling. A name-only scan
  * finds that string and reports the dead directory as read.
  *
@@ -415,8 +415,8 @@ export function fixtureDirs() {
  * with no baseline, so a false positive blocks a push while a false negative
  * merely leaves the status quo. Hence a candidate passes on ANY resolving
  * reference from anywhere in `packages/` or `scripts/`, including a
- * cross-package one — `packages/aai-ui/fixtures/` is read by
- * `packages/aai-cli/e2e.test.ts`, so a package-scoped scan would flag a live
+ * cross-package one — `packages/aai-ui/src/fixtures/` is read by
+ * `packages/aai-cli/src/e2e.test.ts`, so a package-scoped scan would flag a live
  * directory.
  *
  * @returns {{file: string, line: number, text: string}[]}

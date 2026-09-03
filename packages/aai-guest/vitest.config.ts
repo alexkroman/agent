@@ -29,7 +29,7 @@ export default defineConfig({
       // job is to fail — turned `pnpm check` red with `expected 'cart' to be
       // 'basket'`, naming a file no commit contains. The directory is gitignored,
       // which is exactly why nothing else notices it.
-      ".workspaces/**",
+      "src/.workspaces/**",
       "**/*.integration.test.ts",
       "**/*.scenario.test.ts",
     ],

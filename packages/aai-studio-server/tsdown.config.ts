@@ -28,7 +28,7 @@ export default defineConfig([
     // One bundle per process — aai-server is compiled in, so module-level
     // state (slot caches, keyed locks, session notes) has exactly one copy in
     // the running process.
-    entry: ["index.ts"],
+    entry: ["src/index.ts"],
     format: "esm",
     platform: "node",
     target: "node22",

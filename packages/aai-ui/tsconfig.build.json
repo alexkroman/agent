@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
@@ -10,6 +10,7 @@
     "allowImportingTsExtensions": false,
     "rewriteRelativeImportExtensions": true
   },
+  "include": ["src"],
   "exclude": [
     "node_modules",
     "dist",
@@ -17,7 +18,7 @@
     // task), never emitted: they are a repo artifact, and `rootDir: "."` would
     // otherwise put 18 stray `.d.ts` files under `dist/contracts/`. For aai-ui
     // that is not merely dead output — its `files: ["dist"]` would SHIP them.
-    "contracts",
+    "src/contracts",
     "**/*.test.ts",
     "**/*.test.tsx",
     "**/_test-utils.ts",

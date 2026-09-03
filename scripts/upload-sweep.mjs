@@ -77,12 +77,12 @@ import { randomFillSync } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { sleep } from "../packages/aai/sdk/sleep.ts";
+import { sleep } from "../packages/aai/src/sdk/sleep.ts";
 import {
   UPLOAD_PART_BYTES,
   UPLOAD_PART_CONCURRENCY,
-} from "../packages/aai/sdk/upload-constants.ts";
-import { createWorkflowApiClient } from "../packages/aai/sdk/workflow-api-client.ts";
+} from "../packages/aai/src/sdk/upload-constants.ts";
+import { createWorkflowApiClient } from "../packages/aai/src/sdk/workflow-api-client.ts";
 import { parseSweepArgs, usage } from "./_upload-sweep-args.mjs";
 import {
   fixed,

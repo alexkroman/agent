@@ -55,7 +55,7 @@
  * So CI runs {@link runSelection} — one command, `--gates ci` — and the rows
  * reach it as VALUES. Adding, renaming or deleting a gate is an edit to this
  * file alone, and the two cannot disagree because there is only one of them.
- * `packages/aai-templates/gate-wiring.test.ts` is the guard that CANNOT be
+ * `packages/aai-templates/src/gate-wiring.test.ts` is the guard that CANNOT be
  * deleted with its subject: it lives in a package owning none of this, reads
  * the table and the workflow independently, and fails on an empty parse.
  * Fatality stays a FIELD read by {@link runPhase}, which is the other half the
@@ -226,6 +226,7 @@ const GATES = [
     why: "The mechanical half of AGENTS.md. Every rule used to live only as prose in that file, which is enforcement exactly as long as a reviewer remembers it.",
   },
   { script: "check:file-length", phase: "ratchets", fatal: false },
+  { script: "check:package-layout", phase: "ratchets", fatal: false },
   {
     script: "check:test-assertions",
     phase: "ratchets",

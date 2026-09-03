@@ -46,7 +46,7 @@ Packages depend on `aai` via `workspace:*` but never on each other.
 
 ```sh
 pnpm --filter aai test                       # Single package
-pnpm vitest run packages/aai/types_test.ts    # Single file
+pnpm vitest run packages/aai/src/types_test.ts    # Single file
 ```
 
 ## Changesets

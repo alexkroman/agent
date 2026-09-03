@@ -4,7 +4,7 @@ The `aai-docs` workspace — the TypeDoc setup that turns the published type
 surface into documentation, in two renderings — **and the guide for the other
 two committed descriptions of that same surface**: the API reports
 (`packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`) and the capability
-epochs (`packages/*/contracts/`). Three artifacts, three gates, one question
+epochs (`packages/*/src/contracts/`). Three artifacts, three gates, one question
 each — did a signature MOVE, is the move BREAKING, and what does it MEAN — and
 they are documented together because a change to any published package
 usually owes all three. The root `AGENTS.md` keeps the table and the four
@@ -164,7 +164,7 @@ per package — the repo would still have four — and every symbol trades its
 of lines. So `API.md` is a plain concatenation, generated in the same pass and
 gated by the same `--check`: derived, not a second source of truth.
 
-`packages/aai-templates/api-surface-file.test.ts` is the guard under that gate:
+`packages/aai-templates/src/api-surface-file.test.ts` is the guard under that gate:
 `--check` would print its checkmark for an empty file agreeing with an empty
 file, which is what an assembly loop that stopped finding entry points, or a
 fence parser that stopped matching, would produce. The test parses the reports
@@ -274,7 +274,7 @@ Six properties are load-bearing:
   cannot refuse an honest new one. Adding an exemption is a hand edit in a
   reviewable diff — the same contract as the two `--update` baselines — so
   keeping this file empty is a review question, not a settled one.
-  `packages/aai-templates/api-contracts-gate.test.ts` owns all four, because
+  `packages/aai-templates/src/api-contracts-gate.test.ts` owns all four, because
   `--bump --retain` cannot check a scaffold it has just written empty.
 
   **A retained epoch that promised a name the current surface has since REMOVED
@@ -355,7 +355,7 @@ reports rather than re-derived, so this and the thing a reviewer looks at cannot
 disagree — which is why the ordering in `check.mjs` and CI is fixed and asserted:
 a stale report would be believed.
 
-`packages/aai-templates/api-contracts-gate.test.ts` is the guard under the gate,
+`packages/aai-templates/src/api-contracts-gate.test.ts` is the guard under the gate,
 and it has the same shape as `api-surface-file.test.ts` for the same reason: the
 gate compares two things the script derives, so an extraction that stopped
 finding anything would hash nothing, agree with a committed nothing, and print
@@ -380,7 +380,7 @@ the gate that matters. They are also out of coverage by each package's
 at 0% and drag the package under floors that have nothing to do with what they
 measure), and its files are declared as knip `entry` points, since nothing
 imports either directory and nothing is meant to. A new contract package
-owes those three, plus `packages/*/contracts/**` staying in the `aai-templates`
+owes those three, plus `packages/*/src/contracts/**` staying in the `aai-templates`
 turbo `inputs` — that is what stops the gate-under-the-gate being served from
 cache exactly when a contract tree changes.
 
@@ -502,7 +502,7 @@ left behind to read as current.
 **It carries floors (12 files, 300 KB) because a diff-based gate passes when
 an empty render agrees with an empty tree** — and its whole success output is a
 count, the same shape as the five gates the root guide records having caught
-printing a checkmark over nothing. `packages/aai-templates/docs-markdown-gate.test.ts`
+printing a checkmark over nothing. `packages/aai-templates/src/docs-markdown-gate.test.ts`
 is the guard on the other side, over the COMMITTED tree and the config that
 produced it, which the script's floor cannot see.
 
@@ -565,7 +565,7 @@ There is no `typedoc.json` in `packages/aai-runtime`, and its absence is now a
 measured decision rather than an oversight. Two things make it one.
 
 **A package-local config alone turns the suite red.**
-`packages/aai-templates/docs-markdown-gate.test.ts` globs `packages/*/typedoc.json`
+`packages/aai-templates/src/docs-markdown-gate.test.ts` globs `packages/*/typedoc.json`
 and asserts that every package holding one has committed markdown under
 `docs/api/` — so the file cannot land before the render that produces its page.
 The coupling is deliberate and it is wider than that one test: flipping this on
@@ -640,3 +640,14 @@ doors exist precisely so one hook bag can reach all of them. The fix is on the
 TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
 `upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
 bag. Do not narrow them back.
+
+### A new CONTRACT package owes four things
+
+A package that grows a `src/contracts/` directory needs the
+`tsconfig.build.json` exclusion (`src/contracts`, so `rootDir: "src"` does not
+emit a `.d.ts` per capability root and per frozen example into `dist/`), the
+`vitest.config.ts` coverage exclusion, knip `entry` points for
+`src/contracts/entrypoints/*.ts` — nothing imports a capability root and
+nothing is meant to — and `packages/*/src/contracts/**` staying in the
+`aai-templates` turbo `inputs`, which is what stops the gate-under-the-gate
+being served from cache exactly when a contract tree changes.

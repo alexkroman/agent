@@ -1018,7 +1018,7 @@ through to `app.notFound`), once as a platform route serving GET and POST for a
 guest that also answered DELETE, so a Stop button worked in dev and 404'd on
 every deployed agent.
 
-So `GUEST_ROUTE_EXPOSURE` (`packages/aai-server/guest-routes.ts`) declares each
+So `GUEST_ROUTE_EXPOSURE` (`packages/aai-server/src/guest-routes.ts`) declares each
 route as `proxied` (with the methods the GUEST answers, plus the `suffix` when
 the platform path ends in a parameter), `direct-dial`, `host-only`, or
 `guest-internal` — dialled only from inside the container on loopback, which is
@@ -1448,7 +1448,7 @@ request URL").
 ### Durable workflows — `/:slug/.well-known/workflow/v1/webhook/:token`
 
 The Workflow DevKit runs entirely inside the guest (see
-`packages/aai/host/workflow-*.ts`); this is the platform's share of the DEVKIT's
+`packages/aai/src/host/workflow-*.ts`); this is the platform's share of the DEVKIT's
 own three routes — the tenant-facing API is separate, below — and which of the
 three gets a proxy is the decision worth keeping:
 
@@ -1774,8 +1774,8 @@ it.
 - `net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
   (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
 
-There is deliberately **no load or chaos tier.** `packages/aai-server/load/`
-and `packages/aai-server/adversarial/` (plus the `load-and-adversarial` CI job
+There is deliberately **no load or chaos tier.** `packages/aai-server/src/load/`
+and `packages/aai-server/src/adversarial/` (plus the `load-and-adversarial` CI job
 and `docker-compose.load.yml`) were deleted, because what they asserted had
 drifted away from what they claimed to test. The two "adversarial" tests
 deployed an agent whose tool body spun forever **and then never invoked it**,

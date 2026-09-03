@@ -22,7 +22,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-const TARGET = new URL("../packages/aai/sdk/providers/llm/gateway-models.ts", import.meta.url);
+const TARGET = new URL("../packages/aai/src/sdk/providers/llm/gateway-models.ts", import.meta.url);
 const GENERATOR = new URL("./gen-gateway-models.mjs", import.meta.url);
 
 const fresh = execFileSync(process.execPath, [GENERATOR.pathname], { encoding: "utf-8" });

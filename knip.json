@@ -102,7 +102,7 @@
     },
     "packages/aai": {
       "entry": [
-        "host/_test-utils.ts",
+        "src/host/_test-utils.ts",
         "**/*.test.ts",
         "**/*.test-d.ts",
         // The capability contracts. Nothing imports the directory and nothing is
@@ -110,40 +110,40 @@
         // report for that slice of the authoring API. "Unused" in knip's sense
         // and load-bearing in the only sense that matters here. A `--bump
         // --retain` that writes a compatibility fixture owes an entry for it.
-        "contracts/entrypoints/*.ts"
+        "src/contracts/entrypoints/*.ts"
       ]
     },
     "packages/aai-runtime": {
       "entry": [
         // Test helpers and fuzz harnesses: imported only by sibling specs, and
         // the fixtures directory is read at runtime by the replay harness.
-        "_test-utils.ts",
+        "src/_test-utils.ts",
         "**/*-test-utils.ts",
-        "integration/**/*.integration.test.ts",
+        "src/integration/**/*.integration.test.ts",
         "**/*.test.ts",
         // The capability contracts — same reason as `packages/aai` above.
-        "contracts/entrypoints/*.ts",
+        "src/contracts/entrypoints/*.ts",
         // The tool fixtures `tools-dir.test.ts` scans. Nothing imports them by
         // name and nothing is meant to — a tool is reached by being IN the
         // directory, which is the property under test.
-        "fixtures/tool-dirs/**/*.ts"
+        "src/fixtures/tool-dirs/**/*.ts"
       ]
     },
     "packages/aai-ui": {
       "entry": [
         "**/*.test.{ts,tsx}",
         "**/*.test-d.ts",
-        "_react-test-utils.ts",
+        "src/_react-test-utils.ts",
         // The capability contracts, same as `packages/aai` above: a root exists
         // so api-contracts.mjs can extract a report for that slice of the
         // authoring API.
-        "contracts/entrypoints/*.ts"
+        "src/contracts/entrypoints/*.ts"
       ]
     },
     "packages/aai-cli": {
       "entry": [
         "**/*.test.ts",
-        "_test-utils.ts"
+        "src/_test-utils.ts"
       ],
       // NO `ignoreDependencies` for `workflow`, and the entry that used to sit
       // here is worth a note because it came and went twice. It existed for

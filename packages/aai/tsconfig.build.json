@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
@@ -10,6 +10,7 @@
     "allowImportingTsExtensions": false,
     "rewriteRelativeImportExtensions": true
   },
+  "include": ["src"],
   "exclude": [
     "node_modules",
     "dist",
@@ -19,7 +20,7 @@
     // `dist/contracts/`. Dead output here — `.npmignore`'s bare `contracts/`
     // rule matches at any depth, so none of it ever shipped — but in `aai-ui`,
     // whose `files: ["dist"]` has no such rule behind it, it did.
-    "contracts",
+    "src/contracts",
     "**/*.test.ts",
     "**/*.test-d.ts",
     "**/_test-*.ts",

@@ -192,7 +192,7 @@ function storageBucket() {
  * which is exactly the reason the variable is mandatory rather than sniffed.
  */
 function publicOrigin() {
-  const file = path.join(REPO_ROOT, "packages/aai-server/constants.ts");
+  const file = path.join(REPO_ROOT, "packages/aai-server/src/constants.ts");
   const source = existsSync(file) ? readFileSync(file, "utf-8") : "";
   const declared = /^export const DEFAULT_PORT = (\d+);/m.exec(source)?.[1];
   const port = process.env.PORT ?? declared;

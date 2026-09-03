@@ -16,14 +16,14 @@ export default defineConfig({
     // also exclude (pentest, run-code-sandbox, integration.test.ts) had all been
     // deleted, and nothing noticed — which is the failure mode a convention avoids.
     exclude: ["**/*.integration.test.ts", "**/*.scenario.test.ts", "node_modules", "dist"],
-    setupFiles: [...sharedSetupFiles, "./sdk/_test-matchers.ts"],
+    setupFiles: [...sharedSetupFiles, "./src/sdk/_test-matchers.ts"],
     coverage: {
       // `contracts/` is neither production source nor test infrastructure: the
       // capability roots are pure re-export lists and the compatibility
       // fixtures are compiled by `tsc`, never executed. Left in, coverage
       // counts twenty-odd files at 0% and drags the package under floors that
       // have nothing to do with what they measure.
-      exclude: [...sharedCoverageExclude, "contracts/**"],
+      exclude: [...sharedCoverageExclude, "src/contracts/**"],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
       thresholds: { lines: 92, functions: 88, branches: 83, statements: 90 },

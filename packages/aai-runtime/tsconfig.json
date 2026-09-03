@@ -5,6 +5,6 @@
     "tsBuildInfoFile": "../../.tsbuildinfo/aai-runtime.tsbuildinfo",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["./**/*.ts"],
+  "include": ["src", "*.ts"],
   "exclude": ["node_modules", "dist", "**/__snapshots__"]
 }

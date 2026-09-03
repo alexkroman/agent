@@ -32,8 +32,8 @@
     // the way every template does, so leaving it unresolvable would mean
     // either an example that is not checked or an example nobody would copy.
     "paths": {
-      "@alexkroman1/aai": ["./packages/aai/index.ts"],
-      "@alexkroman1/aai-ui": ["./packages/aai-ui/index.ts"],
+      "@alexkroman1/aai": ["./packages/aai/src/index.ts"],
+      "@alexkroman1/aai-ui": ["./packages/aai-ui/src/index.ts"],
       "zod": ["./packages/aai/node_modules/zod"]
     }
   },
