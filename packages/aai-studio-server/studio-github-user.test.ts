@@ -1,15 +1,25 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The entitlement check behind the install callback.
 //
-// Every test here is a REFUSAL except the first, which is the point: this is
-// the gate that decides whether one studio account may attach — and force-push
-// through — another tenant's GitHub installation, so what matters is that it
-// fails closed on every path, including the ones that are not an attack (a
-// network blip, a shape GitHub did not used to send).
+// Most tests here are a REFUSAL, which is the point: this is the gate that
+// decides whether one studio account may attach — and force-push through —
+// another tenant's GitHub installation, so what matters is that it fails
+// closed on every path, including the ones that are not an attack (a network
+// blip, a shape GitHub did not used to send).
+//
+// The listing is also what RESOLVES an installation the redirect did not name,
+// so a failure shape that reads as "no installations" rather than as an error
+// decides a link as well as a refusal — hence the failure cases are asserted
+// on the list itself, not only through the boolean.
 
 import { describe, expect, test, vi } from "vitest";
 import { testGithubApp } from "./_studio-github-test-utils.ts";
-import { exchangeUserCode, userControlsInstallation } from "./studio-github-user.ts";
+import {
+  exchangeUserCode,
+  listUserInstallations,
+  resolveUserInstallation,
+  userControlsInstallation,
+} from "./studio-github-user.ts";
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -58,34 +68,28 @@ describe("exchangeUserCode", () => {
   });
 });
 
-describe("userControlsInstallation", () => {
-  const listing = (ids: number[], total = ids.length): Response =>
-    json({ total_count: total, installations: ids.map((id) => ({ id })) });
+const listing = (ids: number[], total = ids.length): Response =>
+  json({ total_count: total, installations: ids.map((id) => ({ id })) });
 
-  test("true only when the id is in the user's own installations", async () => {
+describe("listUserInstallations", () => {
+  test("reports what the user administers, newest first", async () => {
     const fetchFn = vi.fn<typeof globalThis.fetch>(async () => listing([7, 42]));
-    expect(await userControlsInstallation("tok", 42, fetchFn)).toBe(true);
-  });
-
-  test("false for an installation the user does not administer", async () => {
-    // The escalation, at its smallest: the id is real and the token is real,
-    // and they are not each other's.
-    const fetchFn = vi.fn<typeof globalThis.fetch>(async () => listing([7]));
-    expect(await userControlsInstallation("tok", 42, fetchFn)).toBe(false);
+    expect(await listUserInstallations("tok", fetchFn)).toEqual([42, 7]);
   });
 
   test("the bearer is the USER token, on GitHub's installations route", async () => {
     const fetchFn = vi.fn<typeof globalThis.fetch>(async () => listing([42]));
-    await userControlsInstallation("gho_user", 42, fetchFn);
+    await listUserInstallations("gho_user", fetchFn);
     const [url, init] = fetchFn.mock.calls[0] ?? [];
     expect(String(url)).toContain("https://api.github.com/user/installations");
     const headers = init?.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer gho_user");
   });
 
-  test("every failure shape fails CLOSED", async () => {
-    // "We could not confirm" and "you do not control it" call for the same
-    // refusal, so each of these must be false rather than throwing or passing.
+  test("every failure shape reports NOTHING, rather than throwing", async () => {
+    // Empty is what both callers fail closed on: the entitlement check refuses
+    // and the resolver sends the user to the install page. A partial list is
+    // the one answer neither could act on, so a failed page discards the walk.
     const responses: Response[] = [
       json({ message: "Bad credentials" }, 401),
       json({}, 500),
@@ -95,30 +99,64 @@ describe("userControlsInstallation", () => {
     ];
     for (const response of responses) {
       const fetchFn = vi.fn<typeof globalThis.fetch>(async () => response);
-      expect(await userControlsInstallation("tok", 42, fetchFn)).toBe(false);
+      expect(await listUserInstallations("tok", fetchFn)).toEqual([]);
     }
   });
 
-  test("a string id that merely looks like the number does not match", async () => {
+  test("a page that fails MID-WALK discards what came before it", async () => {
+    const pages = [listing(Array.from({ length: 100 }, (_, i) => i + 1000)), json({}, 500)];
+    const fetchFn = vi.fn<typeof globalThis.fetch>(async () => pages.shift() ?? listing([]));
+    expect(await listUserInstallations("tok", fetchFn)).toEqual([]);
+  });
+
+  test("a string id that merely looks like a number is dropped", async () => {
     // Identity, not coercion: `"42" == 42` would hand an attacker a match from
     // any endpoint that stringifies ids.
     const fetchFn = vi.fn<typeof globalThis.fetch>(async () =>
       json({ total_count: 1, installations: [{ id: "42" }] }),
     );
-    expect(await userControlsInstallation("tok", 42, fetchFn)).toBe(false);
+    expect(await listUserInstallations("tok", fetchFn)).toEqual([]);
   });
 
   test("walks to a second page, and stops at a short one", async () => {
-    // A full first page that does NOT contain the target, so the walk has to
-    // reach the second one to find it.
     const pages = [listing(Array.from({ length: 100 }, (_, i) => i + 1000)), listing([42])];
     const fetchFn = vi.fn<typeof globalThis.fetch>(async () => pages.shift() ?? listing([]));
-    expect(await userControlsInstallation("tok", 42, fetchFn)).toBe(true);
+    expect(await listUserInstallations("tok", fetchFn)).toContain(42);
     expect(fetchFn).toHaveBeenCalledTimes(2);
 
     // A short page means the listing is exhausted — no further request.
     const short = vi.fn<typeof globalThis.fetch>(async () => listing([1]));
-    expect(await userControlsInstallation("tok", 42, short)).toBe(false);
+    expect(await listUserInstallations("tok", short)).toEqual([1]);
     expect(short).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("userControlsInstallation", () => {
+  test("true only when the id is in the user's own installations", () => {
+    expect(userControlsInstallation([42, 7], 42)).toBe(true);
+  });
+
+  test("false for an installation the user does not administer", () => {
+    // The escalation, at its smallest: the id is real and the token is real,
+    // and they are not each other's.
+    expect(userControlsInstallation([7], 42)).toBe(false);
+    expect(userControlsInstallation([], 42)).toBe(false);
+  });
+});
+
+describe("resolveUserInstallation", () => {
+  test("the only installation, when there is one", () => {
+    expect(resolveUserInstallation([42])).toBe(42);
+  });
+
+  test("nothing to link when the user administers none", () => {
+    // Not a refusal: the caller sends them to the install page, which is what
+    // this state means.
+    expect(resolveUserInstallation([])).toBeUndefined();
+  });
+
+  test("the NEWEST of several, since one link per account is the model", () => {
+    // The list arrives id-descending, and ids increase with creation.
+    expect(resolveUserInstallation([99, 42, 7])).toBe(99);
   });
 });

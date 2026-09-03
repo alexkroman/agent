@@ -68,7 +68,7 @@
  * meets.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseScriptArgs } from "./_args.mjs";
 import {
   DEPLOY_CARRIED,
@@ -177,14 +177,24 @@ function versionBumpedCarriers(base) {
  *
  * A file that will not PARSE is reported rather than skipped — silently
  * ignoring it is how a typo'd changeset gets read as an absent one, which is
- * rule 20's whole subject.
+ * rule 20's whole subject. A file that no longer EXISTS is a different case
+ * and is skipped: the diff is against a merge base, so it names deletions as
+ * well as additions, and a release consumes changesets by deleting them. Any
+ * branch whose merge base predates a Version Packages merge therefore lists
+ * files that are gone — which used to crash the whole gate on `readFileSync`,
+ * with a bare ENOENT and no mention of what was being checked. A changeset
+ * the branch REMOVED ships nothing either way, so there is nothing to read.
  *
  * @param {readonly string[]} changed From {@link changedSince}.
  * @returns {{ entries: {name: string}[], malformed: {file: string, error: string}[] }}
  */
 function branchChangesetEntries(changed) {
   const files = changed.filter(
-    (path) => path.startsWith(".changeset/") && path.endsWith(".md") && !path.endsWith("README.md"),
+    (path) =>
+      path.startsWith(".changeset/") &&
+      path.endsWith(".md") &&
+      !path.endsWith("README.md") &&
+      existsSync(path),
   );
   const entries = [];
   const malformed = [];

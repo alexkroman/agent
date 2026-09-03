@@ -920,6 +920,21 @@ project's workspace to a branch as ONE commit.
   trimmed to one value in each — it is also the HMAC key below, so a key
   differing by a trailing newline between two replicas is a fleet whose halves
   reject each other's states.
+- **Connect goes through `/login/oauth/authorize`, NOT the App's install
+  page.** `github.com/apps/<slug>/installations/new` redirects back to the App
+  only on a FIRST install; visited once the App is installed it shows the
+  installation's "update permissions" screen and fires no redirect at all —
+  GitHub's documented behaviour, not an edge case. So the callback never ran,
+  no link was written, and the card kept offering **Connect GitHub** with the
+  App plainly installed on GitHub's side. It caught anyone who had installed
+  the App once: an interrupted first attempt, a second studio account, or
+  simply installing it from GitHub first. The authorize endpoint always ends
+  at the App's callback URL with a `code`, installed or not, and offers to
+  install when it is not — so the round trip completes either way. A popup
+  fixes none of this; it would be a window parked on a GitHub settings page
+  with nothing to report back. **The App's Callback URL must therefore be
+  `<origin>/studio/github/callback`** — GitHub sends authorization to the
+  first registered callback URL whatever `redirect_uri` says, so we send none.
 - **The callback is the one studio route that cannot authenticate its
   caller.** `GET /studio/github/callback` is a top-level navigation performed
   by github.com — no bearer, nothing `authMw` could resolve — and what it
@@ -929,6 +944,19 @@ project's workspace to a branch as ONE commit.
   the route attaches THEIR installation to somebody else's account), and the
   `installation_id` is resolved against GitHub as the App before anything is
   stored (the signature proves who is asking, never what they are attaching).
+- **WHICH installation is read from the user token, not from the redirect.**
+  GitHub sends `installation_id` only when the App was installed during this
+  round trip, so through the authorize endpoint most callbacks carry a `code`
+  and nothing else. `GET /user/installations` — already fetched for the
+  entitlement check, and already scoped to this App — answers both questions:
+  a redirect that NAMES an id must have it in that list (unchanged, and the
+  refusal that closes the cross-tenant escalation), and one that names none
+  takes the list's newest entry. One link per account is the model, so some
+  choice has to be made; it is never silent, since the card names the account
+  it connected and links to GitHub's own picker. A user who authorized without
+  installing anything has an empty list, and that is a REDIRECT to the install
+  page rather than an error — the flow continuing, with a fresh state so the
+  return trip lands back here.
   The state carries a 10-minute `exp`, is compared in constant time, and is
   minted at CLICK time by `POST /studio/github/connect` rather than handed out
   with the status — a settings pane left open would otherwise hold a link that

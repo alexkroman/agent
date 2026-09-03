@@ -126,10 +126,50 @@ export function githubInstallPageUrl(config: GithubAppConfig): string {
 
 /**
  * The same page, carrying the signed `state` GitHub echoes back to the
- * callback — the CONNECT entry point, as opposed to the bare page above.
+ * callback — where a user who has NOT installed the App yet picks their
+ * repositories.
+ *
+ * Deliberately no longer the connect button's destination; see
+ * {@link githubAuthorizeUrl}. It is where the callback bounces a user whose
+ * account holds no installation of this App, which is the one case that really
+ * does need this page.
  */
 export function githubInstallUrl(config: GithubAppConfig, state: string): string {
   const url = new URL(githubInstallPageUrl(config));
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+
+/**
+ * Where the Connect button sends the tab — user authorization, NOT the install
+ * page.
+ *
+ * **`installations/new` is a dead end for an App that is already installed**,
+ * and that is GitHub's documented behaviour rather than an edge case: the
+ * second visit shows the installation's "update permissions" screen and never
+ * fires the post-install redirect, so the callback never runs, no link is
+ * written, and the studio's button stays "Connect GitHub" forever. Anyone who
+ * has installed the App once — a first attempt that was interrupted, another
+ * studio account, or simply installing it from GitHub first — lands there
+ * permanently, with the App visibly installed and the studio insisting it is
+ * not. A popup would not help: what the popup would be sitting on is a GitHub
+ * settings page with nothing to report back.
+ *
+ * `/login/oauth/authorize` always ends at the App's callback URL with a
+ * `code`, installed or not — so the round trip completes either way, and the
+ * callback resolves WHICH installation from the user token rather than from a
+ * redirect parameter GitHub only sometimes sends (studio-github-user.ts).
+ * When the App is not installed at all, the authorize screen offers to install
+ * it; when the user declines, the callback finds no installation and bounces
+ * them to {@link githubInstallUrl}.
+ *
+ * No `redirect_uri`: GitHub sends a GitHub App's authorization to the FIRST
+ * callback URL registered on the App whatever we pass, so naming one here
+ * would be a value that reads as authoritative and decides nothing.
+ */
+export function githubAuthorizeUrl(config: GithubAppConfig, state: string): string {
+  const url = new URL("https://github.com/login/oauth/authorize");
+  url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("state", state);
   return url.toString();
 }
