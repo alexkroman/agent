@@ -85,6 +85,56 @@ describe("createStepGate", () => {
     expect(started.length).toBeLessThanOrEqual(3);
   });
 
+  test("keeps strict FIFO order across a queue far wider than the gate", async () => {
+    // The head CURSOR that replaced `waiting.shift()` is a performance change,
+    // so what it owes is that it changed NOTHING else: the FIFO note on
+    // `createStepGate` is a promise a reader watching a fan-out relies on, and a
+    // cursor plus a compacting `splice` is exactly the kind of bookkeeping that
+    // drops or reorders an entry at the boundary where the prefix is dropped.
+    //
+    // 200 wide rather than the 5 the ordering case above uses, so the compaction
+    // runs many times over one queue rather than not at all.
+    const started: number[] = [];
+    const gate = createStepGate(1);
+    const tasks = Array.from({ length: 200 }, (_, i) => pending(started, i));
+    for (const task of tasks) void gate(task.run);
+    await flush();
+    expect(started).toEqual([0]);
+    for (const task of tasks) {
+      task.resolve();
+      await tick();
+    }
+    // Every task ran, exactly once, in the order it was queued.
+    expect(started).toEqual(Array.from({ length: 200 }, (_, i) => i));
+  });
+
+  test("admits exactly `limit` again after a queue has fully drained", async () => {
+    // The state the cursor could leave behind: a dead prefix, or a `head` past
+    // the end of an array that is never reset, either of which loses the next
+    // waiter silently rather than failing. Drain the gate completely, then queue
+    // a second wave through the same one.
+    const started: number[] = [];
+    const gate = createStepGate(2);
+    const first = Array.from({ length: 6 }, (_, i) => pending(started, i));
+    for (const task of first) void gate(task.run);
+    await flush();
+    for (const task of first) {
+      task.resolve();
+      await tick();
+    }
+    expect(started).toEqual([0, 1, 2, 3, 4, 5]);
+
+    const second = Array.from({ length: 4 }, (_, i) => pending(started, 100 + i));
+    for (const task of second) void gate(task.run);
+    await flush();
+    // Two, not one and not three: the drained queue left neither a stale waiter
+    // holding a slot nor a leaked count.
+    expect(started).toEqual([0, 1, 2, 3, 4, 5, 100, 101]);
+    second[0]?.resolve();
+    await tick();
+    expect(started).toEqual([0, 1, 2, 3, 4, 5, 100, 101, 102]);
+  });
+
   test("a slot is released when the task THROWS, not just when it resolves", async () => {
     // A step that fails still holds a slot until it settles. Leaking one per
     // failure would shrink the gate to zero over a run against a flaky provider

@@ -152,23 +152,6 @@ export type SuspendController = {
   enter(): WalkSlot;
 };
 
-/**
- * The earliest TIMER deadline among outstanding waits, or `undefined`.
- *
- * `undefined` entries are hooks with no deadline and are skipped rather than
- * winning: a hook ends when somebody signals it, which arrives as its own
- * delivery, so it says nothing about when to come back. A suspension is
- * `undefined` only when NOTHING outstanding is a timer.
- */
-function earliestDeadline(waits: readonly (number | undefined)[]): number | undefined {
-  let earliest: number | undefined;
-  for (const wakeAt of waits) {
-    if (wakeAt === undefined) continue;
-    if (earliest === undefined || wakeAt < earliest) earliest = wakeAt;
-  }
-  return earliest;
-}
-
 export function createSuspendController(): SuspendController {
   const channel = Promise.withResolvers<never>();
   /**
@@ -181,9 +164,31 @@ export function createSuspendController(): SuspendController {
    * would re-enter the body's step bodies and double-count every effect the
    * property harnesses measure.
    */
-  const parked = Promise.withResolvers<never>().promise;
-  /** Every wait this walk has reached and not settled, by wake time. */
-  const outstanding: (number | undefined)[] = [];
+  const parkedForever = Promise.withResolvers<never>().promise;
+  /**
+   * How many waits this walk has reached and not settled.
+   *
+   * A COUNT rather than the list of wake times it used to be. Nothing is ever
+   * removed from that list — a parked wait never settles — so the only two
+   * questions ever asked of it are "is anything parked" and "what is the
+   * earliest deadline", and both are maintained in O(1) as a wait arrives.
+   *
+   * The saving is modest and worth stating honestly rather than overclaimed:
+   * the scan it replaces ran at the SUSPENSION point, which is once per walk
+   * (`check` short-circuits on `suspension !== undefined` afterwards), so what
+   * goes is one O(waits) pass plus an array that grew with every wait a body
+   * reached. What is left is a shape with nothing to re-derive.
+   */
+  let parked = 0;
+  /**
+   * The earliest TIMER deadline among outstanding waits, or `undefined`.
+   *
+   * A hook with no deadline contributes NOTHING rather than winning: it ends
+   * when somebody signals it, which arrives as its own delivery, so it says
+   * nothing about when to come back. A suspension is `undefined` only when
+   * nothing outstanding is a timer.
+   */
+  let earliest: number | undefined;
   let inflight = 0;
   let checking = false;
   let suspension: Suspension | undefined;
@@ -192,13 +197,13 @@ export function createSuspendController(): SuspendController {
     checking = false;
     // Something started again between the schedule and the tick — its own end
     // re-schedules, so there is nothing to do here.
-    if (suspension !== undefined || inflight > 0 || outstanding.length === 0) return;
-    suspension = { wakeAt: earliestDeadline(outstanding) };
+    if (suspension !== undefined || inflight > 0 || parked === 0) return;
+    suspension = { wakeAt: earliest };
     channel.reject(suspension);
   };
 
   const schedule = (): void => {
-    if (checking || suspension !== undefined || inflight > 0 || outstanding.length === 0) return;
+    if (checking || suspension !== undefined || inflight > 0 || parked === 0) return;
     checking = true;
     // `process.nextTick` and not a timer: it runs only once the microtask queue
     // is exhausted, so a wait reached through a promise chain is counted, and a
@@ -218,9 +223,12 @@ export function createSuspendController(): SuspendController {
     return {
       end,
       park(wakeAt) {
-        outstanding.push(wakeAt);
+        parked++;
+        if (wakeAt !== undefined && (earliest === undefined || wakeAt < earliest)) {
+          earliest = wakeAt;
+        }
         end();
-        return parked;
+        return parkedForever;
       },
     };
   };

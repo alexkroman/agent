@@ -206,18 +206,32 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // One read for the whole replay — see `JournalStore`'s doc for why this is not
   // a lookup per step. Indexed by `key`, which is what `ctx.step` computes.
   const settled = new Map<string, StepEntry>();
-  // Awaited here whether the caller prefetched it or not, so the ordering below
-  // is identical either way: an overlapped read is the SAME read, started
-  // earlier — see `ReplayOptions.steps`.
-  const entries = await (options.steps ?? journal.readSteps(runId));
+  const sleeps = new Map<string, SleepRecord>();
+  // ISSUED TOGETHER, then awaited — the two are independent reads of one run id
+  // and nothing here needs the first to decide the second. `workflow-engine.ts`
+  // already starts both beside its `running` compare-and-set, so the prefetched
+  // path was already one round trip; a caller that passes neither (`aai dev`'s
+  // own dispatcher on a host-supplied journal, the eval engine, every harness)
+  // took them SEQUENTIALLY because the second call was not even made until the
+  // first resolved. Same reads, one latency.
+  const stepsRead = options.steps ?? journal.readSteps(runId);
+  const sleepsRead = options.sleeps ?? journal.readSleeps(runId);
+  // A rejection belongs to whoever awaits it. The no-op catch is only so the
+  // `await` below rejecting first cannot leave the other one unhandled — which
+  // by default ends the process (`scripts/fail-on-process-warning.mjs` makes it
+  // a test failure), and is the same guard `workflow-engine.ts` puts on the pair
+  // it prefetches.
+  void stepsRead.catch(() => undefined);
+  void sleepsRead.catch(() => undefined);
+  // Awaited here whether the caller prefetched or not, so the ordering below is
+  // identical either way: an overlapped read is the SAME read, started earlier —
+  // see `ReplayOptions.steps`.
+  const entries = await stepsRead;
   for (const entry of entries) settled.set(entry.key, entry);
   // The WAIT half of the same snapshot — see `ReplayOptions.sleeps`. Awaited
-  // beside the steps rather than lazily at the first wait, so the ordering is
-  // identical whether or not the caller prefetched, exactly as above.
-  const sleeps = new Map<string, SleepRecord>();
-  for (const record of await (options.sleeps ?? journal.readSleeps(runId))) {
-    sleeps.set(record.key, record);
-  }
+  // beside the steps rather than lazily at the first wait, so a wait's answer
+  // never costs a round trip mid-walk.
+  for (const record of await sleepsRead) sleeps.set(record.key, record);
   // BEFORE the body runs, because the point is not to start work this run cannot
   // finish — a walk of a journal at the ceiling is the slowest thing the engine
   // does and the least likely to reach an end. A refusal is an ordinary `failed`

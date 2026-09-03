@@ -12,7 +12,7 @@
 import { type WorkflowCtx, workflow } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger } from "./_test-utils.ts";
+import { makeLogger, tick } from "./_test-utils.ts";
 import {
   createInProcessWorkflowEngine,
   type InProcessWorkflowEngine,
@@ -123,6 +123,151 @@ describe("a suspended run", () => {
     await sleep(30);
     expect(body.mock.calls.length).toBe(walks);
     expect(await engine.getRun(runId)).toMatchObject({ status: "running" });
+  });
+});
+
+describe("a burst of deliveries for ONE run", () => {
+  /**
+   * A body that parks on four hooks, races them, and then holds the walk open
+   * in a step the test controls.
+   *
+   * The shape matters: signalling the remaining hooks while that step is in
+   * flight is the burst this exists for, and it is not contrived — a fan-out of
+   * `ctx.waitFor` answered at once is one `signal` per hook, and every one of
+   * them dispatches.
+   */
+  function racer(): {
+    run: (input: Record<string, unknown>, ctx: WorkflowCtx) => Promise<string>;
+    walks: () => number;
+    slow: () => number;
+    release: () => void;
+  } {
+    const gate = Promise.withResolvers<void>();
+    let walks = 0;
+    let slow = 0;
+    return {
+      walks: () => walks,
+      slow: () => slow,
+      release: () => gate.resolve(),
+      run: async (_input, ctx) => {
+        walks++;
+        // The waits are hoisted so the race reads on ONE line, which is what
+        // keeps `guard-invariants` rule 3 able to see there is no timer among
+        // them — it is line-based, so a wrapped argument list is reported
+        // without the elements being visible. Do not re-inline it.
+        const answers = [
+          ctx.waitFor<string>("tok_0"),
+          ctx.waitFor<string>("tok_1"),
+          ctx.waitFor<string>("tok_2"),
+          ctx.waitFor<string>("tok_3"),
+        ];
+        const first = await Promise.race(answers);
+        await ctx.step("slow", async () => {
+          slow++;
+          await gate.promise;
+          return "held";
+        });
+        return first;
+      },
+    };
+  }
+
+  test("is COLLAPSED into one re-walk rather than raced against the walk in flight", async () => {
+    // The amplification this dispatcher used to take, and the platform side
+    // already refuses. A/B'd against the guard removed, on this exact body:
+    // five walks, `slow` executed THREE times, and the run `failed` with
+    // "step slow has 3 unfinished attempt(s) against a budget of 3" — the
+    // dispatcher's own duplicates spending the author's whole retry lease on a
+    // run in which nothing had died.
+    const body = racer();
+    const { engine } = harness(body.run);
+    const runId = await engine.start("digest", [{}]);
+
+    // Parked on all four hooks, so every signal below reaches an OPEN one.
+    await vi.waitFor(() => {
+      expect(body.walks()).toBe(1);
+    });
+    // The first answer is what lets the body past the race and into the step —
+    // walk 2, held there until this test releases it.
+    expect(await engine.signal("tok_0", "zero")).toBe(true);
+    await vi.waitFor(() => {
+      expect(body.slow()).toBe(1);
+    });
+    expect(body.walks()).toBe(2);
+
+    // The burst, arriving while walk 2 is inside the step. All three are
+    // accepted — nothing is dropped — and none of them may start a walk beside
+    // the one in flight.
+    expect(
+      await Promise.all([
+        engine.signal("tok_1", "one"),
+        engine.signal("tok_2", "two"),
+        engine.signal("tok_3", "three"),
+      ]),
+    ).toEqual([true, true, true]);
+    await tick();
+    expect(body.walks()).toBe(2);
+
+    body.release();
+    await vi.waitFor(async () => {
+      expect(await engine.getRun(runId)).toMatchObject({ status: "completed" });
+    });
+    // The run finished on the answer the race really won, and the step ran once.
+    expect(await engine.readOutput(runId)).toBe("zero");
+    expect(body.slow()).toBe(1);
+    // Two walks, not five. The three collapsed deliveries cost one `execute`
+    // against a run that is already terminal, which never reaches the body.
+    expect(body.walks()).toBe(2);
+  });
+
+  test("is DEFERRED rather than dropped, so at-least-once still holds", async () => {
+    // The other half. Collapsing is only safe if the collapsed delivery still
+    // happens: a signal that arrives mid-walk carries an answer the walk in
+    // flight may already have read past, so one re-delivery has to follow it.
+    const gate = Promise.withResolvers<void>();
+    let walks = 0;
+    const { engine } = harness(async (_input, ctx) => {
+      walks++;
+      // Hoisted for the reason the case above hoists its own — see there.
+      const answers = [ctx.waitFor<string>("tok_a"), ctx.waitFor<string>("tok_b")];
+      const first = await Promise.race(answers);
+      await ctx.step("slow", () => gate.promise);
+      // A second park, so the walk that took the burst does NOT end the run —
+      // which is what makes the deferred delivery observable rather than a
+      // no-op against a terminal record.
+      await ctx.waitFor<string>("tok_end");
+      return first;
+    });
+    const runId = await engine.start("digest", [{}]);
+    await vi.waitFor(() => {
+      expect(walks).toBe(1);
+    });
+
+    expect(await engine.signal("tok_a", "a")).toBe(true);
+    await vi.waitFor(() => {
+      expect(walks).toBe(2);
+    });
+    // Mid-walk, while walk 2 is held inside the step. The `tick` is what makes
+    // the case the one being tested rather than a timing accident: the dispatch
+    // is a `setTimeout(0)`, so without it the delivery might land AFTER walk 2
+    // resolved and never be collapsed at all.
+    expect(await engine.signal("tok_b", "b")).toBe(true);
+    await tick();
+    expect(walks).toBe(2);
+
+    // Walk 2 parks on `tok_end` and resolves; the collapsed delivery then runs
+    // as walk 3. Without it the count stops at two and the delivery is lost.
+    gate.resolve();
+    await vi.waitFor(() => {
+      expect(walks).toBe(3);
+    });
+    expect(await engine.getRun(runId)).toMatchObject({ status: "running" });
+
+    expect(await engine.signal("tok_end", "end")).toBe(true);
+    await vi.waitFor(async () => {
+      expect(await engine.getRun(runId)).toMatchObject({ status: "completed" });
+    });
+    expect(await engine.readOutput(runId)).toBe("a");
   });
 });
 

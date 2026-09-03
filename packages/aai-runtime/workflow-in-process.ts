@@ -226,19 +226,87 @@ export function createInProcessWorkflowEngine(
   const streams = options.streams ?? createMemoryStreams();
 
   const timers = new Set<NodeJS.Timeout>();
+  /**
+   * The runs this dispatcher is walking right now, and whether a delivery
+   * arrived while each was in flight — see {@link deliver}.
+   *
+   * Not to be confused with `workflow-engine.ts`'s `inFlight`, which holds one
+   * ABORT CONTROLLER per walk so `cancel` can stop a body. This holds one entry
+   * per RUN and decides whether a delivery may start a walk at all.
+   *
+   * Same shape and same purpose as `workflow-queue-dispatch.ts`'s module-scope
+   * map on the platform side, scoped to the ENGINE here because that is the
+   * lifetime a dispatcher has: `aai dev` rebuilds one per file save, and a
+   * previous engine's walks are deliberately not this one's business.
+   */
+  const walking = new Map<string, { again: boolean }>();
   let stopped = false;
   // Late-bound: see the module doc. Assigned before anything can dispatch.
   let engine: WorkflowEngine | undefined;
 
-  /** Execute one delivery, reporting a journal failure rather than dropping it. */
+  /**
+   * Execute one delivery, reporting a journal failure rather than dropping it.
+   *
+   * ## A second delivery of a run being walked is DEFERRED, not run beside it
+   *
+   * A delivery is at-least-once and the engine is written for two walks of one
+   * run overlapping — `workflow-engine.ts` argues why the journal rather than a
+   * lock is what makes that safe. Safe is not free, though, and the cost is
+   * measured: a walk that starts while another is mid-body re-runs every step
+   * the first has not journaled yet, *"against the real provider, on a run
+   * already marked `completed`"* (`workflow-replay-attempt.ts`). Each such walk
+   * also charges the same step keys, so `maxAttempts` concurrent walks of one
+   * step exhaust its lease although nothing died.
+   *
+   * The platform side already refuses this — `workflow-queue-dispatch.ts` parks
+   * a delivery whose run is already being walked and asks the queue to come
+   * back — and nothing did so here, so `aai dev` and a self-hosted server were
+   * the deployments that took the amplification. A burst is ordinary rather than
+   * exotic: a fan-out of `ctx.waitFor` answered at once is one `signal` per
+   * hook, and every one of them dispatches.
+   *
+   * **Measured, and it is a FAILED RUN rather than merely wasted work.** Four
+   * hooks raced, three of them signalled while the walk held one step: five
+   * walks, the step's body executed **three** times, and the run ended
+   * `failed` — *"step slow has 3 unfinished attempt(s) against a budget of 3"*,
+   * which is `StepAbandonedError` refusing a step that nothing had abandoned.
+   * So the amplification was not only paying a provider three times for one
+   * step, it was spending the author's whole lease on this dispatcher's own
+   * duplicates. One walk, one execution, `completed` afterwards.
+   *
+   * `again` is what keeps at-least-once intact. A delivery that arrives while a
+   * walk is in flight is not dropped — it is collapsed into ONE re-delivery
+   * scheduled after that walk resolves, which is when its answer is guaranteed
+   * visible to a fresh journal read. A parked run is not in flight (a wait
+   * SUSPENDS the walk rather than holding it open, see
+   * `workflow-replay-suspend.ts`), so a signal reaching a suspended run is
+   * delivered immediately as before.
+   */
   function deliver(runId: string): void {
-    if (stopped) return;
+    if (stopped || !engine) return;
+    const already = walking.get(runId);
+    if (already) {
+      already.again = true;
+      return;
+    }
+    const entry = { again: false };
+    walking.set(runId, entry);
     // `void` with a catch rather than an async listener — `guard-invariants`
     // rule 23, and the reason it exists: a rejection escaping into the timer
     // callback is an unhandled rejection, which by default ends the process.
-    void engine?.execute(runId).catch((err: unknown) => {
-      logger.error?.("Workflow delivery failed", { runId, error: errorMessage(err) });
-    });
+    void engine
+      .execute(runId)
+      .catch((err: unknown) => {
+        logger.error?.("Workflow delivery failed", { runId, error: errorMessage(err) });
+      })
+      .finally(() => {
+        walking.delete(runId);
+        // The collapsed deliveries, as one. Through `schedule` rather than a
+        // direct call, so it lands on a later turn and cannot recurse: a run
+        // whose every delivery arrives mid-walk would otherwise walk forever
+        // without yielding.
+        if (entry.again) schedule(runId);
+      });
   }
 
   /**
@@ -291,6 +359,12 @@ export function createInProcessWorkflowEngine(
       stopped = true;
       for (const timer of timers) clearTimeout(timer);
       timers.clear();
+      // The walks themselves are NOT stopped — `stop()` cancels timers and a
+      // delivery is at-least-once, which is what makes an `aai dev` rebuild
+      // safe. Dropping the entries is what stops a walk this engine no longer
+      // owns from re-scheduling on it as it unwinds; the `finally` above finds
+      // nothing and `schedule` refuses anyway once `stopped`.
+      walking.clear();
     },
   };
 }
