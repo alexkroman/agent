@@ -559,7 +559,16 @@ jobs:
       - run: pnpm exec turbo run build
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with:
-          version: latest
+          # PINNED, and pinned to the SAME version `ship.yml`'s migrate job
+          # applies with. It used to be `latest`, which is the green-in-CI /
+          # red-at-release asymmetry running the wrong way: this is the arm
+          # whose job is to prove the migrations work, and it proved it with a
+          # different CLI than the one that would apply them. The pin's own
+          # argument is in that job — "the CLI decides how migrations are
+          # applied and what counts as pending" — and it applies at least as
+          # strongly here. `ship-workflow-gate.test.ts` asserts the two agree,
+          # because two literals in two files is the shape that drifts.
+          version: 2.109.1
       # `supabase start` applies supabase/migrations on INIT, so a fresh
       # container cannot drift the way a developer's long-lived stack does (see
       # `ensurePlatformTables`, which reports that drift as a sentence).

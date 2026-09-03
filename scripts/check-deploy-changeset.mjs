@@ -54,6 +54,17 @@
  * empty changeset ships nothing) by a different mechanism, and the npm path is
  * not what this gate is about. Worth closing; not here.
  *
+ * ## The SCHEMA is in scope, and it was the wider half of the hole
+ *
+ * `supabase/migrations/**` is carried by the deploy too — see `SCHEMA_DIR` in
+ * `_deploy-changeset-scope.mjs` for the argument. It is worth naming here
+ * because for a migration the failure is strictly worse than for source: an
+ * unreleased source change merely does not ship, while an unreleased migration
+ * is never APPLIED, and the next release deploys whatever code assumes it. And
+ * unlike every package in `CARRIED_PREFIXES`, nothing else could have asked —
+ * `changeset status` answers for workspace packages and `supabase/` is not one,
+ * so a migration-only branch cleared the pre-push hook as well as this gate.
+ *
  * ## Why it is not a `guard-invariants` rule
  *
  * Every rule in that gate is scoped to the TREE, and `AGENTS.md` records why at
@@ -71,9 +82,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parseScriptArgs } from "./_args.mjs";
 import {
-  DEPLOY_CARRIED,
+  CARRIED_PREFIXES,
   DEPLOY_CARRIERS,
   namedCarriers,
+  SCHEMA_DIR,
   triggeringFiles,
 } from "./_deploy-changeset-scope.mjs";
 import { git } from "./_ratchet.mjs";
@@ -89,6 +101,16 @@ import { parseChangesetFrontmatter } from "./guard-invariants-changesets.mjs";
  * losing one of the four is still a failure.
  */
 const MIN_TRACKED_FILES_PER_PACKAGE = 40; // measured: server 287, client 115, guest 91, studio-server 90
+
+/**
+ * The floor under the SCHEMA corpus, which is a directory rather than a package
+ * and so cannot share the number above.
+ *
+ * Same argument, one door along: `supabase/migrations` matching nothing — moved,
+ * renamed, or a typo in {@link SCHEMA_DIR} — would make every migration-only
+ * branch pass, which is the one this entry was added to catch.
+ */
+const MIN_TRACKED_MIGRATIONS = 15; // measured: 26
 
 /** @param {string} base */
 function assertBaseResolves(base) {
@@ -108,16 +130,21 @@ function assertBaseResolves(base) {
 }
 
 function assertCorpus() {
-  for (const pkg of DEPLOY_CARRIED) {
-    const tracked = git(["ls-files", `packages/${pkg}`], { allowNoMatch: true })
+  for (const [key, prefix] of CARRIED_PREFIXES) {
+    // The prefix without its trailing slash is the pathspec: `git ls-files`
+    // takes a directory, and `packages/aai-server/` and `packages/aai-server`
+    // resolve alike, but naming the directory is what the message then prints.
+    const dir = prefix.slice(0, -1);
+    const tracked = git(["ls-files", dir], { allowNoMatch: true })
       .split("\n")
       .filter(Boolean).length;
-    if (tracked >= MIN_TRACKED_FILES_PER_PACKAGE) continue;
+    const floor = key === SCHEMA_DIR ? MIN_TRACKED_MIGRATIONS : MIN_TRACKED_FILES_PER_PACKAGE;
+    if (tracked >= floor) continue;
     console.error(
-      `check-deploy-changeset: packages/${pkg} tracks ${tracked} file(s), under the floor of ` +
-        `${MIN_TRACKED_FILES_PER_PACKAGE}. DEPLOY_CARRIED names a package that has been ` +
-        "renamed or removed — fix the table, because a name matching nothing makes this gate " +
-        "print a checkmark over the hole it exists to close.",
+      `check-deploy-changeset: ${dir} tracks ${tracked} file(s), under the floor of ` +
+        `${floor}. CARRIED_PREFIXES names a directory that has been renamed or removed — ` +
+        "fix the table, because a name matching nothing makes this gate print a checkmark " +
+        "over the hole it exists to close.",
     );
     process.exit(1);
   }
@@ -210,12 +237,21 @@ function branchChangesetEntries(changed) {
 function reportFailure(triggering, malformed) {
   console.error("check-deploy-changeset: this branch changes code a DEPLOY carries, and");
   console.error("nothing in it makes a deploy happen.\n");
-  for (const pkg of DEPLOY_CARRIED) {
-    const bucket = triggering.get(pkg);
+  for (const [key, prefix] of CARRIED_PREFIXES) {
+    const bucket = triggering.get(key);
     if (bucket === undefined) continue;
-    console.error(`  packages/${pkg} — ${bucket.length} file(s):`);
+    console.error(`  ${prefix.slice(0, -1)} — ${bucket.length} file(s):`);
     for (const path of bucket.slice(0, 5)) console.error(`    ${path}`);
     if (bucket.length > 5) console.error(`    … and ${bucket.length - 5} more`);
+  }
+  if (triggering.has(SCHEMA_DIR)) {
+    console.error(
+      `\n  ${SCHEMA_DIR} is the SCHEMA, and its case is worse than a source change:\n` +
+        "  `supabase db push` applies what is PENDING, armed by a carrier version bump and\n" +
+        "  nothing else, so an unreleased migration is not merely unshipped — it is never\n" +
+        "  APPLIED, and the code that assumes it deploys on some later, unrelated release.\n" +
+        "  `changeset status` cannot ask for this: supabase/ is not a workspace package.",
+    );
   }
   for (const { file, error } of malformed) {
     console.error(`\n  ${file} could not be parsed: ${error}`);

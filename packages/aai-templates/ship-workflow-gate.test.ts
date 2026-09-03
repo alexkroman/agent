@@ -38,6 +38,19 @@ const workflow = sole(
 );
 
 /**
+ * `check.yml`, read for ONE assertion: that its Supabase CLI pin agrees with
+ * the version `migrate` applies with. Two literals in two files is the shape
+ * that drifts, and this one drifted to `latest`.
+ */
+const check = sole(
+  import.meta.glob<string>("../../.github/workflows/check.yml", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
+
+/**
  * The `needs:` list declared by one job.
  *
  * Deliberately not a YAML parser — this package carries none, for the reason
@@ -397,5 +410,88 @@ describe("the rollout is observed, not only predicted", () => {
     expect(source.indexOf("verify_modal_deploy.py")).toBeLessThan(
       source.indexOf("scripts/smoke-spawn.mjs"),
     );
+  });
+});
+
+describe("the migration step enforces its own rules", () => {
+  /**
+   * The job's own comment forbids the transaction pooler, and for a long time
+   * that comment was the only thing enforcing it. `assertSessionModeUrl`
+   * refuses one in the SERVER, on the same secret, by the same rule — so the
+   * platform was protected and the one place that runs DDL was not.
+   *
+   * Transaction pooling cannot hold the locks a migration takes, and the
+   * failure it produces names neither pooling nor the URL, which is what makes
+   * a prose rule insufficient here.
+   */
+  test("a transaction-pooler URL is rejected before anything is applied", () => {
+    const source = workflow ?? "";
+    const step = source.slice(source.indexOf("name: Apply Supabase migrations"));
+    const body = step.slice(0, step.indexOf("\n  # ─"));
+    expect(body, "the migrate step no longer slices out").toContain("supabase db push");
+    // Both forms `assertSessionModeUrl` refuses, spelled the same way.
+    expect(body).toContain(":6543");
+    expect(body).toContain("pgbouncer=true");
+    expect(body).toContain("exit 1");
+    // Before the push, or it is a post-mortem rather than a guard.
+    expect(body.indexOf(":6543")).toBeLessThan(body.indexOf("supabase db push --db-url"));
+  });
+
+  test("the pending set is listed before it is applied", () => {
+    // `db push` reports an inversion as "Remote migration versions not found in
+    // local migrations directory", which reads as a missing FILE. Printing both
+    // histories first is what makes the log say which it is, mid-release, on a
+    // database nobody can reach from here.
+    const source = workflow ?? "";
+    expect(source).toContain("supabase migration list --db-url");
+    expect(source.indexOf("supabase migration list --db-url")).toBeLessThan(
+      source.indexOf("supabase db push --db-url"),
+    );
+  });
+
+  /**
+   * The pin's own argument — "the CLI decides how migrations are applied and
+   * what counts as pending" — applies at least as strongly to the arm whose job
+   * is to PROVE the migrations work. `check.yml`'s platform-stack job took
+   * `latest`, which is the green-in-CI / red-at-release asymmetry running the
+   * wrong way: CI validated with one CLI and production applied with another.
+   */
+  test("both workflows install the same Supabase CLI version", () => {
+    const ship = workflow ?? "";
+    expect(check, "check.yml not found").toBeTypeOf("string");
+    const versionsIn = (source: string) =>
+      [
+        ...source.matchAll(
+          /supabase\/setup-cli@[0-9a-f]{40}[^\n]*\n\s*with:\n(?:[^\n]*\n)*?\s*version: (\S+)/g,
+        ),
+      ].map((match) => match[1]);
+    const shipVersions = versionsIn(ship);
+    const checkVersions = versionsIn(check ?? "");
+    expect(shipVersions, "ship.yml declares no setup-cli version").not.toHaveLength(0);
+    expect(checkVersions, "check.yml declares no setup-cli version").not.toHaveLength(0);
+    for (const version of [...shipVersions, ...checkVersions]) {
+      expect(version, "the Supabase CLI must be pinned, never `latest`").not.toBe("latest");
+      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    }
+    expect(new Set([...shipVersions, ...checkVersions]).size).toBe(1);
+  });
+});
+
+describe("the deploy names the commit it shipped", () => {
+  /**
+   * Without `--tag`, Modal's own deployment history is a list of version
+   * numbers with no provenance — so "which commit is production running", the
+   * question this workflow's header is a long account of, is answerable from
+   * GitHub and not from Modal. It is also what lets `modal app rollback` be
+   * aimed at a version somebody can identify (see MODAL-CLAUDE.md, "Rolling
+   * back").
+   */
+  test("modal deploy is tagged with the resolved ref", () => {
+    const source = workflow ?? "";
+    expect(source).toMatch(/modal deploy --tag "\$DEPLOY_TAG"/);
+    // The SAME expression every checkout in this file resolves, so the tag
+    // names the tree that was built rather than a branch pointer — the
+    // distinction run 33660483457 in the header is about.
+    expect(source).toMatch(/DEPLOY_TAG: \$\{\{ inputs\.ref \|\| github\.sha \}\}/);
   });
 });

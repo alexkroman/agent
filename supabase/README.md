@@ -142,6 +142,30 @@ grants). Three places differ, each a decision rather than an oversight:
   to" — is the one that fits, and `APP_DB_CONNECTION_LIMIT` answers the
   connection-cost objection they raise against many roles.
 
+- **Migrations are hand-written, NOT generated from a declarative schema.**
+  `supabase/schemas/*.sql` with migrations produced by `supabase db diff` (and
+  now a `--use-pg-delta` export path) is Supabase's newer recommended
+  *authoring* model, so it deserves a stated answer rather than silence. The
+  answer is no, for this tree: it carries data migrations
+  (`20260809120000_normalize_double_encoded_jsonb.sql`), pg_cron job bodies,
+  extension installs, explicit per-role grants, deny-all RLS, and six
+  deliberate destructive steps — the categories a schema differ handles worst,
+  and the ones where a wrong generated diff is a production incident rather than
+  a compile error. The hand-written files also carry the incident histories that
+  make them reviewable, which a generated file cannot. Note this is orthogonal
+  to how migrations are APPLIED: `db push` from CI is what Supabase recommends
+  either way, and that is what `ship.yml` does.
+
+- **There is no staging project, and no Supabase branch.** Every migration
+  meets production first, which is a real divergence from the "deploy to
+  staging, then production" shape their environments guide recommends.
+  Deliberately deferred, not overlooked: it is the only item on this list whose
+  cost is a second paid project plus the machinery to keep it seeded, and the
+  two gates named below buy most of what it would catch at push time instead.
+  Revisit it when a migration needs to be rehearsed against real data rather
+  than merely ordered correctly — the FK-validating case below is the shape
+  that will force it.
+
 Two operational facts the code depends on and cannot assert:
 
 - **A direct connection is IPv6-only without the IPv4 add-on**, so production
@@ -172,9 +196,22 @@ the store suites assert that no store issues DDL.
 
 **`supabase db push` is MANUAL, and nothing tells you when you have forgotten
 it.** This is no longer true: `.github/workflows/ship.yml` has a `migrate` job
-that runs `supabase db push --db-url` ahead of the deploy, on a version bump or
-on any push touching `supabase/migrations/**`. The account below is why that job
-exists, and it stands as the reason not to remove it. It has
+that runs `supabase db push --db-url` ahead of the deploy, **on a RELEASE** —
+i.e. a commit that moved a workspace `package.json` version line — and on a
+`workflow_dispatch` that arms the deploy. It used to also arm off a
+`HEAD^..HEAD` diff over `supabase/migrations/**`, and that arm was REMOVED
+because at a release commit it finds nothing: the migration sits in an earlier
+commit, so the diff that was supposed to catch it is empty exactly when it
+matters (`ship-workflow-gate.test.ts`, "the branch that arms a release also
+arms the migration"). The consequence is that **a merged migration waits for
+the next release**, so a branch that adds one owes a changeset naming a deploy
+carrier (`aai-server` or `aai-studio-server`) — and
+**`check:deploy-changeset` now enforces that**, because until it did, nothing
+could: that gate was scoped to `packages/<carried>/`, and `changeset status`
+answers for workspace packages, which `supabase/` is not. So a migration-only
+branch cleared every gate in the repository and armed nothing. The account
+below is why that job exists, and it stands as the reason
+not to remove it. It has
 already happened once: `20260808120000_agents_config_default.sql` stopped
 `agents.config` being written but was never pushed, so **every** `POST /deploy`
 died on `null value in column "config" violates not-null constraint` — Publish
@@ -184,6 +221,55 @@ Push migrations before shipping a release that needs them:
 ```sh
 supabase db push        # from the repo root, against the linked project
 ```
+
+**A migration must be survivable by the code ALREADY in production, because it
+applies before the deploy and the deploy can fail.** `migrate` declares only
+`needs: changed`, so it runs beside the npm publish and the guest-image build
+rather than behind them — and every check that could stop a bad rollout (the
+GHCR preflight, `verify_modal_deploy.py`, `smoke-spawn.mjs`) lives in `deploy`,
+downstream of a schema change that has already committed. A red `guest-image`
+therefore leaves production on the old code against the new schema, and
+`modal app rollback` does not undo DDL.
+
+So the ordering rule is expand/contract, and it is a rule rather than a habit:
+**a contraction ships at least one release after its expansion.** Both
+contractions in this tree already do —
+`20260808120000_agents_config_default.sql` stopped `agents.config` being
+written and `20260810030000_drop_agents_config.sql` dropped it a release later
+— and that spacing is load-bearing rather than incidental. The same applies to
+anything that VALIDATES existing rows:
+`20260810010000_workspace_child_foreign_keys.sql` adds two foreign keys and
+clears the orphans first, in the same file, because `add constraint` validates
+every row and CI would never have shown it (see the next paragraph but one).
+
+**Two gates hold the ordering, and neither can see production.** They are
+push-time approximations of facts about a database, and worth knowing the limits
+of:
+
+- **`check:migration-order`** — every migration a branch ADDS must sort after
+  every migration on the merge base, and every filename must be
+  `<14 digits>_<name>.sql`. `db push` refuses a pending file older than the last
+  remote row, which is a MERGE hazard: each branch picks a plausible next
+  timestamp against the main it can see, both apply in isolation, and the
+  inversion exists only in the merge. It has already cost a manual re-dating of
+  two files (`aai-server` changelog, f376585). Reach for `git mv` to a newer
+  timestamp, never `--include-all` — that flag applies every pending file
+  whatever its order, making the applied schema a function of merge order rather
+  than filename order.
+- **`platform-schema.test.ts`, "no two migrations share a version"** — the
+  neighbouring hazard: two files claiming ONE version abort the whole
+  `supabase start` with a duplicate-key error naming neither.
+
+**And CI proves the migrations build a schema from NOTHING, which is not the
+claim `db push` needs.** `check.yml`'s `platform-stack` job runs
+`supabase start`, which applies all of `migrations/` on init — a real and useful
+property, and a different one from "these apply to the database production has
+right now, with its rows in it". A migration that is valid from empty and
+invalid against real data (the FK above, a `set not null`, a unique index over
+duplicates) passes every gate here and fails at release, after the npm publish.
+Nothing static can close that; the `migration list` preflight in the `migrate`
+job makes the failure diagnosable from the log, and a staging project is the
+only thing that would actually rehearse it.
 
 **Jsonb columns must be bound `::text::jsonb`, never a bare `::jsonb`.** The
 stores bind documents as JSON text; with the parameter's type resolved from a

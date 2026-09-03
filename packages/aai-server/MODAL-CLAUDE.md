@@ -297,3 +297,42 @@ kept on the pinned half alone, and its create escaped
 the terminating `try`: a 500 where the taxonomy owes a 503. See
 `translateSpawnFailure`, and `guest-image-wait-gate.test.ts` for the gate that
 no-op'd over a broken publisher for three green deploys.
+
+## Rolling back: `modal app rollback` first, a dispatch second
+
+`ship.yml`'s header calls `workflow_dispatch` "the escape hatch for shipping,
+or rolling back to, a commit that is not a release", and as a *rollback* that
+is the slow half of the answer: it re-checks out, re-packs the SDK, rebuilds
+the guest image, rebuilds the service image and re-runs `migrate` — the whole
+~20 minutes, during which production is still serving the bad version.
+
+Modal has a direct lever, and it should be step one of an incident:
+
+```sh
+modal app rollback aai-server-web                      # to the previous version
+modal app history aai-server-web                       # list versions + tags
+modal app rollback aai-server-web --strategy recreate  # terminate first, don't drain
+```
+
+Four things to know before reaching for it:
+
+- **It is a new deployment, not a time machine.** The version number
+  increments and the rollback is attributed to whoever triggered it; what
+  resets is the App's functions and metadata, independently of the current
+  codebase. So the tree and production disagree afterwards, and the durable
+  fix is still a dispatch (or a forward release).
+- **`--strategy` matters here.** The default `rolling` keeps old containers
+  serving until the restored ones pass their cold start, which is what you
+  want for a bad-but-serving version. `recreate` terminates first and queues
+  inputs, which is what you want when the current version is actively
+  corrupting something.
+- **It does NOT roll back the schema.** `migrate` ran before the deploy and
+  DDL does not reverse, so a rollback lands old code on the new schema. That
+  is exactly what the expand/contract rule in `supabase/README.md` exists to
+  make survivable — read it before assuming a rollback is safe, and if the
+  release contained a contraction, a rollback is NOT safe and a forward fix
+  is the only option.
+- **Aim it by tag.** `ship.yml` passes `modal deploy --tag "$DEPLOY_TAG"` with
+  the commit it built, so `modal app history` names a SHA per version rather
+  than a bare number. Without that tag the dashboard could not tell you which
+  version to roll back to, which is the whole reason the flag is there.
