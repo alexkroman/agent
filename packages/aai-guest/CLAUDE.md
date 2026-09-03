@@ -406,6 +406,46 @@ write still runs, so the host relay and Modal's own log see what they always
 saw. `main()` installs it before anything else can write — every line produced
 earlier is a line the pane cannot show.
 
+## Turning a deployed guest's debug logging ON
+
+`AAI_DEBUG` on the PLATFORM SERVER's env is forwarded into an agent guest's boot
+env by `agentBootEnv` (`aai-server/warm-harness.ts`), following
+`AAI_GUEST_IDLE_EXIT_MS`: read from the server's own environment, forwarded only
+when set, and otherwise absent. It is not env inheritance — a guest inherits
+nothing, which is the property that keeps platform credentials out of a tenant
+container and makes an agent that wrongly reads `process.env` fail locally the
+same way it fails in production.
+
+**It was unreachable before, and the reason generalizes.**
+`debugLoggingEnabled` (`aai-runtime/runtime-config.ts`) is a module-level `const`
+over `process.env`, read at import time; a deployed agent's OWN env arrives as
+the boot file at `AAI_AGENT_ENV_PATH` and is parsed into an object handed to the
+runtime, never merged into `process.env`. So every debug line in the runtime was
+dead in every deployed guest — including `platform-rpc.ts`'s per-call
+`{ label, route, traceId, status, elapsedMs }`, the only decomposition of the
+guest→platform journal RPC anything measures, and the guest is the only place
+that RPC happens. **Any future knob the runtime reads off `process.env` has the
+same problem and needs the same one-line forward.**
+
+Three things about the knob:
+
+- **It takes effect at guest BOOT only.** The flag is read once at module load,
+  so setting it on the server does nothing to a resident guest — the guest has to
+  respawn (a redeploy, or an idle self-exit) before the value is read. Do not
+  spend an hour on this.
+- **It is per REPLICA, not per slug.** The value is the server's own, so it arms
+  every agent guest that replica goes on to spawn.
+- **One spelling, and one flag.** `LOG_LEVEL=DEBUG` — which
+  `debugLoggingEnabled` also accepts — is NOT forwarded: it is a generic name a
+  hosting stack sets for its own reasons, and forwarding it would make the
+  platform's own log level arm per-message logging inside a tenant's guest.
+  `AAI_DEBUG_PARTIALS` is not forwarded either, deliberately: it is one line per
+  ~200 ms of speech and the runtime leaves it off even under `AAI_DEBUG=1` so the
+  turn-level lines stay readable.
+
+Read the output back off the host log (`startGuestLogging` drains both guest
+streams into it) or through the guest's own ring — `aai logs`, above.
+
 ## The manage token is derived, not random
 
 `AAI_GUEST_TOKEN` is HMAC over the sandbox's fleet-wide name

@@ -54,6 +54,29 @@ const ok = () => new Response(JSON.stringify({ messageId: "msg_1" }), { status: 
  */
 const settle = tick;
 
+/** An instant to compute deadlines against, so a case's arithmetic is exact. */
+const NOW = 1_700_000_000_000;
+
+/**
+ * Pin `Date.now()`, because the delay is now MILLISECONDS and a case measuring
+ * one cannot afford the millisecond that elapses between composing a deadline and
+ * dispatching it. `restoreMocks` (see `vitest.shared.ts`) undoes the spy.
+ */
+function freezeClock(): void {
+  vi.spyOn(Date, "now").mockReturnValue(NOW);
+}
+
+/**
+ * What the PLATFORM recovers from the field, which is what a delivery actually
+ * waits: `enqueue` and `reschedule` (`aai-server/workflow-queue-store.ts`) both
+ * do `Math.round(delaySeconds * 1000)` and Postgres computes `available_at` in
+ * milliseconds. Asserting through it is what makes "never earlier than the
+ * deadline" a claim about the delivery rather than about a float on this side.
+ */
+function recoveredMs(delaySeconds: unknown): number {
+  return Math.round(Number(delaySeconds) * 1000);
+}
+
 describe("queueNameFor", () => {
   test("composes the ORCHESTRATION topic, which is what the platform's claim matches", () => {
     // The platform's claim splits the due set on this grammar: orchestration
@@ -74,15 +97,48 @@ describe("createPlatformDispatch", () => {
     expect(sent[0]?.body.delaySeconds).toBeUndefined();
   });
 
-  test("converts a deadline to a delay in SECONDS, rounded up", async () => {
+  test("keeps a sub-second wake's PRECISION, rather than ceiling it to a whole second", async () => {
+    // This case is the defect: `Math.ceil((at - Date.now()) / 1000)` made every
+    // sub-second deadline a `delaySeconds: 1`, so a measured `ctx.sleep(100)`
+    // resumed at ~1,780 ms — ~1,000 of it this rounding, the rest the queue's own
+    // poll interval, which is by design. Nothing below this field needs whole
+    // seconds, so the delay the delivery gets is the delay the body asked for.
+    const { dispatch, sent } = dispatchOver(ok);
+    freezeClock();
+    await dispatch("wrun_1", NOW + 100);
+    expect(recoveredMs(sent[0]?.body.delaySeconds)).toBe(100);
+  });
+
+  test("converts a deadline to a delay in MILLISECONDS, rounded up", async () => {
     // Rounded UP so a delivery is never earlier than the deadline the body
     // computed. Waking early is correct but wasteful — the run re-reads its own
     // stored `wakeAt`, finds it still ahead, and suspends again — and on a
-    // deployed guest the wasted thing is a whole sandbox boot.
+    // deployed guest the wasted thing is a whole sandbox boot. A fractional
+    // deadline therefore ceils to the next whole millisecond, which is the
+    // finest grain the wire carries.
     const { dispatch, sent } = dispatchOver(ok);
-    await dispatch("wrun_1", Date.now() + 1500);
-    expect(sent[0]?.body.delaySeconds).toBe(2);
+    freezeClock();
+    await dispatch("wrun_1", NOW + 100.4);
+    expect(recoveredMs(sent[0]?.body.delaySeconds)).toBe(101);
   });
+
+  // The invariant that must not regress, over the shapes the two roundings meet:
+  // a delivery is NEVER earlier than the deadline, and never more than the one
+  // millisecond the ceil is allowed to cost. `recoveredMs` runs the server's own
+  // conversion, so each case asserts what the delivery really gets rather than
+  // the float this side wrote — a fractional second ceiled the other way round
+  // could be rounded back DOWN there and arrive early after all.
+  test.each([0.1, 1, 99, 100, 100.4, 999, 999.9, 1000, 1500, 60_000])(
+    "a wake %s ms out is delivered no EARLIER than its deadline",
+    async (remaining) => {
+      const { dispatch, sent } = dispatchOver(ok);
+      freezeClock();
+      await dispatch("wrun_1", NOW + remaining);
+      const delivered = recoveredMs(sent[0]?.body.delaySeconds);
+      expect(delivered).toBeGreaterThanOrEqual(remaining);
+      expect(delivered).toBeLessThan(remaining + 1);
+    },
+  );
 
   test("clamps a deadline already past to zero rather than sending a negative", async () => {
     const { dispatch, sent } = dispatchOver(ok);
