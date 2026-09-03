@@ -155,16 +155,36 @@ JS SDK exposes sandbox MEMORY snapshots (today it exposes only
 restore-from-snapshot slots into this single spawn path — do NOT
 reintroduce a host-managed pool to approximate it.
 
-## Nothing is region-pinned — not guest sandboxes, and not the services
+## Sandboxes are unpinned; the WEB service PREFERS the database's region
 
-**Capacity beats locality.** `MODAL_SANDBOX_REGION`
-(comma-separated for multiple) still pins SANDBOX placement via Modal's
+**For a sandbox, capacity still beats locality.** `MODAL_SANDBOX_REGION`
+(comma-separated for multiple) pins SANDBOX placement via Modal's
 `regions` create param, but it is an operator override that production
 leaves unset; `build_image` (scripts/modal_image.py) deliberately bakes no
-value, and neither app's `@app.function` passes `region=`.
+value.
 
-The WEB service's pin (once `us-east-2`) was removed after it took
-production down, and it is worth knowing the shape because no symptom names
+**The web service is the exception, and it is a LIST.** `modal_deploy.py`
+passes `region=REGIONS`, `["us-east-2", "us-east-1"]`. Read the two halves
+separately, because they answer to different failures: the PREFERENCE is
+earned by a measurement, and the FALLBACK is what keeps the outage below
+unreachable.
+
+What earned it is that the Supabase round trips stopped being outside a
+latency budget. A durable run journals per operation and the engine's calls
+are sequential by construction — `claimAttempt` before a step's body,
+`appendStep` after it — so a run's wall clock is a multiple of this
+container's distance from the database. Measured on a deployed
+`use-transcript-workflow`, one 300 KB / 4-second recording, one clean walk:
+**14 × `POST /:slug/workflow-journal` at ~460-666 ms of server time each,
+~7.3 s, to move 2.3 KiB of JSON.** The same 14 calls over the same route and
+statements against a local Postgres: **31.4 ms**. So ~99% was distance, and
+none of it the statements, the pool, the bearer check or the payload. The
+`aai` project is `us-east-2`; `us-east-1` is ~15 ms from it, so a spill still
+lands two orders of magnitude better than an unpinned placement.
+
+A single-value pin is a different thing and stays forbidden. The WEB
+service's earlier bare `us-east-2` took production down, and it is worth
+knowing the shape because no symptom names
 a region: the app sits at `deployed` with **zero tasks** despite
 `MIN_CONTAINERS=1`, requests hang until the client times out having received
 **zero bytes**, and there are **no container logs at all** — not a crash,
@@ -174,11 +194,16 @@ fault says healthy: the image builds, the secrets resolve, and booting the
 entry by hand inside the function's own spec (`modal shell <file>::server
 -c 'node …'`) serves fine. Neither a redeploy nor `modal app rollover`
 helps — both only re-ask for a container that still cannot be placed. A
-warm floor is what makes a pin dangerous, so if a measurement ever justifies
-re-pinning, prefer Modal's region LIST (a fallback order) over one value.
+warm floor is what makes a pin dangerous, which is why the answer was a
+fallback ORDER rather than either a bare region or no preference at all: a
+second entry makes "placed nothing" unreachable while still expressing where
+this container wants to be. `modal-image-inputs.test.ts` pins the list's
+length, its first entry (against the database's region — a first entry that
+drifts keeps the risk and deletes the benefit) and that the decorator really
+reads it; all three are A/B'd against the corresponding regression.
 
-It used to be exported as `MODAL_SANDBOX_REGION` too, so every guest was
-confined to one region's spare capacity. The failure that buys is a spawn
+Guests were once pinned by exporting `MODAL_SANDBOX_REGION` too, so every
+guest was confined to one region's spare capacity. The failure that buys is a spawn
 Modal cannot schedule inside the ~50s `sandbox.tunnels()` waits, surfacing
 as `SandboxTimeoutError: Sandbox operation timed out` — the whole session
 fails, and the more regions are available the less often it happens.

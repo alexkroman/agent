@@ -452,3 +452,51 @@ describe("modal proxy log noise", () => {
     expect(filter).toContain("record.exc_text = None");
   });
 });
+
+/**
+ * The web function's REGION preference.
+ *
+ * Static, like the rest of this file. What rots here rots in one direction and
+ * takes production with it: the service was once pinned to a bare `us-east-2`
+ * and an exhausted region placed NOTHING — zero tasks under `MIN_CONTAINERS=1`,
+ * no logs at all, and no redeploy that recovers it. So the list is the
+ * invariant, not the preference: a fallback entry is what makes that state
+ * unreachable, and "tidy the list down to the one region we actually want" is
+ * exactly the edit that reintroduces it.
+ *
+ * The FIRST entry is pinned separately, and to the database's own region,
+ * because that is the entire reason the preference exists — a journal call is
+ * ~1-2 ms in-region against ~460 ms out of it, and a run pays that per step.
+ * A first entry that drifts away from Supabase leaves the risk and deletes the
+ * benefit, which no other assertion here would notice.
+ */
+describe("modal web function region", () => {
+  const deployPy = readFileSync(
+    path.join(REPO_ROOT, "packages/aai-server/modal_deploy.py"),
+    "utf-8",
+  );
+  const regions = [
+    ...(/^REGIONS = \[([^\]]*)\]/m.exec(deployPy)?.[1]?.matchAll(/"([^"]+)"/g) ?? []),
+  ].map((match) => match[1]);
+
+  test("is a LIST with a fallback, never a single region", () => {
+    // A regex that stopped matching would make every assertion below vacuous.
+    expect(regions.length, "REGIONS not found in modal_deploy.py").toBeGreaterThan(0);
+    expect(
+      regions.length,
+      "REGIONS has one entry: an exhausted region places NOTHING, with no logs and no recovery",
+    ).toBeGreaterThan(1);
+    expect(new Set(regions).size, "a duplicate entry is not a fallback").toBe(regions.length);
+  });
+
+  test("prefers the region the platform database is in", () => {
+    // Supabase project `aai` is us-east-2. The whole point of the preference.
+    expect(regions[0]).toBe("us-east-2");
+  });
+
+  test("is actually PASSED to the function, or it pins nothing", () => {
+    // The constant existing is not the same as the decorator reading it, and
+    // an unread constant looks exactly like a configured one in a diff.
+    expect(deployPy).toMatch(/^ +region=REGIONS,$/m);
+  });
+});
