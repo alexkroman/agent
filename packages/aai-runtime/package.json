@@ -64,7 +64,7 @@
     "@ai-sdk/openai": "^4.0.40",
     "@ai-sdk/xai": "^4.0.38",
     "@alexkroman1/aai": "workspace:*",
-    "@cartesia/cartesia-js": "^3.5.1",
+    "@cartesia/cartesia-js": "^4.1.0",
     "@deepgram/sdk": "^5.8.0",
     "@elevenlabs/elevenlabs-js": "^2.63.0",
     "ai": "catalog:",
