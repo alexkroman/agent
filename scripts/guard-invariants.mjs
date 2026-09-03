@@ -173,7 +173,8 @@ const ABSOLUTE_RULES = [
       "  uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n" +
       "A tag is a mutable pointer, so `@v7` grants every future version of that\n" +
       "code the permissions of the job it runs in — including the release job's\n" +
-      "npm token. Dependabot bumps the SHA and the comment together.",
+      "npm token. Nothing refreshes these pins automatically since Dependabot\n" +
+      "was removed, so bump the SHA and its comment together by hand.",
   },
   {
     id: 12,
