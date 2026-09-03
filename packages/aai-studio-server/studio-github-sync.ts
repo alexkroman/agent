@@ -24,6 +24,14 @@
  * preview deploy's `previewHash` no-op, and for the same reason: a button a
  * user can press twice must not produce two commits of identical content.
  *
+ * **A head that moved is rebuilt onto, never reported as advice.** The ref
+ * update is not forced, so a push that lands while the blobs are uploading
+ * makes it a non-fast-forward; the sync then re-reads the head and builds the
+ * same tree onto their commit, up to `REF_CONFLICT_RETRIES` times. That is
+ * what the user's own "try again" used to do by hand, and doing it by hand
+ * loses again on a branch that is genuinely busy — which is how a message
+ * about a race became the standing answer to failures no retry could clear.
+ *
  * **An empty repository is the common case, not an edge case.** A user who
  * creates a repository for this has one with no commits, so there is no ref
  * to read a parent from — the first sync creates the ref instead of updating
@@ -48,12 +56,43 @@ const BLOB_CONCURRENCY = 8;
 /** Git's mode for a non-executable file — every workspace file is one. */
 const FILE_MODE = "100644";
 
+/**
+ * How many times to rebuild the commit onto a head that moved under us.
+ *
+ * A sync cannot name its parent until the blobs are up, so a push landing in
+ * that window makes the ref update a non-fast-forward. The old behaviour was
+ * to tell the user to press Sync again — which is exactly this loop, run by
+ * hand, and which loses again whenever the branch is busy. The tree is
+ * already written and content-addressed, so an attempt costs one ref read,
+ * one commit and one ref update. Bounded rather than unbounded so a branch
+ * under constant push still terminates with a sentence instead of hanging.
+ */
+const REF_CONFLICT_RETRIES = 2;
+
 export type GithubRepoTarget = {
   owner: string;
   repo: string;
   /** Branch to write. The caller resolves the repository's default. */
   branch: string;
 };
+
+/**
+ * The branch really is moving under us — raised only after
+ * `REF_CONFLICT_RETRIES` rebuilds, and the ONE failure "try again" is honest
+ * advice for.
+ *
+ * A distinct error rather than a status, because the status alone cannot say
+ * it: a 422 from `POST /git/trees` is an unacceptable tree, a 422 from
+ * `POST /git/refs` can be a name GitHub refuses, and a 422 from the ref
+ * update is a race. Answering all three with "that branch moved — try again"
+ * is what left a user pressing Sync against failures no retry could clear.
+ */
+export class GithubRefConflictError extends Error {
+  constructor(branch: string) {
+    super(`The GitHub branch ${branch} moved while the sync was running`);
+    this.name = "GithubRefConflictError";
+  }
+}
 
 /** Where a sync landed, for the workspace stamp and the client's link. */
 export type GithubSyncResult = {
@@ -143,35 +182,59 @@ async function writeTree(
   return data.sha;
 }
 
-/** Point `branch` at `commitSha`, creating the ref when it does not exist. */
+/**
+ * Whether the ref moved, and the failure when it did not.
+ *
+ * The error is carried rather than thrown because the caller has to DECIDE
+ * what it meant: the same 422 is a lost race on a busy branch (retry) or a
+ * ref GitHub will never accept (surface it), and only a second look at the
+ * branch tells the two apart.
+ */
+type RefMove = { moved: true } | { moved: false; err: unknown };
+
+/**
+ * Point `branch` at `commitSha`, creating the ref when it does not exist.
+ *
+ * A 409 or a 422 from either path is reported rather than thrown, because
+ * both paths have the same race: `POST` loses to another create with
+ * "Reference already exists", `PATCH` loses to another push with "Update is
+ * not a fast forward". Every other status is this module's own failure and
+ * propagates.
+ */
 async function moveBranch(
   octokit: GithubOctokit,
   target: GithubRepoTarget,
   commitSha: string,
   hadHead: boolean,
-): Promise<void> {
-  if (!hadHead) {
-    await octokit.request("POST /repos/{owner}/{repo}/git/refs", {
+): Promise<RefMove> {
+  try {
+    if (!hadHead) {
+      await octokit.request("POST /repos/{owner}/{repo}/git/refs", {
+        owner: target.owner,
+        repo: target.repo,
+        ref: `refs/heads/${target.branch}`,
+        sha: commitSha,
+      });
+      return { moved: true };
+    }
+    await octokit.request("PATCH /repos/{owner}/{repo}/git/refs/{ref}", {
       owner: target.owner,
       repo: target.repo,
-      ref: `refs/heads/${target.branch}`,
+      ref: `heads/${target.branch}`,
       sha: commitSha,
+      // NOT forced. The commit we just built names the branch head we read as
+      // its parent, so a fast-forward is exactly what should succeed — and a
+      // non-fast-forward means somebody pushed while we were uploading blobs.
+      // Forcing would discard their commit silently; rebuilding on top of
+      // theirs (see `syncWorkspaceToGithub`) keeps both.
+      force: false,
     });
-    return;
+    return { moved: true };
+  } catch (err) {
+    const status = githubErrorStatus(err);
+    if (status === 409 || status === 422) return { moved: false, err };
+    throw err;
   }
-  await octokit.request("PATCH /repos/{owner}/{repo}/git/refs/{ref}", {
-    owner: target.owner,
-    repo: target.repo,
-    ref: `heads/${target.branch}`,
-    sha: commitSha,
-    // NOT forced. The commit we just built names the branch head we read as
-    // its parent, so a fast-forward is exactly what should succeed — and a
-    // non-fast-forward means somebody pushed while we were uploading blobs.
-    // Forcing would discard their commit silently; failing surfaces it, and
-    // the user's next sync (which re-reads the head) carries the workspace
-    // forward on top of theirs.
-    force: false,
-  });
 }
 
 /**
@@ -220,32 +283,60 @@ export async function syncWorkspaceToGithub(opts: {
     };
   }
 
+  // Written ONCE, outside the retry below: a tree is content-addressed, so a
+  // head that moved changes which commit we build and never which tree it
+  // carries. Re-uploading the blobs per attempt would make a busy branch
+  // quadratically expensive for no different result.
   const treeSha = await writeTree(octokit, target, workspace.files);
-  const { data: commit } = await octokit.request("POST /repos/{owner}/{repo}/git/commits", {
-    owner: target.owner,
-    repo: target.repo,
-    message: `Sync ${project} from AAI Studio`,
-    tree: treeSha,
-    parents: head ? [head] : [],
-  });
-  await moveBranch(octokit, target, commit.sha, head !== null);
 
-  return {
-    changed: true,
-    commitSha: commit.sha,
-    commitUrl: commitUrlFor(commit.sha),
-    syncedHash: workspace.hash,
-  };
+  let parent = head;
+  for (let attempt = 0; attempt <= REF_CONFLICT_RETRIES; attempt += 1) {
+    const { data: commit } = await octokit.request("POST /repos/{owner}/{repo}/git/commits", {
+      owner: target.owner,
+      repo: target.repo,
+      message: `Sync ${project} from AAI Studio`,
+      tree: treeSha,
+      parents: parent ? [parent] : [],
+    });
+    const move = await moveBranch(octokit, target, commit.sha, parent !== null);
+    if (move.moved) {
+      return {
+        changed: true,
+        commitSha: commit.sha,
+        commitUrl: commitUrlFor(commit.sha),
+        syncedHash: workspace.hash,
+      };
+    }
+
+    // What the branch points at NOW is the parent the next commit needs.
+    const next = await readBranchHead(octokit, target);
+
+    // The one shape that is NOT a race: a create refused while the ref still
+    // does not exist lost to nobody — GitHub is rejecting the ref itself, and
+    // a second create is the same request with the same answer. Surfacing
+    // GitHub's own words is the whole point, because the retry advice this
+    // module used to give was a loop the user could not break.
+    if (parent === null && next === null) throw move.err;
+    parent = next;
+  }
+  throw new GithubRefConflictError(target.branch);
 }
 
 /**
  * A GitHub failure as a sentence the studio user can act on.
  *
- * The statuses are the three misconfigurations this flow really produces, and
- * each names the fix rather than the symptom: an uninstalled App, a
- * repository the installation was not granted, and a branch somebody pushed
- * to mid-sync. Anything else keeps GitHub's own words — a message we did not
- * anticipate is more useful verbatim than flattened into "sync failed".
+ * The cases are the misconfigurations this flow really produces, and each
+ * names the fix rather than the symptom: an uninstalled App, a repository the
+ * installation was not granted, and a branch somebody pushed to mid-sync.
+ * Anything else keeps GitHub's own words — a message we did not anticipate is
+ * more useful verbatim than flattened into "sync failed".
+ *
+ * **Only a message that names an ACTION may be substituted for GitHub's.**
+ * "Try again" answered every 409 and 422 here, so a tree GitHub would never
+ * accept read as a race, and the advice was a loop: the user pressed Sync,
+ * got the same sentence, and had nothing to act on. A retryable conflict is
+ * now retried in `syncWorkspaceToGithub` and reaches this function only as
+ * `GithubRefConflictError`, so the sentence is true wherever it appears.
  */
 export function githubSyncErrorMessage(err: unknown): string {
   return githubErrorMessage(err, "sync");
@@ -280,15 +371,22 @@ function githubErrorMessage(err: unknown, kind: "sync" | "create"): string {
 }
 
 function syncErrorMessage(err: unknown): string {
+  // Checked before the status, and it carries none: this is the sync's own
+  // verdict after retrying, not a response GitHub sent.
+  if (err instanceof GithubRefConflictError) {
+    return "That branch moved while the sync was running — try again.";
+  }
   switch (githubErrorStatus(err)) {
     case 401:
     case 404:
       return "GitHub no longer grants access to that repository — reconnect GitHub, or add the repository to the installation.";
     case 403:
       return "The GitHub App is not permitted to write to that repository. Grant it Contents: read and write.";
-    case 409:
-    case 422:
-      return "That branch moved while the sync was running — try again.";
+    // 409 and 422 are deliberately absent. A conflict that a retry could clear
+    // has already been retried and arrives above; anything still carrying one
+    // of those statuses is a request GitHub refuses on its merits (a tree it
+    // will not accept, a ref name it will not create), and telling that user
+    // to try again is advice that cannot ever work.
     default:
       return errorMessage(err);
   }
