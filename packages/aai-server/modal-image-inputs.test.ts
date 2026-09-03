@@ -477,7 +477,9 @@ describe("modal web function region", () => {
   );
   const regions = [
     ...(/^REGIONS = \[([^\]]*)\]/m.exec(deployPy)?.[1]?.matchAll(/"([^"]+)"/g) ?? []),
-  ].map((match) => match[1]);
+  ]
+    .map((match) => match[1])
+    .filter((region) => region !== undefined);
 
   test("is a LIST with a fallback, never a single region", () => {
     // A regex that stopped matching would make every assertion below vacuous.
@@ -492,6 +494,31 @@ describe("modal web function region", () => {
   test("prefers the region the platform database is in", () => {
     // Supabase project `aai` is us-east-2. The whole point of the preference.
     expect(regions[0]).toBe("us-east-2");
+  });
+
+  test("names only regions a real deploy has accepted", () => {
+    // Modal validates region strings SERVER-side, at deploy time, and rejects
+    // one this workspace may not name:
+    //
+    //   Regions us-east-1 are not supported. See
+    //   https://modal.com/docs/guide/region-selection for supported regions
+    //
+    // That failure is invisible to every gate in this repository — the file
+    // parses, the constant is a list, its first entry is still the database's
+    // region — and it fails the DEPLOY, so the app keeps serving the previous
+    // revision and the release ships nothing. Hence an allowlist rather than a
+    // shape rule: nothing local can tell a supported region from an
+    // unsupported one, so a new entry is a claim that `modal deploy` accepted
+    // it, and adding one here means having deployed it.
+    const DEPLOY_ACCEPTED = new Set(["us-east-2", "us-east"]);
+    for (const region of regions) {
+      expect(
+        DEPLOY_ACCEPTED.has(region),
+        `REGIONS names "${region}", which no deploy has accepted — Modal rejects an ` +
+          "unsupported region at deploy time, so this ships nothing. Deploy it first, then " +
+          "add it here.",
+      ).toBe(true);
+    }
   });
 
   test("is actually PASSED to the function, or it pins nothing", () => {

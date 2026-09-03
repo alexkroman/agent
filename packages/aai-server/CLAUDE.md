@@ -923,20 +923,23 @@ Two rules from it that a reader of THIS package needs in front of them:
   URL is public; the token is what keeps the managed surfaces from being an
   open door.
 - **The WEB service PREFERS the database's region; SANDBOXES stay unpinned.**
-  `modal_deploy.py`'s `REGIONS` is `["us-east-2", "us-east-1"]` — a FALLBACK
+  `modal_deploy.py`'s `REGIONS` is `["us-east-2", "us-east"]` — a FALLBACK
   LIST, never a single value, because a bare `us-east-2` is what once left a
   `deployed` app with zero tasks, zero bytes and no container logs at all. The
   preference is earned: durable-run journal calls are sequential by
   construction, so an unpinned container put ~460 ms on each — 14 calls and
   ~7.3 s for one 300 KB transcription, against **31.4 ms** for the same calls
-  against a local Postgres. Supabase is `us-east-2`; `us-east-1` is ~15 ms
-  away, so a spill still beats unpinned by two orders of magnitude.
+  against a local Postgres. Supabase is `us-east-2`, and everything under the
+  broad `us-east` is tens of ms from it, so a spill still beats unpinned by two
+  orders of magnitude. **The fallback is that BROAD region, not a second
+  datacenter**: Modal answers `Regions us-east-1 are not supported` at DEPLOY
+  time, so that list shipped nothing while the app served the old revision.
   `MODAL_SANDBOX_REGION` stays UNSET — a guest holds no host channel, so
   pinning it buys only the ~117 ms guest→platform hop and costs the spawn
   capacity whose exhaustion is `Sandbox operation timed out`. Both outage
   accounts are in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md);
-  `modal-image-inputs.test.ts` pins the list, its first entry and that it is
-  actually passed.
+  `modal-image-inputs.test.ts` pins the list, its first entry, that every entry
+  is deploy-accepted, and that it is actually passed.
 
 - **Orphan cleanup differs per mode.** STUDIO guests: the host's
   WebSocket IS the liveness signal — a host that dies without teardown
