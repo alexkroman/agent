@@ -15,6 +15,9 @@
  * - an **input schema**, so a run started from a tool call or an HTTP request is
  *   validated at the call site rather than crashing three steps in, and so a
  *   page can render a form from it;
+ * - an **output schema**, the same declaration from the other end: what a
+ *   completed run promises its caller, checked once where the run completes and
+ *   served to the page as JSON Schema beside the input one;
  * - a **description**, for that page and for `aai workflow`;
  * - **`uploads`**, naming the input properties that carry an upload id rather
  *   than bytes;
@@ -63,6 +66,14 @@
  */
 
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+// The zod-free half of schema acceptance, and the only half this module may
+// name: `sdk/schema.ts` imports zod for JSON Schema conversion, and everything
+// here rides the `@alexkroman1/aai/workflow-api` subpath a workflow app's PAGE
+// bundles. Validation is a plain method call on `~standard`, so an output
+// schema costs that bundle nothing. `sdk/step-generate-json.ts` is the
+// precedent; the conversion for a listing happens one package over, in the
+// runtime, which is a Node process and may pull zod.
+import type { StandardSchemaV1 } from "./standard-schema.ts";
 // The body's second argument. Type-only here, but re-exported below: an author
 // writing a body needs to name it, and `workflow.ts` is the one module they
 // already import from.
@@ -125,10 +136,11 @@ export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowCtx
  * @typeParam P - Input schema (any Standard Schema, Zod by convention),
  *   validated at `start()`. The input is serialized into the run record, so it
  *   must be JSON-serializable.
- * @typeParam R - What the body resolves with, inferred from the function. It
- *   reaches a caller as `WorkflowRunSnapshot`'s `output`, so passing the
- *   workflow to `start`/`get`/`find` is what makes a completed run's result
- *   typed instead of `unknown`.
+ * @typeParam R - What the body resolves with — inferred from the declared
+ *   {@link WorkflowDef.output} schema when there is one, and from the function
+ *   otherwise. It reaches a caller as `WorkflowRunSnapshot`'s `output`, so
+ *   passing the workflow to `start`/`get`/`find` is what makes a completed
+ *   run's result typed instead of `unknown`.
  *
  * @public
  */
@@ -154,6 +166,37 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
    */
   uploads?: readonly string[];
   /**
+   * Schema for what a COMPLETED run answers with — `input` from the other end.
+   *
+   * Optional, and a workflow that declares none behaves exactly as it always
+   * did. What declaring one buys is three things a body's inferred return type
+   * cannot:
+   *
+   * - **The value is checked where the run completes**, once, against this
+   *   schema; a body that returns something the declaration denies fails the
+   *   run rather than reporting `completed` with an output its own workflow
+   *   says is impossible. A run's output crosses a durable journal, a
+   *   typed-JSON codec and an HTTP hop before a page reads it, and
+   *   `useWorkflowRun<R>`'s `run.output` is otherwise an unchecked CLAIM about
+   *   everything that happened in between.
+   * - **{@link WorkflowOutputOf} reads THIS**, so a page's type comes from the
+   *   declaration rather than from inferring the body — which is what lets an
+   *   annotated `agent.ts` resolve it without the body's signature. See that
+   *   type for the circularity that removes.
+   * - **A page can render results the way it renders the form**, because the
+   *   listing serves it as JSON Schema ({@link WorkflowSummary.outputSchema}).
+   *
+   * Any Standard Schema, Zod by convention — the same acceptance as `input`,
+   * and not a TypeScript type for the same reason: a type is erased, and this
+   * has to be checked at run time and converted for a browser.
+   *
+   * What is stored is the schema's PARSED value, exactly as `start()` stores
+   * the parsed input. So an unknown key a zod object strips is not in what the
+   * caller reads back, and the type a caller holds is a promise the run kept
+   * rather than a claim about it.
+   */
+  output?: StandardSchemaV1<unknown, R>;
+  /**
    * The workflow body.
    *
    * Takes the validated input and a {@link WorkflowCtx}. The input is ONE
@@ -178,6 +221,11 @@ export type AnyWorkflowDef<R = unknown> = {
   description?: string;
   input?: ToolInputSchema;
   uploads?: readonly string[];
+  // Mirrors `WorkflowDef.output` rather than being widened to
+  // `StandardSchemaV1`: `R` is the one thing this type exists to carry, and the
+  // schema is now the DECLARED source of it, so a def matched here has to say
+  // the same thing about `R` through either member.
+  output?: StandardSchemaV1<unknown, R>;
   run: WorkflowBody<never, R>;
 };
 
@@ -197,7 +245,7 @@ export type AnyWorkflowDef<R = unknown> = {
  * @example
  * ```ts no-check
  * // agent.ts
- * export const transcribe = workflow({ input: …, run: transcribeFlow });
+ * export const transcribe = workflow({ input: …, output: transcriptSchema, run: transcribeFlow });
  *
  * // client.tsx — `import type` is erased, so nothing server-side is bundled.
  * import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
@@ -207,13 +255,43 @@ export type AnyWorkflowDef<R = unknown> = {
  * if (run?.status === "completed") console.log(run.output.text); // typed
  * ```
  *
+ * ## It reads the declared SCHEMA first, and that is what breaks a cycle
+ *
+ * The DECLARATION is the better source of this type, and the worse one used to
+ * be the only one. Deriving `R` from the body means `typeof theDef` needs the
+ * body's signature — while a body annotated `WorkflowInputOf<typeof theDef>`
+ * needs `typeof theDef`, which is `TS7022` reported against `agent.ts`. The
+ * documented way out is to ANNOTATE the declaration, and an annotation whose
+ * `R` comes from a schema (`WorkflowDef<typeof digestInput, z.infer<typeof
+ * digestOutput>>`) states the output type once, in the schema, rather than
+ * naming it a second time by hand.
+ *
+ * That annotated shape is also what the second reading gets WRONG, which is
+ * the other half of this rewrite. `D extends WorkflowDef<ToolInputSchema, infer
+ * R>` is an assignability test over the whole def, and `run`'s input is a
+ * function PARAMETER — so a def carrying an input schema is not assignable to
+ * one taking the open `Record<string, unknown>`, and the conditional silently
+ * fell to `never`. It is the same contravariance {@link AnyWorkflowDef} was
+ * written for, reached by the other route, and it is why the test below matches
+ * `run` as `WorkflowBody<never, infer R>` — `never` is assignable to every
+ * parameter type.
+ *
+ * `unknown extends O` is how "declared nothing" is told from "declared a
+ * schema": a def with no output schema still HAS the optional property in its
+ * type, carrying `R` — so the two readings agree, and the fallback only ever
+ * fires for a def-shaped object that names no output at all.
+ *
  * `Awaited` because a body may be sync or async and the snapshot always holds
  * the settled value.
  *
  * @public
  */
-export type WorkflowOutputOf<D> =
-  D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
+export type WorkflowOutputOf<D> = D extends {
+  run: WorkflowBody<never, infer R>;
+  output?: StandardSchemaV1<unknown, infer O> | undefined;
+}
+  ? Awaited<unknown extends O ? R : O>
+  : never;
 
 /**
  * A workflow's INPUT type — what its declared schema parses to, which is
@@ -312,6 +390,21 @@ export type WorkflowSummary = {
    */
   inputSchema?: unknown;
   /**
+   * JSON Schema for what a completed run answers with, when the workflow
+   * declared an `output` — what a page renders its RESULTS from, the way
+   * `inputSchema` is what it renders its form from.
+   *
+   * Converted at declaration-listing time for the same stated reason: the
+   * reader is a browser, and a Standard Schema does not survive the wire.
+   *
+   * The two are converted in opposite DIRECTIONS and the asymmetry is not an
+   * oversight — see the converter in the runtime's `workflow-client.ts`. An
+   * input schema is described as what a caller may SEND (a `.default()` field
+   * is optional); an output schema as what the run PRODUCES, which is the
+   * parsed value, where that same field is always present.
+   */
+  outputSchema?: unknown;
+  /**
    * Input properties that carry an upload id — see `WorkflowDef.uploads`.
    *
    * Served alongside the schema because a form is rendered from BOTH: the schema
@@ -340,9 +433,18 @@ export type WorkflowSummary = {
  * it is declared under, so the `workflowId` a compiler used to attach — and the
  * check that used to look for it — are both gone. See {@link WorkflowBody}.
  *
+ * **Two signatures, and which one applies is decided by `output`.** With an
+ * output schema the result type comes from the SCHEMA and the body is CHECKED
+ * against it — a body returning something else is an error at the declaration,
+ * naming the property that disagrees, rather than quietly redefining what the
+ * workflow promises. With no `output` nothing changes: the result type is
+ * inferred from the body exactly as before. Both answer the same
+ * `WorkflowDef<P, R>`, so nothing downstream can tell which was used.
+ *
  * @example
  * `agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
- * `agent()` takes no `tools`.
+ * `agent()` takes no `tools`. Declaring `output` beside `input` is what makes
+ * the run's result checked where it completes and typed where it is read.
  * ```ts no-check
  * import { agent, workflow } from "@alexkroman1/aai";
  * import { z } from "zod";
@@ -351,6 +453,7 @@ export type WorkflowSummary = {
  * export const digest = workflow({
  *   description: "Research a topic overnight and store the result",
  *   input: z.object({ topic: z.string() }),
+ *   output: z.object({ topic: z.string(), headline: z.string() }),
  *   run: digestFlow,
  * });
  *
@@ -381,8 +484,15 @@ export type WorkflowSummary = {
  *
  * @public
  */
+export function workflow<
+  P extends ToolInputSchema = ToolInputSchema,
+  O extends StandardSchemaV1 = StandardSchemaV1,
+>(
+  def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & { output: O },
+): WorkflowDef<P, InferSchemaOutput<O>>;
 export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
   def: WorkflowDef<P, R>,
-): WorkflowDef<P, R> {
+): WorkflowDef<P, R>;
+export function workflow(def: WorkflowDef): WorkflowDef {
   return def;
 }

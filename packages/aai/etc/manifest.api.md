@@ -123,6 +123,7 @@ type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -676,6 +677,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -711,6 +713,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 

@@ -5620,7 +5620,10 @@ export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: Wor
 ### WorkflowOutputOf
 
 ```ts
-type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
+type WorkflowOutputOf<D> = D extends {
+  output?: StandardSchemaV1<unknown, infer O>;
+  run: WorkflowBody<never, infer R>;
+} ? Awaited<unknown extends O ? R : O> : never;
 ```
 
 A workflow's OUTPUT type, for a page that polls its runs.
@@ -5645,7 +5648,7 @@ bundle.
 
 ```ts no-check
 // agent.ts
-export const transcribe = workflow({ input: …, run: transcribeFlow });
+export const transcribe = workflow({ input: …, output: transcriptSchema, run: transcribeFlow });
 
 // client.tsx — `import type` is erased, so nothing server-side is bundled.
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
@@ -5654,6 +5657,32 @@ import type { transcribe } from "./agent.ts";
 const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
 if (run?.status === "completed") console.log(run.output.text); // typed
 ```
+
+## It reads the declared SCHEMA first, and that is what breaks a cycle
+
+The DECLARATION is the better source of this type, and the worse one used to
+be the only one. Deriving `R` from the body means `typeof theDef` needs the
+body's signature — while a body annotated `WorkflowInputOf<typeof theDef>`
+needs `typeof theDef`, which is `TS7022` reported against `agent.ts`. The
+documented way out is to ANNOTATE the declaration, and an annotation whose
+`R` comes from a schema (`WorkflowDef<typeof digestInput, z.infer<typeof
+digestOutput>>`) states the output type once, in the schema, rather than
+naming it a second time by hand.
+
+That annotated shape is also what the second reading gets WRONG, which is
+the other half of this rewrite. `D extends WorkflowDef<ToolInputSchema, infer
+R>` is an assignability test over the whole def, and `run`'s input is a
+function PARAMETER — so a def carrying an input schema is not assignable to
+one taking the open `Record<string, unknown>`, and the conditional silently
+fell to `never`. It is the same contravariance [AnyWorkflowDef](../aai/workflow-api.md#anyworkflowdef) was
+written for, reached by the other route, and it is why the test below matches
+`run` as `WorkflowBody<never, infer R>` — `never` is assignable to every
+parameter type.
+
+`unknown extends O` is how "declared nothing" is told from "declared a
+schema": a def with no output schema still HAS the optional property in its
+type, carrying `R` — so the two readings agree, and the fallback only ever
+fires for a def-shaped object that names no output at all.
 
 `Awaited` because a body may be sync or async and the snapshot always holds
 the settled value.
@@ -5967,6 +5996,7 @@ type WorkflowSummary = {
   description?: string;
   inputSchema?: unknown;
   name: string;
+  outputSchema?: unknown;
   uploads?: readonly string[];
 };
 ```
@@ -6004,6 +6034,25 @@ name: string;
 ```
 
 Key the workflow is declared under in `agent({ workflows })`.
+
+##### outputSchema?
+
+```ts
+optional outputSchema?: unknown;
+```
+
+JSON Schema for what a completed run answers with, when the workflow
+declared an `output` — what a page renders its RESULTS from, the way
+`inputSchema` is what it renders its form from.
+
+Converted at declaration-listing time for the same stated reason: the
+reader is a browser, and a Standard Schema does not survive the wire.
+
+The two are converted in opposite DIRECTIONS and the asymmetry is not an
+oversight — see the converter in the runtime's `workflow-client.ts`. An
+input schema is described as what a caller may SEND (a `.default()` field
+is optional); an output schema as what the run PRODUCES, which is the
+parsed value, where that same field is always present.
 
 ##### uploads?
 
