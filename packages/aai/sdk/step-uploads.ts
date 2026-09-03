@@ -211,6 +211,32 @@ export type ReadUploadOptions = {
 };
 
 /**
+ * One upload OPENED: its record, and a reader over the windows THAT record named.
+ *
+ * The shape exists because {@link UploadReader.info} and {@link UploadReader.read}
+ * each resolve the record for themselves, and every caller needs both — so the
+ * obvious composition costs TWO look-ups of one row for one logical read, and the
+ * byte route costs one per CHUNK. Measured against a counting record backend, a
+ * `readUpload` was 2 and a range download of an N-window upload was N+1; both are
+ * 1 through here. On a deployed guest a look-up is a `POST /:slug/upload-records`
+ * across the platform, so those are round trips rather than map reads.
+ *
+ * **It also PINS the window map for the operation, which is the correctness half.**
+ * A read resolved its ceiling from one record and then fetched its bytes against a
+ * possibly newer one, and the byte route wrote a `Content-Length` from a record it
+ * then read N chunks against — so a part landing mid-download could answer bytes
+ * the header had already promised were something else. One record, one answer.
+ *
+ * @public
+ */
+export type OpenUpload = {
+  /** The record every window below was resolved against. */
+  info: UploadInfo;
+  /** Bytes `[start, end)` of this upload. The caller has already clamped them. */
+  read(start: number, end: number): Promise<Uint8Array>;
+};
+
+/**
  * The half of an upload store a step needs: metadata, and a byte range.
  *
  * Declared here rather than in `host/` because this module is the reader and
@@ -223,6 +249,16 @@ export type UploadReader = {
   info(id: string): Promise<UploadInfo | undefined>;
   /** Bytes `[start, end)` of one upload. The caller has already clamped them. */
   read(id: string, start: number, end: number): Promise<Uint8Array>;
+  /**
+   * The record and a reader over it, from ONE look-up — see {@link OpenUpload}.
+   *
+   * **OPTIONAL, and the fallback is exactly the pair above.** A fake holds its
+   * bytes in memory, where a second look-up costs nothing; a REAL store's is a
+   * database row or an HTTP round trip, which is the whole reason this exists.
+   * So requiring it would break every two-method fake to buy nothing on the one
+   * path that has nothing to save. `UploadStore` (`aai-runtime`) requires it.
+   */
+  open?(id: string): Promise<OpenUpload | undefined>;
 };
 
 /** What an uploader may declare about a file it is storing. */
@@ -371,17 +407,34 @@ export async function uploadInfo(id: string): Promise<UploadInfo> {
  * @public
  */
 export async function readUpload(id: string, opts: ReadUploadOptions = {}): Promise<UploadSlice> {
-  const reader = requireUploadAccess();
-  const info = await reader.info(id);
-  if (!info) throw new Error(`No upload with id ${id}`);
+  // ONE look-up of the record, not two — see {@link OpenUpload}. The clamp below
+  // is unchanged and still runs HERE rather than in the store: it is the reader's
+  // contract (a plan may end one byte past the file) and there is one copy of it.
+  const held = await openUpload(id);
+  if (!held) throw new Error(`No upload with id ${id}`);
+  const { info } = held;
   const ceiling = readableEnd(info, opts.start ?? 0);
   const start = clamp(opts.start ?? 0, 0, ceiling);
   const end = clamp(opts.end ?? info.size, start, ceiling);
   // An empty window is answered without touching the store: it is a legal ask
   // (a zero-length trailing segment) and every backend would have to special
   // case it anyway.
-  const bytes = end > start ? await reader.read(id, start, end) : new Uint8Array(0);
+  const bytes = end > start ? await held.read(start, end) : new Uint8Array(0);
   return { info, bytes, start, end };
+}
+
+/**
+ * The published store's record for `id` and a reader bound to it, or `undefined`.
+ *
+ * The one place {@link UploadReader.open}'s absence is answered, so a two-method
+ * fake behaves exactly as it did and a real store pays one look-up.
+ */
+async function openUpload(id: string): Promise<OpenUpload | undefined> {
+  const reader = requireUploadAccess();
+  if (reader.open) return await reader.open(id);
+  const info = await reader.info(id);
+  if (!info) return undefined;
+  return { info, read: async (start, end) => await reader.read(id, start, end) };
 }
 
 /**

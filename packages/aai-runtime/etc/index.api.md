@@ -19,6 +19,7 @@ import { LanguageModel } from 'ai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { Message } from '@alexkroman1/aai';
 import { ModelMessage } from 'ai';
+import type { OpenUpload } from '@alexkroman1/aai/host-internal';
 import { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
@@ -311,6 +312,7 @@ type JournalStore = {
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
     claimAttempt(runId: string, key: string): Promise<number>;
     releaseAttempt(runId: string, key: string): Promise<void>;
+    readSleeps(runId: string): Promise<SleepEntry[]>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
@@ -638,6 +640,11 @@ export type SessionWebSocket = {
 export type SkipGreeting = boolean | (() => boolean);
 
 // @public
+type SleepEntry = SleepRecord & {
+    key: string;
+};
+
+// @public
 type SleepRecord = {
     wakeAt: number;
     woken: boolean;
@@ -808,6 +815,7 @@ export const UPLOADS_TABLE = "aai_workflow_uploads";
 
 // @public
 export type UploadStore = UploadReader & {
+    open(id: string): Promise<OpenUpload | undefined>;
     create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
         limit?: number;
     }): Promise<UploadInfo>;

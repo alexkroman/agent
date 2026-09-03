@@ -121,7 +121,7 @@
  * client advancing `size` past a hole.
  */
 
-import type { UploadReader } from "@alexkroman1/aai/host-internal";
+import type { OpenUpload, UploadReader } from "@alexkroman1/aai/host-internal";
 import {
   UPLOAD_CHUNK_BYTES,
   UPLOAD_CLAIM_BATCH,
@@ -166,10 +166,10 @@ export const UPLOAD_WINDOW_CONCURRENCY = 4;
  * request header on the wire and nothing else, so it meets none of those limits.
  *
  * Spending the window number on it was costing a claim its ROUND COUNT, which is
- * the only thing a batch of probes has: `UPLOAD_CLAIM_BATCH` is 32, so 32 probes
- * at four wide is EIGHT sequential rounds of a request that moves no data.
- * Measured on a harness at the production log's own latencies — 600 ms per record
- * round trip, 400 ms per probe — over the three changes that landed together:
+ * the only thing a batch of probes has: `UPLOAD_CLAIM_BATCH` is 32, so 32 probes at
+ * four wide is EIGHT sequential rounds of a request that moves no data. Measured on
+ * a harness at the production log's own latencies (600 ms per record round trip,
+ * 400 ms per probe) over the three changes that landed together:
  *
  * | claim | 3 reads, 4 wide | 1 read, 4 wide | 1 read, 32 wide, overlapped |
  * | --- | --- | --- | --- |
@@ -184,10 +184,9 @@ export const UPLOAD_WINDOW_CONCURRENCY = 4;
  *
  * **The last column is flat, and that is the finding**: the probes now run
  * alongside the record read that `recordParts` was waiting for anyway, so a claim
- * costs what its record round trips cost and its width is free. What is left is
- * one read and one write, strictly ordered because the write is of the merge —
- * collapsing those needs the merge to happen where the record lives, which is a
- * change to the `UploadRecords` seam and all three of its homes.
+ * costs what its record round trips cost and its width is free. What is left is one
+ * read and one write, both load-bearing — `upload-record-round-trips.test.ts`
+ * counts every operation's round trips and argues the two this one keeps.
  */
 export const UPLOAD_PROBE_CONCURRENCY = UPLOAD_CLAIM_BATCH;
 
@@ -316,6 +315,8 @@ export type UploadMeta = {
 
 /** The store, as the API routes and `readUpload` use it. */
 export type UploadStore = UploadReader & {
+  /** {@link UploadReader.open}, REQUIRED here — the byte route has no fallback. */
+  open(id: string): Promise<OpenUpload | undefined>;
   /**
    * Store one file, streaming it in.
    *

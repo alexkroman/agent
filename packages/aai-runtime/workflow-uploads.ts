@@ -45,7 +45,7 @@
  * the store: `runtime-barrel.ts` and six call sites already name it.
  */
 
-import { MAX_WORKFLOW_UPLOAD_BYTES } from "@alexkroman1/aai/host-internal";
+import { MAX_WORKFLOW_UPLOAD_BYTES, type OpenUpload } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -370,6 +370,7 @@ export function createUnavailableUploadStore(missing: string): UploadStore {
     writePart: refuse<UploadInfo>,
     recordParts: refuse<UploadInfo>,
     info: refuse<UploadInfo | undefined>,
+    open: refuse<OpenUpload | undefined>,
     read: refuse<Uint8Array>,
   };
 }

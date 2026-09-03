@@ -37,6 +37,7 @@ type JournalStore = {
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
     claimAttempt(runId: string, key: string): Promise<number>;
     releaseAttempt(runId: string, key: string): Promise<void>;
+    readSleeps(runId: string): Promise<SleepEntry[]>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
@@ -91,6 +92,11 @@ export type RunWorkflowOptions = {
     logger?: Logger;
     crashAt?: string;
     maxDeliveries?: number;
+};
+
+// @public
+type SleepEntry = SleepRecord & {
+    key: string;
 };
 
 // @public

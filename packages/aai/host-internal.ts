@@ -292,6 +292,7 @@ export {
 } from "./sdk/step-speak.ts";
 export {
   assertUploadToken,
+  type OpenUpload,
   publishUploadReader,
   UPLOADS_UNAVAILABLE_MESSAGE,
   type UploadAccess,

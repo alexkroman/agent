@@ -84,6 +84,19 @@ export function assertUploadOpen(id: string, held: UploadRecord): void {
   if (held.complete) throw new UploadCompleteError(id);
 }
 
+/**
+ * The total a parts upload declared, checked against one offset.
+ *
+ * Split out of the store's `declared` so a caller that already holds the record does
+ * not have to read it again for these two refusals — see
+ * {@link UploadStore.recordParts}, which reads once inside its lock. It takes the
+ * record rather than fetching one because a declared total is IMMUTABLE:
+ * `beginParts` writes `expected` and nothing else ever does, so a copy of it cannot
+ * go stale the way `parts` can.
+ *
+ * (This block was left behind in `_upload-store-blobs.ts` when the function moved
+ * here, where it bound to the next declaration instead and this one had none.)
+ */
 export function declaredTotal(id: string, held: UploadRecord, offset: number): number {
   if (held.expected === undefined) {
     throw new UploadPartError(`Upload ${id} was not begun as a parts upload.`);
