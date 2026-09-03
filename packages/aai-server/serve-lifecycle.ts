@@ -20,6 +20,7 @@
 
 import type { Server as NodeHttpServer } from "node:http";
 import { errorMessage } from "@alexkroman1/aai";
+import { EGRESS_KEEP_ALIVE_MS } from "@alexkroman1/aai-runtime/internal";
 import { serve } from "@hono/node-server";
 import pTimeout from "p-timeout";
 import { SHUTDOWN_CLOSE_FALLBACK_MS, SHUTDOWN_TEARDOWN_TIMEOUT_MS } from "./constants.ts";
@@ -33,7 +34,63 @@ export type ServerLike = {
   on(event: "error", cb: (err: unknown) => void): void;
   on(event: "listening", cb: () => void): void;
   close(cb?: () => void): void;
+  /**
+   * Node's socket reaps, set by {@link startService} — see
+   * {@link HTTP_KEEP_ALIVE_TIMEOUT_MS}.
+   *
+   * OPTIONAL so an injected test double need not carry them, and writable
+   * because Node exposes them as assignable properties rather than as `serve`
+   * options: `@hono/node-server` takes `{fetch, port}` and hands back the
+   * `http.Server`, which is the only place these can be set.
+   */
+  keepAliveTimeout?: number | undefined;
+  headersTimeout?: number | undefined;
 };
+
+/**
+ * How long an idle keep-alive socket is kept between requests.
+ *
+ * **Set at all because it was Node's 5s default, under a client that holds its
+ * end for 30s** — and the shorter side decides, so the guest's
+ * `EGRESS_KEEP_ALIVE_MS` was unreachable and every journal call more than 5s
+ * after the previous one opened a fresh socket. Measured on this shape (6
+ * sequential POSTs, client 30s): 6s apart against a 5s server is **6 TCP
+ * connections**; the same run with the server above the client is **1**. A
+ * durable step that takes longer than 5s is the ordinary case — an LLM call, a
+ * transcription, an ffmpeg convert — so the guest→platform journal path was
+ * paying that on essentially every `appendStep`.
+ *
+ * **DERIVED from the client's value, not restated.** The two were set
+ * independently, in different packages, and nothing related them — which is the
+ * whole defect: a client keep-alive is only half of one. Adding a margin here
+ * means the server always reaps second, which is the direction that matters
+ * (the reverse is a client reusing a socket the server is closing, whose
+ * `ECONNRESET` reaches `fetch` as the bare "fetch failed" this repo has already
+ * chased once).
+ *
+ * **What it does NOT claim.** `@modal.web_server` puts Modal's ASGI proxy in
+ * front, so the guest's TLS terminates at Modal's edge and this governs the
+ * proxy→Node hop — localhost, no TLS, where a socket setup is far cheaper than
+ * the ~20% of wall time `_egress-fetch.ts` measured for a real handshake. So
+ * this is correctness and hygiene on the half we control, not a measured
+ * production win; whether Modal's proxy pools upstream at all is not knowable
+ * from here.
+ */
+export const HTTP_KEEP_ALIVE_TIMEOUT_MS = EGRESS_KEEP_ALIVE_MS + 5000;
+
+/**
+ * Slowloris bound: how long a client may take to send COMPLETE request headers.
+ *
+ * Above {@link HTTP_KEEP_ALIVE_TIMEOUT_MS} deliberately — Node races the two
+ * against each other, and a headers timeout at or below the keep-alive can reap
+ * a socket while its next request's headers are still arriving. Still well
+ * under Node's own 60s default, so raising the keep-alive did not weaken the
+ * bound it shares a socket with. The BODY phase stays on Node's
+ * `requestTimeout` (300s), for the reason `aai-runtime/server.ts` states one
+ * package over: an upload is legitimately long-bodied and the slowloris vector
+ * is the headers phase.
+ */
+export const HTTP_HEADERS_TIMEOUT_MS = HTTP_KEEP_ALIVE_TIMEOUT_MS + 5000;
 
 export type ShutdownHandlerOptions = {
   /** Service-specific teardown, run before the HTTP server is closed. */
@@ -139,6 +196,11 @@ export type StartServiceOptions = {
 export async function startService(opts: StartServiceOptions): Promise<void> {
   const serveImpl = opts.serveImpl ?? (serve as unknown as NonNullable<typeof opts.serveImpl>);
   const server = serveImpl({ fetch: opts.fetch, port: opts.port });
+  // BEFORE `listening`, so no connection is ever served under the defaults.
+  // `@hono/node-server` takes no timeout options — it hands back the
+  // `http.Server`, and these are assignable properties on it.
+  server.keepAliveTimeout = HTTP_KEEP_ALIVE_TIMEOUT_MS;
+  server.headersTimeout = HTTP_HEADERS_TIMEOUT_MS;
   opts.injectWebSocket?.(server as unknown as NodeHttpServer);
 
   // Without a listener, a listen failure (e.g. EADDRINUSE) gets Node's default

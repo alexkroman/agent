@@ -1,8 +1,13 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { EGRESS_KEEP_ALIVE_MS } from "@alexkroman1/aai-runtime/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerLiveStream, resetLiveStreams } from "./live-streams.ts";
-import { createShutdownHandler, startService } from "./serve-lifecycle.ts";
+import {
+  createShutdownHandler,
+  HTTP_KEEP_ALIVE_TIMEOUT_MS,
+  startService,
+} from "./serve-lifecycle.ts";
 import { captureLogs } from "./test-utils.ts";
 
 beforeEach(() => {
@@ -177,6 +182,11 @@ describe("startService", () => {
     const handlers: Record<string, (arg?: unknown) => void> = {};
     return {
       server: {
+        // The two socket reaps `startService` assigns — declared so a test can
+        // read them back typed. `undefined` until it sets them, which is what
+        // the "before listening" case below distinguishes.
+        keepAliveTimeout: undefined as number | undefined,
+        headersTimeout: undefined as number | undefined,
         on: (event: string, cb: (arg?: unknown) => void) => {
           handlers[event] = cb;
           if (event === "listening") cb();
@@ -186,6 +196,52 @@ describe("startService", () => {
       handlers,
     };
   }
+
+  it("sets the socket reaps ABOVE the guest's own client keep-alive", async () => {
+    // The defect this pins: both were left to Node's defaults — keep-alive 5s —
+    // under a guest client that holds its end for 30s. The shorter side decides,
+    // so the client's value was unreachable and a journal call more than 5s
+    // after the previous one opened a fresh socket. Asserted as an ORDERING
+    // against the imported constant rather than against literals, because the
+    // two drifting apart in different packages IS the bug.
+    const { server } = fakeServer();
+    await startService({
+      label: "AAI test service",
+      fetch: () => new Response("ok"),
+      port: 1234,
+      onShutdown: async () => undefined,
+      serveImpl: () => server,
+    });
+
+    expect(server.keepAliveTimeout).toBeGreaterThan(EGRESS_KEEP_ALIVE_MS);
+    // Node races the two, so a headers timeout at or below the keep-alive can
+    // reap a socket whose next request's headers are still arriving.
+    expect(server.headersTimeout).toBeGreaterThan(server.keepAliveTimeout ?? 0);
+    // And still inside Node's own 60s default, so raising the keep-alive did not
+    // widen the slowloris window it shares a socket with.
+    expect(server.headersTimeout).toBeLessThanOrEqual(60_000);
+  });
+
+  it("sets them BEFORE the server reports listening", async () => {
+    // A connection served under the 5s default is a connection the fix missed.
+    let atListening: number | undefined;
+    const { server } = fakeServer();
+    const on = server.on;
+    server.on = (event: string, cb: (arg?: unknown) => void) => {
+      if (event === "listening") atListening = server.keepAliveTimeout;
+      on(event, cb);
+    };
+
+    await startService({
+      label: "AAI test service",
+      fetch: () => new Response("ok"),
+      port: 1234,
+      onShutdown: async () => undefined,
+      serveImpl: () => server,
+    });
+
+    expect(atListening).toBe(HTTP_KEEP_ALIVE_TIMEOUT_MS);
+  });
 
   it("injects websockets before listening and logs the service label", async () => {
     const { server } = fakeServer();

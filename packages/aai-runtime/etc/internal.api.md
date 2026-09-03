@@ -104,6 +104,9 @@ export function createUploadStore(opts: {
 export function decodeStorageJson(text: string): unknown;
 
 // @internal
+export const EGRESS_KEEP_ALIVE_MS = 30000;
+
+// @internal
 export function encodeStorageJson(value: unknown): string;
 
 // @public

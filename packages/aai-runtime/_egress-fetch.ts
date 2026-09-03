@@ -76,8 +76,18 @@ const EGRESS_CONNECTIONS = 64;
  * The bursts arrive seconds apart — a claim, then the next batch of windows — and
  * a fresh TLS handshake per request was worth ~20% of wall time in the
  * measurements `sdk/step-fetch.ts` records.
+ *
+ * **EXPORTED because a client keep-alive is only half of one**, and the other
+ * half is the SERVER's: whichever side reaps first decides, so a client value
+ * above the server's is unreachable. `aai-server` derives its own
+ * `HTTP_KEEP_ALIVE_TIMEOUT_MS` from this rather than restating a number, which
+ * is the drift that made this one dead config for the journal — see that
+ * constant. The upload measurement above is what SET the number; it is not what
+ * makes it effective.
+ *
+ * @internal
  */
-const EGRESS_KEEP_ALIVE_MS = 30_000;
+export const EGRESS_KEEP_ALIVE_MS = 30_000;
 
 /**
  * The pool, built on first use.

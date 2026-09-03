@@ -1026,6 +1026,7 @@
   ],
   "@alexkroman1/aai-runtime/internal": [
     "CONTAINED_ENV",
+    "EGRESS_KEEP_ALIVE_MS",
     "JournalConformanceSuite",
     "PLATFORM_ROUTES",
     "PlatformEndpoint",

@@ -84,6 +84,10 @@ export {
   UPLOAD_PART_BYTES,
   UPLOAD_TOKEN_RE,
 } from "@alexkroman1/aai/host-internal";
+// The guest's own outbound keep-alive. `aai-server` sets the PLATFORM server's
+// above it, because the shorter of the two decides and a client value above the
+// server's reaps nothing — see `HTTP_KEEP_ALIVE_TIMEOUT_MS` there.
+export { EGRESS_KEEP_ALIVE_MS } from "./_egress-fetch.ts";
 // Parsing an `Authorization: Bearer <token>` header. Here because FOUR
 // byte-identical copies existed — the guest's gate (`aai-guest/harness-auth.ts`),
 // `bearerMatches` in this package, `aai-server/_bearer.ts`, and the platform's
