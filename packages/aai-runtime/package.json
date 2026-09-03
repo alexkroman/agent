@@ -76,6 +76,7 @@
     "p-event": "^7.1.0",
     "p-timeout": "catalog:",
     "postgres": "^3.4.9",
+    "tokenx": "catalog:",
     "ulid": "catalog:",
     "undici": "^8.10.1",
     "ws": "catalog:",

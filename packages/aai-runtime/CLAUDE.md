@@ -1602,6 +1602,23 @@ makes yields look instant. A correct client's yield rate against the old code
 was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
 reverting the gate.
 
+## The LLM view is bounded by TOKENS; the message cap is the backstop
+
+`DEFAULT_MAX_HISTORY` counts MESSAGES, which does not correlate with what a
+request costs: a text turn is a sentence and one `retail`-shaped tool result is
+~106 KB, so 200 of those is an order of magnitude past any window and the
+request fails at the provider mid-call. `transports/pipeline-history-budget.ts`
+derives a budget from the model's own window — `ASSEMBLYAI_GATEWAY_MODELS`'
+`context`, which nothing read until now — less `HISTORY_CONTEXT_RESERVE` (25%)
+for the system prompt, the tool DECLARATIONS and the reply. `capLlm` trims
+oldest to it, keeps at least the newest message, then heals the tool-pair split
+as before. Counting is `tokenx` (heuristic, no BPE encoder), memoized per
+message object; the reserve is what absorbs its error.
+
+**An unknown window falls back to the count cap rather than guessing one.** A
+guess too large fails at the provider — the bug — and one too small amputates a
+working conversation.
+
 ## A rollback at the cap used to cost a real turn
 
 `transports/pipeline-history.ts` keeps two capped views, and

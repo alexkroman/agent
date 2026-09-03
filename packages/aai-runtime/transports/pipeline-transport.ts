@@ -15,6 +15,7 @@ import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
+import { historyTokenBudget } from "./pipeline-history-budget.ts";
 import { createTurnLlmRunner } from "./pipeline-llm-stream.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createPipelineSpeculation } from "./pipeline-speculation.ts";
@@ -106,7 +107,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Pipeline transport owns its conversation memory (SessionCore does not in
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
-  const history = createPipelineHistory(sessionConfig.history);
+  // The LLM view's budget is derived from the MODEL, so it is resolved here
+  // rather than inside the history: this is where the resolved model is, and a
+  // model whose context window this repo does not know answers `undefined`,
+  // which leaves the view on the message cap alone. See
+  // pipeline-history-budget.ts.
+  const history = createPipelineHistory(sessionConfig.history, {
+    llmTokenBudget: historyTokenBudget(opts.llm),
+  });
   // Turn serializer + its queued-turn epoch check — see createTurnChain.
   const turnChain = createTurnChain({ gate, isTerminated: () => terminated });
   // What the caller has actually HEARD of the current reply: the barge-in
