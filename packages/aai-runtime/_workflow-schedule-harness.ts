@@ -19,7 +19,7 @@
  * scheduling `execute`: two deliveries would then run one after the other and
  * every law would hold for the wrong reason.
  *
- * Wrapping the thirteen METHODS instead leaves each of them ATOMIC, which is what
+ * Wrapping the METHODS instead leaves each of them ATOMIC, which is what
  * the contract requires and what the memory journal really is — every body there
  * completes its read-and-write with no `await` between the two, and a scheduled
  * task body runs to completion. What the scheduler gets to choose is the order
@@ -147,6 +147,7 @@ export function scheduleJournal(inner: JournalStore, options: ScheduleOptions): 
     ),
     readSteps: wrap("readSteps", (runId: string) => inner.readSteps(runId)),
     readStep: wrap("readStep", (runId: string, key: string) => inner.readStep(runId, key)),
+    readSleeps: wrap("readSleeps", (runId: string) => inner.readSleeps(runId)),
     claimAttempt: wrap("claimAttempt", (runId: string, key: string) =>
       inner.claimAttempt(runId, key),
     ),

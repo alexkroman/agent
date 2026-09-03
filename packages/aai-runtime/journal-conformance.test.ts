@@ -278,6 +278,16 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
       // `null` rather than `undefined`: the route answers JSON, and the client
       // reads nothing off it — see `releaseAttempt` in `workflow-journal-platform.ts`.
       return store.releaseAttempt(str(body, "runId"), str(body, "key")).then(() => null);
+    case "readSleeps":
+      return store.readSleeps(str(body, "runId")).then((records) =>
+        records.map((record) => ({
+          key: record.key,
+          wakeAt: record.wakeAt,
+          woken: record.woken,
+          correlationId: record.correlationId,
+          kind: record.kind,
+        })),
+      );
     case "claimSleep":
       return store
         .claimSleep(

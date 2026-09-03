@@ -63,36 +63,27 @@
  */
 
 import { DEFAULT_STEP_MAX_ATTEMPTS, type StepOptions, type WorkflowCtx } from "@alexkroman1/aai";
-import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { describeCodeChange } from "./workflow-code-version.ts";
 import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS } from "./workflow-journal-bound.ts";
-import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
+import type { JournalStore, SleepEntry, SleepRecord, StepEntry } from "./workflow-journal-types.ts";
 import { createDeterminismReads } from "./workflow-replay-determinism.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
 import { watchJournalFailure } from "./workflow-replay-journal-failure.ts";
+import { classifyThrow, type ReplayOutcome } from "./workflow-replay-outcome.ts";
 import { journaledStepOutput } from "./workflow-replay-schema.ts";
 import { runStepAttempts, stepFailure } from "./workflow-replay-step.ts";
-import { createSuspendController, type SuspendController } from "./workflow-replay-suspend.ts";
+import { createSuspendController } from "./workflow-replay-suspend.ts";
 import { createWaitMethods } from "./workflow-replay-waits.ts";
 import { withRunContext } from "./workflow-run-context.ts";
 import type { StepGate } from "./workflow-step-gate.ts";
 import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
 
-/** What a run's execution resolved to. */
-export type ReplayOutcome =
-  | { kind: "completed"; output: unknown }
-  | { kind: "failed"; error: { message: string } }
-  /**
-   * The body is waiting. Not an outcome the RUN has — it is still `running` —
-   * but the outcome this DELIVERY has: the caller returns the worker.
-   *
-   * `wakeAt` present means a TIMER — schedule the next delivery for then.
-   * `undefined` means a HOOK: there is no deadline, and the next delivery comes
-   * from whoever signals. Scheduling one anyway would poll a run that may be
-   * parked for a week.
-   */
-  | { kind: "suspended"; wakeAt: number | undefined };
+// Re-exported at the surface it has always had — see `workflow-replay-outcome.ts`.
+// `export ... from` rather than exporting the imported binding: the import above
+// is for this module's OWN use of the type, and Biome's `noExportedImports`
+// wants the re-export to name its source.
+export type { ReplayOutcome } from "./workflow-replay-outcome.ts";
 
 /** What {@link replayRun} needs to run one body. */
 export type ReplayOptions = {
@@ -134,6 +125,21 @@ export type ReplayOptions = {
    */
   steps?: Promise<StepEntry[]> | undefined;
   /**
+   * This walk's WAIT snapshot, already in flight — the other half of
+   * {@link ReplayOptions.steps}, issued at the same moment and for the same
+   * reason.
+   *
+   * It buys more than the step read does, because what it removes is not one
+   * round trip but N: a body that sleeps in a loop reaches every one of its
+   * ELAPSED sleeps again on the next delivery, and each of those used to be its
+   * own `claimSleep`. See `workflow-replay-waits.ts` for the rule deciding which
+   * of them this snapshot may answer.
+   *
+   * Optional on the same terms: a caller with nothing to overlap it with passes
+   * nothing and the read is taken here.
+   */
+  sleeps?: Promise<SleepEntry[]> | undefined;
+  /**
    * Where `report()` writes. Optional: a spec driving a body directly has no
    * reader, and a body that reports into nothing is not an error.
    */
@@ -164,54 +170,6 @@ export type ReplayOptions = {
    */
   gate?: StepGate | undefined;
 };
-
-/**
- * What the RACE settling with a rejection means, once the walk's state is in hand.
- *
- * Extracted from {@link replayRun}'s `catch` rather than inlined, because the
- * arms are a decision procedure with a fixed ORDER and nothing else in that
- * function shares state with them — and inlined they took `replayRun` over
- * Biome's cognitive-complexity ceiling, the same seam
- * `workflow-replay-step.ts` was split at.
- *
- * `undefined` means "this is not this function's business": an abort is the
- * caller's own signal coming back out, and `replayRun` re-throws it.
- */
-function classifyThrow(
-  err: unknown,
-  walk: {
-    signal: AbortSignal | undefined;
-    refused: string | undefined;
-    journalFailed: boolean;
-    suspend: SuspendController;
-  },
-): ReplayOutcome | undefined {
-  // The run was cancelled and its status is already whatever cancelled it.
-  if (walk.signal?.aborted && err === walk.signal.reason) return undefined;
-  // The JOURNAL failed, so the run's state is unknown and this is not a verdict
-  // about the run at all: `undefined` re-throws, the delivery fails, and the
-  // queue retries it. Ahead of the refusal below because a refusal is a reading
-  // of the journal, and a journal that is not answering cannot support one.
-  if (walk.journalFailed) return undefined;
-  // A REFUSAL the engine raised about this walk wins over everything below,
-  // INCLUDING a suspension — which is the one ordering that changed when
-  // suspension stopped being a throw, and it changed towards the truth. Three
-  // raise one: a divergence — once the walk has read a key the run never
-  // reached, every later line ran against a body that had lost its place, so its
-  // own failure describes a consequence rather than the cause — a step whose
-  // budget is held by attempts that never ended (`StepAbandonedError`), where
-  // the body never ran at all and whatever it did instead is not the finding —
-  // and a wait reached inside a step, where every wait AFTER it would read the
-  // wrong record. A walk that has lost its place must not be parked and
-  // re-delivered: the refusal is stable, so every later delivery would raise it
-  // again, and meanwhile the run reads as healthily waiting.
-  if (walk.refused !== undefined) return { kind: "failed", error: { message: walk.refused } };
-  // The walk parked. Not a failure and not something the body did: this value
-  // was minted by the suspend controller and was never in the body's reach.
-  const suspension = walk.suspend.suspensionOf(err);
-  if (suspension) return { kind: "suspended", wakeAt: suspension.wakeAt };
-  return { kind: "failed", error: { message: errorMessage(err) } };
-}
 
 /**
  * Run one workflow body to a terminal answer.
@@ -253,6 +211,13 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // earlier — see `ReplayOptions.steps`.
   const entries = await (options.steps ?? journal.readSteps(runId));
   for (const entry of entries) settled.set(entry.key, entry);
+  // The WAIT half of the same snapshot — see `ReplayOptions.sleeps`. Awaited
+  // beside the steps rather than lazily at the first wait, so the ordering is
+  // identical whether or not the caller prefetched, exactly as above.
+  const sleeps = new Map<string, SleepRecord>();
+  for (const record of await (options.sleeps ?? journal.readSleeps(runId))) {
+    sleeps.set(record.key, record);
+  }
   // BEFORE the body runs, because the point is not to start work this run cannot
   // finish — a walk of a journal at the ceiling is the slowest thing the engine
   // does and the least likely to reach an end. A refusal is an ordinary `failed`
@@ -336,7 +301,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     // Split out for the reason the reads above are — see
     // `workflow-replay-waits.ts`, which also carries what naming the waits
     // closed and the one residual it did not.
-    ...createWaitMethods({ runId, workflow, journal, suspend, refuse: setRefused }),
+    ...createWaitMethods({ runId, workflow, journal, sleeps, suspend, refuse: setRefused }),
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       // IDENTITY first: which journal key is this call? See `WorkflowCtx` in the
       // SDK for why it is a name plus an occurrence count.

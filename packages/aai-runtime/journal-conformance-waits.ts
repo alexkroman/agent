@@ -93,6 +93,62 @@ export function journalWaitConformance(arm: JournalArm): void {
       });
     });
 
+    describe("readSleeps answers the whole run in one read", () => {
+      test("a run with no waits reads back an empty list, not a throw", async () => {
+        // The replay engine takes this read at the TOP of every walk, before it
+        // knows whether the body waits at all — so the ordinary answer for most
+        // runs is nothing, and a backend that threw would fail every delivery of
+        // every wait-free workflow.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        expect(await journal.readSleeps(runId)).toEqual([]);
+      });
+
+      test("every wait comes back, ordered by key, with its own claimSleep record", async () => {
+        // The whole point of the bulk read is that a walk may answer an elapsed
+        // wait WITHOUT claiming it, so what it hands back has to be exactly what
+        // the claim would have — field for field, both kinds, per key.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        const at = Date.now() + FAR;
+        const b = await journal.claimSleep(runId, "poll#1", at, "batch");
+        const a = await journal.claimSleep(runId, "poll#0", at - 1000, undefined);
+        const deadline = await journal.claimSleep(
+          runId,
+          "hookTimeout#0",
+          at,
+          undefined,
+          "hookTimeout",
+        );
+        expect(await journal.readSleeps(runId)).toEqual([
+          { ...deadline, key: "hookTimeout#0" },
+          { ...a, key: "poll#0" },
+          { ...b, key: "poll#1" },
+        ]);
+      });
+
+      test("a wake is VISIBLE to it, which is the fact a snapshot may act on", async () => {
+        // `woken` is the monotonic flag the engine short-circuits an elapsed wait
+        // on. A backend whose bulk read did not carry it would leave every walk
+        // round-tripping, silently.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        await journal.claimSleep(runId, "nap#0", Date.now() + FAR, undefined);
+        expect(await journal.wakeSleeps(runId, undefined)).toBe(1);
+        expect((await journal.readSleeps(runId)).map((record) => record.woken)).toEqual([true]);
+      });
+
+      test("a run that does not exist reads back nothing", async () => {
+        // Unlike the four CLAIM methods, this is defined for a run with no
+        // record: the engine reaches it before the body runs, and "no waits" is
+        // the honest answer to a question about a run that has none.
+        expect(await arm.journal().readSleeps(`${arm.uid()}-absent`)).toEqual([]);
+      });
+    });
+
     describe("wakeSleeps answers what THIS call changed", () => {
       test("a bare wake reaches ordinary sleeps and NOT a hook's deadline", async () => {
         // A `waitFor(token, { timeoutMs })` journals its deadline through the

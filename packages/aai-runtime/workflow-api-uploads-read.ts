@@ -54,8 +54,12 @@
  */
 
 import type http from "node:http";
-import { mapStream, UPLOAD_CHUNK_BYTES, UPLOAD_CLAIM_BATCH } from "@alexkroman1/aai/host-internal";
-import type { UploadInfo } from "@alexkroman1/aai/step";
+import {
+  mapStream,
+  type OpenUpload,
+  UPLOAD_CHUNK_BYTES,
+  UPLOAD_CLAIM_BATCH,
+} from "@alexkroman1/aai/host-internal";
 import { sendUploadFailure } from "./_upload-route-failures.ts";
 import { sendJson } from "./workflow-api-http.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
@@ -72,22 +76,21 @@ import type { UploadStore } from "./workflow-uploads.ts";
 export const UPLOAD_READ_AHEAD = 8;
 
 /**
- * `store.info`, with a named failure ANSWERED rather than thrown.
+ * A store read, with a named failure ANSWERED rather than thrown.
  *
- * Three states, and the reads need all three kept apart: the record
- * ({@link UploadInfo}), "no such upload" (`null` → the caller's 404), and "this
- * route already answered" (`undefined` → return). Collapsing the last two is what
- * would put a misconfigured deployment back under a 404, which reads as "your id
- * is wrong" — the same confusion `createUnavailableUploadStore` refuses to create
- * by making its `info` throw instead of answering empty.
+ * Three states, and the reads need all three kept apart: the value, "no such
+ * upload" (`null` → the caller's 404), and "this route already answered"
+ * (`undefined` → return). Collapsing the last two is what would put a
+ * misconfigured deployment back under a 404, which reads as "your id is wrong" —
+ * the same confusion `createUnavailableUploadStore` refuses to create by making
+ * its methods throw instead of answering empty.
  */
-async function readInfoOrFail(
+async function orFail<T>(
   res: http.ServerResponse,
-  store: UploadStore,
-  id: string,
-): Promise<UploadInfo | null | undefined> {
+  read: () => Promise<T | undefined>,
+): Promise<T | null | undefined> {
   try {
-    return (await store.info(id)) ?? null;
+    return (await read()) ?? null;
   } catch (err: unknown) {
     if (sendUploadFailure(res, err)) return undefined;
     throw err;
@@ -108,7 +111,7 @@ export async function readUploadInfoRoute(
   id: string,
   directParts = false,
 ): Promise<void> {
-  const info = await readInfoOrFail(res, store, id);
+  const info = await orFail(res, async () => await store.info(id));
   if (info === undefined) return;
   if (!info) {
     sendJson(res, 404, { error: `No upload with id ${id}` });
@@ -139,13 +142,19 @@ export async function readUploadRoute(
   store: UploadStore,
   id: string,
 ): Promise<void> {
-  const info = id ? await readInfoOrFail(res, store, id) : null;
-  if (info === undefined) return;
-  if (!info) {
+  // OPENED once, not read per chunk. Every chunk below used to call
+  // `store.read(id, …)`, each of which resolves the record for itself — so a range
+  // download of an N-window upload cost N+1 look-ups of one row, and on a deployed
+  // guest a look-up is a `POST /:slug/upload-records` across the platform. It also
+  // PINS the window map for the whole response, which the `Content-Length` written
+  // below was already assuming. See {@link OpenUpload}.
+  const held = id ? await orFail(res, async () => await store.open(id)) : null;
+  if (held === undefined) return;
+  if (!held) {
     sendJson(res, 404, { error: `No upload with id ${id}` });
     return;
   }
-  await sendUploadBytes(req, res, store, id, info);
+  await sendUploadBytes(req, res, held);
 }
 
 /**
@@ -158,10 +167,9 @@ export async function readUploadRoute(
 async function sendUploadBytes(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  store: UploadStore,
-  id: string,
-  info: UploadInfo,
+  held: OpenUpload,
 ): Promise<void> {
+  const { info } = held;
   const header = req.headers.range;
   const range = typeof header === "string" ? parseRange(header, info.size) : undefined;
   if (range === "unsatisfiable") {
@@ -195,7 +203,7 @@ async function sendUploadBytes(
   // buffering the answer would defeat the storage layer's whole shape, and reading
   // one chunk per write would pay a round trip per megabyte.
   for await (const bytes of mapStream(chunkRanges(start, end), UPLOAD_READ_AHEAD, (window) =>
-    store.read(id, window.start, window.end),
+    held.read(window.start, window.end),
   )) {
     // A client that hung up mid-download: stop reading rather than filling a
     // socket nobody is on the other end of. Leaving the loop closes the stream,

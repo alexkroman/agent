@@ -17,6 +17,7 @@ import {
   requestPath,
   UPLOAD_CHUNK_BYTES,
 } from "@alexkroman1/aai/host-internal";
+import type { UploadInfo } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { silentLogger, tick } from "./_test-utils.ts";
 import { createWorkflowApi } from "./workflow-api.ts";
@@ -59,30 +60,42 @@ function chunkByte(start: number): number {
  */
 function gatedReadStore(size: number): UploadStore & {
   reads: number[];
-  open: () => void;
+  /** How many times the RECORD was resolved — see the route's `open` note. */
+  lookups: () => number;
+  release: () => void;
 } {
   const gate = Promise.withResolvers<void>();
   const reads: number[] = [];
-  let open = false;
+  let released = false;
+  let lookups = 0;
   const refuse = (): never => {
     throw new Error("this suite reads; the write routes are specced beside the writes");
   };
+  const record = (id: string): UploadInfo | undefined => {
+    lookups += 1;
+    return id === "upl_read"
+      ? { id, name: "a.wav", type: "audio/wav", size, complete: true }
+      : undefined;
+  };
+  const bytes = async (start: number, end: number): Promise<Uint8Array> => {
+    reads.push(start);
+    if (!released) await gate.promise;
+    return new Uint8Array(end - start).fill(chunkByte(start));
+  };
   return {
     reads,
-    open: () => {
-      open = true;
+    lookups: () => lookups,
+    release: () => {
+      released = true;
       gate.resolve();
     },
-    info: (id) =>
-      Promise.resolve(
-        id === "upl_read"
-          ? { id, name: "a.wav", type: "audio/wav", size, complete: true }
-          : undefined,
-      ),
+    info: (id) => Promise.resolve(record(id)),
+    open: (id) => {
+      const info = record(id);
+      return Promise.resolve(info && { info, read: bytes });
+    },
     async read(_id, start, end) {
-      reads.push(start);
-      if (!open) await gate.promise;
-      return new Uint8Array(end - start).fill(chunkByte(start));
+      return await bytes(start, end);
     },
     create: refuse,
     stream: refuse,
@@ -123,7 +136,7 @@ describe("GET /workflows/uploads/:id", () => {
     expect(store.reads).toEqual(
       Array.from({ length: UPLOAD_READ_AHEAD }, (_, at) => at * UPLOAD_CHUNK_BYTES),
     );
-    store.open();
+    store.release();
     const res = await answered;
     expect(res.status).toBe(200);
     const body = new Uint8Array(await res.arrayBuffer());
@@ -131,12 +144,32 @@ describe("GET /workflows/uploads/:id", () => {
     expect(store.reads).toHaveLength(12);
   });
 
+  test("resolves the record ONCE for the whole download, not once per chunk", async () => {
+    // The other half of "a download is not a couple of hundred round trips": the
+    // read-ahead above bounded the BYTE reads, and every one of them used to resolve
+    // the record for itself as well — `store.read(id, …)` takes an id, so the store
+    // has to look the row up before it can say which object holds a byte. On a
+    // deployed guest that row is a `POST /:slug/upload-records` across the platform,
+    // so a twelve-megabyte download was thirteen of them.
+    const store = gatedReadStore(UPLOAD_CHUNK_BYTES * 12);
+    store.release();
+    const base = await serve(store);
+    const res = await fetch(`${base}/workflows/uploads/upl_read`);
+    expect(res.status).toBe(200);
+    expect(new Uint8Array(await res.arrayBuffer())).toHaveLength(UPLOAD_CHUNK_BYTES * 12);
+    // Twelve chunks were read and the record was resolved once. Asserted against
+    // the chunk count too, so a route that went back to a look-up per chunk fails
+    // here rather than merely getting slower.
+    expect(store.reads).toHaveLength(12);
+    expect(store.lookups()).toBe(1);
+  });
+
   test("writes the chunks in file order however the reads settle", async () => {
     // What read-ahead must not cost: `mapStream` yields in source order, so a chunk
     // that came back early cannot overtake the one before it. Every chunk carries
     // its own index as its bytes, so a swap is visible at the boundary.
     const store = gatedReadStore(UPLOAD_CHUNK_BYTES * 12);
-    store.open();
+    store.release();
     const base = await serve(store);
     const res = await fetch(`${base}/workflows/uploads/upl_read`);
     const body = new Uint8Array(await res.arrayBuffer());
@@ -150,7 +183,7 @@ describe("GET /workflows/uploads/:id", () => {
     // A window of reads may be in flight when the socket dies; what must not happen
     // is the route walking the rest of the file into a socket nobody is on.
     const store = gatedReadStore(UPLOAD_CHUNK_BYTES * 200);
-    store.open();
+    store.release();
     const base = await serve(store);
     const aborter = new AbortController();
     const res = await fetch(`${base}/workflows/uploads/upl_read`, { signal: aborter.signal });

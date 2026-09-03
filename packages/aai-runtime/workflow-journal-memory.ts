@@ -30,6 +30,7 @@ import type {
   ResumableRun,
   RunRecord,
   RunStatus,
+  SleepEntry,
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-types.ts";
@@ -350,6 +351,18 @@ export function createMemoryJournal(): JournalStore {
       // budget the next claim re-takes, where a negative one is an unbounded
       // budget for a step that wedges the guest.
       slot.attempts.set(key, Math.max((slot.attempts.get(key) ?? 0) - 1, 0));
+    },
+
+    async readSleeps(runId: string): Promise<SleepEntry[]> {
+      // COPIES, and sorted by key — a sleep record is MUTABLE (`wake` sets
+      // `woken`), so handing the stored object out would let a caller's snapshot
+      // change under it, which is exactly the staleness the reader is written to
+      // reason about. Both databases answer `order by key`.
+      const sleeps = slotOf(runId)?.sleeps;
+      if (!sleeps) return [];
+      return [...sleeps]
+        .sort(([a], [b]) => codeUnit(a, b))
+        .map(([key, record]) => ({ ...record, key }));
     },
 
     async claimSleep(

@@ -124,8 +124,13 @@ describe("routing", () => {
 
   test("a malformed upload id is a 400 rather than reaching the store", async () => {
     const info = vi.fn(() => Promise.resolve(undefined));
+    // `open` is what the BYTES route reaches for now, so it is what the grammar
+    // check has to stop short of — asserted below beside `info`, since the two
+    // read routes take different doors into the same record.
+    const open = vi.fn(() => Promise.resolve(undefined));
     const uploads: UploadStore = {
       info,
+      open,
       read: () => Promise.resolve(new Uint8Array()),
       create: () => Promise.resolve({ id: "upl_1", name: "", type: "", size: 0, complete: true }),
       stream: (id: string) => Promise.resolve({ id, name: "", type: "", size: 0, complete: true }),
@@ -141,6 +146,7 @@ describe("routing", () => {
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "Malformed upload id" });
     expect(info).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
   });
 });
 

@@ -124,6 +124,7 @@
     "OPENAI_S2S_KIND",
     "OPENROUTER_API_KEY_ENV",
     "OPENROUTER_KIND",
+    "OpenUpload",
     "OwnedMap",
     "PACER_BURST_MS",
     "PIPELINE_FLUSH_TIMEOUT_MS",

@@ -27,6 +27,29 @@
  * only unbounded part, and an author who journals megabytes has a different
  * problem), so the whole-read is affordable in a way the per-step read is not.
  *
+ * ## A WAIT was outside that guarantee, and it cost a run
+ *
+ * The argument above is about `ctx.step`, and for a long time the interface
+ * implemented it for steps ALONE: {@link JournalStore.readSteps} was the only
+ * bulk read, so a replay answered a settled step out of the walk's snapshot and
+ * round-tripped {@link JournalStore.claimSleep} for every ELAPSED sleep it
+ * walked past — the exact per-reach lookup this section refuses, on the one
+ * shape that grows with the number of deliveries rather than with the body.
+ *
+ * A polling body is where that compounds. `ctx.sleep("poll", …)` in a loop mints
+ * `sleep!poll#0`, `sleep!poll#1`, … one per iteration, and every one of them is
+ * in the past by the time the next delivery walks it, so delivery N re-claimed
+ * N-1 finished waits to be told each time that the wait was over. Measured on a
+ * deployed transcription run: journal `POST`s per delivery rose **+1 per
+ * delivery, monotonically, across 69 consecutive deliveries**, 2,675 of them in
+ * 25 minutes, and the run never finished. Nothing reported it — every call
+ * SUCCEEDED, and a delivery that is merely slower than the last one looks like a
+ * busy queue.
+ *
+ * {@link JournalStore.readSleeps} is the missing half, read once beside
+ * `readSteps` and answered from the same snapshot. What a snapshot may answer is
+ * narrower than for a step, and `workflow-replay-waits.ts` owns that rule.
+ *
  * ## Every value here crosses a wire, so it is TYPED JSON
  *
  * `input`, `output` and a failure's `error` are `unknown` and are encoded by
@@ -47,6 +70,7 @@ import type {
   HookRecord,
   ResumableRun,
   RunRecord,
+  SleepEntry,
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-records.ts";
@@ -57,6 +81,7 @@ export type {
   HookRecord,
   ResumableRun,
   RunRecord,
+  SleepEntry,
   SleepRecord,
   StepEntry,
 } from "./workflow-journal-records.ts";
@@ -268,6 +293,29 @@ export type JournalStore = {
    * step: no release at all.
    */
   releaseAttempt(runId: string, key: string): Promise<void>;
+  /**
+   * Every durable wait this run has ever registered, ordered by `key`.
+   *
+   * The bulk read {@link JournalStore.readSteps} is for steps, and it exists for
+   * the same reason — see "A WAIT was outside that guarantee" above. One read
+   * per WALK, taken beside the step read and indexed by the engine; there is no
+   * per-key read beside it because a wait the snapshot cannot answer must be
+   * CLAIMED rather than merely read, which {@link JournalStore.claimSleep}
+   * already does.
+   *
+   * Both KINDS are in it: a `ctx.sleep` and the deadline half of a
+   * `ctx.waitFor(token, { timeoutMs })` share this table, so a reader that wants
+   * only one filters on {@link SleepRecord.kind} rather than expecting the store
+   * to have done it.
+   *
+   * Ordered by `key` rather than left unspecified, so the three backends answer
+   * the same array for the same run — the conformance suite compares them
+   * directly, and an order that differs by deployment is the drift that table
+   * exists to catch. It is code-unit order in memory and the column's collation
+   * in both databases, which is the same limit `readSteps` states and is
+   * unobservable for the same reason: the one reader indexes by `key`.
+   */
+  readSleeps(runId: string): Promise<SleepEntry[]>;
   /**
    * Record this sleep's wake time the FIRST time it is reached, and read back
    * whatever is stored on every reach after.

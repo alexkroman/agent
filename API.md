@@ -1087,6 +1087,12 @@ export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
 // @public (undocumented)
 export const OPENROUTER_KIND: "openrouter";
 
+// @public
+export type OpenUpload = {
+    info: UploadInfo;
+    read(start: number, end: number): Promise<Uint8Array>;
+};
+
 // @internal (undocumented)
 export interface OwnedMap<K, V> {
     claim(key: K, value: V): () => boolean;
@@ -1703,6 +1709,7 @@ type UploadRange = {
 export type UploadReader = {
     info(id: string): Promise<UploadInfo | undefined>;
     read(id: string, start: number, end: number): Promise<Uint8Array>;
+    open?(id: string): Promise<OpenUpload | undefined>;
 };
 
 // @internal
@@ -7757,6 +7764,7 @@ import { LanguageModel } from 'ai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { Message } from '@alexkroman1/aai';
 import { ModelMessage } from 'ai';
+import type { OpenUpload } from '@alexkroman1/aai/host-internal';
 import { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
@@ -8049,6 +8057,7 @@ type JournalStore = {
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
     claimAttempt(runId: string, key: string): Promise<number>;
     releaseAttempt(runId: string, key: string): Promise<void>;
+    readSleeps(runId: string): Promise<SleepEntry[]>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
@@ -8376,6 +8385,11 @@ export type SessionWebSocket = {
 export type SkipGreeting = boolean | (() => boolean);
 
 // @public
+type SleepEntry = SleepRecord & {
+    key: string;
+};
+
+// @public
 type SleepRecord = {
     wakeAt: number;
     woken: boolean;
@@ -8546,6 +8560,7 @@ export const UPLOADS_TABLE = "aai_workflow_uploads";
 
 // @public
 export type UploadStore = UploadReader & {
+    open(id: string): Promise<OpenUpload | undefined>;
     create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
         limit?: number;
     }): Promise<UploadInfo>;
@@ -8641,6 +8656,7 @@ import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
+import type { OpenUpload } from '@alexkroman1/aai/host-internal';
 import type { OwnedMap } from '@alexkroman1/aai/host-internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
@@ -8824,6 +8840,7 @@ type JournalStore = {
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
     claimAttempt(runId: string, key: string): Promise<number>;
     releaseAttempt(runId: string, key: string): Promise<void>;
+    readSleeps(runId: string): Promise<SleepEntry[]>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
@@ -9085,6 +9102,11 @@ type SessionWebSocket = {
 };
 
 // @public
+type SleepEntry = SleepRecord & {
+    key: string;
+};
+
+// @public
 type SleepRecord = {
     wakeAt: number;
     woken: boolean;
@@ -9158,6 +9180,7 @@ type UploadMeta = {
 
 // @public
 type UploadStore = UploadReader & {
+    open(id: string): Promise<OpenUpload | undefined>;
     create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
         limit?: number;
     }): Promise<UploadInfo>;
@@ -9259,6 +9282,7 @@ type JournalStore = {
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
     claimAttempt(runId: string, key: string): Promise<number>;
     releaseAttempt(runId: string, key: string): Promise<void>;
+    readSleeps(runId: string): Promise<SleepEntry[]>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
     wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
     claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
@@ -9313,6 +9337,11 @@ export type RunWorkflowOptions = {
     logger?: Logger;
     crashAt?: string;
     maxDeliveries?: number;
+};
+
+// @public
+type SleepEntry = SleepRecord & {
+    key: string;
 };
 
 // @public

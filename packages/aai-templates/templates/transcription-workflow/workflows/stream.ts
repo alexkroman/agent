@@ -215,22 +215,43 @@ const POLL_INTERVAL_MS = 5000;
  * A poll is one cheap step (the body's own note above the `continue` says so), but
  * it is not free — it is a journal write and, on the platform, a step execution —
  * so a rate estimate that comes out near zero must not turn the loop into a spin.
- * 250ms is under the latency of any single segment's transcription, so nothing is
- * waiting on this.
+ *
+ * **The comparison that decides this number is the ROUND TRIP of the machinery
+ * that implements the sleep, not the latency of a segment's transcription.** It
+ * was 250ms on the second reading, which made it DEAD: `ctx.sleep`'s deadline is
+ * computed before its journal write is issued and tested after that write comes
+ * back, so on the platform — where one journal call was measured at ~558ms mean,
+ * p50 ranging 164-796ms — a 250ms sleep has already expired by the time its own
+ * write answers. It did not sleep at all, and the loop then polled as fast as the
+ * journal would let it. A floor under the round trip is not a floor.
+ *
+ * 1000ms is above every one of those readings and still an order of magnitude
+ * under a single segment's transcription, so nothing is waiting on it.
  */
-const MIN_POLL_INTERVAL_MS = 250;
+const MIN_POLL_INTERVAL_MS = 1000;
 
 /**
  * Consecutive polls with NO new bytes before the run gives up.
  *
  * An upload that died stays incomplete forever, so without a bound the run polls for
- * as long as the world will replay it. At {@link POLL_INTERVAL_MS} this is five minutes
- * of silence — far longer than any stall a live uplink produces, and short enough
- * that the failure reaches whoever is watching.
+ * as long as the world will replay it.
+ *
+ * **What one poll COSTS is a delivery, not an interval, and this doc said
+ * otherwise.** It read "at {@link POLL_INTERVAL_MS} this is five minutes of
+ * silence", which counts the sleep and nothing else. A poll that sleeps also
+ * suspends the run, so the wall clock between two polls is the sleep plus a
+ * queue round trip plus the next delivery's opening reads — measured on a
+ * deployed run at 11-40 seconds. Sixty of those is **20 to 40 minutes**, not
+ * five.
+ *
+ * That is longer than intended and is left as it is: what the bound has to
+ * outlast is a stall a live uplink really produces, and erring long costs an
+ * abandoned upload some idle deliveries where erring short fails a healthy
+ * recording. The number to write down is the honest one.
  *
  * It resets on every byte, so a slow upload is bounded by its own quietest gap
  * rather than by its total length: a two-hour recording on a bad connection is fine
- * as long as something arrives every five minutes.
+ * as long as something arrives inside that window.
  */
 const MAX_IDLE_POLLS = 60;
 
@@ -266,8 +287,9 @@ export type UploadProgressView = {
    * When this view was taken, as the step that took it saw the clock.
    *
    * Journaled, which is the only reason the body may read a clock at all: the
-   * sleep below is derived from the RATE between two of these, and a value the
-   * body sampled itself would make that derivation diverge on a replay. Same rule
+   * sleep below is derived from the RATE between the run's FIRST view and this
+   * one, and a value the body sampled itself would make that derivation diverge
+   * on a replay. Same rule
    * as every other field here — see the body's own note on why its state is legal.
    */
   observedAt: number;
@@ -304,10 +326,20 @@ export async function transcribeStreamFlow(input: { recording: string }, ctx: Wo
   // stopped from one whose prefix has not caught up yet.
   let lastStored = -1;
   /**
-   * The previous poll, so {@link nextPollDelay} has two journaled samples to take
-   * a rate from. Body state for the same reason the rest is: it came out of a step.
+   * The FIRST poll, so {@link nextPollDelay} has a baseline to take an AVERAGE
+   * rate from. Body state for the same reason the rest is: it came out of a step.
+   *
+   * It used to be the PREVIOUS poll, and a two-sample difference is not a
+   * throughput here: the store publishes bytes an `UPLOAD_PART_BYTES` window at a
+   * time, so consecutive polls see either no change at all — which reads as a
+   * stall and gives back the flat ceiling — or one whole 8 MiB window, an
+   * instantaneous burst rate tens of times the real average that collapses the
+   * sleep to its floor. The distribution is bimodal and neither mode is the
+   * number the estimate wants. A baseline that never moves measures exactly what
+   * the arithmetic below claims to: bytes delivered per millisecond, over the
+   * upload so far.
    */
-  let previous: UploadProgressView | undefined;
+  let baseline: UploadProgressView | undefined;
 
   for (;;) {
     const at = await ctx.step("probeUpload", () => probeUpload(input.recording));
@@ -315,6 +347,11 @@ export async function transcribeStreamFlow(input: { recording: string }, ctx: Wo
     // on a `complete` view, whose prefix is the whole file. Updating it inside a
     // branch is how it used to end up describing whichever poll last had work.
     lastSize = at.size;
+    // HERE, not after the sleep below, and that placement is the whole bug the
+    // baseline replaced: the `continue` on a batch of ready segments skipped the
+    // old `previous = at`, so the next rate was computed against a view taken
+    // before the batch. Set once, before any branch can be taken.
+    baseline ??= at;
 
     // The header has to be present before anything can be planned, and it is the
     // first thing to arrive. `complete` also qualifies, for a recording shorter
@@ -381,8 +418,7 @@ export async function transcribeStreamFlow(input: { recording: string }, ctx: Wo
     // Sleep until the next segment should HAVE landed, rather than for a fixed
     // interval — see `nextPollDelay`. Both arguments are journaled step results,
     // so a replay computes the same delay from the same two samples.
-    await ctx.sleep("poll", nextPollDelay(at, previous, plan, done));
-    previous = at;
+    await ctx.sleep("poll", nextPollDelay(at, baseline, plan, done));
   }
 
   const finished = plan;
@@ -429,8 +465,16 @@ export async function probeUpload(id: string): Promise<UploadProgressView> {
  * The flat {@link POLL_INTERVAL_MS} this replaced is wrong in both directions on a
  * slow uplink: too long when a segment is seconds away, and equally too long when
  * it is a minute away, so the run discovers work late and then asks again pointlessly.
- * Two consecutive polls give a byte RATE, the plan gives the byte offset the next
- * un-transcribed segment needs, and the difference is a wait with a reason.
+ * The run's FIRST poll and its latest one give a byte RATE, the plan gives the byte
+ * offset the next un-transcribed segment needs, and the difference is a wait with a
+ * reason.
+ *
+ * **`baseline` is the first poll of the run and never moves**, so what this reads is
+ * the AVERAGE throughput rather than a first difference between two adjacent polls.
+ * That is not a refinement: bytes are published an `UPLOAD_PART_BYTES` window at a
+ * time, so a two-sample difference is 0 or one whole 8 MiB window and never the
+ * rate — see the body's own note where the baseline is set. The arithmetic below is
+ * unchanged, which is why it is the CALLER that had the bug.
  *
  * Every input is a journaled step result — both views, and a plan derived from one —
  * so a replay computes the identical delay. That is the whole reason
@@ -445,15 +489,16 @@ export async function probeUpload(id: string): Promise<UploadProgressView> {
  */
 export function nextPollDelay(
   at: UploadProgressView,
-  previous: UploadProgressView | undefined,
+  baseline: UploadProgressView | undefined,
   plan: StreamPlan | undefined,
   done: ReadonlySet<number>,
 ): number {
-  // No previous sample, or a clock that did not advance: nothing to derive a rate
-  // from. The first sleep of every run takes this arm.
-  const elapsedMs = previous ? at.observedAt - previous.observedAt : 0;
-  if (!previous || elapsedMs <= 0) return POLL_INTERVAL_MS;
-  const bytesPerMs = (at.stored - previous.stored) / elapsedMs;
+  // No baseline, or a clock that has not advanced past it: nothing to derive a
+  // rate from. The first sleep of every run takes this arm, the baseline BEING
+  // that poll.
+  const elapsedMs = baseline ? at.observedAt - baseline.observedAt : 0;
+  if (!baseline || elapsedMs <= 0) return POLL_INTERVAL_MS;
+  const bytesPerMs = (at.stored - baseline.stored) / elapsedMs;
   // A stalled or shrinking upload has no arrival to predict. `MAX_IDLE_POLLS` is
   // what ends that run; this only declines to guess about it.
   if (bytesPerMs <= 0) return POLL_INTERVAL_MS;
@@ -476,7 +521,13 @@ export function nextPollDelay(
   // Every segment is already stored: the loop is waiting on `complete`, which is a
   // flag the uploader sets rather than bytes to extrapolate.
   if (remaining === undefined) return POLL_INTERVAL_MS;
-  if (remaining <= 0) return MIN_POLL_INTERVAL_MS;
+  // There is no `remaining <= 0` arm, and there used to be one returning the
+  // floor. It was UNREACHABLE from the body — `bytesUntilStored` answers 0 only
+  // when `segmentStored` does, which would have put the segment in `ready` and
+  // taken the `continue` above, and the no-plan arm is only taken while
+  // `at.size < HEADER_PROBE_BYTES` — and REDUNDANT besides: `Math.ceil` of a
+  // non-positive quotient is non-positive, so the `Math.max` below already
+  // answers the floor for it. Deleting it changes no answer for any input.
   return Math.min(
     POLL_INTERVAL_MS,
     Math.max(MIN_POLL_INTERVAL_MS, Math.ceil(remaining / bytesPerMs)),

@@ -1,0 +1,24 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "uploads",
+  "epoch": 2,
+  "sha256": "5161390d2b2ba0a2c34ff4b684a0754601781dbc13b02bd4e8fb8eb22406b3bf",
+  "exports": [
+    "HttpUploadBlobsOptions",
+    "UPLOADS_TABLE",
+    "UPLOAD_KEY_PREFIX",
+    "UPLOAD_STORAGE_BUCKET_ENV",
+    "UPLOAD_STORAGE_KEY_ENV",
+    "UPLOAD_STORAGE_URL_ENV",
+    "UploadBlobs",
+    "UploadMeta",
+    "UploadPart",
+    "UploadStore",
+    "UploadTooLargeError",
+    "UploadsUnavailableError",
+    "createHttpUploadBlobs",
+    "createMemoryUploadBlobs",
+    "partKey",
+    "partsOf"
+  ]
+}

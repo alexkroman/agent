@@ -147,6 +147,20 @@ export type SleepRecord = {
 };
 
 /**
+ * One durable wait AND the key it is stored under — what a BULK read answers.
+ *
+ * `SleepRecord` is what {@link JournalStore.claimSleep} hands back, and that
+ * caller already knows the key it asked about. {@link JournalStore.readSleeps}
+ * answers about a whole run, so the key has to travel with the record; this is
+ * exactly the relationship {@link StepEntry} has to a step's payload, which is
+ * why it carries its own `key` too rather than being returned in a map.
+ *
+ * An array rather than a `Map` because it crosses the platform's wire as JSON,
+ * where a map is not representable — the same reason `readSteps` answers one.
+ */
+export type SleepEntry = SleepRecord & { key: string };
+
+/**
  * One outstanding HOOK: a body parked on somebody else's answer.
  *
  * Mutable for the reason {@link SleepRecord} is — it records something that has

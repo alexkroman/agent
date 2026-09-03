@@ -68,6 +68,34 @@
  * the schema — there is no payload, `undefined` is the outcome the body branches
  * on, and running a schema over "nobody answered" would fail every timeout a
  * validating wait ever takes.
+ * ## An ELAPSED wait is answered from the walk's snapshot
+ *
+ * `replayRun` opens with one `readSteps`, and a settled step is then free. Waits
+ * had no such read: every `ctx.sleep` a walk reached was a `claimSleep` round
+ * trip, and the answer was almost always "that finished long ago". A body that
+ * polls is where that compounds, because each iteration mints a NEW key —
+ * `sleep!poll#0`, `sleep!poll#1`, … — so delivery N re-claims N-1 finished waits
+ * before it can do anything, and journal traffic is quadratic in the number of
+ * deliveries rather than proportional to the work.
+ *
+ * Production, on a 34-segment transcription run: **2,675 journal POSTs in 25
+ * minutes, rising +1 per delivery across 69 consecutive deliveries**, the
+ * interval between deliveries growing 11s → 37s in step with the count, and the
+ * run never completed. Every call succeeded; what a log shows is a run getting
+ * slower.
+ *
+ * {@link WaitOptions.sleeps} is the missing read and {@link overInSnapshot} is
+ * the rule for using it, which is NARROWER than the step one because
+ * `claimSleep` is a claim rather than a read. Both `ctx.sleep` and the deadline
+ * half of `ctx.waitFor` take that arm.
+ *
+ * **`claimHook` still round-trips on every reach, and that is a known
+ * residual.** `delivered` is monotonic the same way `woken` is, so the identical
+ * argument would let a snapshot answer an already-answered hook — but hooks live
+ * in their own table and would need their own bulk read, and the shape that
+ * makes waits quadratic (a new key per loop iteration) is not one a body reaches
+ * with `waitFor`, which parks rather than polls. Measure a body that does before
+ * adding the second read.
  *
  * @module
  */
@@ -79,7 +107,7 @@ import type {
   WorkflowCtx,
 } from "@alexkroman1/aai";
 import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
-import type { JournalStore } from "./workflow-journal-types.ts";
+import type { JournalStore, SleepRecord } from "./workflow-journal-types.ts";
 import { waitTokenDiverged } from "./workflow-replay-divergence.ts";
 import { checkWorkflowValue, waitPayloadRefused } from "./workflow-replay-schema.ts";
 import type { SuspendController } from "./workflow-replay-suspend.ts";
@@ -124,6 +152,35 @@ function deadlineOf(
   return waitOptions.timeoutMs;
 }
 
+/**
+ * May this wait be answered OVER, out of the walk's opening snapshot alone?
+ *
+ * This is the whole correctness argument for the snapshot, and it is narrower
+ * than the step one. `ctx.step` answers from `settled` because a settled step is
+ * a FACT and a journal entry is immutable; `claimSleep` is not a read at all —
+ * it CREATES the record when there is none — so a snapshot miss can never be
+ * answered here, and a walk that skipped the claim would leave a wait no wake and
+ * no reconcile can find.
+ *
+ * So a `true` needs two things, and both are properties nothing can take back:
+ *
+ * - **the record is IN the snapshot**, so the claim has already happened and
+ *   there is nothing left for this reach to create; and
+ * - **the wait is over by a MONOTONIC test** — `woken` is set once and never
+ *   cleared, and `wakeAt` is decided on the first reach and never moves (first
+ *   write wins), so a deadline in the past stays in the past.
+ *
+ * Everything else round-trips exactly as before: an absent record, and a
+ * future-dated unwoken one, whose `woken` a `wakeUp` may have flipped since the
+ * snapshot was taken. A stale snapshot can therefore only ever be wrong in the
+ * direction of taking a round trip it did not need — never of skipping a claim
+ * that had to happen, and never of missing a wake.
+ */
+function overInSnapshot(record: SleepRecord | undefined, now: number): boolean {
+  if (record === undefined) return false;
+  return record.woken || now >= record.wakeAt;
+}
+
 /** What {@link createWaitMethods} needs to answer one walk's waits. */
 export type WaitOptions = {
   runId: string;
@@ -136,6 +193,16 @@ export type WaitOptions = {
    */
   workflow: string;
   journal: JournalStore;
+  /**
+   * Every wait this run had registered when the walk OPENED, by key.
+   *
+   * One `readSleeps` for the whole replay, taken beside the step read — see
+   * `ReplayOptions.sleeps`. What it may be used for is {@link overInSnapshot}'s
+   * subject; what it is FOR is that a body sleeping in a loop reaches every one
+   * of its finished sleeps again on every delivery, which made journal traffic
+   * quadratic in the number of deliveries.
+   */
+  sleeps: ReadonlyMap<string, SleepRecord>;
   /**
    * Where a wait PARKS, and the channel the walk suspends on. One per walk, so
    * its suspension value is unique to this call and recognisable by identity.
@@ -158,7 +225,7 @@ export type WaitOptions = {
  * @internal
  */
 export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "sleep" | "waitFor"> {
-  const { runId, workflow, journal, suspend, refuse } = options;
+  const { runId, workflow, journal, sleeps: snapshot, suspend, refuse } = options;
   /**
    * Reaches so far, per NAME — a sleep by its label, a hook by its token.
    *
@@ -168,9 +235,14 @@ export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "slee
    * would make one shift the other for no reason. Two maps rather than one for
    * the same reason `workflow-replay-determinism.ts` keeps three counters —
    * inserting a sleep must shift no hook.
+   *
+   * `-Counts` rather than the bare nouns because {@link WaitOptions.sleeps} is
+   * the walk's RECORD snapshot: two things keyed by very nearly the same string,
+   * and one shadowing the other in this scope is how a reach comes to count
+   * itself against the wrong map.
    */
-  const sleeps = new Map<string, number>();
-  const hooks = new Map<string, number>();
+  const sleepCounts = new Map<string, number>();
+  const hookCounts = new Map<string, number>();
 
   /** The next occurrence of `name` in `counts`, advancing it. */
   const nextOccurrence = (counts: Map<string, number>, name: string): number => {
@@ -201,12 +273,20 @@ export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "slee
   ): Promise<void> {
     const noWait = refuseInsideStep("ctx.sleep");
     if (noWait) throw noWait;
-    const occurrence = nextOccurrence(sleeps, label);
+    const occurrence = nextOccurrence(sleepCounts, label);
+    const key = `sleep!${label}#${occurrence}`;
+    // Answered from the walk's opening read, and no slot is entered — this does
+    // no engine work, exactly like a `ctx.step` answered out of `settled`. It is
+    // the arm that makes a polling body's journal traffic flat rather than
+    // quadratic: every iteration but the current one is a sleep that finished
+    // deliveries ago. See `overInSnapshot` for why only a snapshot HIT that is
+    // already over may take it.
+    if (overInSnapshot(snapshot.get(key), Date.now())) return;
     const slot = suspend.enter();
     try {
       const record = await journal.claimSleep(
         runId,
-        `sleep!${label}#${occurrence}`,
+        key,
         wakeAtFrom(until),
         sleepOptions?.correlationId,
       );
@@ -251,17 +331,25 @@ export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "slee
     // the wake time is decided the first time this wait is reached, where a
     // `Promise.race` against a fresh `ctx.sleep` would restart it on every
     // delivery and the window would never close.
-    const deadline = await journal.claimSleep(
-      runId,
-      `hookTimeout!${token}#${occurrence}`,
-      Date.now() + timeoutMs,
-      undefined,
-      // Not an ordinary sleep: a bare `wakeUp(runId)` cuts a SCHEDULE short and
-      // must not also close an approval window. See `SleepRecord.kind`.
-      "hookTimeout",
-    );
-    if (!(deadline.woken || Date.now() >= deadline.wakeAt)) {
-      return { kind: "park", wakeAt: deadline.wakeAt };
+    const deadlineKey = `hookTimeout!${token}#${occurrence}`;
+    // The SAME snapshot arm `sleep` takes, and it applies for the same reason
+    // rather than by analogy: a deadline is a row in the sleeps table, so
+    // `readSleeps` already carries it and `overInSnapshot` is asking the same
+    // monotonic question. What it does NOT skip is the `closeHook` below — the
+    // window still has to be shut, and that answer decides the branch.
+    if (!overInSnapshot(snapshot.get(deadlineKey), Date.now())) {
+      const deadline = await journal.claimSleep(
+        runId,
+        deadlineKey,
+        Date.now() + timeoutMs,
+        undefined,
+        // Not an ordinary sleep: a bare `wakeUp(runId)` cuts a SCHEDULE short and
+        // must not also close an approval window. See `SleepRecord.kind`.
+        "hookTimeout",
+      );
+      if (!(deadline.woken || Date.now() >= deadline.wakeAt)) {
+        return { kind: "park", wakeAt: deadline.wakeAt };
+      }
     }
     // Closed unanswered. The hook is CLOSED before the body continues, so a
     // signal arriving a moment later cannot make the next replay read a payload
@@ -318,7 +406,7 @@ export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "slee
     if (noWait) throw noWait;
     // Keyed by the TOKEN the body reached — a name it already had, so unlike
     // `ctx.sleep` this needed no new argument.
-    const occurrence = nextOccurrence(hooks, token);
+    const occurrence = nextOccurrence(hookCounts, token);
     const slot = suspend.enter();
     const schema = waitOptions?.schema;
     try {

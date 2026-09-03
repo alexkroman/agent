@@ -801,6 +801,12 @@ export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
 // @public (undocumented)
 export const OPENROUTER_KIND: "openrouter";
 
+// @public
+export type OpenUpload = {
+    info: UploadInfo;
+    read(start: number, end: number): Promise<Uint8Array>;
+};
+
 // @internal (undocumented)
 export interface OwnedMap<K, V> {
     claim(key: K, value: V): () => boolean;
@@ -1417,6 +1423,7 @@ type UploadRange = {
 export type UploadReader = {
     info(id: string): Promise<UploadInfo | undefined>;
     read(id: string, start: number, end: number): Promise<Uint8Array>;
+    open?(id: string): Promise<OpenUpload | undefined>;
 };
 
 // @internal

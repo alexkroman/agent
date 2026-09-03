@@ -26,13 +26,14 @@ The claims are of four different kinds, which is why there are four files:
   methods as a TABLE rather than a case each: every statement binds the slug as
   `$1`, no statement binds a bare `$n::jsonb`, `claimAttempt` issues exactly one
   query. A table because the interesting failure is one method forgetting, and a
-  hand-written case per method is what a thirteenth method would not get.
+  hand-written case per method is what the NEXT method would not get.
 
   **It did not get it, and there is now an assertion instead of this warning.**
   `readStep` was added and the table did not notice — the paragraph above
   predicted exactly that and was still only prose. The roster is checked against
   the imported NAMESPACE now ("the table names every journal method"), so a
-  fourteenth method fails this suite rather than being remembered. Same reason
+  method added to the namespace fails this suite rather than being remembered.
+  Same reason
   every counting gate in this repo carries a floor: the success output of a
   hand-kept table is indistinguishable from a complete one.
 - **`aai-server/platform-workflow-journal.scenario.test.ts`** — the only place
@@ -164,3 +165,62 @@ written, false the moment status began deciding a type, and it made that arm
 structurally unable to see the mapping. And the conformance table asserted the
 conflict with a bare `toThrow()`, which cannot see an arm refusing with the wrong
 type at all.
+
+## A wait was outside the whole-read guarantee
+
+`JournalStore`'s own doc argues that the journal is READ WHOLE at the top of a
+walk rather than queried per step, because a replay reaches every step the run
+has ever completed. That argument was implemented for steps and for nothing
+else: `readSteps` was the only bulk read, so a settled step was free and every
+`ctx.sleep` a walk reached was a `claimSleep` round trip whose answer was almost
+always "that finished several deliveries ago".
+
+**A POLLING body is where it compounds, and it does so in the number of
+DELIVERIES rather than the size of the body.** `ctx.sleep("poll", …)` in a loop
+mints a new key per iteration — `sleep!poll#0`, `sleep!poll#1`, … — all of them
+elapsed by the time the next delivery walks them, so delivery N re-claimed N-1
+finished waits before it could do any work.
+
+Measured in production, on a 34-segment `transcription-workflow` run: journal
+`POST`s per delivery rose **+1 per delivery, monotonically, across 69
+consecutive deliveries** — 2,675 of them in 25 minutes, and the run never
+completed. The gap between deliveries grew 11s → 37s tracking the count, and
+when journal p50 fell 796ms → 164ms the gap collapsed to 11s with the count
+unchanged, which is what identifies the count rather than the latency as the
+term. Nothing reported it: every call SUCCEEDED, so a log shows a run getting
+slower.
+
+`JournalStore.readSleeps` is the missing half — one bulk read, taken beside
+`readSteps` in `workflow-engine.ts` and handed down as `ReplayOptions.sleeps`.
+
+**What a snapshot may answer is NARROWER than for a step, and that is the whole
+of the correctness argument.** `claimSleep` is a CLAIM, not a read: it creates
+the record when there is none. So `overInSnapshot`
+(`workflow-replay-waits.ts`) answers `true` only when the record is IN the
+snapshot — the claim has already happened — AND the wait is over by a MONOTONIC
+test: `woken` is set once and never cleared, and `wakeAt` is fixed on the first
+reach (first write wins) so a past deadline stays past. Everything else
+round-trips exactly as before, which means a stale snapshot can only ever be
+wrong in the direction of taking a round trip it did not need — never of
+skipping a claim that had to happen, and never of missing a wake.
+
+Three things not to relitigate:
+
+- **The deadline half of `ctx.waitFor` takes the same arm**, and not by analogy:
+  a `hookTimeout` is a row in the same table, so `readSleeps` already carries it.
+  What it does not skip is `closeHook`, whose answer decides the branch.
+- **`claimHook` has the same shape and is deliberately NOT fixed.** `delivered`
+  is monotonic exactly as `woken` is, so a bulk hook read would let a snapshot
+  answer an already-answered wait — but hooks are their own table and their own
+  read, and the shape that makes sleeps quadratic (a fresh key per loop
+  iteration) is not one a body reaches with `waitFor`, which parks rather than
+  polls. Measure a body that does before adding the second read.
+- **The engine prefetches unconditionally**, so a run with no waits pays one
+  extra `POST` per delivery. It is issued CONCURRENTLY with the step read, so it
+  costs no latency, and a wait-free workflow typically takes one delivery; a
+  lazy read would save that at the price of putting the read on the critical
+  path of the first wait of every polling run, which is the case that matters.
+
+`workflow-wait-snapshot.test.ts` is the regression, and its module doc carries
+the A/B: with the snapshot arm removed, claims per delivery go
+`[1, 2, 3, 4, 5, 5]` against the flat `[1, 1, 1, 1, 1, 0]` it asserts.

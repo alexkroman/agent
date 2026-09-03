@@ -46,7 +46,12 @@
  * why the lock lives HERE, above both implementations, rather than in either.
  */
 
-import { assertUploadToken, mapStream, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
+import {
+  assertUploadToken,
+  mapStream,
+  type OpenUpload,
+  UPLOAD_PART_BYTES,
+} from "@alexkroman1/aai/host-internal";
 import { mapConcurrent, type UploadInfo } from "@alexkroman1/aai/step";
 import { createKeyedLock, omitUndefined, withLock } from "@alexkroman1/aai/utils";
 import {
@@ -409,29 +414,45 @@ export function createBlobUploadStore(opts: {
       });
     },
 
-    async info(id): Promise<UploadInfo | undefined> {
-      await records.ensure();
-      const held = await records.read(id);
-      return held ? info(id, held) : undefined;
-    },
-
-    async read(id, start, end): Promise<Uint8Array> {
-      await records.ensure();
-      const held = await records.read(id);
-      if (!held) return new Uint8Array(0);
-      const wanted = partsCovering(held.parts, start, end);
-      // One read per object the window overlaps, in order. A window inside a single
-      // part is one read, which is the ordinary case: a header probe, or a segment
-      // cut to the part size.
-      const pieces = await Promise.all(
-        wanted.map(async ({ part, from, to }) => await blobs.read(key(id, part.at), from, to)),
-      );
-      return concat(
-        pieces,
-        pieces.reduce((total, piece) => total + piece.length, 0),
-      );
-    },
+    // All THREE reads go through one look-up of the record, which is what makes the
+    // count answerable at all — `read`'s own `id` parameter is the reason it used to
+    // resolve the row for itself, once per chunk of a download.
+    open: openRecord,
+    info: async (id) => (await openRecord(id))?.info,
+    read: async (id, start, end) =>
+      (await (await openRecord(id))?.read(start, end)) ?? new Uint8Array(0),
   };
+
+  /**
+   * The record, and a reader over the windows THAT record named.
+   *
+   * The boundary list is PINNED for as long as the caller holds it — see
+   * {@link OpenUpload}. One look-up per read operation rather than one per chunk,
+   * and a part landing mid-download can no longer answer bytes the response's own
+   * `Content-Length` already promised were something else.
+   *
+   * One blob read per object a window overlaps, in order. A window inside a single
+   * part is one read, which is the ordinary case: a header probe, or a segment cut
+   * to the part size.
+   */
+  async function openRecord(id: string): Promise<OpenUpload | undefined> {
+    await records.ensure();
+    const held = await records.read(id);
+    if (!held) return;
+    return {
+      info: info(id, held),
+      read: async (start, end) => {
+        const wanted = partsCovering(held.parts, start, end);
+        const pieces = await Promise.all(
+          wanted.map(async ({ part, from, to }) => await blobs.read(key(id, part.at), from, to)),
+        );
+        return concat(
+          pieces,
+          pieces.reduce((total, piece) => total + piece.length, 0),
+        );
+      },
+    };
+  }
 
   /**
    * The declared shape a part has to fit, or the reason it cannot.
@@ -456,15 +477,6 @@ export function createBlobUploadStore(opts: {
   }
 }
 
-/**
- * The total a parts upload declared, checked against one offset.
- *
- * Split out of `declared` so a caller that already holds the record does not have
- * to read it again for these two refusals — see {@link UploadStore.recordParts},
- * which reads once inside its lock. It takes the record rather than fetching one
- * because a declared total is IMMUTABLE: `beginParts` writes `expected` and
- * nothing else ever does, so a copy of it cannot go stale the way `parts` can.
- */
 /**
  * Whether this window is ALREADY in the record, byte for byte.
  *
