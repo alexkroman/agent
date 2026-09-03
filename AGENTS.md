@@ -1173,8 +1173,8 @@ A tag is a mutable pointer, so `@v7` grants every future version of that code
 the permissions of the job it runs in — including the release job's npm token.
 Every `uses:` carries a 40-character commit SHA with the release in a trailing
 comment; `guard-invariants.mjs` rule 7 fails a workflow that reuses a floating
-tag, and dependabot bumps the SHA and the comment together so the pins do not
-rot into a reason to stop pinning.
+tag. Pins are refreshed BY HAND now: Dependabot did that, and never opened a
+mergeable PR here, so it was removed.
 
 ### Artifact sizes have a budget, with an escape valve
 
