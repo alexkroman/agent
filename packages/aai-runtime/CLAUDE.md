@@ -1183,11 +1183,17 @@ byte route reads `UPLOAD_READ_AHEAD` chunks ahead of what it has written — bot
 `mapStream` (below), which is where the ordering, the memory bound, and the
 whole-window buffering that keeps a failed write re-sendable are argued.
 
-## Every call this runtime makes of its OWN goes through `egressFetch`
+## Every call this runtime makes of its OWN goes through a POOL, and there are two
 
-`_egress-fetch.ts` is the one outbound `fetch` for the platform's routes and the
-bucket a window is read from; `_http1-agent.ts` holds the `allowH2: false` both
-it and `step-fetch.ts` are built on. **`globalThis.fetch` is banned here by
+`_egress-fetch.ts` holds both: `rpcFetch` for a platform route (a kilobyte of
+JSON, one per step transition) and `blobFetch` for a window's bytes. They were
+one pool, so a claim's 32 concurrent probes competed for the sockets a journal
+write queued behind — and one `allowH2` answer served both, though the
+measurement behind it is about multi-megabyte bodies exhausting a flow-control
+window and a kilobyte cannot exhaust one. Both still default to HTTP/1.1;
+`AAI_EGRESS_RPC_HTTP2` is a switch on the pool where the answer is unmeasured,
+and the byte pool deliberately has none. `_egress-pool.ts` builds them, and
+`step-fetch.ts` takes a third. **`globalThis.fetch` is banned here by
 `guard-invariants` rule 29**, whose remedy carries the argument.
 
 `sdk/step-fetch.ts` measured the problem and fixed it for a STEP's outbound call:

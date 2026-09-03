@@ -257,7 +257,7 @@ export function repairOpenAiStream(
     // pruned as typed `params` by `gatewayToolSchemaMiddleware`, before the
     // provider serializes anything (see `_gateway-tool-schema.ts`).
     // BASELINED against `guard-invariants` rule 29, which bans this fallback in
-    // this package: the pooled `egressFetch` would be WRONG here, not merely
+    // this package: the pooled `blobFetch` would be WRONG here, not merely
     // unnecessary. This wraps a caller-supplied PROVIDER fetch, resolves the
     // global per call so a spec can stub it, and the branch below builds a
     // `Headers` and a `Response` from the ambient realm — which undici 8

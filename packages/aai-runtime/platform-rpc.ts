@@ -58,7 +58,7 @@
 import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import { egressFetch } from "./_egress-fetch.ts";
+import { rpcFetch } from "./_egress-fetch.ts";
 import { type PlatformEndpoint, type PlatformRoute, platformUrl } from "./platform-endpoint.ts";
 import { PLATFORM_UNAVAILABLE_CODE } from "./workflow-api-error-status.ts";
 
@@ -118,11 +118,11 @@ export function platformBearer(token: string): { authorization: string } {
  * @internal
  */
 export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): Promise<string> {
-  // `egressFetch`, never the global — see `_egress-fetch.ts`. These calls share an
+  // `rpcFetch`, never the global — see `_egress-fetch.ts`. These calls share an
   // origin with the upload broker's, so on HTTP/2 they shared its connection too:
   // a reset taken by a claim's bucket probes failed the run-event reads in the same
   // instant, which is what made one transport fault read as three unrelated bugs.
-  const fetchFn = opts.fetch ?? egressFetch;
+  const fetchFn = opts.fetch ?? rpcFetch;
   const res = await pTimeout(
     fetchFn(platformUrl(opts.base, call.route), {
       method: "POST",

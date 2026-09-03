@@ -265,14 +265,17 @@ export const STATE_RULES = [
         "  const doFetch = globalThis.fetch;",
       ],
       ignores: [
-        "  const call = opts.fetch ?? egressFetch;",
+        "  const call = opts.fetch ?? blobFetch;",
         // The TYPE, which every one of these seams declares and must keep.
         "  fetch?: typeof globalThis.fetch | undefined;",
-        "export const egressFetch: typeof globalThis.fetch = (input, init) =>",
+        "export const rpcFetch: typeof globalThis.fetch = (input, init) =>",
       ],
     },
     remedy:
-      "Use `egressFetch` from ./_egress-fetch.ts.\n" +
+      "Use `rpcFetch` (a platform RPC) or `blobFetch` (bytes) from\n" +
+      "./_egress-fetch.ts — two pools, because a kilobyte of JSON and an 8 MiB\n" +
+      "window are not the same traffic and must not compete for one pool's\n" +
+      "sockets. That module's doc carries the split.\n" +
       "\n" +
       "undici 8 — the copy backing `globalThis.fetch` from Node 26 — defaults\n" +
       "`allowH2` to TRUE, so every concurrent request this process makes to one\n" +

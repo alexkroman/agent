@@ -36,7 +36,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { egressFetch } from "./_egress-fetch.ts";
+import { blobFetch } from "./_egress-fetch.ts";
 import { contentLength, IDENTITY_ENCODING, type UploadBlobs } from "./_upload-blobs.ts";
 import { collectCapped } from "./_upload-byte-util.ts";
 import { UPLOAD_STORAGE_BUCKET_ENV, UPLOAD_STORAGE_URL_ENV } from "./_upload-env.ts";
@@ -48,7 +48,7 @@ export type HttpUploadBlobsOptions = {
   serviceKey: string;
   bucket: string;
   /**
-   * Test seam — production takes the pooled HTTP/1.1 `egressFetch`, NEVER
+   * Test seam — production takes the pooled HTTP/1.1 `blobFetch`, NEVER
    * `globalThis.fetch`: see `_egress-fetch.ts`.
    */
   fetch?: typeof globalThis.fetch | undefined;
@@ -64,7 +64,7 @@ export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs
   const endpoint = storageEndpoint(opts.url);
   // See `_egress-fetch.ts`: the operator's own bucket is reached the same way the
   // platform is, several windows at a time, so it takes the same HTTP/1.1 pool.
-  const call = opts.fetch ?? egressFetch;
+  const call = opts.fetch ?? blobFetch;
   const auth = {
     apikey: opts.serviceKey,
     Authorization: `Bearer ${opts.serviceKey}`,

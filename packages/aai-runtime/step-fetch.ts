@@ -8,12 +8,12 @@
  * `undici`, being on the CLI's zero-dependency startup path and riding the
  * browser bundle, so the dispatcher lives here and `createServer` publishes it.
  *
- * ## `allowH2: false` is the entire mechanism, and it lives in `_http1-agent.ts`
+ * ## `allowH2: false` is the entire mechanism, and it lives in `_egress-pool.ts`
  *
  * undici's connector offers `ALPNProtocols: allowH2 ? ['http/1.1', 'h2'] :
  * ['http/1.1']`, and undici 8 defaults `allowH2` to **true** — so turning it off
  * is what stops the far side upgrading a fan-out onto one multiplexed
- * connection. It moved to `_http1-agent.ts` when the runtime's OWN egress needed
+ * connection. It moved to `_egress-pool.ts` when the runtime's OWN egress needed
  * the same flag for the same reason (`_egress-fetch.ts`, which carries the
  * production failure that found it); everything else here is sizing.
  *
@@ -40,7 +40,7 @@ import {
 } from "@alexkroman1/aai/host-internal";
 import type { StepFetchInit } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { createHttp1Pool } from "./_http1-agent.ts";
+import { createEgressPool } from "./_egress-pool.ts";
 import { currentRun } from "./workflow-run-context.ts";
 
 /**
@@ -74,7 +74,10 @@ type StepFetchHandle = {
  * @internal
  */
 export function createStepFetch(): StepFetchHandle {
-  const pool = createHttp1Pool({
+  const pool = createEgressPool({
+    // Stated rather than defaulted: this is the pool the measurement below was
+    // taken on, so it is the one caller for which HTTP/1.1 is a finding.
+    allowH2: false,
     connections: STEP_FETCH_CONNECTIONS,
     keepAliveTimeout: STEP_FETCH_KEEP_ALIVE_MS,
     pipelining: STEP_FETCH_PIPELINING,
@@ -116,7 +119,7 @@ export function createStepFetch(): StepFetchHandle {
     };
     return pinnedFetch(url, request);
   };
-  // `close`, not `destroy` — see `createHttp1Pool`. A request already in flight
+  // `close`, not `destroy` — see `createEgressPool`. A request already in flight
   // when the server shuts down is a step's, and cutting it off would fail a run
   // that was about to finish. Idle keep-alive sockets — the thing a rebuild
   // strands — go either way.
