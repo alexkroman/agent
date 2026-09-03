@@ -262,7 +262,12 @@ export {
   // `aai-runtime/workflow-replay-suspend.ts`.
   type SleepOptions,
   type StepOptions,
+  // The schema-bearing halves of the two option bags above. A type a public
+  // signature names must be reachable from the barrel that publishes it, and
+  // `ctx.step`/`ctx.waitFor` each take one in their validating overload.
+  type StepSchemaOptions,
   type WaitForOptions,
+  type WaitForSchemaOptions,
   type WorkflowClient,
   // What a workflow BODY is handed. An author annotates a body's second
   // parameter with it, which is the membership test this barrel applies.

@@ -221,6 +221,16 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
    * PRESENCE of the key rather than definedness, because a body that returns
    * nothing is a completed run whose output really is `undefined` and must not
    * cost a round trip to say so.
+   *
+   * **It does NOT re-validate the output against `WorkflowDef.output`, and that
+   * is a decision rather than an omission.** This runs on every poll — every
+   * `useWorkflowRun` tick, every browser reload of a run that finished last
+   * week, once per completed run in a `recent()` page — so a parse here is a
+   * hot path for a value that was already checked at the one moment it could
+   * have changed: where the engine wrote it (`workflow-output.ts`). A schema
+   * that has since been EDITED is the case a read-side check would catch, and
+   * it is the wrong verdict anyway — the run is finished, it kept the promise
+   * its own code version made, and a new declaration cannot un-complete it.
    */
   async function toSnapshot(
     record: WdkRunRecord,
@@ -405,7 +415,12 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
           // be rendered must not take the status tool down with it. `def.input &&`
           // rather than a bare call: the guard is what makes the argument
           // present, so it stays in front of it.
-          inputSchema: def.input && safeJsonSchema(def.input, name, logger),
+          inputSchema: def.input && safeJsonSchema(def.input, "input", name, logger),
+          // The same conversion in the other DIRECTION, in the same place and
+          // for the same reason — a page rendering RESULTS needs the shape of
+          // one, and a Standard Schema does not survive the wire either way.
+          // See `safeJsonSchema` for why the direction differs.
+          outputSchema: def.output && safeJsonSchema(def.output, "output", name, logger),
           // Forwarded rather than derived: which properties are uploads is the
           // author's declaration, and the page is the reader that acts on it.
           uploads: def.uploads,
@@ -421,33 +436,50 @@ function streamOptions(options: StreamOptions | undefined): WdkStreamOptions {
 }
 
 /**
- * Convert a declared input schema for the wire, warning rather than throwing.
+ * Convert a declared schema for the wire, warning rather than throwing.
  *
- * **`"input"`, and it is the direction by definition.** This feeds
- * {@link WorkflowSummary.inputSchema} — "the input schema to render" — and
- * `validate` above runs the SAME schema over what the caller then sends, so
- * whatever a `.default()` fills in is exactly what the caller may omit. Under
- * zod's own default (`"output"`, the PARSED value) every defaulted field is
- * advertised `required`, so a rendered form marked as mandatory the fields whose
- * author had supplied a fallback while the validator beside it accepted the
- * submission without them. Two shipped templates were living with it.
+ * **The direction is not a setting, it is which END of the run this is**, and
+ * `io` names both at once: the conversion direction and the half of the
+ * declaration being described.
  *
- * Two other things move with the direction, and neither costs this surface
- * anything. A plain `z.object()` stops claiming `additionalProperties: false` —
- * honest, since zod ACCEPTS an unknown key on the way in and silently drops it,
- * and no reader of this schema (`WorkflowFields`, the studio's sampler) looks at
- * the keyword. And a `.transform()` field reports its PRE-transform type instead
- * of failing conversion, which is the type a caller actually has to send.
+ * `"input"` feeds {@link WorkflowSummary.inputSchema} — "the input schema to
+ * render" — and `validate` above runs the SAME schema over what the caller then
+ * sends, so whatever a `.default()` fills in is exactly what the caller may
+ * omit. Under zod's own default (`"output"`, the PARSED value) every defaulted
+ * field is advertised `required`, so a rendered form marked as mandatory the
+ * fields whose author had supplied a fallback while the validator beside it
+ * accepted the submission without them. Two shipped templates were living with
+ * it.
+ *
+ * `"output"` is the mirror image, and takes zod's default for exactly the reason
+ * the input half rejects it: what a page renders results from is the value the
+ * run PRODUCED, which is the parsed one — the engine journals what the schema
+ * returned (`workflow-output.ts`), so a defaulted field really is always
+ * present, and advertising it optional would be the same lie pointing the other
+ * way.
+ *
+ * Two other things move with the direction on the input side, and neither costs
+ * that surface anything. A plain `z.object()` stops claiming
+ * `additionalProperties: false` — honest, since zod ACCEPTS an unknown key on
+ * the way in and silently drops it, and no reader of this schema
+ * (`WorkflowFields`, the studio's sampler) looks at the keyword. And a
+ * `.transform()` field reports its PRE-transform type instead of failing
+ * conversion, which is the type a caller actually has to send.
+ *
+ * A schema that cannot convert is omitted rather than fatal, on either side:
+ * the listing is also what `workflow_status` reads, and a form — or a result —
+ * that cannot be rendered must not take the status tool down with it.
  */
 function safeJsonSchema(
-  schema: NonNullable<WorkflowDef["input"]>,
+  schema: NonNullable<WorkflowDef["input"] | WorkflowDef["output"]>,
+  io: "input" | "output",
   name: string,
   logger: Logger,
 ): unknown {
   try {
-    return toToolJsonSchema(schema, "input");
+    return toToolJsonSchema(schema, io);
   } catch (err: unknown) {
-    logger.warn?.("Workflow input schema could not be converted to JSON Schema", {
+    logger.warn?.(`Workflow ${io} schema could not be converted to JSON Schema`, {
       workflow: name,
       error: errorMessage(err),
     });

@@ -27,11 +27,17 @@ export {
   // worth having, so its option bag is part of the declaring surface.
   type SleepOptions,
   type StepOptions,
+  // The schema-bearing halves of both bags. A step's output and a hook's
+  // payload are the two values a body handles that it did not compute, so the
+  // option that CHECKS each belongs to the declaring surface beside the bag it
+  // extends.
+  type StepSchemaOptions,
   // `ctx.waitFor`'s options. A hook's DEADLINE is a parameter rather than a race
   // against `ctx.sleep` — the engine journals one call as one decision, where a
   // race restarts the window on every replay — so it belongs to the declaring
   // surface too.
   type WaitForOptions,
+  type WaitForSchemaOptions,
   type WorkflowClient,
   // What a BODY is handed, and the per-step overrides it may pass. They join
   // this capability rather than `workflow-api` by that same test: `ctx.step` is

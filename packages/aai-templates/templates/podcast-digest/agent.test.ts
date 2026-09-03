@@ -512,6 +512,72 @@ describe("discoverEpisodes", () => {
     expect(episodes[0]?.podcastTitle).toBe("Example Show");
   });
 
+  /**
+   * The three degradation cases of the iTunes payload, which is third-party
+   * JSON reached without an API key — so every one of them is a shape a live
+   * run really meets, and NONE of them may fail the run. A schema parsed with a
+   * throwing `parse` fails all three.
+   */
+  test("keeps the usable hit when a neighbouring entry is not even an object", async () => {
+    stub({
+      "itunes.apple.com/lookup": {
+        body: {
+          results: [
+            "no results",
+            7,
+            null,
+            { feedUrl: "https://show.test/feed.xml", collectionName: "Example Show" },
+          ],
+        },
+      },
+      "show.test/feed.xml": { body: THREE_EPISODES },
+    });
+
+    const episodes = await discoverEpisodes("https://podcasts.apple.com/us/podcast/x/id123", 1);
+
+    expect(episodes[0]?.podcastTitle).toBe("Example Show");
+  });
+
+  test("reads a malformed lookup payload as no hits, and takes the other route", async () => {
+    // An interstitial, a rate-limit body, a schema change: `results` is not an
+    // array, so there is nothing to search — which is what the page fallback
+    // below this exists for, and is a normal outcome rather than a failed run.
+    stub({
+      "itunes.apple.com/lookup": { body: { results: "temporarily unavailable" } },
+      "podcasts.apple.com": {
+        body:
+          '<script id="serialized-server-data">' +
+          '{"d":[{"model":{"adamId":"123","feedUrl":"https://show.test/feed.xml"}}]}' +
+          "</script>",
+      },
+      "show.test/feed.xml": { body: THREE_EPISODES },
+    });
+
+    expect(await discoverEpisodes("https://podcasts.apple.com/us/podcast/x/id123", 1)).toHaveLength(
+      1,
+    );
+  });
+
+  test("falls back to the feed's host when the hit names the show unusably", async () => {
+    // `collectionName` of the wrong type and no `trackName` behind it is the
+    // same case as neither field being there: the hit still carries the one
+    // field the caller came for, so it is used, and the title falls back to the
+    // feed's host. The feed here has no `<title>` of its own, which is what
+    // makes that fallback observable at all.
+    stub({
+      "itunes.apple.com/lookup": {
+        body: { results: [{ feedUrl: "https://show.test/feed.xml", collectionName: 42 }] },
+      },
+      "show.test/feed.xml": {
+        body: `<?xml version="1.0"?><rss><channel>${itemXml("only", "Tue, 01 Jan 2030 00:00:00 GMT")}</channel></rss>`,
+      },
+    });
+
+    const episodes = await discoverEpisodes("https://podcasts.apple.com/us/podcast/x/id123", 1);
+
+    expect(episodes[0]?.podcastTitle).toBe("show.test");
+  });
+
   test("falls back to Apple's own page when the lookup omits the feed", async () => {
     stub({
       "itunes.apple.com/lookup": { body: { results: [{ collectionName: "Example Show" }] } },

@@ -965,8 +965,12 @@ neither an annotated context nor a cast.
 
 ### workflow()
 
+#### Call Signature
+
 ```ts
-function workflow<P, R>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
+function workflow<P, O>(def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & {
+  output: O;
+}): WorkflowDef<P, InferSchemaOutput<O>>;
 ```
 
 Declare a durable workflow.
@@ -975,27 +979,29 @@ An identity function for type inference, exactly like `tool()` — the returned
 object is the input unchanged. Workflows are named by the key they are declared
 under, so this takes no `name`.
 
-#### Type Parameters
+##### Type Parameters
 
-##### P
+###### P
 
 `P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
 
-##### R
+###### O
 
-`R` = `unknown`
+`O` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\> = `StandardSchemaV1`\<`unknown`, `unknown`\>
 
-#### Parameters
+##### Parameters
 
-##### def
+###### def
 
-[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+`Omit`\<[`WorkflowDef`](#workflowdef)\<`P`, [`InferSchemaOutput`](#inferschemaoutput)\<`O`\>\>, `"output"`\> & \{
+  `output`: `O`;
+\}
 
-#### Returns
+##### Returns
 
-[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+[`WorkflowDef`](#workflowdef)\<`P`, [`InferSchemaOutput`](#inferschemaoutput)\<`O`\>\>
 
-#### Remarks
+##### Remarks
 
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
@@ -1008,10 +1014,19 @@ validate: a body is an ordinary function and a workflow's identity is the key
 it is declared under, so the `workflowId` a compiler used to attach — and the
 check that used to look for it — are both gone. See [WorkflowBody](workflow-api.md#workflowbody).
 
-#### Examples
+**Two signatures, and which one applies is decided by `output`.** With an
+output schema the result type comes from the SCHEMA and the body is CHECKED
+against it — a body returning something else is an error at the declaration,
+naming the property that disagrees, rather than quietly redefining what the
+workflow promises. With no `output` nothing changes: the result type is
+inferred from the body exactly as before. Both answer the same
+`WorkflowDef<P, R>`, so nothing downstream can tell which was used.
+
+##### Examples
 
 `agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
-`agent()` takes no `tools`.
+`agent()` takes no `tools`. Declaring `output` beside `input` is what makes
+the run's result checked where it completes and typed where it is read.
 ```ts no-check
 import { agent, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
@@ -1020,6 +1035,101 @@ import { digestFlow } from "./workflows/digest.ts";
 export const digest = workflow({
   description: "Research a topic overnight and store the result",
   input: z.object({ topic: z.string() }),
+  output: z.object({ topic: z.string(), headline: z.string() }),
+  run: digestFlow,
+});
+
+export default agent({
+  name: "Researcher",
+  workflows: { digest },
+});
+```
+
+`tools/research.ts` — the tool that starts a run.
+```ts no-check
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+import { digest } from "../agent.ts";
+
+export default tool({
+  description: "Kick off overnight research on a topic",
+  inputSchema: z.object({ topic: z.string() }),
+  execute: async ({ topic }, ctx) => {
+    // The workflow itself, not its name: typed input, and a typo is a
+    // compile error. `key` is what lets a later turn find this run.
+    const runId = await ctx.workflows.start(digest, { topic }, { key: ctx.sessionId });
+    return `Working on it — run ${runId}.`;
+  },
+});
+```
+
+#### Call Signature
+
+```ts
+function workflow<P, R>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
+```
+
+Declare a durable workflow.
+
+An identity function for type inference, exactly like `tool()` — the returned
+object is the input unchanged. Workflows are named by the key they are declared
+under, so this takes no `name`.
+
+##### Type Parameters
+
+###### P
+
+`P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
+
+###### R
+
+`R` = `unknown`
+
+##### Parameters
+
+###### def
+
+[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+
+##### Returns
+
+[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+
+##### Remarks
+
+**Three primitives here run a defined process; pick by SCOPE.** A
+[dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
+across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
+DURABLY, outliving the session.
+
+It validates nothing at declaration time, and there is nothing left to
+validate: a body is an ordinary function and a workflow's identity is the key
+it is declared under, so the `workflowId` a compiler used to attach — and the
+check that used to look for it — are both gone. See [WorkflowBody](workflow-api.md#workflowbody).
+
+**Two signatures, and which one applies is decided by `output`.** With an
+output schema the result type comes from the SCHEMA and the body is CHECKED
+against it — a body returning something else is an error at the declaration,
+naming the property that disagrees, rather than quietly redefining what the
+workflow promises. With no `output` nothing changes: the result type is
+inferred from the body exactly as before. Both answer the same
+`WorkflowDef<P, R>`, so nothing downstream can tell which was used.
+
+##### Examples
+
+`agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
+`agent()` takes no `tools`. Declaring `output` beside `input` is what makes
+the run's result checked where it completes and typed where it is read.
+```ts no-check
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+import { digestFlow } from "./workflows/digest.ts";
+
+export const digest = workflow({
+  description: "Research a topic overnight and store the result",
+  input: z.object({ topic: z.string() }),
+  output: z.object({ topic: z.string(), headline: z.string() }),
   run: digestFlow,
 });
 
@@ -4958,13 +5068,24 @@ rule and what to do about it. Never pass one as a string.
 ### StepOptions
 
 ```ts
-type StepOptions = {
+type StepOptions<S> = {
   maxAttempts?: number;
+  schema?: S;
 };
 ```
 
 Per-step overrides. Everything here has a default that is right for most
 steps; passing nothing is the common case.
+
+#### Type Parameters
+
+##### S
+
+`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+
+The schema [StepOptions.schema](#schema-1) carries, when one is
+  given. Defaulted, so `StepOptions` is still spellable without an argument —
+  every caller that predates the schema still means what it meant.
 
 #### Properties
 
@@ -4985,6 +5106,67 @@ Defaults to [DEFAULT\_STEP\_MAX\_ATTEMPTS](#default_step_max_attempts). It is a 
 rather than a global because the right answer is a property of what the
 step DOES: a model call worth retrying three times and a payment capture
 worth retrying never are both ordinary.
+
+##### schema?
+
+```ts
+optional schema?: S;
+```
+
+The shape this step's output must have — any
+[Standard Schema](https://standardschema.dev), zod being the documented
+default. Its OUTPUT type is what the step resolves to.
+
+**Checked on BOTH sides of the journal, and the two catch different bugs.**
+On the WRITE, before the entry is appended, so a body that produced the
+wrong shape — or a value the journal's codec cannot carry — fails at the
+step that produced it rather than on a replay days later; that failure is
+the step's own, so it spends an attempt and a retry may well fix it. On the
+READ, when a later walk is answered from the journal, which is what catches
+a REDEPLOY mid-flight: the run resumes against a bundle whose step returns a
+different shape, and without this the body is handed the old one under the
+new type. That failure is NOT the step's — the step succeeded, days ago —
+so it fails the run the way a divergence does and journals nothing.
+
+Durable session state has been checked structurally in both backends for a
+long time (`packages/aai/CLAUDE.md`, "A slot OWNS its session state": `Map`
+→ `{}`, `Date` → string, `NaN` → null — the values that corrupt do not
+throw, so `JSON.stringify` is not the check). A step's output is exactly as
+durable and had no check at all.
+
+A schema that COERCES is supported and often the better answer: what is
+journaled is what the schema passed, never the raw value, so the next walk
+reads the same thing this one was handed.
+
+***
+
+### StepSchemaOptions
+
+```ts
+type StepSchemaOptions<S> = StepOptions<S> & {
+  schema: S;
+};
+```
+
+[StepOptions](#stepoptions) with the schema PRESENT — what selects the validating
+overload of `ctx.step`, whose result is the schema's output rather than
+whatever the body happened to return.
+
+#### Type Declaration
+
+##### schema
+
+```ts
+schema: S;
+```
+
+The shape — see [StepOptions.schema](#schema-1).
+
+#### Type Parameters
+
+##### S
+
+`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
 
 ***
 
@@ -5502,14 +5684,88 @@ Compile-time stage tag; never present at runtime.
 ### WaitForOptions
 
 ```ts
-type WaitForOptions = {
+type WaitForOptions<S> = {
+  schema?: S;
   timeoutMs: number;
 };
 ```
 
-Per-wait options.
+Per-wait options, for a wait that carries a DEADLINE.
+
+A wait that carries only a schema takes [WaitForSchemaOptions](#waitforschemaoptions) instead —
+two types rather than one optional `timeoutMs`, because the deadline is what
+decides whether the call can resolve `undefined`, and a single bag with both
+halves optional would put `| undefined` on the result of a wait that has no
+way to end unanswered.
+
+#### Type Parameters
+
+##### S
+
+`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
 
 #### Properties
+
+##### schema?
+
+```ts
+optional schema?: S;
+```
+
+The shape the payload must have — any
+[Standard Schema](https://standardschema.dev), zod being the documented
+default. Its OUTPUT type is what the wait resolves to, in place of the type
+parameter.
+
+**A payload is UNTRUSTED**: it arrives over public HTTP, through
+`ctx.workflows.signal` or a webhook delivery to
+`ctx.workflows.publicWebhookUrl(token)`, and nothing between the sender and
+the body inspects it. The type parameter says what you EXPECT; this is the
+only thing that checks. `stepGenerateJson` on `@alexkroman1/aai/step` makes
+the same trade against a model's reply, and its module doc carries the
+general argument under "Why a schema rather than a type parameter".
+
+A payload that fails is a FATAL failure of the run rather than a retry or an
+`undefined`: the payload is journaled, so every later delivery reads the
+same bytes and refuses identically — there is nothing a redelivery could
+change.
+
+**Validation runs AFTER the window has been decided, and does not un-decide
+it.** Whether this wait was answered or timed out is settled by a
+compare-and-set on the hook before the body continues (`closeHook`) — that
+ordering is what stops a signal landing a moment later from making the next
+replay answer a window this one timed out — so by the time a payload is
+checked, the delivery has already happened and been recorded. A rejected
+payload therefore leaves the hook exactly as it found it: DELIVERED, not
+reopened. Reopening would be worse in both directions — it would invite a
+second signal to overwrite the first, and it would make the run's history
+disagree with the request the sender was answered on. Nobody sent the wrong
+shape twice by accident, and the run failing loudly is the outcome that gets
+it fixed.
+
+`timeoutMs` elapsing unanswered is NOT a validation failure: there is no
+payload, the wait resolves `undefined`, and the schema is never consulted.
+
+A schema that coerces or strips unknown keys is supported and is usually
+what a webhook wants; the validated value is what the body receives.
+
+```ts
+import type { WorkflowCtx } from "@alexkroman1/aai";
+import { z } from "zod";
+
+// Derived from the run's own input, so the tool handing the URL out and the
+// body waiting on it agree — see `WorkflowCtx.waitFor`.
+declare function approvalToken(id: string): string;
+
+export async function reviewFlow(input: { id: string }, ctx: WorkflowCtx) {
+  const approval = await ctx.waitFor(approvalToken(input.id), {
+    schema: z.object({ approved: z.boolean() }),
+    timeoutMs: 24 * 60 * 60 * 1000,
+  });
+  if (approval === undefined) return { published: false, reason: "expired" };
+  return { published: approval.approved };
+}
+```
 
 ##### timeoutMs
 
@@ -5523,6 +5779,38 @@ Resolves `undefined` when it elapses unanswered — not a throw, because a
 window closing is an ordinary outcome a body branches on rather than a
 failure. A signal that arrives after it is answered `false`, so a caller
 cannot be told their answer was taken when it was not.
+
+***
+
+### WaitForSchemaOptions
+
+```ts
+type WaitForSchemaOptions<S> = {
+  schema: S;
+};
+```
+
+A wait that carries a schema and NO deadline — `ctx.waitFor(token, { schema })`.
+
+Its own type rather than an optional `timeoutMs` on [WaitForOptions](#waitforoptions),
+for the reason stated there: an unbounded wait has no unanswered branch, so
+its result must not carry `| undefined`.
+
+#### Type Parameters
+
+##### S
+
+`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+
+#### Properties
+
+##### schema
+
+```ts
+schema: S;
+```
+
+The shape the payload must have — see [WaitForOptions.schema](#schema-2).
 
 ***
 
@@ -6124,9 +6412,9 @@ type WorkflowCtx = {
   now: Promise<number>;
   random: Promise<number>;
   sleep: Promise<void>;
-  step: Promise<T>;
+  step: Promise<InferSchemaOutput<S>>;
   uuid: Promise<string>;
-  waitFor: Promise<T>;
+  waitFor: Promise<InferSchemaOutput<S> | undefined>;
 };
 ```
 
@@ -6317,11 +6605,13 @@ Milliseconds to wait, or the `Date` to wait until. A value
 
 ##### step()
 
+###### Call Signature
+
 ```ts
-step<T, Name>(
+step<S, Name>(
    name: Name & Literal<Name>, 
-   fn: () => T | Promise<T>, 
-options?: StepOptions): Promise<T>;
+   fn: () => unknown, 
+options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
 ```
 
 Run `fn` once and journal what it returns; on every later replay, return
@@ -6345,9 +6635,50 @@ The `Literal` constraint is what makes "a string LITERAL" a compile error
 rather than a sentence in this paragraph. It is deliberately not exported —
 an author meets it as the message tsc prints, never by name — so its doc,
 carrying the two shapes it cannot reach and which layer catches each, is in
-`sdk/workflow-ctx.ts` beside the declaration. A harness that means
+`sdk/_workflow-ctx-literal.ts` beside the declaration. A harness that means
 to pass an unbounded name narrows `ctx.step` through one typed alias rather
 than casting at each site.
+
+`options.schema` checks the output on both sides of the journal and makes
+the schema's output what this resolves to — see [StepOptions.schema](#schema-1)
+for what each side catches, and why a read-side failure is not the step's.
+
+###### Type Parameters
+
+###### S
+
+`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+
+###### Name
+
+`Name` *extends* `string`
+
+###### Parameters
+
+###### name
+
+`Name` & `Literal`\<`Name`\>
+
+###### fn
+
+() => `unknown`
+
+###### options
+
+[`StepSchemaOptions`](#stepschemaoptions)\<`S`\>
+
+###### Returns
+
+`Promise`\<[`InferSchemaOutput`](#inferschemaoutput)\<`S`\>\>
+
+###### Call Signature
+
+```ts
+step<T, Name>(
+   name: Name & Literal<Name>, 
+   fn: () => T | Promise<T>, 
+options?: StepOptions): Promise<T>;
+```
 
 ###### Type Parameters
 
@@ -6417,7 +6748,7 @@ replays and still unnameable from outside the body.
 ###### Call Signature
 
 ```ts
-waitFor<T>(token: string): Promise<T>;
+waitFor<S>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
 ```
 
 Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
@@ -6454,8 +6785,11 @@ both places. This replaced the DevKit's `createHook()`, whose token was
 generated body-side for exactly this reason a problem.
 
 **A payload is UNTRUSTED.** It arrives over public HTTP, so validate it with
-a schema before acting on it; the type parameter is a claim about what you
-expect, not a check.
+`options.schema` — the type parameter is a claim, not a check, and until
+that option existed this paragraph was advice with no mechanism under it. A
+schema SUPERSEDES the parameter, and a payload failing one fails the RUN
+fatally with the window left as the delivery found it;
+[WaitForOptions.schema](#schema-2) carries why none of the three can be otherwise.
 
 ## A deadline is an OPTION, and still the one to reach for
 
@@ -6483,11 +6817,9 @@ review window beside a retry backoff), not to put a deadline on one wait.
 
 ###### Type Parameters
 
-###### T
+###### S
 
-`T` = `unknown`
-
-What the signaller is expected to send.
+`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
 
 ###### Parameters
 
@@ -6501,6 +6833,62 @@ Who is being waited for, and also this wait's IDENTITY in
   module doc). Two concurrent waits in one body must use different tokens,
   or a single signal resolves whichever the journal registered first and the
   other waits forever.
+
+###### options
+
+[`WaitForOptions`](#waitforoptions)\<`S`\> & [`WaitForSchemaOptions`](#waitforschemaoptions)\<`S`\>
+
+`timeoutMs` closes the window. Measured from the first time
+  the wait is REACHED and journaled there, so a replay does not extend it.
+  `schema` checks what the signaller actually sent, and decides the type.
+
+###### Returns
+
+`Promise`\<[`InferSchemaOutput`](#inferschemaoutput)\<`S`\> \| `undefined`\>
+
+###### Call Signature
+
+```ts
+waitFor<S>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+```
+
+###### Type Parameters
+
+###### S
+
+`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+
+###### Parameters
+
+###### token
+
+`string`
+
+###### options
+
+[`WaitForSchemaOptions`](#waitforschemaoptions)\<`S`\>
+
+###### Returns
+
+`Promise`\<[`InferSchemaOutput`](#inferschemaoutput)\<`S`\>\>
+
+###### Call Signature
+
+```ts
+waitFor<T>(token: string): Promise<T>;
+```
+
+###### Type Parameters
+
+###### T
+
+`T` = `unknown`
+
+###### Parameters
+
+###### token
+
+`string`
 
 ###### Returns
 
@@ -6558,6 +6946,7 @@ Key the workflow is declared under in `agent({ workflows })`.
 type WorkflowDef<P, R> = {
   description?: string;
   input?: P;
+  output?: StandardSchemaV1<unknown, R>;
   run: WorkflowBody<InferSchemaOutput<P>, R>;
   uploads?: readonly string[];
 };
@@ -6580,10 +6969,11 @@ Input schema (any Standard Schema, Zod by convention),
 
 `R` = `unknown`
 
-What the body resolves with, inferred from the function. It
-  reaches a caller as `WorkflowRunSnapshot`'s `output`, so passing the
-  workflow to `start`/`get`/`find` is what makes a completed run's result
-  typed instead of `unknown`.
+What the body resolves with — inferred from the declared
+  [WorkflowDef.output](#output) schema when there is one, and from the function
+  otherwise. It reaches a caller as `WorkflowRunSnapshot`'s `output`, so
+  passing the workflow to `start`/`get`/`find` is what makes a completed
+  run's result typed instead of `unknown`.
 
 #### Properties
 
@@ -6602,6 +6992,41 @@ optional input?: P;
 ```
 
 Schema for the run input, validated at `start()` so a bad payload fails at the call site.
+
+##### output?
+
+```ts
+optional output?: StandardSchemaV1<unknown, R>;
+```
+
+Schema for what a COMPLETED run answers with — `input` from the other end.
+
+Optional, and a workflow that declares none behaves exactly as it always
+did. What declaring one buys is three things a body's inferred return type
+cannot:
+
+- **The value is checked where the run completes**, once, against this
+  schema; a body that returns something the declaration denies fails the
+  run rather than reporting `completed` with an output its own workflow
+  says is impossible. A run's output crosses a durable journal, a
+  typed-JSON codec and an HTTP hop before a page reads it, and
+  `useWorkflowRun<R>`'s `run.output` is otherwise an unchecked CLAIM about
+  everything that happened in between.
+- **[WorkflowOutputOf](workflow-api.md#workflowoutputof) reads THIS**, so a page's type comes from the
+  declaration rather than from inferring the body — which is what lets an
+  annotated `agent.ts` resolve it without the body's signature. See that
+  type for the circularity that removes.
+- **A page can render results the way it renders the form**, because the
+  listing serves it as JSON Schema ([WorkflowSummary.outputSchema](workflow-api.md#outputschema)).
+
+Any Standard Schema, Zod by convention — the same acceptance as `input`,
+and not a TypeScript type for the same reason: a type is erased, and this
+has to be checked at run time and converted for a browser.
+
+What is stored is the schema's PARSED value, exactly as `start()` stores
+the parsed input. So an unknown key a zod object strips is not in what the
+caller reads back, and the type a caller holds is a promise the run kept
+rather than a claim about it.
 
 ##### run
 

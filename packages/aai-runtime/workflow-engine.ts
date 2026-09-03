@@ -40,6 +40,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { guestCodeVersion } from "./workflow-code-version.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./workflow-journal-types.ts";
+import { settleRunOutcome } from "./workflow-output.ts";
 import { type ReplayOptions, type ReplayOutcome, replayRun } from "./workflow-replay.ts";
 import { createStepGate, resolveStepConcurrency, type StepGate } from "./workflow-step-gate.ts";
 import { type StreamStore, streamNamespace } from "./workflow-streams.ts";
@@ -186,6 +187,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
    */
   async function recordOutcome(
     runId: string,
+    workflow: string,
     outcome: ReplayOutcome,
   ): Promise<RunRecord["status"] | undefined> {
     if (outcome.kind === "suspended") {
@@ -211,16 +213,21 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       return current;
     }
 
+    // What the run BECOMES is decided next door, and before the write: a body
+    // that completed may still have produced something its own workflow's
+    // `output` schema denies, which is a failed run rather than a `completed`
+    // one carrying an impossible output. `workflow-output.ts` argues that, and
+    // deciding it in a module that touches no store is what keeps a journal
+    // blip from ever reading as one — see "A failure of the JOURNAL is not a
+    // failure of the RUN".
+    const terminal = await settleRunOutcome(workflows[workflow], workflow, runId, outcome, logger);
     // `expect` excludes the terminal statuses, which is what stops a run
     // CANCELLED mid-flight from being overwritten as completed by the worker
     // that had not noticed. The body ran to the end either way; what the cancel
     // decided is what the run is recorded as.
-    const moved =
-      outcome.kind === "completed"
-        ? await journal.setStatus(runId, "completed", { output: outcome.output }, ["running"])
-        : await journal.setStatus(runId, "failed", { error: outcome.error }, ["running"]);
+    const moved = await journal.setStatus(runId, terminal.status, terminal.patch, ["running"]);
     if (!moved) return (await journal.getRun(runId))?.status;
-    return outcome.kind;
+    return terminal.status;
   }
 
   /**
@@ -248,6 +255,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
     try {
       return await recordOutcome(
         runId,
+        walk.workflow,
         await replayRun({
           ...walk,
           runId,

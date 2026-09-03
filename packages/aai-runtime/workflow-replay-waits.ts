@@ -40,12 +40,48 @@
  * which is a verdict about the walk and travels through `refuse` as well, so a
  * body that catches broadly cannot turn one into `completed`.
  *
+ * ## A payload is CHECKED after the window has been decided, and never reopens it
+ *
+ * `WaitForOptions.schema` is the first thing that verifies what a stranger sent
+ * — `answered.payload as T` and `record.payload as T` were casts, over a value
+ * that arrived on an unauthenticated public route. `workflow-replay-schema.ts`
+ * carries why a failure is FATAL; what belongs here is where in the sequence it
+ * runs, because the ordering is not free to change.
+ *
+ * The deadline arm decides the window BEFORE the body continues: `closeHook` is a
+ * compare-and-set, and that is what stops a signal landing a moment later from
+ * making the next replay answer a window this one timed out (`HookRecord.closed`).
+ * A payload is therefore only ever validated on a wait that is already CLAIMED —
+ * either delivered on entry, or delivered because the compare-and-set refused —
+ * and the validation deliberately does not undo that claim.
+ *
+ * **A rejected payload leaves the hook exactly as it found it: answered.** Three
+ * reasons, in order of how badly they bite. The delivery HAPPENED and the sender
+ * was answered on it, so a journal that showed the window still open would
+ * disagree with what the far side was told. Reopening would invite a second
+ * signal to overwrite the first, which turns a run that failed loudly into one
+ * whose history depends on who retried. And it would not help anyway: the same
+ * bytes are what every later delivery reads, which is exactly why the refusal is
+ * fatal rather than retryable.
+ *
+ * A window that CLOSES unanswered is not a validation failure and never consults
+ * the schema — there is no payload, `undefined` is the outcome the body branches
+ * on, and running a schema over "nobody answered" would fail every timeout a
+ * validating wait ever takes.
+ *
  * @module
  */
 
-import type { SleepOptions, WaitForOptions, WorkflowCtx } from "@alexkroman1/aai";
+import type {
+  SleepOptions,
+  WaitForOptions,
+  WaitForSchemaOptions,
+  WorkflowCtx,
+} from "@alexkroman1/aai";
+import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
 import type { JournalStore } from "./workflow-journal-types.ts";
 import { waitTokenDiverged } from "./workflow-replay-divergence.ts";
+import { checkWorkflowValue, waitPayloadRefused } from "./workflow-replay-schema.ts";
 import type { SuspendController } from "./workflow-replay-suspend.ts";
 import { waitInsideStep } from "./workflow-replay-wait.ts";
 
@@ -59,9 +95,46 @@ function wakeAtFrom(until: number | Date): number {
   return until instanceof Date ? until.getTime() : Date.now() + until;
 }
 
+/**
+ * What a `waitFor({ timeoutMs })` found once the hook was open.
+ *
+ * Three members rather than the two it used to have (`{ park } | { value }`),
+ * because a CLOSED window and a delivered payload of `undefined` are the same
+ * value and are no longer the same outcome: only one of them has a payload for
+ * a schema to check. The distinction costs a discriminant and is what stops a
+ * validating wait rejecting its own timeout.
+ */
+type DeadlineOutcome =
+  | { kind: "park"; wakeAt: number }
+  | { kind: "closed" }
+  | { kind: "answered"; payload: unknown };
+
+/**
+ * The deadline a wait carries, or `undefined` for an unbounded one.
+ *
+ * Reads the FIELD rather than testing whether options were passed at all, which
+ * is the distinction the second option bag introduced: a schema alone does not
+ * make a wait bounded, and `waitOptions !== undefined` used to mean "has a
+ * deadline" because a deadline was the only thing options could carry.
+ */
+function deadlineOf(
+  waitOptions: WaitForOptions | WaitForSchemaOptions | undefined,
+): number | undefined {
+  if (waitOptions === undefined || !("timeoutMs" in waitOptions)) return undefined;
+  return waitOptions.timeoutMs;
+}
+
 /** What {@link createWaitMethods} needs to answer one walk's waits. */
 export type WaitOptions = {
   runId: string;
+  /**
+   * The declared key of the workflow being walked.
+   *
+   * Read only by a refusal message: a hook token is DERIVED from the run's own
+   * input, so it reads as data rather than as a place in the source, and the
+   * workflow's name is what points a reader at the body that declared the wait.
+   */
+  workflow: string;
   journal: JournalStore;
   /**
    * Where a wait PARKS, and the channel the walk suspends on. One per walk, so
@@ -85,7 +158,7 @@ export type WaitOptions = {
  * @internal
  */
 export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "sleep" | "waitFor"> {
-  const { runId, journal, suspend, refuse } = options;
+  const { runId, workflow, journal, suspend, refuse } = options;
   /**
    * Reaches so far, per NAME — a sleep by its label, a hook by its token.
    *
@@ -167,12 +240,12 @@ export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "slee
    * would land on a slot already closed. Measured: `replayRun` never returns,
    * and `workflow-resume-equivalence.test.ts` times out rather than failing.
    */
-  async function deadlineOutcome<T>(
+  async function deadlineOutcome(
     key: string,
     token: string,
     occurrence: number,
     timeoutMs: number,
-  ): Promise<{ park: number } | { value: T | undefined }> {
+  ): Promise<DeadlineOutcome> {
     // A DEADLINE is journaled as its own sleep, sharing the hook's occurrence so
     // the two travel together. That is what makes the window immune to replay:
     // the wake time is decided the first time this wait is reached, where a
@@ -187,7 +260,9 @@ export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "slee
       // must not also close an approval window. See `SleepRecord.kind`.
       "hookTimeout",
     );
-    if (!(deadline.woken || Date.now() >= deadline.wakeAt)) return { park: deadline.wakeAt };
+    if (!(deadline.woken || Date.now() >= deadline.wakeAt)) {
+      return { kind: "park", wakeAt: deadline.wakeAt };
+    }
     // Closed unanswered. The hook is CLOSED before the body continues, so a
     // signal arriving a moment later cannot make the next replay read a payload
     // and take the answered branch — see `HookRecord.closed`. `undefined` rather
@@ -198,21 +273,54 @@ export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "slee
     // over it was the divergence `HookRecord.closed` exists to prevent arriving
     // by the other door: this walk would time out while every later replay read
     // `delivered: true` and answered.
-    if (await journal.closeHook(runId, key)) return { value: undefined };
+    if (await journal.closeHook(runId, key)) return { kind: "closed" };
     // Refused, so the window was ANSWERED. Re-read it — `claimHook` is
     // idempotent on the key, so this is the same read the next replay makes,
     // which is exactly the point.
     const answered = await journal.claimHook(runId, key, token);
-    return { value: answered.payload as T };
+    return { kind: "answered", payload: answered.payload };
   }
 
-  async function waitFor<T>(token: string, waitOptions?: WaitForOptions): Promise<T | undefined> {
+  /**
+   * The payload a wait resolves: checked against the schema, or handed on.
+   *
+   * The ONE place a payload becomes a value the body sees, which is why both
+   * arms of {@link waitFor} route through it — an arm that cast directly would
+   * be a hole nobody could see from the option's own doc. A refusal is recorded
+   * AND thrown, the pair that stops a body's `catch` reporting `completed`.
+   *
+   * Nothing here touches the hook: by the time it runs the window has already
+   * been claimed, and the module doc argues why validation must not un-claim it.
+   */
+  async function payloadOf<T>(
+    token: string,
+    payload: unknown,
+    schema: StandardSchemaV1 | undefined,
+  ): Promise<T> {
+    if (schema === undefined) return payload as T;
+    const check = await checkWorkflowValue(schema, payload);
+    if (!check.ok) {
+      const refusal = waitPayloadRefused(workflow, token, check.issues);
+      refuse(refusal.message);
+      throw refusal;
+    }
+    return check.value as T;
+  }
+
+  async function waitFor<T>(
+    token: string,
+    // Both bags: a wait may carry a deadline, a schema, or both — see
+    // `WaitForSchemaOptions`, which exists so an unbounded validating wait does
+    // not have to claim a `| undefined` it can never resolve.
+    waitOptions?: WaitForOptions | WaitForSchemaOptions,
+  ): Promise<T | undefined> {
     const noWait = refuseInsideStep("ctx.waitFor");
     if (noWait) throw noWait;
     // Keyed by the TOKEN the body reached — a name it already had, so unlike
     // `ctx.sleep` this needed no new argument.
     const occurrence = nextOccurrence(hooks, token);
     const slot = suspend.enter();
+    const schema = waitOptions?.schema;
     try {
       const key = `hook!${token}#${occurrence}`;
       const record = await journal.claimHook(runId, key, token);
@@ -230,15 +338,20 @@ export function createWaitMethods(options: WaitOptions): Pick<WorkflowCtx, "slee
       // The FIRST payload, every replay. `claimHook` is idempotent on the key,
       // so a re-walk reads what was delivered rather than registering a second
       // wait.
-      if (record.delivered) return record.payload as T;
+      if (record.delivered) return await payloadOf<T>(token, record.payload, schema);
       // No deadline: nothing but a signal ends this, so the wait contributes no
       // wake time — `undefined` is what tells `earliestDeadline` to skip it.
-      if (waitOptions === undefined) return slot.park(undefined);
+      const timeoutMs = deadlineOf(waitOptions);
+      if (timeoutMs === undefined) return slot.park(undefined);
       // AWAITED inside the slot, so the deadline's own journal write is held the
       // way every other engine operation is; the park below is what must stay in
       // this `try`. See `deadlineOutcome`.
-      const outcome = await deadlineOutcome<T>(key, token, occurrence, waitOptions.timeoutMs);
-      return "park" in outcome ? slot.park(outcome.park) : outcome.value;
+      const outcome = await deadlineOutcome(key, token, occurrence, timeoutMs);
+      if (outcome.kind === "park") return slot.park(outcome.wakeAt);
+      // A window that closed carries no payload, so there is nothing to check —
+      // see the module doc on why a timeout is not a validation failure.
+      if (outcome.kind === "closed") return undefined;
+      return await payloadOf<T>(token, outcome.payload, schema);
     } finally {
       slot.end();
     }

@@ -321,8 +321,31 @@ describe("reading the loudness measurement", () => {
     expect(() => parseLoudness(missing)).toThrow(/input_tp/);
   });
 
+  test("names the KEY when the value is unreadable, and QUOTES what came", () => {
+    // The other half of the case above: the key is there and holds something no
+    // number can be read out of — `"n/a"`, which is ffmpeg's own spelling for a
+    // value it could not measure, or a type that was never a number. Terminal
+    // either way, and the message has to carry the value, which is why the
+    // object gate and the value schema are two parses rather than one.
+    expect(() => parseLoudness(LOUDNORM_STDERR.replace('"-7.42"', '"n/a"'))).toThrow(
+      /input_tp.*got "n\/a"/,
+    );
+    expect(() => parseLoudness(LOUDNORM_STDERR.replace('"-7.42"', "[1,2]"))).toThrow(/input_tp/);
+  });
+
+  test("coerces exactly as `Number(…)` does, corners included", () => {
+    // Every value is a STRING on the wire, so the read has always been a
+    // coercion — and `Number(null)` is 0, not `NaN`. Pinned rather than
+    // tightened: the schema replaced a hand-written reader, so its corners are
+    // the ones that reader had, and narrowing them is a change to make on
+    // purpose rather than a side effect of declaring a schema.
+    const nulled = LOUDNORM_STDERR.replace('"0.13"', "null");
+    expect(parseLoudness(nulled).targetOffset).toBe(0);
+  });
+
   test("refuses a block that is not JSON at all", () => {
     expect(() => parseLoudness("[loudnorm] {not json}")).toThrow(MediaAnalysisError);
+    expect(() => parseLoudness("[loudnorm] {not json}")).toThrow(/not JSON/);
   });
 });
 

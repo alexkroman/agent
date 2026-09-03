@@ -37,6 +37,7 @@ type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
 
@@ -128,7 +129,7 @@ type GenerateResult = {
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
-// @public
+// @internal
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
@@ -468,8 +469,14 @@ interface StateProjection<V = unknown> {
 }
 
 // @public
-type StepOptions = {
+type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
+    schema?: S | undefined;
+};
+
+// @public
+type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
+    schema: S;
 };
 
 // @public
@@ -795,8 +802,14 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type WaitForOptions = {
+type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     timeoutMs: number;
+    schema?: S | undefined;
+};
+
+// @public
+type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    schema: S;
 };
 
 // @public
@@ -835,11 +848,14 @@ type WorkflowClient = {
 type WorkflowCtx = {
     readonly runId: string;
     readonly workflow: string;
+    step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     now(): Promise<number>;
     random(): Promise<number>;
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
@@ -868,6 +884,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
     uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -903,6 +920,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    outputSchema?: unknown;
     uploads?: readonly string[];
 };
 
