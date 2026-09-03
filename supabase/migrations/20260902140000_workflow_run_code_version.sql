@@ -1,3 +1,24 @@
+-- Renamed from `20260902010000_workflow_run_code_version.sql`. It merged
+-- (#1360) AFTER a migration named `20260902120000_workflow_run_abandonment.sql`
+-- (#1358) had already been applied to production, so `supabase db push` saw a
+-- pending file sorting BEFORE the last remote row and refused the whole push:
+--
+--     Found local migration files to be inserted before the last migration on
+--     remote database. Rerun the command with --include-all flag ...
+--
+-- The push is the deploy's `migrate` stage, so the refusal blocked the release.
+-- The rename is the fix rather than `--include-all`, which would make
+-- out-of-order application permanent policy and leave the applied schema a
+-- function of MERGE order instead of filename order. Safe to rename here
+-- because nothing had applied it in production and the statement below is
+-- `add column if not exists` — it neither depends on nor is depended on by the
+-- migration it now follows. The two `aai-*/CHANGELOG.md` entries that cite the
+-- old name are published history and deliberately not rewritten.
+--
+-- The lesson for the next concurrent pair: a migration's timestamp is claimed
+-- when it MERGES, not when it is written. Re-date the file on rebase if
+-- anything newer landed under `supabase/migrations/` while the branch was open.
+--
 -- `aai_platform.workflow_runs.code_version` — which BUNDLE a run was started
 -- against.
 --
