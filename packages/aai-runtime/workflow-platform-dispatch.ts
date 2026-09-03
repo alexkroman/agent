@@ -90,13 +90,29 @@ export function createPlatformDispatch(
 ): (runId: string, at?: number) => Promise<void> {
   const send = createPlatformQueueSend(opts.platform);
   return async (runId, at) => {
-    // Seconds, because that is what the queue takes. Rounded UP so a delivery is
-    // never earlier than the deadline the body computed: a sleep that wakes early
-    // re-reads its own stored `wakeAt`, finds it still in the future, and suspends
-    // again — correct, but a wasted boot, and on a deployed guest a boot is the
-    // expensive thing.
-    const delaySeconds =
-      at === undefined ? undefined : Math.max(0, Math.ceil((at - Date.now()) / 1000));
+    // Rounded UP so a delivery is never earlier than the deadline the body
+    // computed: a sleep that wakes early re-reads its own stored `wakeAt`, finds it
+    // still in the future, and suspends again — correct, but a wasted boot, and on
+    // a deployed guest a boot is the expensive thing.
+    //
+    // The ceil is at MILLISECOND granularity, which preserves that property and
+    // costs at most 1 ms. It used to be `Math.ceil((at - Date.now()) / 1000)`,
+    // which preserved it at a cost of up to a full second on EVERY sub-second
+    // wake — measured, a `ctx.sleep(100)` resumed at ~1,780 ms of which ~1,000 was
+    // this line. Nothing below the field needs whole seconds: `enqueue` multiplies
+    // by 1000 and Postgres computes `available_at` in milliseconds, and the
+    // enqueue route validates only that the number is finite. (The remaining
+    // ~780 ms is `WORKFLOW_QUEUE_INTERVAL_MS` and is by design — a future-dated
+    // row is deliberately not announced; see `announce()` in
+    // `aai-server/workflow-queue-store.ts`.)
+    //
+    // Ceil the MILLISECOND and divide afterwards, never the other way round: the
+    // server's own conversion is `Math.round(delaySeconds * 1000)` (in both
+    // `enqueue` and `reschedule`), so an integer millisecond survives the round
+    // trip exactly, where ceiling a fractional second could be rounded back DOWN
+    // and land the delivery before the deadline after all.
+    const delayMs = at === undefined ? undefined : Math.max(0, Math.ceil(at - Date.now()));
+    const delaySeconds = delayMs === undefined ? undefined : delayMs / 1000;
     try {
       await send(queueNameFor(runId), { runId }, { delaySeconds });
     } catch (err: unknown) {
