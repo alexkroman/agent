@@ -577,9 +577,14 @@ jobs:
       #   * It tags every non-private workspace package at the version its
       #     manifest declares (`privatePackages.tag` is false in
       #     `.changeset/config.json`), rather than only what THIS run packed —
-      #     so a version that reached npm on a run which failed to tag it gets
-      #     its tag from the next release. That case is not hypothetical; it is
-      #     nine releases wide.
+      #     so a release that publishes nothing new still owes, and writes, the
+      #     tag for the version in its tree.
+      #
+      # What it does NOT do is close a hole behind it. It tags the CURRENT
+      # manifest version, so once the next release bumps past a version that
+      # was published untagged, that version is unreachable from here — which
+      # is the state 9.0.1 through 13.0.0 are in, and why they are backfilled
+      # by hand rather than by the next run of this step.
       #
       # Unconditional for the same reason: the tag is owed by the commit that
       # declares the version, not by whether this particular run happened to
