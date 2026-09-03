@@ -1,0 +1,5 @@
+---
+"aai-server": patch
+---
+
+Split the queue's retry budget in two, so an infrastructure condition cannot drop a message. 'attempt' counted every way a delivery can go wrong, and two of them are not the same fact: a guest that answered has told us something about the message, and a guest that was never reached has not. With one counter the cheapest infrastructure condition there is — the broker answering 503 because a sandbox boot is still in flight, which is literally up-but-not-ready — spent the same attempt as a step that threw, and five of those inside ~380s dropped the message; the run then waited out STALL_GRACE_MS before reconcile brought it back, so a blip cost sixteen minutes and six sandbox boots. A delivery that sent no request now throws GuestUnreachableError and spends a second counter (unreachable_attempts) on a longer, more patient backoff table whose total lands just inside the reconcile grace, so reconcile follows that budget rather than racing it. A fetch that throws is deliberately not classified as unreachable, since the guest may have received the message and be running the step.

@@ -24,6 +24,7 @@ import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { captureLogs, createTestStore, fakeSandbox } from "./test-utils.ts";
 import { createQueueDeliverer } from "./workflow-queue-deliver.ts";
+import { isGuestUnreachable } from "./workflow-queue-failure.ts";
 import type { QueuedMessage } from "./workflow-queue-store.ts";
 
 const SLUG = "my-agent";
@@ -257,6 +258,15 @@ describe("createQueueDeliverer", () => {
       await expect(deliver(message())).rejects.toThrow(/HTTP 500[\s\S]*cannot read id/);
     });
 
+    test("a guest that ANSWERED is not unreachable, whatever it answered", async () => {
+      // The other side of the classification, and the half that keeps it sound:
+      // a 500 means the guest received the message, so it spends the message's
+      // own budget. Reading it as unreachable would give a permanently failing
+      // step ten patient minutes on top of its five attempts.
+      const { deliver } = await resident(() => new Response("step threw", { status: 500 }));
+      await expect(deliver(message())).rejects.not.toSatisfy(isGuestUnreachable);
+    });
+
     test("a 400 rejects too, since an unroutable queue name is not a success", async () => {
       const { deliver } = await resident(() =>
         Response.json({ error: "unroutable queue name: nope" }, { status: 400 }),
@@ -278,6 +288,11 @@ describe("createQueueDeliverer", () => {
         fetchFn: recordingGuest().fetchFn,
       });
       await expect(deliver(message())).rejects.toThrow(/broker refused my-agent: HTTP 503/);
+      // UNREACHABLE, which is what routes it to the patient budget rather than
+      // the message's own five attempts: no request was sent, so nothing has
+      // been learned about this message. A boot still in flight is exactly the
+      // "up but not ready" case — see `workflow-queue-failure.ts`.
+      await expect(deliver(message())).rejects.toSatisfy(isGuestUnreachable);
     });
 
     test("rejects for a slug with no agent at all", async () => {
@@ -290,6 +305,7 @@ describe("createQueueDeliverer", () => {
         fetchFn: recordingGuest().fetchFn,
       });
       await expect(deliver(message({ slug: "gone" }))).rejects.toThrow(/HTTP 404/);
+      await expect(deliver(message({ slug: "gone" }))).rejects.toSatisfy(isGuestUnreachable);
     });
 
     test("never reaches the guest when the broker refused", async () => {
