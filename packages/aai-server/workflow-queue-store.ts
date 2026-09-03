@@ -6,10 +6,22 @@
  * parameter, and the difference is not cosmetic: a value written through BOTH
  * `JSON.stringify` and a bare `::jsonb` round-trips DOUBLE-ENCODED — the column
  * holds the JSON as a jsonb *string*, so `payload->>'runId'` is null for every
- * row. That silently collapsed this module's `distinct on` to a single candidate,
- * caught only by the real-Postgres tier, which is precisely the bug
- * `jsonb-encoding.scenario.test.ts` and the `normalize_double_encoded_jsonb`
- * migration already exist for. A fake cannot see it: a fake holds JS values.
+ * row. The `run_id` column is `generated always as (payload ->> 'runId')`, so
+ * that bug now makes every row's `run_id` null and {@link claimDue} claims NONE
+ * of them, where it used to collapse the `distinct on` to a single candidate and
+ * keep delivering. Either way it is caught only by the real-Postgres tier, which
+ * is precisely what `jsonb-encoding.scenario.test.ts` and the
+ * `normalize_double_encoded_jsonb` migration exist for. A fake cannot see it: a
+ * fake holds JS values.
+ *
+ * A DELAY crosses as `$n::bigint * interval '1 millisecond'`, never
+ * `($n || ' milliseconds')::interval`. The old spelling concatenated a parameter
+ * into a string and cast the result, so the parameter's TYPE was decided by
+ * whatever text it happened to hold and a bad value was a runtime SQL error
+ * rather than a rejected bind; and the three statements below plus the claim's
+ * five sites had to keep spelling the same trick the same way. Every delay here
+ * is in milliseconds for the same reason: one unit, so `announce`'s "is this due
+ * now" test reads identically wherever it is called from.
  *
  * `aai_platform.workflow_queue`'s own migration carries why this exists at all —
  * graphile-worker's `LISTEN` connection is the thing being given back, and it
@@ -42,6 +54,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
+import { queueNameKind } from "@alexkroman1/aai-runtime/internal";
 import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -76,14 +89,14 @@ export type QueuedMessage = {
  * What a queue row's `payload` holds — the queue's OWN envelope, not the
  * DevKit's message.
  *
- * The distinction matters twice. The column is `jsonb`, because the claim reads
- * `payload->>'runId'` out of it to serialize a run's messages against each other
- * — an opaque `bytea` could not be queried that way, and per-run ordering is the
- * one thing this queue has to get right. But what a run actually sends is BINARY:
- * the DevKit serializes with devalue and its executor is handed those bytes
- * verbatim. So the bytes ride in `data` as base64, and the platform never parses
- * them — a queue that understood that payload would be a second implementation
- * of somebody else's serialization format.
+ * The distinction matters twice. The column is `jsonb`, because the `run_id`
+ * column the claim serializes on is `generated always as (payload ->> 'runId')`
+ * — an opaque `bytea` could not be projected that way, and per-run ordering is
+ * the one thing this queue has to get right. But what a run actually sends is
+ * BINARY: the DevKit serializes with devalue and its executor is handed those
+ * bytes verbatim. So the bytes ride in `data` as base64, and the platform never
+ * parses them — a queue that understood that payload would be a second
+ * implementation of somebody else's serialization format.
  *
  * Base64 rather than a `bytea` column beside the jsonb for the same reason
  * `@workflow/world-postgres` does it ("graphile-worker is using JSON under the
@@ -163,9 +176,22 @@ export type EnqueueParams = {
  * Failures are swallowed, deliberately: the row is committed and the periodic pass
  * will find it, so a failed announcement costs latency and nothing else. Letting
  * it reject would turn a successful enqueue into a caller-visible error.
+ *
+ * **{@link reschedule} announces through here too, and did not.** A guest that
+ * parks with `{"timeoutSeconds": 0}` — a busy walk asking to be re-presented
+ * immediately, which is what `queueDeliveryBusySeconds` answers for a walk that
+ * has barely started — was re-parked with `available_at = now()` and NO notify,
+ * so it waited out a whole `WORKFLOW_QUEUE_INTERVAL_MS` for a message that was
+ * already due. The rule above is unchanged and is what makes this safe: the test
+ * is the delay, not the caller, so a real `sleep()` still announces nothing.
+ *
+ * The delay is in MILLISECONDS, which is the unit both call sites already hold —
+ * `reschedule` rounds a fractional `delaySeconds` into them, and passing seconds
+ * from one caller and milliseconds from the other would make the `> 0` test read
+ * differently on each.
  */
-async function announce(sql: SqlExec, delaySeconds: number): Promise<void> {
-  if (delaySeconds > 0) return;
+async function announce(sql: SqlExec, delayMs: number): Promise<void> {
+  if (delayMs > 0) return;
   try {
     await sql("select pg_notify($1, '')", [WORKFLOW_QUEUE_CHANNEL]);
   } catch (error) {
@@ -197,29 +223,61 @@ async function announce(sql: SqlExec, delaySeconds: number): Promise<void> {
  */
 export const WORKFLOW_QUEUE_CHANNEL = "aai_workflow_queue";
 
+/**
+ * Which of {@link claimDue}'s two serialization domains this message belongs to,
+ * decided at the DOOR and stored.
+ *
+ * The DevKit's queue-name grammar is applied here, once, in TypeScript. It used
+ * to be applied in the CLAIM instead, as two POSIX-ERE patterns crossing the
+ * package boundary as SQL parameters, and the column is not merely faster: a
+ * value written at enqueue records what the classifier said AT THE TIME, so a
+ * DevKit that renames a topic cannot reclassify a row already in the table. A
+ * generated column would have the same defect as the regexes, with the grammar
+ * duplicated into the DDL as well.
+ *
+ * `null` for a name the grammar does not recognise, and that is not a fallback:
+ * the claim requires `kind = 'workflow'` or `kind = 'step'` positively, so such
+ * a row is claimed by NOBODY. It also cannot arrive through the real route —
+ * `workflow-enqueue-handler.ts` answers 400 before calling this — which is what
+ * makes the two predicates exhaustive over the table. The table's own
+ * `check (kind in ('workflow', 'step'))` then refuses any THIRD value, so a new
+ * kind that nobody taught the claim about fails at the insert rather than
+ * sitting unclaimable.
+ */
+function queueKind(queueName: string): "workflow" | "step" | null {
+  return queueNameKind(queueName) ?? null;
+}
+
 export async function enqueue(sql: SqlExec, params: EnqueueParams): Promise<{ id: string }> {
-  const delaySeconds = Math.max(0, params.delaySeconds ?? 0);
+  const delayMs = Math.max(0, Math.round((params.delaySeconds ?? 0) * 1000));
   const rows = await sql(
+    // `kind` is written HERE and nowhere else, which is what makes the claim's
+    // two `kind = …` predicates exhaustive over the table — see
+    // {@link queueKind}. `run_id` is not in this list on purpose: it is a
+    // GENERATED column over `payload`, so naming it would be an error rather
+    // than a duplication.
     `insert into aai_platform.workflow_queue
-       (id, slug, queue_name, payload, headers, deployment_id, idempotency_key, available_at)
-     values ($1, $2, $3, $4::text::jsonb, $5::text::jsonb, $6, $7,
-             now() + ($8 || ' seconds')::interval)
+       (id, slug, queue_name, kind, payload, headers, deployment_id, idempotency_key,
+        available_at)
+     values ($1, $2, $3, $4, $5::text::jsonb, $6::text::jsonb, $7, $8,
+             now() + $9::bigint * interval '1 millisecond')
      on conflict do nothing
      returning id`,
     [
       params.id,
       params.slug,
       params.queueName,
+      queueKind(params.queueName),
       JSON.stringify(params.payload ?? null),
       params.headers === undefined ? null : JSON.stringify(params.headers),
       params.deploymentId ?? null,
       params.idempotencyKey ?? null,
-      String(delaySeconds),
+      String(delayMs),
     ],
   );
   const inserted = rows[0]?.id;
   if (typeof inserted === "string") {
-    await announce(sql, delaySeconds);
+    await announce(sql, delayMs);
     return { id: inserted };
   }
 
@@ -279,16 +337,23 @@ export async function ack(sql: SqlExec, id: string): Promise<void> {
  * into another replica's past (or future). The delay is clamped at zero because
  * the value comes from tenant code by way of the DevKit, and a negative
  * interval would make the message due before it was written.
+ *
+ * **A zero-delay re-park ANNOUNCES**, like an immediate {@link enqueue}, and did
+ * not: the row went back due-now with nothing telling a listener to look, so a
+ * guest re-parking a busy walk paid a full `WORKFLOW_QUEUE_INTERVAL_MS` per hop.
+ * {@link announce} carries the rest, including why a real `sleep()` still says
+ * nothing.
  */
 export async function reschedule(sql: SqlExec, id: string, delaySeconds: number): Promise<void> {
   const delayMs = Math.max(0, Math.round(delaySeconds * 1000));
   await sql(
     `update aai_platform.workflow_queue
         set locked_at = null,
-            available_at = now() + ($2 || ' milliseconds')::interval
+            available_at = now() + $2::bigint * interval '1 millisecond'
       where id = $1`,
     [id, String(delayMs)],
   );
+  await announce(sql, delayMs);
 }
 
 /**
@@ -319,9 +384,12 @@ export async function fail(
     `update aai_platform.workflow_queue
         set attempt = $2,
             locked_at = null,
-            available_at = now() + ($3 || ' milliseconds')::interval
+            available_at = now() + $3::bigint * interval '1 millisecond'
       where id = $1`,
     [id, next, String(backoffMs)],
   );
+  // No {@link announce} here, and it is not an omission: every entry in
+  // `RETRY_BACKOFF_MS` is positive, so a failed delivery is never due now and a
+  // notification would wake every replica to find nothing.
   return "retry";
 }

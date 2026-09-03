@@ -188,6 +188,15 @@ export const SLUG_LOCK_ACQUIRE_TIMEOUT_MS = 15_000;
  * a signal whose whole purpose is latency. Both members are things a
  * platform-owned connection can always do; a composition that has this handle at
  * all has both.
+ *
+ * **One TYPE, but not one connection.** `Pick`ing off `CloseableDb` reads as
+ * "some pool, minus the parts you may not use", and that is what the platform
+ * built for a while — with the `LISTEN` landing on a transaction-pooled handle,
+ * where a subscription cannot be held (`service-config.ts` has the account). So
+ * read this as a pair of CAPABILITIES rather than as one handle: `reserve` may
+ * be pooled, `listen` must be session-mode, and the composition root satisfies
+ * the two from two handles. The type is deliberately silent about that — it is
+ * the wiring's decision, and a spec asserts it per member.
  */
 export type AdminDb = Pick<CloseableDb, "reserve" | "listen">;
 

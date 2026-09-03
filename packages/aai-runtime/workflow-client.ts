@@ -45,7 +45,6 @@ import {
   PUBLIC_URL_UNCONFIGURED_MESSAGE,
   toToolJsonSchema,
 } from "@alexkroman1/aai/host-internal";
-import type { Db } from "@alexkroman1/aai/internal";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
@@ -61,12 +60,7 @@ import type {
 } from "@alexkroman1/aai/workflow-api";
 import { WorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
-import {
-  createMemoryKeyStore,
-  createPostgresKeyStore,
-  resolveFindLimit,
-  type WorkflowKeyStore,
-} from "./workflow-keys.ts";
+import { resolveFindLimit, type WorkflowKeyStore } from "./workflow-keys.ts";
 import { WORKFLOW_WEBHOOK_PREFIX } from "./workflow-serve.ts";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
 
@@ -95,8 +89,10 @@ export type WorkflowClientOptions = {
   /** The agent's declared workflows, keyed by the name they are declared under. */
   workflows: Readonly<Record<string, WorkflowDef>>;
   /**
-   * Where correlation keys are recorded. Pass a Postgres store in production and
-   * a memory store under `aai dev` — see `workflow-keys.ts`.
+   * Where correlation keys are recorded. One of the three stores in
+   * `workflow-keys.ts` — the platform's index for a deployed guest, an app's own
+   * Postgres for a self-hosted one, memory under `aai dev`; `selectKeyStore`
+   * (`workflow-runtime.ts`) is what picks between them.
    */
   keys: WorkflowKeyStore;
   /**
@@ -490,9 +486,4 @@ function safeJsonSchema(
 function unknownWorkflowMessage(named: string, declared: readonly string[]): string {
   const list = declared.length > 0 ? declared.join(", ") : "(none)";
   return `Workflow "${named}" is not declared on this agent. Declared workflows: ${list}.`;
-}
-
-/** Build the key store this runtime should use: the app database, or memory. */
-export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore {
-  return db ? createPostgresKeyStore(db) : createMemoryKeyStore();
 }

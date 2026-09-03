@@ -7,24 +7,27 @@
  * store at import time — which is what lets the client's own specs run with no
  * journal at all.
  *
- * The interesting part is the key store, because the two cases are not "prod and
- * a test" but two legitimate deployments:
+ * The interesting part is the key store, because the three cases are not "prod
+ * and a test" but three legitimate deployments — and they are the RUNS' three,
+ * one for one:
  *
- * - **With a `DATABASE_URL`** — the correlation-key index is a table in the database
- *   the AUTHOR supplied. This used to be every platform workflow app, because
- *   creating one switched app storage on; the platform provisions no database now,
- *   so it is whoever set the secret.
- * - **Without** — the index is in memory and forgotten on restart.
+ * - **A platform guest** — the correlation-key index is the platform's own table,
+ *   reached over `POST /:slug/workflow-keys` with the per-sandbox bearer. This is
+ *   what a deployed agent gets, and it is `selectKeyStore`'s first arm for
+ *   `selectJournal`'s reason.
+ * - **With a `DATABASE_URL`** — the index is a table in the database the AUTHOR
+ *   supplied. This used to be every platform workflow app, because creating one
+ *   switched app storage on; the platform provisions no database now, so it is
+ *   whoever set the secret.
+ * - **Neither** — the index is in memory and forgotten on restart.
  *
- * **The RUNS follow the same `DATABASE_URL`, and that is deliberate.** An
- * asymmetry here is a trap either way: durable runs beside a forgotten
- * correlation index means `find()` by key stops resolving across a restart while
- * the runs survive, and the reverse means a key pointing at a run that is gone.
- * One decision, one boot line, both reported.
- *
- * The RUNS have a third home a `DATABASE_URL` cannot describe — the platform's
- * journal, for a deployed guest, which holds no database of its own. That
- * preference is `selectJournal`'s, below.
+ * **The RUNS and the KEYS follow the same preference, and that is deliberate.**
+ * An asymmetry is a trap either way: durable runs beside a forgotten correlation
+ * index means `find()` by key stops resolving across a restart while the runs
+ * survive — which is precisely what a deployed guest had until the platform arm
+ * existed, the journal being durable since `workflow-journal-platform.ts` while
+ * the only pointer into it died with the sandbox — and the reverse means a key
+ * pointing at a run that is gone. One preference, one boot line, both reported.
  *
  * A missing database is therefore NOT a reason to withhold the client. It was
  * tempting to make storage a hard requirement and have `ctx.workflows` reject
@@ -37,11 +40,17 @@ import type { AgentDef } from "@alexkroman1/aai";
 import type { Db } from "@alexkroman1/aai/internal";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";
-import { createWorkflowClient, resolveKeyStore } from "./workflow-client.ts";
+import { createWorkflowClient } from "./workflow-client.ts";
 import { createInProcessWorkflowEngine } from "./workflow-in-process.ts";
 import { createPlatformJournal } from "./workflow-journal-platform.ts";
 import { createPostgresJournal } from "./workflow-journal-postgres.ts";
 import type { JournalStore } from "./workflow-journal-types.ts";
+import {
+  createMemoryKeyStore,
+  createPostgresKeyStore,
+  type WorkflowKeyStore,
+} from "./workflow-keys.ts";
+import { createPlatformKeyStore } from "./workflow-keys-platform.ts";
 import { createRunNotifier, type RunNotifier } from "./workflow-notify.ts";
 import { createPlatformDispatch } from "./workflow-platform-dispatch.ts";
 import { platformGuestOptions } from "./workflow-platform-world.ts";
@@ -175,6 +184,64 @@ function selectJournal(
 }
 
 /**
+ * Pick the correlation-key index, and name it for the boot line.
+ *
+ * Three backends, the same strict preference as {@link selectJournal} and for the
+ * same reasons — which is the property to preserve rather than an echo of it: the
+ * index and the journal are two halves of one answer to "which run belongs to this
+ * caller", so a deployment that resolved them differently would keep runs in one
+ * place and the only pointer to them in another.
+ *
+ * - **platform** — `createPlatformKeyStore`, one `POST /:slug/workflow-keys` per
+ *   call, beside the journal, the queue, session state and the upload records that
+ *   already work this way. FIRST, because a deployed guest may also carry an
+ *   author-supplied `DATABASE_URL` and its keys belong beside its runs rather than
+ *   split across two databases.
+ * - **postgres** — `createPostgresKeyStore` over that `DATABASE_URL`, which is what
+ *   a self-hosted deployment has and the platform never provisions.
+ * - **memory** — a `Map`, for `aai dev` and for trying a workflow out before
+ *   provisioning anything. Deliberately not durable, and the boot line SAYS so.
+ *
+ * **The platform pair is read from THIS PROCESS's environment**
+ * (`platformGuestOptions`), never the agent's — the distinction that already cost
+ * a deployment, and the safer read besides: an agent may set any `AAI_*` key as a
+ * secret, so under the tenant spelling an agent would choose the base URL and
+ * bearer its own index was sent to.
+ *
+ * A separate function from `resolveKeyStore`, which is PUBLISHED on this package's
+ * root barrel and is the two LOCAL arms an embedder can build from a `Db` they
+ * hold. The platform arm needs no argument and no embedder: it is read out of the
+ * environment the platform itself wrote, so it belongs to the selection this
+ * runtime makes rather than to the resolver an embedder calls.
+ *
+ * NOT exported, like {@link selectJournal} beside it: the boot line is the
+ * contract an operator reads, so `workflow-runtime.test.ts` asserts the choice
+ * through the LOG rather than by calling this — which is also the only way to
+ * answer "will a correlation key survive a restart" from outside.
+ */
+function selectKeyStore(db: Db | undefined): {
+  keys: WorkflowKeyStore;
+  keyStoreKind: string;
+} {
+  // `platformGuestOptions()` and NOT `resolvePlatformQueue(env)`: that separate
+  // name exists so a caller cannot accidentally hand it the AGENT's environment,
+  // which is the mistake two callers made and which cost a deployment. A spec
+  // reaches it with `vi.stubEnv`, which is the process env this is meant to read.
+  const platform = platformGuestOptions();
+  if (platform) {
+    return { keys: createPlatformKeyStore(platform), keyStoreKind: "platform" };
+  }
+  if (db) return { keys: createPostgresKeyStore(db), keyStoreKind: "postgres" };
+  return {
+    keys: createMemoryKeyStore(),
+    // Spelled out for the reason the journal's memory arm is: a durability
+    // tradeoff absent from the log reads as a bug, and this is the one an author
+    // is most likely to hit by accident.
+    keyStoreKind: "memory (in-process — a caller's next call will not find this run)",
+  };
+}
+
+/**
  * What a run's PROGRESS channel is backed by — and today the answer is always
  * memory, which is a limitation stated rather than a choice made.
  *
@@ -230,12 +297,19 @@ export function buildWorkflowClient(
     logger,
     journalOption,
   );
+  const { keys, keyStoreKind } = selectKeyStore(db);
   logger.info?.("Workflows resolved", {
     workflows: Object.keys(workflows),
     // Which store is in play decides whether a correlation key survives a
     // restart, so it belongs in the one line an operator reads at boot rather
     // than being inferred from whether storage happens to be on.
-    keyStore: db ? "postgres" : "memory",
+    //
+    // It is `selectKeyStore`'s answer now, and it used to be `db ? "postgres" :
+    // "memory"` — a line that was TRUE and useless: on a deployed guest it read
+    // `memory`, correctly, every time, with nobody reading it, while the runs
+    // beside it were durable. A boot line is only a gate on the deployments
+    // somebody looks at; the fix was the third backend, not the wording.
+    keyStore: keyStoreKind,
     // The RUN store, which is a different question from the key store and the
     // one an operator actually asks after a restart. Reported rather than
     // assumed, because a durability tradeoff absent from the log reads as a bug —
@@ -284,7 +358,7 @@ export function buildWorkflowClient(
   const engine = createInProcessWorkflowEngine({ workflows, logger, journal, dispatch });
   const client = createWorkflowClient({
     workflows,
-    keys: resolveKeyStore(db),
+    keys,
     // The engine this repo owns, executing its own deliveries in this process.
     // `createWorkflowClient` hands `start` the DECLARED KEY, and the engine
     // records a run under that same string — which is the whole of what the

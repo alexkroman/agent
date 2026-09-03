@@ -14,10 +14,6 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import {
-  STEP_QUEUE_NAME_PATTERN,
-  WORKFLOW_QUEUE_NAME_PATTERN,
-} from "@alexkroman1/aai-runtime/internal";
 import type { SqlExec } from "./secret-store.ts";
 import type { QueuedMessage } from "./workflow-queue-store.ts";
 
@@ -91,27 +87,37 @@ export const WORKFLOW_QUEUE_STEPS_PER_RUN = 8;
  *   which took every deployed agent's in-run step concurrency from the graphile
  *   path's three (`APP_DB_WORLD_WORKER_CONCURRENCY`) down to one.
  *
- *   So the serialization domain is `(slug, runId, is-step)`. Orchestration keeps
+ *   So the serialization domain is `(slug, run_id, kind)`. Orchestration keeps
  *   `distinct on` plus the `not exists` — the half that is easy to miss: without
  *   it a run whose earlier message is still being delivered hands out a second
  *   one. Steps get {@link WORKFLOW_QUEUE_STEPS_PER_RUN}, counting in-flight ones,
  *   so one busy run cannot spend the whole tick.
  *
- * - **The two kinds are matched EXPLICITLY, and there is no third case.** Both
- *   patterns come from `aai-runtime/internal` — where the DevKit is a declared
- *   dependency — and are applied here as parameters rather than respelled, so
- *   there is one source of truth. Orchestration is `~ $5` and steps are `~ $4`;
- *   neither is the other's complement, so a name matching neither is claimed by
+ * - **The kind is a COLUMN, and there is no third case.** `kind` is written at
+ *   enqueue from `queueNameKind` (`workflow-queue-store.ts`), so the DevKit's
+ *   queue-name grammar is applied exactly once, in TypeScript, at the boundary
+ *   that already refuses what it cannot classify — `workflow-enqueue-handler.ts`
+ *   answers 400 before the row exists, and the guest's dispatch refuses it again
+ *   on delivery. Here it is `kind = 'workflow'` and `kind = 'step'`, neither the
+ *   other's complement, so a row with any other value (or none) is claimed by
  *   NOBODY.
  *
- *   That is safe only because such a row cannot exist: `queueNameKind` refuses an
- *   unclassifiable name in the enqueue handler (400) before it is stored, and the
- *   guest's dispatch refuses it again on delivery. Writing orchestration as
- *   `!~ <step>` instead — the catch-all — is what this used to do, and it converts
- *   a DevKit that renames a topic into the whole fleet silently returning to
- *   one-step-at-a-time: precisely the regression the bullet above exists to undo,
- *   which nothing failed on and a stopwatch found. A wedged row is louder than a
- *   silent one, and the refusal at the boundary means neither happens.
+ *   It used to be two REGEXES passed in as SQL parameters, and the column is not
+ *   merely faster: writing the kind at the door means a DevKit that renames a
+ *   topic cannot reclassify a row already in the table. Writing orchestration as
+ *   `!~ <step>` instead — the catch-all this replaced — converted such a rename
+ *   into the whole fleet silently returning to one-step-at-a-time, which is the
+ *   regression the bullet above exists to undo, which nothing failed on and a
+ *   stopwatch found. `20260903010000_workflow_queue_run_kind_columns.sql` carries
+ *   the measurement and why `kind` is not a generated column.
+ *
+ * - **`run_id` is a column too, and is required POSITIVELY.** It is
+ *   `generated always as (payload ->> 'runId') stored`, so the envelope stays the
+ *   single source of truth and the two in-flight guards compare with `=` rather
+ *   than the `is not distinct from` a nullable jsonb extraction forced. A row
+ *   whose payload carries no `runId` is therefore excluded rather than grouped
+ *   with every other such row: `parseEnvelope` would refuse it on delivery
+ *   anyway, so the alternative was five sandbox boots and then abandonment.
  * - **Disjoint under concurrency, WITHOUT `for update`.** Postgres refuses
  *   `FOR UPDATE … DISTINCT` outright (`FOR UPDATE is not allowed with DISTINCT
  *   clause`), so the claim is the UPDATE itself: the trailing unclaimed
@@ -144,18 +150,47 @@ export async function claimDue(
   staleMs = QUEUE_CLAIM_STALE_MS,
 ): Promise<QueuedMessage[]> {
   const rows = await sql(
-    // TWO due sets rather than one, and each keeps the column order of
-    // `workflow_queue_run_idx` — `(slug, payload->>'runId', available_at)` — so
-    // both still read the index in the order they need. Folding the kind into one
-    // window's `partition by` would make that expression part of the sort key,
-    // which no index provides, and the migration that added that index exists
-    // because this query used to sort 7.5 MB to DISK every pass.
+    // The STALE CUTOFF is defined once, in a one-row `stale` CTE, and read back
+    // as a scalar subquery at each of its four sites. It used to be
+    // `($2 || ' milliseconds')::interval` spelled five times, which is four
+    // chances for the arms to disagree about what "stale" means — and a string
+    // concatenated into a cast, where a bad value is a runtime SQL error rather
+    // than a bound parameter of a declared type.
     //
-    // The union's alias is `due` and not `both`: `BOTH` is a RESERVED word in
-    // Postgres (the `trim(both …)` modifier), so a bare subquery alias of that
-    // name is a syntax error rather than a style question. Nothing in the unit
-    // tier would have caught it — the only tests that EXECUTE this SQL are
-    // `describeWithPg` ones, which skip without a real database.
+    // A scalar subquery rather than CROSS JOINING the CTE, and that is not a
+    // style choice: an uncorrelated subquery is an InitPlan, evaluated once and
+    // usable as an index condition, where a joined CTE column is opaque to the
+    // planner and would cost the `available_at`/`locked_at` bounds their
+    // indexes. `now()` is left inline because it is one stable function call
+    // with nothing to drift.
+    //
+    // TWO due sets rather than one: folding the kind into a single window's
+    // `partition by` would make it part of the sort key and cost each arm the
+    // partial index that actually serves it. The union's alias is `due` and not
+    // `both`: `BOTH` is a RESERVED word in Postgres (the `trim(both …)`
+    // modifier), so a bare subquery alias of that name is a syntax error rather
+    // than a style question. Nothing in the unit tier would have caught it — the
+    // only tests that EXECUTE this SQL are `describeWithPg` ones, which skip
+    // without a real database.
+    //
+    // The step arm's in-flight count is ONE aggregate over the claimed set,
+    // joined in, rather than a correlated `select count(*)` per candidate row.
+    // The correlated form was the single most expensive thing in this statement
+    // — 72,160 executions and 700,320 buffer hits of a 758,467-buffer pass — and
+    // the aggregate is bounded by what is actually in flight fleet-wide
+    // (replicas x `WORKFLOW_QUEUE_DELIVER_CONCURRENCY`, tens of rows).
+    //
+    // Orchestration keeps `not exists` rather than joining the same aggregate,
+    // and the split is by QUESTION rather than by cost: one arm asks whether any
+    // of a run's messages is in flight, the other how many. A shared `in_flight`
+    // CTE was written and MEASURED against this, in case an eagerly materialized
+    // CTE cost the idle tick — it does not, and that expectation was wrong:
+    // Postgres executes a CTE on the first CTE SCAN, so on an idle tick its body
+    // reports `never executed` exactly as this hash join's inner side does
+    // (0.63-0.95 ms and 624 buffers against 0.88-0.91 ms and 624, on the same
+    // database with the index dropped; busy and backlog were inside the noise
+    // both ways). So this is a readability choice with no performance claim
+    // attached — do not "optimize" it into one shape or the other.
     //
     // The UPDATE is wrapped in a `claimed` CTE so the outer select can ORDER what
     // comes back, and that is a fix rather than a flourish: `UPDATE … RETURNING`
@@ -165,46 +200,47 @@ export async function claimDue(
     // CI Postgres arms while passing locally — the shape of luck, not of a
     // guarantee. Stating it costs one column in the `returning` list and makes the
     // claim's fairness claim true of the RESULT and not just of the selection.
-    `with orchestration_due as (
-       select distinct on (q.slug, q.payload->>'runId') q.id, q.available_at
+    `with stale as (
+       select now() - $2::bigint * interval '1 millisecond' as before
+     ),
+     orchestration_due as (
+       select distinct on (q.slug, q.run_id) q.id, q.available_at
        from aai_platform.workflow_queue q
        where q.available_at <= now()
-         and (q.locked_at is null or q.locked_at < now() - ($2 || ' milliseconds')::interval)
-         and q.queue_name ~ $5
+         and q.kind = 'workflow'
+         and q.run_id is not null
+         and (q.locked_at is null or q.locked_at < (select before from stale))
          and not exists (
            select 1 from aai_platform.workflow_queue o
            where o.slug = q.slug
-             and o.payload->>'runId' is not distinct from q.payload->>'runId'
-             and o.queue_name ~ $5
-             and o.locked_at is not null
-             and o.locked_at >= now() - ($2 || ' milliseconds')::interval
+             and o.kind = 'workflow'
+             and o.run_id = q.run_id
+             and o.locked_at >= (select before from stale)
          )
-       order by q.slug, q.payload->>'runId', q.available_at
+       order by q.slug, q.run_id, q.available_at
      ),
      step_due as (
        select ranked.id, ranked.available_at
        from (
-         select q.id, q.available_at, q.slug, q.payload->>'runId' as run_id,
+         select q.id, q.available_at, q.slug, q.run_id,
                 row_number() over (
-                  partition by q.slug, q.payload->>'runId'
+                  partition by q.slug, q.run_id
                   order by q.available_at, q.id
                 ) as rn
          from aai_platform.workflow_queue q
          where q.available_at <= now()
-           and (q.locked_at is null or q.locked_at < now() - ($2 || ' milliseconds')::interval)
-           and q.queue_name ~ $4
+           and q.kind = 'step'
+           and q.run_id is not null
+           and (q.locked_at is null or q.locked_at < (select before from stale))
        ) ranked
-       where ranked.rn <= greatest(
-         $3 - (
-           select count(*) from aai_platform.workflow_queue o
-           where o.slug = ranked.slug
-             and o.payload->>'runId' is not distinct from ranked.run_id
-             and o.queue_name ~ $4
-             and o.locked_at is not null
-             and o.locked_at >= now() - ($2 || ' milliseconds')::interval
-         ),
-         0
-       )
+       left join (
+         select o.slug, o.run_id, count(*) as n
+         from aai_platform.workflow_queue o
+         where o.kind = 'step'
+           and o.locked_at >= (select before from stale)
+         group by o.slug, o.run_id
+       ) in_flight on in_flight.slug = ranked.slug and in_flight.run_id = ranked.run_id
+       where ranked.rn <= greatest($3 - coalesce(in_flight.n, 0), 0)
      ),
      candidates as (
        select id from (
@@ -217,20 +253,18 @@ export async function claimDue(
        update aai_platform.workflow_queue q
           set locked_at = now()
         where q.id in (select id from candidates)
-          and (q.locked_at is null or q.locked_at < now() - ($2 || ' milliseconds')::interval)
+          and (q.locked_at is null or q.locked_at < (select before from stale))
        returning q.id, q.slug, q.queue_name, q.payload, q.headers, q.deployment_id,
                  q.attempt, q.available_at
      )
      select id, slug, queue_name, payload, headers, deployment_id, attempt
      from claimed
      order by available_at, id`,
-    [
-      limit,
-      String(staleMs),
-      WORKFLOW_QUEUE_STEPS_PER_RUN,
-      STEP_QUEUE_NAME_PATTERN,
-      WORKFLOW_QUEUE_NAME_PATTERN,
-    ],
+    // `staleMs` crosses as TEXT with an explicit `::bigint` in the statement,
+    // rather than as a number the driver types for us: the cast is what makes
+    // `$2 * interval '1 millisecond'` resolve to one operator instead of
+    // depending on how postgres.js chose to declare the parameter.
+    [limit, String(staleMs), WORKFLOW_QUEUE_STEPS_PER_RUN],
   );
   return rows.map((r) => ({
     id: String(r.id),

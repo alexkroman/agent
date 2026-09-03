@@ -32,16 +32,94 @@
  */
 
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
+import { createPlatformQueueSend } from "@alexkroman1/aai-runtime/internal";
 import { Hono } from "hono";
-import { afterAll, beforeAll, beforeEach } from "vitest";
+import { afterAll, beforeAll, beforeEach, vi } from "vitest";
 import { pgUrl } from "./_pg-test-utils.ts";
 import type { HonoEnv } from "./context.ts";
+import { guestTokenFor } from "./guest-token.ts";
 import { slugMw } from "./middleware.ts";
 import type { AdminDb } from "./platform-lock.ts";
+import { agentSandboxName } from "./sandbox-directory.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { createTestStore, ensurePlatformTables, type TestFetch } from "./test-utils.ts";
 import { createWorkflowEnqueueHandler } from "./workflow-enqueue-handler.ts";
-import type { EnqueueParams } from "./workflow-queue-store.ts";
+import { type EnqueueParams, WORKFLOW_QUEUE_CHANNEL } from "./workflow-queue-store.ts";
+
+/** What {@link withQueueNotifications} lends a test body. */
+export type QueueNotifyProbe = {
+  /** `WORKFLOW_QUEUE_CHANNEL` notifications delivered so far. */
+  count: () => number;
+  /**
+   * Commit a sentinel on the same connection the writes use, and wait for it.
+   *
+   * This is what makes an ABSENCE assertable. The obvious version — write, then
+   * `vi.waitFor(() => expect(count()).toBe(1))` — PASSES when the code is wrong,
+   * verified by making the notify unconditional: `waitFor` polls until the
+   * assertion holds, and with both writes notifying it holds transiently after
+   * the first arrives and before the second does. Postgres delivers
+   * notifications to one connection in COMMIT order, so a sentinel committed
+   * after the write arrives after anything that write would have sent: once this
+   * resolves, "no queue notification yet" is a settled fact rather than a race.
+   * A `sleep()` is the alternative and is both slower and weaker.
+   */
+  fence: () => Promise<void>;
+};
+
+/**
+ * Count queue notifications on this fixture's OWN database while `body` runs.
+ *
+ * The database matters: `WORKFLOW_QUEUE_CHANNEL` carries every tenant's enqueue,
+ * so a listener built from `pgUrl()` would sit on the shared database while the
+ * writes announce on this one — the positive controls fail and the absences pass
+ * vacuously. See {@link useThrowawayPlatformDb}.
+ */
+export async function withQueueNotifications(
+  fx: QueueFixture,
+  body: (probe: QueueNotifyProbe) => Promise<void>,
+): Promise<void> {
+  const BARRIER = "aai_test_queue_barrier";
+  let count = 0;
+  let fenced = 0;
+  const listener = createPostgresDb({ url: fx.url(), max: 2 });
+  try {
+    const stopQueue = await listener.listen(WORKFLOW_QUEUE_CHANNEL, () => {
+      count += 1;
+    });
+    const stopBarrier = await listener.listen(BARRIER, () => {
+      fenced += 1;
+    });
+    try {
+      await body({
+        count: () => count,
+        fence: async () => {
+          const want = fenced + 1;
+          await fx.sql()("select pg_notify($1, '')", [BARRIER]);
+          // THROWS rather than asserting, and that is the lint rule rather than a
+          // preference: an `expect` outside a `test()` body is
+          // `noMisplacedAssertion`, and `vi.waitFor` retries on a throw exactly
+          // as it retries on a failed assertion. The assertions belong to the
+          // caller either way — this only waits.
+          await vi.waitFor(() => {
+            if (fenced < want) throw new Error(`barrier ${want} not delivered yet`);
+          });
+        },
+      });
+    } finally {
+      stopQueue();
+      stopBarrier();
+    }
+  } finally {
+    await listener.close();
+  }
+}
+
+/**
+ * Code-unit order, the repo's standing rule for anything an assertion reads —
+ * `localeCompare` with no explicit locale answers to the runtime's ICU default,
+ * so the same rows would sort differently on another machine.
+ */
+export const byCodeUnit = (a: string, b: string) => Number(a > b) - Number(a < b);
 
 /**
  * A private, migrated platform database for one suite, torn down after it.
@@ -155,6 +233,19 @@ export type QueueFixture = {
    * only the BUNDLE store is in memory, which neither suite reads.
    */
   platformFetch: () => TestFetch;
+  /**
+   * The GUEST's own enqueue client, dialling {@link QueueFixture.platformFetch}
+   * as the first tenant — the whole outbound wire, from `createPlatformQueueSend`
+   * through the bearer to the real route and the real store.
+   *
+   * Here rather than in the suite because three cases need it and the wiring is
+   * twenty lines of bearer-plus-fetch adapter apiece: the enqueue-to-delivery
+   * loop, the run key SQL reads back out of the envelope, and the `kind` the
+   * store derives from the queue name. Two hand-rolled copies were already in
+   * the file and it is at the 700-line test cap, which its own doc says to
+   * answer by extracting more SETUP rather than by splitting the subject.
+   */
+  guestSend: () => ReturnType<typeof createPlatformQueueSend>;
   /** One ORCHESTRATION message for `runId`, on this fixture's first tenant. */
   msg: (id: string, runId: string, over?: Partial<EnqueueParams>) => EnqueueParams;
 };
@@ -233,6 +324,21 @@ export function useQueueFixture(slugs: readonly string[]): QueueFixture {
     url: () => db.url(),
     adminDb: () => db.adminDb(),
     platformFetch: () => platformFetch,
+    guestSend: () =>
+      createPlatformQueueSend({
+        base: `http://platform.test/${slugs[0]}`,
+        // `AAI_GUEST_TOKEN_SECRET` is unset in these suites, so `guestTokenFor`
+        // draws a per-process key — which both sides read, so they agree.
+        token: guestTokenFor(agentSandboxName(slugs[0] as string, 1)),
+        fetch: async (input, init) => {
+          const req = new Request(input, init);
+          return platformFetch(new URL(req.url).pathname, {
+            method: req.method,
+            headers: req.headers,
+            body: await req.text(),
+          });
+        },
+      }),
     msg: (id, runId, over = {}) => ({
       id,
       slug: slugs[0] as string,

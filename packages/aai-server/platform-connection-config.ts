@@ -3,9 +3,9 @@
  * WHICH Postgres connection the platform opens for what, and in which mode.
  *
  * Split out of `service-config.ts` (which was over the file-length cap) along a
- * real seam rather than an arbitrary one: these three resolvers answer one
- * question — may this connection be POOLED, and how — and the answer is measured
- * rather than chosen. `supabase/config.toml`'s pooler stanza carries the run:
+ * real seam rather than an arbitrary one: these resolvers answer one question —
+ * may this connection be POOLED, and how — and the answer is measured rather
+ * than chosen. `supabase/config.toml`'s pooler stanza carries the run:
  *
  * - `SUPABASE_DB_URL` stays SESSION-mode, because the slug lock is a
  *   session-scoped `pg_advisory_lock` and a rival connection acquired the same
@@ -20,10 +20,23 @@
  *   `pg_try_advisory_xact_lock` inside `begin … commit`, whose lifetime is
  *   exactly the transaction a pooler pins a backend for — verified correct
  *   including a rival refused while held and release on commit.
- * - App databases must be SESSION-pooled, because they host the Workflow DevKit:
- *   graphile-worker uses NAMED prepared statements, `world-postgres` opens a
- *   `LISTEN` client with no polling fallback, and `workflow-lock-sweep.ts` takes
- *   a session-scoped advisory lock. Transaction mode breaks all three, silently.
+ * - A `LISTEN` must be SESSION-mode, because the subscription is state in one
+ *   backend's session and a transaction pooler hands that backend on after every
+ *   statement — Supavisor does not support it there at all
+ *   (supabase/supavisor#85). This bullet used to be about APP DATABASES, which
+ *   hosted the Workflow DevKit and needed session mode for three reasons:
+ *   graphile-worker's NAMED prepared statements, `world-postgres`'s `LISTEN`
+ *   client with no polling fallback, and `workflow-lock-sweep.ts`'s
+ *   session-scoped advisory lock. There are no app databases now, and the rule
+ *   survived the move rather than going with them: the DevKit's world and the
+ *   queue sweep's `NOTIFY` listener both run on `SUPABASE_DB_URL`, the listener
+ *   on a handle of its OWN (`service-config.ts`) — because for a while it did
+ *   not, and a `LISTEN` through the transaction-pooled admin pool established
+ *   fine and delivered nothing. (The prepared-statement leg is the one to stop
+ *   citing as current: Supavisor is reported to parse `PREPARE` and broadcast it
+ *   across backends now. Not verified here, and nothing rests on it — the other
+ *   two legs stand on their own, and neither one is about a database we
+ *   provision.)
  *
  * `platform-connection-config.test.ts` pins every rule here, including the two
  * refusals that read backwards until you see what they prevent.

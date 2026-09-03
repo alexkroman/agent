@@ -39,15 +39,14 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
-import { createPlatformQueueSend } from "@alexkroman1/aai-runtime/internal";
 import { expect, test, vi } from "vitest";
 import { describeWithPg } from "./_pg-test-utils.ts";
-import { useQueueFixture } from "./_workflow-queue-test-utils.ts";
-import { guestTokenFor } from "./guest-token.ts";
-import { agentSandboxName } from "./sandbox-directory.ts";
+import {
+  byCodeUnit,
+  useQueueFixture,
+  withQueueNotifications,
+} from "./_workflow-queue-test-utils.ts";
 import type { SqlExec } from "./secret-store.ts";
-import type { TestFetch } from "./test-utils.ts";
 import { claimDue, WORKFLOW_QUEUE_STEPS_PER_RUN } from "./workflow-queue-claim.ts";
 import {
   ack,
@@ -56,16 +55,9 @@ import {
   fail,
   parseEnvelope,
   QUEUE_MAX_ATTEMPTS,
-  WORKFLOW_QUEUE_CHANNEL,
+  reschedule,
 } from "./workflow-queue-store.ts";
 import { runQueuePass } from "./workflow-queue-sweep.ts";
-
-/**
- * Code-unit order, the repo's standing rule for anything an assertion reads —
- * `localeCompare` with no explicit locale answers to the runtime's ICU default,
- * so the same rows would sort differently on another machine.
- */
-const byCodeUnit = (a: string, b: string) => Number(a > b) - Number(a < b);
 
 describeWithPg("workflow queue store", () => {
   /** This suite's OWN tenants — see the fixture's doc for why they are not shared. */
@@ -75,7 +67,6 @@ describeWithPg("workflow queue store", () => {
   const sql: SqlExec = (q, params) => fx.sql()(q, params);
   const msg = fx.msg;
   const adminDb = fx.adminDb;
-  const platformFetch: TestFetch = (input, init) => fx.platformFetch()(input, init);
 
   test("an enqueued message is claimable, and claiming removes it from the due set", async () => {
     await enqueue(sql, msg("m1", "r1"));
@@ -204,6 +195,53 @@ describeWithPg("workflow queue store", () => {
     await enqueue(sql, { ...msg("x1", "r1"), queueName: "__wkf_something_r1" });
     await enqueue(sql, { ...msg("x2", "r1"), queueName: "__wkf_something_r1" });
     expect(await claimDue(sql, 10)).toHaveLength(0);
+  });
+
+  /**
+   * The two COLUMNS the claim compares, written once per message instead of
+   * re-derived per tick — and both of the ways a row can fail to name one.
+   *
+   * `kind` comes from `queueNameKind` at the door, so an unclassifiable name
+   * stores `null` rather than a guess; `run_id` is generated from the payload, so
+   * an envelope with no `runId` stores `null` too. The claim requires both
+   * POSITIVELY, which is why the last assertion is the whole point: neither row
+   * is claimed, where before this the first was inert on a regex that matched
+   * nothing and the second would have been delivered and refused by
+   * `parseEnvelope` five sandbox boots in a row.
+   */
+  test("the store writes `kind`, and `run_id` follows the payload", async () => {
+    await enqueue(sql, msg("w1", "r1"));
+    await enqueue(sql, { ...msg("s1", "r1"), queueName: "__wkf_step_r1:s1" });
+    await enqueue(sql, { ...msg("x1", "r1"), queueName: "__wkf_something_r1" });
+    await enqueue(sql, { ...msg("n1", "r1"), payload: {} });
+    const rows = await sql("select id, kind, run_id from aai_platform.workflow_queue order by id");
+    expect(rows).toEqual([
+      { id: "n1", kind: "workflow", run_id: null },
+      { id: "s1", kind: "step", run_id: "r1" },
+      { id: "w1", kind: "workflow", run_id: "r1" },
+      { id: "x1", kind: null, run_id: "r1" },
+    ]);
+    expect((await claimDue(sql, 10)).map((m) => m.id).sort(byCodeUnit)).toEqual(["s1", "w1"]);
+  });
+
+  /**
+   * A THIRD kind fails at the insert rather than sitting unclaimable, which is
+   * the whole of what `check (kind in ('workflow', 'step'))` buys: the claim has
+   * two `kind = …` predicates and neither is a catch-all, so a value nobody
+   * taught it about would be a row it silently never selects.
+   *
+   * Written with raw SQL because `enqueue` cannot produce one — `queueNameKind`
+   * returns one of two strings or nothing — and the constraint is a property of
+   * the TABLE, which only a real Postgres has.
+   */
+  test("the table refuses a kind the claim does not know", async () => {
+    await expect(
+      sql(
+        `insert into aai_platform.workflow_queue (id, slug, queue_name, kind, payload)
+         values ('k1', $1, '__wkf_orchestration_r1', 'orchestration', '{}'::jsonb)`,
+        [SLUGS[0]],
+      ),
+    ).rejects.toThrow(/workflow_queue_kind_check/);
   });
 
   test("a NAMESPACED step queue name still fans out", async () => {
@@ -481,29 +519,15 @@ describeWithPg("workflow queue store", () => {
    * Every other spec in this series covers one hop with the next one faked. This is
    * the only place the four agree — and the two that most need checking against
    * each other are the ENVELOPE and the RUN ID, because the guest writes them and
-   * the claim's `distinct on (slug, payload->>'runId')` reads them out of jsonb.
-   * That is exactly where a double-encoded payload silently collapsed this queue's
-   * per-run ordering once already, and a fake cannot see it: a fake holds JS
-   * values.
+   * the claim's `distinct on (slug, run_id)` reads a column GENERATED out of that
+   * jsonb. That is exactly where a double-encoded payload silently collapsed this
+   * queue's per-run ordering once already, and a fake cannot see it: a fake holds
+   * JS values.
    */
   test("a message the guest enqueues is claimed and delivered, envelope intact", async () => {
-    const bearer = guestTokenFor(agentSandboxName(SLUGS[0] as string, 1));
     // The guest's real client, pointed at the platform's real route through the
-    // orchestrator's own fetch. `AAI_GUEST_TOKEN_SECRET` is unset here, so
-    // `guestTokenFor` draws a per-process key — which both sides read, so they
-    // agree.
-    const send = createPlatformQueueSend({
-      base: `http://platform.test/${SLUGS[0]}`,
-      token: bearer,
-      fetch: async (input, init) => {
-        const req = new Request(input, init);
-        return platformFetch(new URL(req.url).pathname, {
-          method: req.method,
-          headers: req.headers,
-          body: await req.text(),
-        });
-      },
-    });
+    // orchestrator's own fetch — see `QueueFixture.guestSend`.
+    const send = fx.guestSend();
 
     const input = new Uint8Array([7, 0, 255]);
     const sent = await send("__wkf_workflow_r-loop", { runId: "r-loop", runInput: { input } });
@@ -539,42 +563,29 @@ describeWithPg("workflow queue store", () => {
   /**
    * The per-run KEY the envelope exists to make readable, end to end.
    *
-   * A double-encoded payload makes `payload->>'runId'` null for every row, and
-   * every per-run rule in {@link claimDue} — the orchestration `distinct on`, the
-   * step fan-out's `partition by` — is written on that expression. So the
-   * assertion is the expression itself, read back out of SQL.
+   * A double-encoded payload makes the GENERATED `run_id` column null for every
+   * row, and every per-run rule in {@link claimDue} — the orchestration
+   * `distinct on`, the step fan-out's `partition by` — is written on it. So the
+   * assertion is the column, read back out of SQL.
    *
    * It used to be `toHaveLength(1)`, which no longer discriminates and is worth a
    * note because the obvious repair does not either. These are `__wkf_step_*`
-   * messages, so three of them now legitimately claim together; but under the
-   * double-encode bug a null `runId` puts all three in ONE partition and claims
-   * all three as well. Both the old expectation and a naive `toHaveLength(3)` are
-   * satisfied by the bug this test is here to catch — hence reading the key.
+   * messages, so three of them now legitimately claim together; and while the
+   * claim's `run_id is not null` means the double-encode bug would today claim
+   * NONE of them rather than all three, a naive `toHaveLength(3)` is still
+   * satisfied by a fixture that never wrote a run id at all — hence reading the
+   * key.
    */
   test("the envelope keeps a run's key readable to SQL", async () => {
-    const bearer = guestTokenFor(agentSandboxName(SLUGS[0] as string, 1));
-    const send = createPlatformQueueSend({
-      base: `http://platform.test/${SLUGS[0]}`,
-      token: bearer,
-      fetch: async (input, init) => {
-        const req = new Request(input, init);
-        return platformFetch(new URL(req.url).pathname, {
-          method: req.method,
-          headers: req.headers,
-          body: await req.text(),
-        });
-      },
-    });
+    const send = fx.guestSend();
     for (const n of [1, 2, 3]) {
       await send("__wkf_step_r-one", { workflowRunId: "r-one", stepId: `s${n}` });
     }
-    // The envelope's whole job: `runId` at the TOP level of `payload`, reachable
-    // by the `->>` every per-run rule is written on. Double-encoded, these are
-    // three nulls.
-    const keys = await sql(
-      `select payload->>'runId' as run_id from aai_platform.workflow_queue
-        order by id`,
-    );
+    // The envelope's whole job: `runId` at the TOP level of `payload`, which is
+    // what the GENERATED `run_id` column projects and every per-run rule is
+    // written on. Double-encoded, these are three nulls — and the column is read
+    // rather than the expression, because the column is what the claim compares.
+    const keys = await sql("select run_id from aai_platform.workflow_queue order by id");
     expect(keys.map((r) => r.run_id)).toEqual(["r-one", "r-one", "r-one"]);
 
     // And the end-to-end consequence for STEP messages, which is the fan-out.
@@ -598,24 +609,13 @@ describeWithPg("workflow queue store", () => {
    * postgres.js's `listen`, so a fake proves nothing here.
    */
   test("enqueuing a DUE message notifies a listener", async () => {
-    const fired: number[] = [];
-    const listener = createPostgresDb({ url: fx.url(), max: 1 });
-    try {
-      const unlisten = await listener.listen(WORKFLOW_QUEUE_CHANNEL, () => {
-        fired.push(1);
-      });
-      try {
-        await enqueue(sql, msg("m1", "r1"));
-        // The notification is delivered on COMMIT and travels asynchronously, so
-        // this polls rather than assuming it has landed by the time `enqueue`
-        // resolves.
-        await vi.waitFor(() => expect(fired.length).toBeGreaterThan(0));
-      } finally {
-        unlisten();
-      }
-    } finally {
-      await listener.close();
-    }
+    await withQueueNotifications(fx, async (notify) => {
+      await enqueue(sql, msg("m1", "r1"));
+      // The notification is delivered on COMMIT and travels asynchronously, so
+      // this polls rather than assuming it has landed by the time `enqueue`
+      // resolves.
+      await vi.waitFor(() => expect(notify.count()).toBeGreaterThan(0));
+    });
   });
 
   /**
@@ -626,51 +626,49 @@ describeWithPg("workflow queue store", () => {
    * run a query that returns nothing. A parked message is what the periodic pass
    * exists for, and it is the one thing a notification cannot express.
    *
-   * ## Why the BARRIER, and not a `waitFor` on a count
-   *
-   * The obvious version — enqueue the delayed one, enqueue a due one as a positive
-   * control, then `vi.waitFor(() => expect(count).toBe(1))` — PASSES when the code
-   * is wrong, verified by making the notify unconditional. `waitFor` polls until
-   * the assertion holds, and with both messages notifying it holds transiently
-   * after the first arrives and before the second does.
-   *
-   * So the absence needs a fence rather than a timeout. Postgres delivers
-   * notifications to one connection in COMMIT order, so a sentinel committed after
-   * the delayed enqueue arrives after anything that enqueue would have sent: once
-   * the barrier fires, "no queue notification yet" is a settled fact rather than a
-   * race. A `sleep()` would be the alternative and would be both slower and
-   * weaker.
+   * `notify.fence()` rather than a `waitFor` on the count, and its own doc
+   * carries why: the timeout version passes when the code is wrong.
    */
   test("enqueuing a DELAYED message does not notify", async () => {
-    const BARRIER = "aai_test_queue_barrier";
-    let queueNotifications = 0;
-    let barrierFired = false;
-    const listener = createPostgresDb({ url: fx.url(), max: 2 });
-    try {
-      const stopQueue = await listener.listen(WORKFLOW_QUEUE_CHANNEL, () => {
-        queueNotifications += 1;
-      });
-      const stopBarrier = await listener.listen(BARRIER, () => {
-        barrierFired = true;
-      });
-      try {
-        await enqueue(sql, { ...msg("m1", "r1"), delaySeconds: 30 });
-        // Same connection as the enqueue, so ordering is guaranteed against it.
-        await sql("select pg_notify($1, '')", [BARRIER]);
-        await vi.waitFor(() => expect(barrierFired).toBe(true));
-        expect(queueNotifications).toBe(0);
+    await withQueueNotifications(fx, async (notify) => {
+      await enqueue(sql, { ...msg("m1", "r1"), delaySeconds: 30 });
+      await notify.fence();
+      expect(notify.count()).toBe(0);
 
-        // POSITIVE CONTROL, after the fact: without it this spec would pass on a
-        // listener that never works at all, which is the vacuous-absence shape.
-        await enqueue(sql, msg("m2", "r1"));
-        await vi.waitFor(() => expect(queueNotifications).toBe(1));
-      } finally {
-        stopQueue();
-        stopBarrier();
-      }
-    } finally {
-      await listener.close();
-    }
+      // POSITIVE CONTROL, after the fact: without it this spec would pass on a
+      // listener that never works at all, which is the vacuous-absence shape.
+      await enqueue(sql, msg("m2", "r1"));
+      await vi.waitFor(() => expect(notify.count()).toBe(1));
+    });
+  });
+
+  /**
+   * A ZERO-DELAY RE-PARK announces, and a real `sleep()` still does not.
+   *
+   * `reschedule` never announced at all, so a guest parking a busy walk with
+   * `{"timeoutSeconds": 0}` — which is what a walk that has barely started asks
+   * for — put its message back due-NOW with nothing telling a listener to look,
+   * and then waited out a whole `WORKFLOW_QUEUE_INTERVAL_MS`. On the one
+   * mechanism that exists to keep a long walk moving.
+   *
+   * The delayed half is the rule that had to survive the fix, and it is the same
+   * rule the case above asserts for `enqueue`: the test is the DELAY, not the
+   * caller.
+   */
+  test("a zero-delay re-park notifies; a real sleep does not", async () => {
+    // Enqueued and claimed BEFORE the listener attaches, because `enqueue`
+    // announces too and the subject here is `reschedule`.
+    await enqueue(sql, msg("m1", "r1"));
+    const [claimed] = await claimDue(sql, 1);
+    const id = claimed?.id ?? "";
+    await withQueueNotifications(fx, async (notify) => {
+      await reschedule(sql, id, 30);
+      await notify.fence();
+      expect(notify.count()).toBe(0);
+
+      await reschedule(sql, id, 0);
+      await vi.waitFor(() => expect(notify.count()).toBe(1));
+    });
   });
 
   test("deleting the agent takes its queued messages with it", async () => {

@@ -15,23 +15,43 @@
  * Without an index the durable run is unreachable from the next call, which is
  * the case the whole feature is for.
  *
- * Two implementations, because the index has to work in both places a workflow
- * runs:
+ * Three implementations, because the index has to work in all three places a
+ * workflow runs — the same three the run JOURNAL has, and picked by the same
+ * preference (`selectKeyStore` in `workflow-runtime.ts`):
  *
+ * - **Platform** (`createPlatformKeyStore`, `workflow-keys-platform.ts`) — the
+ *   platform's own table, over `POST /:slug/workflow-keys` with the per-sandbox
+ *   bearer. This is what a DEPLOYED agent gets, and it is the newest of the three.
  * - **Postgres** (`createPostgresKeyStore`) — a single table in the app's own
- *   `ctx.db` schema, so it needs no second credential and is reaped with the app.
- *   This is production, and it is why a workflow app has storage switched on when
- *   it is created: the index is not optional the way `ctx.db` is.
- * - **Memory** (`createMemoryKeyStore`) — for `aai dev` against the Local World,
- *   which keeps its own state in `.workflow-data/` and needs no database.
- *   Deliberately NOT durable: a dev server restart forgets the index, which is
- *   the same thing the Local World's in-memory queue already does to the runs
- *   themselves, so degrading further would be dishonest about what dev mode is.
+ *   database, so it needs no second credential and is reaped with the app. This is
+ *   a SELF-HOSTED deployment, or a platform agent whose author supplied a
+ *   `DATABASE_URL` as a secret.
+ * - **Memory** (`createMemoryKeyStore`) — for `aai dev`, which keeps its own state
+ *   in `.workflow-data/` and needs no database. Deliberately NOT durable: a dev
+ *   server restart forgets the index, which is the same thing dev mode already
+ *   does to the runs themselves, so degrading further would be dishonest about
+ *   what dev mode is.
  *
- * The table is created lazily and idempotently rather than by a migration step,
- * for the same reason the world's own `bootstrap` is idempotent: an agent's first
- * workflow may be its first ever deploy, and there is no separate provisioning
- * pass to hang a DDL step off.
+ * **Two claims that used to be in this doc were false, and the second is why the
+ * platform arm exists.** It said the Postgres store "is production", and that "a
+ * workflow app has storage switched on when it is created" — both written when
+ * `ctx.db` existed. The platform provisions no database now
+ * (`packages/aai/sdk/db.ts`, `aai-server/sandbox-resolve.ts`: `DATABASE_URL` is the
+ * AUTHOR's own secret and is usually absent), so on a typical deployed agent the
+ * store in production was the MEMORY one — a `Map` in a sandbox that self-exits
+ * after `AGENT_IDLE_EXIT_MS`. The run itself was durable, so what died was the only
+ * pointer to it: `find()` answered `[]` on the caller's next call and the agent
+ * started a second run for somebody it had already served, with nothing reporting
+ * it, because an empty index and a first-time caller are the same answer. This is
+ * the gap `20260901000000_platform_workflow_journal.sql` closed for the journal,
+ * still open one table over.
+ *
+ * The Postgres table is created lazily and idempotently rather than by a migration
+ * step, for the same reason a dev world's `bootstrap` is: an agent's first workflow
+ * may be its first ever deploy, and there is no separate provisioning pass to hang
+ * a DDL step off. The PLATFORM table is the opposite — one migration
+ * (`20260903030000_workflow_run_keys.sql`), applied before any code runs, because
+ * that schema serves every agent and no tenant may create anything in it.
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
@@ -76,8 +96,8 @@ export function resolveFindLimit(limit: number | undefined): number {
  * same millisecond would collapse.
  *
  * **A run id is recorded at most once, which is this store's spelling of the
- * Postgres one's `on conflict (run_id) do nothing`.** See {@link recorded}: it
- * closed two divergences from the store that runs in production, both found by
+ * `on conflict … do nothing` both durable stores carry.** See {@link recorded}: it
+ * closed two divergences from the stores a deployment really uses, both found by
  * `workflow-keys-conformance.ts` on its first run and both on the path that
  * clause exists for.
  */

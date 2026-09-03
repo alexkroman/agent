@@ -77,14 +77,21 @@ const log = createLogger("workflow.queue.sweep");
  * guest's own work.
  *
  * The cost of a tick that finds nothing is one indexed query — a BitmapOr of
- * `workflow_queue_due_idx` and `workflow_queue_claimed_idx`, measured at 0.201 ms
- * against a 200,000-row queue — so an idle fleet pays close to nothing for the
- * frequency. That is the IDLE tick, and this comment used to claim the same index
- * "covers exactly this predicate" full stop: it does not, because the claim's
- * `(locked_at is null OR locked_at < <stale>)` has an arm that partial index
- * excludes by construction. A BUSY tick is served by `workflow_queue_run_idx`
- * instead, which is a whole `explain (analyze)` of its own —
- * `20260828040000_workflow_queue_run_index.sql` carries it.
+ * `workflow_queue_due_idx` and `workflow_queue_claimed_idx`, measured at
+ * 0.930-1.024 ms against a 200,000-row queue with 4,000 claims outstanding — so
+ * an idle fleet pays close to nothing for the frequency. This comment used to
+ * claim the same index "covers exactly this predicate" full stop: it does not,
+ * because the claim's `(locked_at is null OR locked_at < <stale>)` has an arm
+ * that partial index excludes by construction, which is what makes it a BitmapOr
+ * of the two rather than a scan of one.
+ *
+ * The same pair now serves a BUSY tick as well — 19.56-21.43 ms with 4,000
+ * messages due across 500 agents, against 516-527 ms before the claim stopped
+ * re-deriving the run and the kind of every candidate row.
+ * `20260903010000_workflow_queue_run_kind_columns.sql` carries that measurement,
+ * the two columns it rests on, and why the expression index this paragraph used
+ * to name (`workflow_queue_run_idx`, from `20260828040000`) is gone with nothing
+ * in its place.
  *
  * Override with `WORKFLOW_QUEUE_INTERVAL_MS`; **0 disables delivery entirely**,
  * which is announced, because a durable run then never advances.
@@ -200,8 +207,9 @@ async function claimAndReconcile(
     // NOTHING DUE is exactly when a stalled run should be looked for: the queue
     // is idle, the admin pool is free, and a run that is unfinished with no
     // message is invisible to every other pass. It rides the connection the
-    // claim already holds rather than taking a second — an idle tick must stay
-    // free of the pool, which is 4 for the whole replica — and both statements
+    // claim already holds rather than taking a second — `ADMIN_POOL_MAX` is 16
+    // for the whole replica and every platform read shares it, so a tick that
+    // finds nothing must not cost the pool twice a second — and both statements
     // are brief, so the reservation stays as short as the claim's own doc
     // promises.
     //
@@ -212,7 +220,7 @@ async function claimAndReconcile(
     //
     // Which is also why its COST is this module's problem and not only the
     // reconcile module's: no leader means this runs at >= 1 Hz PER REPLICA, on
-    // this reserved connection, on the branch measured at 0.201 ms and
+    // this reserved connection, on the branch measured at ~1 ms and
     // advertised above as close to free. `20260901020000_workflow_reconcile_cost.sql`
     // is what keeps it so — the two indexes the predicate needs (nothing served
     // either the status scan or the `(slug, queue_name)` anti-join), plus the
@@ -295,7 +303,14 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
   // `brokerSessionUrl` (up to `BROKER_READY_TIMEOUT_MS`) plus a POST bounded at
   // `QUEUE_DELIVERY_TIMEOUT_MS`. At the defaults — 32 messages a tick, 8 in
   // flight — one pass against unreachable guests pinned a connection for minutes
-  // out of `ADMIN_POOL_MAX`, which is 4 for the whole replica.
+  // out of `ADMIN_POOL_MAX`, which is 16 for the whole replica. Passes never
+  // overlap (`_interval-sweep.ts`), so this is one connection rather than one a
+  // second — and one is the point: the pool is SHARED with every platform read
+  // the replica makes (Vault, the agents row the broker needs, journal appends,
+  // session state), and `platform-db-budget.test.ts` ties `ADMIN_POOL_MAX x
+  // MAX_CONTAINERS` to the instance's `max_connections`. So a settle held across
+  // a fan-out spends a sixteenth of the replica's whole platform-database
+  // capacity for as long as one tenant's guest is unreachable.
   //
   // Each of `ack`/`fail`/`reschedule` is a single statement and no transaction
   // spans them, so per-statement is not merely cheaper — it is all they need. A
@@ -372,7 +387,7 @@ export async function runQueuePass(opts: QueueSweepOptions): Promise<SweepPass> 
  *
  * Per STATEMENT, never one reservation around a fan-out — see the argument at
  * the settle call site: a delivery can hold a connection for minutes out of an
- * `ADMIN_POOL_MAX` of 4.
+ * `ADMIN_POOL_MAX` of 16, which every platform read on the replica shares.
  */
 async function settleOn<T>(adminDb: AdminDb, run: (sql: SqlExec) => Promise<T>): Promise<T> {
   const conn = await adminDb.reserve();

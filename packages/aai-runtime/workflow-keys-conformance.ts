@@ -48,7 +48,7 @@
  * memory store's rule too, which is `on conflict (run_id) do nothing` in a
  * `Set`.
  *
- * ## Two stores, two arms, and what each can SEE
+ * ## Three stores, three arms, and what each can SEE
  *
  * - **memory** — the reference, in the UNIT tier, unconditionally
  *   (`workflow-keys-conformance.test.ts`). A store that disagrees with it has a
@@ -58,15 +58,35 @@
  *   `describeWithPg`, where the lazy DDL, the primary key `on conflict (run_id)
  *   do nothing` rests on, `order by created_at desc, run_id desc` and `limit`
  *   as a bind parameter are the database's answers rather than a fake's.
+ * - **platform** — in the UNIT tier, over a transport that decodes exactly what
+ *   `aai-server/workflow-keys-handler.ts` decodes and then delegates every
+ *   SEMANTIC to the memory reference. So it sees THIS side of the wire: the shape
+ *   of every request the client builds, that `record` stamps a `createdAt` at all,
+ *   and that `lookup` READS its answer rather than assuming one.
  *
- * **There is no third arm, and there is no fourth.** Unlike the journal and
- * session state, this contract has no PLATFORM implementation: the index lives
- * in the app's own `ctx.db` schema (which is why a workflow app has storage
- * switched on when it is created), so there is no route to drive and no
- * platform SQL to be blind to. The two arms are the two configurations anything
- * runs — a dev server with no database, and an app with one.
+ * **This header used to say "there is no third arm, and there is no fourth",** on
+ * the ground that the index lives in the app's own `ctx.db` schema "which is why a
+ * workflow app has storage switched on when it is created". Both halves were
+ * false by then: `ctx.db` is gone and the platform provisions no database, so the
+ * store a DEPLOYED agent actually used was the memory one — the `Map` this table
+ * calls the reference, in a sandbox that self-exits. `createPlatformKeyStore`
+ * (`workflow-keys-platform.ts`) is the third implementation and the third arm.
  *
- * **What NEITHER arm can see** is a claim about the DDL or the plan, because a
+ * **The FOURTH arm is owed and is not written**, and the gap is the journal's
+ * exactly: the unit platform arm's transport is memory-backed, so it cannot
+ * represent a bug in the platform's own SQL — that arm has to be the shared case
+ * list over `createPlatformKeyStore` wired to the REAL route and a real Postgres,
+ * which can only be stood up from `aai-server`, and doing so needs
+ * `createPlatformKeyStore` plus a `loadWorkflowKeyConformance` on
+ * `@alexkroman1/aai-runtime/internal` (the loader shape `loadJournalConformance`
+ * and `loadSessionStateConformance` already have, and for their measured reason:
+ * the case modules pull `vitest`, an optional peer). Until it exists, the
+ * platform's statements are covered by `aai-server/
+ * platform-workflow-keys.scenario.test.ts` — a per-store suite over a real
+ * database including the cross-tenant reads, which is a different question from
+ * "does this backend satisfy the shared contract" and does not answer it.
+ *
+ * **What NO arm can see** is a claim about the DDL or the plan, because a
  * conformance table drives the interface and nothing else:
  * `aai-server/workflow-keys.scenario.test.ts` is where the `create table` and
  * the four-column `create index` are asserted to have EXECUTED, where the ULID
@@ -148,12 +168,31 @@ export type WorkflowKeyStoreEntry = {
   module: string;
   /** The factory it exports. */
   factory: string;
-  /** Which tier its arm runs in. */
-  tier: "unit" | "scenario";
+  /**
+   * Every file that answers the shared case list over this store.
+   *
+   * This replaced a single `tier: "unit" | "scenario"`, and the platform entry is
+   * why — the same lesson `JournalBackend.arms` records: a store may have arms in
+   * more than one tier AND in more than one PACKAGE, and a `tier` field can
+   * describe only one of them, so the second ends up in the entry's PROSE, which
+   * is not a registration. A path is relative to `packages/`, so an arm a package
+   * away is as declared as one beside this registry.
+   */
+  arms: readonly WorkflowKeyArmSite[];
   /** Set when the store is deliberately NOT conformable. */
   conformance?: false;
   /** Why not — a claim a reviewer can argue with. */
   why?: string;
+};
+
+/** One file that runs the shared case list over one store. */
+export type WorkflowKeyArmSite = {
+  /** The test file, relative to `packages/`. */
+  file: string;
+  /** Which tier it runs in — checked against the filename, not trusted. */
+  tier: "unit" | "scenario";
+  /** What this arm can see that its siblings cannot. */
+  sees: string;
 };
 
 /**
@@ -176,20 +215,45 @@ export const WORKFLOW_KEY_STORES: readonly WorkflowKeyStoreEntry[] = [
     store: "memory",
     module: "workflow-keys.ts",
     factory: "createMemoryKeyStore",
-    /** The reference. Unit tier, unconditionally, on every machine. */
-    tier: "unit",
+    arms: [
+      {
+        file: "aai-runtime/workflow-keys-conformance.test.ts",
+        tier: "unit",
+        sees: "the reference, unconditionally, on every machine",
+      },
+    ],
   },
   {
     store: "postgres",
     module: "workflow-keys.ts",
     factory: "createPostgresKeyStore",
-    /**
-     * Scenario tier: the lazy DDL, the primary key that makes
-     * `on conflict (run_id) do nothing` a no-op rather than an error, the
-     * ordering clause and `limit` as a bind parameter are all the database's
-     * answers.
-     */
-    tier: "scenario",
+    arms: [
+      {
+        file: "aai-runtime/workflow-keys-conformance-postgres.scenario.test.ts",
+        tier: "scenario",
+        sees: "the lazy DDL, the primary key that makes `on conflict (run_id) do nothing` a no-op rather than an error, the ordering clause and `limit` as a bind parameter, all as the database's answers",
+      },
+    ],
+  },
+  {
+    store: "platform",
+    // The one entry naming a module of its own — the other two share
+    // `workflow-keys.ts`, which is the shape this table came out of. So the
+    // FACTORY-name sweep below is what discovers all three, and the module scan is
+    // what would find a fourth arriving in a fourth file.
+    module: "workflow-keys-platform.ts",
+    factory: "createPlatformKeyStore",
+    arms: [
+      {
+        file: "aai-runtime/workflow-keys-conformance.test.ts",
+        tier: "unit",
+        sees: "THIS side of the wire — the request shape, the `createdAt` the client stamps, and that `lookup` reads its answer — over a handler-shaped transport that delegates every semantic to the memory reference",
+      },
+      // The arm that would find a bug in the platform's own SQL is NOT here, and
+      // the header says what it needs. Naming it in this list before it exists
+      // would be the failure `journal-conformance-arms.test.ts` was written for,
+      // one direction over: an arm declared and absent from the tree.
+    ],
   },
 ];
 

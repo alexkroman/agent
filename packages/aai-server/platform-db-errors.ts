@@ -61,9 +61,10 @@ export const PLATFORM_DB_CONNECT_TIMEOUT_SECONDS = 10;
  * upload records), each of which holds a reservation for the life of its request
  * (`_platform-route.ts`'s `withReserved`) and takes no advisory lock. So
  * `service-config.ts` passes this number as `queryTimeoutMs` AND as
- * `reservedQueryTimeoutMs` there — unbounded, four hung reads exhaust
- * `ADMIN_POOL_MAX` and every other platform read on the replica queues behind
- * them, reachable with four concurrent watchers.
+ * `reservedQueryTimeoutMs` there — unbounded, `ADMIN_POOL_MAX` hung reads leave
+ * every other platform read on the replica queued behind them. That was
+ * reachable with FOUR concurrent watchers when the pool was 4; at 16 it takes
+ * sixteen, which is a wider door and the same room behind it.
  *
  * It bounds a STATEMENT, never a HOLD, which is what keeps the queue sweep legal:
  * it reserves a connection across a delivery that can take minutes while every
@@ -97,7 +98,7 @@ export const PLATFORM_DB_CONNECT_TIMEOUT_SECONDS = 10;
 export const PLATFORM_DB_QUERY_TIMEOUT_MS = 30_000;
 
 /**
- * How long a guest platform route waits for one of the ADMIN pool's four
+ * How long a guest platform route waits for one of the ADMIN pool's
  * connections before answering 503.
  *
  * The other half of the bound above, and the one that was missing.

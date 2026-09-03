@@ -1,0 +1,183 @@
+-- The delivery claim asked two questions the table could not answer, and paid
+-- for both on every tick.
+--
+-- `claimDue` (`aai-server/workflow-queue-claim.ts`) is the platform's delivery
+-- query, run on a RESERVED admin connection every `WORKFLOW_QUEUE_INTERVAL_MS` —
+-- one second by default. It splits the due set two ways: ORCHESTRATION messages
+-- serialized one per run, STEP messages fanned out to
+-- `WORKFLOW_QUEUE_STEPS_PER_RUN`. Neither half of that split was a column.
+--
+--   (a) The RUN. `q.payload->>'runId'`, spelled seven times, indexed by an
+--       EXPRESSION index (`workflow_queue_run_idx`, from
+--       `20260828040000_workflow_queue_run_index.sql`) whose own closing
+--       paragraph records the hazard it was living with: "an expression index is
+--       matched by expression equality and nothing warns when it stops
+--       matching". Because a jsonb extraction may be null, the two in-flight
+--       guards also had to compare with `is not distinct from`, which no btree
+--       can search.
+--   (b) The KIND. Matched with two REGEXES passed in as parameters
+--       (`STEP_QUEUE_NAME_PATTERN` / `WORKFLOW_QUEUE_NAME_PATTERN` on
+--       `@alexkroman1/aai-runtime/internal`). No index can serve a regex, so
+--       both CTEs re-derived the kind of every candidate row after the scan —
+--       and so did the correlated in-flight subquery, once per candidate.
+--
+-- Both are decided BEFORE the row is written: `queueNameKind` refuses a name it
+-- cannot classify with a 400 in `workflow-enqueue-handler.ts`, and the envelope
+-- carries `runId` because the claim needs it. So this stores what the claim
+-- queries.
+--
+-- ── `run_id` is GENERATED; `kind` is not, deliberately ──────────────────────
+--
+-- `run_id` is `generated always as (payload ->> 'runId') stored`, which is legal
+-- because `->>` on jsonb is immutable. The payload stays the single source of
+-- truth (`QueueEnvelope`), the column cannot disagree with it, and no writer has
+-- to remember it exists.
+--
+-- `kind` is a PLAIN column written at enqueue from `queueNameKind`. A generated
+-- column would have to embed the `__[<ns>_]wkf_(workflow|step)_` grammar in this
+-- DDL, which is the second spelling of a third-party grammar that
+-- `aai-runtime/workflow-queue-dispatch.ts` exists to prevent — and it would be
+-- worse than the regexes it replaced: a DevKit that renamed a topic would
+-- silently RECLASSIFY every row already in the table, where a value written at
+-- the door stays what the classifier said at the time. One source of truth, in
+-- TypeScript, at the boundary that already refuses.
+--
+-- The backfill below IS that grammar in SQL, and that is the difference: it is a
+-- statement about the rows that exist right now, run once, not a rule the table
+-- keeps applying.
+--
+-- `check (kind in ('workflow', 'step'))` rides on the `add column` rather than
+-- arriving as its own `alter table … add constraint`, for a reason worth knowing
+-- before moving it: `ensurePlatformTables` (`aai-server/test-utils.ts`) replays
+-- these files into a throwaway database by extracting `create table`,
+-- `alter table … add/drop column` and `create index` statements, so a separate
+-- constraint statement — or a `do` block guarding one — is INVISIBLE to every
+-- scenario suite, and the fixture would then accept rows production refuses.
+-- Inline, it is one `add column` and replays with it. It also needs no `if not
+-- exists` of its own: `add column if not exists` skips the whole clause.
+--
+-- NOT NULL is deliberately absent from both. `run_id` cannot take it — a
+-- generated column's NOT NULL is checked during the table rewrite below, so one
+-- pre-existing row with no `runId` in its payload would turn this into a FAILED
+-- DEPLOY rather than an inert row, and `payload` is typed `unknown` at the
+-- store's boundary. `kind` cannot take it for the same reason plus a second: the
+-- reconcile suite inserts queue rows directly, as the platform's own SQL may.
+-- What the claim does instead is require both columns positively — `kind =
+-- 'workflow'` / `kind = 'step'`, and `run_id is not null` — so a row missing
+-- either is claimed by NOBODY. That is exactly the treatment an unclassifiable
+-- queue name already had, and it is better than the alternative it replaces: a
+-- payload with no `runId` used to be delivered, refused by `parseEnvelope`,
+-- retried, and abandoned five sandbox boots later. Such a row now accumulates
+-- instead, which is the accepted cost of the same rule.
+--
+-- ── MEASURED, on PostgreSQL 16.13 ───────────────────────────────────────────
+--
+-- 500 agents, 200,000 queued messages, 25,000 runs (8 messages each), 60%
+-- orchestration topics and 40% step topics — the fixture
+-- `20260828040000` used, extended with the step traffic that migration predates.
+-- Both databases `vacuum full analyze`d; one `claimDue` for 32 messages at
+-- `QUEUE_CLAIM_STALE_MS` and `WORKFLOW_QUEUE_STEPS_PER_RUN`; three runs each with
+-- every time column re-derived before every run, because 3,600 fresh claims age
+-- out of a 120 s stale window while a bench is open and then measure nothing.
+--
+-- Three regimes, because the planner answers them differently:
+--
+--                                        before              after
+--   IDLE (nothing due, 4,000 claimed)
+--     time                          1.674-1.983 ms      0.930-1.024 ms
+--     buffers                          610-634             636-644
+--   BUSY, HEALTHY (4,000 due)
+--     time                            516.1-527.0 ms     19.56-21.43 ms
+--     buffers                       42,649-44,763       11,842-11,929
+--   BACKLOG (180,000 due)
+--     time                          6,291-6,465 ms      317.2-344.9 ms
+--     buffers                            758,467            16,947
+--     temp                              8.2 MB             8.2 MB
+--
+-- The busy-healthy row is the one to read: 4,000 due messages spread over 500
+-- agents is what a 1 Hz tick meets on a fleet under load, and it is 25x. The
+-- backlog row is `20260828040000`'s own fixture and is a pathological case —
+-- 180,000 due messages is a queue nobody is draining — but it is where the cost
+-- was: 758,467 buffer hits, almost all of them the step arm's correlated
+-- in-flight count run once per candidate row (72,160 loops, 700,320 buffers).
+-- Replacing it with ONE aggregate over the claimed set is most of the win.
+--
+-- The idle tick is the one this must not regress, being the state a
+-- once-per-second tick is in almost always, and it improves: same buffers, less
+-- CPU, because `kind = 'step'` replaces a regex match per row.
+--
+-- The 8.2 MB of temp is UNCHANGED and is not this migration's to fix. Two
+-- external merge sorts (4,944 kB + 3,296 kB) serve the `distinct on` and the
+-- window over a 180,000-row due set; the planner chooses them over any index in
+-- both shapes, and it is right to — a due set that large is most of the table.
+--
+-- ── WHY NOTHING REPLACES `workflow_queue_run_idx` ───────────────────────────
+--
+-- The obvious move is a replacement index over the new columns —
+-- `(kind, slug, run_id, available_at)` — to serve both due sets and both
+-- in-flight guards. It was built and measured, and it is NOT here, on the same
+-- grounds `20260828040000` refused a stale-side mirror: the planner does not
+-- want it, and it would be write-path cost for nothing.
+--
+-- Worse than nothing, in fact. A/B on ONE database with the same statement and
+-- the index as the only difference, the IDLE tick went **0.882-0.907 ms to
+-- 6.254-6.318 ms**, and its buffers 624 to 1,660: the planner takes the new
+-- index for the step arm's ordering and walks the whole `kind = 'step'` half of
+-- it — 1,351 buffers — instead of the `workflow_queue_due_idx` +
+-- `workflow_queue_claimed_idx` BitmapOr that answers an idle tick in five. The
+-- busy and backlog regimes were inside the noise either way (19.56-21.43 against
+-- 20.39-20.59 ms; 317.2-344.9 against 301.7-338.7 ms) — those two pairs are not
+-- single-variable A/Bs, so read them as "no measurable gain", not as a delta.
+--
+-- The reason it earns nothing is the query, not the columns. The two due sets are
+-- selected by `available_at <= now()` with no run and no tenant to lead with,
+-- which is precisely what the partial `due_idx`/`claimed_idx` pair already
+-- covers; and the in-flight arms no longer seek per candidate — they read the
+-- CLAIMED set, which is bounded by replicas x
+-- `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` (tens of rows) and has had its own
+-- partial index since `20260827000000_workflow_world.sql`. The fixture's 3,600
+-- claims are ~100x a real fleet's and still cost ~1,800 buffers.
+--
+-- `workflow_queue_due_idx` and `workflow_queue_claimed_idx` therefore become
+-- LOAD-BEARING for the busy tick as well as the idle one, which reverses what
+-- `20260828040000` concluded — read that migration's "`workflow_queue_due_idx`
+-- STAYS" section as still true and its "one index" section as retired.
+-- `workflow_queue_run_topic_idx (slug, queue_name)` is untouched and still
+-- serves the reconcile pass's anti-join, which matches a whole queue NAME.
+--
+-- ── COST ────────────────────────────────────────────────────────────────────
+--
+-- On the same 200,000 rows, `vacuum full analyze`d both sides: the heap grows
+-- 27 MB to 32 MB (two stored columns, ~26 bytes a row) and the indexes shrink
+-- 22 MB to 13 MB — a net 4 MB smaller table. On the write path, which is what a
+-- step BLOCKS on, 20,000 inserts went 274.2-294.9 ms to 229.7-238.3 ms: the
+-- dropped expression index more than pays for computing and storing `run_id`.
+--
+-- `set local lock_timeout` because the `add column … generated … stored`
+-- REWRITES the table under an ACCESS EXCLUSIVE lock: on a busy platform database
+-- this deploy step should fail and be retried rather than queue behind a long
+-- transaction while every enqueue queues behind it. The queue is transient by
+-- construction — a delivered row is deleted — so the rewrite is over whatever is
+-- in flight, not over history.
+--
+-- Note the DDL replay named above extracts no `update` and no `drop index`, so a
+-- scenario database is built with an empty table (nothing to backfill) and keeps
+-- `workflow_queue_run_idx`. Both are differences in PLAN, never in semantics,
+-- which is the line that replay draws deliberately: it does apply every unique
+-- index, because a unique index is a constraint.
+set local lock_timeout = '5s';
+
+alter table aai_platform.workflow_queue
+  add column if not exists run_id text generated always as (payload ->> 'runId') stored;
+
+alter table aai_platform.workflow_queue
+  add column if not exists kind text check (kind in ('workflow', 'step'));
+
+update aai_platform.workflow_queue
+   set kind = case
+                when queue_name ~ '^__([a-z][a-z0-9]*_)?wkf_workflow_.+$' then 'workflow'
+                when queue_name ~ '^__([a-z][a-z0-9]*_)?wkf_step_.+$' then 'step'
+              end
+ where kind is null;
+
+drop index if exists aai_platform.workflow_queue_run_idx;

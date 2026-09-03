@@ -41,6 +41,40 @@ const CLAIM_ATTEMPTS = 3;
  * `claimSleep` is called on every walk of the body past a wait — so the common
  * path, a pure read, would leave a dead tuple behind each time.
  *
+ * **`do nothing` really is free on that path, and it is MEASURED now, because
+ * the paragraph above was challenged.** The objection: `insert … on conflict do
+ * nothing` performs SPECULATIVE INSERTION — Postgres writes the heap tuple and
+ * its index entries, then super-deletes them on detecting the conflict — so this
+ * shape would leave the same dead tuple per walk per wait that it claims to
+ * avoid, and the argument would be self-defeating. It is not. Postgres
+ * PRE-CHECKS the arbiter index BEFORE writing anything
+ * (`ExecCheckIndexConstraints`, ahead of the heap insert in `ExecInsert`), and a
+ * `do nothing` whose pre-check finds a COMMITTED conflicting row returns having
+ * written no tuple at all. Speculative insertion, and the super-deletion that
+ * does leave a dead tuple, happen only where the pre-check passes and the index
+ * insert then races an inserter it could not see — the rare race the retry above
+ * exists for, and never the walk.
+ *
+ * PostgreSQL 16.13, 1000 conflicting claims of one already-claimed row, on a
+ * table with `autovacuum_enabled = false` so nothing reclaims behind the count:
+ *
+ * | shape | `n_tup_ins` | `n_tup_upd` | dead tuples |
+ * | --- | --- | --- | --- |
+ * | this one — `on conflict do nothing` | 1 | 0 | **0** |
+ * | a leading `existing` CTE guarding the insert | 1 | 0 | **0** |
+ * | the rejected `on conflict … do update` | 1 | 1000 | **24** |
+ *
+ * The `1` is the row the measurement seeded; the third line is the positive
+ * control, and is what proves the harness can see a dead tuple at all.
+ * `explain analyze` states it without arithmetic — `Tuples Inserted: 0`,
+ * `Conflicting Tuples: 1`. `claimHook`'s BARE `on conflict do nothing` was
+ * measured the same way and behaves identically on both of its unique indexes:
+ * with no arbiter named the pre-check covers every unique index on the table.
+ *
+ * So the middle line is the one to read before "optimising" this. Guarding the
+ * insert with a leading read of the row saves NOTHING — there was no write to
+ * remove — and costs an extra index probe on every claim.
+ *
  * The twin on the platform's own database is `aai-server/_journal-claim.ts`,
  * which carries the same argument with the platform's latency numbers. The two
  * stores mirror each other's statements deliberately (see

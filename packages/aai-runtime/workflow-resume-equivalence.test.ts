@@ -278,16 +278,34 @@ describe("a run resumed after its worker died", () => {
       { numRuns: 60 },
     );
 
-    // Ranges over 20 runs. Without these the equality assertions above are
-    // satisfied by a corpus of one-step bodies that never crashed at all.
-    expect(reached.crashes, "no crash ever failed a delivery").toBeGreaterThan(80); // 140-252
-    expect(reached.resumesOffJournal, "no resume read a step off the journal").toBeGreaterThan(55); // 104-210
-    expect(reached.suspends, "nothing ever suspended").toBeGreaterThan(90); // 155-276
-    expect(reached.fanOut, "no program fanned out").toBeGreaterThan(10); // 20-36
-    expect(reached.nested, "no program nested a step inside a step").toBeGreaterThan(5); // 11-21
-    expect(reached.gateReentry, "no nested step ran through a one-slot gate").toBeGreaterThan(0);
-    expect(reached.signals, "no hook was ever answered by a signal").toBeGreaterThan(12); // 28-112
-    expect(reached.failures, "no generated run ever failed").toBeGreaterThan(3); // 8-23
+    // Ranges over 22 runs, re-measured. Without these the equality assertions
+    // above are satisfied by a corpus of one-step bodies that never crashed at
+    // all — so what each floor is for is catching a state NEVER REACHED, not
+    // pinning how often one is.
+    //
+    // `suspends` is the one to read before touching any of these. Its floor was
+    // 90 against a recorded 155-276, i.e. 58% of the recorded minimum — the same
+    // fraction its siblings sit at, and calibrated against a left tail that does
+    // not hold. A real `pnpm check` run drew **62**, below all 22 samples here,
+    // and failed the gate on a tree whose change (queue columns, in aai-server)
+    // cannot affect this suite. Re-measuring on pristine main gave 104-200, so
+    // the recorded range was optimistic too: this walk's counts are correlated
+    // WITHIN a run rather than independent per step, which is exactly the long
+    // left tail this repo's guide warns about ("one run is not a range").
+    //
+    // So it is floored under the OBSERVED OUTLIER rather than under a fraction
+    // of a mean, which is what the guide asks for and what the other seven
+    // already happen to satisfy. 30 is under 62 with room for a worse draw and
+    // still an order of magnitude above "nothing ever suspended", which is the
+    // only thing it has to catch.
+    expect(reached.crashes, "no crash ever failed a delivery").toBeGreaterThan(80); // 135-229
+    expect(reached.resumesOffJournal, "no resume read a step off the journal").toBeGreaterThan(55); // 95-185
+    expect(reached.suspends, "nothing ever suspended").toBeGreaterThan(30); // 104-200, and 62 seen live
+    expect(reached.fanOut, "no program fanned out").toBeGreaterThan(10); // 21-37
+    expect(reached.nested, "no program nested a step inside a step").toBeGreaterThan(5); // 13-23
+    expect(reached.gateReentry, "no nested step ran through a one-slot gate").toBeGreaterThan(0); // 1-10
+    expect(reached.signals, "no hook was ever answered by a signal").toBeGreaterThan(12); // 27-123
+    expect(reached.failures, "no generated run ever failed").toBeGreaterThan(3); // 11-26
   });
 });
 
