@@ -1076,6 +1076,7 @@
     "safeFetch",
     "sessionStateDdl",
     "stampSessionEvent",
+    "traceIdOf",
     "wireSessionSocket",
     "workflowJournalDdl"
   ],

@@ -38,7 +38,13 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { isOneOf, requiredInt, requiredSize, requiredString } from "./_body-fields.ts";
-import { guestSlug, notConfigured, type PlatformCall, withReserved } from "./_platform-route.ts";
+import {
+  guestSlug,
+  guestTrace,
+  notConfigured,
+  type PlatformCall,
+  withReserved,
+} from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
@@ -194,6 +200,7 @@ export function createWorkflowKeysHandler(
         log,
         failure: "workflow-keys call failed",
         detail: { slug, method },
+        trace: guestTrace(c),
         // No `statusFor`: neither method has a domain refusal. `record` is
         // idempotent by contract (`on conflict do nothing`) and `lookup` answers
         // an empty page for anything it does not hold, so every remaining failure

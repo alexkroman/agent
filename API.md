@@ -9154,6 +9154,9 @@ type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: 
 // @internal
 type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
 
+// @internal
+export function traceIdOf(header: string | null | undefined): string | undefined;
+
 // @public
 type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
 

@@ -31,7 +31,13 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { isOneOf, requiredSize, requiredString } from "./_body-fields.ts";
-import { guestSlug, notConfigured, type PlatformCall, withReserved } from "./_platform-route.ts";
+import {
+  guestSlug,
+  guestTrace,
+  notConfigured,
+  type PlatformCall,
+  withReserved,
+} from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
@@ -163,6 +169,7 @@ export function createUploadsHandler(
         log,
         failure: "upload-records call failed",
         detail: { slug, method },
+        trace: guestTrace(c),
         // 409 and NOT logged as a failure: a refused claim is this route working.
         // The runtime turns it back into `UploadIdTakenError`, which is a 409 to
         // the caller who chose the id.

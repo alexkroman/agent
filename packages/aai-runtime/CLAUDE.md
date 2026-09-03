@@ -767,6 +767,16 @@ this package.
 
 ### A journal read is a round trip, and four shapes issued it N times
 
+**The ~840 ms is DECOMPOSABLE now, and was a total for as long as it was
+quoted.** Every RPC carries a W3C `traceparent` (`_trace-context.ts`) and logs
+its own elapsed at debug; `aai-server`'s `withReserved` logs `waitedMs` and
+`workMs` under the same id. So `elapsed - (waited + work)` is the hop, and
+"was it our pool" is answerable from two log lines rather than from a guess —
+which matters because `ADMIN_POOL_MAX` had already been widened once on the
+assumption that it was. One span per CALL: a run's whole walk is not one trace,
+which would need the trace minted at the delivery and carried through
+`workflow-run-context.ts`.
+
 Every platform-arm `JournalStore` call is one `POST /:slug/workflow-journal`,
 measured at **~840 ms of server time**, on a route holding one of
 `ADMIN_POOL_MAX` connections for the whole request — so these are the pool a

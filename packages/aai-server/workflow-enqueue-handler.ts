@@ -54,7 +54,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES, queueNameKind } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { optionalString, requiredString } from "./_body-fields.ts";
-import { guestSlug, notConfigured, withReserved } from "./_platform-route.ts";
+import { guestSlug, guestTrace, notConfigured, withReserved } from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
@@ -184,6 +184,7 @@ export function createWorkflowEnqueueHandler(
         failure: "could not queue the message",
         logMessage: "enqueue failed",
         detail: { slug },
+        trace: guestTrace(c),
       },
       async (sql) => {
         const result = await enqueue(sql, {

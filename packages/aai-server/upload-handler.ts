@@ -98,7 +98,7 @@ import { UploadTooLargeError } from "@alexkroman1/aai-runtime";
 import { UPLOAD_TOKEN_RE } from "@alexkroman1/aai-runtime/internal";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { withReserved } from "./_platform-route.ts";
+import { guestTrace, withReserved } from "./_platform-route.ts";
 import type { HonoEnv } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import { callerReachableUrl } from "./microsandbox-network.ts";
@@ -230,7 +230,12 @@ async function assertUploadOpen(
   if (!adminDb) return;
   const held = await withReserved(
     adminDb,
-    { log, failure: "upload lookup failed", detail: { slug: c.var.slug, id } },
+    {
+      log,
+      failure: "upload lookup failed",
+      detail: { slug: c.var.slug, id },
+      trace: guestTrace(c),
+    },
     async (sql) => await readUpload(sql, c.var.slug, id),
   );
   if (!held?.complete) return;

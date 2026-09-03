@@ -29,6 +29,7 @@ import { MAX_WORKFLOW_FIND_LIMIT } from "@alexkroman1/aai-runtime";
 import { describe, expect, test, vi } from "vitest";
 import {
   bearerFor,
+  captureLogs,
   createTestOrchestrator,
   deploy,
   fakeAdminDbOver,
@@ -61,14 +62,23 @@ function callRoute(
   slug: string,
   body: unknown,
   bearer?: string,
+  traceparent?: string,
 ): Promise<Response> {
   const authorization = bearer === undefined ? undefined : `Bearer ${bearer}`;
   return fetch(`/${slug}/workflow-journal`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...omitUndefined({ authorization }) },
+    headers: {
+      "content-type": "application/json",
+      ...omitUndefined({ authorization, traceparent }),
+    },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
+
+// At module scope, because `captureLogs` installs `beforeEach`/`afterEach` —
+// called inside a test body it registers its hooks too late to have recorded
+// anything.
+const logs = captureLogs();
 
 describe("POST /:slug/workflow-journal", () => {
   describe("authorization", () => {
@@ -201,6 +211,34 @@ describe("POST /:slug/workflow-journal", () => {
       // 200 or 500 — a 400 would mean the route rejected the CALL rather than the
       // database answering oddly, which is what a missing method looks like.
       expect(res.status, method).not.toBe(400);
+    });
+
+    /**
+     * The trace id end to end, over the real route rather than over
+     * `withReserved` alone.
+     *
+     * `_platform-route.test.ts` pins that every line the frame writes carries the
+     * id; what only a route can show is that the id is READ — that the header the
+     * runtime mints (`aai-runtime/platform-rpc.ts`) reaches `guestTrace` through
+     * hono's own request, which is the half a middleware change can break with
+     * every unit test still green.
+     */
+    test("a caller's traceparent reaches the route's own log line", async () => {
+      const TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
+      const p = await platform(() => {
+        throw new Error("connection reset");
+      });
+      const res = await callRoute(
+        p.fetch,
+        MINE,
+        { method: "getRun", runId: "wrun_1" },
+        await bearerFor(p.store, MINE),
+        `00-${TRACE}-00f067aa0ba902b7-01`,
+      );
+      expect(res.status).toBe(503);
+      expect(logs.all().map((line) => line.ctx)).toContainEqual(
+        expect.objectContaining({ slug: MINE, traceId: TRACE }),
+      );
     });
 
     test("a refused hook-token claim is a 409 that SAYS why, never a retryable 503", async () => {

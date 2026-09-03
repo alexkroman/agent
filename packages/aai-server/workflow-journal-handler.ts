@@ -39,7 +39,13 @@ import {
   requiredSize,
   requiredString,
 } from "./_body-fields.ts";
-import { guestSlug, notConfigured, type PlatformCall, withReserved } from "./_platform-route.ts";
+import {
+  guestSlug,
+  guestTrace,
+  notConfigured,
+  type PlatformCall,
+  withReserved,
+} from "./_platform-route.ts";
 import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
@@ -229,6 +235,7 @@ export function createWorkflowJournalHandler(
         log,
         failure: "workflow-journal call failed",
         detail: { slug, method },
+        trace: guestTrace(c),
         // 409 and NOT logged as a failure: a refused hook-token claim, and a
         // refused duplicate run id, are this route WORKING. The generic arm below
         // is a 503, which tells the guest to retry a condition that cannot change

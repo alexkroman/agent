@@ -59,7 +59,9 @@ import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { rpcFetch } from "./_egress-fetch.ts";
+import { newTraceparent, traceIdOf } from "./_trace-context.ts";
 import { type PlatformEndpoint, type PlatformRoute, platformUrl } from "./platform-endpoint.ts";
+import { consoleLogger } from "./runtime-config.ts";
 import { PLATFORM_UNAVAILABLE_CODE } from "./workflow-api-error-status.ts";
 
 /** One POST to the platform, as its caller declares it. */
@@ -123,10 +125,21 @@ export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): 
   // a reset taken by a claim's bucket probes failed the run-event reads in the same
   // instant, which is what made one transport fault read as three unrelated bugs.
   const fetchFn = opts.fetch ?? rpcFetch;
+  // A W3C trace context per call, so this side's wall clock and the handler's
+  // own breakdown can be put beside each other — see `_trace-context.ts`, which
+  // carries the ~840 ms this exists to decompose. Minted here rather than passed
+  // in: every one of the four clients goes through this function, so a caller
+  // that forgot would be a call with no correlation at all.
+  const traceparent = newTraceparent();
+  const startedAt = performance.now();
   const res = await pTimeout(
     fetchFn(platformUrl(opts.base, call.route), {
       method: "POST",
-      headers: { ...platformBearer(opts.token), "content-type": "application/json" },
+      headers: {
+        ...platformBearer(opts.token),
+        "content-type": "application/json",
+        traceparent,
+      },
       body: call.body,
     }),
     {
@@ -134,6 +147,17 @@ export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): 
       message: `${call.label} timed out after ${call.timeoutMs}ms`,
     },
   );
+  // DEBUG, which `consoleLogger` makes a no-op unless `AAI_DEBUG=1`: this is one
+  // line per platform call on a path that sustains several a second, and it is
+  // an instrument rather than an event. The `traceId` is the join key and the
+  // status is what says whether the elapsed time bought anything.
+  consoleLogger.debug("platform call", {
+    label: call.label,
+    route: call.route,
+    traceId: traceIdOf(traceparent),
+    status: res.status,
+    elapsedMs: Math.round(performance.now() - startedAt),
+  });
   if (!res.ok) {
     // The body is DETAIL and the status is the finding, so a reply that will not
     // read must not replace it with a stream error. Three of the four clients

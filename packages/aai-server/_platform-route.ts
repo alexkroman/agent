@@ -62,7 +62,9 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "@alexkroman1/aai-runtime";
+import { traceIdOf } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import type { AppContext } from "./context.ts";
 import { assertGuestBearer } from "./guest-bearer.ts";
@@ -84,6 +86,27 @@ export async function guestSlug(c: AppContext): Promise<string> {
   const slug = c.var.slug;
   await assertGuestBearer(c, slug);
   return slug;
+}
+
+/**
+ * The caller's trace id, for this request's log lines.
+ *
+ * Every guest→platform RPC now carries a `traceparent`
+ * (`aai-runtime/_trace-context.ts`), and this is the other end of it: the id
+ * goes on every line {@link withReserved} writes, so the caller's wall clock and
+ * this side's `waitedMs`/`workMs` can be put beside each other. A busy replica
+ * writes hundreds of these a second, so a timestamp cannot make that join and an
+ * id can.
+ *
+ * `undefined` for any caller that sent no header — an older guest, or a request
+ * from something that is not a guest at all — which is why {@link ReservedCall}
+ * declares the key REQUIRED with an optional value: a route may have no trace,
+ * but it may not forget to look.
+ *
+ * @internal
+ */
+export function guestTrace(c: AppContext): string | undefined {
+  return traceIdOf(c.req.header("traceparent"));
 }
 
 /**
@@ -148,6 +171,15 @@ export type ReservedCall = {
   logMessage?: string | undefined;
   /** What the warn line carries besides the error: the slug, and the method where a route has one. */
   detail: Record<string, unknown>;
+  /**
+   * This request's trace id — {@link guestTrace}.
+   *
+   * A REQUIRED key with an optional value, deliberately: `traceparent` is absent
+   * for plenty of legitimate callers, but a route that never asked for it is a
+   * route whose lines cannot be joined to the caller's, and that is a mistake
+   * the checker can catch where a `?:` would let it pass.
+   */
+  trace: string | undefined;
   /**
    * A domain error this route answers with a status of its own.
    *
@@ -214,6 +246,17 @@ export const RESERVE_WAIT_WARN_MS = PLATFORM_DB_RESERVE_TIMEOUT_MS / 10;
  *
  * @internal
  */
+/**
+ * A route's `detail`, plus its trace id when it has one.
+ *
+ * `omitUndefined` rather than a spread of `{ traceId }`: a `traceId: undefined`
+ * in a log context prints as a field that is there and empty, which reads as a
+ * caller that sent a broken header rather than one that sent none.
+ */
+function traced(call: ReservedCall): Record<string, unknown> {
+  return { ...call.detail, ...omitUndefined({ traceId: call.trace }) };
+}
+
 export async function withReserved<T>(
   adminDb: AdminDb,
   call: ReservedCall,
@@ -226,14 +269,14 @@ export async function withReserved<T>(
     reserved = await adminDb.reserve();
   } catch (err: unknown) {
     call.log.warn("Platform admin reservation failed", {
-      ...call.detail,
+      ...traced(call),
       waitedMs: since(askedAt),
       error: errorMessage(err),
     });
     throw err;
   }
   const waitedMs = since(askedAt);
-  const line = { ...call.detail, waitedMs };
+  const line = { ...traced(call), waitedMs };
   if (waitedMs >= RESERVE_WAIT_WARN_MS) call.log.warn("Platform admin reservation was slow", line);
   else call.log.debug("Platform admin reservation", line);
   const heldAt = performance.now();
@@ -246,7 +289,7 @@ export async function withReserved<T>(
     const own = call.statusFor?.(err);
     if (own) throw own;
     call.log.warn(call.logMessage ?? call.failure, {
-      ...call.detail,
+      ...traced(call),
       waitedMs,
       workMs: since(heldAt),
       error: errorMessage(err),

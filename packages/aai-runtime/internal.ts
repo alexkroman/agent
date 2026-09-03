@@ -88,6 +88,16 @@ export {
 // above it, because the shorter of the two decides and a client value above the
 // server's reaps nothing — see `HTTP_KEEP_ALIVE_TIMEOUT_MS` there.
 export { EGRESS_KEEP_ALIVE_MS } from "./_egress-fetch.ts";
+/**
+ * The W3C trace-context parser, so the two sides of the platform hop agree.
+ *
+ * The runtime MINTS a `traceparent` on every RPC and `aai-server` reads the id
+ * off the request to put it on its own log lines. One grammar, in the package
+ * that emits it — a second regex in the server would be the drift that makes a
+ * correlation key silently stop correlating. `_trace-context.ts` carries the
+ * argument.
+ */
+export { traceIdOf } from "./_trace-context.ts";
 // Parsing an `Authorization: Bearer <token>` header. Here because FOUR
 // byte-identical copies existed — the guest's gate (`aai-guest/harness-auth.ts`),
 // `bearerMatches` in this package, `aai-server/_bearer.ts`, and the platform's

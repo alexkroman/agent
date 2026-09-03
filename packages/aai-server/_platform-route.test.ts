@@ -63,7 +63,14 @@ function countingDb(): { db: AdminDb; released: () => number; reserved: () => nu
   };
 }
 
-const CALL = { log, failure: "storage call failed", detail: { slug: "my-agent" } };
+const CALL = {
+  log,
+  failure: "storage call failed",
+  detail: { slug: "my-agent" },
+  // The key is REQUIRED with an optional value, so every route has to look for a
+  // trace even when there is not one. Absent here except where a case is about it.
+  trace: undefined,
+};
 
 test("hands the work a query function bound to the reserved connection", async () => {
   const { db } = countingDb();
@@ -255,6 +262,53 @@ describe("the acquire is timed", () => {
       }),
     ).rejects.toMatchObject({ status: 503 });
     expect(logs.all().at(-1)?.ctx).toMatchObject({ waitedMs: 4900, workMs: 20 });
+  });
+});
+
+/**
+ * The other end of the guest's `traceparent`, which is what makes the two sides
+ * of the ~840 ms hop JOINABLE.
+ *
+ * A busy replica writes hundreds of these lines a second, so a timestamp cannot
+ * put a caller's elapsed beside this side's `waitedMs`/`workMs` and an id can.
+ * Every line `withReserved` writes therefore carries it — and NONE of them
+ * carries an empty one, which is the half worth pinning: a `traceId: undefined`
+ * in a log context reads as a caller that sent a broken header rather than one
+ * that sent none.
+ */
+describe("the caller's trace id", () => {
+  const TRACE = "4bf92f3577b34da6a3ce929d0e0e4736";
+  const traced = { ...CALL, trace: TRACE };
+
+  test("is on the reservation line, beside the wait it explains", async () => {
+    const { db } = countingDb();
+    await withReserved(db, traced, async () => "ok");
+    expect(logs.all().at(-1)?.ctx).toMatchObject({ slug: "my-agent", traceId: TRACE });
+  });
+
+  test("is on the 503's warn, so a failed call is correlatable too", async () => {
+    const { db } = countingDb();
+    await expect(
+      withReserved(db, traced, () => {
+        throw new Error("connection reset");
+      }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(logs.all().at(-1)?.ctx).toMatchObject({ traceId: TRACE, error: "connection reset" });
+  });
+
+  test("is on a FAILED acquire, which is the line that had no trace at all", async () => {
+    const failing = {
+      listen: () => Promise.resolve(() => undefined),
+      reserve: () => Promise.reject(new Error("no connection available")),
+    } as AdminDb;
+    await expect(withReserved(failing, traced, async () => "ok")).rejects.toThrow();
+    expect(logs.all().at(-1)?.ctx).toMatchObject({ traceId: TRACE });
+  });
+
+  test("is OMITTED rather than empty when the caller sent none", async () => {
+    const { db } = countingDb();
+    await withReserved(db, CALL, async () => "ok");
+    expect(logs.all().at(-1)?.ctx).not.toHaveProperty("traceId");
   });
 });
 
