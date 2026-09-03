@@ -18,7 +18,13 @@ import {
   renderWithClient,
   stubFetch,
 } from "./_test-utils.ts";
-import { GithubCard, type GithubSyncState, lastCommitUrl, syncStateText } from "./github-card.tsx";
+import {
+  GithubCard,
+  type GithubSyncState,
+  lastCommitUrl,
+  pickerOrder,
+  syncStateText,
+} from "./github-card.tsx";
 import { consumeGithubResult, githubResultText } from "./github-result.ts";
 
 const CONNECTED = {
@@ -38,6 +44,25 @@ function renderCard(data?: GithubSyncState) {
 afterEach(() => {
   vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
+});
+
+describe("pickerOrder", () => {
+  test("puts the newest installation entry first and copies the array", () => {
+    // GitHub lists an installation's repositories oldest-first, so the one a
+    // user just created to sync into — the only entry they are certain of —
+    // was last in a list that runs to a thousand.
+    const repos = [
+      { fullName: "acme/oldest", private: false },
+      { fullName: "acme/newest", private: true },
+    ];
+    expect(pickerOrder(repos).map((entry) => entry.fullName)).toEqual([
+      "acme/newest",
+      "acme/oldest",
+    ]);
+    // Copied, not reversed in place: the array belongs to the query cache, and
+    // reversing it there would flip the order again on every re-render.
+    expect(repos.map((entry) => entry.fullName)).toEqual(["acme/oldest", "acme/newest"]);
+  });
 });
 
 describe("syncStateText", () => {
@@ -143,6 +168,29 @@ describe("GithubCard", () => {
     await screen.findByText("acme");
     await screen.findByText("acme/voice-agent (private)");
     expect(screen.getByText("Add or remove repositories")).toBeTruthy();
+  });
+
+  test("the picker renders the newest repository first", async () => {
+    stubFetch({
+      "/studio/github": () => jsonResponse(CONNECTED),
+      "/studio/github/repos": () =>
+        jsonResponse({
+          repos: [
+            { fullName: "acme/oldest", private: false },
+            { fullName: "acme/newest", private: true },
+          ],
+        }),
+    });
+    renderCard();
+
+    await screen.findByText("acme/newest (private)");
+    // The rendered order, not just the helper's: the picker is where this is
+    // either true or invisible.
+    expect([...document.querySelectorAll("option")].map((option) => option.textContent)).toEqual([
+      "Choose a repository…",
+      "acme/newest (private)",
+      "acme/oldest",
+    ]);
   });
 
   test("an installation with no repositories says where the fix is", async () => {

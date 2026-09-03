@@ -172,6 +172,24 @@ function CreateRepo({
 }
 
 /**
+ * The picker's order: the installation listing, REVERSED.
+ *
+ * GitHub answers `GET /installation/repositories` oldest-first, so the
+ * repository a user just made in order to sync into it — the one case where
+ * they know exactly which entry they want — landed at the bottom of a list
+ * that runs to a thousand. Newest-first puts it under the cursor.
+ *
+ * Reversing rather than sorting on a key, because the summary carries none
+ * worth sorting on: `fullName` is alphabetical, which buries the same
+ * repository just as thoroughly, and a real timestamp would be a field on the
+ * wire that only this line reads. Pure and exported so the order is a thing a
+ * test states rather than an argument about GitHub's defaults.
+ */
+export function pickerOrder(repos: readonly GithubRepo[]): readonly GithubRepo[] {
+  return [...repos].reverse();
+}
+
+/**
  * The repository `<select>` and the two things it has to be able to say:
  * still loading, and "the App cannot write anywhere yet".
  *
@@ -205,7 +223,7 @@ function RepoPicker({
           <option value="">
             {repos.isPending ? "Loading repositories…" : "Choose a repository…"}
           </option>
-          {(repos.data ?? []).map((entry) => (
+          {pickerOrder(repos.data ?? []).map((entry) => (
             <option key={entry.fullName} value={entry.fullName}>
               {entry.fullName}
               {entry.private ? " (private)" : ""}

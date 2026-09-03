@@ -70,6 +70,17 @@ export type FakeGithubOptions = {
   /** Make the `code` exchange fail, as a replayed or forged code does. */
   rejectUserCode?: boolean;
   /**
+   * A repository with NO COMMITS, which refuses every Git Data write with
+   * 409 until something gives it one.
+   *
+   * The state a user who just created a repository for this is in, and the
+   * one `head: null` alone cannot express: that says the BRANCH has no
+   * commit, where this says GitHub will not accept the blob that would make
+   * one. Cleared by the Contents API write the sync bootstraps with, which is
+   * how the real thing behaves.
+   */
+  emptyRepo?: boolean;
+  /**
    * Force a status for requests whose path contains this fragment.
    *
    * `times` (default 1) is how many matching requests fail, which is what
@@ -100,6 +111,8 @@ export type FakeGithub = {
 
 /** The commit sha the fake's commit route always returns. */
 export const FAKE_COMMIT_SHA = "c0ffee1234567890c0ffee1234567890c0ffee12";
+/** The commit the Contents API leaves behind when it un-empties a repository. */
+export const FAKE_INIT_COMMIT_SHA = "1n1t0000000000001n1t0000000000001n1t0000";
 const TREE_SHA = "tree567890abcdef1234567890abcdef12345678";
 
 function json(body: unknown, status = 200): Response {
@@ -123,6 +136,8 @@ type FakeContext = {
   head: string | null;
   repos: readonly { full_name: string; private: boolean; default_branch: string }[];
   accountType: "User" | "Organization";
+  /** No commits yet — the Git Data API is closed until one exists. */
+  emptyRepo: boolean;
   /** How many blobs have been uploaded, so each gets a distinct sha. */
   blobCount: number;
 };
@@ -211,8 +226,26 @@ const FAKE_ROUTES: readonly FakeRoute[] = [
   {
     method: "POST",
     matches: endsWith("/git/blobs"),
-    // A distinct sha per blob, so a tree assertion can tell entries apart.
-    reply: (_call, ctx) => json({ sha: `blob${String(ctx.blobCount++).padStart(36, "0")}` }, 201),
+    // GitHub's real refusal on a repository with no commits, and the reason
+    // the sync bootstraps through the Contents API — a blob is the FIRST
+    // write the push makes, so nothing downstream of it was ever reached.
+    reply: (_call, ctx) =>
+      ctx.emptyRepo
+        ? json({ message: "Git Repository is empty." }, 409)
+        : // A distinct sha per blob, so a tree assertion can tell entries apart.
+          json({ sha: `blob${String(ctx.blobCount++).padStart(36, "0")}` }, 201),
+  },
+  {
+    method: "PUT",
+    matches: contains("/contents/"),
+    // The one endpoint that writes to a repository with no commits: it makes
+    // the default branch and the first commit, which is exactly what un-blocks
+    // everything above.
+    reply: (_call, ctx) => {
+      ctx.emptyRepo = false;
+      ctx.head = FAKE_INIT_COMMIT_SHA;
+      return json({ commit: { sha: FAKE_INIT_COMMIT_SHA } }, 201);
+    },
   },
   { method: "POST", matches: endsWith("/git/trees"), reply: () => json({ sha: TREE_SHA }, 201) },
   {
@@ -250,6 +283,7 @@ export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
       { full_name: "acme/voice-agent", private: true, default_branch: "main" },
     ],
     accountType: options.accountType ?? "Organization",
+    emptyRepo: options.emptyRepo === true,
     blobCount: 0,
   };
   let failures = 0;

@@ -12,6 +12,7 @@ import { describe, expect, test } from "vitest";
 import {
   createFakeGithub,
   FAKE_COMMIT_SHA,
+  FAKE_INIT_COMMIT_SHA,
   TEST_INSTALLATION_ID,
   testGithubApp,
 } from "./_studio-github-test-utils.ts";
@@ -79,6 +80,63 @@ describe("syncWorkspaceToGithub", () => {
     expect(github.lastCall("/git/commits")?.body).toMatchObject({ parents: [] });
     expect(github.lastCall("/git/refs")?.method).toBe("POST");
     expect(github.calls.some((call) => call.method === "PATCH")).toBe(false);
+  });
+
+  test("a repository with NO COMMITS is bootstrapped through the Contents API", async () => {
+    // The failure this path exists for: GitHub refuses `POST /git/blobs` on a
+    // repository that has no commits, so the parentless-commit path above was
+    // unreachable for the very users it was written for — the reward for
+    // making a repository to sync into was "Git Repository is empty." and a
+    // link to the create-a-blob reference page.
+    const github = createFakeGithub({ head: null, emptyRepo: true });
+    const result = await runSync(github);
+
+    expect(result.changed).toBe(true);
+    const init = github.lastCall("/contents/");
+    expect(init?.method).toBe("PUT");
+    expect(init?.path).toBe("/repos/acme/voice-agent/contents/agent.ts");
+    expect(init?.body).toMatchObject({
+      message: "Initialize demo from AAI Studio",
+      content: Buffer.from("export default 1;", "utf8").toString("base64"),
+    });
+    // No `branch`: an empty repository only accepts a commit to the default
+    // branch, and naming the branch it is about to create is how that call
+    // gets refused.
+    expect(init?.body).not.toHaveProperty("branch");
+    // The bootstrap commit is the parent, so the sync's own commit builds ON
+    // it rather than orphaning it — and the ref already exists, so the move
+    // is the ordinary fast-forward PATCH.
+    expect(github.lastCall("/git/commits")?.body).toMatchObject({
+      parents: [FAKE_INIT_COMMIT_SHA],
+    });
+    expect(github.lastCall("/git/refs/")?.method).toBe("PATCH");
+    // The whole tree still goes up afterwards — the bootstrap writes one file
+    // to make the repository non-empty, it does not stand in for the sync.
+    expect(github.treeEntries().map((entry) => entry.path)).toEqual(["agent.ts"]);
+  });
+
+  test("the bootstrap writes the FIRST workspace file, sorted, not whichever key came first", async () => {
+    // Sorted so a retried sync writes the same initial commit rather than one
+    // that depends on the file map's insertion order.
+    const github = createFakeGithub({ head: null, emptyRepo: true });
+    await runSync(github, {
+      workspace: workspace({ "client.tsx": "b", "agent.ts": "a" }),
+    });
+
+    expect(github.lastCall("/contents/")?.path).toBe("/repos/acme/voice-agent/contents/agent.ts");
+  });
+
+  test("a 409 that the bootstrap does not clear is surfaced, not retried forever", async () => {
+    // The bootstrap gets ONE attempt. A 409 still standing after it is not an
+    // empty repository, and a loop around a refusal is the shape this module
+    // already removed once (see the ref-conflict retry's own bound).
+    const github = createFakeGithub({
+      head: null,
+      failWith: { pathIncludes: "/git/blobs", status: 409, times: 99 },
+    });
+
+    await expect(runSync(github)).rejects.toThrow();
+    expect(github.calls.filter((call) => call.path.includes("/contents/"))).toHaveLength(1);
   });
 
   test("an existing branch is a fast-forward PATCH naming the old head as parent", async () => {

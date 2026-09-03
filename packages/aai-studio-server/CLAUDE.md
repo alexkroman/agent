@@ -978,6 +978,36 @@ project's workspace to a branch as ONE commit.
   one outcome a sync must never produce. An empty repository is the COMMON
   case (a user makes one for this), so a 404/409 on the ref read takes the
   `POST /git/refs` path with a parentless commit.
+- **On a repository with NO COMMITS the Git Data API is CLOSED, and the
+  Contents API is the way in.** The parentless-commit path above was
+  unreachable for the users it was written for: GitHub refuses
+  `POST /git/blobs` with 409 `Git Repository is empty.`, and a blob is the
+  FIRST write the push makes — so the whole reward for creating a repository
+  to sync into was that message and a link to the create-a-blob reference
+  page. `initializeRepo` meets that refusal by writing ONE file through
+  `PUT /repos/{owner}/{repo}/contents/{path}`, the only endpoint that works
+  there, and the sync then writes its tree onto the commit that leaves behind.
+  Four properties. It is REACTIVE, not predicted, because the ref read cannot
+  tell an empty repository from a branch that does not exist yet (404 answers
+  both) while the refusal says exactly which one it met — and re-uploading the
+  blobs afterwards costs nothing twice, a blob being content-addressed. It
+  writes a REAL workspace file (the first, sorted, so a retried sync writes the
+  same initial commit) rather than a placeholder, so nothing has to be deleted
+  and the tree replacement a moment later covers it anyway. It names NO branch,
+  because an empty repository accepts a commit only to the default branch and
+  naming the branch GitHub is about to create is how that call gets refused —
+  which also means a sync targeting some other branch merely ends up with a
+  non-empty repository and the unchanged create-the-ref path. And it gets ONE
+  attempt: a 409 still standing after it is not an empty repository, and a loop
+  around a refusal is the shape this module already removed once.
+- **The picker lists the installation NEWEST-FIRST** (`pickerOrder` in
+  `github-card.tsx`). GitHub answers `GET /installation/repositories`
+  oldest-first, so the repository a user just made in order to sync into it —
+  the one entry they are certain of, and the one the bootstrap above exists for
+  — sat at the bottom of a list that runs to a thousand. Reversed rather than
+  sorted on a key: the summary carries none worth sorting on, `fullName` buries
+  the same repository just as thoroughly, and a timestamp would be a field on
+  the wire that one line reads.
 - **A head that moved is REBUILT onto, and only a spent retry budget may say
   "try again".** Unforced means the ref update can lose, so the sync re-reads
   the head and rebuilds the same tree onto the winner's commit
