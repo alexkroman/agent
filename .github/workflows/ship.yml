@@ -206,7 +206,7 @@ jobs:
         # `version:` only — publishing belongs to the job below, which runs
         # whatever branch this action takes. See "Pack and publish run
         # UNCONDITIONALLY".
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
         with:
           version: pnpm run version
         env:
@@ -537,7 +537,7 @@ jobs:
       # nothing to wait for.
       - name: Download the packed release
         if: needs.release.outputs.packed == 'true'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: changeset-pack
           path: .changeset-pack
