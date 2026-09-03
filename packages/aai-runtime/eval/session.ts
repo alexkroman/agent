@@ -175,6 +175,29 @@ export type EvalSession = {
    * the harness's.
    */
   say(text: string): Promise<EvalTurn>;
+  /**
+   * Say every line in order, waiting out each reply, and hand back every turn.
+   *
+   * Byte-identical in three shipped templates before it was published
+   * (`dispatch-center`, `retail`, `travel-concierge`), each under a doc reaching
+   * the same conclusion independently — which is the tell that it is the
+   * harness's concept rather than any template's. The conclusion is the reason
+   * to reach for this rather than a list of `say()` calls: a case over several
+   * turns must assert about the turn a MECHANISM fired in, never about turn
+   * number two, because how many turns an agent takes to get somewhere is the
+   * model's business and it measurably varies — `retail`'s desk reads the order
+   * back before it stages, so its staging call has landed in turn two, three
+   * and four across live runs. A case pinned to a turn index is a flake with a
+   * misleading name.
+   *
+   * `turnCalling`, `callsIn` and `describeTurn` (`eval/turns.ts`, published on
+   * the same subpath) are what read the result without pinning an index.
+   *
+   * Strictly sequential, like the caller it stands for: each line is committed
+   * only once the reply to the previous one has ended, so a recorded tool order
+   * is the agent's and not the harness's.
+   */
+  sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
   /** Every event this session has emitted, in stream order. */
   events(): readonly SessionEvent[];
   /**
@@ -408,28 +431,43 @@ async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promis
     throw err;
   }
 
+  // A binding rather than a method on the literal below, so `sayAll` reaches it
+  // without `this` — a handle destructured out of a case's context
+  // (`async ({ session }) => …`) is exactly the shape that makes a `this`-bound
+  // method fail somewhere the type checker cannot see.
+  const say = async (text: string): Promise<EvalTurn> => {
+    const stt = fake.sttSession();
+    // The handle this closure belongs to is only returned after
+    // `session.start()` resolved, which is what opens the STT stage, and the
+    // fake never clears the stream it last opened — so an absent one is this
+    // module having reordered its own start, not a case doing anything.
+    invariant(stt !== undefined, "eval.session.stt.open", () => ({ sessionId }));
+    const from = events.length;
+    stt.commit(text);
+    await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);
+    const turn = events.slice(from);
+    return {
+      text: saidIn(turn).join(" "),
+      events: turn,
+      toolCalls: toolCallsIn(turn),
+      completed: turn.some((e) => e.type === "reply.completed"),
+    };
+  };
+
   return {
     id: sessionId,
     events: () => events,
     said: () => saidIn(events),
     toolCalls: () => toolCallsIn(events),
-    async say(text) {
-      const stt = fake.sttSession();
-      // The handle this closure belongs to is only returned after
-      // `session.start()` resolved, which is what opens the STT stage, and the
-      // fake never clears the stream it last opened — so an absent one is this
-      // module having reordered its own start, not a case doing anything.
-      invariant(stt !== undefined, "eval.session.stt.open", () => ({ sessionId }));
-      const from = events.length;
-      stt.commit(text);
-      await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);
-      const turn = events.slice(from);
-      return {
-        text: saidIn(turn).join(" "),
-        events: turn,
-        toolCalls: toolCallsIn(turn),
-        completed: turn.some((e) => e.type === "reply.completed"),
-      };
+    say,
+    async sayAll(lines) {
+      const turns: EvalTurn[] = [];
+      // Sequential on purpose: `say()` returns when the reply to ITS utterance
+      // ends, so awaiting each in turn is what keeps the next line out of the
+      // previous turn. A `Promise.all` here would commit every utterance at
+      // once and record an order belonging to the harness.
+      for (const line of lines) turns.push(await say(line));
+      return turns;
     },
     async close() {
       await session.stop();

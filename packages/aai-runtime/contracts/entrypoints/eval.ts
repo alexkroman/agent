@@ -27,11 +27,14 @@
 // as MOVING it, which on the runtime's export list is a removal.
 export type { StepFetch } from "../../eval-barrel.ts";
 export {
+  callsIn,
   completedOutput,
   createFakeSttOpener,
   createFakeTtsOpener,
   createVmRunCode,
   customEventsIn,
+  describeToolCalls,
+  describeTurn,
   type EvalCredentials,
   type EvalEmitted,
   type EvalRunOptions,
@@ -63,8 +66,10 @@ export {
   TURN_ENDS,
   toolArgsIn,
   toolCallsIn,
+  toolNames,
   toolResultIn,
   toolResultsIn,
+  turnCalling,
   type VmRunCodeOptions,
 } from "../../eval-barrel.ts";
 export {

@@ -59,6 +59,7 @@ type EvalRunOptions = StartOptions & {
 type EvalSession = {
     readonly id: string;
     say(text: string): Promise<EvalTurn>;
+    sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
     events(): readonly SessionEvent[];
     said(): readonly string[];
     toolCalls(): readonly EvalToolCall[];
@@ -153,6 +154,9 @@ type EvalWorkflows = {
         timeoutMs?: number | undefined;
     }): Promise<EvalWorkflowRun>;
     runs(): Promise<readonly EvalWorkflowRun[]>;
+    settleAll(options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<readonly EvalWorkflowRun[]>;
     close(): Promise<void>;
 };
 

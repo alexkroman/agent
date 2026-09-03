@@ -48,6 +48,7 @@
  * The assertion READERS ({@link saidIn}, {@link toolCallsIn}, {@link TURN_ENDS},
  * {@link toolArgsIn}, {@link toolResultIn}, {@link toolResultsIn},
  * {@link lastStateIn}, {@link statesIn}, {@link customEventsIn},
+ * {@link toolNames}, {@link callsIn}, {@link turnCalling},
  * {@link completedOutput}) are here rather than a vocabulary of matchers because
  * an eval already has a runner: `expect` in a vitest file is the simple case, and
  * a case that must PROFILE rather than bisect on the first failure wants a
@@ -56,6 +57,12 @@
  * THROWS rather than returning something empty when it has nothing to read —
  * that is the half a hand-rolled `find`/`?? ""` gets wrong, and it turns a case
  * asserting against `undefined` into a case that names what actually happened.
+ *
+ * The two DIAGNOSTICS ({@link describeToolCalls}, {@link describeTurn}) are the
+ * same idea for the runner's own half: a reader that throws says what happened,
+ * and an `expect` that fails says "expected undefined to be defined" unless the
+ * case hands it a message. Ten sites across five templates hand-built that
+ * message, four of them byte-identically, which is what says it belongs here.
  *
  * Exports are enumerated explicitly (no `export *`) so the public surface is
  * deliberate: a new symbol in one of these modules does not ship as public API
@@ -78,6 +85,7 @@
 export type { RunCodeExecutor, StepFetch } from "@alexkroman1/aai/host-internal";
 export {
   customEventsIn,
+  describeToolCalls,
   type EvalToolCall,
   lastStateIn,
   saidIn,
@@ -85,6 +93,7 @@ export {
   TURN_ENDS,
   toolArgsIn,
   toolCallsIn,
+  toolNames,
   toolResultIn,
   toolResultsIn,
 } from "./eval/events.ts";
@@ -120,6 +129,13 @@ export {
   type StubScript,
   type StubStep,
 } from "./eval/stub-llm.ts";
+// Reading a CALL rather than one reply. Public because the claim they make is
+// the one a multi-turn case has to make and could not spell: the turn a
+// MECHANISM fired in, never turn number two — how many turns an agent takes to
+// get somewhere is the model's business and it measurably varies, so a case
+// pinned to an index is a flake with a misleading name. Three templates reached
+// that conclusion independently and wrote these three out under it.
+export { callsIn, describeTurn, turnCalling } from "./eval/turns.ts";
 // The `node:vm` `run_code` executor. Public because the `run_code` builtin
 // REFUSES without one off-platform (the Modal container is the security
 // boundary), so a case about an agent that answers by running code cannot assert

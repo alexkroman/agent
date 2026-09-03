@@ -82,13 +82,13 @@ import type { Logger } from "../runtime-config.ts";
 import { createWorkflowClient } from "../workflow-client.ts";
 import { createMemoryKeyStore } from "../workflow-keys.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
+import { releaseQuietly, settleAllRuns, warnOnAbandonedRuns } from "./_workflow-drain.ts";
 import { type EvalCredentials, silentLogger } from "./session.ts";
 import {
   createEvalWorkflowEngine,
   type EvalEmitted,
   type EvalRunRecord,
   type EvalSleep,
-  type EvalWorkflowEngine,
   type EvalWorkflowEngineOptions,
 } from "./workflow-engine.ts";
 
@@ -255,7 +255,32 @@ export type EvalWorkflows = {
   ): Promise<EvalWorkflowRun>;
   /** Every run this app has started, oldest first, without waiting for any. */
   runs(): Promise<readonly EvalWorkflowRun[]>;
-  /** Unpublish the step slots and release the engine. Never rejects. */
+  /**
+   * Wait for every run this app has started, oldest first, and read them all.
+   *
+   * **Not tidiness — a LEAK.** Two shipped templates hand-rolled this loop
+   * verbatim, and `recap-workflow`'s doc says why: the scripted provider a case
+   * installs is unpublished when that case finishes, so a body still mid-flight
+   * makes its next request "against whatever the next case publishes — or
+   * against the real provider, with a real key".
+   *
+   * The half that stays the CASE's is the release: what holds a run in flight is
+   * a gate of the case's own, and nothing here can open one. So the shape is
+   * `release(); await app.settleAll();`. A run started WHILE this drains is
+   * drained too, and `timeoutMs` bounds each run rather than the set. See
+   * `eval/_workflow-drain.ts` for the whole argument, including what
+   * {@link EvalWorkflows.close} does when this is not called.
+   */
+  settleAll(options?: { timeoutMs?: number | undefined }): Promise<readonly EvalWorkflowRun[]>;
+  /**
+   * Unpublish the step slots and release the engine. Never rejects.
+   *
+   * **It does NOT wait for a run still in flight, and it says so out loud when
+   * there is one** — a `process.emitWarning` naming the run and pointing at
+   * {@link EvalWorkflows.settleAll}. Draining here could only deadlock and
+   * abandoning silently is the leak; `eval/_workflow-drain.ts` argues all three
+   * options.
+   */
   close(): Promise<void>;
 };
 
@@ -386,7 +411,14 @@ export function openEvalWorkflows(opts: EvalWorkflowsOptions): EvalWorkflows {
       for (const record of engine.records()) runs.push(await snapshotOf(record.runId, record));
       return runs;
     },
-    close: () => releaseQuietly(engine),
+    settleAll(options?: { timeoutMs?: number | undefined }) {
+      const timeoutMs = timeoutFor(options?.timeoutMs);
+      return settleAllRuns(engine, (runId) => read(runId, timeoutMs));
+    },
+    async close(): Promise<void> {
+      warnOnAbandonedRuns(engine);
+      await releaseQuietly(engine);
+    },
   };
 }
 
@@ -398,11 +430,6 @@ function runTimeoutMessage(runId: string, timeoutMs: number, record: EvalRunReco
     `(status ${record.status}, ${record.reported.length} progress line(s)` +
     `${last === undefined ? "" : `, last: ${JSON.stringify(last)}`})`
   );
-}
-
-/** Release the engine without letting teardown fail a case. */
-async function releaseQuietly(engine: EvalWorkflowEngine): Promise<void> {
-  await engine.release().catch(() => undefined);
 }
 
 /**
