@@ -257,6 +257,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
             ? AbortSignal.any([callerSignal, controller.signal])
             : controller.signal,
           gate,
+          logger,
         }),
       );
     } catch (err: unknown) {

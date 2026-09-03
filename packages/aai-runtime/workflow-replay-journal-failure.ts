@@ -127,6 +127,7 @@ export function watchJournalFailure(journal: JournalStore): JournalFailureWatch 
       setStatus: (runId, next, patch, expect) =>
         journal.setStatus(runId, next, patch, expect).catch(note),
       readSteps: (runId) => journal.readSteps(runId).catch(note),
+      readStep: (runId, key) => journal.readStep(runId, key).catch(note),
       claimAttempt: (runId, key) => journal.claimAttempt(runId, key).catch(note),
       releaseAttempt: (runId, key) => journal.releaseAttempt(runId, key).catch(note),
       claimSleep: (runId, key, wakeAt, correlationId, kind) =>

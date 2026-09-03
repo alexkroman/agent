@@ -194,6 +194,24 @@ export type JournalStore = {
    */
   readSteps(runId: string): Promise<StepEntry[]>;
   /**
+   * ONE settled step by its key, or `undefined` when it has not settled.
+   *
+   * **This does not reopen the question above it** ("Why the journal is read
+   * whole and not queried per step"). That argument is about the WALK's opening
+   * read, where a lookup per `ctx.step` costs a round trip per step per replay
+   * and reading whole costs one whatever the run has done. This answers a
+   * different question, asked on one path only: `settledSince`
+   * (`workflow-replay-attempt.ts`) re-reads a SINGLE key when `claimAttempt`
+   * says somebody else reached it, to find out whether they settled it. That
+   * call site had no keyed primitive, so it read the whole journal and kept one
+   * entry — an O(N) scan to answer an O(1) question, on the contended path, in
+   * exactly the runs where N is largest.
+   *
+   * Both databases key this table `(run_id, key)` (the platform's adds `slug`),
+   * so this is an index seek rather than a scan and needs no new index.
+   */
+  readStep(runId: string, key: string): Promise<StepEntry | undefined>;
+  /**
    * Charge one attempt for `key` and resolve the attempt's 1-based number.
    *
    * Called BEFORE the step body runs, and that order is the whole contract: a

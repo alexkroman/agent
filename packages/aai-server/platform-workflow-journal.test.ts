@@ -114,6 +114,11 @@ const CALLS: readonly {
   },
   { name: "readSteps", rows: [[]], run: (sql) => journal.readSteps(sql, SLUG, "wrun_1") },
   {
+    name: "readStep",
+    rows: [[]],
+    run: (sql) => journal.readStep(sql, SLUG, "wrun_1", "a#0"),
+  },
+  {
     name: "claimAttempt",
     rows: [[{ n: 1 }]],
     run: (sql) => journal.claimAttempt(sql, SLUG, "wrun_1", "a#0"),
@@ -156,6 +161,22 @@ const CALLS: readonly {
 ];
 
 describe("tenancy is in every statement", () => {
+  test("the table names every journal method, so a fourteenth cannot arrive untested", () => {
+    // A hand-written case per method is exactly what a NEW method does not get,
+    // and this is not hypothetical: `readStep` was added and this table did not
+    // notice, while the guide beside it argued that a thirteenth method would be
+    // missed. So the roster is checked against the NAMESPACE rather than against
+    // a count in a comment — the same reason every counting gate in this repo
+    // carries a floor.
+    const methods = Object.entries(journal)
+      .filter(([, value]) => typeof value === "function")
+      .map(([name]) => name)
+      // The two typed refusals are classes on the same namespace, not methods.
+      .filter((name) => !name.endsWith("Error"))
+      .sort();
+    expect(methods).toEqual(CALLS.map((call) => call.name).sort());
+  });
+
   test.each(CALLS.map((call) => [call.name, call] as const))(
     "%s binds the slug as $1 on every statement it issues",
     async (_name, call) => {
