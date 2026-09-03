@@ -260,7 +260,8 @@ describe("runQueuePass", () => {
     // the fan-out and released it only after every delivery had resolved. That
     // is the shortage the paragraph above describes, arriving one phase later:
     // at the defaults (32 a tick, 8 in flight) against guests that are timing
-    // out, one pass pinned a connection for minutes out of ADMIN_POOL_MAX = 4.
+    // out, one pass pinned a connection for minutes out of ADMIN_POOL_MAX = 16,
+    // which every platform read on the replica shares.
     const { db, held } = fakeDb(Array.from({ length: 6 }, (_, i) => msg(`m${i}`)));
     let peakDuringDelivery = 0;
     await runQueuePass({

@@ -228,26 +228,24 @@ export {
   type PlatformQueueOptions,
   payloadRunId,
 } from "./workflow-platform-queue.ts";
-// The queue-name grammar, and the classifier over it. It began as the DevKit's
-// (`parseQueueName` in `@workflow/world`) and is ours now — the platform's claim
-// SQL matches the two patterns, so it has to stay stable whoever owns it. It is a
-// declared dependency of THIS package and not of `aai-server`, so a second
-// spelling on that side is exactly the copy this subpath exists to prevent.
+// The CLASSIFIER over the queue-name grammar. It began as the DevKit's
+// (`parseQueueName` in `@workflow/world`) and is ours now. It is a declared
+// dependency of THIS package and not of `aai-server`, so a second spelling on
+// that side is exactly the copy this subpath exists to prevent.
 //
-// The PLATFORM needs all three. The two PATTERNS cross as strings because its
-// delivery claim applies them inside Postgres, splitting the due set into the
-// orchestration messages it serializes per run and the step messages it fans out
-// (`claimDue` in `aai-server/workflow-queue-store.ts`) — a `RegExp` would not
-// survive the trip into SQL. `queueNameKind` is the same grammar for the enqueue
-// HANDLER, which refuses a name it cannot classify before the row is stored; that
-// refusal is what makes the claim's two patterns exhaustive over the table and so
-// is the reason it needs no third, fall-back case.
-export {
-  queueNameKind,
-  STEP_QUEUE_NAME_PATTERN,
-  WORKFLOW_QUEUE_NAME_PATTERN,
-  WORKFLOW_QUEUE_PATH,
-} from "./workflow-queue-dispatch.ts";
+// The platform calls it TWICE and both are writes rather than reads: the enqueue
+// HANDLER refuses a name it cannot classify (400, before the row exists), and
+// `workflow-queue-store.ts` stores what it answers as `workflow_queue.kind`. The
+// claim then compares that column.
+//
+// `STEP_QUEUE_NAME_PATTERN` and `WORKFLOW_QUEUE_NAME_PATTERN` used to be exported
+// beside it, as strings, because the claim applied them inside Postgres as
+// `~ $n` — a `RegExp` would not survive the trip into SQL. Storing the kind
+// retires that: the grammar is applied once per message, in this package, and
+// `20260903010000_workflow_queue_run_kind_columns.sql` carries what it bought
+// (a busy tick 516 ms -> 20 ms) and why the column is not GENERATED from the
+// grammar in the DDL instead.
+export { queueNameKind, WORKFLOW_QUEUE_PATH } from "./workflow-queue-dispatch.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
 //

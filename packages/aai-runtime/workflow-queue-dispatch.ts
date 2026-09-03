@@ -83,28 +83,25 @@ const walking = new Map<string, number>();
 /**
  * The DevKit's queue-name prefix, up to the kind — `__[<namespace>_]wkf_`.
  *
- * Exported as a PATTERN STRING rather than a `RegExp` because the platform's
- * delivery claim applies the same grammar inside Postgres
- * (`claimDue` in `aai-server/workflow-queue-store.ts`, which serializes a run's
- * ORCHESTRATION messages while letting its STEP messages fan out). A second
- * spelling of a third-party grammar on the side that does not depend on the
- * DevKit is exactly what this module's own doc refuses, so the one source of
- * truth is here and the SQL takes it as a parameter.
+ * MODULE-LOCAL, and it used to leave the package: the two patterns below were
+ * `@internal` exports on `aai-runtime/internal` because the platform's delivery
+ * claim applied the same grammar inside Postgres, as `~ $n` against a pattern
+ * crossing as a SQL parameter. It does not any more — a queue row carries a
+ * `kind` column, written from {@link queueNameKind} at enqueue
+ * (`aai-server/workflow-queue-store.ts`), so the grammar is applied exactly once
+ * per message, here, and the claim reads a value. The one-source-of-truth
+ * argument that put these strings on a public subpath is what retires them from
+ * it: there is no longer a second engine to feed.
  *
- * Deliberately POSIX-ERE compatible — a capturing group, never `(?:` — because
- * Postgres's `~` operator does not accept the non-capturing form and the failure
- * would be a runtime error inside the claim rather than a build error here.
- *
- * @internal
+ * A capturing group rather than `(?:` is a leftover of that arrangement —
+ * Postgres's `~` does not accept the non-capturing form — and stays, because
+ * {@link queueNameKind} reads no group and the alternative is a diff with no
+ * behaviour in it.
  */
-export const QUEUE_NAME_GRAMMAR = "^__([a-z][a-z0-9]*_)?wkf_";
+const QUEUE_NAME_GRAMMAR = "^__([a-z][a-z0-9]*_)?wkf_";
 
-/**
- * The grammar narrowed to ORCHESTRATION messages — the run's journal replay.
- *
- * @internal
- */
-export const WORKFLOW_QUEUE_NAME_PATTERN = `${QUEUE_NAME_GRAMMAR}workflow_.+$`;
+/** The grammar narrowed to ORCHESTRATION messages — the run's journal replay. */
+const WORKFLOW_QUEUE_NAME_PATTERN = `${QUEUE_NAME_GRAMMAR}workflow_.+$`;
 
 /**
  * The grammar narrowed to STEP messages — one step's execution.
@@ -126,12 +123,10 @@ export const WORKFLOW_QUEUE_NAME_PATTERN = `${QUEUE_NAME_GRAMMAR}workflow_.+$`;
  *
  * Both require an id after the kind (`.+$`), so this and {@link queueNameKind}
  * cannot disagree about the bare prefix.
- *
- * @internal
  */
-export const STEP_QUEUE_NAME_PATTERN = `${QUEUE_NAME_GRAMMAR}step_.+$`;
+const STEP_QUEUE_NAME_PATTERN = `${QUEUE_NAME_GRAMMAR}step_.+$`;
 
-/** Compiled once; the exported strings are what Postgres takes as a parameter. */
+/** Compiled once; the strings above exist only to build these. */
 const WORKFLOW_QUEUE_NAME_RE = new RegExp(WORKFLOW_QUEUE_NAME_PATTERN);
 const STEP_QUEUE_NAME_RE = new RegExp(STEP_QUEUE_NAME_PATTERN);
 
@@ -145,12 +140,15 @@ const STEP_QUEUE_NAME_RE = new RegExp(STEP_QUEUE_NAME_PATTERN);
  * cost of it drifting is bounded by every caller REFUSING rather than picking a
  * route or a serialization domain.
  *
- * Written as two tests over the two exported patterns rather than one regex with
- * an alternation, so the classifier and the platform's SQL cannot drift: there is
- * no second spelling to keep in step. The alternation version also had a real
- * bug — the namespace group is capturing (POSIX ERE has no `(?:`), so reading
- * `match[1]` classified every name as unroutable and answered 400 to the whole
- * queue.
+ * Written as two tests over the two patterns rather than one regex with an
+ * alternation, because the alternation version had a real bug: the namespace
+ * group is capturing (POSIX ERE has no `(?:`), so reading `match[1]` classified
+ * every name as unroutable and answered 400 to the whole queue.
+ *
+ * It is now the ONLY reader of that grammar in the system. The platform stores
+ * what this answers as `workflow_queue.kind` and its claim compares the column,
+ * so this function is both the router's classifier and the enqueue handler's
+ * refusal — see {@link STEP_QUEUE_NAME_PATTERN} for why there is no third case.
  *
  * @internal
  */

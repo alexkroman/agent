@@ -131,11 +131,12 @@ function parseEnqueueRequest(raw: unknown): EnqueueRequest {
   }
   // The queue name decides how the DELIVERY CLAIM serializes this message —
   // orchestration one-per-run, steps fanned out — so a name it cannot classify is
-  // refused here rather than stored. `claimDue` matches the two kinds explicitly
-  // and neither pattern is a catch-all, so an unclassifiable row would simply
-  // never be claimed; and the catch-all it replaced turned a renamed DevKit topic
-  // into the whole fleet silently serializing again. This is the boundary that
-  // makes those two patterns exhaustive over the table.
+  // refused here rather than stored. This is the SAME call the store then makes
+  // to write `workflow_queue.kind`, which is what the claim compares: a name
+  // this refuses would land as a null `kind` and be claimed by nobody, and the
+  // catch-all that arrangement replaced turned a renamed DevKit topic into the
+  // whole fleet silently serializing again. Refusing here is what makes the
+  // claim's two `kind = …` predicates exhaustive over the table.
   const queueName = requiredString(raw, "queueName");
   if (queueNameKind(queueName) === undefined) {
     throw new HTTPException(400, {
@@ -189,9 +190,11 @@ export function createWorkflowEnqueueHandler(
           id,
           slug,
           queueName: body.queueName,
-          // The queue's OWN envelope: `runId` is queryable because the claim
-          // serializes a run's messages on it, and `data` is the DevKit's opaque
-          // body. See `QueueEnvelope`.
+          // The queue's OWN envelope: `runId` is at the TOP level because the
+          // claim serializes a run's messages on it — the `run_id` column is
+          // `generated always as (payload ->> 'runId')`, so this field is what
+          // fills it — and `data` is the DevKit's opaque body. See
+          // `QueueEnvelope`.
           payload: { runId: body.runId, data: body.data },
           ...omitUndefined({
             headers: body.headers,

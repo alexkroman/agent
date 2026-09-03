@@ -3,9 +3,12 @@
 -- `findStalledRuns` (`aai-server/workflow-queue-reconcile.ts`) is the query the
 -- queue sweep runs on the branch whose entire point is to be free: the tick that
 -- claimed nothing. `20260828040000_workflow_queue_run_index.sql` measured that
--- idle tick at **0.201 ms** and `workflow-queue-sweep.ts` promises an idle fleet
--- "pays close to nothing for the frequency". This migration is what keeps that
--- true now that a second statement rides the same reservation.
+-- idle tick at **0.201 ms** — the figure is that migration's, for the single-CTE
+-- claim of the day; the split claim measured 1.674-1.983 ms and
+-- `20260903010000_workflow_queue_run_kind_columns.sql` took it to 0.930-1.024 ms —
+-- and `workflow-queue-sweep.ts` promises an idle fleet "pays close to nothing for
+-- the frequency". This migration is what keeps that true now that a second
+-- statement rides the same reservation.
 --
 -- Three things compound, and none of them is bounded by anything the server sets:
 --
@@ -13,13 +16,15 @@
 --       module doc says so outright ("NO LEADER LOCK"), because `claimDue` is
 --       lock-free by design. So EVERY replica reconciles on EVERY idle tick, at
 --       `WORKFLOW_QUEUE_INTERVAL_MS` — one second by default, i.e. >= 1 Hz per
---       replica, on the RESERVED admin connection out of an `ADMIN_POOL_MAX` of 4.
+--       replica, on the RESERVED admin connection out of an `ADMIN_POOL_MAX` of
+--       16, which every platform read the replica makes shares.
 --   (b) Nothing indexed it. `workflow_runs` carried one index,
 --       `workflow_runs_listing_idx (slug, workflow, created_at desc, run_id desc)`,
 --       which is for `listRuns` and is useless to a fleet-wide scan with no slug —
 --       so the outer query was a sequential scan plus a sort. The `not exists`
 --       anti-join is on `(slug, queue_name)`, which none of `workflow_queue`'s
---       three indexes lead with either (`due`, `claimed`, and
+--       indexes lead with either (`due`, `claimed`, and — until
+--       `20260903010000_workflow_queue_run_kind_columns.sql` dropped it —
 --       `run_idx (slug, (payload->>'runId'), available_at)`).
 --   (c) Nothing ever DELETED a terminal run. No pg_cron job touched
 --       `workflow_runs`, and `platform-workflow-journal.ts`'s `setStatus` says as

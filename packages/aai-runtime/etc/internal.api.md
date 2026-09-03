@@ -481,9 +481,6 @@ type StateSyncSession = {
     recordPush(json: string): void;
 };
 
-// @internal
-export const STEP_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_step_.+$";
-
 // @public
 type StepEntry = {
     key: string;
@@ -575,9 +572,6 @@ export const WORKFLOW_CALLBACK_ROUTES: {
 
 // @internal
 export const WORKFLOW_DATA_DIR_ENV = "AAI_WORKFLOW_DATA_DIR";
-
-// @internal
-export const WORKFLOW_QUEUE_NAME_PATTERN = "^__([a-z][a-z0-9]*_)?wkf_workflow_.+$";
 
 // @internal
 export const WORKFLOW_QUEUE_PATH = "/workflow-queue";

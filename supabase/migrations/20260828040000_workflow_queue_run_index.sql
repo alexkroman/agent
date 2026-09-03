@@ -1,9 +1,18 @@
 -- The queue claim's `distinct on` had no index, and sorted to DISK every pass.
 --
--- `claimDue` (`workflow-queue-store.ts`) is the platform's delivery query, run on
+-- SUPERSEDED by `20260903010000_workflow_queue_run_kind_columns.sql`, which
+-- stores the run id and the message kind as COLUMNS and drops the index this file
+-- adds: measured, the planner stopped wanting any index over that ground, and
+-- keeping one regressed the idle tick. What survives here is the reasoning — the
+-- disk-sort measurement below, and the "`workflow_queue_due_idx` STAYS" section,
+-- which that migration relies on more heavily than this one did. Read the "WHY
+-- ONE INDEX AND NOT TWO" section as retired with the index itself.
+--
+-- `claimDue` (`workflow-queue-claim.ts`) is the platform's delivery query, run on
 -- a RESERVED admin connection every `WORKFLOW_QUEUE_INTERVAL_MS` — one second by
--- default, out of `ADMIN_POOL_MAX`, which is 4 for a whole replica. It reduces the
--- due set to one message per run:
+-- default, out of `ADMIN_POOL_MAX`, which is 16 for a whole replica and shared
+-- with every platform read it makes. It reduces the due set to one message per
+-- run:
 --
 --   select distinct on (q.slug, q.payload->>'runId') q.id, q.available_at
 --   ...
