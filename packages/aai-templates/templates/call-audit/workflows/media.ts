@@ -59,7 +59,7 @@
  */
 
 import type { PcmFormat } from "@alexkroman1/aai/step";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { z } from "zod";
 
 /**
  * The format every recording is converted to before anything measures it.
@@ -255,9 +255,9 @@ export function measureLoudnessArgs(input: string): string[] {
  * `{…}` in the text — last because a re-run's block would follow an earlier one,
  * and because nothing else ffmpeg logs at info level is brace-delimited.
  *
- * Every value arrives as a STRING (`"input_i" : "-16.19"`), which is ffmpeg's
- * shape and not a quirk of one version; a numeric coercion that silently yields
- * `NaN` is what a missing key would otherwise become, so each one is checked.
+ * Both halves of the read are declared below — {@link LoudnessBlock} for "is it
+ * an object", {@link LoudnessValues} for the five values, every one of which
+ * arrives as a STRING and has to coerce without silently yielding `NaN`.
  */
 export function parseLoudness(stderr: string): Loudness {
   const open = stderr.lastIndexOf("{");
@@ -268,22 +268,67 @@ export function parseLoudness(stderr: string): Loudness {
         "loses `-loglevel info`, since `print_format=json` writes through ffmpeg's log.",
     );
   }
-  // `isRecord` from the SDK rather than a hand-written
-  // `typeof x === "object" && x !== null` — this repo's rule (`guard-invariants`
-  // rule 17). It also NARROWS, so nothing below needs the
-  // `as Record<string, unknown>` the open-coded version required.
-  const parsed = safeJson(stderr.slice(open, close + 1));
-  if (!isRecord(parsed)) {
+  // Two parses, one per sentence this function can say. The block being an
+  // OBJECT and the five values being readable are different failures with
+  // different remedies, and the second message quotes the value ffmpeg actually
+  // printed — which needs the block still in hand, so the gate cannot be folded
+  // into the schema below.
+  const block = LoudnessBlock.safeParse(safeJson(stderr.slice(open, close + 1)));
+  if (!block.success) {
     throw new MediaAnalysisError("The loudness pass printed a block that is not JSON.");
   }
+
+  const values = LoudnessValues.safeParse(block.data);
+  if (!values.success) {
+    // Zod reports issues in the schema's own field order, so the first one names
+    // the same key the first per-key read named — and there is always a key,
+    // the object gate above having already passed.
+    const key = String(values.error.issues[0]?.path[0]);
+    throw new MediaAnalysisError(
+      `The loudness pass reported no usable \`${key}\` (got ${JSON.stringify(block.data[key])}).`,
+    );
+  }
+
   return {
-    inputLufs: numberAt(parsed, "input_i"),
-    inputTruePeak: numberAt(parsed, "input_tp"),
-    inputRange: numberAt(parsed, "input_lra"),
-    inputThreshold: numberAt(parsed, "input_thresh"),
-    targetOffset: numberAt(parsed, "target_offset"),
+    inputLufs: values.data.input_i,
+    inputTruePeak: values.data.input_tp,
+    inputRange: values.data.input_lra,
+    inputThreshold: values.data.input_thresh,
+    targetOffset: values.data.target_offset,
   };
 }
+
+/**
+ * Is the found `{…}` an object at all?
+ *
+ * The reachable failure is {@link safeJson} answering `undefined` — a brace pair
+ * found in ffmpeg's chatter with something other than JSON between them — and
+ * that is a different sentence from a value being unreadable, which is why this
+ * gate exists at all rather than being folded into {@link LoudnessValues}.
+ *
+ * `looseObject`, not `object`: it asks the ONE question and says nothing about
+ * keys, which matters because ffmpeg prints ten and the schema below reads five.
+ */
+const LoudnessBlock = z.looseObject({});
+
+/**
+ * The five numbers, in the order {@link parseLoudness} reports them missing.
+ *
+ * `z.coerce.number()` is the load-bearing choice: every value arrives as a
+ * STRING (`"input_i" : "-16.19"`), which is ffmpeg's shape and not a quirk of
+ * one version, so the schema has to coerce exactly as `Number(…)` did. What it
+ * adds is the check — zod 4's `z.number()` refuses `NaN` and both infinities,
+ * so a key ffmpeg stopped printing fails HERE with its name attached instead of
+ * flowing into pass two's argv as the literal text `NaN` and coming back as an
+ * ffmpeg option-parsing error about a filter.
+ */
+const LoudnessValues = z.object({
+  input_i: z.coerce.number(),
+  input_tp: z.coerce.number(),
+  input_lra: z.coerce.number(),
+  input_thresh: z.coerce.number(),
+  target_offset: z.coerce.number(),
+});
 
 /**
  * Pass two: apply the measurement, find the pauses, and write the audio.
@@ -615,23 +660,4 @@ function safeJson(text: string): unknown {
   } catch {
     return undefined;
   }
-}
-
-/**
- * One of `loudnorm`'s values, as a number.
- *
- * Checked rather than coerced: every value arrives as a string, so `Number(…)` on
- * a key ffmpeg stopped printing yields `NaN`, which then flows into the second
- * pass's argv as the literal text `NaN` and makes ffmpeg reject the filter with a
- * message about option parsing. Naming the key here is what turns that into a
- * sentence about the analysis.
- */
-function numberAt(raw: Record<string, unknown>, key: string): number {
-  const parsed = Number(raw[key]);
-  if (!Number.isFinite(parsed)) {
-    throw new MediaAnalysisError(
-      `The loudness pass reported no usable \`${key}\` (got ${JSON.stringify(raw[key])}).`,
-    );
-  }
-  return parsed;
 }

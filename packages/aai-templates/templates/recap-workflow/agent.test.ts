@@ -554,6 +554,33 @@ describe("checkTranscript", () => {
     stubProvider({ status: "transcribing" });
     await expect(checkTranscript("t_1")).rejects.toThrow(/unknown transcript status/);
   });
+
+  test("drops a field of the wrong type rather than failing the poll", async () => {
+    // THE degradation rule, and the test that fails against a schema parsed
+    // with a throwing `parse`: the job is running and `status` says so, so a
+    // `text` the provider sent as a number is one unusable field — not a reason
+    // to end a run that has already paid for the transcription. Each optional
+    // field carries its own `.catch(undefined)` for exactly this.
+    stubProvider({ status: "processing", text: 42, error: [], audio_duration: "254" });
+    expect(await checkTranscript("t_1")).toEqual({ status: "processing" });
+  });
+
+  test("drops a non-finite duration, which `Math.round(x / 60)` cannot use", async () => {
+    // JSON cannot spell `Infinity`, so this arrives as a string or a null and
+    // has to be refused the same way — `z.number()` refuses both, which is the
+    // `Number.isFinite` test the hand-written reader carried.
+    stubProvider({ status: "completed", text: "Hello.", audio_duration: null });
+    expect(await checkTranscript("t_1")).toEqual({ status: "completed", text: "Hello." });
+  });
+
+  test("names an unreadable body as `undefined` rather than throwing twice", async () => {
+    // Valid JSON that is not this endpoint's object — a proxy that answered
+    // with a list, say. There is no status to report, so the sentence says
+    // exactly that rather than the report itself failing on the body it was
+    // sent to describe.
+    stubProvider([{ status: "completed" }]);
+    await expect(checkTranscript("t_1")).rejects.toThrow(/unknown transcript status: undefined/);
+  });
 });
 
 describe("discardTranscript — the compensation", () => {
