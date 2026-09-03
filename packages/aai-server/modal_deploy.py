@@ -120,12 +120,12 @@ from modal_image import build_image, install_proxy_noise_filter, run_node  # noq
 
 PORT = 8080
 
-# ── Region: deliberately UNPINNED ────────────────────────────────────────────
+# ── Region: a FALLBACK LIST, us-east-2 first ─────────────────────────────────
 #
-# The web server is placed by Modal for CAPACITY, the same trade guest
-# sandboxes already make (see build_image in scripts/modal_image.py). It was
-# pinned to ``us-east-2``, which confines an always-warm replica to one
-# region's spare capacity — and when that runs dry Modal places NOTHING.
+# ``REGIONS`` below is passed to the web function. It is a LIST and not a
+# single value, and that is the whole design: this service was once pinned to
+# a bare ``us-east-2``, which confines an always-warm replica to one region's
+# spare capacity — and when that runs dry Modal places NOTHING.
 #
 # That outage is worth describing, because none of its symptoms name a region:
 # the app sits at ``deployed`` with ZERO tasks despite MIN_CONTAINERS=1 below,
@@ -134,14 +134,44 @@ PORT = 8080
 # not even a crash. ``modal app logs`` replays the last image build and then
 # streams silence, which reads as a wedged control plane rather than a
 # placement failure. Nothing recovers it: a redeploy or ``modal app rollover``
-# only re-asks for a container that still cannot be placed.
+# only re-asks for a container that still cannot be placed. A second region is
+# what makes that state unreachable while still expressing a PREFERENCE, which
+# is why the fix for it was never "pin harder" and is not "unpin" either.
 #
-# The locality this cost is small and shrinking: voice clients dial the guest
-# sandbox's tunnel directly, so no session traffic passes through here at all,
-# and the Supabase round trips that remain are not inside a latency budget.
-# Re-pin per environment (Modal's ``region`` takes a list, so prefer a
-# FALLBACK list over a single value) if a measurement ever justifies it — but
-# never for a service holding a warm floor.
+# ## What changed the answer: the Supabase round trips ARE in a budget now
+#
+# This block used to end "the Supabase round trips that remain are not inside a
+# latency budget", and that premise was retired by durable workflows. A run's
+# journal is a platform call per operation, and the engine's are SEQUENTIAL by
+# construction — ``claimAttempt`` before a step's body, ``appendStep`` after it
+# — so a run's wall clock is a multiple of this container's distance from the
+# database. Measured on a deployed ``use-transcript-workflow``, one 300 KB / 4
+# second recording, ONE clean walk with no retries:
+#
+#   14 x POST /:slug/workflow-journal, ~460-666 ms of server time each
+#   = ~7.3 s, to move 2.3 KiB of JSON (largest single body: 358 B)
+#
+# The same 14 calls, same route, same statements, against a local Postgres:
+# **31.4 ms total**, ~1-2 ms each in steady state. So ~99% of that time was
+# distance, and none of it was the statements, the pool, the bearer check or
+# the payload. The database is Supabase ``us-east-2`` (project ``aai``), and
+# Modal was placing this container wherever it found capacity — observed as far
+# off as another continent and cloud.
+#
+# ``us-east-1`` is the spill, deliberately: it is ~15 ms from ``us-east-2``, so
+# a placement that misses the preference still lands two orders of magnitude
+# better than an unpinned one, and the warm floor can always be placed.
+#
+# ## Guest sandboxes are NOT pinned by this, and that is deliberate
+#
+# They are a separate placement site (``MODAL_SANDBOX_REGION``, read by
+# modal-sandbox-env.ts) and they stay unpinned — see build_image in
+# scripts/modal_image.py for the ``Sandbox operation timed out`` this produced
+# under load. It costs little here: an agent guest holds no host channel at
+# all, so the hop this would shorten is the guest's own platform calls
+# (measured at ~117 ms of the ~8.9 s above), not a voice turn. An operator can
+# still set that variable per environment without a code change.
+REGIONS = ["us-east-2", "us-east-1"]
 
 # ── One app, both surfaces ───────────────────────────────────────────────────
 #
@@ -315,7 +345,10 @@ app = modal.App("aai-server-web")
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("aai-server")],
-    # No region= — see "Region: deliberately UNPINNED" above.
+    # A PREFERENCE with a fallback, never a single region — see "Region: a
+    # FALLBACK LIST, us-east-2 first" above for the measurement that justifies
+    # the preference and the outage that forbids dropping the fallback.
+    region=REGIONS,
     cpu=1,
     memory=2048,
     # Autoscaler bounds — see the "Web-service autoscaling" block above.
