@@ -83,6 +83,45 @@ export function journalStepConformance(arm: JournalArm): void {
         expect(await journal.readSteps(missing.runId)).toEqual([]);
       });
 
+      test("readStep answers ONE settled step by key, and undefined for anything else", async () => {
+        // The keyed read `settledSince` asks with. Its three misses matter as much
+        // as its hit: a key nobody settled, a key on the WRONG run, and a run
+        // nobody started all mean "not settled" rather than raising — the answer
+        // only ever SKIPS work, so reading it wrongly re-runs a step, which
+        // at-least-once already permits.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        const missing = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        await journal.createRun(runOf({ runId: missing.runId }));
+        const entry = stepOf({ key: "poll#1", name: "poll", finishedAt: 4242 });
+        await journal.appendStep(runId, entry);
+        expect(await journal.readStep(runId, "poll#1")).toEqual(entry);
+        expect(await journal.readStep(runId, "poll#0")).toBeUndefined();
+        expect(await journal.readStep(missing.runId, "poll#1")).toBeUndefined();
+        expect(await journal.readStep(keysFor(arm).runId, "poll#1")).toBeUndefined();
+      });
+
+      test("readStep and readSteps agree on every entry, so neither can drift", async () => {
+        // Two statements over one table, and the interesting failure is a column
+        // one of them forgot — which is invisible to a case that only ever asks
+        // one of them. `startedAt` is the live instance: it was added by an
+        // `alter table`, so a read that omitted it would answer a step with no
+        // derivable cost and nothing else would notice.
+        const journal = arm.journal();
+        const { runId } = keysFor(arm);
+        await journal.createRun(runOf({ runId }));
+        for (const [n, key] of ["a#0", "b#0", "c#0"].entries()) {
+          await journal.appendStep(
+            runId,
+            stepOf({ key, name: key.slice(0, 1), startedAt: 900 + n, finishedAt: 1000 + n }),
+          );
+        }
+        for (const entry of await journal.readSteps(runId)) {
+          expect(await journal.readStep(runId, entry.key)).toEqual(entry);
+        }
+      });
+
       test("a step's name and attempt count are what was stored", async () => {
         const journal = arm.journal();
         const { runId } = keysFor(arm);

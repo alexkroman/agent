@@ -83,6 +83,12 @@ function abandonedMessage(name: string, outstanding: number, maxAttempts: number
  * extra round trip lands only where it can change the outcome: a step reached by
  * an overlapping walk, or by one that died.
  *
+ * **It is `readStep` and not `readSteps`.** This asks about ONE key, and it used
+ * to read the whole journal and keep one entry — an O(N) scan to answer an O(1)
+ * question, on the contended path, in exactly the runs where N is largest. That
+ * does not contradict the once-per-walk argument above, which is about the
+ * WALK's opening read; see `JournalStore.readStep`.
+ *
  * **What it does NOT fix, deliberately**: two walks reaching a step NEITHER has
  * settled still both run it. That is the engine's stated at-least-once cost
  * (`workflow-engine.ts`: *"not doing the work twice … is a cost rather than a
@@ -91,9 +97,8 @@ function abandonedMessage(name: string, outstanding: number, maxAttempts: number
  * this closes is the half that is not a race at all: a window measured in
  * minutes, in which every step of a FINISHED run is re-executed.
  */
-async function settledSince(options: StepAttemptOptions): Promise<StepEntry | undefined> {
-  const entries = await options.journal.readSteps(options.runId);
-  return entries.find((entry) => entry.key === options.key);
+function settledSince(options: StepAttemptOptions): Promise<StepEntry | undefined> {
+  return options.journal.readStep(options.runId, options.key);
 }
 
 /**

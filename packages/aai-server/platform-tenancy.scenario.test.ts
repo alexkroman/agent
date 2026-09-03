@@ -31,7 +31,12 @@
  *
  * ## What is real, and why the oracle is a MODEL rather than a sibling store
  *
- * Real: `platform-workflow-journal.ts`'s twelve methods (hooks included),
+ * Real: twelve of `platform-workflow-journal.ts`'s thirteen methods (hooks
+ * included; `readStep` is deliberately absent — it reads the same table through
+ * the same slug-leading predicate as `readSteps`, and its tenancy is pinned by
+ * hand in `platform-workflow-journal.scenario.test.ts` rather than generated
+ * here, because extending this grammar perturbs coverage floors calibrated on
+ * observed minimums),
  * `platform-uploads.ts`'s five, `platform-session-state.ts`'s six, every
  * statement they issue, and the shipped `aai_platform` schema with its primary
  * keys, its unique `(slug, token)` index and its cascades from `agents`.

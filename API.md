@@ -8046,6 +8046,7 @@ type JournalStore = {
         };
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
+    readStep(runId: string, key: string): Promise<StepEntry | undefined>;
     claimAttempt(runId: string, key: string): Promise<number>;
     releaseAttempt(runId: string, key: string): Promise<void>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
@@ -8820,6 +8821,7 @@ type JournalStore = {
         };
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
+    readStep(runId: string, key: string): Promise<StepEntry | undefined>;
     claimAttempt(runId: string, key: string): Promise<number>;
     releaseAttempt(runId: string, key: string): Promise<void>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
@@ -9254,6 +9256,7 @@ type JournalStore = {
         };
     }, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
+    readStep(runId: string, key: string): Promise<StepEntry | undefined>;
     claimAttempt(runId: string, key: string): Promise<number>;
     releaseAttempt(runId: string, key: string): Promise<void>;
     claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;

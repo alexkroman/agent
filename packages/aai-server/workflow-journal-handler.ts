@@ -110,6 +110,7 @@ const METHODS = [
   "listRuns",
   "setStatus",
   "readSteps",
+  "readStep",
   "claimAttempt",
   "releaseAttempt",
   "claimSleep",
@@ -297,6 +298,11 @@ function plan(method: Method, slug: string, body: Record<string, unknown>): Plat
     case "readSteps": {
       const runId = requiredString(body, "runId");
       return (sql) => journal.readSteps(sql, slug, runId);
+    }
+    case "readStep": {
+      const runId = requiredString(body, "runId");
+      const key = requiredString(body, "key");
+      return (sql) => journal.readStep(sql, slug, runId, key);
     }
     case "claimAttempt": {
       const runId = requiredString(body, "runId");

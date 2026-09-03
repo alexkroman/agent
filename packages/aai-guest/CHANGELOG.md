@@ -1,5 +1,15 @@
 # aai-guest
 
+## 0.5.13
+
+### Patch Changes
+
+- Updated dependencies [4507050]
+  - @alexkroman1/aai-runtime@12.0.0
+  - @alexkroman1/aai-cli@12.0.0
+  - @alexkroman1/aai@12.0.0
+  - @alexkroman1/aai-ui@12.0.0
+
 ## 0.5.12
 
 ### Patch Changes

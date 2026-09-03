@@ -95,6 +95,9 @@ import type {
 import { isTerminalStatus, JournalConflictError } from "./workflow-journal-types.ts";
 import { decodeStorageJson } from "./workflow-typed-json.ts";
 
+/** Every column a {@link StepEntry} is rebuilt from — ONE list, so the two reads below cannot drift. */
+const SELECT_STEP = `select key, name, status, output::text as output, error, attempts, started_at, finished_at from ${WORKFLOW_STEP_TABLE}`;
+
 /**
  * Build a journal over `db`.
  *
@@ -202,11 +205,18 @@ export function createPostgresJournal(opts: { db: Db }): JournalStore {
 
     async readSteps(runId: string): Promise<StepEntry[]> {
       const rows = await db.query<StepRow>(
-        `select key, name, status, output::text as output, error, attempts, started_at, finished_at
-         from ${WORKFLOW_STEP_TABLE} where run_id = $1 order by finished_at, key`,
+        `${SELECT_STEP} where run_id = $1 order by finished_at, key`,
         [runId],
       );
       return rows.map(toStepEntry);
+    },
+
+    async readStep(runId: string, key: string): Promise<StepEntry | undefined> {
+      const [row] = await db.query<StepRow>(`${SELECT_STEP} where run_id = $1 and key = $2`, [
+        runId,
+        key,
+      ]);
+      return row ? toStepEntry(row) : undefined;
     },
 
     async claimAttempt(runId: string, key: string): Promise<number> {

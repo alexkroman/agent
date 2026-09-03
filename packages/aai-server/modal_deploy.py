@@ -163,9 +163,30 @@ PORT = 8080
 # Modal was placing this container wherever it found capacity — observed as far
 # off as another continent and cloud.
 #
-# ``us-east-1`` is the spill, deliberately: it is ~15 ms from ``us-east-2``, so
-# a placement that misses the preference still lands two orders of magnitude
-# better than an unpinned one, and the warm floor can always be placed.
+# ## The spill is the BROAD region, because ``us-east-1`` is not selectable
+#
+# The spill was written as ``us-east-1`` — ~15 ms from ``us-east-2``, so a
+# placement that misses the preference still lands two orders of magnitude
+# better than an unpinned one. Modal refused it, and the refusal is a DEPLOY
+# failure rather than a placement one, so the app kept serving the previous
+# revision and nothing shipped:
+#
+#   Regions us-east-1 are not supported. See
+#   https://modal.com/docs/guide/region-selection for supported regions
+#
+# Which specific regions a workspace may name is Modal's to decide and is not
+# knowable from this file, so the fallback is now the BROAD ``us-east`` — a
+# granularity level rather than one datacenter, and the one Modal's own guide
+# recommends reaching for, since a wider pool is what improves availability.
+# It keeps the property the spill was for: everything under ``us-east`` is
+# within tens of milliseconds of the database, i.e. two orders of magnitude
+# better than the unpinned placements measured above, and the warm floor can
+# always be placed.
+#
+# Note the list is a SET of acceptable regions rather than an ordered
+# preference Modal promises to honour; ``us-east-2`` leads it because that is
+# where the database is, and `modal-image-inputs.test.ts` pins that intent so
+# a later edit cannot drift the first entry away from Supabase.
 #
 # ## Guest sandboxes are NOT pinned by this, and that is deliberate
 #
@@ -176,7 +197,7 @@ PORT = 8080
 # all, so the hop this would shorten is the guest's own platform calls
 # (measured at ~117 ms of the ~8.9 s above), not a voice turn. An operator can
 # still set that variable per environment without a code change.
-REGIONS = ["us-east-2", "us-east-1"]
+REGIONS = ["us-east-2", "us-east"]
 
 # ── One app, both surfaces ───────────────────────────────────────────────────
 #

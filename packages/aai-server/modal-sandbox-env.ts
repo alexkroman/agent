@@ -159,7 +159,11 @@ export function parseSandboxLimitsFromEnv(
 
 /**
  * Parses guest-sandbox region pinning from `MODAL_SANDBOX_REGION`
- * (comma-separated for multiple acceptable regions, e.g. `"us-east-1"`).
+ * (comma-separated for multiple acceptable regions, e.g. `"us-east-2"`, or a
+ * granularity level like `"us-east"`). The value is not validated here: Modal
+ * checks region strings server-side and refuses one it does not support
+ * (`Regions us-east-1 are not supported`), so an operator setting this is
+ * choosing from Modal's list, not from anything in this tree.
  *
  * **Production leaves this UNSET on purpose** — an operator override, not a
  * deployed default. Pinning trades placement capacity for locality, and

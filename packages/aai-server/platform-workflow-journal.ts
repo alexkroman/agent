@@ -294,19 +294,37 @@ export async function setStatus(
   return rows.length > 0;
 }
 
+/**
+ * The steps of one run, as both reads below start — ONE statement, so a column
+ * added for one cannot be silently absent from the other. `output::text` in
+ * particular is what keeps `jsonb` normalization out of the decoded value.
+ */
+const STEPS_OF_RUN = `select key, name, status, output::text as output, error, attempts, started_at, finished_at
+   from ${STEPS} where slug = $1 and run_id = $2`;
+
 /** Every settled step of a run, in the order they finished. */
 export async function readSteps(
   sql: SqlExec,
   slug: string,
   runId: string,
 ): Promise<JournalStepRow[]> {
-  const rows = await sql(
-    `select key, name, status, output::text as output, error, attempts,
-            started_at, finished_at
-       from ${STEPS} where slug = $1 and run_id = $2 order by finished_at, key`,
-    [slug, runId],
-  );
+  const rows = await sql(`${STEPS_OF_RUN} order by finished_at, key`, [slug, runId]);
   return rows.map(toStep);
+}
+
+/**
+ * ONE settled step, or `null` when it has not settled — `null` and not
+ * `undefined` because this answer crosses `JSON.stringify`, which drops the
+ * latter. An index seek on this table's primary key `(slug, run_id, key)`.
+ */
+export async function readStep(
+  sql: SqlExec,
+  slug: string,
+  runId: string,
+  key: string,
+): Promise<JournalStepRow | null> {
+  const [row] = await sql(`${STEPS_OF_RUN} and key = $3`, [slug, runId, key]);
+  return row ? toStep(row) : null;
 }
 
 /**

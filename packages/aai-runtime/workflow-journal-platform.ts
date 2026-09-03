@@ -307,6 +307,21 @@ export function createPlatformJournal(opts: PlatformEndpoint): JournalStore {
       return await sharedReadSteps(runId);
     },
 
+    async readStep(runId: string, key: string): Promise<StepEntry | undefined> {
+      // NOT routed through `shareByKey` like the read above: that coalescer keys
+      // on a run id, and this asks about one step of one — and the call site
+      // (`settledSince`) reaches it once per contended step, never in the
+      // concurrent burst a coalescer exists for.
+      //
+      // An UNREADABLE answer reads as "not settled" here, where `appendStep`
+      // refuses one — the asymmetry is deliberate and matches `readSteps`, which
+      // drops a row it cannot parse. This answer only ever SKIPS work, so
+      // failing to read it re-runs a step, which is what at-least-once already
+      // permits; `appendStep`'s answer decides what a double execution RETURNS,
+      // where a guess is a divergence.
+      return toStep(await call(opts, "readStep", { runId, key }));
+    },
+
     async claimAttempt(runId: string, key: string): Promise<number> {
       const n = await call(opts, "claimAttempt", { runId, key });
       if (typeof n !== "number") {

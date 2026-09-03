@@ -64,7 +64,9 @@
 
 import { DEFAULT_STEP_MAX_ATTEMPTS, type StepOptions, type WorkflowCtx } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import type { Logger } from "./runtime-config.ts";
 import { describeCodeChange } from "./workflow-code-version.ts";
+import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS } from "./workflow-journal-bound.ts";
 import type { JournalStore, StepEntry } from "./workflow-journal-types.ts";
 import { createDeterminismReads } from "./workflow-replay-determinism.ts";
 import { watchDivergence } from "./workflow-replay-divergence.ts";
@@ -136,6 +138,15 @@ export type ReplayOptions = {
    * reader, and a body that reports into nothing is not an error.
    */
   streams?: StreamStore | undefined;
+  /**
+   * Where a walk's own WARNINGS go — today only the journal-growth one
+   * (`workflow-journal-bound.ts`).
+   *
+   * Optional for the same reason `streams` is: a spec driving a body directly has
+   * no logger, and a warning nobody reads is not an error. The engine passes its
+   * own, which is the only path a deployed run takes.
+   */
+  logger?: Logger | undefined;
   /**
    * Cancellation. Checked before each step EXECUTES — never mid-step, since a
    * step is the unit this engine can neither interrupt nor un-journal. A run
@@ -242,6 +253,22 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // earlier — see `ReplayOptions.steps`.
   const entries = await (options.steps ?? journal.readSteps(runId));
   for (const entry of entries) settled.set(entry.key, entry);
+  // BEFORE the body runs, because the point is not to start work this run cannot
+  // finish — a walk of a journal at the ceiling is the slowest thing the engine
+  // does and the least likely to reach an end. A refusal is an ordinary `failed`
+  // outcome rather than a throw: the engine already writes one and the run has a
+  // real verdict, where a throw would leave it `running` for the sweep to find.
+  const bound = journalBound(entries.length);
+  if (bound.kind === "refuse") return { kind: "failed", error: { message: bound.message } };
+  if (bound.kind === "warn") {
+    options.logger?.warn(bound.message, {
+      runId,
+      workflow: options.workflow,
+      steps: bound.steps,
+      ceiling: WORKFLOW_JOURNAL_MAX_STEPS,
+    });
+  }
+
   // What the run record says about the CODE, read once. Two refusals narrate
   // themselves with it and each states a different conclusion from the same
   // three-way verdict — a divergence and a journaled output that no longer

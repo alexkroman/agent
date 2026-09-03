@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The GitHub App's host configuration: what counts as configured, and the
-// three shapes a PEM survives an environment variable in.
+// four shapes a PEM survives an environment variable in.
 
+import { createPrivateKey, generateKeyPairSync } from "node:crypto";
 import { describe, expect, test } from "vitest";
 import { createGithubAppConfig, githubInstallUrl } from "./studio-github-config.ts";
 
@@ -45,8 +46,8 @@ describe("createGithubAppConfig", () => {
     expect(createGithubAppConfig(env({ GITHUB_APP_SLUG: "" }))).toBeUndefined();
   });
 
-  test("a PEM survives all three environment-variable spellings", () => {
-    // Only the intact form signs a JWT, and the other two fail as
+  test("a PEM survives all four environment-variable spellings", () => {
+    // Only the intact form signs a JWT, and the other three fail as
     // `DECODER routines::unsupported` at the first sync — hours after the
     // misconfiguration, nowhere near it.
     const intact = createGithubAppConfig(env({}));
@@ -57,9 +58,44 @@ describe("createGithubAppConfig", () => {
       env({ GITHUB_APP_PRIVATE_KEY: Buffer.from(PEM, "utf8").toString("base64") }),
     );
 
+    const spaced = createGithubAppConfig(
+      env({ GITHUB_APP_PRIVATE_KEY: PEM.trim().replaceAll("\n", " ") }),
+    );
+
     expect(intact?.privateKey).toContain("-----BEGIN PRIVATE KEY-----");
     expect(escaped?.privateKey).toBe(intact?.privateKey);
     expect(base64?.privateKey.trim()).toBe(PEM.trim());
+    // The one that used to get PAST the header test: `includes("-----BEGIN")`
+    // is true of a collapsed PEM, so it was returned unchanged and only
+    // OpenSSL objected. Byte-identical to the intact form, because this value
+    // is also the install `state` HMAC key.
+    expect(spaced?.privateKey).toBe(intact?.privateKey);
+  });
+
+  test("a collapsed RSA key is one OpenSSL accepts, and the label is not split", () => {
+    // The production shape, on a REAL key: 32 spaces, zero newlines, from a
+    // paste through a single-line field. A whitespace substitution would
+    // shatter `-----BEGIN RSA PRIVATE KEY-----` into four lines, which is why
+    // the repair reads the header and footer rather than the spaces — and why
+    // this asserts on `createPrivateKey` rather than on the string, the string
+    // having looked fine throughout the outage.
+    const pem = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    }).privateKey;
+    const collapsed = pem.trim().replaceAll("\n", " ");
+
+    expect(collapsed).not.toContain("\n");
+    expect(() => createPrivateKey(collapsed)).toThrow(/unsupported/);
+
+    const config = createGithubAppConfig(env({ GITHUB_APP_PRIVATE_KEY: collapsed }));
+    expect(config?.privateKey).toContain("-----BEGIN RSA PRIVATE KEY-----");
+    expect(createPrivateKey(config?.privateKey ?? "").asymmetricKeyType).toBe("rsa");
+    // Idempotent: an already-intact key is not re-shaped, or two replicas
+    // reading the same secret through different paths would hold different
+    // HMAC keys and reject each other's install callbacks.
+    expect(config?.privateKey).toBe(pem.trim());
   });
 
   test("something that decodes to no PEM at all is left alone", () => {
