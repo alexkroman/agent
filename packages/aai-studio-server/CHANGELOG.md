@@ -1,5 +1,13 @@
 # aai-studio-server
 
+## 0.11.2
+
+### Patch Changes
+
+- 926ae11: Fix the studio's Connect GitHub button never becoming Sync: the connect flow went to the App's install page, which GitHub does not redirect back from once the App is installed, so the callback never ran. Connect now goes through /login/oauth/authorize, and the callback resolves the installation from the user token when the redirect names none.
+- Updated dependencies [200537a]
+  - aai-server@3.7.2
+
 ## 0.11.1
 
 ### Patch Changes
