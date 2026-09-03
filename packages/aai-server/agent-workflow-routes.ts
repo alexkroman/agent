@@ -22,6 +22,7 @@
  * | `/workflow-enqueue` | **this agent's guest** | the per-sandbox bearer, bound to one slug |
  * | `/session-state` | **this agent's guest** | the same, and every statement is slug-scoped |
  * | `/workflow-journal` | **this agent's guest** | the same, and every statement is slug-scoped |
+ * | `/workflow-keys` | **this agent's guest** | the same, and every statement is slug-scoped |
  * | `/upload-records` | **this agent's guest** | the same |
  *
  * The split in that table is the point: the first three are open by design and each
@@ -66,6 +67,11 @@ import {
   MAX_WORKFLOW_JOURNAL_BODY_BYTES,
   WORKFLOW_JOURNAL_ROUTE,
 } from "./workflow-journal-handler.ts";
+import {
+  createWorkflowKeysHandler,
+  MAX_WORKFLOW_KEYS_BODY_BYTES,
+  WORKFLOW_KEYS_ROUTE,
+} from "./workflow-keys-handler.ts";
 import {
   createWorkflowWebhookHandler,
   MAX_WEBHOOK_BODY_BYTES,
@@ -158,6 +164,19 @@ export function registerAgentWorkflowRoutes(
     WORKFLOW_JOURNAL_ROUTE,
     limit(MAX_WORKFLOW_JOURNAL_BODY_BYTES),
     createWorkflowJournalHandler(omitUndefined({ adminDb: opts.adminDb })),
+  );
+
+  // The correlation-key INDEX — `(workflow, key) -> runId`, which is how a
+  // caller's next call finds the run their last one started. Same bearer and the
+  // same slug-in-every-statement scoping as the journal above, and it closes the
+  // same gap one table over: the index's other two backends are a `Map` and the
+  // agent's own `DATABASE_URL`, so before this route a deployed agent kept the
+  // only pointer to its durable runs in a sandbox that self-exits. The run
+  // survived and the pointer did not, which reads as a caller who never called.
+  agents.post(
+    WORKFLOW_KEYS_ROUTE,
+    limit(MAX_WORKFLOW_KEYS_BODY_BYTES),
+    createWorkflowKeysHandler(omitUndefined({ adminDb: opts.adminDb })),
   );
 
   // The guest's workflow UPLOAD records — the last piece of a guest's durable state

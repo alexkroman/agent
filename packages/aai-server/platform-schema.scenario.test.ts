@@ -242,6 +242,15 @@ describeWithStack("the platform migration applies and the stores work against it
       // SCHEDULE: that guest's own timers die with a sandbox that self-exits, so
       // a due message here is what boots it and re-walks the journal above.
       "workflow_queue",
+      // The correlation-key INDEX (`20260903030000_workflow_run_keys.sql`) —
+      // `(workflow, key) -> runId`, the only pointer from a caller to the durable
+      // run their last call started. It is the journal's gap one table over: the
+      // index's other two backends are a `Map` and the agent's own `DATABASE_URL`,
+      // so a deployed agent kept that pointer in a sandbox that self-exits while
+      // the run beside it was durable. Tenancy leads the primary key like every
+      // table above, and it references `agents` rather than `workflow_runs` on
+      // purpose — see the migration.
+      "workflow_run_keys",
       // RETIRED, and still here on purpose: which agent owns a durable run
       // (`20260827010000_workflow_run_owner.sql`), scoping every storage read
       // back when the DevKit's tenant-column-less world ran on this database.

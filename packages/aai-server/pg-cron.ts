@@ -38,6 +38,7 @@ import {
   SWEEP_SESSION_STATE,
   SWEEP_STUDIO_SESSIONS,
   SWEEP_UPLOAD_RECORDS,
+  SWEEP_WORKFLOW_RUN_KEYS,
   SWEEP_WORKFLOW_RUNS,
 } from "./pg-cron-bodies.ts";
 import type { SqlExec } from "./secret-store.ts";
@@ -123,6 +124,19 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
       name: "aai-sweep-workflow-runs",
       schedule: "17 * * * *",
       command: SWEEP_WORKFLOW_RUNS,
+    },
+    // The correlation-key index is the one child of a run the sweep above cannot
+    // delete — see {@link SWEEP_WORKFLOW_RUN_KEYS} for why that table must not
+    // reference `workflow_runs` and therefore cannot ride its CTE.
+    //
+    // Hourly like the run sweep, and at minute 43 because minutes here are spread
+    // deliberately: it sits well after :17, so a key is collected in the same hour
+    // its run is rather than waiting for the next pass, and it shares its minute
+    // with nothing.
+    {
+      name: "aai-sweep-workflow-run-keys",
+      schedule: "43 * * * *",
+      command: SWEEP_WORKFLOW_RUN_KEYS,
     },
     ...(opts.storage
       ? [

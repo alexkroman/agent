@@ -283,3 +283,100 @@ export const SWEEP_STUDIO_SESSIONS =
  */
 export const SWEEP_CRON_HISTORY =
   "delete from cron.job_run_details where end_time < now() - interval '7 days'";
+
+/**
+ * How old a correlation-key row must be before the sweep below will even LOOK at
+ * it — a prefilter, and not a retention policy.
+ *
+ * The policy is the predicate beside it: a key is collectible when the RUN it
+ * names is gone. This number only decides how cheaply a pass can establish that
+ * there is nothing to do, so any value is CORRECT and only the cost changes — too
+ * short and the anti-join is asked about rows whose run is still there, too long
+ * and an already-dead run's key lingers an extra day. That is why it is a literal
+ * here rather than imported the way `SESSION_STATE_RETENTION` and
+ * `UPLOAD_RECORD_RETENTION` are: those two ARE their policies, so a second copy
+ * could disagree with the code, and this one has nothing to disagree with.
+ *
+ * Thirty days matches `sweep_terminal_workflow_runs`'s own default window, so a
+ * run and its key become collectible in the same pass rather than a window apart.
+ */
+const WORKFLOW_RUN_KEY_PREFILTER = "30 days";
+
+/**
+ * How many key rows one call may delete.
+ *
+ * The whole body is one transaction, so this is what keeps it short — the same
+ * cap `sweep_terminal_workflow_runs` reaches with ten batches of five thousand,
+ * and deliberately equal to it: that function's hourly ceiling is 50,000 RUNS and
+ * a run carries at most one key row, so this cannot fall behind the sweep it
+ * follows. A narrower batch would make the deficit permanent rather than the
+ * transaction shorter.
+ */
+const WORKFLOW_RUN_KEY_BATCH = 50_000;
+
+/**
+ * Correlation keys whose run no longer exists.
+ *
+ * `(workflow, key) -> runId` is the only pointer from a caller to the durable run
+ * they started (`aai-runtime/workflow-keys.ts`), and unlike a run's steps,
+ * attempts, sleeps and hooks it is NOT deleted by
+ * `aai_platform.sweep_terminal_workflow_runs`. So without this job it is the one
+ * child of a run that outlives the run forever.
+ *
+ * ## Why the cascade and the run sweep are not enough
+ *
+ * `workflow_run_keys.slug` cascades from `agents`, which covers a DELETED AGENT
+ * and nothing else. Retention is the other half and the run sweep cannot do it
+ * for us: every table that names a run references `agents` rather than
+ * `workflow_runs` — which is why that function deletes the other four children in
+ * its own statement — and this table additionally must NOT reference
+ * `workflow_runs`, because `WorkflowKeyStore.record` promises nothing about a run
+ * existing and a foreign key would make the platform arm refuse what the memory
+ * and self-hosted arms accept.
+ *
+ * What a dangling key costs is not correctness — `WorkflowClient.find` drops a
+ * recorded id whose run is gone, deliberately, so history ageing out cannot fail
+ * a lookup — but it costs a `getRun` per dangling id on every `find`, and on a
+ * deployed agent each of those is a `POST /:slug/workflow-journal` round trip
+ * holding one of `ADMIN_POOL_MAX` connections to answer nothing. Plus a table
+ * that only grows, which is the shape `20260901020000_workflow_reconcile_cost.sql`
+ * records paying for once already.
+ *
+ * ## The predicate is "the run is GONE", not "the key is old"
+ *
+ * Age alone would be wrong rather than merely coarse: a run can park for longer
+ * than any window this could pick — `podcast-digest` sleeps between digests — and
+ * deleting the key of a LIVE run is exactly the failure the index exists to
+ * prevent, one call before the caller phones back. Asking about the run instead
+ * needs no knowledge of the run-retention policy at all, so it stays right if that
+ * policy changes, and it also collects the key of a run that never existed.
+ *
+ * {@link WORKFLOW_RUN_KEY_PREFILTER} is what keeps a no-op pass cheap:
+ * `workflow_run_keys_created_idx` turns "is there anything old enough to ask
+ * about" into one index probe, where the bare anti-join is a sequential scan plus
+ * a primary-key probe per row, hourly, forever.
+ *
+ * `for update skip locked` for the reason the run sweep uses it: a row somebody
+ * else already holds — a concurrent agent delete cascading — is the next call's,
+ * not this transaction's to wait for.
+ *
+ * NOT `guarded()`: a migration owns this table, so it is always there, and a
+ * `to_regclass` wrapper would be pretending otherwise (`pg-cron.ts`'s module doc
+ * has the two tables that really need one).
+ */
+export const SWEEP_WORKFLOW_RUN_KEYS = `with doomed as (
+  select k.slug, k.run_id
+    from aai_platform.workflow_run_keys k
+   where k.created_at < (extract(epoch from now()) * 1000)::bigint
+                        - (extract(epoch from interval '${WORKFLOW_RUN_KEY_PREFILTER}') * 1000)::bigint
+     and not exists (
+       select 1 from aai_platform.workflow_runs r
+        where r.slug = k.slug and r.run_id = k.run_id
+     )
+   order by k.created_at
+   limit ${WORKFLOW_RUN_KEY_BATCH}
+   for update skip locked
+)
+delete from aai_platform.workflow_run_keys k
+ using doomed d
+ where k.slug = d.slug and k.run_id = d.run_id`;

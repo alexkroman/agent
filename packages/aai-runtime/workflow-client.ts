@@ -95,8 +95,10 @@ export type WorkflowClientOptions = {
   /** The agent's declared workflows, keyed by the name they are declared under. */
   workflows: Readonly<Record<string, WorkflowDef>>;
   /**
-   * Where correlation keys are recorded. Pass a Postgres store in production and
-   * a memory store under `aai dev` — see `workflow-keys.ts`.
+   * Where correlation keys are recorded. One of the three stores in
+   * `workflow-keys.ts` — the platform's index for a deployed guest, an app's own
+   * Postgres for a self-hosted one, memory under `aai dev`; `selectKeyStore`
+   * (`workflow-runtime.ts`) is what picks between them.
    */
   keys: WorkflowKeyStore;
   /**
@@ -492,7 +494,24 @@ function unknownWorkflowMessage(named: string, declared: readonly string[]): str
   return `Workflow "${named}" is not declared on this agent. Declared workflows: ${list}.`;
 }
 
-/** Build the key store this runtime should use: the app database, or memory. */
+/**
+ * Build the key store an embedder holding a `Db` should use: that database, or
+ * memory.
+ *
+ * The two LOCAL arms, and that is the whole of what this can decide. There is a
+ * third — the platform's own index, which a DEPLOYED guest reaches over HTTP
+ * (`workflow-keys-platform.ts`) — and it is deliberately not reachable from here:
+ * it takes no argument an embedder could supply, being read out of the environment
+ * the platform itself wrote, and reading that environment is a decision about which
+ * deployment this is rather than about which `Db` the caller holds. `selectKeyStore`
+ * in `workflow-runtime.ts` is where that decision lives, beside `selectJournal`,
+ * which resolves the RUNS by the same preference and for the same reasons.
+ *
+ * So a deployed guest does not come through this function, and this signature is
+ * unchanged for that reason as much as any: it is on this package's root barrel,
+ * i.e. contracted, and widening it would oblige an epoch on the `keys` capability
+ * to describe a platform arm no embedder can build.
+ */
 export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore {
   return db ? createPostgresKeyStore(db) : createMemoryKeyStore();
 }

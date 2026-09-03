@@ -1,15 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The guest's end of the PLATFORM wire: one credential pair, one URL builder, and
- * the four paths declared once.
+ * the five paths declared once.
  *
- * Four modules reach the platform over HTTP — `session-state-platform.ts`,
- * `uploads-platform.ts`, `workflow-journal-platform.ts` and
+ * Five modules reach the platform over HTTP — `session-state-platform.ts`,
+ * `uploads-platform.ts`, `workflow-journal-platform.ts`,
+ * `workflow-keys-platform.ts` and
  * `workflow-platform-queue.ts` — and each had grown its own `{base, token, fetch?}`
  * options type, its own `` `${base.replace(/\/+$/, "")}/…` ``, and its own copy of
  * the path the platform serves it on. That last one is the expensive copy: the
- * platform declares the same four strings independently (`session-state-handler.ts`
- * and its three siblings), so renaming or versioning one was a two-package edit whose
+ * platform declares the same strings independently (`session-state-handler.ts`
+ * and its siblings), so renaming or versioning one was a two-package edit whose
  * failure mode is a 404 the runtime reports as `answered HTTP 404` — a rejected
  * `hydrate`, i.e. a failed session start, with nothing naming the path.
  *
@@ -17,7 +18,7 @@
  *
  * The dependency runs one way: `aai-server` already imports this package's
  * `/internal` (the typed-json codec, the route tables), and `aai-runtime` may not
- * import the server. So the shared declaration has to sit on this side, and the four
+ * import the server. So the shared declaration has to sit on this side, and the
  * handlers take their `*_ROUTE` from {@link PLATFORM_ROUTES} rather than spelling a
  * literal. That is the same move `server-routes.ts` makes for the OPPOSITE
  * direction, for the same reason its doc gives.
@@ -50,6 +51,16 @@ export const PLATFORM_ROUTES = {
   workflowJournal: "/workflow-journal",
   /** The guest asking the platform to queue a message for one of its own runs. */
   workflowEnqueue: "/workflow-enqueue",
+  /**
+   * The correlation-key index — `(workflow, key) -> runId`.
+   *
+   * Its own route beside the journal rather than a method ON it, because it is a
+   * different STORE with a different interface: `WorkflowKeyStore` has two methods
+   * and three backends of its own, and the journal route's `METHODS` list is the
+   * `JournalStore` seam. Folding them would put one route's body cap, one list and
+   * one 501 across two stores that are selected independently.
+   */
+  workflowKeys: "/workflow-keys",
 } as const;
 
 /** One of {@link PLATFORM_ROUTES}. */
