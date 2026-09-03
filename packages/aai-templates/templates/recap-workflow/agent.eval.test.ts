@@ -62,8 +62,14 @@
  * this file SHIPS — see `agent.test.ts`.
  */
 import agentDef from "virtual:aai/agent";
+import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
-import type { EvalToolCall, EvalWorkflows } from "@alexkroman1/aai-runtime/eval";
+import {
+  type EvalToolCall,
+  type EvalWorkflows,
+  toolResultIn,
+  toolResultsIn,
+} from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -116,17 +122,24 @@ type ScriptedProvider = {
  * rather than answering an empty 200: a step calling something nobody expected
  * is a finding, where an empty body reads as a provider that said nothing.
  *
+ * The model leg is `stubGatewayRoute`'s, first, because it is the one leg whose
+ * shape this file cannot check: the completion envelope is a WIRE shape, so a
+ * field typed one off does not fail — `stepGenerate` reads no content, reports
+ * an empty completion, and the case blames the recap. The reader routes off the
+ * SDK's own completions PATH and answers `undefined` for everything else, which
+ * is what lets it sit in front of the three batch legs below it.
+ *
  * `hold` keeps the FIRST poll pending, and it is the only way to observe a run
  * that is still going: a durable `sleep` is skipped here, so an unheld run
  * burns its whole poll loop in milliseconds.
  */
 function stubProvider(options: { hold?: boolean; ending?: Ending } = {}): ScriptedProvider {
   const gate = Promise.withResolvers<void>();
+  const model = stubGatewayRoute(RECAP_JSON);
   let polls = 0;
   const stub = installStubStepFetch(async (request) => {
-    if (request.url.includes("/chat/completions")) {
-      return { body: { choices: [{ message: { content: RECAP_JSON } }] } };
-    }
+    const recapped = model.route(request);
+    if (recapped) return recapped;
     if (request.method === "POST") return { body: { id: TRANSCRIPT_ID, status: "queued" } };
     // The compensation. A real DELETE removes the transcript from the account,
     // which is what makes "a failed run leaves nothing behind" a claim rather
@@ -158,15 +171,25 @@ const Cancelled = z.object({ cancelled: z.boolean(), note: z.string() });
  *
  * Parsed rather than regexed: a tool result reaches the event stream as a
  * serialized string, and a shape that stopped matching should fail HERE naming
- * the field instead of handing the next assertion `undefined`.
+ * the field instead of handing the next assertion `undefined`. That is
+ * `toolResultsIn`'s job, and the half it does better than the filter-and-map
+ * this was: a call with no result THROWS naming its position, where
+ * `one.result !== undefined` dropped it — so a tool that was called and never
+ * returned left a shorter list and a case that read the calls it did get.
  */
-function recapStarts(calls: readonly EvalToolCall[]): z.infer<typeof RecapStart>[] {
-  return calls
-    .filter((one) => one.name === "request_recap" && one.result !== undefined)
-    .map((one) => RecapStart.parse(JSON.parse(String(one.result))));
+function recapStarts(calls: readonly EvalToolCall[]): readonly z.infer<typeof RecapStart>[] {
+  return toolResultsIn(calls, "request_recap", RecapStart);
 }
 
-/** The run id the first `request_recap` of this turn reported. */
+/**
+ * The run id the FIRST `request_recap` of this turn reported.
+ *
+ * `recapStarts` rather than `toolResultIn`: a turn is allowed more than one call
+ * here — the case below says so in as many words, a desk that asks twice being
+ * the model's business — and the singular reader refuses a second one on
+ * purpose. What is asserted about the extras is that each was REFUSED with the
+ * run this found.
+ */
 function startedRunId(calls: readonly EvalToolCall[]): string {
   const [first] = recapStarts(calls);
   if (first === undefined) {
@@ -328,8 +351,7 @@ describeEval(
         const runId = startedRunId(started.toolCalls);
         const turn = await session.say("Forget it — cancel that, please.");
 
-        const cancel = turn.toolCalls.find((one) => one.name === "cancel_recap");
-        const answer = Cancelled.parse(JSON.parse(String(cancel?.result)));
+        const answer = toolResultIn(turn.toolCalls, "cancel_recap", Cancelled);
         expect(answer.cancelled).toBe(true);
         // The sentence is a documented promise of this template, not a
         // decoration: cancellation is NOT cooperative here, so the transcript

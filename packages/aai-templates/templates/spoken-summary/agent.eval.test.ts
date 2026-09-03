@@ -48,6 +48,7 @@
 // exercised. `run.slept` below is the other half of that admission written as
 // an assertion. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that
 // really suspends and resumes a run.
+import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import {
   installStubSpeech,
   installStubTranscribe,
@@ -115,23 +116,30 @@ function publish(bytes: Uint8Array, name: string, type: string) {
  *
  * ONE fake, because publishing a `stepFetch` REPLACES — a flow that transcribes
  * AND calls a model cannot install two, which is exactly what `otherwise` is
- * for. The transcription half is the SDK's own fake rather than this file's
- * hand-typed wire: it routes off the SDK's endpoint constants, so a case cannot
- * pass because the fake and the step agree on a typo.
+ * for. BOTH halves are the SDK's own fakes rather than this file's hand-typed
+ * wire, and it is the same argument twice: each routes off the SDK's own
+ * endpoint constant, so a case cannot pass because the fake and the step agree
+ * on a typo. The predicate here used to be `url.includes("llm-gateway")` — a
+ * HOST, which the default gateway happens to carry and a `gatewayUrl` pointed
+ * anywhere else does not, so the fake would have gone on answering the
+ * transcription 404 to a model call it no longer recognised.
+ *
+ * The reader also hands back DECODED calls, which is why the case below asks
+ * `model.calls[0].prompt` what the model was SHOWN: off a raw request body that
+ * is the whole serialized request, `model` and `reasoning_effort` included.
  */
 function scriptProvider(options: { text?: string; pendingPolls?: number } = {}) {
-  return installStubTranscribe({
+  const model = stubGatewayRoute(JSON.stringify(REPLY));
+  const provider = installStubTranscribe({
     text: options.text ?? TRANSCRIPT,
     durationSec: 42,
     // Passed straight through rather than conditionally spread: the option
     // already admits `undefined`, and `guard-invariants` rule 2 counts the
     // spread.
     pendingPolls: options.pendingPolls,
-    otherwise: (request) =>
-      request.url.includes("llm-gateway")
-        ? { body: { choices: [{ message: { content: JSON.stringify(REPLY) } }] } }
-        : undefined,
+    otherwise: (request) => model.route(request),
   });
+  return { provider, model };
 }
 
 describeWorkflowEval(
@@ -144,7 +152,7 @@ describeWorkflowEval(
       // returned bytes, or an id nothing wrote, or two ids because the synthesis
       // and the store became two steps.
       const uploads = publish(new Uint8Array(64), "standup.wav", "audio/wav");
-      const provider = scriptProvider();
+      const { provider } = scriptProvider();
       const speech = installStubSpeech({ pcmBytes: 96_000 });
 
       const run = await app.run(spokenSummary, { recording: UPLOAD_ID });
@@ -207,7 +215,7 @@ describeWorkflowEval(
       // central prompt decision regressing — synthesize the bullet list and you
       // get a voice reading "one. two. three." with no connective tissue.
       publish(new Uint8Array(64), "standup.wav", "audio/wav");
-      const provider = scriptProvider();
+      const { model } = scriptProvider();
       const speech = installStubSpeech();
 
       const run = await app.run(spokenSummary, { recording: UPLOAD_ID, voice: "michael" });
@@ -226,9 +234,10 @@ describeWorkflowEval(
 
       // And the model was ASKED for both, over the transcript it was given. A
       // prompt that stopped asking for a script is how the field goes missing.
-      const prompt = String(provider.calls.find((call) => call.leg === "other")?.body ?? "");
-      expect(prompt).toContain("READ ALOUD");
-      expect(prompt).toContain("The launch is on for Tuesday the fourth");
+      const asked = model.calls[0];
+      if (asked === undefined) expect.fail("the run must have asked the model for a summary");
+      expect(asked.prompt).toContain("READ ALOUD");
+      expect(asked.prompt).toContain("The launch is on for Tuesday the fourth");
     });
 
     test("a recording with no speech stops before the model and the voice", async ({ app }) => {
@@ -237,7 +246,7 @@ describeWorkflowEval(
       // the run would go on to summarize no words and store half a second of
       // audio — a green run with an empty product.
       const uploads = publish(new Uint8Array(64), "silence.wav", "audio/wav");
-      const provider = scriptProvider({ text: "   " });
+      const { model } = scriptProvider({ text: "   " });
       const speech = installStubSpeech();
 
       const run = await app.run(spokenSummary, { recording: UPLOAD_ID });
@@ -247,7 +256,7 @@ describeWorkflowEval(
       expect(run.output).toBeUndefined();
       // Nothing was summarized and nothing was spoken, which is the half that
       // makes this more than an error-message assertion.
-      expect(provider.calls.filter((call) => call.leg === "other")).toEqual([]);
+      expect(model.calls).toEqual([]);
       expect(speech.calls).toEqual([]);
       expect(uploads.writes).toEqual([]);
       expect(run.reported).not.toContain("Summarizing the transcript.");
@@ -262,7 +271,7 @@ describeWorkflowEval(
       // them. A loop that re-submitted, or one that spun with no wait, both
       // produce a correct transcript and a wrong bill.
       publish(new Uint8Array(64), "standup.wav", "audio/wav");
-      const provider = scriptProvider({ pendingPolls: 2 });
+      const { provider } = scriptProvider({ pendingPolls: 2 });
       installStubSpeech();
 
       const run = await app.run(spokenSummary, { recording: UPLOAD_ID });

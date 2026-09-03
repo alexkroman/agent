@@ -29,6 +29,7 @@
 // journal, no replay, and no per-step retry, so a rate-limited live run FAILS
 // where a deployed one would have ridden it out. The tier that really resumes a
 // run is `aai-cli`'s `dev-workflow.scenario.test.ts`.
+import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
@@ -52,32 +53,36 @@ const critique = (verdict: "ship" | "revise", score = 8): string =>
     notes: verdict === "ship" ? [] : ["Say what happens to the handover", "Name the start date"],
   });
 
-/** One gateway reply, in the envelope `stepGenerate` reads. */
-const reply = (content: string) => ({ body: { choices: [{ message: { content } }] } });
-
 /**
  * Answer the gateway with `contents`, in order, and record what each stage asked.
  *
- * The last reply repeats, matching `stubGateway`'s convention — a loop cannot
- * know how many calls it will make, and a script that ran out mid-loop would
- * fail on the script rather than on the code. `installStubStepFetch` rather than
- * `installStubGateway`: `stepGenerate` goes through the published `stepFetch`
- * slot, and a published slot BEATS a stubbed global, so stubbing the global here
- * would test a path production does not take.
+ * `stubGatewayRoute` owns both halves this file used to hand-write. The
+ * ENVELOPE, because it is a WIRE shape and a field typed one off does not fail —
+ * `stepGenerate` reads no content, reports an empty completion, and the case
+ * blames the loop. And the CURSOR: the last reply repeats, because a loop cannot
+ * know how many calls it will make, so a script that said one thing forever
+ * could only ever drive it into its budget and one that ran out mid-loop would
+ * fail on the script rather than on the code. Both of those are now the SDK's
+ * one copy rather than this file's second.
+ *
+ * `installStubStepFetch` rather than `installStubGateway`: `stepGenerate` goes
+ * through the published `stepFetch` slot, and a published slot BEATS a stubbed
+ * global, so stubbing the global here would test a path production does not
+ * take. Anything that is not a completion request THROWS — every step in this
+ * body is a model call, so a request the route does not recognise is a finding,
+ * and answering it with a reply anyway is how a stage that started dialling
+ * something else would pass.
  */
 function scriptGateway(contents: readonly string[]) {
-  let next = 0;
-  const fetched = installStubStepFetch(() => {
-    const content = contents.at(Math.min(next, contents.length - 1)) ?? "";
-    next += 1;
-    return reply(content);
+  const model = stubGatewayRoute(contents);
+  installStubStepFetch((request) => {
+    const answered = model.route(request);
+    if (answered === undefined) {
+      throw new Error(`unexpected step request in an eval: ${request.method} ${request.url}`);
+    }
+    return answered;
   });
-  return fetched;
-}
-
-/** Every prompt the gateway was sent, in call order. */
-function promptsOf(fetched: ReturnType<typeof scriptGateway>): string[] {
-  return fetched.calls.map((call) => String(call.body ?? ""));
+  return model;
 }
 
 describeWorkflowEval(agentDef, (test) => {
@@ -140,7 +145,7 @@ describeWorkflowEval(agentDef, (test) => {
     // running, and asking it and then accepting whatever it says is not evidence
     // about the budget. What this pins is the loop's arithmetic — the half a
     // live case cannot reach.
-    const fetched = scriptGateway([
+    const model = scriptGateway([
       DRAFT,
       critique("revise", 4),
       `${DRAFT} It starts on the first Monday of the month.`,
@@ -170,12 +175,15 @@ describeWorkflowEval(agentDef, (test) => {
     ).toBe(true);
     // One draft plus a critique-and-revise pair per round. A loop that critiqued
     // twice, or revised the round it shipped, changes this number.
-    expect(fetched.calls).toHaveLength(1 + 2 * MAX_ROUNDS);
+    expect(model.calls).toHaveLength(1 + 2 * MAX_ROUNDS);
 
     // `briefBlock` is what keeps the three stages from drifting apart, and this is
     // the assertion behind that claim: the writer, the critic AND the reviser were
-    // all shown the same brief and the same must-cover point.
-    const prompts = promptsOf(fetched);
+    // all shown the same brief and the same must-cover point. Read off the
+    // recorded `prompt` — the USER message — rather than off the raw request
+    // body, which is the whole serialized request and would let a `model` id or a
+    // `temperature` satisfy one of these `toContain`s.
+    const prompts = model.calls.map((call) => call.prompt);
     expect(prompts).toHaveLength(1 + 2 * MAX_ROUNDS);
     for (const prompt of prompts) {
       expect(prompt).toContain("quokka");

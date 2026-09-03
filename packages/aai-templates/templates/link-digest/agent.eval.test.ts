@@ -26,14 +26,12 @@
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect, onTestFinished } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { SETTLE_MS } from "./workflows/digest.ts";
-
-/** The gateway leg, so one handler can route the page and the model apart. */
-const isModelCall = (url: string): boolean => url.includes("/chat/completions");
 
 /**
  * A page with an ANSWER in it, so "did it summarize what it fetched" is a
@@ -107,15 +105,25 @@ async function servePage(html: string): Promise<string> {
  *
  * ONE handler, because publishing a `stepFetch` REPLACES — a flow that fetches a
  * page and calls a model cannot install two fakes, so it routes by URL. The
- * recorded calls are what makes the prompt assertable, which is the only way to
- * check what the model was SHOWN rather than what it said.
+ * routing is `stubGatewayRoute`'s rather than this file's: it answers the
+ * completion request and `undefined` for everything else, which is what makes
+ * the page the `??` arm — and it routes off the SDK's own completions PATH, so a
+ * case cannot pass because the fake and the step agree on a typo. That matters
+ * more here than it looks: the envelope is a WIRE shape, so a field typed one
+ * off does not fail — `stepGenerate` reads no content and reports an empty
+ * completion, and the case blames the digest.
+ *
+ * The recorded calls are what makes the prompt assertable, which is the only way
+ * to check what the model was SHOWN rather than what it said — and they come
+ * back DECODED, so the last case reads `prompt` rather than the raw request
+ * body, which is the whole serialized request.
  */
 function scriptBothLegs(html: string, reply = SCRIPTED_DIGEST) {
-  return installStubStepFetch((request) =>
-    isModelCall(request.url)
-      ? { body: { choices: [{ message: { content: reply } }] } }
-      : { body: html, headers: { "Content-Type": "text/html" } },
+  const model = stubGatewayRoute(reply);
+  installStubStepFetch(
+    (request) => model.route(request) ?? { body: html, headers: { "Content-Type": "text/html" } },
   );
+  return model;
 }
 
 describeWorkflowEval(agentDef, (test) => {
@@ -180,18 +188,19 @@ describeWorkflowEval(agentDef, (test) => {
       "</body>",
       `<p>${"padding sentence about otters. ".repeat(2000)}</p></body>`,
     );
-    const legs = scriptBothLegs(oversized);
+    const model = scriptBothLegs(oversized);
 
     const run = await app.run(digest, { url: "https://example.test/otters" });
     expect(run.status).toBe("completed");
 
-    const prompt = String(legs.calls.find((call) => isModelCall(call.url))?.body ?? "");
-    expect(prompt).toContain("Sea otters are one of the few mammals that use tools");
+    const asked = model.calls[0];
+    if (asked === undefined) expect.fail("the run must have shown the article to the model");
+    expect(asked.prompt).toContain("Sea otters are one of the few mammals that use tools");
     // Neither the script's instruction nor the stylesheet reached the prompt.
-    expect(prompt).not.toContain(SMUGGLED);
-    expect(prompt).not.toContain("rebeccapurple");
+    expect(asked.prompt).not.toContain(SMUGGLED);
+    expect(asked.prompt).not.toContain("rebeccapurple");
     // And the text was CAPPED on the way across the queue. 24k characters plus
     // the prompt's own framing, well under the ~60k this page would otherwise be.
-    expect(prompt.length).toBeLessThan(30_000);
+    expect(asked.prompt.length).toBeLessThan(30_000);
   });
 });
